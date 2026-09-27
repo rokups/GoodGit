@@ -50,6 +50,26 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 10. **UI wording.** Git terms: HEAD, branch, commit, staged, unstaged. Never "@ is a change you
     edit", change IDs, aliases, workspaces (except where §4 keeps a label).
 
+## Working notes (for resuming work)
+
+- **Build and test:**
+  - Build: `cmake --preset ninja && cmake --build build/ninja`.
+  - Tests run inside the real binary: `cd build/ninja && ./bin/ggui --test=FILTER --headless`
+    (`--list-tests` lists them).
+  - Failure logs and screenshots go to `build/ninja/test-artifacts/`.
+  - `GGUI_KEEP_TEST_DIRS=1` keeps the scenario repositories.
+- **Scripts:**
+  - Mark tasks: `scripts/mark_task.py ID done|partial "status text"`.
+  - Regenerate the traceability matrix:
+    `scripts/traceability.py --phase N --out docs/traceability.md trace.json`.
+  - Measure coverage: `NO_GATE=1 scripts/run_software_coverage.sh`.
+- **Test-engine pitfalls:**
+  - Combo labels must not contain `##`, and menu labels must not contain `/`.
+  - Items inside tables or child windows need `s.child(...)` or `**/` paths.
+  - Wait predicates must not `revParse` a ref that may not exist (use `gitMayFail`).
+- **Clean-room exception:** the owner allows reusing graph rendering and graph-loading
+  optimizations from `build/ggui-src`. Otherwise rule 1 stands.
+
 ---
 
 ## Phase 0 — Spec and harness
@@ -967,6 +987,27 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   placement for `fixup!`/`squash!`/`amend!`; squash message assembly the way Git does;
   engine selection (in-memory unless `edit`/`break`/`exec` or user choice) with reason.
 - **Done when:** exercised by P3-16 … P3-19.
+- **Design notes (not started):**
+  - **Todo model:** put it in libgg (`Todo.hpp/.cpp`) so `git-gg` can share it.
+    - Parse and format Git's todo, with validation.
+    - Autosquash, with `amend!` placed as `fixup -C`.
+    - Squash messages: fill Git's commented template, then apply `cleanup=strip`. The
+      `squash!` subject line is commented out, as in Git ≥ 2.32.
+  - **In-memory engine:** map the todo onto `gg::rewrite::Plan`.
+    - pick/reword → Pick with a message override.
+    - squash/fixup → `Step::Kind::Squash`.
+    - drop → `dropped`; update-ref → `refsToSteps`.
+    - Run it through `Actions::rewrite` (pre-flight, one update-ref, one Undo).
+    - "Keep committer date" needs a committer override on `Step`/`Plan`. The Rewriter
+      currently always signs with the default committer.
+  - **Native engine:**
+    - `Source/gitgg/SequenceEditor.cpp` is a stub. It should write the prepared todo and
+      messages.
+    - Run `git rebase -i` with `GIT_SEQUENCE_EDITOR`/`GIT_EDITOR` and `GG_OPERATION`.
+    - The stop UI builds on `App::drawStateBadge`, `Actions::continueOperation` and
+      `detectState` (`Source/core/Readers.cpp`, which already reads `.git/rebase-merge/`).
+  - **Tests:** `Source/tests/test_rebase_i.cpp`, including the differential test against
+    `git rebase -i` on a copy.
 
 ### P3-16 Interactive rebase: todo editor UI and entry points
 - **Depends on:** P3-15
