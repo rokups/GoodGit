@@ -1154,95 +1154,117 @@ reused for UF-06 to UF-09 (explicit exception to the clean-room rule).
 
 ## User feedback, round 2 (2026-09-27)
 
-Requested by the user after P3-14 (UF-10 … UF-31). Not started.
+Requested by the user after P3-14 (UF-10 … UF-31). All done.
 
-### UF-10 History tooltips only while the list is not scrolling
+### [x] UF-10 History tooltips only while the list is not scrolling
+- **Status:** done. Tooltips are held back for 0.3 s after any scroll change (wheel, scrollbar, keyboard) (`HIST-TOOLTIP-SCROLL`).
 - **Do:** suppress row/graph/badge tooltips while the History list is scrolling (wheel,
   scrollbar drag or keyboard); show them again once scrolling stops.
 
-### UF-11 Side-by-side diff shows only code
+### [x] UF-11 Side-by-side diff shows only code
+- **Status:** done. No hunk header lines side by side; hunk stage/discard/unstage moved to the context menu for both views (`DIFF-SBS-CODE-ONLY`, `DIFF-HUNK-MENU`).
 - **Do:** no `@@ -a,b +c,d @@` hunk header lines in the side-by-side view; the
   "… N unchanged lines" expander already marks omitted content.
 
-### UF-12 Remotes in Branches share the Remotes context menu
+### [x] UF-12 Remotes in Branches share the Remotes context menu
+- **Status:** done. The remote node has the Remotes menu; remote-tracking branches get it as a "Remote <name>" submenu (`BR-REMOTE-MENU`).
 - **Do:** a remote (and its remote-tracking branches) in the Branches panel gets the same
   context menu as in the Remotes panel.
 
-### UF-13 Copy ID copies the short ID; Shift copies the full ID
+### [x] UF-13 Copy ID copies the short ID; Shift copies the full ID
+- **Status:** done. Short ID by default, full ID with Shift, in History, toolbar, Info, Blame and Reflog (`APP-COPY-ID-SHIFT`).
 - **Do:** every "Copy ID" (menus, toolbar, Info, keyboard) copies the short ID by default and
   the full ID when Shift is held; the menu text/tooltip says so.
 
-### UF-14 Full IDs show the short prefix normally and the rest dimmed
+### [x] UF-14 Full IDs show the short prefix normally and the rest dimmed
+- **Status:** done. Info commit ID and ID tooltips (History, Blame, Stashes, toolbar) dim everything after the short prefix (`APP-ID-DIMMED`).
 - **Do:** wherever a full commit ID is displayed, draw the short-ID prefix in the standard
   text colour and the remainder dimmed.
 
-### UF-15 Diff: "Compare with HEAD" on the button row
+### [x] UF-15 Diff: "Compare with HEAD" on the button row
+- **Status:** done. "Compare with HEAD" sits on the diff button row, for a commit's or stash's file (`DIFF-VS-HEAD`).
 - **Do:** replace "Compare only this file with HEAD" with a "Compare with HEAD" control on the
   same line as the diff toolbar buttons.
 
-### UF-16 Changes: double-click opens the file
+### [x] UF-16 Changes: double-click opens the file
+- **Status:** done. Double-click opens new files in the editor, others in the diff tool against the parent; it no longer stages (`CHG-DBLCLICK-OPEN`).
 - **Do:** double-clicking a file in Changes opens new files in the configured editor, and
   modified files in the configured diff tool (against the parent).
 
-### UF-17 Changes: Patch submenu
+### [x] UF-17 Changes: Patch submenu
+- **Status:** done. Patch ▸ Copy / Save... (`CHG-CTX-COPY-PATCH`, `CHG-CTX-SAVE-PATCH`).
 - **Do:** replace "Copy patch" and "Save patch..." with a "Patch" submenu holding "Copy" and
   "Save...".
 
-### UF-18 History graph not clipped at the left edge
+### [x] UF-18 History graph not clipped at the left edge
+- **Status:** done. The graph starts inside its column by the outline's overhang (`HIST-GRAPH-NOT-CLIPPED`).
 - **Do:** move the graph slightly to the right so the white outline of the current commit is
   not clipped by the left edge.
 
-### UF-19 Default pull method in Settings
+### [x] UF-19 Default pull method in Settings
+- **Status:** done. Settings ▸ Git ▸ Pull method: Merge / Rebase / Rebase, keeping merges / Fast-forward only (`SET-PULL-METHOD`).
 - **Do:** Settings lets the user configure the default pull method (`pull.rebase`, merge or
   fast-forward only).
 
-### UF-20 Name and email in Settings
+### [x] UF-20 Name and email in Settings
+- **Status:** done. user.name and user.email per scope (`SET-IDENTITY`).
 - **Do:** Settings lets the user configure `user.name` and `user.email`.
 
-### UF-21 Settings: one field per option, scopes as tabs
+### [x] UF-21 Settings: one field per option, scopes as tabs
+- **Status:** done. Scope tabs User / Repository / Worktree, inherited hints, Inherit clears an override; the Worktree tab needs extensions.worktreeConfig (`SET-SCOPE-TABS`, `SET-SCOPE-HINT`, `SET-SCOPE-INHERIT`).
 - **Do:** each option has a single field. The scope (worktree / repository / user) is
   chosen with tabs. On a higher-precedence tab where only a lower-precedence value exists,
   show that value as a hint. Where the higher-precedence scope overrides it, offer a way to
   clear the override and inherit the lower-precedence value again.
 
-### UF-22 Tags without "(annotated)"
+### [x] UF-22 Tags without "(annotated)"
+- **Status:** done (`TAG-LABEL-PLAIN`).
 - **Do:** drop the "(annotated)" suffix from tag labels.
 
-### UF-23 "Set upstream" with a branch filter
+### [x] UF-23 "Set upstream" with a branch filter
+- **Status:** done. Filter field in the upstream list; Enter picks the first match (`BR-SET-UPSTREAM-FILTER`).
 - **Do:** the branch "Set upstream" dialog or menu gets a filter field for the branch list.
 
-### UF-24 History filter hides the graph
+### [x] UF-24 History filter hides the graph
+- **Status:** done. Text filter or Conflicted only: a three-column table without the graph (`HIST-FILTER-NO-GRAPH`).
 - **Do:** while a History filter is active, hide the graph column, because the graph is
   broken for filtered rows anyway.
 
-### UF-25 History keeps its scroll position
+### [x] UF-25 History keeps its scroll position
+- **Status:** done. The rows in view are captured each frame and restored after any change to the rows (`HIST-SCROLL-ANCHOR`).
 - **Do:** any change to History (expanding or collapsing merges, loading more, refreshes)
   keeps the scroll position anchored on the rows being viewed.
 
-### UF-26 Remove Track / Untrack from Changes
+### [x] UF-26 Remove Track / Untrack from Changes
+- **Status:** done. Menu items, dialog, action, tests and spec IDs removed (`CHG-NO-TRACK-UNTRACK`).
 - **Do:** remove the "Track" and "Untrack..." context-menu items in Changes
   (`ChangesPanel.cpp`), together with the Untrack dialog (`Session::showUntrackDialog`),
   `Actions::untrack`, and their tests and spec IDs.
 
-### UF-27 Remove the toolbar Previous / Next buttons
+### [x] UF-27 Remove the toolbar Previous / Next buttons
+- **Status:** done. Move HEAD to parent/child stay in the Commit menu (`TB-NO-PREV-NEXT`).
 - **Do:** remove the toolbar buttons that move HEAD to its parent or child (`##tb_prev`,
   `##tb_next` in `AppChrome.cpp`), with their tests and spec IDs.
 
-### UF-28 Toolbar folder button opens the working directory
+### [x] UF-28 Toolbar folder button opens the working directory
+- **Status:** done (`TB-OPEN-FOLDER`).
 - **Do:** the toolbar folder button (`##tb_open`) opens the current repository's working
   directory in the system file manager instead of "Open repository...". Opening a
   repository stays available from the menu, Ctrl+O and the repository switcher.
 
-### UF-29 Changes header for the working tree
+### [x] UF-29 Changes header for the working tree
+- **Status:** done. Header "0000000 Working tree"; Compare with HEAD disabled in Changes and Diff (`CHG-HEADER-WT`).
 - **Do:** when the Working tree is selected, the Changes header shows the zero commit ID
   before "Working tree", and "Compare with HEAD" (see UF-15) is disabled.
 
-### UF-30 Author in Info has no button effect
+### [x] UF-30 Author in Info has no button effect
+- **Status:** done. A shared plain-text item keeps hover for tooltips and menus but draws no highlight; also used for the toolbar labels and diff placeholders (`INFO-AUTHOR-PLAIN`).
 - **Do:** the author line in the change information (Info panel) keeps its right-click
   context menu (copy name/email, "Edit author...") where it is, but shows no hover or click
   highlight, because clicking it does nothing. General rule: items whose click does nothing
   must not look or behave like buttons.
 
-### UF-31 Toolbar branch label and commit ID are plain text
+### [x] UF-31 Toolbar branch label and commit ID are plain text
+- **Status:** done. Click no longer reveals; tooltip and Copy ID stay (`TB-HEAD-PLAIN`).
 - **Do:** the toolbar's branch label and HEAD commit ID are plain text instead of selectables
   (clicking them does nothing useful). Keep the tooltip if it is still useful.

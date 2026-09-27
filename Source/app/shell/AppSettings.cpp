@@ -4,22 +4,175 @@
 #include "util/Ui.hpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 namespace ggui {
 
 namespace {
 
-struct ScopeKey {
-    const char* scope;   // "user", "repository", "worktree"
-    const char* flag;    // git config flag
-    const char* label;
+// Config scopes, lowest precedence first (a later scope overrides an earlier one).
+struct Scope {
+    const char* scope; // key in Session::config(): "user", "repository", "worktree"
+    const char* flag;  // git config flag
+    const char* label; // tab label
 };
 
-constexpr ScopeKey kEditorScopes[] = {{"user", "--global", "User"}, {"repository", "--local", "Repository"},
+constexpr Scope kScopes[] = {{"user", "--global", "User"}, {"repository", "--local", "Repository"},
     {"worktree", "--worktree", "Worktree"}};
 
+// Pull method from pull.rebase / pull.ff at one scope (0 = not set there).
+constexpr const char* kPullMethods[] = {"(not set)", "Merge", "Rebase", "Rebase, keeping merges", "Fast-forward only"};
+
+int pullMethod(const std::string& rebase, const std::string& ff)
+{
+    if (rebase == "merges" || rebase == "m")
+        return 3;
+    if (rebase == "true" || rebase == "yes" || rebase == "on" || rebase == "1" || rebase == "i" || rebase == "interactive")
+        return 2;
+    if (ff == "only")
+        return 4;
+    if (!rebase.empty())
+        return 1;
+    return 0;
+}
+
 } // namespace
+
+void App::drawGitConfigSettings(Session& s)
+{
+    const auto& cfg = s.config();
+    auto value = [&](const std::string& scope, const std::string& key) {
+        auto it = cfg.find(scope);
+        if (it == cfg.end())
+            return std::string();
+        auto k = it->second.find(key);
+        return k == it->second.end() ? std::string() : k->second;
+    };
+    // Sets (or, for empty values, unsets) keys at one scope in one mutation.
+    auto setConfig = [&s](const char* flag, std::vector<std::pair<std::string, std::string>> values) {
+        const std::string f = flag;
+        s.actions().run("set " + values.front().first, [f, values](core::MutationContext& ctx) {
+            for (const auto& [k, v] : values) {
+                if (v.empty())
+                    ctx.gitMayFail({"config", f, "--unset", k});
+                else
+                    ctx.git({"config", f, k, v});
+            }
+        }, [&s](const core::MutationFinishedEvent& e) {
+            if (e.outcome != core::Outcome::Ok)
+                s.app().showError(e.label, e.message);
+            s.requestConfig();
+        }, false, false);
+    };
+    const bool free = s.actions().busy().empty();
+    ImGui::TextUnformatted("Git configuration");
+    ImGui::SameLine();
+    helpMarker("Each tab edits one scope. A value set in a later tab overrides the earlier ones for this "
+               "repository; an empty field inherits (shown as a hint).");
+    if (!ImGui::BeginTabBar("##config_scope"))
+        return;
+    for (size_t si = 0; si < std::size(kScopes); ++si) {
+        const Scope& sc = kScopes[si];
+        if (!ImGui::BeginTabItem(sc.label))
+            continue;
+        // Without extensions.worktreeConfig, `git config --worktree` writes the repository's config.
+        const bool worktreeOff = std::string(sc.scope) == "worktree" && value("effective", "extensions.worktreeConfig") != "true";
+        if (worktreeOff) {
+            ImGui::TextWrapped("Worktree settings are off in this repository: git keeps one config for all its "
+                               "worktrees until extensions.worktreeConfig is set.");
+            ImGui::BeginDisabled(!free);
+            if (ImGui::Button("Enable worktree settings##enable_worktree_config"))
+                setConfig("--local", {{"extensions.worktreeConfig", "true"}});
+            ImGui::EndDisabled();
+            ImGui::Separator();
+        }
+        const bool editable = free && !worktreeOff;
+        // The value this scope would inherit: the nearest lower-precedence scope that sets it.
+        auto inherited = [&](const std::string& key) -> std::pair<std::string, const char*> {
+            for (size_t k = si; k-- > 0;)
+                if (auto v = value(kScopes[k].scope, key); !v.empty())
+                    return {v, kScopes[k].label};
+            return {std::string(), nullptr};
+        };
+        auto inheritButton = [&](const char* id, const std::string& lower, const char* from) {
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!editable);
+            const bool clicked = ImGui::SmallButton((std::string("Inherit##") + id).c_str());
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Clear this override and use %s from %s", lower.c_str(), from);
+            return clicked;
+        };
+        auto textOption = [&](const char* key) {
+            const std::string mine = value(sc.scope, key);
+            const auto [lower, from] = inherited(key);
+            const std::string mapKey = std::string(sc.scope) + "|" + key;
+            const std::string label = std::string(key) + "##" + key;
+            std::string& text = m_configEdit[mapKey];
+            // Follow changes made elsewhere (plain git, another tab) unless the field is being edited.
+            if (ImGui::GetActiveID() != ImGui::GetID(label.c_str()) && m_configSeen[mapKey] != mine) {
+                text = mine;
+                m_configSeen[mapKey] = mine;
+            }
+            const std::string hint = from ? lower + "  (" + from + ")" : std::string();
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+            ImGui::BeginDisabled(!editable);
+            ImGui::InputTextWithHint(label.c_str(), hint.c_str(), &text);
+            ImGui::EndDisabled();
+            if (ImGui::IsItemDeactivatedAfterEdit() && text != mine)
+                setConfig(sc.flag, {{key, text}});
+            if (!mine.empty() && from && inheritButton(key, lower, from)) {
+                text.clear();
+                setConfig(sc.flag, {{key, ""}});
+            }
+        };
+        textOption("user.name");
+        textOption("user.email");
+        ImGui::Separator();
+        textOption("core.editor");
+        textOption("merge.tool");
+        textOption("diff.tool");
+        ImGui::Separator();
+        // Pull method: pull.rebase (merge / rebase / rebase keeping merges) or pull.ff=only.
+        const int method = pullMethod(value(sc.scope, "pull.rebase"), value(sc.scope, "pull.ff"));
+        int lowerMethod = 0;
+        const char* lowerFrom = nullptr;
+        for (size_t k = si; k-- > 0 && !lowerFrom;)
+            if (int m = pullMethod(value(kScopes[k].scope, "pull.rebase"), value(kScopes[k].scope, "pull.ff")); m != 0) {
+                lowerMethod = m;
+                lowerFrom = kScopes[k].label;
+            }
+        std::string preview = kPullMethods[method];
+        if (method == 0)
+            preview = lowerFrom ? std::string(kPullMethods[lowerMethod]) + "  (" + lowerFrom + ")" : "Merge  (git default)";
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+        ImGui::BeginDisabled(!editable);
+        if (ImGui::BeginCombo("Pull method##pull_method", preview.c_str())) {
+            for (int m = 0; m < static_cast<int>(std::size(kPullMethods)); ++m) {
+                if (!ImGui::Selectable(kPullMethods[m], m == method) || m == method)
+                    continue;
+                const std::string ff = value(sc.scope, "pull.ff");
+                std::vector<std::pair<std::string, std::string>> set;
+                const char* rebase[] = {"", "false", "true", "merges", ""};
+                set.emplace_back("pull.rebase", rebase[m]);
+                if (m == 4 || ff == "only")
+                    set.emplace_back("pull.ff", m == 4 ? "only" : "");
+                setConfig(sc.flag, std::move(set));
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+        if (method != 0 && lowerFrom && inheritButton("pull_method", kPullMethods[lowerMethod], lowerFrom)) {
+            std::vector<std::pair<std::string, std::string>> set{{"pull.rebase", ""}};
+            if (value(sc.scope, "pull.ff") == "only")
+                set.emplace_back("pull.ff", "");
+            setConfig(sc.flag, std::move(set));
+        }
+        ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+}
 
 void App::drawSettingsWindow()
 {
@@ -70,72 +223,14 @@ void App::drawSettingsWindow()
                     s->requestConfig();
                     m_configLoaded = true;
                 }
-                const auto& cfg = s->config();
-                if (cfg.empty()) {
-                    // Nothing to edit before the values are known (typed text would be replaced).
-                    ImGui::TextDisabled("Reading git configuration...");
-                } else {
-                auto value = [&](const std::string& scope, const std::string& key) {
-                    auto it = cfg.find(scope);
-                    if (it == cfg.end())
-                        return std::string();
-                    auto k = it->second.find(key);
-                    return k == it->second.end() ? std::string() : k->second;
-                };
-                auto editRow = [&](const char* scope, const char* flag, const char* key, const char* label, const char* id) {
-                    const std::string mapKey = std::string(scope) + "|" + key;
-                    if (!m_configEdit.count(mapKey))
-                        m_configEdit[mapKey] = value(scope, key); // once; then it is the user's text
-                    ImGui::PushID(id);
-                    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
-                    ImGui::InputText(label, &m_configEdit[mapKey]);
-                    ImGui::SameLine();
-                    const bool free = s->actions().busy().empty();
-                    ImGui::BeginDisabled(!free);
-                    if (ImGui::SmallButton("Save")) {
-                        const std::string v = m_configEdit[mapKey];
-                        const std::string k = key;
-                        const std::string f = flag;
-                        s->actions().run("set " + k, [f, k, v](core::MutationContext& ctx) {
-                            if (v.empty())
-                                ctx.gitMayFail({"config", f, "--unset", k});
-                            else
-                                ctx.git({"config", f, k, v});
-                        }, [s](const core::MutationFinishedEvent& e) {
-                            if (e.outcome != core::Outcome::Ok)
-                                s->app().showError(e.label, e.message);
-                            s->requestConfig();
-                        }, false, false);
-                    }
-                    ImGui::EndDisabled();
-                    ImGui::PopID();
-                };
-                ImGui::TextUnformatted("core.editor");
-                for (const auto& sc : kEditorScopes)
-                    editRow(sc.scope, sc.flag, "core.editor", sc.label, (std::string("editor_") + sc.scope).c_str());
-                ImGui::Separator();
-                editRow("repository", "--local", "merge.tool", "merge.tool", "merge_tool");
-                editRow("repository", "--local", "diff.tool", "diff.tool", "diff_tool");
-                const char* rebase[] = {"(not set)", "false", "true", "merges"};
-                const std::string current = value("repository", "pull.rebase");
-                int choice = 0;
-                for (int i = 1; i < 4; ++i)
-                    if (current == rebase[i])
-                        choice = i;
-                if (ImGui::Combo("pull.rebase##pull_rebase", &choice, rebase, 4)) {
-                    const std::string v = choice == 0 ? std::string() : rebase[choice];
-                    s->actions().run("set pull.rebase", [v](core::MutationContext& ctx) {
-                        if (v.empty())
-                            ctx.gitMayFail({"config", "--local", "--unset", "pull.rebase"});
-                        else
-                            ctx.git({"config", "--local", "pull.rebase", v});
-                    }, [s](const core::MutationFinishedEvent&) { s->requestConfig(); }, false, false);
-                }
-                ImGui::TextDisabled("Effective pull.rebase: %s", value("effective", "pull.rebase").empty()
-                        ? "(git default: merge)" : value("effective", "pull.rebase").c_str());
-                }
+                if (s->config().empty())
+                    ImGui::TextDisabled("Reading git configuration..."); // typed text would be replaced
+                else
+                    drawGitConfigSettings(*s);
             }
             ImGui::EndTabItem();
+        } else {
+            m_configLoaded = false; // read again when the tab is shown (plain git may have changed it)
         }
         if (ImGui::BeginTabItem("Hooks")) {
             ImGui::Checkbox("Ask to install the ggui hooks when opening a repository##ask_hooks", &d.askHooksOnOpen);

@@ -224,7 +224,8 @@ void Session::requestHooksStatus() { m_engine->readHooksStatus(); }
 
 void Session::requestConfig()
 {
-    m_engine->readConfig({"core.editor", "merge.tool", "diff.tool", "pull.rebase", "extensions.worktreeConfig"});
+    m_engine->readConfig({"user.name", "user.email", "core.editor", "merge.tool", "diff.tool", "pull.rebase", "pull.ff",
+        "extensions.worktreeConfig"});
 }
 
 std::string Session::shortId(const core::Oid& id) const

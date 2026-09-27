@@ -59,18 +59,24 @@ Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations) · Previous cha
 ### 1.4 Toolbar — window `"##Toolbar"` (K + N)
 Left to right, each button has a tooltip with its shortcut:
 New `##tb_new` · Commit/Amend `##tb_commit` (label "Commit" when the working tree/index is
-selected, "Amend" when HEAD is selected) · Prev `##tb_prev` · Next `##tb_next` · Undo `##tb_undo` ·
+selected, "Amend" when HEAD is selected) · Undo `##tb_undo` ·
 Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` ·
 Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
-recent repositories) · open-folder `##tb_open` · current branch label `##tb_branch` (branch name or
-"detached") · HEAD ID `##tb_head` (click: reveal in History; right-click: Copy ID) ·
+recent repositories) · folder `##tb_open` (opens the working directory in the file manager) ·
+current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
+(plain text, short ID; tooltip with the full ID; right-click: Copy ID) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,
 BISECTING) with Continue / Skip / Abort · activity spinner `##tb_activity` (tooltip lists the
 background tasks) + `Cancel##tb_cancel`.
 
 Mutation buttons are disabled (with a tooltip "Not available yet" until their phase, and
 "Busy: <operation>" while a conflicting mutation runs).
+
+General rules (UF-13, UF-14, UF-30): items whose click does nothing are plain text (no hover or
+click highlight; a context menu may still attach). Full commit IDs show the short prefix in the
+text colour and the rest dimmed. Every "Copy ID" copies the short ID, or the full ID while Shift
+is held (the menu item says "Shift: full ID").
 
 ### 1.5 Errors and notifications (K)
 - Important errors (failed git commands, open/clone failures, hook failures, journal errors) open
@@ -84,8 +90,14 @@ Mutation buttons are disabled (with a tooltip "Not available yet" until their ph
 
 ### 1.6 Settings window `"Settings"` (K/N)
 Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light),
-**Git** (N: `core.editor` per scope User/Repository/Worktree, `merge.tool`, `diff.tool`,
-`pull.rebase`, "When nothing is staged" default: Ask / Stage all tracked / Stage selected),
+**Git** (N: "When nothing is staged" default: Ask / Stage all tracked / Stage selected; git
+configuration with scope tabs `##config_scope` User / Repository / Worktree, one field per option:
+`user.name`, `user.email`, `core.editor`, `merge.tool`, `diff.tool`, *Pull method*
+`##pull_method` (Merge / Rebase / Rebase, keeping merges / Fast-forward only = `pull.rebase` or
+`pull.ff=only`). An unset field shows the inherited lower-scope value as a hint; a field that
+overrides a lower scope has *Inherit* `Inherit##<key>` to clear the override. Fields apply on
+Enter or when they lose focus; an empty field unsets. The Worktree tab is off until
+`extensions.worktreeConfig` is set (*Enable worktree settings*).),
 **Hooks** (N: status, Install, Remove, first-open answer), **Conflicts** (N, Phase 3: "Expand to
 index stages on checkout"). **D** max-new-file-size.
 
@@ -114,6 +126,11 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
 - Header row: filter field `##hist_filter` (message, ID, branch, tag), toggle *Conflicted only*
   `##hist_conflicted` (N), toggle *Stashes* `##hist_stashes` (N), *Show more* when truncated.
 - Table `##hist_table`: columns Graph, Description (ID prefix, badges, subject), Author, Date.
+  While a filter is active (text or *Conflicted only*) the graph column is hidden
+  (`##hist_table_filtered`, three columns). The graph starts slightly inside its column so the
+  current commit's outline is not clipped. Changes to the rows (refresh, expanding or
+  collapsing merges, loading more, the Index row appearing) keep the rows in view in place.
+  Row, graph and badge tooltips are held back while the list scrolls.
   Row IDs: `row_wt` (Working tree), `row_index` (Index, N, only when something is staged),
   `row_<full commit id>` for commits.
 - Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
@@ -145,18 +162,20 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   folded into the target commit (descendants rebased, the working tree kept as it is).
 
 ## 3. Changes panel — window `"Changes"`
-- Header: title of the selection ("Working tree", "Index", commit subject, stash message),
-  filter `##changes_filter`, toggle *Compare with HEAD* `##compare_head`.
+- Header `###changes_title`: title of the selection ("0000000 Working tree" — the zero ID —,
+  "Index", short ID and commit subject, stash message), filter `##changes_filter`, toggle
+  *Compare with HEAD* `##compare_head` (enabled for commits only).
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
   renames shown `old → new`.
 - For Working tree / Index (N): groups `Staged`, `Unstaged`, `Untracked`, `Conflicted`, each a
   collapsible header with a count and group buttons (Stage all / Unstage all). Space/Enter
-  toggles staging of the selection; double-click stages; drag rows between Staged and
-  Unstaged.
+  toggles staging of the selection; drag rows between Staged and Unstaged.
+- Double-click opens a file: new files in the editor, other files in the diff tool against the
+  parent (HEAD for the working tree and index).
 - Multi-select: Ctrl-click, Shift-click, Ctrl+A. ↑/↓ navigation.
 - File context menu: Open working-copy file · Open containing folder · Copy ▸ (Name, Relative
-  path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Track/Untrack (M,N
-  "Add to .gitignore") · Resolve with merge tool · Mark resolved · Copy patch · Save patch… ·
+  path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Resolve with merge
+  tool · Mark resolved · Patch ▸ (Copy, Save…) ·
   Blame file · External diff ▸ (vs HEAD, vs parent) · Revert · Move to parent/child · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
@@ -168,23 +187,25 @@ plan §4.3 table.
 
 ## 5. Change information panel — window `"Change information"`
 - Message editor `##message` with *Save message* `##save_message` (HEAD only until Phase 3).
-- Author line with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
+- Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
   differs (N); Date; published/lock state ("Published" / "Not published").
-- Commit ID `##commit_id` with Copy; Parents list `parent_<n>` (click reveals).
+- Commit ID (full, dimmed after the short prefix) with Copy `##commit_id`; Parents list
+  `parent_<n>` (click reveals).
 - N: conflicted files list with side counts. N: "Amend" mode for HEAD with a clean index.
 - D: aliases list.
 
 ## 6. Diff panel — window `"Diff"`
 - Toolbar: view `##diff_view` (Unified / Side by side), whitespace `##diff_ws` (Normal / Ignore
-  changes / Ignore all), context lines `##diff_context`, *Compare only this file with HEAD*
-  `##diff_vs_head`, for stashes a part selector `##stash_part` (Working tree / Index /
+  changes / Ignore all), context lines `##diff_context`, *Compare with HEAD* `##diff_vs_head`
+  (this file of a commit or stash; on the same row), for stashes a part selector `##stash_part` (Working tree / Index /
   Untracked).
 - Body: hunks with headers; per hunk buttons (N) `Stage hunk`, `Discard hunk`, `Unstage hunk`.
+  Side by side shows only code: no hunk header lines (gap placeholders mark omitted lines).
   Line selection with click/Shift-click; Ctrl+C copies.
 - Expandable context rows `expand_<n>` (click: 10 lines; Shift+click: whole gap).
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.
-- Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) (N) · Move line(s)/hunk to
+- Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) and hunk(s) (N) · Move line(s)/hunk to
   parent/child/active commit/working tree (Phase 3) · Revert line/hunk (Phase 3).
 
 ## 7. Blame panel — window `"Blame"`
@@ -199,8 +220,12 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
   Reveal · Copy name · Check out · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
   remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
-  Interactive rebase onto… (Phase 3). Remote-tracking branches are listed under their remote.
-- **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>`
+  Interactive rebase onto… (Phase 3). Remote-tracking branches are listed under their remote;
+  the remote has the Remotes panel's context menu, and each remote-tracking branch has Reveal ·
+  Copy name · Remote <name> ▸ (the same menu). Set upstream… has a filter field (Enter picks
+  the first match).
+- **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>` (the
+  name only; the tooltip of an annotated tag shows its message)
   (visibility toggle). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
 - **Worktrees** `"Worktrees"` (M): rows `worktree_<name>` (main, stale, locked marks). Context:
   Copy name · Copy path · Reveal HEAD · Open directory · Open here · Open in new window ·

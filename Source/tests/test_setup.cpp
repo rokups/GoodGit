@@ -138,40 +138,96 @@ GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoab
 
 namespace ggtest {
 
-GG_TEST("setup", "Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase", "SET-EDITOR-USER",
-    "SET-EDITOR-REPO", "SET-EDITOR-WORKTREE", "SET-MERGETOOL", "SET-DIFFTOOL", "SET-PULL-REBASE")
+GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides", "SET-EDITOR-USER",
+    "SET-EDITOR-REPO", "SET-EDITOR-WORKTREE", "SET-MERGETOOL", "SET-DIFFTOOL", "SET-PULL-METHOD", "SET-IDENTITY",
+    "SET-SCOPE-TABS", "SET-SCOPE-HINT", "SET-SCOPE-INHERIT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     s.app.openSettings();
     ctx->Yield(2);
     ctx->ItemClick("//Settings/##settings_tabs/Git");
-    const std::string tab = "//Settings/##settings_tabs/Git/";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "editor_user/User").c_str()); }));
-    auto edit = [&](const std::string& id, const std::string& label, const std::string& value) {
-        s.setText((tab + id + "/" + label).c_str(), value);
-        ctx->ItemClick((tab + id + "/Save").c_str());
+    const std::string tabs = "//Settings/##settings_tabs/Git/##config_scope/";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tabs + "User").c_str()); }));
+    auto scope = [&](const char* label) {
+        ctx->ItemClick((tabs + label).c_str());
+        ctx->Yield(2);
+        return tabs + label + "/";
+    };
+    auto config = [&](const char* flag, const char* key) {
+        return gg::trim(s.gitMayFail(repo, {"config", flag, "--get", key}).out);
+    };
+    auto edit = [&](const std::string& tab, const std::string& key, const std::string& value) {
+        s.setText(tab + key + "##" + key, value);
+        ctx->KeyPress(ImGuiKey_Enter);
         s.settle();
     };
-    auto config = [&](const char* scope, const char* key) {
-        return gg::trim(s.gitMayFail(repo, {"config", scope, "--get", key}).out);
-    };
-    edit("editor_user", "User", "editor-for-user");
+    // User scope: identity, editor, pull method.
+    std::string tab = scope("User");
+    edit(tab, "user.name", "Ui User");
+    GG_CHECK(s.waitUntil([&] { return config("--global", "user.name") == "Ui User"; }));
+    edit(tab, "user.email", "ui@example.com");
+    GG_CHECK(s.waitUntil([&] { return config("--global", "user.email") == "ui@example.com"; }));
+    edit(tab, "core.editor", "editor-for-user");
     GG_CHECK(s.waitUntil([&] { return config("--global", "core.editor") == "editor-for-user"; }));
-    edit("editor_repository", "Repository", "editor-for-repo");
+    s.comboSelect((tab + "Pull method##pull_method").c_str(), "Rebase, keeping merges");
+    GG_CHECK(s.waitUntil([&] { return config("--global", "pull.rebase") == "merges"; }));
+    // Repository scope: the user values show as hints until overridden.
+    tab = scope("Repository");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "Ui User  (User)"); }));
+    GG_CHECK(!s.itemExists((tab + "Inherit##user.name").c_str()));
+    edit(tab, "user.name", "Repo User");
+    GG_CHECK(s.waitUntil([&] { return config("--local", "user.name") == "Repo User"; }));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "user.name"}), "Repo User");
+    // Overriding offers "Inherit", which clears the override again.
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "Inherit##user.name").c_str()); }));
+    ctx->ItemClick((tab + "Inherit##user.name").c_str());
+    GG_CHECK(s.waitUntil([&] { return config("--local", "user.name").empty(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "user.name"}), "Ui User");
+    edit(tab, "core.editor", "editor-for-repo");
     GG_CHECK(s.waitUntil([&] { return config("--local", "core.editor") == "editor-for-repo"; }));
-    edit("editor_worktree", "Worktree", "editor-for-worktree");
-    GG_CHECK(s.waitUntil([&] { return config("--worktree", "core.editor") == "editor-for-worktree"; }));
-    edit("merge_tool", "merge.tool", "meld");
+    edit(tab, "merge.tool", "meld");
     GG_CHECK(s.waitUntil([&] { return config("--local", "merge.tool") == "meld"; }));
-    edit("diff_tool", "diff.tool", "kdiff3");
+    edit(tab, "diff.tool", "kdiff3");
     GG_CHECK(s.waitUntil([&] { return config("--local", "diff.tool") == "kdiff3"; }));
-    s.comboSelect((tab + "pull.rebase##pull_rebase").c_str(), "true");
-    GG_CHECK(s.waitUntil([&] { return config("--local", "pull.rebase") == "true"; }));
-    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "Effective pull.rebase: true"); }));
-    // Emptying a value unsets it.
-    edit("merge_tool", "merge.tool", "");
+    // Pull method: fast-forward only is pull.ff; rebase is pull.rebase (and drops ff-only here).
+    s.comboSelect((tab + "Pull method##pull_method").c_str(), "Fast-forward only");
+    GG_CHECK(s.waitUntil([&] { return config("--local", "pull.ff") == "only" && config("--local", "pull.rebase").empty(); }));
+    s.settle();
+    s.comboSelect((tab + "Pull method##pull_method").c_str(), "Rebase");
+    GG_CHECK(s.waitUntil([&] { return config("--local", "pull.rebase") == "true" && config("--local", "pull.ff").empty(); }));
+    s.settle();
+    s.comboSelect((tab + "Pull method##pull_method").c_str(), "Merge");
+    GG_CHECK(s.waitUntil([&] { return config("--local", "pull.rebase") == "false"; }));
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "Inherit##pull_method").c_str()); }));
+    ctx->ItemClick((tab + "Inherit##pull_method").c_str());
+    GG_CHECK(s.waitUntil([&] { return config("--local", "pull.rebase").empty(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "pull.rebase"}), "merges");
+    // Emptying a field unsets the value at that scope.
+    edit(tab, "merge.tool", "");
     GG_CHECK(s.waitUntil([&] { return config("--local", "merge.tool").empty(); }));
+    // Worktree scope.
+    // Worktree scope: off until extensions.worktreeConfig is set (git would write the repository's
+    // config otherwise).
+    tab = scope("Worktree");
+    GG_CHECK(ctx->ItemInfo((tab + "core.editor##core.editor").c_str()).ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->ItemClick((tab + "Enable worktree settings##enable_worktree_config").c_str());
+    GG_CHECK(s.waitUntil([&] { return config("--local", "extensions.worktreeConfig") == "true"; }));
+    GG_REQUIRE(s.waitUntil([&] {
+        return (ctx->ItemInfo((tab + "core.editor##core.editor").c_str()).ItemFlags & ImGuiItemFlags_Disabled) == 0;
+    }));
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "editor-for-repo  (Repository)"); }));
+    edit(tab, "core.editor", "editor-for-worktree");
+    GG_CHECK(s.waitUntil([&] { return config("--worktree", "core.editor") == "editor-for-worktree"; }));
+    GG_CHECK_STR_EQ(config("--local", "core.editor"), "editor-for-repo");
+    // A change made with plain git shows up in the field.
+    s.git(repo, {"config", "--worktree", "core.editor", "changed-outside"});
+    ctx->ItemClick("//Settings/##settings_tabs/General");
+    ctx->ItemClick("//Settings/##settings_tabs/Git");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "changed-outside"); }));
     ctx->WindowClose("//Settings");
 }
 

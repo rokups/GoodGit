@@ -383,6 +383,8 @@ GG_TEST("shell", "auto-open argv[1], else the most recent existing repository", 
     s.write(prefs, "settings.json", json);
     const fs::path log2 = s.path("second.log");
     r = s.runGgui({"--smoke"}, {{"GGUI_LOG_FILE", log2.string()}});
+    if (!r.ok())
+        ctx->LogError("second run: %s\n%s", r.message().c_str(), r.err.c_str());
     GG_CHECK(r.ok());
     const std::string text = s.read(s.root(), "second.log");
     GG_CHECK(text.find("opening " + repo.string()) != std::string::npos);

@@ -169,9 +169,12 @@ private:
     int m_pickersRunning = 0;
     int m_recentFocus = -1;
     int m_quitRequests = 0;
-    // Settings window: editable git config values (key "scope|name").
+    // Settings window: editable git config values (key "scope|name") and the value they were
+    // last synchronised from (a change made elsewhere replaces the text unless it is being edited).
     std::map<std::string, std::string> m_configEdit;
+    std::map<std::string, std::string> m_configSeen;
     bool m_configLoaded = false;
+    void drawGitConfigSettings(Session& s);
 };
 
 // Draws a button with an icon and optional label; returns true when clicked.

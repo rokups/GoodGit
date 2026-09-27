@@ -162,6 +162,7 @@ void App::resetForTest()
     m_clone.reset();
     m_configLoaded = false;
     m_configEdit.clear();
+    m_configSeen.clear();
     m_recentInfo.clear();
     m_recentFilter.clear();
     m_welcomePath.clear();

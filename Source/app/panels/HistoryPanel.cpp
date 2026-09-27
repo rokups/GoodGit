@@ -875,10 +875,13 @@ void HistoryPanel::draw(bool* open)
         ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Author", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 9);
         ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8);
-        ImGui::TableHeadersRow();
-        // The graph column follows the lane count (the table would otherwise keep its first width).
-        if (m_graphShown && std::abs(ImGui::GetCurrentTable()->Columns[0].WidthRequest - graphWidth) > 0.5f)
+        // The graph column follows the lane count (the table would otherwise keep its first or
+        // saved width). Only before the first row (the layout is locked after that) and once the
+        // table has been laid out (on its first frame the setup width applies).
+        ImGuiTable* table = ImGui::GetCurrentTable();
+        if (m_graphShown && table->MinColumnWidth > 0.0f && std::abs(table->Columns[0].WidthRequest - graphWidth) > 0.5f)
             ImGui::TableSetColumnWidth(0, graphWidth);
+        ImGui::TableHeadersRow();
         // Wheel, scrollbar or keyboard: any change of the scroll position this frame.
         const float scrollY = ImGui::GetScrollY();
         if (std::abs(scrollY - m_lastScrollY) > 0.5f)

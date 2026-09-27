@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-2)
 
-Covered: 452/452 required IDs; 452/625 of the whole catalogue.
+Covered: 466/466 required IDs; 566/644 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -43,11 +43,13 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | MENU-VIEW-RESET-LAYOUT | 1 | §4.1 | View ▸ Reset layout restores the default | shell/View menu: panels, next/previous changed file, reset layout |
 | TB-REFRESH | 1 | §4.1 | Toolbar Refresh | shell/Repository menu: copy path, refresh, working directory, settings, quit |
 | TB-REPO-SWITCH | 1 | §4.1 | Toolbar repository switcher | shell/recent repositories: Welcome list, Recent menu, switcher |
-| TB-OPEN-FOLDER | 1 | §4.1 | Toolbar open-folder button | shell/open with the picker: Welcome, menu, Ctrl+O, toolbar |
+| TB-OPEN-FOLDER | 1 | §4.1 | Toolbar folder button opens the working directory (UF-28) | shell/Repository menu: copy path, refresh, working directory, settings, quit |
 | TB-BRANCH | 1 | §4.1 | Toolbar shows the current branch | shell/open by typed path, default layout, close from the menu |
 | TB-DETACHED | 1 | §4.1 | Toolbar shows "detached" | shell/repository kinds: bare, unborn, linked worktree, SHA-256, detached |
-| TB-HEAD-REVEAL | 1 | §4.1 | Click HEAD ID reveals it in History | shell/toolbar HEAD: reveal and copy |
-| TB-HEAD-COPY | 1 | §4.1 | HEAD ID context menu copies it | shell/toolbar HEAD: reveal and copy |
+| TB-HEAD-PLAIN | 1 | §4.1 | Toolbar branch label and HEAD ID are plain text; clicking does nothing (UF-31) | shell/toolbar HEAD: plain text, copy short or full ID |
+| TB-HEAD-COPY | 1 | §4.1 | HEAD ID context menu copies it | shell/toolbar HEAD: plain text, copy short or full ID |
+| APP-ID-DIMMED | 1 | §4.1 | Full IDs show the short prefix normally and the rest dimmed (UF-14) | info/change information: message, author, committer, date, ID, parents<br>history/copy ID and full description; tooltip ID |
+| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13) | history/copy ID and full description; tooltip ID<br>shell/toolbar HEAD: plain text, copy short or full ID |
 | TB-SPINNER | 1 | §4.1 | Activity spinner while working | shell/activity spinner, task tooltip and Cancel |
 | TB-CANCEL | 1 | §4.1 | Activity Cancel button | shell/activity spinner, task tooltip and Cancel |
 | TB-TASK-TOOLTIP | 1 | §4.1 | Background-task tooltip | shell/activity spinner, task tooltip and Cancel |
@@ -66,6 +68,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | APP-CANCEL-LONG-OPS | 1 | §3.1 | History load, reveal, large diff and blame can be cancelled | engine/overlapping diff requests: only the newest result is shown<br>history/large history: first page, Show more, reveal, cancel<br>history/cancel a long history load and a reveal<br>shell/activity spinner, task tooltip and Cancel |
 | HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges | history/graph, rows, badges and short IDs<br>visual/graph lines are continuous from row to row<br>visual/screenshots of the main views |
 | HIST-GRAPH-CONTINUOUS | 1 | §4.2 | Graph lines connect row to row at a constant row pitch | visual/graph lines are continuous from row to row |
+| HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge (UF-18) | visual/graph is not clipped at the left edge |
 | HIST-MERGE-COLLAPSED-DEFAULT | 1 | §4.2 | Merge commits start collapsed | history/merges start collapsed; expand and collapse merged history |
 | HIST-LOAD-FAST | 1 | §4.2 | First history rows of a large repository appear quickly | history/first rows of a large history appear quickly |
 | UI-TEXT-BASELINE | 1 | §6 | Text in one row shares a baseline (labels, buttons, badges, icons) | visual/text shares a baseline across widgets on one line |
@@ -81,30 +84,34 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | HIST-INDEX-ROW | 1 | §4.2 | Index (staged) row when something is staged | history/Working tree and Index rows |
 | HIST-STASH-BADGES | 1 | §4.2 | Stash badges on base commits (toggle) | history/stash badges on base commits |
 | HIST-SCOPE | 1 | §4.2 | Scope follows side-panel selection | history/scope follows the side panels |
-| HIST-SEARCH | 1 | §4.2 | Search/filter by message, ID, branch, tag | history/search by message, ID, branch and tag |
+| HIST-SEARCH | 1 | §4.2 | Search/filter by message, ID, branch, tag | history/search by message, ID, branch and tag; no graph while filtering |
+| HIST-SCROLL-ANCHOR | 1 | §4.2 | Changes to History (refresh, merges, load more, Index row) keep the rows in view in place (UF-25) | history/scroll position stays anchored on the rows in view |
+| HIST-TOOLTIP-SCROLL | 1 | §4.2 | Row, graph and badge tooltips wait until the list stops scrolling (UF-10) | history/tooltips wait until scrolling stops |
+| HIST-FILTER-NO-GRAPH | 1 | §4.2 | The graph column is hidden while a History filter is active (UF-24) | history/search by message, ID, branch and tag; no graph while filtering |
 | HIST-REVEAL | 1 | §4.2 | Reveal a commit (loads until found) | history/large history: first page, Show more, reveal, cancel |
 | HIST-REVEAL-CANCEL | 1 | §4.2 | Reveal is cancellable | history/large history: first page, Show more, reveal, cancel<br>history/cancel a long history load and a reveal |
 | HIST-SHOW-MORE | 1 | §4.2 | Show more for collapsed regions | history/large history: first page, Show more, reveal, cancel |
 | HIST-MERGE-EXPAND | 1 | §4.2 | Expand and collapse merge history | history/merges start collapsed; expand and collapse merged history |
 | HIST-KEY-UPDOWN | 1 | §4.2 | ↑/↓ navigation | history/keyboard navigation |
-| HIST-CTX-COPY-ID | 1 | §4.2 | Context: Copy ▸ ID | history/copy ID and full description |
-| HIST-CTX-COPY-DESC | 1 | §4.2 | Context: Copy ▸ Full description | history/copy ID and full description |
-| CHG-FILES | 1 | §4.4 | File list for the selected commit | changes/commit files, filter, compare with HEAD |
-| CHG-FILTER | 1 | §4.4 | Filter the file list | changes/commit files, filter, compare with HEAD |
+| HIST-CTX-COPY-ID | 1 | §4.2 | Context: Copy ▸ ID | history/copy ID and full description; tooltip ID |
+| HIST-CTX-COPY-DESC | 1 | §4.2 | Context: Copy ▸ Full description | history/copy ID and full description; tooltip ID |
+| CHG-FILES | 1 | §4.4 | File list for the selected commit | changes/commit files, filter, compare with HEAD, header |
+| CHG-FILTER | 1 | §4.4 | Filter the file list | changes/commit files, filter, compare with HEAD, header |
 | CHG-MULTISELECT-CTRL | 1 | §4.4 | Ctrl-click multi-select | changes/multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation |
 | CHG-MULTISELECT-SHIFT | 1 | §4.4 | Shift-click range select | changes/multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation |
 | CHG-SELECT-ALL | 1 | §4.4 | Ctrl+A selects all | changes/multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation |
 | CHG-KEY-NAV | 1 | §4.4 | Keyboard navigation | changes/multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation |
 | CHG-STATUS-ICONS | 1 | §4.4 | Status icons | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-RENAMES | 1 | §4.4 | Renames and copies | changes/working tree groups: staged, unstaged, untracked, conflicted |
-| CHG-COMPARE-HEAD | 1 | §4.4 | Compare with HEAD toggle | changes/commit files, filter, compare with HEAD |
+| CHG-COMPARE-HEAD | 1 | §4.4 | Compare with HEAD toggle | changes/commit files, filter, compare with HEAD, header |
+| CHG-HEADER-WT | 1 | §4.4 | Working tree header shows the zero ID; Compare with HEAD disabled (UF-29) | changes/commit files, filter, compare with HEAD, header |
 | CHG-GROUPS | 1 | §4.4 | Staged/Unstaged/Untracked/Conflicted groups | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-SCANNING | 1 | §3.1 | Partial status marked scanning… | engine/partial status on a huge worktree is marked scanning |
 | CHG-CTX-COPY-NAME | 1 | §4.4 | Context: Copy ▸ Name | changes/file context menu: copy, patch, save patch, blame |
 | CHG-CTX-COPY-REL | 1 | §4.4 | Context: Copy ▸ Relative path | changes/file context menu: copy, patch, save patch, blame |
 | CHG-CTX-COPY-ABS | 1 | §4.4 | Context: Copy ▸ Absolute path | changes/file context menu: copy, patch, save patch, blame |
-| CHG-CTX-COPY-PATCH | 1 | §4.4 | Context: Copy patch | changes/file context menu: copy, patch, save patch, blame |
-| CHG-CTX-SAVE-PATCH | 1 | §4.4 | Context: Save patch… | changes/file context menu: copy, patch, save patch, blame |
+| CHG-CTX-COPY-PATCH | 1 | §4.4 | Context: Patch ▸ Copy (UF-17) | changes/file context menu: copy, patch, save patch, blame |
+| CHG-CTX-SAVE-PATCH | 1 | §4.4 | Context: Patch ▸ Save… (UF-17) | changes/file context menu: copy, patch, save patch, blame |
 | CHG-CTX-BLAME | 1 | §4.4 | Context: Blame file | changes/file context menu: copy, patch, save patch, blame |
 | INFO-MESSAGE | 1 | §4.4 | Message shown | info/change information: message, author, committer, date, ID, parents |
 | INFO-AUTHOR | 1 | §4.4 | Author shown | info/change information: message, author, committer, date, ID, parents |
@@ -113,10 +120,12 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | INFO-DATE | 1 | §4.4 | Date shown | info/change information: message, author, committer, date, ID, parents |
 | INFO-PUBLISHED | 1 | §4.4 | Published/lock state shown | history/published vs unpublished commits |
 | INFO-COMMIT-ID-COPY | 1 | §4.4 | Commit ID copy | info/change information: message, author, committer, date, ID, parents |
+| INFO-AUTHOR-PLAIN | 1 | §4.4 | Author line has no hover or click effect; its context menu stays (UF-30) | info/change information: message, author, committer, date, ID, parents |
 | INFO-PARENTS-REVEAL | 1 | §4.4 | Parents list reveals on click | info/change information: message, author, committer, date, ID, parents |
 | INFO-COMMITTER | 1 | §4.4 | Committer shown when it differs | info/change information: message, author, committer, date, ID, parents |
 | DIFF-UNIFIED | 1 | §4.5 | Unified view | diff/unified view, context lines, expandable context |
 | DIFF-SIDE-BY-SIDE | 1 | §4.5 | Side-by-side view | diff/side-by-side view with syntax highlighting |
+| DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines (UF-11) | diff/side-by-side view with syntax highlighting |
 | DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all | diff/whitespace modes |
 | DIFF-CONTEXT | 1 | §4.5 | Context-line count | diff/unified view, context lines, expandable context |
 | DIFF-EXPAND | 1 | §4.5 | Expand context | diff/unified view, context lines, expandable context |
@@ -126,7 +135,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | DIFF-IMAGE | 1 | §4.5 | Image placeholder | diff/binary, image, submodule and mode-change placeholders |
 | DIFF-SUBMODULE | 1 | §4.5 | Submodule placeholder | diff/binary, image, submodule and mode-change placeholders |
 | DIFF-MODE-CHANGE | 1 | §4.5 | Mode-change line | diff/binary, image, submodule and mode-change placeholders |
-| DIFF-VS-HEAD | 1 | §4.5 | Compare only this file with HEAD | diff/renames, compare this file with HEAD, large diffs |
+| DIFF-VS-HEAD | 1 | §4.5 | Compare with HEAD (this file), on the diff button row (UF-15) | diff/renames, compare this file with HEAD, large diffs |
 | DIFF-COPY-KEY | 1 | §4.5 | Ctrl+C copies the selection | diff/select lines, Ctrl+C and the context menu |
 | DIFF-LOAD-FULL | 1 | §4.5 | Load full diff for capped files | diff/renames, compare this file with HEAD, large diffs |
 | DIFF-RENAME | 1 | §4.5 | Renames and copies in diffs | diff/renames, compare this file with HEAD, large diffs |
@@ -157,6 +166,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | TAG-TOGGLE | 1 | §4.7 | Tags: visibility toggle | panels/tags: filter, visibility, reveal, copy |
 | TAG-REVEAL | 1 | §4.7 | Tags: Reveal | panels/tags: filter, visibility, reveal, copy |
 | TAG-COPY | 1 | §4.7 | Tags: Copy | panels/tags: filter, visibility, reveal, copy |
+| TAG-LABEL-PLAIN | 1 | §4.7 | Tags: labels are the tag names, without "(annotated)" (UF-22) | panels/tags: filter, visibility, reveal, copy |
 | WT-LIST | 1 | §4.7 | Worktrees: list with main/stale/locked | panels/worktrees: main, locked, stale; copy, reveal, open |
 | WT-COPY-NAME | 1 | §4.7 | Worktrees: Copy name | panels/worktrees: main, locked, stale; copy, reveal, open |
 | WT-COPY-PATH | 1 | §4.7 | Worktrees: Copy path | panels/worktrees: main, locked, stale; copy, reveal, open |
@@ -184,7 +194,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | APP-PROMPT-GGREFS | 2 | §4.1 | Old gg refs cleanup prompt appears | setup/old gg refs: listed, kept as branches, deleted at once, undoable, ignorable |
 | MENU-REPO-INIT | 2 | §4.1 | Repository ▸ Initialize… | setup/initialize a repository from Welcome and the menu |
 | MENU-REPO-CLONE | 2 | §4.1 | Repository ▸ Clone… | network/clone from Welcome and the menu; unreachable remote fails cleanly |
-| MENU-REPO-FETCH | 2 | §4.1 | Repository ▸ Fetch | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
+| MENU-REPO-FETCH | 2 | §4.1 | Repository ▸ Fetch | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | MENU-REPO-PULL | 2 | §4.1 | Repository ▸ Pull | network/pull follows pull.rebase; dropdown overrides; menu and panels |
 | MENU-REPO-PUSH | 2 | §4.1 | Repository ▸ Push | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
 | MENU-COMMIT-NEW | 2 | §4.1 | Commit ▸ New commit (menu) | new/new commit on HEAD advances the branch (toolbar, menu, keys) |
@@ -201,16 +211,15 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | TB-NEW | 2 | §4.1 | Toolbar New | new/new commit on HEAD advances the branch (toolbar, menu, keys) |
 | TB-COMMIT | 2 | §4.1 | Toolbar Commit/Amend | commit/commit the index from the toolbar; hooks run natively |
 | TB-COMMIT-LABEL | 2 | §4.1 | Commit/Amend label follows the selection | commit/commit the index from the toolbar; hooks run natively |
-| TB-PREV | 2 | §4.1 | Toolbar Prev (HEAD to parent) | checkout/move HEAD to parent and child |
-| TB-NEXT | 2 | §4.1 | Toolbar Next (HEAD to child) | checkout/move HEAD to parent and child |
+| TB-NO-PREV-NEXT | 2 | §4.1 | The toolbar has no Previous / Next buttons (UF-27) | checkout/move HEAD to parent and child |
 | TB-UNDO | 2 | §4.1 | Toolbar Undo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear<br>undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way |
 | TB-REDO | 2 | §4.1 | Toolbar Redo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear |
-| TB-FETCH | 2 | §4.1 | Toolbar Fetch fetches all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
-| TB-FETCH-REMOTE | 2 | §4.1 | Fetch dropdown: a single remote | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
-| TB-FETCH-PRUNE | 2 | §4.1 | Fetch dropdown: Fetch and prune | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
-| TB-FETCH-TAGS | 2 | §4.1 | Fetch dropdown: Fetch tags | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
+| TB-FETCH | 2 | §4.1 | Toolbar Fetch fetches all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| TB-FETCH-REMOTE | 2 | §4.1 | Fetch dropdown: a single remote | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| TB-FETCH-PRUNE | 2 | §4.1 | Fetch dropdown: Fetch and prune | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| TB-FETCH-TAGS | 2 | §4.1 | Fetch dropdown: Fetch tags | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | TB-PULL | 2 | §4.1 | Toolbar Pull follows pull.rebase/pull.ff | network/pull follows pull.rebase; dropdown overrides; menu and panels |
-| TB-PULL-BADGE | 2 | §4.1 | Pull incoming badge ↓n | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
+| TB-PULL-BADGE | 2 | §4.1 | Pull incoming badge ↓n | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | TB-PULL-MERGE | 2 | §4.1 | Pull dropdown: merge | network/pull follows pull.rebase; dropdown overrides; menu and panels |
 | TB-PULL-REBASE | 2 | §4.1 | Pull dropdown: rebase | network/pull follows pull.rebase; dropdown overrides; menu and panels |
 | TB-PULL-FFONLY | 2 | §4.1 | Pull dropdown: fast-forward only | network/pull follows pull.rebase; dropdown overrides; menu and panels |
@@ -218,7 +227,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | TB-PULL-DISABLED-NOUPSTREAM | 2 | §4.1 | Pull disabled with reason without upstream | network/pull disabled when detached or without upstream; Stash and pull |
 | TB-PULL-STASH | 2 | §4.1 | Local changes block pull: Stash and pull | network/pull disabled when detached or without upstream; Stash and pull |
 | TB-PUSH | 2 | §4.1 | Toolbar Push to upstream | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
-| TB-PUSH-BADGE | 2 | §4.1 | Push outgoing badge ↑n | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
+| TB-PUSH-BADGE | 2 | §4.1 | Push outgoing badge ↑n | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | TB-PUSH-NOUPSTREAM | 2 | §4.1 | No upstream: Push to… with --set-upstream prefilled | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
 | TB-PUSH-TO | 2 | §4.1 | Push dropdown: Push to… | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
 | TB-PUSH-FORCE-LEASE | 2 | §4.1 | Push dropdown: Force with lease | network/rejected push: Pull then push, Force with lease; push tags |
@@ -233,12 +242,16 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | TB-STATE-CONTINUE | 2 | §4.1 | State badge Continue | conflicts/native merge: three-way diff, take ours, edit the message, continue |
 | TB-STATE-SKIP | 2 | §4.1 | State badge Skip | conflicts/native: abort a merge, skip a rebase step |
 | TB-STATE-ABORT | 2 | §4.1 | State badge Abort | conflicts/native: abort a merge, skip a rebase step |
-| SET-EDITOR-USER | 2 | §4.1 | Settings: core.editor (User) | setup/Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase |
-| SET-EDITOR-REPO | 2 | §4.1 | Settings: core.editor (Repository) | setup/Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase |
-| SET-EDITOR-WORKTREE | 2 | §4.1 | Settings: core.editor (Worktree) | setup/Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase |
-| SET-MERGETOOL | 2 | §4.1 | Settings: merge.tool | setup/Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase |
-| SET-DIFFTOOL | 2 | §4.1 | Settings: diff.tool | setup/Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase |
-| SET-PULL-REBASE | 2 | §4.1 | Settings: pull.rebase | setup/Settings ▸ Git edits core.editor per scope, merge/diff tools and pull.rebase |
+| SET-EDITOR-USER | 2 | §4.1 | Settings: core.editor (User) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-EDITOR-REPO | 2 | §4.1 | Settings: core.editor (Repository) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-EDITOR-WORKTREE | 2 | §4.1 | Settings: core.editor (Worktree) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-MERGETOOL | 2 | §4.1 | Settings: merge.tool | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-DIFFTOOL | 2 | §4.1 | Settings: diff.tool | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-PULL-METHOD | 2 | §4.1 | Settings: default pull method: merge, rebase, rebase keeping merges, fast-forward only (UF-19) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email (UF-20) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-INHERIT | 2 | §4.1 | Settings: Inherit clears an override so the lower-scope value applies again (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-COMMIT-ALL-DEFAULT | 2 | §4.1 | Settings: default when nothing is staged | commit/default for nothing staged comes from Settings |
 | SET-HOOKS-TAB | 2 | §4.1 | Settings: Hooks tab install/remove/status | hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab |
 | APP-EXT-EDITOR | 2 | §4.1 | Open file in core.editor | staging/external editor, folder and diff tools |
@@ -288,13 +301,13 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | CHG-STAGE | 2 | §4.4 | Stage file/selection | staging/stage, unstage and discard files |
 | CHG-UNSTAGE | 2 | §4.4 | Unstage file/selection | staging/stage, unstage and discard files |
 | CHG-DISCARD | 2 | §4.4 | Discard file/selection (with confirmation for untracked) | staging/stage, unstage and discard files |
-| CHG-KEY-TOGGLE-SPACE | 2 | §4.4 | Space toggles staging | staging/Space, Enter and double-click toggle staging |
-| CHG-KEY-TOGGLE-ENTER | 2 | §4.4 | Enter toggles staging | staging/Space, Enter and double-click toggle staging |
-| CHG-DBLCLICK-STAGE | 2 | §4.4 | Double-click stages | staging/Space, Enter and double-click toggle staging |
+| CHG-KEY-TOGGLE-SPACE | 2 | §4.4 | Space toggles staging | staging/Space and Enter toggle staging |
+| CHG-KEY-TOGGLE-ENTER | 2 | §4.4 | Enter toggles staging | staging/Space and Enter toggle staging |
+| CHG-DBLCLICK-OPEN | 2 | §4.4 | Double-click opens new files in the editor, others in the diff tool against the parent (UF-16) | staging/double-click opens new files in the editor, others in the diff tool |
 | CHG-STAGE-ALL | 2 | §4.4 | Stage all | staging/stage all, unstage all, stage modified |
 | CHG-UNSTAGE-ALL | 2 | §4.4 | Unstage all | staging/stage all, unstage all, stage modified |
 | CHG-STAGE-MODIFIED | 2 | §4.4 | Stage all modified (not untracked) | staging/stage all, unstage all, stage modified |
-| CHG-INTENT-TO-ADD | 2 | §4.4 | Intent to add | staging/intent to add, track, untrack (and ignore), delete |
+| CHG-INTENT-TO-ADD | 2 | §4.4 | Intent to add | staging/intent to add, delete; no Track / Untrack |
 | CHG-MARK-RESOLVED | 2 | §4.4 | Mark conflict resolved (git add) | conflicts/native: resolve by editing, mark resolved, continue |
 | CHG-FIRSTCLASS-CONFLICTED | 2 | §4.4 | First-class conflicted files of a checked-out commit under Conflicted | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes |
 | CHG-DRAG-STAGE | 2 | §4.4 | Drag Unstaged→Staged | staging/drag files between Staged and Unstaged |
@@ -305,11 +318,9 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | CHG-CTX-MARK-RESOLVED | 2 | §4.4 | Context: Mark resolved | conflicts/native: resolve by editing, mark resolved, continue |
 | CHG-CTX-EXTDIFF-HEAD | 2 | §4.4 | Context: External diff ▸ vs HEAD | staging/external editor, folder and diff tools |
 | CHG-CTX-EXTDIFF-PARENT | 2 | §4.4 | Context: External diff ▸ vs parent | staging/external editor, folder and diff tools |
-| CHG-CTX-DELETE | 2 | §4.4 | Context: Delete file | staging/intent to add, track, untrack (and ignore), delete |
-| CHG-TRACK | 2 | §4.4 | Track (git add) an untracked file | staging/intent to add, track, untrack (and ignore), delete |
-| CHG-UNTRACK | 2 | §4.4 | Untrack (git rm --cached) | staging/intent to add, track, untrack (and ignore), delete |
-| CHG-UNTRACK-IGNORE | 2 | §4.4 | Untrack and add to .gitignore | staging/intent to add, track, untrack (and ignore), delete |
-| INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | commit/reword HEAD from Change information (amend mode) |
+| CHG-CTX-DELETE | 2 | §4.4 | Context: Delete file | staging/intent to add, delete; no Track / Untrack |
+| CHG-NO-TRACK-UNTRACK | 2 | §4.4 | No Track / Untrack items in the Changes menu (UF-26) | staging/intent to add, delete; no Track / Untrack |
+| INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | commit/reword HEAD from Change information (amend mode)<br>rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
 | INFO-AMEND-MODE | 2 | §4.4 | Amend mode for HEAD with a clean index | commit/reword HEAD from Change information (amend mode) |
 | INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes |
 | DIFF-STAGE-LINES | 2 | §4.5 | Stage line(s) | linestaging/CRLF lines, missing final newline, new files<br>linestaging/randomized line staging matches the content model |
@@ -318,8 +329,10 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | DIFF-DISCARD-HUNK | 2 | §4.5 | Discard hunk | linestaging/stage, discard and unstage hunks |
 | DIFF-UNSTAGE-LINES | 2 | §4.5 | Unstage line(s) | linestaging/randomized line staging matches the content model |
 | DIFF-UNSTAGE-HUNK | 2 | §4.5 | Unstage hunk | linestaging/stage, discard and unstage hunks |
+| DIFF-HUNK-MENU | 2 | §4.5 | Context menu: Stage / Discard / Unstage hunk(s) (both views) | linestaging/hunks from the context menu in the side-by-side view |
 | DIFF-HUNK-BUTTONS | 2 | §4.5 | Buttons in hunk headers | linestaging/stage, discard and unstage hunks |
 | DIFF-STAGING-RANDOM | 2 | §8.4 | Randomized line/hunk staging matches git apply --cached | linestaging/randomized line staging matches the content model |
+| BR-REMOTE-MENU | 2 | §4.7 | Branches: a remote and its remote-tracking branches have the Remotes panel's menu (UF-12) | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | BR-CREATE | 2 | §4.7 | Branches: Create branch | refs/create, check out, rename and delete branches |
 | BR-CHECKOUT | 2 | §4.7 | Branches: Check out | refs/create, check out, rename and delete branches |
 | BR-PUSH | 2 | §4.7 | Branches: Push | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
@@ -329,6 +342,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | BR-DELETE-REMOTE | 2 | §4.7 | Branches: Delete ▸ on a remote | refs/delete a branch on its remote, and everywhere |
 | BR-DELETE-ALL | 2 | §4.7 | Branches: Delete ▸ Local and all remotes | refs/delete a branch on its remote, and everywhere |
 | BR-SET-UPSTREAM | 2 | §4.7 | Branches: Set upstream | refs/upstream: set, unset, fast-forward |
+| BR-SET-UPSTREAM-FILTER | 2 | §4.7 | Set upstream: filter field for the branch list; Enter picks the first match (UF-23) | refs/upstream: set, unset, fast-forward |
 | BR-UNSET-UPSTREAM | 2 | §4.7 | Branches: Unset upstream | refs/upstream: set, unset, fast-forward |
 | BR-FF-UPSTREAM | 2 | §4.7 | Branches: Fast-forward to upstream | refs/upstream: set, unset, fast-forward |
 | BR-PULL | 2 | §4.7 | Branches: Pull (current branch) | network/pull follows pull.rebase; dropdown overrides; menu and panels |
@@ -343,8 +357,8 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | REM-DELETE | 2 | §4.7 | Remotes: Delete | refs/remotes: add, edit URL, prune on fetch, delete |
 | REM-EDIT-URL | 2 | §4.7 | Remotes: Edit URL | refs/remotes: add, edit URL, prune on fetch, delete |
 | REM-PRUNE-ON-FETCH | 2 | §4.7 | Remotes: prune on fetch option | refs/remotes: add, edit URL, prune on fetch, delete |
-| REM-FETCH | 2 | §4.7 | Remotes: Fetch | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
-| REM-FETCH-ALL | 2 | §4.7 | Remotes: Fetch all | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
+| REM-FETCH | 2 | §4.7 | Remotes: Fetch | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| REM-FETCH-ALL | 2 | §4.7 | Remotes: Fetch all | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | REM-PULL | 2 | §4.7 | Remotes: Pull | network/pull follows pull.rebase; dropdown overrides; menu and panels |
 | REFLOG-BRANCH | 2 | §4.7 | Reflog: create a branch from old/new | refs/create a branch from a reflog entry |
 | UNDO-ALL-MUTATIONS | 2 | §5 U1 | Every everyday (Phase 2) mutation is undone by Undo | undo/every everyday mutation can be undone |
@@ -355,9 +369,9 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | REMOTE-CLONE | 2 | §4.8 | Clone with progress | network/clone from Welcome and the menu; unreachable remote fails cleanly |
 | REMOTE-CLONE-CANCEL | 2 | §4.8 | Clone cancel cleans up | network/cancel a clone: no directory left behind |
 | REMOTE-CLONE-FAIL | 2 | §4.8 | Clone from an unreachable remote fails cleanly | network/clone from Welcome and the menu; unreachable remote fails cleanly |
-| REMOTE-FETCH-ONE | 2 | §4.8 | Fetch one remote | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
-| REMOTE-FETCH-ALL | 2 | §4.8 | Fetch all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
-| REMOTE-FETCH-NO-FF | 2 | §4.8 | Fetch changes only remote-tracking refs | network/fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move |
+| REMOTE-FETCH-ONE | 2 | §4.8 | Fetch one remote | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| REMOTE-FETCH-ALL | 2 | §4.8 | Fetch all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| REMOTE-FETCH-NO-FF | 2 | §4.8 | Fetch changes only remote-tracking refs | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | REMOTE-FETCH-FAIL | 2 | §4.8 | Fetch network failure reported | network/fetch from an unreachable remote reports the failure |
 | REMOTE-PUSH | 2 | §4.8 | Push a branch | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
 | REMOTE-PUSH-SET-UPSTREAM | 2 | §4.8 | Push --set-upstream for a new branch | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
@@ -385,10 +399,10 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | STASH-SWITCH-HELPER | 2 | §4.9 | Stash and switch helper | checkout/local changes block a switch: Stash and switch |
 | STASH-PULL-HELPER | 2 | §4.9 | Stash and pull helper | network/pull disabled when detached or without upstream; Stash and pull |
 | STASH-UNDO-DROP | 2 | §4.9 | Undo brings a dropped stash back | stash/apply, pop with the index, apply one file, branch, drop, undo, clear |
-| CONF-PARSE-DIFF3 | 2 | §4.10 | Two-sided diff3 regions detected | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes |
-| CONF-PARSE-NWAY | 2 | §4.10 | N-sided extended regions detected | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache |
-| CONF-MARKER-LENGTH | 2 | §4.10 | Marker length ≥ 7, honours conflict-marker-size, opening fixes length | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache |
-| CONF-WELLFORMED-ONLY | 2 | §4.10 | Malformed/partial markers are text | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache |
+| CONF-PARSE-DIFF3 | 2 | §4.10 | Two-sided diff3 regions detected | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes<br>conflicts/marker grammar edge cases (docs/spec/conflict-markers.md) |
+| CONF-PARSE-NWAY | 2 | §4.10 | N-sided extended regions detected | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache<br>conflicts/marker grammar edge cases (docs/spec/conflict-markers.md) |
+| CONF-MARKER-LENGTH | 2 | §4.10 | Marker length ≥ 7, honours conflict-marker-size, opening fixes length | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache<br>conflicts/marker grammar edge cases (docs/spec/conflict-markers.md) |
+| CONF-WELLFORMED-ONLY | 2 | §4.10 | Malformed/partial markers are text | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache<br>conflicts/marker grammar edge cases (docs/spec/conflict-markers.md) |
 | CONF-OPTOUT | 2 | §4.10 | gg-conflicts=false opt-out | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache |
 | CONF-CACHE-DISPOSABLE | 2 | §4.10 | Deleting .git/gg changes nothing reported | conflicts/marker parsing: N sides, marker length, malformed, opt-out, disposable cache |
 | CONF-DISPLAY-HISTORY | 2 | §4.10 | History marks conflicted commits (incl. descendants keeping a conflict) | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes |
@@ -442,7 +456,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | CLI-UNDO | 2 | §6 | git gg undo | cli/git gg undo, redo and op log |
 | CLI-REDO | 2 | §6 | git gg redo | cli/git gg undo, redo and op log |
 | CLI-OP-LOG | 2 | §6 | git gg op log | cli/git gg undo, redo and op log |
-| CLI-CONFLICTS | 2 | §6 | git gg conflicts (exit 1 when any) | cli/git gg conflicts, help and exit codes |
+| CLI-CONFLICTS | 2 | §6 | git gg conflicts (exit 1 when any) | cli/git gg conflicts, help and exit codes<br>conflicts/marker grammar edge cases (docs/spec/conflict-markers.md) |
 | CLI-UI | 2 | §6 | git gg ui | cli/git gg ui starts ggui on the repository |
 | CLI-HELP | 2 | §6 | git gg help / --help | cli/git gg conflicts, help and exit codes |
 | CLI-EXIT-CODES | 2 | §6 | Git-style exit codes and stderr | cli/git gg conflicts, help and exit codes |
@@ -456,104 +470,109 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | FAIL-LOCKED-REF | 2 | §8.4 | Locked ref makes the mutation fail cleanly | undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way |
 | FAIL-NETWORK | 2 | §8.4 | Unreachable remote | network/clone from Welcome and the menu; unreachable remote fails cleanly |
 | FAIL-CANCEL | 2 | §8.4 | Cancelled network operation leaves a plain-git state | network/cancel a clone: no directory left behind |
-| MENU-COMMIT-ACTIONS | 3 | §4.1 | Commit menu carries the selected-commit actions | — |
-| HIST-KEY-D | 3 | §4.2 | D: duplicate commit | — |
-| HIST-KEY-SHIFT-D | 3 | §4.2 | Shift+D: duplicate branch | — |
-| HIST-KEY-S | 3 | §4.2 | S: squash | — |
-| HIST-KEY-SHIFT-S | 3 | §4.2 | Shift+S: squash with descendants | — |
-| HIST-KEY-ALT-S | 3 | §4.2 | Alt+S: split | — |
-| HIST-KEY-A | 3 | §4.2 | A: drop | — |
-| HIST-KEY-SHIFT-A | 3 | §4.2 | Shift+A: drop branch | — |
+| MENU-COMMIT-ACTIONS | 3 | §4.1 | Commit menu carries the selected-commit actions | edit/no-op rewrites keep ids; the Commit menu carries the selected commit's actions |
+| HIST-KEY-D | 3 | §4.2 | D: duplicate commit | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
+| HIST-KEY-SHIFT-D | 3 | §4.2 | Shift+D: duplicate branch | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
+| HIST-KEY-S | 3 | §4.2 | S: squash | edit/squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S) |
+| HIST-KEY-SHIFT-S | 3 | §4.2 | Shift+S: squash with descendants | edit/squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S) |
+| HIST-KEY-ALT-S | 3 | §4.2 | Alt+S: split | edit/split a commit by files (Alt+S) |
+| HIST-KEY-A | 3 | §4.2 | A: drop | edit/abandon a commit (A) and a branch (Shift+A) |
+| HIST-KEY-SHIFT-A | 3 | §4.2 | Shift+A: drop branch | edit/abandon a commit (A) and a branch (Shift+A) |
 | HIST-KEY-I | 3 | §4.2 | I: interactive rebase from here | — |
-| HIST-DND-MOVE-BEFORE | 3 | §4.2 | Drag commit→commit: Move before | — |
-| HIST-DND-MOVE-AFTER | 3 | §4.2 | Drag commit→commit: Move after | — |
-| HIST-DND-SQUASH | 3 | §4.2 | Drag commit→commit: Squash | — |
-| HIST-DND-REBASE | 3 | §4.2 | Drag commit→commit: Rebase | — |
-| HIST-DND-CHOOSER | 3 | §4.2 | Drop without modifier shows chooser | — |
-| HIST-DND-BRANCH | 3 | §4.2 | Drag branch badge→commit moves branch | — |
-| HIST-DND-FILES | 3 | §4.2 | Drag files→commit moves changes | — |
-| HIST-PUBLISHED-WARN | 3 | §4.2 | Warn before rewriting published history | — |
-| ACT-NEW-INSERT-BEFORE | 3 | §4.3 | Insert new commit before (rebases descendants) | — |
-| ACT-NEW-INSERT-AFTER | 3 | §4.3 | Insert new commit after (rebases descendants) | — |
-| ACT-DESCRIBE-ANY | 3 | §4.3 | Reword any commit (descendants rebased) | — |
-| ACT-EDIT-AUTHOR | 3 | §4.3 | Edit author of any commit | — |
-| ACT-DUPLICATE-COMMIT | 3 | §4.3 | Duplicate a commit onto its parent (detached copy) | — |
-| ACT-DUPLICATE-BRANCH | 3 | §4.3 | Duplicate a branch range | — |
-| ACT-REBASE-COMMIT | 3 | §4.3 | Rebase one commit onto a destination | — |
-| ACT-REBASE-BRANCH | 3 | §4.3 | Rebase the whole branch onto a destination | — |
+| HIST-DND-MOVE-BEFORE | 3 | §4.2 | Drag commit→commit: Move before | dnd/commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser |
+| HIST-DND-MOVE-AFTER | 3 | §4.2 | Drag commit→commit: Move after | dnd/commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser |
+| HIST-DND-SQUASH | 3 | §4.2 | Drag commit→commit: Squash | dnd/commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser |
+| HIST-DND-REBASE | 3 | §4.2 | Drag commit→commit: Rebase | dnd/commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser |
+| HIST-DND-CHOOSER | 3 | §4.2 | Drop without modifier shows chooser | dnd/commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser |
+| HIST-DND-BRANCH | 3 | §4.2 | Drag branch badge→commit moves branch | dnd/a branch badge onto a commit moves the branch |
+| HIST-DND-FILES | 3 | §4.2 | Drag files→commit moves changes | dnd/files onto a commit: a commit's files into its parent; working tree files into any commit |
+| HIST-PUBLISHED-WARN | 3 | §4.2 | Warn before rewriting published history | edit/rebase one commit, and a commit with its descendants, onto another branch |
+| ACT-NEW-INSERT-BEFORE | 3 | §4.3 | Insert new commit before (rebases descendants) | edit/insert a new commit before or after one |
+| ACT-NEW-INSERT-AFTER | 3 | §4.3 | Insert new commit after (rebases descendants) | edit/insert a new commit before or after one |
+| ACT-DESCRIBE-ANY | 3 | §4.3 | Reword any commit (descendants rebased) | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
+| ACT-EDIT-AUTHOR | 3 | §4.3 | Edit author of any commit | rewrite/edit the author of any commit |
+| REWRITE-INVARIANTS | 3 | §8.4 | Rewrite keeps ancestors/unrelated refs, rebases descendants with their trees | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
+| REWRITE-POST-REWRITE | 3 | §4.12 | post-rewrite runs with the old→new mapping | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
+| REWRITE-UNDO | 3 | §5 U1 | One journal operation per rewrite; Undo restores exactly | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
+| REWRITE-PUBLISHED-WARN | 3 | §4.3 | Rewriting published commits asks first; remote-tracking refs never move | rewrite/published history asks first; a locked ref leaves everything untouched |
+| REWRITE-FAIL-UNTOUCHED | 3 | §8.4 | A failing rewrite leaves refs, HEAD, index and working tree untouched | rewrite/published history asks first; a locked ref leaves everything untouched |
+| ACT-DUPLICATE-COMMIT | 3 | §4.3 | Duplicate a commit onto its parent (detached copy) | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
+| ACT-DUPLICATE-BRANCH | 3 | §4.3 | Duplicate a branch range | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
+| ACT-REBASE-COMMIT | 3 | §4.3 | Rebase one commit onto a destination | edit/rebase one commit, and a commit with its descendants, onto another branch |
+| ACT-REBASE-BRANCH | 3 | §4.3 | Rebase the whole branch onto a destination | edit/rebase one commit, and a commit with its descendants, onto another branch |
 | ACT-IREBASE | 3 | §4.3 | Interactive rebase… opens the todo editor | — |
-| ACT-SQUASH-PARENT | 3 | §4.3 | Squash into parent | — |
-| ACT-SQUASH-TARGET | 3 | §4.3 | Squash into a chosen target | — |
-| ACT-SQUASH-DESCENDANTS | 3 | §4.3 | Squash with descendants | — |
-| ACT-SPLIT | 3 | §4.3 | Split a commit by selected files | — |
-| ACT-RESTORE-COMMIT | 3 | §4.3 | Restore paths in a commit from another commit | — |
-| ACT-RESTORE-WORKTREE | 3 | §4.3 | Restore the working tree from a commit | — |
-| ACT-ABANDON | 3 | §4.3 | Abandon a commit (descendants rebased) | — |
-| ACT-ABANDON-BRANCH | 3 | §4.3 | Abandon a branch | — |
-| ACT-ABANDON-REMOTE | 3 | §4.3 | Abandon branch also deletes the remote branch | — |
-| ACT-SIMPLIFY-PARENTS | 3 | §4.3 | Remove redundant merge parents | — |
-| ACT-REORDER | 3 | §4.3 | Move a commit before/after another | — |
-| ACT-REORDER-COPY | 3 | §4.3 | Copy a commit before/after another | — |
-| ACT-MOVE-CHANGES-PARENT | 3 | §4.3 | Move files/hunks/lines to the parent | — |
-| ACT-MOVE-CHANGES-CHILD | 3 | §4.3 | Move files/hunks/lines to the child | — |
-| ACT-MOVE-CHANGES-WORKTREE | 3 | §4.3 | Move changes to the working tree (uncommit) | — |
-| ACT-MERGE-INTO-HEAD | 3 | §4.3 | Merge into HEAD in memory | — |
-| ACT-MERGE-NATIVE | 3 | §4.3 | Merge using native git merge | — |
-| ACT-REBASE-HEAD-ONTO | 3 | §4.3 | Rebase HEAD onto branch | — |
-| ACT-RECONCILE | 3 | §4.3 | Reconcile a diverged branch with its upstream | — |
-| ACT-REWRITE-TEXT-CONFLICT | 3 | §4.3 | Rewrites continue with first-class text conflicts | — |
-| ACT-REWRITE-COMPLETION-MSG | 3 | §4.3 | Completion message lists newly conflicted commits | — |
-| ACT-REWRITE-AUTO-RESOLVE | 3 | §4.3 | A later rewrite resolves a conflict automatically | — |
-| ACT-REWRITE-INVARIANTS | 3 | §8.4 | Ancestors/unrelated unchanged, no-op keeps IDs, failure changes nothing, Undo exact | — |
-| CHG-FIRSTCLASS-RESOLVE-AMEND | 3 | §4.4 | Resolve, stage and amend clears the conflict | — |
-| CHG-CTX-REVERT | 3 | §4.4 | Context: Revert | — |
-| CHG-CTX-MOVE-PARENT | 3 | §4.4 | Context: Move to parent | — |
-| CHG-CTX-MOVE-CHILD | 3 | §4.4 | Context: Move to child | — |
-| INFO-EDIT-AUTHOR | 3 | §4.4 | Edit author | — |
-| DIFF-CTX-MOVE-PARENT | 3 | §4.5 | Context: Move line(s)/hunk to parent | — |
-| DIFF-CTX-MOVE-CHILD | 3 | §4.5 | Context: Move line(s)/hunk to child | — |
-| DIFF-CTX-MOVE-ACTIVE | 3 | §4.5 | Context: Move line(s)/hunk to active commit | — |
-| DIFF-CTX-MOVE-WORKTREE | 3 | §4.5 | Context: Move line(s)/hunk to working tree | — |
-| DIFF-CTX-REVERT | 3 | §4.5 | Context: Revert line/hunk | — |
-| DIFF-TERM-VIEW | 3 | §4.10 | Per-term conflict view (base → side N) | — |
-| BR-MERGE-INTO-HEAD | 3 | §4.7 | Branches: Merge into HEAD | — |
-| BR-REBASE-HEAD-ONTO | 3 | §4.7 | Branches: Rebase HEAD onto branch | — |
-| BR-RECONCILE | 3 | §4.7 | Branches: Reconcile with remote/branch… | — |
+| ACT-SQUASH-PARENT | 3 | §4.3 | Squash into parent | edit/squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S) |
+| ACT-SQUASH-TARGET | 3 | §4.3 | Squash into a chosen target | edit/squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S) |
+| ACT-SQUASH-DESCENDANTS | 3 | §4.3 | Squash with descendants | edit/squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S) |
+| ACT-SPLIT | 3 | §4.3 | Split a commit by selected files | edit/split a commit by files (Alt+S) |
+| ACT-RESTORE-COMMIT | 3 | §4.3 | Restore paths in a commit from another commit | edit/restore paths in a commit or the working tree; simplify parents |
+| ACT-RESTORE-WORKTREE | 3 | §4.3 | Restore the working tree from a commit | edit/restore paths in a commit or the working tree; simplify parents |
+| ACT-ABANDON | 3 | §4.3 | Abandon a commit (descendants rebased) | edit/abandon a commit (A) and a branch (Shift+A) |
+| ACT-ABANDON-BRANCH | 3 | §4.3 | Abandon a branch | edit/abandon a commit (A) and a branch (Shift+A) |
+| ACT-ABANDON-REMOTE | 3 | §4.3 | Abandon branch also deletes the remote branch | edit/abandon a commit (A) and a branch (Shift+A) |
+| ACT-SIMPLIFY-PARENTS | 3 | §4.3 | Remove redundant merge parents | edit/restore paths in a commit or the working tree; simplify parents |
+| ACT-REORDER | 3 | §4.3 | Move a commit before/after another | edit/reorder: move a commit before another, and copy one |
+| ACT-REORDER-COPY | 3 | §4.3 | Copy a commit before/after another | edit/reorder: move a commit before another, and copy one |
+| ACT-MOVE-CHANGES-PARENT | 3 | §4.3 | Move files/hunks/lines to the parent | move/files: to the parent, to the child, to the working tree, revert |
+| ACT-MOVE-CHANGES-CHILD | 3 | §4.3 | Move files/hunks/lines to the child | move/files: to the parent, to the child, to the working tree, revert |
+| ACT-MOVE-CHANGES-WORKTREE | 3 | §4.3 | Move changes to the working tree (uncommit) | move/files: to the parent, to the child, to the working tree, revert |
+| ACT-MERGE-INTO-HEAD | 3 | §4.3 | Merge into HEAD in memory | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| ACT-MERGE-NATIVE | 3 | §4.3 | Merge using native git merge | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| ACT-REBASE-HEAD-ONTO | 3 | §4.3 | Rebase HEAD onto branch | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| ACT-RECONCILE | 3 | §4.3 | Reconcile a diverged branch with its upstream | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| ACT-REWRITE-TEXT-CONFLICT | 3 | §4.3 | Rewrites continue with first-class text conflicts | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| ACT-REWRITE-COMPLETION-MSG | 3 | §4.3 | Completion message lists newly conflicted commits | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| ACT-REWRITE-AUTO-RESOLVE | 3 | §4.3 | A later rewrite resolves a conflict automatically | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| ACT-REWRITE-INVARIANTS | 3 | §8.4 | Ancestors/unrelated unchanged, no-op keeps IDs, failure changes nothing, Undo exact | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| CHG-FIRSTCLASS-RESOLVE-AMEND | 3 | §4.4 | Resolve, stage and amend clears the conflict | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |
+| CHG-CTX-REVERT | 3 | §4.4 | Context: Revert | move/files: to the parent, to the child, to the working tree, revert |
+| CHG-CTX-MOVE-PARENT | 3 | §4.4 | Context: Move to parent | move/files: to the parent, to the child, to the working tree, revert |
+| CHG-CTX-MOVE-CHILD | 3 | §4.4 | Context: Move to child | move/files: to the parent, to the child, to the working tree, revert |
+| INFO-EDIT-AUTHOR | 3 | §4.4 | Edit author | rewrite/edit the author of any commit |
+| DIFF-CTX-MOVE-PARENT | 3 | §4.5 | Context: Move line(s)/hunk to parent | move/lines: a hunk to the parent and to the active commit |
+| DIFF-CTX-MOVE-CHILD | 3 | §4.5 | Context: Move line(s)/hunk to child | move/lines: a hunk to the parent and to the active commit |
+| DIFF-CTX-MOVE-ACTIVE | 3 | §4.5 | Context: Move line(s)/hunk to active commit | move/lines: a hunk to the parent and to the active commit |
+| DIFF-CTX-MOVE-WORKTREE | 3 | §4.5 | Context: Move line(s)/hunk to working tree | move/lines: a hunk to the parent and to the active commit |
+| DIFF-CTX-REVERT | 3 | §4.5 | Context: Revert line/hunk | move/lines: a hunk to the parent and to the active commit |
+| DIFF-TERM-VIEW | 3 | §4.10 | Per-term conflict view (base → side N) | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |
+| BR-MERGE-INTO-HEAD | 3 | §4.7 | Branches: Merge into HEAD | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| BR-REBASE-HEAD-ONTO | 3 | §4.7 | Branches: Rebase HEAD onto branch | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| BR-RECONCILE | 3 | §4.7 | Branches: Reconcile with remote/branch… | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
 | BR-IREBASE-ONTO | 3 | §4.7 | Branches: Interactive rebase onto… | — |
-| CONF-EDGE-NOEOL | 3 | §4.10 | Missing final newline round-trips | — |
-| CONF-EDGE-CRLF | 3 | §4.10 | CRLF vs LF sides round-trip | — |
-| CONF-EDGE-EMPTY | 3 | §4.10 | Empty sides round-trip | — |
-| CONF-EDGE-MARKERLIKE | 3 | §4.10 | Marker-like content round-trips (longer markers) | — |
-| CONF-NWAY-MERGE | 3 | §4.10 | N-way term merge and simplification | — |
-| CONF-NO-NESTING | 3 | §4.10 | No nested markers after cancellation sequences | — |
-| CONF-AUTO-RESOLVE | 3 | §4.10 | Reordering back / dropping the cause resolves | — |
-| CONF-PREFLIGHT-BINARY | 3 | §4.10 | Pre-flight: binary conflict | — |
-| CONF-PREFLIGHT-MODIFY-DELETE | 3 | §4.10 | Pre-flight: modify/delete | — |
-| CONF-PREFLIGHT-TYPE | 3 | §4.10 | Pre-flight: type / file-directory / symlink | — |
-| CONF-PREFLIGHT-SUBMODULE | 3 | §4.10 | Pre-flight: submodule | — |
-| CONF-PREFLIGHT-MODE | 3 | §4.10 | Pre-flight: mode conflict | — |
-| CONF-PREFLIGHT-RENAME | 3 | §4.10 | Pre-flight: rename/rename, rename/delete | — |
-| CONF-PREFLIGHT-FILTER | 3 | §4.10 | Pre-flight: filtered (LFS) text | — |
-| CONF-PREFLIGHT-OPTOUT | 3 | §4.10 | Pre-flight: opt-out file | — |
-| CONF-PREFLIGHT-DISK-FILE | 3 | §4.10 | Pre-flight: choose a file from disk | — |
-| CONF-PREFLIGHT-STEP | 3 | §4.10 | Pre-flight steps through commits in order | — |
-| CONF-PREFLIGHT-CANCEL | 3 | §4.10 | Pre-flight Cancel leaves the repository byte-identical | — |
-| CONF-CHECKOUT-CLEAN | 3 | §4.10 | Checking out a conflicted commit: git status clean, markers in files | — |
-| CONF-CHECKOUT-EXPAND-STAGES | 3 | §4.10 | Setting: expand to index stages on checkout | — |
-| CONF-RESOLVE-MERGETOOL | 3 | §4.10 | First-class: resolve with merge tool | — |
-| CONF-RESOLVE-TAKE-SIDE | 3 | §4.10 | First-class: take side N (region / whole file) | — |
-| CONF-RESOLVE-EDITOR | 3 | §4.10 | First-class: edit in editor | — |
-| CONF-MARK-RESOLVED-REFUSE | 3 | §4.10 | Mark resolved refused while regions remain | — |
-| CONF-RESOLVE-AMEND | 3 | §4.10 | Resolve then amend: descendants resolve too | — |
-| CONF-RESOLVE-NEW-COMMIT | 3 | §4.10 | Resolve then new commit on top | — |
-| CONF-TRANSPARENCY | 3 | §4.10 | Plain git rebase/cherry-pick/amend/merge/stash/gc/clone/push keep conflicts | — |
-| CONF-GIT-MERGE-GGUI-REGIONS | 3 | §4.10 | Plain git merging a file with ggui regions | — |
-| CONF-PREPUSH-HOOK | 3 | §4.10 | Managed pre-push refuses conflicted commits for plain git push | — |
+| CONF-EDGE-NOEOL | 3 | §4.10 | Missing final newline round-trips | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
+| CONF-EDGE-CRLF | 3 | §4.10 | CRLF vs LF sides round-trip | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
+| CONF-EDGE-EMPTY | 3 | §4.10 | Empty sides round-trip | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
+| CONF-EDGE-MARKERLIKE | 3 | §4.10 | Marker-like content round-trips (longer markers) | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
+| CONF-NWAY-MERGE | 3 | §4.10 | N-way term merge and simplification | edges/N-way: merging two conflicted lines gives three sides; merging again simplifies |
+| CONF-NO-NESTING | 3 | §4.10 | No nested markers after cancellation sequences | edges/randomized reorders of N changes to one place always come back exact<br>edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| CONF-AUTO-RESOLVE | 3 | §4.10 | Reordering back / dropping the cause resolves | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| CONF-PREFLIGHT-BINARY | 3 | §4.10 | Pre-flight: binary conflict | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-MODIFY-DELETE | 3 | §4.10 | Pre-flight: modify/delete | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-TYPE | 3 | §4.10 | Pre-flight: type / file-directory / symlink | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-SUBMODULE | 3 | §4.10 | Pre-flight: submodule | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-MODE | 3 | §4.10 | Pre-flight: mode conflict | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-RENAME | 3 | §4.10 | Pre-flight: rename/rename, rename/delete | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-FILTER | 3 | §4.10 | Pre-flight: filtered (LFS) text | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-OPTOUT | 3 | §4.10 | Pre-flight: opt-out file | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-DISK-FILE | 3 | §4.10 | Pre-flight: choose a file from disk | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
+| CONF-PREFLIGHT-STEP | 3 | §4.10 | Pre-flight steps through commits in order | preflight/conflicts are listed per commit in order; Cancel leaves .git byte-identical |
+| CONF-PREFLIGHT-CANCEL | 3 | §4.10 | Pre-flight Cancel leaves the repository byte-identical | preflight/conflicts are listed per commit in order; Cancel leaves .git byte-identical |
+| CONF-CHECKOUT-CLEAN | 3 | §4.10 | Checking out a conflicted commit: git status clean, markers in files | conflicts/checking out a conflicted commit: clean status by default, index stages when asked |
+| CONF-CHECKOUT-EXPAND-STAGES | 3 | §4.10 | Setting: expand to index stages on checkout | conflicts/checking out a conflicted commit: clean status by default, index stages when asked |
+| CONF-RESOLVE-MERGETOOL | 3 | §4.10 | First-class: resolve with merge tool | conflicts/first-class: resolve with the merge tool (stages from the regions) |
+| CONF-RESOLVE-TAKE-SIDE | 3 | §4.10 | First-class: take side N (region / whole file) | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |
+| CONF-RESOLVE-EDITOR | 3 | §4.10 | First-class: edit in editor | conflicts/first-class: take a side in one region; resolve in the editor and commit on top |
+| CONF-MARK-RESOLVED-REFUSE | 3 | §4.10 | Mark resolved refused while regions remain | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |
+| CONF-RESOLVE-AMEND | 3 | §4.10 | Resolve then amend: descendants resolve too | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |
+| CONF-RESOLVE-NEW-COMMIT | 3 | §4.10 | Resolve then new commit on top | conflicts/first-class: take a side in one region; resolve in the editor and commit on top |
+| CONF-TRANSPARENCY | 3 | §4.10 | Plain git rebase/cherry-pick/amend/merge/stash/gc/clone/push keep conflicts | edges/plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push |
+| CONF-GIT-MERGE-GGUI-REGIONS | 3 | §4.10 | Plain git merging a file with ggui regions | edges/plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push |
+| CONF-PREPUSH-HOOK | 3 | §4.10 | Managed pre-push refuses conflicted commits for plain git push | hooks/managed pre-push refuses plain git pushes of conflicted commits |
 | CONF-NATIVE-IREBASE-EDIT-TODO | 3 | §4.10 | Stopped interactive rebase: Edit remaining todo | — |
 | CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue | — |
 | CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view | — |
-| HOOK-REWRITE-RUN | 3 | §4.12 | pre-rebase/post-rewrite/post-checkout run via git hook run for rewrites | — |
-| HOOK-PREPUSH | 3 | §4.12 | pre-push refuses conflicted commits | — |
+| HOOK-REWRITE-RUN | 3 | §4.12 | pre-rebase/post-rewrite/post-checkout run via git hook run for rewrites | rewrite/pre-rebase can veto a rebase; post-checkout runs when HEAD moves |
+| HOOK-PREPUSH | 3 | §4.12 | pre-push refuses conflicted commits | hooks/managed pre-push refuses plain git pushes of conflicted commits |
 | IR-ENTRY-HISTORY-KEY | 3 | §4.13 | History: I key | — |
 | IR-ENTRY-HISTORY-MENU | 3 | §4.13 | History: Interactive rebase from here… | — |
 | IR-ENTRY-SELECTION | 3 | §4.13 | Interactive rebase selection… | — |
@@ -600,7 +619,7 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | IR-ENGINE-USER-CHOICE | 3 | §4.13 | Run as git rebase (user choice) | — |
 | IR-ENGINE-SHOWN | 3 | §4.13 | Engine and reason shown in the editor | — |
 | IR-MEMORY-ONE-UNDO | 3 | §4.13 | In-memory rebase = one Undo | — |
-| IR-MEMORY-CANCEL | 3 | §4.13 | Cancel before apply changes nothing | — |
+| IR-MEMORY-CANCEL | 3 | §4.13 | Cancel before apply changes nothing | preflight/conflicts are listed per commit in order; Cancel leaves .git byte-identical |
 | IR-NATIVE-STOP-EDIT | 3 | §4.13 | Native stop: edit | — |
 | IR-NATIVE-STOP-BREAK | 3 | §4.13 | Native stop: break | — |
 | IR-NATIVE-STOP-EXEC | 3 | §4.13 | Native stop: failing exec | — |
@@ -611,8 +630,8 @@ Covered: 452/452 required IDs; 452/625 of the whole catalogue.
 | IR-PLAIN-EDIT-TODO | 3 | §4.13 | Edit remaining todo writes git-rebase-todo like --edit-todo | — |
 | IR-DIFFERENTIAL | 3 | §8.4 | Randomized differential test vs git rebase -i | — |
 | IR-AUTOSQUASH-ORDER | 3 | §8.4 | Autosquash order matches git | — |
-| CLI-NEW-BEFORE | 3 | §6 | git gg new --before | — |
-| CLI-NEW-AFTER | 3 | §6 | git gg new --after | — |
+| CLI-NEW-BEFORE | 3 | §6 | git gg new --before | cli/git gg new --before/--after inserts and rebases the descendants |
+| CLI-NEW-AFTER | 3 | §6 | git gg new --after | cli/git gg new --before/--after inserts and rebases the descendants |
 | CLI-SEQ-EDITOR | 3 | §6 | git gg sequence-editor (internal) | — |
 | APP-OPEN-WORKTREE-WINDOW | 4 | §4.1 | Open a linked worktree in a new window | — |
 | WT-ADD | 4 | §4.7 | Worktrees: Add… | — |

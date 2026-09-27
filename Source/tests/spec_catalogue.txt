@@ -125,7 +125,11 @@ SET-EDITOR-REPO | 2 | §4.1 | Settings: core.editor (Repository)
 SET-EDITOR-WORKTREE | 2 | §4.1 | Settings: core.editor (Worktree)
 SET-MERGETOOL | 2 | §4.1 | Settings: merge.tool
 SET-DIFFTOOL | 2 | §4.1 | Settings: diff.tool
-SET-PULL-REBASE | 2 | §4.1 | Settings: pull.rebase
+SET-PULL-METHOD | 2 | §4.1 | Settings: default pull method: merge, rebase, rebase keeping merges, fast-forward only (UF-19)
+SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email (UF-20)
+SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21)
+SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21)
+SET-SCOPE-INHERIT | 2 | §4.1 | Settings: Inherit clears an override so the lower-scope value applies again (UF-21)
 SET-COMMIT-ALL-DEFAULT | 2 | §4.1 | Settings: default when nothing is staged
 SET-HOOKS-TAB | 2 | §4.1 | Settings: Hooks tab install/remove/status
 APP-EXT-EDITOR | 2 | §4.1 | Open file in core.editor

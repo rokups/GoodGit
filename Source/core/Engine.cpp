@@ -519,7 +519,11 @@ RequestId Engine::scanConflicts(std::vector<Oid> commits)
 RequestId Engine::readConfig(std::vector<std::string> keys)
 {
     return submit(Queue::Snapshot, "Reading configuration", kSlotConfig, true, [this, keys = std::move(keys)](Job& job) {
-        git_repository* repo = job.repo();
+        // A fresh handle: the job's repository keeps the config files it found when it was opened
+        // (config.worktree only appears once extensions.worktreeConfig is set).
+        const char* workdir = git_repository_workdir(job.repo());
+        gg::git2::Repository fresh = gg::git2::openRepositoryExact(workdir ? workdir : git_repository_path(job.repo()));
+        git_repository* repo = fresh.get();
         ConfigEvent ev;
         ev.request = job.id;
         git_config* rawAll = nullptr;
