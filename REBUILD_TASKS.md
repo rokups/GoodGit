@@ -1110,3 +1110,70 @@ reused for UF-06 to UF-09 (explicit exception to the clean-room rule).
 - **Status:** done. Important errors open a modal error popup (OK / Copy message). Warnings and
   information are corner toasts that fade out, stay while hovered and can be closed
   (`APP-ERROR-POPUP`, `APP-ERROR-DISMISS`, `APP-NOTIFY-TOAST`).
+
+## User feedback, round 2 (2026-09-27)
+
+Requested by the user after P3-14. Not started.
+
+### UF-10 History tooltips only while the list is not scrolling
+- **Do:** suppress row/graph/badge tooltips while the History list is scrolling (wheel,
+  scrollbar drag or keyboard); show them again once scrolling stops.
+
+### UF-11 Side-by-side diff shows only code
+- **Do:** no `@@ -a,b +c,d @@` hunk header lines in the side-by-side view; the
+  "… N unchanged lines" expander already marks omitted content.
+
+### UF-12 Remotes in Branches share the Remotes context menu
+- **Do:** a remote (and its remote-tracking branches) in the Branches panel gets the same
+  context menu as in the Remotes panel.
+
+### UF-13 Copy ID copies the short ID; Shift copies the full ID
+- **Do:** every "Copy ID" (menus, toolbar, Info, keyboard) copies the short ID by default and
+  the full ID when Shift is held; the menu text/tooltip says so.
+
+### UF-14 Full IDs show the short prefix normally and the rest dimmed
+- **Do:** wherever a full commit ID is displayed, draw the short-ID prefix in the standard
+  text colour and the remainder dimmed.
+
+### UF-15 Diff: "Compare with HEAD" on the button row
+- **Do:** replace "Compare only this file with HEAD" with a "Compare with HEAD" control on the
+  same line as the diff toolbar buttons.
+
+### UF-16 Changes: double-click opens the file
+- **Do:** double-clicking a file in Changes opens new files in the configured editor, and
+  modified files in the configured diff tool (against the parent).
+
+### UF-17 Changes: Patch submenu
+- **Do:** replace "Copy patch" and "Save patch..." with a "Patch" submenu holding "Copy" and
+  "Save...".
+
+### UF-18 History graph not clipped at the left edge
+- **Do:** move the graph slightly to the right so the white outline of the current commit is
+  not clipped by the left edge.
+
+### UF-19 Default pull method in Settings
+- **Do:** Settings lets the user configure the default pull method (`pull.rebase`, merge or
+  fast-forward only).
+
+### UF-20 Name and email in Settings
+- **Do:** Settings lets the user configure `user.name` and `user.email`.
+
+### UF-21 Settings: one field per option, scopes as tabs
+- **Do:** each option has a single field. The scope (worktree / repository / user) is
+  chosen with tabs. On a higher-precedence tab where only a lower-precedence value exists,
+  show that value as a hint. Where the higher-precedence scope overrides it, offer a way to
+  clear the override and inherit the lower-precedence value again.
+
+### UF-22 Tags without "(annotated)"
+- **Do:** drop the "(annotated)" suffix from tag labels.
+
+### UF-23 "Set upstream" with a branch filter
+- **Do:** the branch "Set upstream" dialog or menu gets a filter field for the branch list.
+
+### UF-24 History filter hides the graph
+- **Do:** while a History filter is active, hide the graph column, because the graph is
+  broken for filtered rows anyway.
+
+### UF-25 History keeps its scroll position
+- **Do:** any change to History (expanding or collapsing merges, loading more, refreshes)
+  keeps the scroll position anchored on the rows being viewed.

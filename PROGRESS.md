@@ -50,7 +50,8 @@ Where the work stands and how to pick it up again. The task list with per-task e
      against `git rebase -i` on a copy.
 2. **P3-20, Phase 3 gate**, then the branch-coverage push. The largest gaps are Readers,
    DiffPanel, Markers, ChangesPanel and Journal.
-3. **Phase 4** (P4-01 … P4-06).
+3. **User feedback round 2** (UF-10 … UF-25 in REBUILD_TASKS.md), not started.
+4. **Phase 4** (P4-01 … P4-06).
 
 ## Working notes
 
