@@ -1237,10 +1237,11 @@ Requested by the user after P3-14 (UF-10 … UF-31). Not started.
 - **Do:** when the Working tree is selected, the Changes header shows the zero commit ID
   before "Working tree", and "Compare with HEAD" (see UF-15) is disabled.
 
-### UF-30 Author in Info is plain text
-- **Do:** the author line in the change information (Info panel) is plain text instead of a
-  selectable item. Its context-menu actions (copy name/email, "Edit author...") stay reachable
-  elsewhere, for example next to the author or in the commit menu.
+### UF-30 Author in Info has no button effect
+- **Do:** the author line in the change information (Info panel) keeps its right-click
+  context menu (copy name/email, "Edit author...") where it is, but shows no hover or click
+  highlight, because clicking it does nothing. General rule: items whose click does nothing
+  must not look or behave like buttons.
 
 ### UF-31 Toolbar branch label and commit ID are plain text
 - **Do:** the toolbar's branch label and HEAD commit ID are plain text instead of selectables
