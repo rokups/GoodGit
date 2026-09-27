@@ -75,12 +75,14 @@ GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "B
     s.settle();
 }
 
-GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNSET-UPSTREAM", "BR-FF-UPSTREAM")
+GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNSET-UPSTREAM", "BR-FF-UPSTREAM",
+    "BR-SET-UPSTREAM-FILTER")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "behind", "origin/main~1"});
     s.git(repo, {"branch", "--set-upstream-to=origin/main", "behind"});
     s.git(repo, {"branch", "loose", "HEAD"});
+    s.git(repo, {"push", "-q", "origin", "HEAD~1:refs/heads/feature"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     s.contextMenu(branchRow("behind").c_str(), "Fast-forward to upstream");
@@ -93,6 +95,22 @@ GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNS
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "branch.loose.merge"}).ok(); }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "--abbrev-ref", "loose@{upstream}"}), "origin/main");
+    // The branch list has a filter: typing narrows it, Enter picks the first match.
+    s.contextMenu(branchRow("loose").c_str(), "Set upstream...");
+    GG_REQUIRE(s.dialogOpen("Set upstream"));
+    ctx->ItemClick("//Set upstream/Upstream of loose##upstream");
+    ctx->Yield(2);
+    ctx->KeyCharsAppend("feat");
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemExists(("//$FOCUSED/" + Scenario::escapeRef("origin/feature")).c_str()));
+    GG_CHECK(!ctx->ItemExists(("//$FOCUSED/" + Scenario::escapeRef("origin/main")).c_str()));
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(2);
+    s.dialogButton("Set upstream", "Set");
+    GG_CHECK(s.waitUntil([&] {
+        return s.gitOut(repo, {"rev-parse", "--abbrev-ref", "loose@{upstream}"}) == "origin/feature";
+    }));
+    s.settle();
     s.contextMenu(branchRow("loose").c_str(), "Unset upstream");
     GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(repo, {"config", "branch.loose.merge"}).ok(); }));
     s.settle();

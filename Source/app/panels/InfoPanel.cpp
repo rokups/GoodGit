@@ -108,7 +108,7 @@ void InfoPanel::draw(bool* open)
         };
         label("Author");
         const std::string author = d.authorName + " <" + d.authorEmail + ">";
-        ImGui::Selectable((author + "###author").c_str());
+        plainText((author + "###author").c_str());
         if (ImGui::BeginPopupContextItem("##author_menu", ImGuiPopupFlags_MouseButtonRight)) {
             if (ImGui::MenuItem("Copy name"))
                 ImGui::SetClipboardText(d.authorName.c_str());
@@ -151,10 +151,13 @@ void InfoPanel::draw(bool* open)
             ImGui::PopStyleColor();
         }
         label("Commit");
-        ImGui::TextUnformatted(d.id.hex().c_str());
+        const std::string shortId = m_session.shortId(d.id);
+        idText(d.id.hex(), shortId.size(), "commit_id_text");
         ImGui::SameLine();
         if (ImGui::SmallButton(ICON_MS_CONTENT_COPY "###commit_id"))
-            ImGui::SetClipboardText(d.id.hex().c_str());
+            copyId(shortId, d.id.hex());
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Copy the short ID (%s)", kCopyIdHint);
         if (const ConflictList* conflicts = m_session.conflictsOf(d.id)) {
             label("Conflicts");
             for (size_t i = 0; i < conflicts->size(); ++i) {

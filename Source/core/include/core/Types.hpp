@@ -245,7 +245,6 @@ enum class DiffKind {
     Commits,         // a vs b
     Staged,          // HEAD vs index
     Unstaged,        // index vs working tree (untracked included)
-    WorktreeVsHead,  // HEAD vs working tree
     StashWorktree,   // stash: base vs stash commit (working tree part)
     StashIndex,      // stash: base vs index commit
     StashUntracked,  // stash: untracked commit

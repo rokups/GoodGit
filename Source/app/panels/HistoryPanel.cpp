@@ -15,6 +15,20 @@
 namespace ggui {
 
 namespace {
+
+// The current commit's outline reaches past half a lane: the graph starts this far into its cell
+// so the table's left edge does not clip it.
+float graphInset(float laneWidth)
+{
+    const float rowHeight = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
+    const float thickness = std::max(1.5f, ImGui::GetFontSize() * 0.12f);
+    return std::max(0.0f, rowHeight * 0.32f + thickness * 2.0f - laneWidth * 0.5f);
+}
+
+float laneX(float cellX, int lane, float laneWidth)
+{
+    return cellX + graphInset(laneWidth) + laneWidth * (static_cast<float>(lane) + 0.5f);
+}
 ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
 } // namespace
 
@@ -433,7 +447,7 @@ void HistoryPanel::drawGraphCell(const core::HistoryRow& row, float laneWidth, f
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float top = origin.y - ImGui::GetStyle().CellPadding.y;
-    const float x0 = origin.x + laneWidth * 0.5f;
+    const float x0 = laneX(origin.x, 0, laneWidth);
     const float ys[3] = {top, top + rowHeight * 0.5f, top + rowHeight};
     const Palette& p = theme().palette();
     const float thickness = std::max(1.5f, ImGui::GetFontSize() * 0.12f);
@@ -473,6 +487,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
 {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2);
     ImGui::TableSetColumnIndex(0);
+    const ImVec2 cellStart = ImGui::GetCursorScreenPos();
     const Selection& sel = m_session.selection();
     const bool selected = sel.kind == kind;
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
@@ -500,13 +515,21 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
             actions.unstageAll();
         ImGui::EndPopup();
     }
+    const ImU32 text = (kind == SelKind::WorkingTree && m_nativeConflicts) ? theme().palette().conflict : ImGui::GetColorU32(ImGuiCol_Text);
+    if (!m_graphShown) {
+        ImGui::SetCursorScreenPos(cellStart);
+        ImGui::PushStyleColor(ImGuiCol_Text, text);
+        ImGui::TextUnformatted(label);
+        ImGui::PopStyleColor();
+        return;
+    }
     // Node in lane 0 (hollow), dashed line hint toward HEAD.
     ImDrawList* dl = ImGui::GetWindowDrawList();
     // The HEAD lane (0) continues from here down to HEAD's row; the Index row sits on it.
     const float pad = ImGui::GetStyle().CellPadding.y;
     const ImVec2 min = ImGui::GetItemRectMin();
     const float h = ImGui::GetItemRectSize().y;
-    const ImVec2 c(min.x + laneWidth * 0.5f, min.y + h * 0.5f);
+    const ImVec2 c(laneX(min.x, 0, laneWidth), min.y + h * 0.5f);
     const Palette& p = theme().palette();
     const ImU32 col = (kind == SelKind::WorkingTree && m_nativeConflicts) ? p.conflict : p.dim;
     const float r = h * 0.22f;
@@ -516,7 +539,6 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     dl->AddCircle(c, r, col, 0, thickness);
     dl->AddLine(ImVec2(c.x, c.y + r), ImVec2(c.x, min.y + h + pad), col, thickness);
     ImGui::TableSetColumnIndex(1);
-    const ImU32 text = (kind == SelKind::WorkingTree && m_nativeConflicts) ? p.conflict : ImGui::GetColorU32(ImGuiCol_Text);
     ImGui::PushStyleColor(ImGuiCol_Text, text);
     ImGui::TextUnformatted(label);
     ImGui::PopStyleColor();
@@ -584,8 +606,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         m_session.showPushToDialog(branchesHere.front());
     ImGui::Separator();
     if (ImGui::BeginMenu("Copy")) {
-        if (ImGui::MenuItem("ID"))
-            ImGui::SetClipboardText(hex.c_str());
+        copyIdMenuItem("ID", row.shortId, hex);
         if (ImGui::MenuItem("Full description")) {
             std::string text = hex + " " + row.subject + "\nAuthor: " + row.author + " <" + row.authorEmail
                 + ">\nDate: " + core::formatTime(row.time, true);
@@ -637,25 +658,29 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         ImGui::SetScrollHereY(0.4f);
         m_scrollToSelection = false;
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        ImGui::SetTooltip("%s\n%s <%s>\n%s", row.id.hex().c_str(), row.author.c_str(), row.authorEmail.c_str(),
-            core::formatTime(row.time, true).c_str());
+    if (!m_scrolling && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        idTooltip(row.id.hex(), row.shortId.size(),
+            row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true));
     dragAndDrop(row);
     drawRowMenu(row);
-    drawGraphCell(row, laneWidth, rowHeight, cellStart);
-    if (row.parents.size() > 1) {
+    if (m_graphShown)
+        drawGraphCell(row, laneWidth, rowHeight, cellStart);
+    if (m_graphShown && row.parents.size() > 1) {
         const float r = rowHeight * 0.32f;
-        const ImVec2 c(cellStart.x + laneWidth * 0.5f + static_cast<float>(row.lane) * laneWidth,
+        const ImVec2 c(laneX(cellStart.x, row.lane, laneWidth),
             cellStart.y - ImGui::GetStyle().CellPadding.y + rowHeight * 0.5f);
         ImGui::SetCursorScreenPos(ImVec2(c.x - r, c.y - r));
         if (ImGui::InvisibleButton("###merge_toggle", ImVec2(r * 2, r * 2)))
             toggleMerge(row.id);
-        if (ImGui::IsItemHovered())
+        if (!m_scrolling && ImGui::IsItemHovered())
             ImGui::SetTooltip(row.collapsed ? "Expand merged history (%d commits hidden)" : "Collapse merged history",
                 row.collapsedCount);
     }
 
-    ImGui::TableSetColumnIndex(1);
+    if (m_graphShown)
+        ImGui::TableSetColumnIndex(1);
+    else
+        ImGui::SetCursorScreenPos(cellStart); // the row's Selectable shares the first column
     ImGui::PushStyleColor(ImGuiCol_Text, p.dim);
     ImGui::TextUnformatted(row.shortId.c_str());
     ImGui::PopStyleColor();
@@ -696,11 +721,75 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         ImGui::TextUnformatted(row.subject.c_str());
     ImGui::PopStyleColor();
 
-    ImGui::TableSetColumnIndex(2);
+    ImGui::TableSetColumnIndex(column(2));
     ImGui::TextUnformatted(row.author.c_str());
-    ImGui::TableSetColumnIndex(3);
+    ImGui::TableSetColumnIndex(column(3));
     ImGui::TextUnformatted(core::formatTime(row.time).c_str());
     ImGui::PopID();
+}
+
+void HistoryPanel::restoreScrollAnchor(int virtualRows, float pitch)
+{
+    if (virtualRows != m_virtualRows)
+        m_restoreAnchor = true;
+    m_virtualRows = virtualRows;
+    if (m_scrollToSelection) {
+        // Scrolling to the selection wins.
+        m_restoreAnchor = false;
+        m_wantScroll.reset();
+    }
+    if (m_restoreAnchor && m_anchor) {
+        std::unordered_map<core::Oid, size_t, core::OidHash> wanted;
+        for (size_t k = 0; k < m_anchor->ids.size(); ++k)
+            wanted.emplace(m_anchor->ids[k], k);
+        size_t best = m_anchor->ids.size();
+        int pos = -1;
+        for (size_t i = 0; i < m_visible.size() && best > 0; ++i)
+            if (auto it = wanted.find(m_rows[static_cast<size_t>(m_visible[i])].id); it != wanted.end() && it->second < best) {
+                best = it->second;
+                pos = static_cast<int>(i);
+            }
+        if (pos >= 0) {
+            const int delta = virtualRows + pos - m_anchor->slots[best];
+            m_wantScroll = std::max(0.0f, m_anchor->scrollY + static_cast<float>(delta) * pitch);
+            m_wantScrollFrames = 0;
+            m_restoreAnchor = false;
+        } else if (!m_loading) {
+            m_restoreAnchor = false; // gone: leave the scroll where it is
+        }
+    }
+    if (m_wantScroll)
+        ImGui::SetNextWindowScroll(ImVec2(-1.0f, *m_wantScroll));
+}
+
+void HistoryPanel::captureScrollAnchor(int virtualRows)
+{
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    if (m_wantScroll) {
+        // Scrolling is clamped to last frame's content height: when rows were added the target
+        // may be reached a frame later.
+        if (std::abs(w->Scroll.y - *m_wantScroll) <= 0.5f || ++m_wantScrollFrames > 3)
+            m_wantScroll.reset();
+        return;
+    }
+    if (m_restoreAnchor)
+        return; // still waiting for the anchored rows (a reload streams in)
+    std::vector<std::pair<float, int>> inView; // (top, display index)
+    const float top = w->InnerClipRect.Min.y + ImGui::TableGetHeaderRowHeight();
+    for (const auto& [index, y] : m_rowTops)
+        if (y >= top - 0.5f && y < w->InnerClipRect.Max.y)
+            inView.emplace_back(y, index);
+    std::sort(inView.begin(), inView.end());
+    ScrollAnchor a;
+    a.scrollY = w->Scroll.y;
+    for (const auto& [y, index] : inView) {
+        a.ids.push_back(m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(index)])].id);
+        a.slots.push_back(virtualRows + index);
+    }
+    if (a.ids.empty())
+        m_anchor.reset();
+    else
+        m_anchor = std::move(a);
 }
 
 void HistoryPanel::draw(bool* open)
@@ -742,6 +831,7 @@ void HistoryPanel::draw(bool* open)
     if (m_visibleDirty) {
         m_visible = visibleIndexes();
         m_visibleDirty = false;
+        m_restoreAnchor = true;
     }
 
     // Keyboard while the panel is focused (§4.2 keys).
@@ -769,21 +859,32 @@ void HistoryPanel::draw(bool* open)
     }
 
     const float laneWidth = ImGui::GetFontSize() * 0.9f;
-    const float graphWidth = std::min(laneWidth * static_cast<float>(std::max(1, m_maxLanes)) + laneWidth * 0.5f,
+    const float graphWidth = std::min(graphInset(laneWidth) + laneWidth * static_cast<float>(std::max(1, m_maxLanes)) + laneWidth * 0.5f,
         ImGui::GetContentRegionAvail().x * 0.4f);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
-    if (ImGui::BeginTable("##hist_table", 4, flags)) {
+    m_graphShown = m_appliedFilter.empty() && !m_conflictedOnly;
+    const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
+    const int virtualRows = (m_snapshot && !m_snapshot->bare) ? (m_hasStaged ? 2 : 1) : 0;
+    restoreScrollAnchor(virtualRows, pitch);
+    if (ImGui::BeginTable(m_graphShown ? "##hist_table" : "##hist_table_filtered", m_graphShown ? 4 : 3, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("##graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, graphWidth);
+        if (m_graphShown)
+            ImGui::TableSetupColumn("##graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, graphWidth);
         ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Author", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 9);
         ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8);
         ImGui::TableHeadersRow();
         // The graph column follows the lane count (the table would otherwise keep its first width).
-        if (std::abs(ImGui::GetCurrentTable()->Columns[0].WidthRequest - graphWidth) > 0.5f)
+        if (m_graphShown && std::abs(ImGui::GetCurrentTable()->Columns[0].WidthRequest - graphWidth) > 0.5f)
             ImGui::TableSetColumnWidth(0, graphWidth);
+        // Wheel, scrollbar or keyboard: any change of the scroll position this frame.
+        const float scrollY = ImGui::GetScrollY();
+        if (std::abs(scrollY - m_lastScrollY) > 0.5f)
+            m_scrolledAt = ImGui::GetTime();
+        m_lastScrollY = scrollY;
+        m_scrolling = m_scrolledAt >= 0.0 && ImGui::GetTime() - m_scrolledAt < 0.3;
         if (m_snapshot && !m_snapshot->bare) {
             std::string wtLabel = "Working tree";
             if (m_nativeConflicts)
@@ -812,7 +913,7 @@ void HistoryPanel::draw(bool* open)
         if (m_truncated) {
             // The walk stops after a page: the last row loads the next one.
             ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2);
-            ImGui::TableSetColumnIndex(1);
+            ImGui::TableSetColumnIndex(column(1));
             ImGui::BeginDisabled(m_loading);
             const std::string more = std::string(ICON_MS_EXPAND_MORE " Load more (") + std::to_string(m_rows.size())
                 + " commits shown)###hist_load_more";
@@ -820,14 +921,16 @@ void HistoryPanel::draw(bool* open)
                 showMore();
             ImGui::EndDisabled();
         }
+        captureScrollAnchor(virtualRows);
         ImGui::EndTable();
         drawDropChooser();
-        const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
         m_rowPitchOk = true;
         for (size_t k = 1; k < m_rowTops.size(); ++k)
             if (m_rowTops[k].first == m_rowTops[k - 1].first + 1
                 && std::abs(m_rowTops[k].second - m_rowTops[k - 1].second - pitch) > 0.5f)
                 m_rowPitchOk = false;
+    } else {
+        ImGui::GetCurrentContext()->NextWindowData.ClearFlags(); // the scroll was for the table
     }
     ImGui::PopStyleVar();
     ImGui::End();

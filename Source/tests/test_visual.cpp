@@ -112,6 +112,37 @@ GG_TEST("visual", "graph lines are continuous from row to row", "HIST-GRAPH", "H
     GG_CHECK(history.rowPitchConsistent());
 }
 
+GG_TEST("visual", "graph is not clipped at the left edge", "HIST-GRAPH-NOT-CLIPPED")
+{
+    // HEAD on a merge commit: the largest outline, in lane 0.
+    const fs::path repo = s.fixture(Recipe::Merges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->history().loading() && !s.session()->history().rows().empty(); }));
+    ctx->Yield(3);
+    ImGuiTable* table = ImGui::TableFindByID(ctx->GetID("//History/##hist_table"));
+    GG_REQUIRE(table != nullptr && table->InnerWindow != nullptr);
+    const ImRect clip = table->Columns[0].ClipRect;
+    // Everything drawn with the graph column's clip rectangle lies inside it horizontally.
+    const ImDrawList* dl = table->InnerWindow->DrawList;
+    int checked = 0;
+    for (const ImDrawCmd& cmd : dl->CmdBuffer) {
+        if (std::abs(cmd.ClipRect.x - clip.Min.x) > 0.5f || std::abs(cmd.ClipRect.z - clip.Max.x) > 0.5f)
+            continue;
+        for (unsigned k = 0; k < cmd.ElemCount; ++k) {
+            const ImDrawVert& v = dl->VtxBuffer[static_cast<int>(cmd.VtxOffset + dl->IdxBuffer[static_cast<int>(cmd.IdxOffset + k)])];
+            if (v.pos.y < cmd.ClipRect.y || v.pos.y > cmd.ClipRect.w)
+                continue;
+            ++checked;
+            if (v.pos.x < clip.Min.x - 0.5f) {
+                ctx->LogError("graph vertex at x=%.1f left of the column (%.1f)", v.pos.x, clip.Min.x);
+                GG_CHECK(false);
+                return;
+            }
+        }
+    }
+    GG_CHECK(checked > 100);
+}
+
 GG_TEST("visual", "screenshots of the main views", "HIST-GRAPH")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);

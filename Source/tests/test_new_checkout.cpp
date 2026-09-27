@@ -129,14 +129,16 @@ GG_TEST("checkout", "local changes block a switch: Stash and switch", "ACT-CHECK
 }
 
 GG_TEST("checkout", "move HEAD to parent and child", "ACT-MOVE-HEAD-PARENT", "ACT-MOVE-HEAD-CHILD", "MENU-COMMIT-PREV",
-    "MENU-COMMIT-NEXT", "TB-PREV", "TB-NEXT")
+    "MENU-COMMIT-NEXT", "TB-NO-PREV-NEXT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string main = s.head(repo);
     const std::string p1 = s.revParse(repo, "HEAD~1");
     const std::string p2 = s.revParse(repo, "HEAD~2");
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_prev");
+    // The toolbar has no Previous / Next buttons (the Commit menu has the actions).
+    GG_CHECK(!s.itemExists("//##Toolbar/###tb_prev") && !s.itemExists("//##Toolbar/###tb_next"));
+    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent");
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, p1); }));
     s.settle();
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "(detached)");
@@ -147,7 +149,7 @@ GG_TEST("checkout", "move HEAD to parent and child", "ACT-MOVE-HEAD-PARENT", "AC
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, p1); }));
     s.settle();
     // The child that is a branch tip switches to the branch again.
-    ctx->ItemClick("//##Toolbar/###tb_next");
+    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to child");
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, main) && symbolicHead(s, repo) == "main"; }));
     s.settle();
 }

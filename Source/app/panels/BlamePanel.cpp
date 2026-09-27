@@ -101,8 +101,7 @@ void BlamePanel::drawLineMenu(int index)
     ImGui::Separator();
     if (ImGui::MenuItem("Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
-    if (ImGui::MenuItem("Copy commit ID", nullptr, false, committed))
-        ImGui::SetClipboardText(line.commit.hex().c_str());
+    copyIdMenuItem("Copy commit ID", m_session.shortId(line.commit), line.commit.hex(), committed);
     ImGui::Separator();
     if (ImGui::MenuItem("Select change block"))
         blockText(index, &m_selFirst, &m_selLast);
@@ -211,8 +210,9 @@ void BlamePanel::draw(bool* open)
                     if (l.commit.isNull())
                         ImGui::SetTooltip("Not committed yet");
                     else
-                        ImGui::SetTooltip("%s\n%s\n%s, %s\n%s:%d", l.commit.hex().c_str(), l.summary.c_str(),
-                            l.author.c_str(), core::formatTime(l.time).c_str(), l.origPath.c_str(), l.origLine);
+                        idTooltip(l.commit.hex(), m_session.shortId(l.commit).size(),
+                            l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"
+                                + std::to_string(l.origLine));
                 }
                 drawLineMenu(i);
                 ImGui::TableSetColumnIndex(1);

@@ -221,7 +221,7 @@ GG_TEST("undo", "every everyday mutation can be undone", "UNDO-ALL-MUTATIONS")
     s.commitFile(other, "fetched.txt", "x\n", "To fetch");
     s.git(other, {"push", "-q", "origin", "main"});
     check("fetch", [&] { ctx->ItemClick("//##Toolbar/###tb_fetch"); });
-    check("move HEAD to parent", [&] { ctx->ItemClick("//##Toolbar/###tb_prev"); });
+    check("move HEAD to parent", [&] { ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent"); });
 }
 
 } // namespace ggtest

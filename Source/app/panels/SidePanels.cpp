@@ -44,6 +44,38 @@ bool visibilityRow(const std::string& rawId, const std::string& label, bool visi
     return clicked;
 }
 
+// The Remotes panel's menu for a remote; also on the remote and its remote-tracking branches in
+// Branches.
+void remoteMenuItems(Session& session, const core::RemoteInfo& r)
+{
+    auto& actions = session.actions();
+    const bool free = actions.busy().empty();
+    const auto snap = session.snapshot();
+    const auto* current = snap ? snap->currentBranch() : nullptr;
+    if (ImGui::MenuItem("Copy name"))
+        ImGui::SetClipboardText(r.name.c_str());
+    ImGui::Separator();
+    if (ImGui::MenuItem("Fetch", nullptr, false, free))
+        actions.fetch(r.name, false, false);
+    const bool pullable = free && current && current->upstream.rfind(r.name + "/", 0) == 0;
+    if (ImGui::MenuItem("Pull", nullptr, false, pullable))
+        actions.pull(PullMode::Config);
+    bool prune = r.pruneOnFetch;
+    if (ImGui::MenuItem("Prune on fetch", nullptr, &prune, free))
+        actions.setPruneOnFetch(r.name, prune);
+    if (ImGui::MenuItem("Edit URL...", nullptr, false, free))
+        session.showEditRemoteDialog(r.name);
+    if (ImGui::MenuItem("Delete", nullptr, false, free)) {
+        Form f;
+        f.title = "Delete remote";
+        f.message = "Delete the remote '" + r.name + "' and its remote-tracking branches?";
+        const std::string name = r.name;
+        f.buttons.push_back({"Delete", [&actions, name](Form&) { actions.removeRemote(name); }});
+        f.buttons.push_back({"Cancel", {}});
+        session.app().dialogs().open(std::move(f));
+    }
+}
+
 } // namespace
 
 // ---- Branches -----------------------------------------------------------------------------------
@@ -173,7 +205,17 @@ void BranchesPanel::draw(bool* open)
             byRemote[r.remote].push_back(&r);
     for (const auto& [remote, list] : byRemote) {
         ImGui::PushID(("remote_group_" + remote).c_str());
-        if (ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        const core::RemoteInfo* info = nullptr;
+        for (const auto& r : m_snapshot->remotes)
+            if (r.name == remote)
+                info = &r;
+        const bool nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+        // The remote has the Remotes panel's menu.
+        if (info && ImGui::BeginPopupContextItem("##remote_menu")) {
+            remoteMenuItems(m_session, *info);
+            ImGui::EndPopup();
+        }
+        if (nodeOpen) {
             for (const auto* r : list) {
                 const std::string full = "refs/remotes/" + r->name;
                 if (visibilityRow("rbranch_" + r->name, r->name, history.refVisible(full), false, p.remote))
@@ -183,6 +225,11 @@ void BranchesPanel::draw(bool* open)
                         m_session.revealCommit(r->target);
                     if (ImGui::MenuItem("Copy name"))
                         ImGui::SetClipboardText(r->name.c_str());
+                    // ... and its remote's menu.
+                    if (info && ImGui::BeginMenu(("Remote " + remote).c_str())) {
+                        remoteMenuItems(m_session, *info);
+                        ImGui::EndMenu();
+                    }
                     ImGui::EndPopup();
                 }
             }
@@ -220,8 +267,7 @@ void TagsPanel::draw(bool* open)
         if (!containsNoCase(t.name, m_filter))
             continue;
         const std::string full = "refs/tags/" + t.name;
-        const std::string label = t.name + (t.annotated ? "  (annotated)" : "");
-        if (visibilityRow("tag_" + t.name, label, history.refVisible(full), false, theme().palette().tag))
+        if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tag))
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty())
             ImGui::SetTooltip("%s", t.message.c_str());
@@ -325,7 +371,6 @@ void RemotesPanel::draw(bool* open)
         actions.fetch("", false, false);
     ImGui::EndDisabled();
     if (snap) {
-        const auto* current = snap->currentBranch();
         for (const auto& r : snap->remotes) {
             ImGui::PushID(("remote_" + r.name).c_str());
             ImGui::Selectable((r.name + "  " + r.url + (r.pruneOnFetch ? "  (prune)" : "") + "###row").c_str());
@@ -333,28 +378,7 @@ void RemotesPanel::draw(bool* open)
                 ImGui::SetTooltip("fetch: %s\npush: %s%s", r.url.c_str(), r.pushUrl.empty() ? r.url.c_str() : r.pushUrl.c_str(),
                     r.pruneOnFetch ? "\nprune on fetch" : "");
             if (ImGui::BeginPopupContextItem("##remote_menu")) {
-                if (ImGui::MenuItem("Copy name"))
-                    ImGui::SetClipboardText(r.name.c_str());
-                ImGui::Separator();
-                if (ImGui::MenuItem("Fetch", nullptr, false, free))
-                    actions.fetch(r.name, false, false);
-                const bool pullable = free && current && current->upstream.rfind(r.name + "/", 0) == 0;
-                if (ImGui::MenuItem("Pull", nullptr, false, pullable))
-                    actions.pull(PullMode::Config);
-                bool prune = r.pruneOnFetch;
-                if (ImGui::MenuItem("Prune on fetch", nullptr, &prune, free))
-                    actions.setPruneOnFetch(r.name, prune);
-                if (ImGui::MenuItem("Edit URL...", nullptr, false, free))
-                    m_session.showEditRemoteDialog(r.name);
-                if (ImGui::MenuItem("Delete", nullptr, false, free)) {
-                    Form f;
-                    f.title = "Delete remote";
-                    f.message = "Delete the remote '" + r.name + "' and its remote-tracking branches?";
-                    const std::string name = r.name;
-                    f.buttons.push_back({"Delete", [&actions, name](Form&) { actions.removeRemote(name); }});
-                    f.buttons.push_back({"Cancel", {}});
-                    m_session.app().dialogs().open(std::move(f));
-                }
+                remoteMenuItems(m_session, r);
                 ImGui::EndPopup();
             }
             ImGui::PopID();
@@ -393,9 +417,9 @@ void StashesPanel::draw(bool* open)
             if (ImGui::Selectable((label + "###row").c_str(), selected))
                 m_session.select(Selection{SelKind::Stash, s.commit, s.index});
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                ImGui::SetTooltip("%s\nbase %s\n%s%s%s", s.commit.hex().c_str(), s.base.shortHex(10).c_str(),
-                    core::formatTime(s.time).c_str(), s.hasIndexChanges ? "\nhas index changes" : "",
-                    s.hasUntracked ? "\nhas untracked files" : "");
+                idTooltip(s.commit.hex(), m_session.shortId(s.commit).size(),
+                    "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
+                        + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
             // The menu belongs to the row (the last item before it must be the Selectable).
             if (ImGui::BeginPopupContextItem("##stash_menu")) {
                 if (ImGui::MenuItem("Apply", nullptr, false, free))
@@ -494,10 +518,8 @@ void ReflogPanel::draw(bool* open)
                     + e.newId.shortHex() + "###reflog_" + std::to_string(i);
                 ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
                 if (ImGui::BeginPopupContextItem("##reflog_menu")) {
-                    if (ImGui::MenuItem("Copy new ID"))
-                        ImGui::SetClipboardText(e.newId.hex().c_str());
-                    if (ImGui::MenuItem("Copy old ID", nullptr, false, !e.oldId.isNull()))
-                        ImGui::SetClipboardText(e.oldId.hex().c_str());
+                    copyIdMenuItem("Copy new ID", m_session.shortId(e.newId), e.newId.hex());
+                    copyIdMenuItem("Copy old ID", m_session.shortId(e.oldId), e.oldId.hex(), !e.oldId.isNull());
                     if (ImGui::MenuItem("Reveal new commit"))
                         m_session.revealCommit(e.newId);
                     if (ImGui::MenuItem("Reveal old commit", nullptr, false, !e.oldId.isNull()))

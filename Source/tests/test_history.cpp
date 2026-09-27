@@ -104,7 +104,7 @@ GG_TEST("history", "Working tree and Index rows", "HIST-WT-ROW", "HIST-INDEX-ROW
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(s.itemExists("//History/**/###row_wt"));
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/**/###row_index"); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
     ctx->ItemClick("//History/**/###row_index");
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::Index);
     // Unstaging everything removes the Index row (the watcher notices the plain git step).
@@ -152,7 +152,8 @@ GG_TEST("history", "scope follows the side panels", "HIST-SCOPE", "BR-TOGGLE", "
     GG_CHECK(s.waitUntil([&] { return findRow(s, mainTip) != nullptr && findRow(s, topic) != nullptr; }));
 }
 
-GG_TEST("history", "search by message, ID, branch and tag", "HIST-SEARCH")
+GG_TEST("history", "search by message, ID, branch and tag; no graph while filtering", "HIST-SEARCH",
+    "HIST-FILTER-NO-GRAPH")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     s.git(repo, {"tag", "v-special", "feature~1"});
@@ -178,8 +179,25 @@ GG_TEST("history", "search by message, ID, branch and tag", "HIST-SEARCH")
     expectOnly(s.revParse(repo, "topic").substr(0, 10).c_str(), {s.revParse(repo, "topic")});
     expectOnly("v-special", {s.revParse(repo, "feature~1")});
     expectOnly("topic", {s.revParse(repo, "topic")});
+    // While filtering, the graph column is hidden; rows still read and select as usual.
+    ctx->Yield(2);
+    GG_CHECK(!history.graphShown());
+    ImGuiTable* filtered = ImGui::TableFindByID(ctx->GetID("//History/##hist_table_filtered"));
+    GG_CHECK(filtered != nullptr && filtered->ColumnsCount == 3);
+    GG_CHECK(s.itemText(rowRef(s.revParse(repo, "topic")).c_str()).rfind(findRow(s, s.revParse(repo, "topic"))->shortId + " Topic", 0) == 0);
+    ctx->ItemClick(rowRef(s.revParse(repo, "topic")).c_str());
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.revParse(repo, "topic"));
     ctx->ItemInputValue("//History/##hist_filter", "");
     GG_CHECK(s.waitUntil([&] { return history.visibleIds().size() == history.rows().size(); }));
+    ctx->Yield(2);
+    GG_CHECK(history.graphShown());
+    // "Conflicted only" is a filter too.
+    ctx->ItemClick("//History/Conflicted only##hist_conflicted");
+    ctx->Yield(2);
+    GG_CHECK(!history.graphShown());
+    ctx->ItemClick("//History/Conflicted only##hist_conflicted");
+    ctx->Yield(2);
+    GG_CHECK(history.graphShown());
 }
 
 GG_TEST("history", "merges start collapsed; expand and collapse merged history", "HIST-MERGE-EXPAND",
@@ -227,19 +245,113 @@ GG_TEST("history", "keyboard navigation", "HIST-KEY-UPDOWN")
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
 }
 
-GG_TEST("history", "copy ID and full description", "HIST-CTX-COPY-ID", "HIST-CTX-COPY-DESC")
+GG_TEST("history", "copy ID and full description; tooltip ID", "HIST-CTX-COPY-ID", "HIST-CTX-COPY-DESC",
+    "APP-COPY-ID-SHIFT", "APP-ID-DIMMED")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     const std::string id = s.revParse(repo, "HEAD~2");
+    const std::string shortId = s.gitOut(repo, {"rev-parse", "--short", id});
     s.contextMenu(rowRef(id).c_str(), "Copy/ID");
+    GG_CHECK_STR_EQ(s.clipboard(), shortId);
+    ctx->ItemClick(rowRef(id).c_str(), ImGuiMouseButton_Right);
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->MenuClick("//$FOCUSED/Copy/ID");
+    ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK_STR_EQ(s.clipboard(), id);
+    // The row tooltip starts with the full ID, its short prefix undimmed.
+    ctx->MouseMove(rowRef(id).c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.idShownDimmed("//##Tooltip_00", id, shortId.size()));
     s.contextMenu(rowRef(id).c_str(), "Copy/Full description");
     const std::string desc = s.clipboard();
     GG_CHECK(desc.rfind(id + " Add f3", 0) == 0);
     GG_CHECK(desc.find("Author: Test User <test@example.com>") != std::string::npos);
     // Right-click selected the row.
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), id);
+}
+
+namespace {
+
+// A history taller than the panel: 150 commits on main after the Linear fixture.
+fs::path tallRepo(Scenario& s)
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int i = 0; i < 150; ++i)
+        s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Main " + std::to_string(i)});
+    return repo;
+}
+
+float rowTop(Scenario& s, const std::string& hex)
+{
+    const ImGuiTestItemInfo info = s.ctx->ItemInfo(rowRef(hex).c_str(), ImGuiTestOpFlags_NoError);
+    return info.ID ? info.RectFull.Min.y : -1.0f;
+}
+
+} // namespace
+
+GG_TEST("history", "scroll position stays anchored on the rows in view", "HIST-SCROLL-ANCHOR")
+{
+    const fs::path repo = tallRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading() && history.rows().size() > 150; }));
+    // Walk down to a row in the middle with the keyboard (the list scrolls along).
+    const std::string viewed = s.revParse(repo, "HEAD~75");
+    ctx->ItemClick(rowRef(s.head(repo)).c_str());
+    for (int i = 0; i < 75; ++i)
+        ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    GG_REQUIRE(s.session()->selection().id.hex() == viewed);
+    const float before = rowTop(s, viewed);
+    GG_REQUIRE(before > 0.0f);
+    // New commits made with plain git arrive at the top (a refresh reloads History).
+    for (int i = 0; i < 5; ++i)
+        s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Newer " + std::to_string(i)});
+    GG_REQUIRE(s.waitUntil([&] { return history.row(ggui::core::Oid::fromHex(s.head(repo))) != nullptr && !history.loading(); }));
+    ctx->Yield(5);
+    GG_CHECK(std::abs(rowTop(s, viewed) - before) < 1.0f);
+    // The Index row appears above the commits.
+    s.write(repo, "staged.txt", "x\n");
+    s.git(repo, {"add", "staged.txt"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
+    ctx->Yield(5);
+    GG_CHECK(std::abs(rowTop(s, viewed) - before) < 1.0f);
+    // Scrolling to the selection still wins (keyboard navigation).
+    for (int i = 0; i < 40; ++i)
+        ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    const std::string below = s.revParse(repo, "HEAD~" + std::to_string(75 + 5 + 40));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), below);
+    GG_CHECK(rowTop(s, below) > 0.0f);
+}
+
+GG_TEST("history", "tooltips wait until scrolling stops", "HIST-TOOLTIP-SCROLL")
+{
+    const fs::path repo = tallRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading() && history.rows().size() > 150; }));
+    const std::string row = s.revParse(repo, "HEAD~10");
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    ctx->MouseMove(rowRef(row).c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse).
+    ctx->MouseWheelY(-1.0f);
+    ctx->Yield(2);
+    GG_CHECK(history.scrolling());
+    GG_CHECK(!tipShown());
+    ctx->MouseWheelY(-1.0f);
+    ctx->SleepNoSkip(0.15f, 0.05f);
+    GG_CHECK(!tipShown());
+    // Once it stops, tooltips come back.
+    ctx->SleepNoSkip(1.2f, 0.1f);
+    GG_CHECK(!history.scrolling());
+    GG_CHECK(tipShown());
 }
 
 GG_TEST("history", "large history: first page, Show more, reveal, cancel", "HIST-SHOW-MORE", "HIST-REVEAL",

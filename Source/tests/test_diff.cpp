@@ -130,7 +130,7 @@ GG_TEST("diff", "unified view, context lines, expandable context", "DIFF-UNIFIED
     GG_CHECK(!s.itemExists((body(s) + "/###expand_1").c_str()));
 }
 
-GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE", "DIFF-SYNTAX")
+GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE", "DIFF-SYNTAX", "DIFF-SBS-CODE-ONLY")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -142,7 +142,16 @@ GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE
     // Two editors, removed lines left and added lines right, aligned line for line.
     GG_CHECK(s.itemExists(s.child(body(s).c_str(), "##sbs_left").c_str()));
     GG_CHECK(s.itemExists(s.child(body(s).c_str(), "##sbs_right").c_str()));
-    GG_CHECK(s.itemExists((s.child(body(s).c_str(), "##sbs_left") + "/###hunk_0").c_str()));
+    // Only code: no hunk header lines (the unified view keeps them).
+    for (const char* side : {"##sbs_left", "##sbs_right"}) {
+        const std::string editor = s.child(body(s).c_str(), side);
+        GG_CHECK(!s.itemExists((editor + "/###hunk_0").c_str()));
+        const auto lines = s.drawnText(editor.c_str());
+        GG_CHECK(lines.size() > 3);
+        for (const auto& line : lines)
+            GG_CHECK(line.find("@@") == std::string::npos);
+    }
+    GG_CHECK(s.itemExists((s.child(body(s).c_str(), "##sbs_left") + "/###expand_0").c_str()));
     s.comboSelect("//Diff/##diff_view", "Unified");
     ctx->Yield(2);
     GG_CHECK(!s.app.settings().data().diffSideBySide);
@@ -236,16 +245,20 @@ GG_TEST("diff", "renames, compare this file with HEAD, large diffs", "DIFF-RENAM
     GG_REQUIRE(file(s) != nullptr);
     GG_CHECK(file(s)->kind == ggui::core::ChangeKind::Renamed);
     GG_CHECK_STR_EQ(file(s)->oldPath, "old.txt");
-    // Compare only code.cpp of the "change" commit with HEAD.
+    // Compare only code.cpp of the "change" commit with HEAD; the control sits on the button row.
     showFile(s, r.change, "code.cpp");
-    ctx->ItemClick("//Diff/Compare only this file with HEAD##diff_vs_head");
+    const ImGuiTestItemInfo view = ctx->ItemInfo("//Diff/##diff_view");
+    const ImGuiTestItemInfo vsHead = ctx->ItemInfo("//Diff/Compare with HEAD##diff_vs_head");
+    GG_CHECK(std::abs(view.RectFull.GetCenter().y - vsHead.RectFull.GetCenter().y) < 1.0f);
+    GG_CHECK((vsHead.ItemFlags & ImGuiItemFlags_Disabled) == 0);
+    ctx->ItemClick("//Diff/Compare with HEAD##diff_vs_head");
     GG_CHECK(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
         return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.a.hex() == s.head(r.path);
     }));
     GG_REQUIRE(file(s) != nullptr);
     GG_CHECK_EQ(file(s)->hunks.size(), static_cast<size_t>(3));
-    ctx->ItemClick("//Diff/Compare only this file with HEAD##diff_vs_head");
+    ctx->ItemClick("//Diff/Compare with HEAD##diff_vs_head");
     // Large diff: capped, then loaded in full.
     showFile(s, r.change, "big.txt");
     GG_REQUIRE(file(s) != nullptr);

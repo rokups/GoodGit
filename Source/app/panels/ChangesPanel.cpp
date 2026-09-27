@@ -326,16 +326,15 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     const bool free = actions.busy().empty();
     const bool worktree = m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index;
     const auto rows = actionRows(row);
-    std::vector<std::string> stage, unstage, discardTracked, discardUntracked, untracked, tracked, nativeConflicts,
+    std::vector<std::string> stage, unstage, discardTracked, discardUntracked, untracked, nativeConflicts,
         conflicts, existing;
     for (const FileRow* r : rows) {
         switch (r->group) {
-        case FileGroup::Staged: unstage.push_back(r->path); tracked.push_back(r->path); break;
+        case FileGroup::Staged: unstage.push_back(r->path); break;
         case FileGroup::Unstaged:
             stage.push_back(r->path);
             if (!r->intentToAdd)
                 discardTracked.push_back(r->path);
-            tracked.push_back(r->path);
             break;
         case FileGroup::Untracked:
             stage.push_back(r->path);
@@ -377,10 +376,6 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             m_session.showDiscardDialog(discardTracked, discardUntracked);
         if (ImGui::MenuItem("Intent to add", nullptr, false, free && !untracked.empty()))
             actions.intentToAdd(untracked);
-        if (ImGui::MenuItem("Track", nullptr, false, free && !untracked.empty()))
-            actions.stage(untracked);
-        if (ImGui::MenuItem("Untrack...", nullptr, false, free && !tracked.empty()))
-            m_session.showUntrackDialog(tracked);
         ImGui::Separator();
         const bool firstClassRow = row.group == FileGroup::Conflicted && row.firstClass;
         if (ImGui::MenuItem("Resolve with merge tool", nullptr, false,
@@ -419,7 +414,8 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             actions.markResolved(conflicts);
     }
     ImGui::Separator();
-    if (ImGui::MenuItem(m_selected.size() > 1 ? "Copy patch of selection" : "Copy patch")) {
+    if (ImGui::BeginMenu("Patch")) {
+        // Of the selected files in this row's group, or of this file.
         core::DiffQuery q = patchQuery(row);
         if (m_selected.size() > 1) {
             q.path.clear();
@@ -427,23 +423,18 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
                 if (m_selected.count(r.key()) && r.group == row.group)
                     q.paths.push_back(r.path);
         }
-        m_session.engine().diff(q, kSlotCopyPatch);
-    }
-    if (ImGui::MenuItem(m_selected.size() > 1 ? "Save patch of selection..." : "Save patch...")) {
-        core::DiffQuery q = patchQuery(row);
-        if (m_selected.size() > 1) {
-            q.path.clear();
-            for (const auto& r : m_rows)
-                if (m_selected.count(r.key()) && r.group == row.group)
-                    q.paths.push_back(r.path);
+        if (ImGui::MenuItem("Copy"))
+            m_session.engine().diff(q, kSlotCopyPatch);
+        if (ImGui::MenuItem("Save...")) {
+            const std::string name = fs::path(row.path).filename().string() + ".patch";
+            m_session.app().pickSaveFile("Save patch", name, [this, q](const std::string& path) {
+                if (path.empty())
+                    return;
+                m_savePatchPath = path;
+                m_session.engine().diff(q, kSlotSavePatch);
+            });
         }
-        const std::string name = fs::path(row.path).filename().string() + ".patch";
-        m_session.app().pickSaveFile("Save patch", name, [this, q](const std::string& path) {
-            if (path.empty())
-                return;
-            m_savePatchPath = path;
-            m_session.engine().diff(q, kSlotSavePatch);
-        });
+        ImGui::EndMenu();
     }
     const bool canBlame = row.kind != core::ChangeKind::Deleted && row.group != FileGroup::StashUntracked;
     if (ImGui::MenuItem("Blame file", nullptr, false, canBlame)) {
@@ -486,6 +477,29 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     ImGui::EndPopup();
 }
 
+void ChangesPanel::openFile(const FileRow& row)
+{
+    const auto snap = m_session.snapshot();
+    if (!snap || snap->bare || !m_session.actions().busy().empty())
+        return;
+    auto& actions = m_session.actions();
+    std::error_code ec;
+    const bool added = row.kind == core::ChangeKind::Added || row.kind == core::ChangeKind::Untracked;
+    if ((added || row.group == FileGroup::Conflicted) && fs::exists(snap->workdir / row.path, ec)) {
+        actions.openInEditor(row.path);
+        return;
+    }
+    const std::string id = m_selection.id.hex();
+    switch (row.group) {
+    case FileGroup::Staged:
+    case FileGroup::Unstaged: actions.externalDiff(row.path, "HEAD", ""); break;
+    case FileGroup::Commit:
+    case FileGroup::StashWorktree: actions.externalDiff(row.path, id + "^", id); break;
+    case FileGroup::StashIndex: actions.externalDiff(row.path, id + "^1", id + "^2"); break;
+    default: break;
+    }
+}
+
 void ChangesPanel::drawFile(const FileRow& row, int)
 {
     ImGui::PushID(row.path.c_str());
@@ -504,10 +518,8 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     const std::string id = label + "###file_" + row.path;
     if (ImGui::Selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
         const ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)
-            && (row.group == FileGroup::Unstaged || row.group == FileGroup::Untracked)) {
-            if (m_session.actions().busy().empty())
-                m_session.actions().stage({row.path});
+        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            openFile(row);
         } else if (io.KeyCtrl) {
             if (selected)
                 m_selected.erase(key);
@@ -626,33 +638,39 @@ void ChangesPanel::draw(bool* open)
     const auto snap = m_session.snapshot();
     std::string title;
     switch (m_selection.kind) {
-    case SelKind::WorkingTree: title = "Working tree"; break;
+    case SelKind::WorkingTree:
+        // Git's zero ID stands for the working tree (as in `git diff --raw`).
+        title = std::string(m_session.shortIdLength(), '0') + " Working tree";
+        break;
     case SelKind::Index: title = "Index (staged)"; break;
     case SelKind::Commit: {
         const auto* row = m_session.history().row(m_selection.id);
-        title = m_selection.id.shortHex(10) + (row ? " " + row->subject : std::string());
+        title = m_session.shortId(m_selection.id) + (row ? " " + row->subject : std::string());
         break;
     }
     case SelKind::Stash: title = "stash@{" + std::to_string(m_selection.stashIndex) + "}"; break;
     default: title = "Nothing selected"; break;
     }
-    ImGui::TextUnformatted(title.c_str());
+    plainText((title + "###changes_title").c_str());
     if (m_scanning || m_loading) {
         ImGui::SameLine();
         ImGui::TextDisabled(m_scanning ? "scanning..." : "loading...");
     }
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
     ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter);
-    if (m_selection.kind == SelKind::Commit) {
-        ImGui::SameLine();
-        if (ImGui::Checkbox("Compare with HEAD##compare_head", &m_compareHead)) {
-            m_rows.clear();
-            m_current.clear();
-            m_selected.clear();
-            requestFiles();
-            m_session.diff().clear();
-        }
+    ImGui::SameLine();
+    // Compares a commit with HEAD; the working tree and index already are.
+    ImGui::BeginDisabled(m_selection.kind != SelKind::Commit);
+    bool compare = m_compareHead && m_selection.kind == SelKind::Commit;
+    if (ImGui::Checkbox("Compare with HEAD##compare_head", &compare)) {
+        m_compareHead = compare;
+        m_rows.clear();
+        m_current.clear();
+        m_selected.clear();
+        requestFiles();
+        m_session.diff().clear();
     }
+    ImGui::EndDisabled();
     ImGui::Separator();
 
     ImGui::BeginChild("##files", ImVec2(0, 0), ImGuiChildFlags_None);

@@ -145,6 +145,39 @@ GG_TEST("linestaging", "stage, discard and unstage hunks", "DIFF-STAGE-HUNK", "D
     s.settle();
 }
 
+GG_TEST("linestaging", "hunks from the context menu in the side-by-side view", "DIFF-HUNK-MENU")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "hunks");
+    std::string text;
+    for (int i = 1; i <= 30; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    s.commitFile(repo, "f.txt", text, "Base");
+    std::string changed = text;
+    changed.replace(changed.find("line 3\n"), 7, "LINE 3\n");
+    changed.replace(changed.find("line 27\n"), 8, "LINE 27\n");
+    s.write(repo, "f.txt", changed);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    s.comboSelect("//Diff/##diff_view", "Side by side");
+    ctx->Yield(3);
+    const std::string left = s.child(body(s).c_str(), "##sbs_left");
+    // Row 0 is the first hunk's header (not shown here); rows 1-2 are context, row 3 removes line 3.
+    s.contextMenu((left + "/###line_3").c_str(), "Stage hunk(s)");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"show", ":f.txt"}).find("LINE 3") != std::string::npos; }));
+    s.settle();
+    GG_CHECK(s.gitOut(repo, {"show", ":f.txt"}).find("LINE 27") == std::string::npos);
+    GG_REQUIRE(showFile(s, "Staged", "f.txt"));
+    s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_3").c_str(), "Unstage hunk(s)");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty(); }));
+    s.settle();
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_3").c_str(), "Discard hunk(s)");
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt").find("LINE 3") == std::string::npos; }));
+    s.settle();
+    GG_CHECK(s.read(repo, "f.txt").find("LINE 27") != std::string::npos);
+    s.comboSelect("//Diff/##diff_view", "Unified");
+}
+
 GG_TEST("linestaging", "CRLF lines, missing final newline, new files", "DIFF-STAGE-LINES", "DIFF-DISCARD-LINES")
 {
     const fs::path repo = s.fixture(Recipe::TextEdgeCases);

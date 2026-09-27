@@ -50,7 +50,6 @@ public:
     void takeConflictSide(const std::vector<std::string>& paths, int side, int region = -1);
     // Stages 1–3 from the file's regions, then the configured merge tool.
     void mergeToolFirstClass(const std::string& path);
-    void untrack(const std::vector<std::string>& paths, bool addToGitignore);
     void deleteFiles(const std::vector<std::string>& paths);
     // A patch (hunk/line staging, discard, Apply patch…).
     void applyPatch(const std::string& label, const std::string& patch, bool cached, bool reverse, Callback done = {});

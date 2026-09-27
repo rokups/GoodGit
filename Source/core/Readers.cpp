@@ -745,7 +745,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         opts.flags |= GIT_DIFF_IGNORE_WHITESPACE_CHANGE;
     else if (q.whitespace == Whitespace::IgnoreAll)
         opts.flags |= GIT_DIFF_IGNORE_WHITESPACE;
-    const bool worktree = q.kind == DiffKind::Unstaged || q.kind == DiffKind::WorktreeVsHead;
+    const bool worktree = q.kind == DiffKind::Unstaged;
     if (worktree)
         opts.flags |= GIT_DIFF_INCLUDE_UNTRACKED | GIT_DIFF_RECURSE_UNTRACKED_DIRS | GIT_DIFF_SHOW_UNTRACKED_CONTENT;
     opts.payload = const_cast<gg::CancelToken*>(&cancel);
@@ -785,13 +785,6 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         index.reset(ri);
         git_index_read(index.get(), 0);
         check(git_diff_index_to_workdir(&raw, repo, index.get(), &opts), "git_diff_index_to_workdir");
-        break;
-    }
-    case DiffKind::WorktreeVsHead: {
-        git_oid head;
-        if (git_reference_name_to_id(&head, repo, "HEAD") == 0)
-            a = treeOf(repo, toOid(head));
-        check(git_diff_tree_to_workdir_with_index(&raw, repo, a.get(), &opts), "git_diff_tree_to_workdir_with_index");
         break;
     }
     case DiffKind::StashWorktree:

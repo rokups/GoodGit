@@ -227,6 +227,19 @@ void Session::requestConfig()
     m_engine->readConfig({"core.editor", "merge.tool", "diff.tool", "pull.rebase", "extensions.worktreeConfig"});
 }
 
+std::string Session::shortId(const core::Oid& id) const
+{
+    if (const core::HistoryRow* row = m_history->row(id))
+        return row->shortId;
+    return id.shortHex(shortIdLength()); // not loaded
+}
+
+size_t Session::shortIdLength() const
+{
+    const auto& rows = m_history->rows();
+    return rows.empty() ? 7 : rows.front().shortId.size();
+}
+
 core::Oid Session::headChild() const
 {
     if (!m_snapshot || m_snapshot->head.isNull())

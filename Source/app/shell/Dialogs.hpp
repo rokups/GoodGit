@@ -21,6 +21,8 @@ struct Field {
     int choice = 0;
     std::vector<std::string> options;
     std::string hint;
+    bool filterable = false;  // Combo: a filter field at the top of the list (Enter picks the first match)
+    std::string filter;
 };
 
 struct Form;

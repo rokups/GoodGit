@@ -73,6 +73,71 @@ void drawBadge(const char* label, ImU32 color, bool outlined)
     dl->AddText(ImVec2(pos.x + padX, pos.y), theme().palette().badgeText, label, end);
 }
 
+namespace {
+
+void textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return;
+    const ImVec2 size = ImGui::CalcTextSize(label, end);
+    const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
+    const ImRect bb(pos, ImVec2(pos.x + size.x, pos.y + size.y));
+    ImGui::ItemSize(size, 0.0f);
+    if (!ImGui::ItemAdd(bb, id))
+        return;
+    if (id != 0) {
+        // Hover is tracked (tooltips, context menus, the test engine) but never drawn.
+        ImGui::ItemHoverable(bb, id, ImGuiItemFlags_None);
+        [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext(); // used by the test-engine hook
+        IMGUI_TEST_ENGINE_ITEM_INFO(id, label, ImGuiItemStatusFlags_None);
+    }
+    ImDrawList* dl = window->DrawList;
+    const char* split = label + std::min(dimFrom, static_cast<size_t>(end - label));
+    dl->AddText(pos, ImGui::GetColorU32(ImGuiCol_Text), label, split);
+    if (split < end) {
+        const float x = ImGui::CalcTextSize(label, split).x;
+        dl->AddText(ImVec2(pos.x + x, pos.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), split, end);
+    }
+}
+
+} // namespace
+
+void plainText(const char* label)
+{
+    const char* end = ImGui::FindRenderedTextEnd(label);
+    textItem(label, end, std::string::npos, *end ? ImGui::GetID(label) : 0);
+}
+
+void idText(const std::string& hex, size_t shortLen, const char* id)
+{
+    const std::string label = id ? hex + "###" + id : hex;
+    textItem(label.c_str(), label.c_str() + hex.size(), shortLen, id ? ImGui::GetID(label.c_str()) : 0);
+}
+
+void idTooltip(const std::string& hex, size_t shortLen, const std::string& rest)
+{
+    if (!ImGui::BeginTooltip())
+        return;
+    idText(hex, shortLen);
+    if (!rest.empty())
+        ImGui::TextUnformatted(rest.c_str());
+    ImGui::EndTooltip();
+}
+
+void copyId(const std::string& shortId, const std::string& fullId)
+{
+    ImGui::SetClipboardText((ImGui::GetIO().KeyShift ? fullId : shortId).c_str());
+}
+
+bool copyIdMenuItem(const char* label, const std::string& shortId, const std::string& fullId, bool enabled)
+{
+    if (!ImGui::MenuItem(label, kCopyIdHint, false, enabled))
+        return false;
+    copyId(shortId, fullId);
+    return true;
+}
+
 void spinner(const char* id, float radius)
 {
     const ImVec2 pos = ImGui::GetCursorScreenPos();

@@ -32,6 +32,7 @@ public:
 
     void onSelection(const Selection& sel);
     void showFile(const Selection& sel, const FileRow& row, bool compareHead);
+    bool canCompareWithHead() const;
     void refreshIfShowing();
     void clear();
     void onDiff(const core::DiffEvent& event);

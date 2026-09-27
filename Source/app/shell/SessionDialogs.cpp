@@ -334,6 +334,7 @@ void Session::showSetUpstreamDialog(const std::string& branch)
     Form f;
     f.title = "Set upstream";
     Field up{Field::Combo, "upstream", "Upstream of " + branch};
+    up.filterable = true;
     if (m_snapshot)
         for (const auto& r : m_snapshot->remoteBranches) {
             up.options.push_back(r.name);
@@ -393,17 +394,6 @@ void Session::showDeleteFilesDialog(std::vector<std::string> paths)
         list += "  " + p + "\n";
     f.message = "Delete these files from the working tree?\n\n" + list;
     f.buttons.push_back({"Delete", [this, paths](Form&) { m_actions->deleteFiles(paths); }});
-    f.buttons.push_back({"Cancel", {}});
-    m_app.dialogs().open(std::move(f));
-}
-
-void Session::showUntrackDialog(std::vector<std::string> paths)
-{
-    Form f;
-    f.title = "Untrack";
-    f.message = "Stop tracking these files (git rm --cached)? The files stay on disk.";
-    f.add(Field{Field::Check, "ignore", "Also add them to .gitignore"});
-    f.buttons.push_back({"Untrack", [this, paths](Form& form) { m_actions->untrack(paths, form.checked("ignore")); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

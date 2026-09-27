@@ -59,6 +59,8 @@ private:
     void drawGroup(FileGroup group, const char* title, int count);
     void drawFile(const FileRow& row, int flatIndex);
     void drawFileMenu(const FileRow& row);
+    // Double-click: new files open in the editor, others in the diff tool against the parent.
+    void openFile(const FileRow& row);
     void dropTarget(FileGroup group);
     // The rows an action on `row` applies to: the selection when `row` is selected.
     std::vector<const FileRow*> actionRows(const FileRow& row) const;

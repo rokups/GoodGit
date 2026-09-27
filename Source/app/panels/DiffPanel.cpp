@@ -111,6 +111,13 @@ core::DiffQuery DiffPanel::queryFor(const Selection& sel, const FileRow& row, bo
     return q;
 }
 
+bool DiffPanel::canCompareWithHead() const
+{
+    // A commit's or stash's file (the working tree and index already compare with HEAD's side);
+    // not when the Changes panel already compares the whole commit with HEAD.
+    return m_file && (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash) && !m_compareHead;
+}
+
 void DiffPanel::onSelection(const Selection& sel)
 {
     m_selection = sel;
@@ -228,14 +235,10 @@ void DiffPanel::request()
     const auto& settings = m_session.app().settings().data();
     core::DiffQuery q = queryFor(m_selection, *m_file, m_compareHead, m_session.snapshot());
     const auto snap = m_session.snapshot();
-    if (m_fileVsHead && snap && !snap->head.isNull()) {
-        if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash) {
-            q.kind = core::DiffKind::Commits;
-            q.a = snap->head;
-            q.b = m_selection.id;
-        } else {
-            q.kind = core::DiffKind::WorktreeVsHead;
-        }
+    if (m_fileVsHead && snap && !snap->head.isNull() && canCompareWithHead()) {
+        q.kind = core::DiffKind::Commits;
+        q.a = snap->head;
+        q.b = m_selection.id;
     }
     q.context = settings.diffContext;
     q.whitespace = static_cast<core::Whitespace>(settings.diffWhitespace);
@@ -475,9 +478,7 @@ void DiffPanel::buildViews()
             continue;
         }
         if (r.kind == Row::Hunk) {
-            EditorLine l{EditorLine::Hunk, static_cast<int>(i), r.hunk};
-            const std::string& h = f.hunks[static_cast<size_t>(r.hunk)].header;
-            emitBoth(l, l, h, h);
+            // Only code: the gap placeholders already mark what lies between hunks.
             ++i;
             continue;
         }
@@ -672,6 +673,7 @@ void DiffPanel::drawToolbar()
         std::vector<std::string> terms{"Raw markers"};
         for (int k = 1; k <= sides; ++k)
             terms.push_back("Base \xe2\x86\x92 side " + std::to_string(k));
+        ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
         if (ImGui::BeginCombo("##term_view", terms[static_cast<size_t>(std::clamp(m_termView, 0, sides))].c_str())) {
             for (int k = 0; k <= sides; ++k)
@@ -681,17 +683,18 @@ void DiffPanel::drawToolbar()
                 }
             ImGui::EndCombo();
         }
-        ImGui::SameLine();
     }
     if (m_file && m_file->group == FileGroup::Conflicted && !m_file->firstClass) {
+        ImGui::SameLine();
         const char* stageViews[] = {"Working tree", "Base \xe2\x86\x92 ours", "Base \xe2\x86\x92 theirs", "Ours \xe2\x86\x92 theirs"};
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11);
         if (ImGui::Combo("##conflict_view", &m_conflictView, stageViews, 4))
             request();
-        ImGui::SameLine();
     }
-    ImGui::BeginDisabled(!m_file);
-    if (ImGui::Checkbox("Compare only this file with HEAD##diff_vs_head", &m_fileVsHead)) {
+    ImGui::SameLine();
+    // This file only; the Changes panel's "Compare with HEAD" switches the whole commit.
+    ImGui::BeginDisabled(!canCompareWithHead());
+    if (ImGui::Checkbox("Compare with HEAD##diff_vs_head", &m_fileVsHead)) {
         m_gapShown.clear();
         request();
     }
@@ -705,10 +708,7 @@ void DiffPanel::drawToolbar()
 void DiffPanel::drawPlaceholder(const core::DiffFile& f)
 {
     const Palette& p = theme().palette();
-    auto info = [](const std::string& text, const char* id) {
-        ImGui::Selectable((text + "###" + id).c_str(), false, ImGuiSelectableFlags_None,
-            ImGui::CalcTextSize(text.c_str(), nullptr, true));
-    };
+    auto info = [](const std::string& text, const char* id) { plainText((text + "###" + id).c_str()); };
     if (f.oldMode && f.newMode && f.oldMode != f.newMode) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.hunkHeader);
         info("Mode changed " + modeText(f.oldMode) + " \xe2\x86\x92 " + modeText(f.newMode), "diff_mode");
@@ -751,19 +751,29 @@ void DiffPanel::drawMenuItems()
     const bool free = m_session.actions().busy().empty();
     const LineSet lines = selectedLines();
     bool changes = false;
+    LineSet hunks; // every line of the hunks the selection touches
     if (m_diff && !m_diff->files.empty())
-        for (const auto& [h, l] : lines)
+        for (const auto& [h, l] : lines) {
             changes = changes || m_diff->files.front().hunks[static_cast<size_t>(h)].lines[static_cast<size_t>(l)].origin != ' ';
+            for (const auto& hl : hunkLines(m_diff->files.front(), h))
+                hunks.insert(hl);
+        }
     if (mode == StagingMode::Unstaged) {
         ImGui::Separator();
         if (ImGui::MenuItem("Stage line(s)", nullptr, false, free && changes))
             applyLines(lines, StagingAction::Stage);
         if (ImGui::MenuItem("Discard line(s)", nullptr, false, free && changes))
             applyLines(lines, StagingAction::Discard);
+        if (ImGui::MenuItem("Stage hunk(s)", nullptr, false, free && !hunks.empty()))
+            applyLines(hunks, StagingAction::Stage);
+        if (ImGui::MenuItem("Discard hunk(s)", nullptr, false, free && !hunks.empty()))
+            applyLines(hunks, StagingAction::Discard);
     } else if (mode == StagingMode::Staged) {
         ImGui::Separator();
         if (ImGui::MenuItem("Unstage line(s)", nullptr, false, free && changes))
             applyLines(lines, StagingAction::Unstage);
+        if (ImGui::MenuItem("Unstage hunk(s)", nullptr, false, free && !hunks.empty()))
+            applyLines(hunks, StagingAction::Unstage);
     }
     // History editing on the selected lines of a commit's change.
     if (m_selection.kind == SelKind::Commit && m_diff && !m_diff->files.empty() && m_diff->query.kind == core::DiffKind::Commit) {

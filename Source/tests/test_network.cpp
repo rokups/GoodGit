@@ -105,9 +105,10 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     GG_CHECK(s.app.errorMessage().empty());
 }
 
-GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel; only remote-tracking refs move", "TB-FETCH",
+GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move", "TB-FETCH",
     "TB-FETCH-REMOTE", "TB-FETCH-PRUNE", "TB-FETCH-TAGS", "MENU-REPO-FETCH", "REM-FETCH", "REM-FETCH-ALL",
-    "REMOTE-FETCH-ONE", "REMOTE-FETCH-ALL", "REMOTE-FETCH-NO-FF", "TB-PULL-BADGE", "TB-PUSH-BADGE")
+    "REMOTE-FETCH-ONE", "REMOTE-FETCH-ALL", "REMOTE-FETCH-NO-FF", "TB-PULL-BADGE", "TB-PUSH-BADGE",
+    "BR-REMOTE-MENU")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path second = s.path("second.git");
@@ -160,6 +161,18 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel; only remote-t
     ctx->ItemClick("//Remotes/Fetch all##fetch_all");
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
     s.settle();
+    // In Branches, the remote and its remote-tracking branches have the Remotes panel's menu.
+    s.showPanel("Branches");
+    remoteCommit(s, repo, "r6.txt", "six\n");
+    s.contextMenu("//Branches/remote_group_origin/origin", "Fetch");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
+    s.settle();
+    remoteCommit(s, repo, "r7.txt", "seven\n");
+    s.contextMenu("//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main", "Remote origin/Fetch");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
+    s.settle();
+    s.contextMenu("//Branches/remote_group_origin/origin", "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "origin");
     GG_CHECK_STR_EQ(s.head(repo), localMain);
 }
 

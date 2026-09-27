@@ -41,7 +41,8 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy", "BR-FILTE
     GG_CHECK(s.itemExists((remoteGroup + "/origin").c_str()));
 }
 
-GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-TOGGLE", "TAG-REVEAL", "TAG-COPY")
+GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-TOGGLE", "TAG-REVEAL", "TAG-COPY",
+    "TAG-LABEL-PLAIN")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"tag", "v1.0", "HEAD~3"});
@@ -53,6 +54,9 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-T
     GG_REQUIRE(tags.size() == 2);
     GG_CHECK(!tags[0].annotated && tags[1].annotated);
     GG_CHECK_STR_EQ(tags[1].message, "Release two\n");
+    // Labels are the plain names, annotated or not.
+    GG_CHECK_STR_EQ(s.itemText("//Tags/tag_v2.0/###tag_v2.0"), "v2.0");
+    GG_CHECK_STR_EQ(s.itemText("//Tags/tag_v1.0/###tag_v1.0"), "v1.0");
     ctx->ItemInputValue("//Tags/##tag_filter", "v2");
     ctx->Yield(2);
     GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###tag_v1.0"));
@@ -144,9 +148,9 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal", "REFLOG-H
     GG_CHECK(reflog.reflog()->entries[0].message.find("checkout: moving from temp to main") != std::string::npos);
     const std::string table = "//Reflog/##reflog_table";
     s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID");
-    GG_CHECK_STR_EQ(s.clipboard(), headLines[0]);
+    GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", headLines[0]}));
     s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID");
-    GG_CHECK_STR_EQ(s.clipboard(), s.revParse(repo, "HEAD@{1}"));
+    GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", "HEAD@{1}"}));
     s.contextMenu((table + "/r0/###reflog_0").c_str(), "Reveal old commit");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD@{1}"); }));
     s.showPanel("Reflog");

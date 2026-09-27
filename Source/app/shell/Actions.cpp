@@ -150,28 +150,6 @@ void Actions::markResolved(const std::vector<std::string>& paths)
     });
 }
 
-void Actions::untrack(const std::vector<std::string>& paths, bool addToGitignore)
-{
-    run(addToGitignore ? "untrack and ignore" : "untrack", [paths, addToGitignore](MutationContext& ctx) {
-        ctx.git(withPaths({"rm", "--cached", "-q", "-r"}, paths));
-        if (addToGitignore) {
-            const fs::path ignore = ctx.cwd() / ".gitignore";
-            std::string existing;
-            {
-                std::ifstream in(ignore, std::ios::binary);
-                std::ostringstream ss;
-                ss << in.rdbuf();
-                existing = ss.str();
-            }
-            std::ofstream out(ignore, std::ios::binary | std::ios::app);
-            if (!existing.empty() && existing.back() != '\n')
-                out << '\n';
-            for (const auto& p : paths)
-                out << '/' << p << '\n';
-        }
-    });
-}
-
 void Actions::deleteFiles(const std::vector<std::string>& paths)
 {
     run("delete " + std::to_string(paths.size()) + " file(s)", [paths](MutationContext& ctx) {

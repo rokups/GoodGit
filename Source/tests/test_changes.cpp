@@ -86,7 +86,7 @@ GG_TEST("changes", "working tree groups: staged, unstaged, untracked, conflicted
     GG_CHECK(s.itemText(fileRef(s, "Conflicted", "f.txt").c_str()).rfind("U  f.txt", 0) == 0);
 }
 
-GG_TEST("changes", "commit files, filter, compare with HEAD", "CHG-FILES", "CHG-FILTER", "CHG-COMPARE-HEAD")
+GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES", "CHG-FILTER", "CHG-COMPARE-HEAD", "CHG-HEADER-WT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "changed\n");
@@ -110,6 +110,14 @@ GG_TEST("changes", "commit files, filter, compare with HEAD", "CHG-FILES", "CHG-
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f1.txt", "f4.txt", "f5.txt", "sub/x.txt"}); }));
     ctx->ItemClick("//Changes/Compare with HEAD##compare_head");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
+    GG_CHECK(s.itemText("//Changes/###changes_title").rfind(s.gitOut(repo, {"rev-parse", "--short", "HEAD~3"}) + " ", 0) == 0);
+    // The working tree: the zero ID before "Working tree"; Compare with HEAD disabled, in both panels.
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::WorkingTree; }));
+    const std::string zeros(s.gitOut(repo, {"rev-parse", "--short", "HEAD"}).size(), '0');
+    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), zeros + " Working tree");
+    GG_CHECK(ctx->ItemInfo("//Changes/Compare with HEAD##compare_head").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_CHECK(ctx->ItemInfo("//Diff/Compare with HEAD##diff_vs_head").ItemFlags & ImGuiItemFlags_Disabled);
 }
 
 GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation", "CHG-MULTISELECT-CTRL",
@@ -167,7 +175,7 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame", "CHG-CTX
     s.contextMenu(ref.c_str(), "Copy/Absolute path");
     GG_CHECK_STR_EQ(s.clipboard(), (repo / "dir" / "file.txt").string());
 
-    s.contextMenu(ref.c_str(), "Copy patch");
+    s.contextMenu(ref.c_str(), "Patch/Copy");
     const std::string expected = s.git(repo, {"diff", "HEAD~1", "HEAD", "--", "dir/file.txt"}).out;
     GG_CHECK(s.waitUntil([&] { return s.clipboard() == expected; }));
     // The copied patch applies with plain git.
@@ -175,7 +183,7 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame", "CHG-CTX
 
     const fs::path out = s.path("file.patch");
     ggui::setEnv("GGUI_TEST_PICK_PATH", out.string());
-    s.contextMenu(ref.c_str(), "Save patch...");
+    s.contextMenu(ref.c_str(), "Patch/Save...");
     GG_CHECK(s.waitUntil([&] { return s.read(s.root(), "file.patch") == expected; }));
 
     // A multi-file selection saves one patch for all selected files.
@@ -184,7 +192,7 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame", "CHG-CTX
     GG_CHECK_EQ(s.session()->changes().selectedKeys().size(), static_cast<size_t>(2));
     const fs::path both = s.path("both.patch");
     ggui::setEnv("GGUI_TEST_PICK_PATH", both.string());
-    s.contextMenu(ref.c_str(), "Save patch of selection...");
+    s.contextMenu(ref.c_str(), "Patch/Save...");
     const std::string expectedBoth = s.git(repo, {"diff", "HEAD~1", "HEAD"}).out;
     GG_CHECK(s.waitUntil([&] { return s.read(s.root(), "both.patch") == expectedBoth; }));
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
@@ -224,7 +232,8 @@ GG_TEST("changes", "stash contents: working tree, index and untracked parts", "S
 }
 
 GG_TEST("info", "change information: message, author, committer, date, ID, parents", "INFO-MESSAGE", "INFO-AUTHOR",
-    "INFO-COPY-NAME", "INFO-COPY-EMAIL", "INFO-DATE", "INFO-COMMIT-ID-COPY", "INFO-PARENTS-REVEAL", "INFO-COMMITTER")
+    "INFO-COPY-NAME", "INFO-COPY-EMAIL", "INFO-DATE", "INFO-COMMIT-ID-COPY", "INFO-PARENTS-REVEAL", "INFO-COMMITTER",
+    "INFO-AUTHOR-PLAIN", "APP-ID-DIMMED")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     // A commit whose committer differs from its author.
@@ -247,12 +256,27 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     GG_CHECK_STR_EQ(s.clipboard(), "Author Person");
     s.contextMenu("//Change information/**/###author", "Copy email");
     GG_CHECK_STR_EQ(s.clipboard(), "author@example.com");
+    // The author line is plain text: no hover or click effect (its context menu stays).
+    ctx->ItemClick("//Change information/**/###author");
+    ctx->Yield(2);
+    GG_CHECK(ImGui::GetActiveID() == 0 && !s.itemDrawsBackground("//Change information/**/###author"));
+    // The full ID shows the short prefix normally and the rest dimmed; copy is short, Shift full.
+    const std::string shortHead = s.gitOut(repo, {"rev-parse", "--short", "HEAD"});
+    ctx->ScrollToItemY("//Change information/**/###commit_id_text");
+    GG_CHECK(s.idShownDimmed("//Change information", s.head(repo), shortHead.size()));
     ctx->ItemClick("//Change information/**/###commit_id");
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick("//Change information/**/###commit_id");
+    ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK_STR_EQ(s.clipboard(), s.head(repo));
     GG_CHECK(info.details()->authorTime > 0);
     // Parents: the merge has two; clicking one reveals it.
     selectCommit(s, s.revParse(repo, "HEAD~1"));
     GG_REQUIRE(s.waitUntil([&] { return info.details() && info.details()->parents.size() == 2; }));
+    // (A clickable item does draw a hover highlight: the check above can fail.)
+    ctx->MouseMove("//Change information/**/###parent_1");
+    GG_CHECK(s.itemDrawsBackground("//Change information/**/###parent_1"));
     ctx->ItemClick("//Change information/**/###parent_1");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~1^2"); }));
     // The root commit has no parents.

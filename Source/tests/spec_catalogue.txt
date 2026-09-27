@@ -70,17 +70,18 @@ MENU-VIEW-RESET-LAYOUT | 1 | §4.1 | View ▸ Reset layout restores the default
 TB-NEW | 2 | §4.1 | Toolbar New
 TB-COMMIT | 2 | §4.1 | Toolbar Commit/Amend
 TB-COMMIT-LABEL | 2 | §4.1 | Commit/Amend label follows the selection
-TB-PREV | 2 | §4.1 | Toolbar Prev (HEAD to parent)
-TB-NEXT | 2 | §4.1 | Toolbar Next (HEAD to child)
+TB-NO-PREV-NEXT | 2 | §4.1 | The toolbar has no Previous / Next buttons (UF-27)
 TB-UNDO | 2 | §4.1 | Toolbar Undo
 TB-REDO | 2 | §4.1 | Toolbar Redo
 TB-REFRESH | 1 | §4.1 | Toolbar Refresh
 TB-REPO-SWITCH | 1 | §4.1 | Toolbar repository switcher
-TB-OPEN-FOLDER | 1 | §4.1 | Toolbar open-folder button
+TB-OPEN-FOLDER | 1 | §4.1 | Toolbar folder button opens the working directory (UF-28)
 TB-BRANCH | 1 | §4.1 | Toolbar shows the current branch
 TB-DETACHED | 1 | §4.1 | Toolbar shows "detached"
-TB-HEAD-REVEAL | 1 | §4.1 | Click HEAD ID reveals it in History
+TB-HEAD-PLAIN | 1 | §4.1 | Toolbar branch label and HEAD ID are plain text; clicking does nothing (UF-31)
 TB-HEAD-COPY | 1 | §4.1 | HEAD ID context menu copies it
+APP-ID-DIMMED | 1 | §4.1 | Full IDs show the short prefix normally and the rest dimmed (UF-14)
+APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13)
 TB-SPINNER | 1 | §4.1 | Activity spinner while working
 TB-CANCEL | 1 | §4.1 | Activity Cancel button
 TB-TASK-TOOLTIP | 1 | §4.1 | Background-task tooltip
@@ -143,6 +144,7 @@ APP-OPEN-WORKTREE-WINDOW | 4 | §4.1 | Open a linked worktree in a new window
 # ---- §4.2 History -----------------------------------------------------------------------------
 HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges
 HIST-GRAPH-CONTINUOUS | 1 | §4.2 | Graph lines connect row to row at a constant row pitch
+HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge (UF-18)
 HIST-MERGE-COLLAPSED-DEFAULT | 1 | §4.2 | Merge commits start collapsed
 HIST-LOAD-FAST | 1 | §4.2 | First history rows of a large repository appear quickly
 UI-TEXT-BASELINE | 1 | §6 | Text in one row shares a baseline (labels, buttons, badges, icons)
@@ -159,6 +161,9 @@ HIST-INDEX-ROW | 1 | §4.2 | Index (staged) row when something is staged
 HIST-STASH-BADGES | 1 | §4.2 | Stash badges on base commits (toggle)
 HIST-SCOPE | 1 | §4.2 | Scope follows side-panel selection
 HIST-SEARCH | 1 | §4.2 | Search/filter by message, ID, branch, tag
+HIST-SCROLL-ANCHOR | 1 | §4.2 | Changes to History (refresh, merges, load more, Index row) keep the rows in view in place (UF-25)
+HIST-TOOLTIP-SCROLL | 1 | §4.2 | Row, graph and badge tooltips wait until the list stops scrolling (UF-10)
+HIST-FILTER-NO-GRAPH | 1 | §4.2 | The graph column is hidden while a History filter is active (UF-24)
 HIST-REVEAL | 1 | §4.2 | Reveal a commit (loads until found)
 HIST-REVEAL-CANCEL | 1 | §4.2 | Reveal is cancellable
 HIST-SHOW-MORE | 1 | §4.2 | Show more for collapsed regions
@@ -271,6 +276,7 @@ CHG-KEY-NAV | 1 | §4.4 | Keyboard navigation
 CHG-STATUS-ICONS | 1 | §4.4 | Status icons
 CHG-RENAMES | 1 | §4.4 | Renames and copies
 CHG-COMPARE-HEAD | 1 | §4.4 | Compare with HEAD toggle
+CHG-HEADER-WT | 1 | §4.4 | Working tree header shows the zero ID; Compare with HEAD disabled (UF-29)
 CHG-GROUPS | 1 | §4.4 | Staged/Unstaged/Untracked/Conflicted groups
 CHG-SCANNING | 1 | §3.1 | Partial status marked scanning…
 CHG-STAGE | 2 | §4.4 | Stage file/selection
@@ -278,7 +284,7 @@ CHG-UNSTAGE | 2 | §4.4 | Unstage file/selection
 CHG-DISCARD | 2 | §4.4 | Discard file/selection (with confirmation for untracked)
 CHG-KEY-TOGGLE-SPACE | 2 | §4.4 | Space toggles staging
 CHG-KEY-TOGGLE-ENTER | 2 | §4.4 | Enter toggles staging
-CHG-DBLCLICK-STAGE | 2 | §4.4 | Double-click stages
+CHG-DBLCLICK-OPEN | 2 | §4.4 | Double-click opens new files in the editor, others in the diff tool against the parent (UF-16)
 CHG-STAGE-ALL | 2 | §4.4 | Stage all
 CHG-UNSTAGE-ALL | 2 | §4.4 | Unstage all
 CHG-STAGE-MODIFIED | 2 | §4.4 | Stage all modified (not untracked)
@@ -295,8 +301,8 @@ CHG-CTX-COPY-REL | 1 | §4.4 | Context: Copy ▸ Relative path
 CHG-CTX-COPY-ABS | 1 | §4.4 | Context: Copy ▸ Absolute path
 CHG-CTX-MERGETOOL | 2 | §4.4 | Context: Resolve with merge tool
 CHG-CTX-MARK-RESOLVED | 2 | §4.4 | Context: Mark resolved
-CHG-CTX-COPY-PATCH | 1 | §4.4 | Context: Copy patch
-CHG-CTX-SAVE-PATCH | 1 | §4.4 | Context: Save patch…
+CHG-CTX-COPY-PATCH | 1 | §4.4 | Context: Patch ▸ Copy (UF-17)
+CHG-CTX-SAVE-PATCH | 1 | §4.4 | Context: Patch ▸ Save… (UF-17)
 CHG-CTX-BLAME | 1 | §4.4 | Context: Blame file
 CHG-CTX-EXTDIFF-HEAD | 2 | §4.4 | Context: External diff ▸ vs HEAD
 CHG-CTX-EXTDIFF-PARENT | 2 | §4.4 | Context: External diff ▸ vs parent
@@ -304,9 +310,7 @@ CHG-CTX-REVERT | 3 | §4.4 | Context: Revert
 CHG-CTX-MOVE-PARENT | 3 | §4.4 | Context: Move to parent
 CHG-CTX-MOVE-CHILD | 3 | §4.4 | Context: Move to child
 CHG-CTX-DELETE | 2 | §4.4 | Context: Delete file
-CHG-TRACK | 2 | §4.4 | Track (git add) an untracked file
-CHG-UNTRACK | 2 | §4.4 | Untrack (git rm --cached)
-CHG-UNTRACK-IGNORE | 2 | §4.4 | Untrack and add to .gitignore
+CHG-NO-TRACK-UNTRACK | 2 | §4.4 | No Track / Untrack items in the Changes menu (UF-26)
 INFO-MESSAGE | 1 | §4.4 | Message shown
 INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD)
 INFO-AUTHOR | 1 | §4.4 | Author shown
@@ -316,6 +320,7 @@ INFO-EDIT-AUTHOR | 3 | §4.4 | Edit author
 INFO-DATE | 1 | §4.4 | Date shown
 INFO-PUBLISHED | 1 | §4.4 | Published/lock state shown
 INFO-COMMIT-ID-COPY | 1 | §4.4 | Commit ID copy
+INFO-AUTHOR-PLAIN | 1 | §4.4 | Author line has no hover or click effect; its context menu stays (UF-30)
 INFO-PARENTS-REVEAL | 1 | §4.4 | Parents list reveals on click
 INFO-COMMITTER | 1 | §4.4 | Committer shown when it differs
 INFO-AMEND-MODE | 2 | §4.4 | Amend mode for HEAD with a clean index
@@ -324,6 +329,7 @@ INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed
 # ---- §4.5 Diff --------------------------------------------------------------------------------
 DIFF-UNIFIED | 1 | §4.5 | Unified view
 DIFF-SIDE-BY-SIDE | 1 | §4.5 | Side-by-side view
+DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines (UF-11)
 DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all
 DIFF-CONTEXT | 1 | §4.5 | Context-line count
 DIFF-EXPAND | 1 | §4.5 | Expand context
@@ -333,7 +339,7 @@ DIFF-BINARY | 1 | §4.5 | Binary placeholder
 DIFF-IMAGE | 1 | §4.5 | Image placeholder
 DIFF-SUBMODULE | 1 | §4.5 | Submodule placeholder
 DIFF-MODE-CHANGE | 1 | §4.5 | Mode-change line
-DIFF-VS-HEAD | 1 | §4.5 | Compare only this file with HEAD
+DIFF-VS-HEAD | 1 | §4.5 | Compare with HEAD (this file), on the diff button row (UF-15)
 DIFF-COPY-KEY | 1 | §4.5 | Ctrl+C copies the selection
 DIFF-LOAD-FULL | 1 | §4.5 | Load full diff for capped files
 DIFF-RENAME | 1 | §4.5 | Renames and copies in diffs
@@ -346,6 +352,7 @@ DIFF-DISCARD-LINES | 2 | §4.5 | Discard line(s)
 DIFF-DISCARD-HUNK | 2 | §4.5 | Discard hunk
 DIFF-UNSTAGE-LINES | 2 | §4.5 | Unstage line(s)
 DIFF-UNSTAGE-HUNK | 2 | §4.5 | Unstage hunk
+DIFF-HUNK-MENU | 2 | §4.5 | Context menu: Stage / Discard / Unstage hunk(s) (both views)
 DIFF-HUNK-BUTTONS | 2 | §4.5 | Buttons in hunk headers
 DIFF-STAGING-RANDOM | 2 | §8.4 | Randomized line/hunk staging matches git apply --cached
 DIFF-CTX-MOVE-PARENT | 3 | §4.5 | Context: Move line(s)/hunk to parent
@@ -377,6 +384,7 @@ BR-CTRL-ONLY | 1 | §4.7 | Branches: Ctrl-click shows only this branch
 BR-CURRENT-OUTLINE | 1 | §4.7 | Branches: current branch outlined
 BR-REVEAL | 1 | §4.7 | Branches: Reveal
 BR-COPY | 1 | §4.7 | Branches: Copy name
+BR-REMOTE-MENU | 2 | §4.7 | Branches: a remote and its remote-tracking branches have the Remotes panel's menu (UF-12)
 BR-UPSTREAM-INFO | 1 | §4.7 | Branches: upstream and ahead/behind shown
 BR-CREATE | 2 | §4.7 | Branches: Create branch
 BR-CHECKOUT | 2 | §4.7 | Branches: Check out
@@ -387,6 +395,7 @@ BR-DELETE-LOCAL | 2 | §4.7 | Branches: Delete ▸ Local
 BR-DELETE-REMOTE | 2 | §4.7 | Branches: Delete ▸ on a remote
 BR-DELETE-ALL | 2 | §4.7 | Branches: Delete ▸ Local and all remotes
 BR-SET-UPSTREAM | 2 | §4.7 | Branches: Set upstream
+BR-SET-UPSTREAM-FILTER | 2 | §4.7 | Set upstream: filter field for the branch list; Enter picks the first match (UF-23)
 BR-UNSET-UPSTREAM | 2 | §4.7 | Branches: Unset upstream
 BR-FF-UPSTREAM | 2 | §4.7 | Branches: Fast-forward to upstream
 BR-PULL | 2 | §4.7 | Branches: Pull (current branch)
@@ -400,6 +409,7 @@ TAG-FILTER | 1 | §4.7 | Tags: filter
 TAG-TOGGLE | 1 | §4.7 | Tags: visibility toggle
 TAG-REVEAL | 1 | §4.7 | Tags: Reveal
 TAG-COPY | 1 | §4.7 | Tags: Copy
+TAG-LABEL-PLAIN | 1 | §4.7 | Tags: labels are the tag names, without "(annotated)" (UF-22)
 TAG-CREATE | 2 | §4.7 | Tags: Create (lightweight)
 TAG-ANNOTATED | 2 | §4.7 | Tags: Create annotated with message
 TAG-DELETE | 2 | §4.7 | Tags: Delete

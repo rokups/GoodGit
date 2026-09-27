@@ -196,10 +196,16 @@ public:
         float baseline;
         float x;
         unsigned codepoint;
+        ImU32 col;
     };
     static std::vector<DrawnGlyph> drawnGlyphs(ImGuiWindow* window);
     std::vector<std::string> drawnText(const char* windowRef);
     bool textShown(const char* windowRef, const std::string& text);
+    // A full commit ID is drawn with its first `shortLen` characters in the text colour and the
+    // rest dimmed (UF-14).
+    // Whether a filled shape (hover/selection highlight, button frame) is drawn behind an item.
+    bool itemDrawsBackground(const char* ref);
+    bool idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen);
     // Waits for an error popup and closes it with OK; false if none appeared.
     bool dismissError(float seconds = 20.0f);
     // Brings a docked panel's tab to the front (e.g. "Tags" behind "Branches").

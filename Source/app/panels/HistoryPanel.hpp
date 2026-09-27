@@ -61,6 +61,9 @@ public:
     std::vector<int> visibleIndexes() const;
     // Last frame: every drawn row started exactly one row height below the previous one.
     bool rowPitchConsistent() const { return m_rowPitchOk; }
+    bool graphShown() const { return m_graphShown; }
+    // Whether the list scrolled within the last moment (tooltips are held back meanwhile).
+    bool scrolling() const { return m_scrolling; }
 
 private:
     core::HistoryScope buildScope() const;
@@ -108,6 +111,29 @@ private:
     void dragAndDrop(const core::HistoryRow& row);
     void drawDropChooser();
     bool m_rowPitchOk = true;
+    // The graph column is hidden while a filter is active (the graph of filtered rows is broken).
+    bool m_graphShown = true;
+    int column(int c) const { return m_graphShown ? c : c - 1; }
+
+    // Scroll anchoring: the rows in view (top first) and their slots (Working tree / Index rows
+    // count), captured each frame; when the rows change the scroll moves so the first of them
+    // still in the list stays where it was.
+    struct ScrollAnchor {
+        std::vector<core::Oid> ids;
+        std::vector<int> slots;
+        float scrollY = 0.0f;
+    };
+    void restoreScrollAnchor(int virtualRows, float pitch);
+    void captureScrollAnchor(int virtualRows);
+    std::optional<ScrollAnchor> m_anchor;
+    bool m_restoreAnchor = false;
+    std::optional<float> m_wantScroll; // re-applied until the table reaches it (content may lag)
+    int m_wantScrollFrames = 0;
+    int m_virtualRows = 0;
+    // Tooltips wait until the list stops scrolling.
+    float m_lastScrollY = 0.0f;
+    double m_scrolledAt = -1.0;
+    bool m_scrolling = false;
 };
 
 } // namespace ggui

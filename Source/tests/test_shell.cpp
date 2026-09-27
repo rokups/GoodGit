@@ -63,7 +63,7 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu", "APP
 }
 
 GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar", "APP-WELCOME-OPEN", "MENU-REPO-OPEN",
-    "MENU-REPO-OPEN-KEY", "TB-OPEN-FOLDER", "MENU-REPO-CLOSE-KEY")
+    "MENU-REPO-OPEN-KEY", "MENU-REPO-CLOSE-KEY")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.track(repo);
@@ -79,7 +79,6 @@ GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar", "APP-WE
     reopen([&] { ctx->ItemClick("//Welcome/###welcome_open"); });
     reopen([&] { ctx->MenuClick("//##MainMenuBar/Repository/Open..."); });
     reopen([&] { ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_O); });
-    reopen([&] { ctx->ItemClick("//##Toolbar/###tb_open"); });
     // A cancelled picker opens nothing.
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
     ggui::setEnv("GGUI_TEST_PICK_CANCEL", "1");
@@ -256,7 +255,7 @@ GG_TEST("shell", "repository state badge", "APP-STATE-DETECT", "TB-STATE-BADGE",
 }
 
 GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settings, quit", "MENU-REPO-COPY-PATH",
-    "MENU-REPO-REFRESH", "MENU-REPO-REFRESH-KEY", "TB-REFRESH", "MENU-REPO-OPEN-WORKDIR", "MENU-REPO-SETTINGS",
+    "MENU-REPO-REFRESH", "MENU-REPO-REFRESH-KEY", "TB-REFRESH", "MENU-REPO-OPEN-WORKDIR", "TB-OPEN-FOLDER", "MENU-REPO-SETTINGS",
     "MENU-REPO-QUIT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -277,6 +276,12 @@ GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settin
     GG_CHECK(s.waitUntil([&] { return generation() > g; }));
 
     ctx->MenuClick("//##MainMenuBar/Repository/Open working directory");
+    GG_CHECK(s.waitUntil([&] {
+        return s.read(opened.parent_path(), opened.filename().string()).find(repo.string()) != std::string::npos;
+    }));
+    // The toolbar folder button opens it too.
+    s.write(opened.parent_path(), opened.filename().string(), "");
+    ctx->ItemClick("//##Toolbar/###tb_open");
     GG_CHECK(s.waitUntil([&] {
         return s.read(opened.parent_path(), opened.filename().string()).find(repo.string()) != std::string::npos;
     }));
@@ -384,16 +389,30 @@ GG_TEST("shell", "auto-open argv[1], else the most recent existing repository", 
     GG_CHECK(text.find("opening " + (s.root() / "gone").string()) == std::string::npos);
 }
 
-GG_TEST("shell", "toolbar HEAD: reveal and copy", "TB-HEAD-REVEAL", "TB-HEAD-COPY")
+GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID", "TB-HEAD-PLAIN", "TB-HEAD-COPY",
+    "APP-COPY-ID-SHIFT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
+    const std::string shortHead = s.gitOut(repo, {"rev-parse", "--short", "HEAD"});
+    GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_head"), shortHead);
+    // Plain text: clicking it neither selects anything nor highlights it.
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
     ctx->ItemClick("//##Toolbar/###tb_head");
-    GG_CHECK(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::Commit; }));
-    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.head(repo));
+    ctx->ItemClick("//##Toolbar/###tb_branch");
+    ctx->Yield(3);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
+    GG_CHECK(ImGui::GetActiveID() == 0);
+    ctx->MouseMove("//##Toolbar/###tb_head");
+    GG_CHECK(!s.itemDrawsBackground("//##Toolbar/###tb_head") && !s.itemDrawsBackground("//##Toolbar/###tb_branch"));
+    // Right-click still offers Copy ID: short by default, full with Shift.
     ctx->ItemClick("//##Toolbar/###tb_head", ImGuiMouseButton_Right);
     ctx->MenuClick("//$FOCUSED/Copy ID");
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
+    ctx->ItemClick("//##Toolbar/###tb_head", ImGuiMouseButton_Right);
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->MenuClick("//$FOCUSED/Copy ID");
+    ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK_STR_EQ(s.clipboard(), s.head(repo));
 }
 

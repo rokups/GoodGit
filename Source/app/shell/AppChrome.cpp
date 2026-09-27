@@ -215,7 +215,7 @@ void App::drawRepositoryButtons()
     const bool free = s && busy.empty();
     auto tip = [&](const char* normal) { return busy.empty() ? normal : busy.c_str(); };
 
-    // New / Commit-Amend / Prev / Next / Undo / Redo
+    // New / Commit-Amend / Undo / Redo
     if (iconButton(ICON_MS_ADD, "##tb_new", tip("New commit on the selection (Ctrl+N)"), free))
         s->newCommitOn(newParents(*s), false);
     ImGui::SameLine();
@@ -224,13 +224,6 @@ void App::drawRepositoryButtons()
     if (iconButton(commitLabel.c_str(), "##tb_commit", tip(amend ? "Amend HEAD" : "Commit the index"),
             free && !s->snapshot()->bare))
         s->showCommitDialog(amend);
-    ImGui::SameLine();
-    if (iconButton(ICON_MS_ARROW_UPWARD, "##tb_prev", tip("Move HEAD to its parent"), free && !s->snapshot()->headUnborn))
-        s->actions().moveHead(false);
-    ImGui::SameLine();
-    const core::Oid child = s ? s->headChild() : core::Oid{};
-    if (iconButton(ICON_MS_ARROW_DOWNWARD, "##tb_next", tip("Move HEAD to its child"), free && !child.isNull()))
-        s->actions().moveHead(true, child);
     ImGui::SameLine();
     if (iconButton(ICON_MS_UNDO, "##tb_undo", tip("Undo (Ctrl+Z)"), free))
         s->actions().undo(false);
@@ -393,8 +386,8 @@ void App::drawToolbar()
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (iconButton(ICON_MS_FOLDER_OPEN, "##tb_open", "Open repository... (Ctrl+O)"))
-        pickAndOpenRepository();
+    if (iconButton(ICON_MS_FOLDER_OPEN, "##tb_open", "Open the working directory", open && !m_session->snapshot()->bare))
+        openInFileManager(m_session->snapshot()->workdir);
 
     if (open) {
         const auto& snap = *m_session->snapshot();
@@ -403,20 +396,21 @@ void App::drawToolbar()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(ICON_MS_CALL_SPLIT);
         ImGui::SameLine(0, 2);
-        ImGui::Selectable((branch + "###tb_branch").c_str(), false, ImGuiSelectableFlags_None,
-            ImGui::CalcTextSize(branch.c_str()));
+        plainText((branch + "###tb_branch").c_str());
         ImGui::SameLine();
-        const std::string headText = snap.head.isNull() ? std::string("(no commit)") : snap.head.shortHex(10);
-        if (ImGui::Selectable((headText + "###tb_head").c_str(), false, ImGuiSelectableFlags_None,
-                ImGui::CalcTextSize(headText.c_str()))
-            && !snap.head.isNull())
-            m_session->revealCommit(snap.head);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("HEAD %s\nClick to reveal in History", snap.head.hex().c_str());
-        if (ImGui::BeginPopupContextItem("##tb_head_menu")) {
-            if (ImGui::MenuItem("Copy ID", nullptr, false, !snap.head.isNull()))
-                ImGui::SetClipboardText(snap.head.hex().c_str());
-            ImGui::EndPopup();
+        const std::string headText = snap.head.isNull() ? std::string("(no commit)") : m_session->shortId(snap.head);
+        plainText((headText + "###tb_head").c_str());
+        if (!snap.head.isNull()) {
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && ImGui::BeginTooltip()) {
+                ImGui::TextUnformatted("HEAD");
+                ImGui::SameLine();
+                idText(snap.head.hex(), headText.size());
+                ImGui::EndTooltip();
+            }
+            if (ImGui::BeginPopupContextItem("##tb_head_menu")) {
+                copyIdMenuItem("Copy ID", headText, snap.head.hex());
+                ImGui::EndPopup();
+            }
         }
         drawStateBadge();
     }

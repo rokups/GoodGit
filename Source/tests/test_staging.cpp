@@ -77,8 +77,7 @@ GG_TEST("staging", "stage, unstage and discard files", "CHG-STAGE", "CHG-UNSTAGE
     s.settle();
 }
 
-GG_TEST("staging", "Space, Enter and double-click toggle staging", "CHG-KEY-TOGGLE-SPACE", "CHG-KEY-TOGGLE-ENTER",
-    "CHG-DBLCLICK-STAGE")
+GG_TEST("staging", "Space and Enter toggle staging", "CHG-KEY-TOGGLE-SPACE", "CHG-KEY-TOGGLE-ENTER")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -89,8 +88,6 @@ GG_TEST("staging", "Space, Enter and double-click toggle staging", "CHG-KEY-TOGG
     ctx->ItemClick(fileRef(s, "Staged", "b.txt").c_str());
     ctx->KeyPress(ImGuiKey_Enter);
     GG_CHECK(waitXY(s, repo, "b.txt", ".M"));
-    ctx->ItemDoubleClick(fileRef(s, "Untracked", "u.txt").c_str());
-    GG_CHECK(waitXY(s, repo, "u.txt", "A."));
 }
 
 GG_TEST("staging", "stage all, unstage all, stage modified", "CHG-STAGE-ALL", "CHG-UNSTAGE-ALL", "CHG-STAGE-MODIFIED",
@@ -116,8 +113,8 @@ GG_TEST("staging", "stage all, unstage all, stage modified", "CHG-STAGE-ALL", "C
     GG_CHECK(waitXY(s, repo, "u.txt", "A."));
 }
 
-GG_TEST("staging", "intent to add, track, untrack (and ignore), delete", "CHG-INTENT-TO-ADD", "CHG-TRACK", "CHG-UNTRACK",
-    "CHG-UNTRACK-IGNORE", "CHG-CTX-DELETE")
+GG_TEST("staging", "intent to add, delete; no Track / Untrack", "CHG-INTENT-TO-ADD", "CHG-NO-TRACK-UNTRACK",
+    "CHG-CTX-DELETE")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     s.write(repo, "v.txt", "another untracked\n");
@@ -125,29 +122,19 @@ GG_TEST("staging", "intent to add, track, untrack (and ignore), delete", "CHG-IN
     GG_REQUIRE(rowsReady(s, 8));
     s.contextMenu(fileRef(s, "Untracked", "u.txt").c_str(), "Intent to add");
     GG_CHECK(waitXY(s, repo, "u.txt", ".A"));
-    s.contextMenu(fileRef(s, "Untracked", "v.txt").c_str(), "Track");
-    GG_CHECK(waitXY(s, repo, "v.txt", "A."));
-    // Untrack a committed file: git rm --cached, file stays on disk.
-    s.contextMenu(fileRef(s, "Unstaged", "b.txt").c_str(), "Untrack...");
-    GG_REQUIRE(s.dialogOpen("Untrack"));
-    s.dialogButton("Untrack", "Untrack");
-    // Deleted from the index, still on disk as an untracked file.
-    GG_CHECK(waitXY(s, repo, "b.txt", "D."));
-    GG_CHECK(s.statusPorcelain(repo).find(std::string("? b.txt")) != std::string::npos);
-    GG_CHECK(fs::exists(repo / "b.txt"));
-    s.contextMenu(fileRef(s, "Staged", "a.txt").c_str(), "Untrack...");
-    GG_REQUIRE(s.dialogOpen("Untrack"));
-    s.dialogCheck("Untrack", "ignore", "Also add them to .gitignore");
-    s.dialogButton("Untrack", "Untrack");
-    GG_CHECK(s.waitUntil([&] { return s.read(repo, ".gitignore").find("/a.txt") != std::string::npos; }));
-    s.settle();
-    GG_CHECK(s.gitOut(repo, {"ls-files", "a.txt"}).empty());
+    // The menu has no Track / Untrack items (Stage and plain git cover them).
+    for (const char* group : {"Untracked", "Unstaged"}) {
+        ctx->ItemClick(fileRef(s, group, group == std::string("Untracked") ? "v.txt" : "b.txt").c_str(), ImGuiMouseButton_Right);
+        ctx->Yield(2);
+        GG_CHECK(ctx->ItemExists("//$FOCUSED/Stage"));
+        GG_CHECK(!ctx->ItemExists("//$FOCUSED/Track") && !ctx->ItemExists("//$FOCUSED/Untrack..."));
+        ctx->KeyPress(ImGuiKey_Escape);
+    }
     // Delete a file from the working tree.
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Untracked", "b.txt").c_str()); }));
-    s.contextMenu(fileRef(s, "Untracked", "b.txt").c_str(), "Delete file...");
+    s.contextMenu(fileRef(s, "Untracked", "v.txt").c_str(), "Delete file...");
     GG_REQUIRE(s.dialogOpen("Delete files"));
     s.dialogButton("Delete files", "Delete");
-    GG_CHECK(s.waitUntil([&] { return !fs::exists(repo / "b.txt"); }));
+    GG_CHECK(s.waitUntil([&] { return !fs::exists(repo / "v.txt"); }));
     s.settle();
 }
 
@@ -208,6 +195,45 @@ GG_TEST("staging", "external editor, folder and diff tools", "CHG-CTX-OPEN", "CH
     GG_CHECK(s.waitUntil([&] {
         return gg::splitLines(s.read(diffLog.parent_path(), diffLog.filename().string())).size() >= before + 2;
     }));
+    s.settle();
+}
+
+GG_TEST("staging", "double-click opens new files in the editor, others in the diff tool", "CHG-DBLCLICK-OPEN")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.commitFile(repo, "f2.txt", "changed\n", "Change f2");
+    s.write(repo, "f1.txt", "edited\n");
+    s.write(repo, "new.txt", "new\n");
+    const fs::path editorLog = s.fakeTool("fake-editor");
+    const fs::path diffLog = s.fakeTool("fake-difftool");
+    ggui::unsetEnv("GIT_EDITOR");
+    ggui::unsetEnv("EDITOR");
+    s.git(repo, {"config", "core.editor", "fake-editor"});
+    s.git(repo, {"config", "diff.tool", "fake"});
+    s.git(repo, {"config", "difftool.fake.cmd", "fake-difftool \"$LOCAL\" \"$REMOTE\""});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowsReady(s, 2));
+    auto lines = [&](const fs::path& log) { return gg::splitLines(s.read(log.parent_path(), log.filename().string())); };
+    auto logHas = [&](const fs::path& log, const std::string& text) {
+        return s.waitUntil([&] { return s.read(log.parent_path(), log.filename().string()).find(text) != std::string::npos; });
+    };
+    // A new file opens in the editor; staging does not change.
+    ctx->ItemDoubleClick(fileRef(s, "Untracked", "new.txt").c_str());
+    GG_CHECK(logHas(editorLog, "new.txt"));
+    s.settle();
+    GG_CHECK_STR_EQ(xy(s, repo, "new.txt"), "??");
+    GG_CHECK(lines(diffLog).empty());
+    // A modified file opens in the diff tool: HEAD's version against the working tree.
+    ctx->ItemDoubleClick(fileRef(s, "Unstaged", "f1.txt").c_str());
+    GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= 2; }));
+    s.settle();
+    GG_CHECK_STR_EQ(xy(s, repo, "f1.txt"), ".M");
+    // In a commit: the parent's version against the commit's.
+    const size_t before = lines(diffLog).size();
+    ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    ctx->ItemDoubleClick(fileRef(s, nullptr, "f2.txt").c_str());
+    GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= before + 2; }));
     s.settle();
 }
 

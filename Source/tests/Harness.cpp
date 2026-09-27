@@ -333,28 +333,89 @@ std::vector<Scenario::DrawnGlyph> Scenario::drawnGlyphs(ImGuiWindow* w)
         // PrimRectUV order: a, (c.x, a.y), c, (a.x, c.y).
         if (vb[i + 1].pos.y != vb[i].pos.y || vb[i + 3].pos.x != vb[i].pos.x || vb[i + 2].pos.x != vb[i + 1].pos.x)
             continue;
-        found.push_back({vb[i].pos.y - it->second.first, vb[i].pos.x, it->second.second});
+        found.push_back({vb[i].pos.y - it->second.first, vb[i].pos.x, it->second.second, vb[i].col});
         i += 3;
     }
     return found;
 }
 
-std::vector<std::string> Scenario::drawnText(const char* windowRef)
+namespace {
+
+// Glyphs of a window and its child windows (tables with scrolling, child regions), in reading order.
+std::vector<Scenario::DrawnGlyph> windowGlyphs(ImGuiTestContext* ctx, const char* windowRef)
 {
     ctx->Yield(1);
-    // The window and its child windows (tables with scrolling, child regions).
-    std::vector<DrawnGlyph> glyphs;
+    std::vector<Scenario::DrawnGlyph> glyphs;
     if (ImGuiWindow* root = ctx->GetWindowByRef(windowRef))
         for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
             for (ImGuiWindow* p = w; p; p = p->ParentWindow)
                 if (p == root) {
-                    const auto more = drawnGlyphs(w);
+                    const auto more = Scenario::drawnGlyphs(w);
                     glyphs.insert(glyphs.end(), more.begin(), more.end());
                     break;
                 }
-    std::sort(glyphs.begin(), glyphs.end(), [](const DrawnGlyph& a, const DrawnGlyph& b) {
+    std::sort(glyphs.begin(), glyphs.end(), [](const Scenario::DrawnGlyph& a, const Scenario::DrawnGlyph& b) {
         return std::abs(a.baseline - b.baseline) > 0.5f ? a.baseline < b.baseline : a.x < b.x;
     });
+    return glyphs;
+}
+
+} // namespace
+
+bool Scenario::itemDrawsBackground(const char* ref)
+{
+    ctx->Yield(2);
+    const ImGuiTestItemInfo info = ctx->ItemInfo(ref, ImGuiTestOpFlags_NoError);
+    if (!info.ID || !info.Window || !info.Window->DrawList)
+        return false;
+    const ImRect item = info.RectFull;
+    const ImVec2 white = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+    const auto& vb = info.Window->DrawList->VtxBuffer;
+    // Runs of untextured vertices of one colour are one filled shape; one that covers the item
+    // but is not much taller than it (window and panel backgrounds are) is a highlight or frame.
+    for (int i = 0; i < vb.Size;) {
+        int j = i;
+        ImRect box(vb[i].pos, vb[i].pos);
+        while (j < vb.Size && vb[j].uv.x == white.x && vb[j].uv.y == white.y && vb[j].col == vb[i].col)
+            box.Add(vb[j++].pos);
+        if (j - i >= 4 && (vb[i].col >> IM_COL32_A_SHIFT) != 0 && box.Contains(item.GetCenter())
+            && box.GetWidth() >= item.GetWidth() * 0.9f && box.GetHeight() < item.GetHeight() * 1.8f)
+            return true;
+        i = std::max(j, i + 1);
+    }
+    return false;
+}
+
+bool Scenario::idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen)
+{
+    const auto glyphs = windowGlyphs(ctx, windowRef);
+    const ImU32 normal = ImGui::GetColorU32(ImGuiCol_Text), dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    // Lines as text (no spaces) with one colour per character.
+    size_t start = 0;
+    for (size_t i = 1; i <= glyphs.size(); ++i) {
+        if (i < glyphs.size() && std::abs(glyphs[i].baseline - glyphs[start].baseline) <= 0.5f)
+            continue;
+        std::string text;
+        for (size_t k = start; k < i; ++k)
+            text += glyphs[k].codepoint < 0x80 ? static_cast<char>(glyphs[k].codepoint) : '?';
+        const size_t at = text.find(hex);
+        if (at != std::string::npos) {
+            for (size_t k = 0; k < hex.size(); ++k)
+                if (glyphs[start + at + k].col != (k < shortLen ? normal : dim)) {
+                    ctx->LogInfo("ID %s: character %zu has the wrong colour", hex.c_str(), k);
+                    return false;
+                }
+            return true;
+        }
+        start = i;
+    }
+    ctx->LogInfo("ID %s not drawn in %s", hex.c_str(), windowRef);
+    return false;
+}
+
+std::vector<std::string> Scenario::drawnText(const char* windowRef)
+{
+    const auto glyphs = windowGlyphs(ctx, windowRef);
     std::vector<std::string> lines;
     float current = -1e9f, lastX = 0.0f;
     const float space = ImGui::GetFontSize() * 0.45f;

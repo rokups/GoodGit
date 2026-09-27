@@ -114,9 +114,27 @@ void Dialogs::draw()
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
             const char* preview = f.options.empty() ? "" : f.options[static_cast<size_t>(f.choice)].c_str();
             if (ImGui::BeginCombo((f.label + id).c_str(), preview)) {
-                for (size_t k = 0; k < f.options.size(); ++k)
+                bool pickFirst = false;
+                if (f.filterable) {
+                    if (ImGui::IsWindowAppearing()) {
+                        f.filter.clear();
+                        ImGui::SetKeyboardFocusHere();
+                    }
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    pickFirst = ImGui::InputTextWithHint("##filter", ICON_MS_SEARCH " Filter", &f.filter,
+                        ImGuiInputTextFlags_EnterReturnsTrue);
+                }
+                for (size_t k = 0; k < f.options.size(); ++k) {
+                    if (!containsNoCase(f.options[k], f.filter))
+                        continue;
+                    if (pickFirst) {
+                        f.choice = static_cast<int>(k);
+                        ImGui::CloseCurrentPopup();
+                        break;
+                    }
                     if (ImGui::Selectable(f.options[k].c_str(), static_cast<int>(k) == f.choice))
                         f.choice = static_cast<int>(k);
+                }
                 ImGui::EndCombo();
             }
             break;
