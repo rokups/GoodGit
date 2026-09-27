@@ -1,0 +1,193 @@
+# ggui CI (REBUILD_PLAN §7 Phase 0, §8.2, §8.3; task P0-14).
+#
+# Linux: Xvfb + software Vulkan (lavapipe), clang source-based coverage, the suite split into
+# shards, git 2.36 (pinned minimum) and the distribution's latest git. Windows: MinGW-static
+# and MSVC. Both gates (functional traceability, > 90 % line/branch coverage) run on every
+# build. Every shard runs with the UI-thread assertion on (the default in test builds).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
+  GGUI_FIXTURE_CACHE: ${{ github.workspace }}/.cache/ggui-fixtures
+  # Highest phase whose spec IDs must all have passing tests.
+  GGUI_DELIVERED_PHASE: "0"
+  SHARDS: "4"
+
+jobs:
+  catalogue:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/traceability.py --check
+
+  git-min:
+    # Builds and caches git 2.36.0, the minimum supported version (G2).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ~/git-2.36
+          key: git-2.36.0-ubuntu-24.04
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libexpat1-dev zlib1g-dev
+          curl -sSLO https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.36.0.tar.xz
+          tar xf git-2.36.0.tar.xz && cd git-2.36.0
+          make -j"$(nproc)" prefix="$HOME/git-2.36" NO_GETTEXT=1 NO_TCLTK=1 all install
+
+  linux:
+    needs: [catalogue, git-min]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        git: [minimum, latest]
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo add-apt-repository -y ppa:git-core/ppa
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build clang llvm lld pkg-config xvfb \
+            mesa-vulkan-drivers libvulkan1 libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+            libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/git-2.36
+          key: git-2.36.0-ubuntu-24.04
+      - if: matrix.git == 'minimum'
+        run: echo "$HOME/git-2.36/bin" >> "$GITHUB_PATH"
+      - run: git --version
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - uses: actions/cache@v4
+        with:
+          path: .cache/ggui-fixtures
+          key: fixtures-large-v1
+      - name: Build (clang, coverage)
+        run: |
+          cmake --preset coverage
+          cmake --build --preset coverage
+      - name: Tests (shard ${{ matrix.shard }}/4, Xvfb, lavapipe)
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/out/profiles/%p-%m.profraw
+          GGUI_TEST_ARTIFACTS: ${{ github.workspace }}/out/test-artifacts
+        run: |
+          mkdir -p out/profiles
+          xvfb-run -a -s "-screen 0 1920x1080x24" \
+            build/coverage/bin/ggui --test --shard=${{ matrix.shard }}/$SHARDS \
+              --trace=out/trace-${{ matrix.git }}-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-${{ matrix.git }}-${{ matrix.shard }}
+          path: |
+            out/
+            build/coverage/bin/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failures-${{ matrix.git }}-${{ matrix.shard }}
+          path: out/test-artifacts/
+
+  gates:
+    needs: linux
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y llvm
+      - uses: actions/download-artifact@v4
+        with:
+          path: shards
+      - name: Functional gate (traceability)
+        run: |
+          python3 scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability.md \
+            shards/linux-*/out/trace-*.json
+      - name: Code gate (coverage, ggui + git-gg profiles merged)
+        run: |
+          bin=$(ls -d shards/linux-latest-0/build/coverage/bin)
+          llvm-profdata merge -sparse shards/linux-latest-*/out/profiles/*.profraw -o coverage.profdata
+          llvm-cov export -format=lcov -instr-profile=coverage.profdata "$bin/ggui" -object "$bin/git-gg" \
+            -ignore-filename-regex='(_deps|\.cache/CPM|generated|Source/tests)' > coverage.lcov
+          python3 scripts/coverage_report.py --lcov coverage.lcov --root "$PWD" \
+            --allowlist scripts/coverage_excl_allowlist.txt --out coverage.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: |
+            traceability.md
+            coverage.md
+
+  windows-mingw:
+    needs: catalogue
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            git mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-mingw-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Build (mingw-x64-static)
+        env:
+          CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
+        run: |
+          cmake --preset mingw-x64-static -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE"
+          cmake --build --preset mingw-x64-static
+      - name: Tests (headless, D3D12/WARP)
+        env:
+          GGUI_HEADLESS: "1"
+        run: build/mingw-x64-static/bin/ggui.exe --test --trace=trace-mingw.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-mingw
+          path: |
+            trace-mingw.json
+            test-artifacts/
+
+  windows-msvc:
+    needs: catalogue
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-msvc-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Build (msvc-x64)
+        run: |
+          cmake --preset msvc-x64 -DCPM_SOURCE_CACHE="${{ github.workspace }}/.cache/CPM"
+          cmake --build --preset msvc-x64
+      - name: Tests (headless, D3D12/WARP)
+        env:
+          GGUI_HEADLESS: "1"
+        run: build/msvc-x64/bin/ggui.exe --test --trace=trace-msvc.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-msvc
+          path: |
+            trace-msvc.json
+            test-artifacts/

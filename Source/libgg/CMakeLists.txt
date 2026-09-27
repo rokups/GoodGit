@@ -1,0 +1,12 @@
+# libgg: internal static library with code shared by ggui and git-gg. Not installed, no ABI.
+file(GLOB LIBGG_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+add_library(libgg STATIC ${LIBGG_SOURCES})
+target_include_directories(libgg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(libgg PUBLIC ggui_libgit2 nlohmann_json::nlohmann_json)
+find_package(Threads REQUIRED)
+target_link_libraries(libgg PUBLIC Threads::Threads)
+if(WIN32)
+    target_link_libraries(libgg PUBLIC ws2_32)
+endif()
+set_target_properties(libgg PROPERTIES OUTPUT_NAME gg_internal)
+ggui_first_party(libgg)

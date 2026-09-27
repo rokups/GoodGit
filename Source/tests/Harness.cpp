@@ -1,0 +1,530 @@
+#include "tests/Harness.hpp"
+
+#include "shell/App.hpp"
+#include "shell/Dialogs.hpp"
+#include "panels/HistoryPanel.hpp"
+#include "shell/Session.hpp"
+#include "shell/Theme.hpp"
+#include "util/Env.hpp"
+
+#include <imgui_internal.h>
+#include <spdlog/spdlog.h>
+
+#include <chrono>
+#include <map>
+#include <fstream>
+#include <sstream>
+
+namespace ggtest {
+
+namespace {
+
+// Fixture commits get deterministic, increasing dates so history order is stable.
+constexpr long long kEpoch = 1767225600; // 2026-01-01T00:00:00Z
+
+} // namespace
+
+Scenario::Scenario(ImGuiTestContext* c, ggui::App& a, fs::path root, std::uint64_t seed)
+    : ctx(c), app(a), m_root(std::move(root)), m_seed(seed), m_rng(seed)
+{
+}
+
+gg::RunResult Scenario::gitMayFail(const fs::path& cwd, std::vector<std::string> args, std::string input)
+{
+    gg::RunRequest r;
+    r.args.reserve(args.size() + 1);
+    r.args.emplace_back("git");
+    for (auto& a : args)
+        r.args.push_back(std::move(a));
+    r.cwd = cwd;
+    r.input = std::move(input);
+    const long long when = kEpoch + 60LL * (++m_commitCounter);
+    const std::string date = "@" + std::to_string(when) + " +0000";
+    r.env.emplace_back("GIT_AUTHOR_DATE", date);
+    r.env.emplace_back("GIT_COMMITTER_DATE", date);
+    // Test reads (git status / diff) must not take index.lock while ggui mutates.
+    r.env.emplace_back("GIT_OPTIONAL_LOCKS", "0");
+    return gg::run(r);
+}
+
+gg::RunResult Scenario::git(const fs::path& cwd, std::vector<std::string> args, std::string input)
+{
+    std::string cmd = "git";
+    for (const auto& a : args)
+        cmd += " " + a;
+    gg::RunResult result = gitMayFail(cwd, std::move(args), std::move(input));
+    if (!result.ok()) {
+        ctx->LogError("step failed (%d): %s\n  in %s\n%s", result.exitCode, cmd.c_str(), cwd.string().c_str(),
+            result.message().c_str());
+        const bool ok = false;
+        IM_CHECK_NO_RET(ok);
+    }
+    return result;
+}
+
+std::string Scenario::gitOut(const fs::path& cwd, std::vector<std::string> args)
+{
+    return gg::trim(git(cwd, std::move(args)).out);
+}
+
+gg::RunResult Scenario::gitgg(const fs::path& cwd, std::vector<std::string> args, std::string input)
+{
+    args.insert(args.begin(), "gg");
+    return gitMayFail(cwd, std::move(args), std::move(input));
+}
+
+gg::RunResult Scenario::run(const fs::path& cwd, std::vector<std::string> args, std::string input)
+{
+    gg::RunRequest r;
+    r.args = std::move(args);
+    r.cwd = cwd;
+    r.input = std::move(input);
+    return gg::run(r);
+}
+
+void Scenario::write(const fs::path& repo, const std::string& rel, const std::string& content)
+{
+    const fs::path p = repo / rel;
+    fs::create_directories(p.parent_path());
+    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    f << content;
+}
+
+std::string Scenario::read(const fs::path& repo, const std::string& rel)
+{
+    std::ifstream f(repo / rel, std::ios::binary);
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+void Scenario::commitFile(const fs::path& repo, const std::string& rel, const std::string& content, const std::string& message)
+{
+    write(repo, rel, content);
+    git(repo, {"add", "--", rel});
+    git(repo, {"commit", "-q", "-m", message});
+}
+
+void Scenario::track(const fs::path& repo)
+{
+    for (const auto& t : m_tracked)
+        if (t == repo)
+            return;
+    m_tracked.push_back(repo);
+}
+
+std::string Scenario::head(const fs::path& repo)
+{
+    auto r = gitMayFail(repo, {"rev-parse", "--verify", "-q", "HEAD"});
+    return r.ok() ? gg::trim(r.out) : std::string();
+}
+
+std::string Scenario::revParse(const fs::path& repo, const std::string& rev)
+{
+    return gitOut(repo, {"rev-parse", "--verify", rev});
+}
+
+std::vector<std::string> Scenario::refs(const fs::path& repo)
+{
+    return gg::splitLines(git(repo, {"for-each-ref", "--format=%(refname) %(objectname)"}).out);
+}
+
+std::string Scenario::statusPorcelain(const fs::path& repo)
+{
+    return git(repo, {"status", "--porcelain=v2", "-z", "-uall"}).out;
+}
+
+bool Scenario::fsck(const fs::path& repo, std::string* output)
+{
+    auto r = gitMayFail(repo, {"fsck", "--no-progress", "--strict"});
+    // A repository plain git understands: status (non-bare) and for-each-ref must work too.
+    auto refsOk = gitMayFail(repo, {"for-each-ref", "--count=1"});
+    auto bare = gitMayFail(repo, {"rev-parse", "--is-bare-repository"});
+    bool statusOk = true;
+    if (bare.ok() && gg::trim(bare.out) == "false")
+        statusOk = gitMayFail(repo, {"status", "--porcelain=v2"}).ok();
+    if (output)
+        *output = r.out + r.err;
+    return r.ok() && refsOk.ok() && statusOk;
+}
+
+bool Scenario::waitUntil(const std::function<bool()>& pred, float seconds)
+{
+    const auto deadline = std::chrono::steady_clock::now()
+        + std::chrono::milliseconds(static_cast<long long>(seconds * 1000.0f));
+    while (!pred()) {
+        if (std::chrono::steady_clock::now() > deadline || ctx->IsError())
+            return pred();
+        ctx->Yield();
+    }
+    return true;
+}
+
+bool Scenario::waitIdle(float seconds)
+{
+    ctx->Yield(2);
+    const bool ok = waitUntil([&] { return app.idle(); }, seconds);
+    ctx->Yield(2);
+    return ok && waitUntil([&] { return app.idle(); }, seconds);
+}
+
+bool Scenario::openRepository(const fs::path& repo)
+{
+    track(repo);
+    if (ctx->IsError())
+        return false;
+    if (app.session())
+        app.closeRepository();
+    const bool welcome = waitUntil([&] {
+        ImGuiWindow* w = ctx->GetWindowByRef("//Welcome");
+        return w && w->Active && !app.session();
+    });
+    if (!welcome) {
+        ctx->LogError("Welcome screen did not appear");
+        IM_CHECK_NO_RET(welcome);
+        return false;
+    }
+    // ItemInputValue presses Enter, which opens the typed path (the keyboard path).
+    ctx->ItemInputValue("//Welcome/##welcome_path", repo.string().c_str());
+    const bool opened = waitUntil([&] { return app.session() && app.session()->opened(); }, 30.0f);
+    if (!opened)
+        ctx->LogError("repository did not open: %s (%s)", repo.string().c_str(), app.errorMessage().c_str());
+    IM_CHECK_NO_RET(opened);
+    waitIdle();
+    ctx->SetRef("");
+    return opened && !ctx->IsError() && app.session() != nullptr;
+}
+
+Scenario::~Scenario()
+{
+    for (const auto& pidFile : m_daemonPidFiles) {
+        const std::string pid = gg::trim(read(pidFile.parent_path(), pidFile.filename().string()));
+        if (!pid.empty())
+            run(m_root, {"kill", pid});
+    }
+    ggui::unsetEnv("GIT_SSH_COMMAND");
+}
+
+std::string Scenario::startGitDaemon(const fs::path& baseDir)
+{
+    // Pick a free port by trying a few; git daemon exits when the port is taken.
+    const fs::path pidFile = m_root / ("daemon-" + std::to_string(m_daemonPidFiles.size()) + ".pid");
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        const int port = 20000 + static_cast<int>(m_rng() % 30000);
+        auto r = gitMayFail(m_root, {"daemon", "--reuseaddr", "--listen=127.0.0.1", "--port=" + std::to_string(port),
+                                        "--base-path=" + baseDir.string(), "--export-all", "--enable=receive-pack",
+                                        "--detach", "--pid-file=" + pidFile.string(), baseDir.string()});
+        if (!r.ok())
+            continue;
+        m_daemonPidFiles.push_back(pidFile);
+        // Wait until it accepts connections.
+        const std::string url = "git://127.0.0.1:" + std::to_string(port) + "/";
+        for (int i = 0; i < 50; ++i) {
+            if (gitMayFail(m_root, {"ls-remote", url + "does-not-exist"}).err.find("Connection refused") == std::string::npos)
+                return url;
+            ctx->SleepNoSkip(0.05f, 0.05f);
+        }
+        return url;
+    }
+    IM_CHECK_NO_RET(false && "git daemon did not start");
+    return {};
+}
+
+std::string Scenario::installSshShim(const std::string& password)
+{
+    const fs::path shim = m_root / "fake-ssh";
+    std::string script = "#!/bin/sh\n"
+                         "# Test SSH shim: runs the remote command locally.\n"
+                         "# git probes the ssh variant with -G (OpenSSH prints its config): nothing to connect.\n"
+                         "for a in \"$@\"; do [ \"$a\" = -G ] && exit 0; done\n"
+                         "while [ $# -gt 0 ]; do case \"$1\" in -o|-p|-i|-l) shift 2;; -*) shift;; *) break;; esac; done\n"
+                         "shift\n";
+    if (!password.empty())
+        script += "answer=$(\"$SSH_ASKPASS\" \"test@localhost's password: \") || exit 255\n"
+                  "[ \"$answer\" = \"" + password + "\" ] || { echo 'Permission denied' >&2; exit 255; }\n";
+    script += "exec sh -c \"$*\"\n";
+    write(m_root, "fake-ssh", script);
+    fs::permissions(shim, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+    ggui::setEnv("GIT_SSH_COMMAND", shim.string());
+    return "ssh://test@localhost";
+}
+
+bool Scenario::itemExists(const char* ref) { return ctx->ItemExists(ref); }
+
+std::string Scenario::itemText(const char* ref)
+{
+    // Clipped items have no label in the test engine: scroll them into view first.
+    if (ctx->ItemExists(ref))
+        ctx->ScrollToItemY(ref);
+    std::string label = itemLabel(ref);
+    const auto pos = label.find("##");
+    return pos == std::string::npos ? label : label.substr(0, pos);
+}
+
+ggui::Session* Scenario::session() { return app.session(); }
+
+bool Scenario::dialogOpen(const char* title, float seconds)
+{
+    const bool ok = waitUntil([&] {
+        const ggui::Form* f = app.dialogs().current();
+        return f && f->title == title && ctx->GetWindowByRef((std::string("//") + title).c_str()) != nullptr;
+    }, seconds);
+    if (!ok) {
+        const ggui::Form* f = app.dialogs().current();
+        ctx->LogError("dialog '%s' did not open (current: '%s')", title, f ? f->title.c_str() : "none");
+    }
+    ctx->Yield(2);
+    return ok;
+}
+
+void Scenario::setText(const std::string& ref, const std::string& text)
+{
+    ctx->ItemClick(ref.c_str());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_A);
+    ctx->KeyPress(ImGuiKey_Delete);
+    if (!text.empty())
+        ctx->KeyChars(text.c_str());
+    ctx->Yield();
+}
+
+void Scenario::dialogText(const char* title, const char* field, const std::string& text)
+{
+    setText(std::string("//") + title + "/##" + field, text);
+}
+
+void Scenario::dialogCheck(const char* title, const char* field, const char* label, bool on)
+{
+    const std::string ref = std::string("//") + title + "/" + label + "##" + field;
+    if (on)
+        ctx->ItemCheck(ref.c_str());
+    else
+        ctx->ItemUncheck(ref.c_str());
+}
+
+void Scenario::dialogButton(const char* title, const char* button)
+{
+    ctx->ItemClick((std::string("//") + title + "/" + button).c_str());
+    ctx->Yield(2);
+}
+
+bool Scenario::settle(float seconds) { return waitIdle(seconds); }
+
+std::vector<Scenario::DrawnGlyph> Scenario::drawnGlyphs(ImGuiWindow* w)
+{
+    struct Key {
+        float u, v;
+        bool operator<(const Key& o) const { return u < o.u || (u == o.u && v < o.v); }
+    };
+    std::map<Key, std::pair<float, unsigned>> glyphs; // uv0 -> (glyph top - baseline, codepoint)
+    for (ImFont* font : {ggui::theme().uiFont(), ggui::theme().monoFont()}) {
+        ImFontBaked* baked = font->GetFontBaked(ImGui::GetStyle().FontSizeBase * ImGui::GetStyle().FontScaleMain);
+        for (const ImFontGlyph& g : baked->Glyphs)
+            if (g.Visible)
+                glyphs[{g.U0, g.V0}] = {g.Y0 - baked->Ascent, g.Codepoint};
+    }
+    std::vector<DrawnGlyph> found;
+    if (!w || !w->WasActive || w->Hidden || !w->DrawList)
+        return found;
+    const auto& vb = w->DrawList->VtxBuffer;
+    for (int i = 0; i + 3 < vb.Size; ++i) {
+        const auto it = glyphs.find({vb[i].uv.x, vb[i].uv.y});
+        if (it == glyphs.end())
+            continue;
+        // PrimRectUV order: a, (c.x, a.y), c, (a.x, c.y).
+        if (vb[i + 1].pos.y != vb[i].pos.y || vb[i + 3].pos.x != vb[i].pos.x || vb[i + 2].pos.x != vb[i + 1].pos.x)
+            continue;
+        found.push_back({vb[i].pos.y - it->second.first, vb[i].pos.x, it->second.second});
+        i += 3;
+    }
+    return found;
+}
+
+std::vector<std::string> Scenario::drawnText(const char* windowRef)
+{
+    ctx->Yield(1);
+    // The window and its child windows (tables with scrolling, child regions).
+    std::vector<DrawnGlyph> glyphs;
+    if (ImGuiWindow* root = ctx->GetWindowByRef(windowRef))
+        for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+            for (ImGuiWindow* p = w; p; p = p->ParentWindow)
+                if (p == root) {
+                    const auto more = drawnGlyphs(w);
+                    glyphs.insert(glyphs.end(), more.begin(), more.end());
+                    break;
+                }
+    std::sort(glyphs.begin(), glyphs.end(), [](const DrawnGlyph& a, const DrawnGlyph& b) {
+        return std::abs(a.baseline - b.baseline) > 0.5f ? a.baseline < b.baseline : a.x < b.x;
+    });
+    std::vector<std::string> lines;
+    float current = -1e9f, lastX = 0.0f;
+    const float space = ImGui::GetFontSize() * 0.45f;
+    for (const auto& g : glyphs) {
+        if (std::abs(g.baseline - current) > 0.5f) {
+            lines.emplace_back();
+            current = g.baseline;
+        } else if (g.x - lastX > space * 2.2f) {
+            lines.back() += ' '; // spaces draw no glyph: re-insert one per gap
+        }
+        char buf[5] = {};
+        ImTextCharToUtf8(buf, g.codepoint);
+        lines.back() += g.codepoint < 0xE000 ? std::string(buf) : std::string("<icon>");
+        lastX = g.x;
+    }
+    return lines;
+}
+
+bool Scenario::textShown(const char* windowRef, const std::string& text)
+{
+    // Compare without spaces (the draw list does not record them).
+    auto squash = [](std::string t) {
+        t.erase(std::remove(t.begin(), t.end(), ' '), t.end());
+        return t;
+    };
+    const std::string want = squash(text);
+    const auto lines = drawnText(windowRef);
+    for (const auto& line : lines)
+        if (squash(line).find(want) != std::string::npos)
+            return true;
+    std::string shown;
+    for (const auto& line : lines)
+        shown += "\n    " + line;
+    ctx->LogInfo("text '%s' not drawn in %s; drawn:%s", text.c_str(), windowRef, shown.c_str());
+    return false;
+}
+
+bool Scenario::dismissError(float seconds)
+{
+    if (!waitUntil([&] { const ggui::Form* f = app.dialogs().current(); return f && f->icon; }, seconds)) {
+        ctx->LogError("no error popup appeared");
+        return false;
+    }
+    const std::string title = app.dialogs().current()->title;
+    if (!dialogOpen(title.c_str()))
+        return false;
+    dialogButton(title.c_str(), "OK");
+    return waitUntil([&] { const ggui::Form* f = app.dialogs().current(); return !f || f->title != title; }, 5.0f);
+}
+
+bool Scenario::expandMerge(const std::string& mergeHex)
+{
+    auto& history = session()->history();
+    const auto id = ggui::core::Oid::fromHex(mergeHex);
+    if (!waitUntil([&] { return history.row(id) != nullptr && !history.loading(); }))
+        return false;
+    if (!history.row(id)->collapsed)
+        return true;
+    ctx->ItemClick(("//History/**/" + mergeHex + "/###merge_toggle").c_str());
+    return waitUntil([&] { return history.row(id) && !history.row(id)->collapsed && !history.loading(); });
+}
+
+void Scenario::screenshot(const std::string& name)
+{
+    const fs::path dir = artifactsDir() / "screens";
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    ctx->Yield(2);
+    ctx->CaptureReset();
+    const std::string png = (dir / (name + ".png")).string();
+    ImStrncpy(ctx->CaptureArgs->InOutputFile, png.c_str(), IM_ARRAYSIZE(ctx->CaptureArgs->InOutputFile));
+    ctx->CaptureScreenshot(ImGuiCaptureFlags_HideMouseCursor);
+}
+
+void Scenario::showPanel(const char* name)
+{
+    // Hidden panels (Reflog, Operations and Blame by default) are opened through View.
+    const auto& panels = app.settings().data().panels;
+    const auto it = panels.find(name);
+    if (it == panels.end() ? !ggui::panel::defaultVisible(name) : !it->second) {
+        ctx->MenuClick((std::string("//##MainMenuBar/View/") + name).c_str());
+        ctx->Yield(3);
+    }
+    ctx->WindowFocus((std::string("//") + name).c_str());
+    ctx->Yield(2);
+}
+
+std::string Scenario::child(const char* parent, const char* childName)
+{
+    ImGuiTestItemInfo info = ctx->WindowInfo((std::string(parent) + "/" + childName).c_str(), ImGuiTestOpFlags_NoError);
+    if (!info.Window)
+        return std::string(parent) + "/" + childName;
+    return "//" + escapeRef(info.Window->Name);
+}
+
+std::string Scenario::escapeRef(const std::string& text)
+{
+    std::string out;
+    for (char c : text) {
+        if (c == '/' || c == '\\')
+            out.push_back('\\');
+        out.push_back(c);
+    }
+    return out;
+}
+
+gg::RunResult Scenario::runGgui(std::vector<std::string> args,
+    std::vector<std::pair<std::string, std::optional<std::string>>> env)
+{
+    gg::RunRequest r;
+    r.args.push_back((fs::path(ggui::executableDir()) / "ggui").string());
+    for (auto& a : args)
+        r.args.push_back(std::move(a));
+    r.cwd = m_root;
+    r.env = std::move(env);
+    r.env.emplace_back("GGUI_HEADLESS", "1");
+    r.cLocale = false;
+    return gg::run(r);
+}
+
+fs::path Scenario::fakeTool(const std::string& name, const std::string& body)
+{
+    const fs::path dir = m_root / "fake-bin";
+    fs::create_directories(dir);
+    const fs::path log = m_root / (name + ".log");
+    std::string script = "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> '" + log.string() + "'; done\n" + body;
+    write(dir, name, script);
+    fs::permissions(dir / name, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+    const std::string path = ggui::getEnv("PATH");
+    if (path.rfind(dir.string(), 0) != 0)
+        ggui::setEnv("PATH", dir.string() + ":" + path);
+    return log;
+}
+
+void Scenario::comboSelect(const char* combo, const char* item)
+{
+    ctx->ItemClick(combo);
+    ImGuiWindow* popup = ctx->GetWindowByRef("//$FOCUSED");
+    IM_CHECK_SILENT(popup != nullptr);
+    // Match by visible label: the "**/" wildcard cannot find labels that contain '/'.
+    ImGuiTestItemList items;
+    ctx->GatherItems(&items, ImGuiTestRef(popup->ID), 4);
+    for (const ImGuiTestItemInfo& info : items) {
+        std::string label = info.DebugLabel;
+        if (const size_t hash = label.find("##"); hash != std::string::npos)
+            label.resize(hash);
+        if (label == item) {
+            ctx->ItemClick(info.ID);
+            return;
+        }
+    }
+    ctx->ItemClick(ImGuiTestRef(("//" + std::string(popup->Name) + "/**/" + item).c_str()));
+}
+
+void Scenario::contextMenu(const char* ref, const char* path)
+{
+    ctx->ItemClick(ref, ImGuiMouseButton_Right);
+    ctx->MenuClick(("//$FOCUSED/" + std::string(path)).c_str());
+}
+
+std::string Scenario::itemLabel(const char* ref)
+{
+    ImGuiTestItemInfo info = ctx->ItemInfo(ref, ImGuiTestOpFlags_NoError);
+    return info.ID ? std::string(info.DebugLabel) : std::string();
+}
+
+std::string Scenario::clipboard()
+{
+    const char* text = ImGui::GetClipboardText();
+    return text ? text : "";
+}
+
+} // namespace ggtest

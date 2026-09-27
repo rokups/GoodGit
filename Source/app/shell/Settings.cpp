@@ -1,0 +1,286 @@
+#include "shell/Settings.hpp"
+
+#include "util/Env.hpp"
+
+#include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <fstream>
+#include <sstream>
+
+namespace ggui {
+
+namespace fs = std::filesystem;
+
+// ---- AsyncIo -----------------------------------------------------------------------------------
+
+AsyncIo::AsyncIo() { m_thread = std::thread([this] { loop(); }); }
+
+AsyncIo::~AsyncIo()
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_stop = true;
+    }
+    m_cv.notify_all();
+    if (m_thread.joinable())
+        m_thread.join();
+}
+
+void AsyncIo::post(std::function<std::function<void()>()> work)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_jobs.push_back(std::move(work));
+    }
+    m_cv.notify_all();
+}
+
+void AsyncIo::pump()
+{
+    std::deque<std::function<void()>> done;
+    {
+        std::lock_guard lock(m_mutex);
+        done.swap(m_done);
+    }
+    for (auto& fn : done)
+        if (fn)
+            fn();
+}
+
+bool AsyncIo::idle() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_jobs.empty() && m_done.empty() && m_running == 0;
+}
+
+void AsyncIo::flush()
+{
+    std::unique_lock lock(m_mutex);
+    m_cv.wait(lock, [this] { return m_jobs.empty() && m_running == 0; });
+}
+
+void AsyncIo::loop()
+{
+    std::unique_lock lock(m_mutex);
+    for (;;) {
+        m_cv.wait(lock, [this] { return m_stop || !m_jobs.empty(); });
+        if (m_jobs.empty() && m_stop)
+            return;
+        auto job = std::move(m_jobs.front());
+        m_jobs.pop_front();
+        ++m_running;
+        lock.unlock();
+        std::function<void()> cont;
+        try {
+            cont = job();
+        } catch (const std::exception& e) {
+            spdlog::error("settings I/O failed: {}", e.what());
+        }
+        lock.lock();
+        --m_running;
+        if (cont)
+            m_done.push_back(std::move(cont));
+        m_cv.notify_all();
+    }
+}
+
+// ---- JSON --------------------------------------------------------------------------------------
+
+namespace {
+
+const char* hooksName(HooksAnswer a)
+{
+    switch (a) {
+    case HooksAnswer::Installed: return "installed";
+    case HooksAnswer::NotNow: return "not-now";
+    case HooksAnswer::Never: return "never";
+    default: return "unasked";
+    }
+}
+
+HooksAnswer hooksFrom(const std::string& s)
+{
+    if (s == "installed")
+        return HooksAnswer::Installed;
+    if (s == "not-now")
+        return HooksAnswer::NotNow;
+    if (s == "never")
+        return HooksAnswer::Never;
+    return HooksAnswer::Unasked;
+}
+
+std::string readAll(const fs::path& p)
+{
+    std::ifstream f(p, std::ios::binary);
+    if (!f)
+        return {};
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+void writeAtomically(const fs::path& p, const std::string& text)
+{
+    std::error_code ec;
+    fs::create_directories(p.parent_path(), ec);
+    const fs::path tmp = p.string() + ".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        f << text;
+    }
+    fs::rename(tmp, p, ec);
+    if (ec)
+        spdlog::warn("cannot write {}: {}", p.string(), ec.message());
+}
+
+} // namespace
+
+nlohmann::json toJson(const SettingsData& d)
+{
+    nlohmann::json j;
+    j["version"] = 1;
+    j["uiScale"] = d.uiScale;
+    j["theme"] = d.theme == Theme::Light ? "light" : "dark";
+    j["recent"] = d.recent;
+    nlohmann::json repos = nlohmann::json::object();
+    for (const auto& [path, prefs] : d.repos)
+        repos[path] = {{"hooks", hooksName(prefs.hooks)}, {"ignoreOldGgRefs", prefs.ignoreOldGgRefs}};
+    j["repos"] = repos;
+    j["panels"] = d.panels;
+    j["diff"] = {{"sideBySide", d.diffSideBySide}, {"context", d.diffContext}, {"whitespace", d.diffWhitespace}};
+    j["historyShowStashes"] = d.historyShowStashes;
+    j["nothingStaged"] = d.nothingStaged == NothingStaged::StageAll ? "stage-all"
+        : d.nothingStaged == NothingStaged::StageSelected                 ? "stage-selected"
+                                                                          : "ask";
+    j["expandStagesOnCheckout"] = d.expandStagesOnCheckout;
+    j["askHooksOnOpen"] = d.askHooksOnOpen;
+    j["expandConflictStages"] = d.expandConflictStages;
+    j["window"] = {{"x", d.windowX}, {"y", d.windowY}, {"w", d.windowW}, {"h", d.windowH}, {"maximized", d.windowMaximized}};
+    return j;
+}
+
+SettingsData fromJson(const nlohmann::json& j)
+{
+    SettingsData d;
+    if (!j.is_object())
+        return d;
+    d.uiScale = std::clamp(j.value("uiScale", 1.0f), 0.5f, 3.0f);
+    d.theme = j.value("theme", std::string("dark")) == "light" ? Theme::Light : Theme::Dark;
+    if (j.contains("recent") && j["recent"].is_array())
+        for (const auto& r : j["recent"])
+            if (r.is_string())
+                d.recent.push_back(r.get<std::string>());
+    if (j.contains("repos") && j["repos"].is_object())
+        for (auto it = j["repos"].begin(); it != j["repos"].end(); ++it) {
+            RepoPrefs p;
+            p.hooks = hooksFrom(it.value().value("hooks", std::string("unasked")));
+            p.ignoreOldGgRefs = it.value().value("ignoreOldGgRefs", false);
+            d.repos[it.key()] = p;
+        }
+    if (j.contains("panels") && j["panels"].is_object())
+        for (auto it = j["panels"].begin(); it != j["panels"].end(); ++it)
+            if (it.value().is_boolean())
+                d.panels[it.key()] = it.value().get<bool>();
+    if (j.contains("diff") && j["diff"].is_object()) {
+        d.diffSideBySide = j["diff"].value("sideBySide", false);
+        d.diffContext = std::clamp(j["diff"].value("context", 3), 0, 100);
+        d.diffWhitespace = std::clamp(j["diff"].value("whitespace", 0), 0, 2);
+    }
+    d.historyShowStashes = j.value("historyShowStashes", true);
+    const std::string ns = j.value("nothingStaged", std::string("ask"));
+    d.nothingStaged = ns == "stage-all" ? NothingStaged::StageAll
+        : ns == "stage-selected"        ? NothingStaged::StageSelected
+                                        : NothingStaged::Ask;
+    d.expandStagesOnCheckout = j.value("expandStagesOnCheckout", false);
+    d.askHooksOnOpen = j.value("askHooksOnOpen", true);
+    d.expandConflictStages = j.value("expandConflictStages", false);
+    if (j.contains("window") && j["window"].is_object()) {
+        const auto& w = j["window"];
+        d.windowX = w.value("x", -1);
+        d.windowY = w.value("y", -1);
+        d.windowW = w.value("w", 0);
+        d.windowH = w.value("h", 0);
+        d.windowMaximized = w.value("maximized", false);
+    }
+    return d;
+}
+
+// ---- Settings ----------------------------------------------------------------------------------
+
+Settings::Settings(AsyncIo& io) : m_io(io) { }
+
+fs::path Settings::prefDir()
+{
+    const std::string over = getEnv("GGUI_PREF_PATH");
+    if (!over.empty())
+        return fs::path(over);
+    char* p = SDL_GetPrefPath("gg", "ggui");
+    fs::path dir = p ? fs::path(p) : fs::current_path();
+    SDL_free(p);
+    return dir;
+}
+
+void Settings::load(std::function<void(const std::string& iniText)> onLoaded)
+{
+    m_dir = prefDir();
+    m_loaded = false;
+    const fs::path dir = m_dir;
+    m_io.post([this, dir, onLoaded = std::move(onLoaded)]() -> std::function<void()> {
+        SettingsData data;
+        const std::string text = readAll(dir / "settings.json");
+        if (!text.empty()) {
+            try {
+                data = fromJson(nlohmann::json::parse(text));
+            } catch (const std::exception& e) {
+                spdlog::warn("ignoring unreadable settings.json: {}", e.what());
+            }
+        }
+        std::string ini = readAll(dir / "imgui.ini");
+        return [this, data = std::move(data), ini = std::move(ini), onLoaded]() {
+            m_data = data;
+            m_loaded = true;
+            if (onLoaded)
+                onLoaded(ini);
+        };
+    });
+}
+
+void Settings::save()
+{
+    const std::string text = toJson(m_data).dump(2);
+    const fs::path file = m_dir / "settings.json";
+    m_io.post([file, text]() -> std::function<void()> {
+        writeAtomically(file, text);
+        return {};
+    });
+}
+
+void Settings::saveIni(std::string text)
+{
+    const fs::path file = m_dir / "imgui.ini";
+    m_io.post([file, text = std::move(text)]() -> std::function<void()> {
+        writeAtomically(file, text);
+        return {};
+    });
+}
+
+void Settings::addRecent(const std::string& path)
+{
+    auto& r = m_data.recent;
+    std::erase(r, path);
+    r.insert(r.begin(), path);
+    if (r.size() > 20)
+        r.resize(20);
+    save();
+}
+
+void Settings::forgetRecent(const std::string& path)
+{
+    std::erase(m_data.recent, path);
+    save();
+}
+
+} // namespace ggui

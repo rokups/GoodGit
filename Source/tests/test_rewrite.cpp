@@ -1,0 +1,176 @@
+// In-memory rewrites (§4.3, §5 R1/R2, §8.4 rewrite invariants; P3-02, P3-07).
+#include "panels/HistoryPanel.hpp"
+#include "shell/App.hpp"
+#include "shell/Dialogs.hpp"
+#include "shell/Session.hpp"
+#include "tests/Harness.hpp"
+
+#include <libgg/Journal.hpp>
+
+#include <fstream>
+
+namespace ggtest {
+
+namespace {
+
+// Refs (with symbolic HEAD), index and working tree status: what a failed rewrite must keep.
+std::string everything(Scenario& s, const fs::path& repo)
+{
+    std::string state = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"});
+    auto head = s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"});
+    state += "\nHEAD " + (head.ok() ? gg::trim(head.out) : s.head(repo));
+    state += "\n" + s.gitOut(repo, {"ls-files", "-s"}) + "\n" + s.statusPorcelain(repo);
+    return state;
+}
+
+std::string info(Scenario& s, const fs::path& repo, const std::string& rev, const char* format)
+{
+    return s.gitOut(repo, {"log", "-1", std::string("--format=") + format, rev});
+}
+
+void selectCommit(Scenario& s, const std::string& hex)
+{
+    s.ctx->ItemClick(("//History/**/###row_" + hex).c_str());
+    s.waitUntil([&] { return s.itemExists("//Change information/##message"); });
+}
+
+} // namespace
+
+GG_TEST("rewrite", "reword a commit in the middle: descendants rebased, the rest untouched, one Undo", "ACT-DESCRIBE-ANY",
+    "INFO-SAVE-MESSAGE", "REWRITE-INVARIANTS", "REWRITE-POST-REWRITE", "REWRITE-UNDO")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "old", "HEAD~3"});   // an ancestor: never moves
+    s.git(repo, {"branch", "mid", "HEAD~1"});   // a descendant of the reworded commit: moves
+    // post-rewrite receives the old → new mapping.
+    const fs::path mapLog = s.path("post-rewrite.log");
+    s.write(repo / ".git" / "hooks", "post-rewrite", "#!/bin/sh\necho \"$1\" > '" + mapLog.string() + "'\ncat >> '" + mapLog.string() + "'\n");
+    fs::permissions(repo / ".git" / "hooks" / "post-rewrite", fs::perms::owner_all);
+    const std::string target = s.revParse(repo, "HEAD~2");
+    const std::string ancestor = s.revParse(repo, "HEAD~3");
+    const std::string tipTree = s.revParse(repo, "HEAD^{tree}");
+    const std::string before = everything(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, target);
+    s.setText("//Change information/##message", "Reworded in the middle\n\nWith a body.");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "HEAD~2", "%B") == "Reworded in the middle\n\nWith a body."; }));
+    s.settle();
+    // Ancestors and unrelated refs keep their ids; descendants are rebased with the same trees.
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~3"), ancestor);
+    GG_CHECK_STR_EQ(s.revParse(repo, "old"), ancestor);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
+    GG_CHECK_STR_EQ(s.revParse(repo, "mid"), s.revParse(repo, "HEAD~1"));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    GG_CHECK_STR_EQ(info(s, repo, "HEAD~1", "%an"), "Test User");
+    // post-rewrite ran with "amend" and three mapped commits.
+    const auto lines = gg::splitLines(s.read(mapLog.parent_path(), mapLog.filename().string()));
+    GG_REQUIRE(!lines.empty());
+    GG_CHECK_STR_EQ(lines[0], "amend");
+    GG_CHECK(s.read(mapLog.parent_path(), mapLog.filename().string()).find(target + " ") != std::string::npos);
+    // One journal operation, recording the rewrites; one Undo restores everything.
+    gg::journal::Journal journal{repo / ".git"};
+    std::string error;
+    const auto ops = journal.read(&error);
+    GG_REQUIRE(!ops.empty());
+    GG_CHECK(ops.back().label.rfind("reword", 0) == 0);
+    GG_CHECK_EQ(ops.back().rewrites.size(), static_cast<size_t>(3));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return everything(s, repo) == before; }));
+}
+
+GG_TEST("rewrite", "edit the author of any commit", "ACT-EDIT-AUTHOR", "INFO-EDIT-AUTHOR")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string target = s.revParse(repo, "HEAD~1");
+    const std::string when = info(s, repo, target, "%at");
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, target);
+    s.contextMenu("//Change information/**/###author", "Edit author...");
+    GG_REQUIRE(s.dialogOpen("Edit author"));
+    s.dialogText("Edit author", "name", "Someone Else");
+    s.dialogText("Edit author", "email", "someone@example.com");
+    s.dialogButton("Edit author", "Save");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "HEAD~1", "%an <%ae>") == "Someone Else <someone@example.com>"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(info(s, repo, "HEAD~1", "%at"), when);  // the author date is kept
+    GG_CHECK_STR_EQ(info(s, repo, "HEAD", "%an"), "Test User");
+}
+
+GG_TEST("rewrite", "published history asks first; a locked ref leaves everything untouched", "REWRITE-PUBLISHED-WARN",
+    "REWRITE-FAIL-UNTOUCHED")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string published = s.revParse(repo, "origin/main~1");
+    const std::string before = everything(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(s.head(repo)) || true);
+    selectCommit(s, published);
+    s.setText("//Change information/##message", "Rewrite what is on the remote");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(everything(s, repo), before);
+    // Confirmed, but main is locked: nothing may change.
+    const fs::path lock = repo / ".git" / "refs" / "heads" / "main.lock";
+    std::ofstream(lock) << "";
+    selectCommit(s, published);
+    s.setText("//Change information/##message", "Rewrite what is on the remote");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.dismissError());
+    fs::remove(lock);
+    GG_CHECK_STR_EQ(everything(s, repo), before);
+    // Without the lock it goes through; remote-tracking refs never move.
+    const std::string remote = s.revParse(repo, "origin/main");
+    selectCommit(s, published);
+    s.setText("//Change information/##message", "Rewrite what is on the remote");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "HEAD~1", "%s") == "Rewrite what is on the remote"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "origin/main"), remote);
+}
+
+} // namespace ggtest
+
+namespace ggtest {
+
+GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD moves", "HOOK-REWRITE-RUN")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "dest", "HEAD~3"});
+    const fs::path hooks = repo / ".git" / "hooks";
+    s.write(hooks, "pre-rebase", "#!/bin/sh\necho \"pre-rebase says no to $1\" >&2\nexit 1\n");
+    fs::permissions(hooks / "pre-rebase", fs::perms::owner_all);
+    const fs::path checkoutLog = s.path("post-checkout.log");
+    s.write(hooks, "post-checkout", "#!/bin/sh\necho \"$1 $2 $3\" > '" + checkoutLog.string() + "'\n");
+    fs::permissions(hooks / "post-checkout", fs::perms::owner_all);
+    const std::string before = everything(s, repo);
+    const std::string tip = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(tip)) != nullptr; });
+    s.contextMenu(("//History/**/###row_" + tip).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "dest");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("pre-rebase says no") != std::string::npos);
+    GG_CHECK_STR_EQ(everything(s, repo), before);
+    GG_CHECK(!fs::exists(checkoutLog));
+    // Without the veto: the rebase happens and post-checkout reports old → new HEAD.
+    fs::remove(hooks / "pre-rebase");
+    s.contextMenu(("//History/**/###row_" + tip).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "dest");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "HEAD~1") == s.revParse(repo, "dest"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(checkoutLog.parent_path(), checkoutLog.filename().string()), tip + " " + s.head(repo) + " 1\n");
+}
+
+} // namespace ggtest

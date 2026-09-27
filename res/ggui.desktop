@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ggui
+Comment=Git GUI
+Exec=ggui %f
+Icon=ggui
+Categories=Development;RevisionControl;
+Terminal=false

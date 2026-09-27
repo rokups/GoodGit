@@ -1,0 +1,170 @@
+// Side panels: Branches, Tags, Worktrees, Remotes, Reflog (§4.7; P1-20).
+#include "panels/HistoryPanel.hpp"
+#include "panels/SidePanels.hpp"
+#include "shell/App.hpp"
+#include "shell/Session.hpp"
+#include "tests/Harness.hpp"
+
+#include <algorithm>
+
+namespace ggtest {
+
+GG_TEST("panels", "branches: filter, current, upstream, reveal, copy", "BR-FILTER", "BR-CURRENT-OUTLINE",
+    "BR-UPSTREAM-INFO", "BR-REVEAL", "BR-COPY")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "other"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto* main = s.session()->snapshot()->findBranch("main");
+    GG_REQUIRE(main != nullptr);
+    GG_CHECK(main->isHead);
+    GG_CHECK_STR_EQ(main->upstream, "origin/main");
+    GG_CHECK_EQ(main->ahead, 1);
+    GG_CHECK_EQ(main->behind, 1);
+    GG_CHECK(s.itemText("//Branches/branch_main/###branch_main").find("origin/main") != std::string::npos);
+    // Nested names are addressable; filter narrows the list.
+    GG_CHECK(s.itemExists("//Branches/branch_feature:one/###branch_feature:one"));
+    ctx->ItemInputValue("//Branches/##branch_filter", "feat");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###branch_main"));
+    GG_CHECK(s.itemExists("//Branches/branch_feature:one/###branch_feature:one"));
+    s.contextMenu("//Branches/branch_feature:one/###branch_feature:one", "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "feature/one");
+    s.contextMenu("//Branches/branch_feature:one/###branch_feature:one", "Reveal");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "feature/one"); }));
+    ctx->ItemInputValue("//Branches/##branch_filter", "");
+    // Remote-tracking branches under their remote.
+    ctx->Yield(2);
+    const std::string remoteGroup = "//Branches/remote_group_origin";
+    GG_CHECK(s.itemExists((remoteGroup + "/origin").c_str()));
+}
+
+GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-TOGGLE", "TAG-REVEAL", "TAG-COPY")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1.0", "HEAD~3"});
+    s.git(repo, {"tag", "-a", "-m", "Release two", "v2.0", "HEAD~1"});
+    s.git(repo, {"branch", "-f", "side", "HEAD~3"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    const auto& tags = s.session()->snapshot()->tags;
+    GG_REQUIRE(tags.size() == 2);
+    GG_CHECK(!tags[0].annotated && tags[1].annotated);
+    GG_CHECK_STR_EQ(tags[1].message, "Release two\n");
+    ctx->ItemInputValue("//Tags/##tag_filter", "v2");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###tag_v1.0"));
+    s.contextMenu("//Tags/tag_v2.0/###tag_v2.0", "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "v2.0");
+    s.contextMenu("//Tags/tag_v2.0/###tag_v2.0", "Reveal");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~1"); }));
+    // Visibility: Ctrl-click shows only this tag's history.
+    ctx->ItemInputValue("//Tags/##tag_filter", "");
+    ctx->Yield(2);
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick("//Tags/tag_v1.0/###tag_v1.0");
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    auto& history = s.session()->history();
+    GG_CHECK(s.waitUntil([&] { return !history.loading() && history.rows().size() == 2; }));
+    GG_CHECK(!history.refVisible("refs/tags/v2.0"));
+    ctx->ItemClick("//Tags/tag_v2.0/###tag_v2.0");
+    GG_CHECK(s.waitUntil([&] { return history.refVisible("refs/tags/v2.0") && history.rows().size() == 4; }));
+}
+
+GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open", "WT-LIST", "WT-COPY-NAME", "WT-COPY-PATH",
+    "WT-REVEAL-HEAD", "WT-OPEN-DIR")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path opened = s.fakeTool("xdg-open");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Worktrees");
+    const auto& wts = s.session()->snapshot()->worktrees;
+    GG_REQUIRE(wts.size() == 4);
+    GG_CHECK(wts[0].isMain && wts[0].isCurrent);
+    const std::string wt1 = repo.filename().string() + "-wt1";
+    const std::string wt2 = repo.filename().string() + "-wt2";
+    const std::string wt3 = repo.filename().string() + "-wt3";
+    auto find = [&](const std::string& name) {
+        return std::find_if(wts.begin(), wts.end(), [&](const auto& w) { return w.name == name; });
+    };
+    GG_REQUIRE(find(wt1) != wts.end() && find(wt2) != wts.end() && find(wt3) != wts.end());
+    GG_CHECK_STR_EQ(find(wt1)->branch, "wt1");
+    GG_CHECK(find(wt2)->locked);
+    GG_CHECK_STR_EQ(find(wt2)->lockReason, "test lock");
+    GG_CHECK(find(wt3)->prunable);
+    // Same list as git worktree list --porcelain.
+    const std::string porcelain = s.gitOut(repo, {"worktree", "list", "--porcelain"});
+    GG_CHECK(porcelain.find("locked test lock") != std::string::npos);
+    GG_CHECK(porcelain.find("prunable") != std::string::npos);
+    const std::string row = "//Worktrees/worktree_" + wt1 + "/###row";
+    GG_CHECK(s.itemExists(row.c_str()));
+    s.contextMenu(row.c_str(), "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), wt1);
+    s.contextMenu(row.c_str(), "Copy path");
+    GG_CHECK_STR_EQ(s.clipboard(), (s.root() / wt1).string());
+    s.contextMenu(row.c_str(), "Reveal HEAD");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "wt1"); }));
+    s.showPanel("Worktrees");
+    s.contextMenu(row.c_str(), "Open directory");
+    GG_CHECK(s.waitUntil([&] {
+        return s.read(opened.parent_path(), opened.filename().string()).find((s.root() / wt1).string()) != std::string::npos;
+    }));
+}
+
+GG_TEST("panels", "remotes: list and copy", "REM-LIST", "REM-COPY")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "backup", "https://example.invalid/backup.git"});
+    s.git(repo, {"config", "remote.backup.prune", "true"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Remotes");
+    const auto& remotes = s.session()->snapshot()->remotes;
+    GG_REQUIRE(remotes.size() == 2);
+    GG_CHECK_STR_EQ(remotes[0].name, "backup");
+    GG_CHECK(remotes[0].pruneOnFetch);
+    GG_CHECK(remotes[1].url.rfind("file://", 0) == 0);
+    s.contextMenu("//Remotes/remote_origin/###row", "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "origin");
+}
+
+GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal", "REFLOG-HEAD", "REFLOG-CHOOSER",
+    "REFLOG-FILTER", "REFLOG-COPY", "REFLOG-REVEAL")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    s.git(repo, {"switch", "-q", "-c", "temp", "HEAD~1"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    const auto headLines = gg::splitLines(s.gitOut(repo, {"reflog", "--format=%H"}));
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries.size() == headLines.size(); }));
+    GG_CHECK_STR_EQ(reflog.reflog()->entries[0].newId.hex(), headLines[0]);
+    GG_CHECK(reflog.reflog()->entries[0].message.find("checkout: moving from temp to main") != std::string::npos);
+    const std::string table = "//Reflog/##reflog_table";
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID");
+    GG_CHECK_STR_EQ(s.clipboard(), headLines[0]);
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID");
+    GG_CHECK_STR_EQ(s.clipboard(), s.revParse(repo, "HEAD@{1}"));
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Reveal old commit");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD@{1}"); }));
+    s.showPanel("Reflog");
+    s.contextMenu((std::string("//Reflog/##reflog_table") + "/r0/###reflog_0").c_str(), "Reveal new commit");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == headLines[0]; }));
+    s.showPanel("Reflog");
+    // Filter.
+    ctx->ItemInputValue("//Reflog/##reflog_filter", "moving from temp");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists((std::string("//Reflog/##reflog_table") + "/r0/###reflog_0").c_str()));
+    GG_CHECK(!s.itemExists((std::string("//Reflog/##reflog_table") + "/r1/###reflog_1").c_str()));
+    ctx->ItemInputValue("//Reflog/##reflog_filter", "");
+    // Other reflogs: a branch and the stash.
+    s.comboSelect("//Reflog/##reflog_ref", "###ref_refs:stash");
+    const auto stashes = gg::splitLines(s.gitOut(repo, {"reflog", "show", "--format=%H", "refs/stash"}));
+    GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/stash" && reflog.reflog()->entries.size() == stashes.size(); }));
+    s.comboSelect("//Reflog/##reflog_ref", "###ref_refs:heads:temp");
+    GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/heads/temp" && reflog.reflog()->entries.size() == 1; }));
+}
+
+} // namespace ggtest

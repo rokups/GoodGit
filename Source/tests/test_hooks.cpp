@@ -1,0 +1,309 @@
+// Managed hooks (§4.12 B, §5 H1; P2-27, P2-28, P2-29).
+#include "shell/App.hpp"
+#include "shell/Dialogs.hpp"
+#include "shell/Session.hpp"
+#include "shell/Settings.hpp"
+#include "tests/Harness.hpp"
+#include "util/Env.hpp"
+
+#include <libgg/GitRunner.hpp>
+#include <libgg/Journal.hpp>
+
+#include <chrono>
+#include <fstream>
+#include <map>
+#include <sstream>
+
+namespace ggtest {
+
+namespace {
+
+std::vector<gg::journal::Operation> journalOps(const fs::path& repo, const std::string& src = {})
+{
+    gg::journal::Journal journal{repo / ".git"};
+    std::string error;
+    auto ops = journal.read(&error);
+    if (!src.empty())
+        std::erase_if(ops, [&](const auto& op) { return op.src != src; });
+    return ops;
+}
+
+// Everything Undo restores: refs (with symbolic HEAD) and the index.
+std::string repoState(Scenario& s, const fs::path& repo)
+{
+    std::string state = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"});
+    auto head = s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"});
+    state += "\nHEAD " + (head.ok() ? gg::trim(head.out) : s.head(repo));
+    state += "\n" + s.gitOut(repo, {"ls-files", "-s"});
+    return state;
+}
+
+// Hooks directory contents (name → mode and bytes).
+std::map<std::string, std::string> hooksDir(const fs::path& repo)
+{
+    std::map<std::string, std::string> out;
+    for (const auto& e : fs::directory_iterator(repo / ".git" / "hooks")) {
+        std::ifstream f(e.path(), std::ios::binary);
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        out[e.path().filename().string()] = std::to_string(static_cast<int>(e.status().permissions())) + ":" + ss.str();
+    }
+    return out;
+}
+
+// git with PATH lacking the directory of git-gg (hooks must then do nothing / warn).
+gg::RunResult gitWithoutGitGg(const fs::path& repo, std::vector<std::string> args)
+{
+    const std::string binDir = gg::findInPath("git-gg").parent_path().string();
+    std::string path;
+    std::stringstream parts(ggui::getEnv("PATH"));
+    for (std::string part; std::getline(parts, part, ':');)
+        if (part != binDir)
+            path += (path.empty() ? "" : ":") + part;
+    gg::RunRequest r;
+    args.insert(args.begin(), "git");
+    r.args = std::move(args);
+    r.cwd = repo;
+    r.env.emplace_back("PATH", path);
+    return gg::run(r);
+}
+
+void writeHook(Scenario& s, const fs::path& repo, const std::string& name, const std::string& body)
+{
+    s.write(repo / ".git" / "hooks", name, "#!/bin/sh\n" + body);
+    fs::permissions(repo / ".git" / "hooks" / name, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+}
+
+} // namespace
+
+GG_TEST("hooks", "git gg hooks install/status/uninstall with config-defined hooks", "HOOK-CLI-INSTALL",
+    "HOOK-CLI-UNINSTALL", "HOOK-CLI-STATUS", "HOOK-CONFIG-DEFINED")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string configBefore = s.read(repo / ".git", "config");
+    auto r = s.gitgg(repo, {"hooks", "status"});
+    GG_CHECK_EQ(r.exitCode, 1);
+    GG_CHECK(r.out.rfind("not installed", 0) == 0);
+    r = s.gitgg(repo, {"hooks", "install"});
+    GG_REQUIRE(r.ok());
+    GG_CHECK(r.out.find("config-defined") != std::string::npos);
+    r = s.gitgg(repo, {"hooks", "status"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.out.rfind("installed (config-defined)", 0) == 0);
+    GG_CHECK(!s.gitOut(repo, {"config", "--get", "hook.ggui-reference-transaction.command"}).empty());
+    GG_CHECK(fs::exists(repo / ".git" / "gg" / "hooks" / "run"));
+    r = s.gitgg(repo, {"hooks", "uninstall"});
+    GG_CHECK(r.ok());
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
+    GG_CHECK_EQ(s.gitgg(repo, {"hooks", "status"}).exitCode, 1);
+}
+
+GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact", "HOOK-WRAPPER",
+    "HOOK-CHAIN", "HOOK-CHAIN-EXIT", "HOOK-UNINSTALL-EXACT")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path marker = s.path("post-commit-ran");
+    writeHook(s, repo, "post-commit", "echo chained > '" + marker.string() + "'\n");
+    writeHook(s, repo, "pre-push", "echo 'user pre-push says no' >&2\nexit 3\n");
+    const auto before = hooksDir(repo);
+    ggui::setEnv("GG_HOOKS_MODE", "wrapper");
+    auto r = s.gitgg(repo, {"hooks", "install"});
+    GG_REQUIRE(r.ok());
+    GG_CHECK(r.out.find("wrapper scripts") != std::string::npos);
+    GG_CHECK(s.read(repo / ".git" / "hooks", "post-commit").find("# ggui managed hook") != std::string::npos);
+    GG_CHECK(fs::exists(repo / ".git" / "hooks" / "post-commit.gg-previous"));
+    // Both the ggui runner (journal) and the user's hook run.
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Through the wrapper"});
+    GG_CHECK(fs::exists(marker));
+    GG_CHECK_EQ(journalOps(repo, "git").size(), static_cast<size_t>(1));
+    // The user's pre-push exit status still decides.
+    r = s.gitMayFail(repo, {"push", "-q", "origin", "main"});
+    GG_CHECK(!r.ok());
+    GG_CHECK(r.err.find("user pre-push says no") != std::string::npos);
+    r = s.gitgg(repo, {"hooks", "uninstall"});
+    GG_CHECK(r.ok());
+    GG_CHECK(hooksDir(repo) == before);
+    ggui::unsetEnv("GG_HOOKS_MODE");
+}
+
+GG_TEST("hooks", "plain git commands are journaled one operation each and Undo restores them", "HOOK-REFTX",
+    "HOOK-GROUPING", "HOOK-POST-CONTEXT", "HOOK-LOOP-GUARD")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return s.session()->hooksInstalled(); }));
+    // Each command: exactly one new "git" operation labelled with the command, undone by Ctrl+Z.
+    auto step = [&](std::vector<std::string> args) {
+        s.settle();
+        const std::string before = repoState(s, repo);
+        const size_t ops = journalOps(repo, "git").size();
+        s.git(repo, args);
+        const auto after = journalOps(repo, "git");
+        std::string cmd = "git";
+        for (const auto& a : args)
+            cmd += " " + a;
+        if (after.size() != ops + 1)
+            ctx->LogError("'%s' recorded %zu operations", cmd.c_str(), after.size() - ops);
+        GG_CHECK_EQ(after.size(), ops + 1);
+        if (!after.empty())
+            GG_CHECK(after.back().label.find(args.front()) != std::string::npos);
+        GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() >= journalOps(repo).size(); }));
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+        const bool restored = s.waitUntil([&] { return repoState(s, repo) == before; });
+        if (!restored)
+            ctx->LogError("undo of '%s' did not restore the repository", cmd.c_str());
+        GG_CHECK(restored);
+        s.settle();
+    };
+    step({"commit", "-q", "--allow-empty", "-m", "Plain commit"});
+    step({"branch", "plain-branch"});
+    step({"checkout", "-q", "-b", "plain-switch"});
+    step({"reset", "-q", "--hard", "HEAD~2"});
+    step({"tag", "-a", "-m", "annotated", "plain-tag"});
+    // post-rewrite adds the rewritten commits to the amend's operation.
+    s.git(repo, {"commit", "-q", "--amend", "-m", "Amended plainly"});
+    const auto amend = journalOps(repo, "git").back();
+    GG_CHECK_EQ(amend.rewrites.size(), static_cast<size_t>(1));
+    s.settle();
+    // ggui's own git commands join its operation (GG_OPERATION): no extra "git" operation.
+    const size_t gitOps = journalOps(repo, "git").size();
+    const size_t gguiOps = journalOps(repo, "ggui").size();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo, "ggui").size() == gguiOps + 1; }));
+    s.settle();
+    GG_CHECK_EQ(journalOps(repo, "git").size(), gitOps);
+    // With hooks, the "no hooks" note is gone.
+    s.showPanel("Operations");
+    GG_CHECK(!s.textShown("//Operations", "Undo covers ggui and git gg only"));
+}
+
+GG_TEST("hooks", "without git-gg on PATH the hooks do nothing, pre-push warns", "HOOK-MISSING-SILENT",
+    "HOOK-MISSING-PREPUSH-WARN")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    auto r = gitWithoutGitGg(repo, {"commit", "-q", "--allow-empty", "-m", "No git-gg"});
+    GG_CHECK(r.ok());
+    GG_CHECK(gg::trim(r.err).empty());
+    GG_CHECK(journalOps(repo, "git").empty());
+    r = gitWithoutGitGg(repo, {"push", "-q", "origin", "HEAD:refs/heads/pushed"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.err.find("git-gg not found") != std::string::npos);
+}
+
+GG_TEST("hooks", "hooks work in linked worktrees", "HOOK-WORKTREE")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    const auto list = gg::splitLines(s.gitOut(repo, {"worktree", "list", "--porcelain"}));
+    fs::path linked;
+    for (const auto& line : list)
+        if (line.rfind("worktree ", 0) == 0 && fs::path(line.substr(9)) != fs::canonical(repo)
+            && fs::exists(fs::path(line.substr(9)) / ".git") && linked.empty())
+            linked = line.substr(9); // (the fixture also has a prunable one whose directory is gone)
+    GG_REQUIRE(!linked.empty());
+    GG_CHECK(s.gitgg(linked, {"hooks", "status"}).ok());
+    s.git(linked, {"commit", "-q", "--allow-empty", "-m", "In the linked worktree"});
+    const auto ops = journalOps(repo, "git");
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.back().wt != "main");
+    GG_CHECK(!ops.back().wt.empty());
+    // And its undo works from there.
+    auto r = s.gitgg(linked, {"undo"});
+    GG_CHECK(r.ok());
+    GG_CHECK(s.gitOut(linked, {"log", "-1", "--format=%s"}) != "In the linked worktree");
+}
+
+GG_TEST("hooks", "a fetch of thousands of refs stays fast with the hooks", "HOOK-FAST")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path origin = s.root() / (repo.filename().string() + "-origin.git");
+    const std::string tip = s.gitOut(origin, {"rev-parse", "main"});
+    std::string input;
+    for (int i = 0; i < 3000; ++i)
+        input += "create refs/heads/many/b" + std::to_string(i) + " " + tip + "\n";
+    GG_REQUIRE(s.git(origin, {"update-ref", "--stdin"}, input).ok());
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    const auto start = std::chrono::steady_clock::now();
+    s.git(repo, {"fetch", "-q", "origin"});
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    ctx->LogInfo("fetch of 3000 refs with hooks: %lld ms", static_cast<long long>(ms));
+    GG_CHECK(ms < 5000);
+    const auto ops = journalOps(repo, "git");
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.back().refs.size() >= 3000);
+}
+
+GG_TEST("hooks", "first-open prompt (Install / Not now / Never) and the Settings Hooks tab", "APP-PROMPT-HOOKS",
+    "HOOK-PROMPT-INSTALL", "HOOK-PROMPT-NOT-NOW", "HOOK-PROMPT-NEVER", "HOOK-SETTINGS", "SET-HOOKS-TAB")
+{
+    s.app.settings().data().askHooksOnOpen = true;
+    const fs::path repo = s.fixture(Recipe::Linear);
+    auto reopen = [&](const fs::path& path) {
+        if (s.session())
+            ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+        ctx->Yield(2);
+        ctx->ItemInputValue("//Welcome/##welcome_path", path.string().c_str());
+    };
+    reopen(repo);
+    GG_REQUIRE(s.dialogOpen("Install ggui hooks?"));
+    s.dialogButton("Install ggui hooks?", "Not now");
+    GG_CHECK(s.app.settings().repo(repo.string()).hooks == ggui::HooksAnswer::NotNow);
+    // "Not now" asks again next time; "Never" does not.
+    reopen(repo);
+    GG_REQUIRE(s.dialogOpen("Install ggui hooks?"));
+    s.dialogButton("Install ggui hooks?", "Never");
+    GG_CHECK(s.app.settings().repo(repo.string()).hooks == ggui::HooksAnswer::Never);
+    reopen(repo);
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && s.session()->hooksStatus(); }));
+    s.settle();
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    // Install from the prompt in another repository.
+    const fs::path other = s.fixture(Recipe::Merges);
+    reopen(other);
+    GG_REQUIRE(s.dialogOpen("Install ggui hooks?"));
+    s.dialogButton("Install ggui hooks?", "Install");
+    GG_CHECK(s.waitUntil([&] { return s.gitgg(other, {"hooks", "status"}).ok(); }));
+    GG_CHECK(s.waitUntil([&] { return s.session()->hooksInstalled(); }));
+    // Settings ▸ Hooks: remove, then install again.
+    s.settle(); // the install finishes (buttons are disabled while ggui is busy)
+    s.app.openSettings();
+    ctx->Yield(2);
+    ctx->ItemClick("//Settings/##settings_tabs/Hooks");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "Status: installed"); }));
+    ctx->ItemClick("//Settings/##settings_tabs/Hooks/Remove hooks##remove_hooks");
+    GG_CHECK(s.waitUntil([&] { return s.gitgg(other, {"hooks", "status"}).exitCode == 1; }));
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "Status: not installed"); }));
+    s.settle();
+    ctx->ItemClick("//Settings/##settings_tabs/Hooks/Install hooks##install_hooks");
+    GG_CHECK(s.waitUntil([&] { return s.gitgg(other, {"hooks", "status"}).ok(); }));
+    ctx->WindowClose("//Settings");
+}
+
+} // namespace ggtest
+
+namespace ggtest {
+
+GG_TEST("hooks", "managed pre-push refuses plain git pushes of conflicted commits", "CONF-PREPUSH-HOOK", "HOOK-PREPUSH")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    const fs::path bare = s.path("prepush-remote.git");
+    s.git(s.root(), {"init", "-q", "--bare", "-b", "main", bare.string()});
+    s.track(bare);
+    s.git(repo, {"remote", "add", "origin", "file://" + bare.generic_string()});
+    s.git(repo, {"push", "-q", "origin", "main~2:refs/heads/main"}); // the clean base only
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    auto r = s.gitMayFail(repo, {"push", "origin", "main"});
+    GG_CHECK(!r.ok());
+    GG_CHECK(r.err.find("refusing to push commits with first-class conflicts") != std::string::npos);
+    GG_CHECK(r.err.find("conflict.txt") != std::string::npos);
+    GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main~2"));
+    // Only --no-verify bypasses it (git's own switch).
+    r = s.gitMayFail(repo, {"push", "-q", "--no-verify", "origin", "main"});
+    GG_CHECK(r.ok());
+    GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main"));
+}
+
+} // namespace ggtest

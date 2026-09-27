@@ -1,0 +1,109 @@
+// ggui settings (settings.json) and imgui.ini, both in SDL_GetPrefPath("gg","ggui")
+// (GGUI_PREF_PATH overrides the directory; tests use it for isolation). All file I/O runs on
+// a background thread; the UI thread only applies results (§3.1).
+#pragma once
+
+#include <nlohmann/json.hpp>
+
+#include <condition_variable>
+#include <deque>
+#include <filesystem>
+#include <functional>
+#include <map>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace ggui {
+
+// Runs small jobs off the UI thread; completions run on the UI thread in pump().
+class AsyncIo {
+public:
+    AsyncIo();
+    ~AsyncIo();
+    AsyncIo(const AsyncIo&) = delete;
+    AsyncIo& operator=(const AsyncIo&) = delete;
+
+    // `work` runs on the I/O thread; its returned continuation runs on the UI thread.
+    void post(std::function<std::function<void()>()> work);
+    void pump();
+    bool idle() const;
+    // Blocks until all queued work is done (shutdown only).
+    void flush();
+
+private:
+    void loop();
+
+    mutable std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::deque<std::function<std::function<void()>()>> m_jobs;
+    std::deque<std::function<void()>> m_done;
+    int m_running = 0;
+    bool m_stop = false;
+    std::thread m_thread;
+};
+
+enum class Theme { Dark, Light };
+enum class HooksAnswer { Unasked, Installed, NotNow, Never };
+enum class NothingStaged { Ask, StageAll, StageSelected };
+
+struct RepoPrefs {
+    HooksAnswer hooks = HooksAnswer::Unasked;
+    bool ignoreOldGgRefs = false;
+};
+
+struct SettingsData {
+    float uiScale = 1.0f;          // 0.5 – 3.0
+    Theme theme = Theme::Dark;
+    std::vector<std::string> recent; // most recent first
+    std::map<std::string, RepoPrefs> repos;
+    std::map<std::string, bool> panels; // window name → visible
+    // Diff panel
+    bool diffSideBySide = false;
+    int diffContext = 3;
+    int diffWhitespace = 0;
+    bool historyShowStashes = true;
+    NothingStaged nothingStaged = NothingStaged::Ask;
+    bool askHooksOnOpen = true;    // first-open prompt for the managed hooks (H1)
+    bool expandConflictStages = false; // §4.10: index stages 1–3 for two-sided first-class conflicts on checkout
+    bool expandStagesOnCheckout = false;
+    // Main window placement (custom imgui.ini handler)
+    int windowX = -1, windowY = -1, windowW = 0, windowH = 0;
+    bool windowMaximized = false;
+};
+
+class Settings {
+public:
+    explicit Settings(AsyncIo& io);
+
+    // Directory for settings.json and imgui.ini.
+    static std::filesystem::path prefDir();
+
+    // Starts loading from prefDir(); `onLoaded` runs on the UI thread with the ini text.
+    void load(std::function<void(const std::string& iniText)> onLoaded);
+    bool loaded() const { return m_loaded; }
+    // Schedules an asynchronous save of settings.json.
+    void save();
+    // Schedules an asynchronous save of the given imgui.ini text.
+    void saveIni(std::string text);
+
+    SettingsData& data() { return m_data; }
+    const SettingsData& data() const { return m_data; }
+
+    void addRecent(const std::string& path);
+    void forgetRecent(const std::string& path);
+    RepoPrefs& repo(const std::string& path) { return m_data.repos[path]; }
+
+private:
+    AsyncIo& m_io;
+    SettingsData m_data;
+    bool m_loaded = false;
+    std::filesystem::path m_dir;
+};
+
+nlohmann::json toJson(const SettingsData& d);
+SettingsData fromJson(const nlohmann::json& j);
+
+} // namespace ggui

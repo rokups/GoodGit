@@ -1,0 +1,234 @@
+# ggui per-panel UI specification
+
+Status: **draft for review** (P0-02). Inputs: `REBUILD_PLAN.md` §4 only. Legend from §4:
+**K** keep, **M** keep the entry point with Git semantics, **N** new, **D** dropped (listed only
+so implementers know it is intentionally absent).
+
+Screenshots of the pre-rebuild app are **not** attached: the analysed checkouts were not
+available to the implementer (clean room, see §10 of the plan). The layout below is taken
+from the plan's written description. Screenshots of the rebuilt app are produced by the test
+suite (`ggui --test=screens` writes `test-artifacts/screens/*.png`) and replace them.
+
+Wording rule: HEAD, branch, commit, staged, unstaged, working tree, index, stash, worktree.
+Never "change", "@", "alias", "workspace" (the §4 label "Compare with @" is written
+"Compare with HEAD").
+
+Stable ImGui identifiers are part of this spec: tests address widgets by these paths, so a
+rename is a spec change. Window names are fixed (`"History"`, `"Changes"` …); widgets inside use
+`##id` suffixes where the visible label is dynamic.
+
+---
+
+## 1. Application shell
+
+### 1.1 Main window
+- Title: `ggui` when no repository is open; `<repo name> — ggui` otherwise.
+- Top to bottom: main menu bar, toolbar (window `"##Toolbar"`), (no error banner: see 1.5),
+  dock space (`"##DockSpace"`).
+- Repository-state badge and prompts appear in the toolbar row.
+
+### 1.2 Welcome screen (K; shown when no repository is open) — window `"Welcome"`
+| Element | ID | Behavior |
+|---|---|---|
+| Title + tagline "A Git client with undo and first-class conflicts" | — | text only |
+| Button *Open repository…* | `Open repository...` | native folder picker (NFD); opens the chosen folder |
+| Button *Initialize repository…* | `Initialize repository...` | folder picker, `git init`, opens it (Phase 2) |
+| Button *Clone repository…* | `Clone repository...` | opens the Clone dialog (Phase 2) |
+| Path field + *Open* | `##welcome_path`, `Open` | opens a typed path (keyboard path for tests and users without a picker) |
+| Recent list | `##recent` rows `recent_<n>` | click opens; Delete key forgets the focused entry; each row shows path, current branch, upstream and ↑n/↓n |
+| Opening progress | `##opening` + `Cancel##open` | spinner, phase text, Cancel |
+
+Auto-open (K): argv[1] if given, otherwise the most recent repository that still exists.
+
+### 1.3 Main menu
+**Repository** (K): Open… `Ctrl+O` · Initialize… · Clone… · Recent ▸ (filter field
+`##recent_filter`, entries show branch, upstream and ahead/behind) · Open working directory ·
+Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · Pull · Push · — ·
+Settings… · Quit `Ctrl+Q`.
+
+**Commit** (M, renamed from "Change"): New commit `Ctrl+N` · New detached commit · Commit… ·
+Amend… · Move HEAD to parent · Move HEAD to child · — · the selected-commit actions of §4
+(below) · Interactive rebase… (N, Phase 3).
+
+**Edit** (K): Undo `Ctrl+Z` · Redo `Ctrl+Y` · Apply patch… (N options: to index / to working tree).
+
+**View** (K): one checkbox per panel (History, Changes, Change information, Diff, Blame,
+Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations) · Previous changed file
+`Shift+F6` · Next changed file `F6` · Reset layout.
+
+### 1.4 Toolbar — window `"##Toolbar"` (K + N)
+Left to right, each button has a tooltip with its shortcut:
+New `##tb_new` · Commit/Amend `##tb_commit` (label "Commit" when the working tree/index is
+selected, "Amend" when HEAD is selected) · Prev `##tb_prev` · Next `##tb_next` · Undo `##tb_undo` ·
+Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` ·
+Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
+**N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
+recent repositories) · open-folder `##tb_open` · current branch label `##tb_branch` (branch name or
+"detached") · HEAD ID `##tb_head` (click: reveal in History; right-click: Copy ID) ·
+**N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,
+BISECTING) with Continue / Skip / Abort · activity spinner `##tb_activity` (tooltip lists the
+background tasks) + `Cancel##tb_cancel`.
+
+Mutation buttons are disabled (with a tooltip "Not available yet" until their phase, and
+"Busy: <operation>" while a conflicting mutation runs).
+
+### 1.5 Errors and notifications (K)
+- Important errors (failed git commands, open/clone failures, hook failures, journal errors) open
+  a modal error popup titled after the action: error icon, the git/hook output verbatim, buttons
+  `OK` (dismiss) and `Copy message`.
+- Low-importance information and warnings show as notifications in the bottom-right corner
+  (windows `##toast_<n>`, newest at the bottom): icon, title, message, close button
+  `###toast_close`, right-click `Copy message`. They fade out after 6 s (information) or 12 s
+  (warnings), not counting time under the mouse; at most five are shown, and a repeated notice
+  replaces the older one.
+
+### 1.6 Settings window `"Settings"` (K/N)
+Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light),
+**Git** (N: `core.editor` per scope User/Repository/Worktree, `merge.tool`, `diff.tool`,
+`pull.rebase`, "When nothing is staged" default: Ask / Stage all tracked / Stage selected),
+**Hooks** (N: status, Install, Remove, first-open answer), **Conflicts** (N, Phase 3: "Expand to
+index stages on checkout"). **D** max-new-file-size.
+
+### 1.7 One-time prompts on open (N)
+- "git not found / too old" (blocking modal `Git required`): shows the found version and the
+  minimum 2.36; buttons *Retry*, *Quit*.
+- Managed hooks (`Install ggui hooks?`): Install / Not now / Never for this repository.
+- Old gg refs (`Old gg data found`): list + Clean up / Ignore.
+
+### 1.8 Default dock layout (K + N)
+```
++----------------+----------------------------+---------------------------+
+| Branches | Tags|                            | Changes                   |
+|                |          History           +---------------------------+
++----------------+                            | Change information        |
+| Worktrees |    |                            +---------------------------+
+| Remotes |      |                            | Diff | Blame | Reflog |   |
+| Stashes        |                            | Operations                |
++----------------+----------------------------+---------------------------+
+```
+Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 % of the right column.
+
+---
+
+## 2. History panel — window `"History"`
+- Header row: filter field `##hist_filter` (message, ID, branch, tag), toggle *Conflicted only*
+  `##hist_conflicted` (N), toggle *Stashes* `##hist_stashes` (N), *Show more* when truncated.
+- Table `##hist_table`: columns Graph, Description (ID prefix, badges, subject), Author, Date.
+  Row IDs: `row_wt` (Working tree), `row_index` (Index, N, only when something is staged),
+  `row_<full commit id>` for commits.
+- Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
+  stash (N). Published commits (reachable from a remote-tracking ref) use the normal text colour;
+  unpublished commits are highlighted. Conflicted commits: conflict colour and ⚠ icon.
+- Keys: ↑/↓ select, `N` new, `Alt+N` new detached, `E` check out, `D`/`Shift+D` duplicate
+  commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
+  branch, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
+- Row context menu: New · New detached · Check out ▸ (branches at the commit, "Detached HEAD") ·
+  Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
+  description) · shared commit actions (§4).
+- Working tree context menu: Commit… · Amend into HEAD… · Discard changes… · N: Stash changes… ·
+  Stage all · Unstage all.
+- Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase; Shift = move
+  before, Ctrl = squash, Alt = rebase, none = chooser popup `##drop_chooser`), branch
+  badge→commit (move branch), files from Changes→commit (move changes).
+- Reveal: loads more history until the commit is found; progress in the activity area,
+  cancellable.
+- Scope: branch/tag/remote visibility from the side panels.
+
+### 2.x Drag and drop (Phase 3)
+- **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,
+  Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (with
+  descendants). Without a modifier a chooser pops up: Move before / Move after / Copy after /
+  Squash into / Rebase onto.
+- **Branch badge → commit row:** moves the branch there (the drag starts on the badge).
+- **Files from Changes → commit row:** a commit's files go to its parent, its child or the
+  checked-out commit (other targets are refused with a notification); working tree files are
+  folded into the target commit (descendants rebased, the working tree kept as it is).
+
+## 3. Changes panel — window `"Changes"`
+- Header: title of the selection ("Working tree", "Index", commit subject, stash message),
+  filter `##changes_filter`, toggle *Compare with HEAD* `##compare_head`.
+- For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
+  renames shown `old → new`.
+- For Working tree / Index (N): groups `Staged`, `Unstaged`, `Untracked`, `Conflicted`, each a
+  collapsible header with a count and group buttons (Stage all / Unstage all). Space/Enter
+  toggles staging of the selection; double-click stages; drag rows between Staged and
+  Unstaged.
+- Multi-select: Ctrl-click, Shift-click, Ctrl+A. ↑/↓ navigation.
+- File context menu: Open working-copy file · Open containing folder · Copy ▸ (Name, Relative
+  path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Track/Untrack (M,N
+  "Add to .gitignore") · Resolve with merge tool · Mark resolved · Copy patch · Save patch… ·
+  Blame file · External diff ▸ (vs HEAD, vs parent) · Revert · Move to parent/child · Delete file.
+
+## 4. Commit actions (Commit menu and History context menu)
+New commit, Edit/Check out, Commit…, Amend…, Describe (Save message), Edit author, Duplicate
+commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
+Abandon/Abandon branch, Simplify parents, Move HEAD to previous/next, Reorder, Move
+files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
+plan §4.3 table.
+
+## 5. Change information panel — window `"Change information"`
+- Message editor `##message` with *Save message* `##save_message` (HEAD only until Phase 3).
+- Author line with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
+  differs (N); Date; published/lock state ("Published" / "Not published").
+- Commit ID `##commit_id` with Copy; Parents list `parent_<n>` (click reveals).
+- N: conflicted files list with side counts. N: "Amend" mode for HEAD with a clean index.
+- D: aliases list.
+
+## 6. Diff panel — window `"Diff"`
+- Toolbar: view `##diff_view` (Unified / Side by side), whitespace `##diff_ws` (Normal / Ignore
+  changes / Ignore all), context lines `##diff_context`, *Compare only this file with HEAD*
+  `##diff_vs_head`, for stashes a part selector `##stash_part` (Working tree / Index /
+  Untracked).
+- Body: hunks with headers; per hunk buttons (N) `Stage hunk`, `Discard hunk`, `Unstage hunk`.
+  Line selection with click/Shift-click; Ctrl+C copies.
+- Expandable context rows `expand_<n>` (click: 10 lines; Shift+click: whole gap).
+- Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
+- Capped large files: "Load full diff" `##load_full`.
+- Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) (N) · Move line(s)/hunk to
+  parent/child/active commit/working tree (Phase 3) · Revert line/hunk (Phase 3).
+
+## 7. Blame panel — window `"Blame"`
+Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5),
+table of lines (commit prefix, author, date, text); uncommitted lines marked "Not committed";
+tooltip per line (full commit summary); context menu: Blame before this change · Show
+originating source · Reveal commit · Copy commit ID · Select change block · Copy change block.
+
+## 8. Side panels
+- **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
+  (click toggles visibility in History, Ctrl-click = only this), current outlined. Context:
+  Reveal · Copy name · Check out · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
+  Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
+  remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
+  Interactive rebase onto… (Phase 3). Remote-tracking branches are listed under their remote.
+- **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>`
+  (visibility toggle). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
+- **Worktrees** `"Worktrees"` (M): rows `worktree_<name>` (main, stale, locked marks). Context:
+  Copy name · Copy path · Reveal HEAD · Open directory · Open here · Open in new window ·
+  Add… · Remove… · N: Lock/Unlock · Prune · Repair. D: gg rename/forget.
+- **Remotes** `"Remotes"`: rows `remote_<name>` with URL. Context: Copy name · Fetch · Pull ·
+  Delete · N: Edit URL… · Prune on fetch (checkbox) · Fetch all. Header: Add remote…
+- **Stashes** `"Stashes"` (N): rows `stash_<n>` (index, message, base, date). Context: Apply ·
+  Pop · Apply (restore index) · Drop… · Branch from stash… · Header: Stash changes… · Clear all….
+- **Reflog** `"Reflog"`: chooser `##reflog_ref` (HEAD, branches, stash), filter, rows with old →
+  new, message. Context: Copy old/new ID · Reveal old/new · Create branch from old/new….
+- **Operations** `"Operations"` (M): rows `op_<id>` (time, source label, description). Context:
+  Restore (undo back to before this operation). Footer note when managed hooks are not
+  installed: "Undo covers ggui and git gg only; use the Reflog for plain git operations."
+
+## 9. Dialogs
+Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dialog>` and
+`Cancel##<dialog>`:
+`Commit`, `Amend`, `Create branch`, `Rename branch`, `Delete branch`, `Move branch`,
+`Create tag`, `Add remote`, `Edit remote URL`, `Clone repository`, `Initialize repository`,
+`Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
+`Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
+`Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
+3), `Interactive rebase` (Phase 3), `Settings`.
+
+## 10. States
+- **Busy:** conflicting actions disabled with reason tooltip; browsing stays enabled.
+- **Scanning:** Changes header shows "scanning…" while partial status results arrive.
+- **Loading history:** History footer shows "Loading…" plus Cancel.
+- **Detached HEAD:** branch label "detached", Pull disabled with reason.
+- **Unborn HEAD:** History shows only the Working tree row; branch label shows the unborn branch.
+- **Bare repository:** no Working tree row; Changes shows commit files only.

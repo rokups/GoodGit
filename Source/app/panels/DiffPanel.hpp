@@ -1,0 +1,134 @@
+// Diff panel (REBUILD_PLAN §4.5): unified and side-by-side views of one file, both read-only text
+// editors (selectable text, syntax highlighting) with a gutter for line numbers, hunk staging
+// buttons, selectable line handles and expandable context.
+#pragma once
+
+#include "panels/ChangesPanel.hpp"
+#include "shell/Session.hpp"
+#include "util/PatchBuilder.hpp"
+
+#include <core/Engine.hpp>
+
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+class TextEditor;
+
+namespace ggui {
+
+class DiffPanel {
+public:
+    static constexpr int kSlot = 1;
+
+    explicit DiffPanel(Session& session);
+    ~DiffPanel();
+
+    // The engine query that shows `row` for `sel`.
+    static core::DiffQuery queryFor(const Selection& sel, const FileRow& row, bool compareHead,
+        const core::SnapshotPtr& snapshot);
+
+    void onSelection(const Selection& sel);
+    void showFile(const Selection& sel, const FileRow& row, bool compareHead);
+    void refreshIfShowing();
+    void clear();
+    void onDiff(const core::DiffEvent& event);
+    void draw(bool* open);
+
+    enum class StagingMode { None, Unstaged, Staged };
+    enum class StagingAction { Stage, Unstage, Discard };
+    StagingMode stagingMode() const;
+    // Lines (and whole hunks) covered by the current row selection.
+    LineSet selectedLines() const;
+    void applyLines(const LineSet& lines, StagingAction action);
+
+    const core::DiffPtr& diff() const { return m_diff; }
+    const std::optional<FileRow>& file() const { return m_file; }
+    std::string languageName() const;
+    std::string selectedText() const;
+    // Scrolls the row into view (rows as in the unified view: gaps, hunk headers, lines).
+    void revealRow(int row);
+    // Lines revealed in context gap `gap` (-1 = all of it).
+    int gapShown(int gap) const
+    {
+        auto it = m_gapShown.find(gap);
+        return it == m_gapShown.end() ? 0 : it->second;
+    }
+
+    // One rendered row of the unified view.
+    struct Row {
+        enum Kind { Hunk, Line, Gap } kind = Line;
+        int hunk = -1;
+        int line = -1;      // index in hunk lines
+        int gap = -1;       // gap index
+        int gapStart = 0;   // first new-side line number (1-based) of the gap
+        int gapCount = 0;   // hidden lines in the gap
+        int oldOffset = 0;  // old = new + offset inside the gap
+    };
+
+private:
+    // One line of an editor view and what it shows.
+    struct EditorLine {
+        enum Kind { Hunk, Line, GapHidden, GapLine, Filler } kind = Filler;
+        int row = -1;
+        int hunk = -1;
+        int line = -1;
+        int gap = -1;
+        int oldNo = 0;
+        int newNo = 0;
+        char origin = ' ';
+    };
+    enum class Side { Unified, Left, Right };
+    struct View {
+        std::unique_ptr<TextEditor> editor;
+        std::vector<EditorLine> lines;
+        std::vector<int> firstLine; // per row: first editor line (-1 = not in this view)
+        std::vector<int> lastLine;
+        Side side = Side::Unified;
+    };
+
+    void request();
+    void buildRows();
+    void buildViews();
+    void setupView(View& v, Side side);
+    void finishView(View& v, const std::string& text);
+    void drawToolbar();
+    void drawUnified();
+    void drawSideBySide();
+    void drawPlaceholder(const core::DiffFile& file);
+    void drawGutter(View& v, int line, float width, float height);
+    void drawMenuItems();
+    void selectRows(View& v, int row, bool extend);
+    std::vector<int> selectedRows() const;
+    View& primaryView();
+
+    Session& m_session;
+    Selection m_selection;
+    std::optional<FileRow> m_file;
+    bool m_compareHead = false;   // from the Changes panel (whole commit vs HEAD)
+    bool m_fileVsHead = false;    // "Compare only this file with HEAD"
+    core::DiffPtr m_diff;
+    core::RequestId m_request = 0;
+    bool m_full = false;
+    bool m_loading = false;
+
+    std::vector<Row> m_rows;
+    std::map<int, int> m_gapShown; // gap index → lines revealed (from its top); -1 = all
+
+    View m_unified;
+    View m_left;
+    View m_right;
+    View* m_active = nullptr;   // view the selection belongs to
+    int m_anchorRow = -1;
+    bool m_viewsDirty = true;
+    bool m_resetScroll = true;
+    float m_syncedScroll = 0.0f;
+    int m_paletteTheme = -1;
+    int m_conflictView = 0; // native conflicts: 0 working tree, 1 base→ours, 2 base→theirs, 3 ours→theirs
+    int m_termView = 0;     // first-class conflicts: 0 raw markers, k: base → side k
+    int termSides() const;  // sides of the shown file's first-class conflict (0 = none)
+};
+
+} // namespace ggui

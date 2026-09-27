@@ -1,0 +1,397 @@
+// History editing actions on the in-memory rewrite engine (§4.3; P3-08 … P3-12).
+#include "panels/ChangesPanel.hpp"
+#include "panels/HistoryPanel.hpp"
+#include "shell/App.hpp"
+#include "shell/Dialogs.hpp"
+#include "shell/Session.hpp"
+#include "tests/Harness.hpp"
+
+namespace ggtest {
+
+namespace {
+
+// c1 adds a.txt, c2 adds b.txt, c3 changes a.txt, c4 adds c.txt and d.txt (main = c4);
+// "side" branches off c2 with s1 adding s.txt.
+struct EditRepo {
+    fs::path path;
+    std::string c1, c2, c3, c4, s1;
+};
+
+EditRepo makeRepo(Scenario& s)
+{
+    EditRepo r;
+    r.path = s.fixture(Recipe::Empty);
+    const fs::path& p = r.path;
+    s.commitFile(p, "a.txt", "one\ntwo\nthree\n", "c1 add a");
+    r.c1 = s.head(p);
+    s.commitFile(p, "b.txt", "b\n", "c2 add b");
+    r.c2 = s.head(p);
+    s.git(p, {"branch", "side"});
+    s.commitFile(p, "a.txt", "one\nTWO\nthree\n", "c3 change a");
+    r.c3 = s.head(p);
+    s.write(p, "c.txt", "c\n");
+    s.write(p, "d.txt", "d\n");
+    s.git(p, {"add", "c.txt", "d.txt"});
+    s.git(p, {"commit", "-q", "-m", "c4 add c and d"});
+    r.c4 = s.head(p);
+    s.git(p, {"switch", "-q", "side"});
+    s.commitFile(p, "s.txt", "s\n", "s1 add s");
+    r.s1 = s.head(p);
+    s.git(p, {"switch", "-q", "main"});
+    return r;
+}
+
+std::string rowRef(const std::string& hex) { return "//History/**/###row_" + hex; }
+
+std::vector<std::string> subjects(Scenario& s, const fs::path& repo, const std::string& rev = "HEAD")
+{
+    std::vector<std::string> out;
+    for (const auto& l : gg::splitLines(s.gitOut(repo, {"log", "--format=%s", rev})))
+        if (!l.empty())
+            out.push_back(l);
+    return out;
+}
+
+bool rowReady(Scenario& s, const std::string& hex)
+{
+    return s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(hex)) != nullptr; });
+}
+
+// Waits for the history to change, then for ggui to be idle.
+bool changed(Scenario& s, const fs::path& repo, const std::string& before, const char* rev = "HEAD")
+{
+    const bool ok = s.waitUntil([&] { return s.revParse(repo, rev) != before; });
+    s.settle();
+    return ok;
+}
+
+} // namespace
+
+GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copies", "ACT-DUPLICATE-COMMIT",
+    "ACT-DUPLICATE-BRANCH", "HIST-KEY-D", "HIST-KEY-SHIFT-D")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK(s.head(r.path) != r.c3);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.c2);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), s.revParse(r.path, r.c3 + "^{tree}"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4); // branches stay
+    const std::string copy = s.head(r.path);
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_D);
+    GG_CHECK(changed(s, r.path, copy));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), s.revParse(r.path, r.c4 + "^{tree}"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c2);
+    GG_CHECK(s.revParse(r.path, "HEAD~1") != r.c3);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
+}
+
+GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto another branch", "ACT-REBASE-COMMIT",
+    "ACT-REBASE-BRANCH", "HIST-PUBLISHED-WARN")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    // c3 and its descendant c4 onto side.
+    s.contextMenu(rowRef(r.c3).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "side");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~2"), r.s1);
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    GG_CHECK_STR_EQ(s.read(r.path, "s.txt"), "s\n"); // the working tree followed
+    // Only the tip commit (c4') onto c1: main follows it, c3 drops out of main.
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(rowReady(s, tip));
+    s.contextMenu(rowRef(tip).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", r.c1);
+    s.dialogCheck("Rebase onto", "with_descendants", "With its descendants");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(changed(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c1 add a"}));
+}
+
+GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S)",
+    "ACT-SQUASH-PARENT", "ACT-SQUASH-TARGET", "ACT-SQUASH-DESCENDANTS", "HIST-KEY-S", "HIST-KEY-SHIFT-S")
+{
+    const EditRepo r = makeRepo(s);
+    const std::string tree = s.revParse(r.path, "main^{tree}");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    ctx->ItemClick(rowRef(r.c4).c_str());
+    ctx->KeyPress(ImGuiKey_S);
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    s.dialogButton("Squash", "Squash");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+    GG_CHECK(subjects(s, r.path).size() == 3);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B"}), "c3 change a\n\nc4 add c and d");
+    // The tip into c1 (an ancestor), keeping c1's message (fixup).
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(rowReady(s, tip));
+    s.contextMenu(rowRef(tip).c_str(), "Squash...");
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    s.dialogText("Squash", "target", r.c1);
+    s.dialogCheck("Squash", "combine", "Combine the messages (squash; otherwise keep the target's: fixup)");
+    s.dialogButton("Squash", "Squash");
+    GG_CHECK(changed(s, r.path, tip));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD~1:a.txt"}), "one\nTWO\nthree");
+    // Everything after c1' into it.
+    const std::string root = s.revParse(r.path, "HEAD~1");
+    GG_REQUIRE(rowReady(s, root));
+    ctx->ItemClick(rowRef(root).c_str());
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_S);
+    GG_CHECK(changed(s, r.path, s.head(r.path)));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c1 add a"}));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+}
+
+GG_TEST("edit", "split a commit by files (Alt+S)", "ACT-SPLIT", "HIST-KEY-ALT-S")
+{
+    const EditRepo r = makeRepo(s);
+    const std::string tree = s.revParse(r.path, "main^{tree}");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    ctx->ItemClick(rowRef(r.c4).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 2; }));
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_S);
+    GG_REQUIRE(s.dialogOpen("Split"));
+    s.dialogCheck("Split", "file_0", "c.txt");
+    s.dialogText("Split", "message", "c4a add c");
+    s.dialogButton("Split", "Split");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c4a add c", "c3 change a", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "--name-only", "--format=", "HEAD~1"}), "c.txt");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "--name-only", "--format=", "HEAD"}), "d.txt");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+}
+
+GG_TEST("edit", "abandon a commit (A) and a branch (Shift+A)", "ACT-ABANDON", "ACT-ABANDON-BRANCH", "ACT-ABANDON-REMOTE",
+    "HIST-KEY-A", "HIST-KEY-SHIFT-A")
+{
+    const EditRepo r = makeRepo(s);
+    // side has an upstream on a bare remote.
+    const fs::path bare = s.path("abandon-remote.git");
+    s.git(s.root(), {"init", "-q", "--bare", bare.string()});
+    s.track(bare);
+    s.git(r.path, {"remote", "add", "origin", "file://" + bare.generic_string()});
+    s.git(r.path, {"push", "-q", "-u", "origin", "side"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiKey_A);
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.read(r.path, "a.txt"), "one\ntwo\nthree\n");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    // The side branch: dropped, deleted locally and on its remote.
+    GG_REQUIRE(rowReady(s, r.s1));
+    ctx->ItemClick(rowRef(r.s1).c_str());
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_A);
+    GG_REQUIRE(s.dialogOpen("Abandon branch"));
+    s.dialogCheck("Abandon branch", "delete_remote", "Also delete them on their remote");
+    s.dialogButton("Abandon branch", "Abandon");
+    // side is on its remote: rewriting it asks first.
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(r.path, {"rev-parse", "--verify", "-q", "refs/heads/side"}).ok(); }));
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(bare, {"branch", "--list", "side"}).empty(); }));
+    s.settle();
+}
+
+GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents", "ACT-RESTORE-COMMIT",
+    "ACT-RESTORE-WORKTREE", "ACT-SIMPLIFY-PARENTS")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    // In c4, restore c.txt from c2 (where it does not exist): c4 no longer adds it.
+    ctx->ItemClick(rowRef(r.c4).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 2; }));
+    ctx->ItemClick((s.child("//Changes", "##files") + "/c.txt/###file_c.txt").c_str());
+    s.contextMenu(rowRef(r.c4).c_str(), "Restore from...");
+    GG_REQUIRE(s.dialogOpen("Restore"));
+    s.dialogText("Restore", "from", r.c2);
+    s.dialogButton("Restore", "Restore");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "--name-only", "--format=", "HEAD"}), "d.txt");
+    GG_CHECK(!fs::exists(r.path / "c.txt"));
+    // The working tree: a.txt as in c1 (staged too).
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(rowReady(s, tip));
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+    ctx->ItemClick((s.child("//Changes", "##files") + "/a.txt/###file_a.txt").c_str());
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Restore from...");
+    GG_REQUIRE(s.dialogOpen("Restore"));
+    s.dialogText("Restore", "from", r.c1);
+    s.comboSelect("//Restore/Restore into##where", "The working tree (git restore)");
+    s.dialogButton("Restore", "Restore");
+    GG_CHECK(s.waitUntil([&] { return s.read(r.path, "a.txt") == "one\ntwo\nthree\n"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--cached", "--name-only"}), "a.txt");
+    GG_CHECK_STR_EQ(s.head(r.path), tip);
+    s.git(r.path, {"reset", "-q", "--hard"});
+    // A merge whose second parent is already an ancestor of the first.
+    const auto merge = s.gitgg(r.path, {"new", "-m", "Redundant merge", "HEAD", r.c2});
+    GG_REQUIRE(merge.ok());
+    const std::string m = gg::trim(merge.out);
+    GG_REQUIRE(rowReady(s, m));
+    s.contextMenu(rowRef(m).c_str(), "Simplify parents");
+    GG_CHECK(changed(s, r.path, m));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%P"}), tip);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Redundant merge");
+}
+
+GG_TEST("edit", "insert a new commit before or after one", "ACT-NEW-INSERT-BEFORE", "ACT-NEW-INSERT-AFTER")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c2));
+    s.contextMenu(rowRef(r.c2).c_str(), "New commit after");
+    GG_CHECK(changed(s, r.path, r.c4));
+    auto count = [&] { return std::stoi(s.gitOut(r.path, {"rev-list", "--count", "HEAD"})); };
+    GG_CHECK_EQ(count(), 5);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2^"), r.c2);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2^{tree}"), s.revParse(r.path, r.c2 + "^{tree}"));
+    // Every child of c2 now hangs on the new commit, side's too (like jj new --after).
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side^"), s.revParse(r.path, "HEAD~2"));
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(rowReady(s, r.c1));
+    s.contextMenu(rowRef(r.c1).c_str(), "New commit before");
+    GG_CHECK(changed(s, r.path, tip));
+    GG_CHECK_EQ(count(), 6);
+    GG_CHECK(s.gitMayFail(r.path, {"rev-parse", "--verify", "-q", "HEAD~5^"}).out.empty()); // the new root
+    // After the tip: the branch advances onto it.
+    const std::string newTip = s.head(r.path);
+    GG_REQUIRE(rowReady(s, newTip));
+    s.contextMenu(rowRef(newTip).c_str(), "New commit after");
+    GG_CHECK(changed(s, r.path, newTip));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), newTip);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
+}
+
+GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile", "ACT-MERGE-INTO-HEAD",
+    "ACT-MERGE-NATIVE", "BR-MERGE-INTO-HEAD", "ACT-REBASE-HEAD-ONTO", "BR-REBASE-HEAD-ONTO", "ACT-RECONCILE",
+    "BR-RECONCILE")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^1"), r.c4);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), r.s1);
+    GG_CHECK_STR_EQ(s.read(r.path, "s.txt"), "s\n");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Merge branch 'side'");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(r.path) == r.c4; }));
+    s.settle();
+    // Natively.
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(r.path, {"rev-parse", "-q", "--verify", "HEAD^2"}).ok(); }));
+    s.settle();
+    s.git(r.path, {"reset", "-q", "--hard", r.c4});
+    // Rebase HEAD (main's own commits c3, c4) onto side.
+    s.contextMenu("//Branches/branch_side/###branch_side", "Rebase HEAD onto branch");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    // Reconcile: main diverged from its "upstream" side again; merge it in.
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "t.txt", "t\n", "s2 add t");
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_main/###branch_main"); }));
+    s.contextMenu("//Branches/branch_main/###branch_main", "Reconcile with remote or branch...");
+    GG_REQUIRE(s.dialogOpen("Reconcile"));
+    s.dialogText("Reconcile", "with", "side");
+    s.comboSelect("//Reconcile/How##how", "Merge it in");
+    const std::string before = s.head(r.path);
+    s.dialogButton("Reconcile", "Reconcile");
+    GG_CHECK(changed(s, r.path, before));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), s.revParse(r.path, "side"));
+}
+
+GG_TEST("edit", "reorder: move a commit before another, and copy one", "ACT-REORDER", "ACT-REORDER-COPY")
+{
+    const EditRepo r = makeRepo(s);
+    const std::string tree = s.revParse(r.path, "main^{tree}");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    // Through the drag-and-drop chooser (the same actions): c4 before c3.
+    s.session()->actions().reorder(ggui::core::Oid::fromHex(r.c4), ggui::core::Oid::fromHex(r.c3), false, false);
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+    const std::string tip = s.head(r.path);
+    s.session()->actions().reorder(ggui::core::Oid::fromHex(r.c2), ggui::core::Oid::fromHex(tip), true, true);
+    GG_CHECK(changed(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2 add b", "c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
+}
+
+GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a later rewrite resolves them",
+    "ACT-REWRITE-TEXT-CONFLICT", "ACT-REWRITE-COMPLETION-MSG", "ACT-REWRITE-AUTO-RESOLVE", "CONF-AUTO-RESOLVE",
+    "ACT-REWRITE-INVARIANTS", "CONF-NO-NESTING")
+{
+    const EditRepo r = makeRepo(s);
+    // c5 changes the line c3 changed: without c3, c5 conflicts.
+    s.commitFile(r.path, "a.txt", "one\nTWO!\nthree\n", "c5 change a again");
+    const std::string c5 = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiKey_A);
+    GG_CHECK(changed(s, r.path, c5));
+    GG_CHECK(s.waitUntil([&] { return !s.app.toasts().empty(); }));
+    GG_CHECK(s.app.toasts().back().message.find("now have first-class conflicts") != std::string::npos);
+    const std::string conflicted = s.gitOut(r.path, {"show", "HEAD:a.txt"});
+    GG_CHECK(conflicted.find("<<<<<<<") != std::string::npos && conflicted.find("|||||||") != std::string::npos);
+    GG_CHECK(s.read(r.path, "a.txt").find("<<<<<<<") != std::string::npos);
+    GG_CHECK(s.statusPorcelain(r.path).empty()); // plain git status stays clean
+    // Undo is exact.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(r.path) == c5; }));
+    s.settle();
+    // Moving c5 before c3 conflicts; moving it back resolves (no nested markers).
+    s.session()->actions().reorder(ggui::core::Oid::fromHex(c5), ggui::core::Oid::fromHex(r.c3), false, false);
+    GG_CHECK(changed(s, r.path, c5));
+    const std::string moved = s.head(r.path);
+    // The moved c5 conflicts (c3 is not under it any more); at the tip the terms cancel out.
+    GG_CHECK(s.gitOut(r.path, {"show", "HEAD~2:a.txt"}).find("<<<<<<<") != std::string::npos);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD:a.txt"}), "one\nTWO!\nthree");
+    const std::string c5moved = s.revParse(r.path, "HEAD~2");
+    s.session()->actions().reorder(ggui::core::Oid::fromHex(c5moved), ggui::core::Oid::fromHex(s.head(r.path)), true, false);
+    GG_CHECK(changed(s, r.path, moved));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD:a.txt"}), "one\nTWO!\nthree");
+    GG_CHECK(!s.gitMayFail(r.path, {"grep", "-q", "<<<<<<<", "HEAD"}).ok()); // no markers anywhere
+}
+
+GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected commit's actions", "MENU-COMMIT-ACTIONS")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/New commit after");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c3); // everything up to c3 kept its id
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~3"), r.c2);
+}
+
+} // namespace ggtest

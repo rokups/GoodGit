@@ -1,0 +1,146 @@
+# Undo journal — format and semantics (U1)
+
+Status: **draft for review** (P0-05). Implements REBUILD_PLAN §5 U1 and §4.12 B.
+Implementation: `Source/libgg/Journal.cpp`; used by ggui, `git gg undo|redo|op log` and
+`git gg hook …`.
+
+The journal is **history only**. Deleting it disables Undo for past operations and changes
+nothing else: no commit, file, ref or conflict means something different without it.
+
+---
+
+## 1. Location and layout
+
+| Path | Content |
+|---|---|
+| `$GIT_COMMON_DIR/gg/journal` | The journal (one file, shared by all worktrees) |
+| `$GIT_COMMON_DIR/gg/journal.lock` | Lock file while appending |
+| `$GIT_COMMON_DIR/gg/cache/` | Disposable caches (not part of this spec) |
+
+`$GIT_COMMON_DIR` is `.git` of the main worktree (or the bare repository). A linked worktree
+uses the same journal.
+
+**Per-worktree HEAD.** Every `HEAD` value is recorded with the worktree it belongs to: the key is
+`HEAD` for the main worktree and `worktrees/<id>/HEAD` for a linked worktree `<id>` (the directory
+name under `$GIT_COMMON_DIR/worktrees/`). Index trees are recorded per worktree the same way.
+Other refs (`refs/heads/*`, `refs/tags/*`, `refs/stash`, `refs/remotes/*`, any other
+reflog-backed ref) are shared. Undo run from worktree *W* considers only operations that touched
+a shared ref or *W*'s own HEAD/index (§5.1).
+
+## 2. Encoding
+
+- UTF-8 text, one **record** per line (JSON Lines). Every record is a JSON object on a single
+  line, terminated by `\n`.
+- The first line of a new journal is the header record `{"gg-journal":1}`. The number is the
+  format version. A reader that finds a higher major version stops reading and reports "journal
+  written by a newer ggui".
+- Every record has `"v":1` (record version) and `"t"` (type). Unknown types and unknown fields
+  are ignored, so later minor additions are compatible.
+- Object IDs are full lowercase hex (40 or 64 characters). The null ID (all zeros) means "did not
+  exist". A symbolic value is written `"ref:<target>"` (e.g. `"ref:refs/heads/main"`).
+
+### 2.1 Record types
+
+| `t` | Fields | Meaning |
+|---|---|---|
+| `begin` | `op`, `src`, `label`, `time`, `wt`, optional `undoes`, optional `cmd` | Opens operation `op` |
+| `refs` | `op`, `u`: list of `[ref, old, new]` | Ref updates that happened in `op` |
+| `index` | `op`, `wt`, `before`, `after` | Index tree of worktree `wt` before/after (tree IDs) |
+| `map` | `op`, `m`: list of `[old commit, new commit]` | Rewrite mapping (post-rewrite) |
+| `end` | `op`, optional `ok` (false = failed) | Closes operation `op` |
+
+- `op` — operation ID: `<unix-ms>-<8 hex>` for ggui/git-gg; `git-<pid>-<start>` for operations
+  opened by the hooks for a plain git command (§4).
+- `src` — `ggui`, `git-gg`, or `git`.
+- `label` — human text shown in the Operations panel, e.g. `commit`, `git rebase -i`,
+  `undo "commit"`.
+- `time` — Unix time in milliseconds.
+- `wt` — worktree key of the process that opened the operation (`main` or the linked id).
+- `undoes` — on an undo operation: the `op` it reverts. Redo is an undo of an undo.
+- `cmd` — for `src:"git"`: the git command line when known.
+
+An operation is the set of all records with the same `op`. Records of different operations may
+interleave (concurrent processes). An operation without `end` is **open**; readers treat an open
+operation older than 10 minutes, or whose process no longer exists, as closed.
+
+### 2.2 Example
+```
+{"gg-journal":1}
+{"v":1,"t":"begin","op":"1759000000000-a1b2c3d4","src":"ggui","label":"commit","time":1759000000000,"wt":"main"}
+{"v":1,"t":"index","op":"1759000000000-a1b2c3d4","wt":"main","before":"4b82…","after":"4b82…"}
+{"v":1,"t":"refs","op":"1759000000000-a1b2c3d4","u":[["refs/heads/main","9f1e…","c0ff…"]]}
+{"v":1,"t":"end","op":"1759000000000-a1b2c3d4"}
+{"v":1,"t":"begin","op":"1759000005000-0badcafe","src":"ggui","label":"undo \"commit\"","time":1759000005000,"wt":"main","undoes":"1759000000000-a1b2c3d4"}
+{"v":1,"t":"refs","op":"1759000005000-0badcafe","u":[["refs/heads/main","c0ff…","9f1e…"]]}
+{"v":1,"t":"end","op":"1759000005000-0badcafe"}
+```
+
+## 3. Writing
+
+- **Append-only.** Records are only ever appended. Nothing is rewritten in place.
+- **Locking** follows Git's ref-lock rules: create `journal.lock` with `O_CREAT|O_EXCL`; if it
+  exists, retry for up to 1 s (10 ms steps), then give up. Git-gg hook callers give up silently
+  (the operation is not recorded); ggui reports "journal busy". A lock older than 10 minutes is
+  stale and is removed.
+- Each record is written with a single `write` of the complete line to a file opened with
+  `O_APPEND`, then the lock is deleted. `fsync` is not required (history only).
+- **Torn or corrupt lines** (no trailing `\n`, invalid JSON, missing `op`) are skipped by readers.
+  The next writer first appends a `\n` if the file does not end in one, so a torn line never
+  merges with a new record.
+
+## 4. Grouping and the loop guard
+
+- ggui and git-gg open an operation (`begin`), set `GG_OPERATION=<op>` in the environment of
+  every child git process, record ref and index state themselves, and close it (`end`).
+- The managed `reference-transaction` hook (`git gg hook reference-transaction committed`)
+  appends a `refs` record with the updates read from stdin:
+  - if `GG_OPERATION` is set, the updates join that operation (no `begin`): this is the loop
+    guard that prevents duplicates;
+  - otherwise the hook computes a command key from the git process that runs it (its parent
+    PID and that process's start time; on Linux from `/proc`, on Windows best effort). If the
+    journal's tail (last 64 KiB) has an open operation with op `git-<pid>-<start>`, the updates
+    join it; otherwise it appends `begin` (src `git`, label from the command line, e.g.
+    `git rebase -i`) followed by the `refs` record.
+- `post-checkout`, `post-merge`, `post-commit` and `post-rewrite` hooks add context to the same
+  operation: `map` records (post-rewrite stdin), index trees, and `end` when the command is known
+  to be finished (post-merge, post-commit and post-checkout of a top-level command; post-rewrite
+  of `rebase`).
+- One plain git command therefore yields exactly one operation, e.g. a whole `git rebase -i`
+  from `rebase (start)` to `rebase (finish)`.
+
+## 5. Undo and redo
+
+### 5.1 Which operation
+Let *W* be the current worktree. The *visible* operations are those that touched a shared ref,
+or *W*'s HEAD/index.
+
+- **Undo** picks the newest visible operation that is not an undo operation and is not already
+  undone (no later operation has `undoes` equal to it, unless that undo was itself undone).
+- **Redo** picks the newest visible undo operation that is newer than every non-undo operation
+  and whose effect is still in place (it has not been undone). Redo = undo of that undo.
+- A new normal operation after some undos makes those undos non-redoable.
+
+### 5.2 Effect
+Undo of operation *X* is a **new operation** (`undoes: X`) that:
+1. checks every ref *X* touched: its current value must equal *X*'s last recorded `new`
+   value. If any differs, Undo is **refused**: "refs moved outside the journal" (lists them);
+2. checks the working tree of *W*: if restoring HEAD would overwrite uncommitted changes, Undo is
+   refused with an offer to stash first;
+3. applies all ref changes back to their first recorded `old` values in **one**
+   `git update-ref --stdin` transaction (old values verified), creating reflog entries;
+4. restores *W*'s index to *X*'s recorded `before` index tree when known (`git read-tree`), and
+   updates the working tree only when that is lossless (`git read-tree -m -u` between the two
+   HEAD trees).
+
+### 5.3 Garbage collection
+The journal holds no refs. Commits that are reachable only through the journal stay alive
+through the reflogs that `git update-ref` writes (Git keeps unreachable reflog entries for
+`gc.reflogExpireUnreachable`, 30 days by default). ggui passes `--create-reflog` so bare
+repositories keep them too. After reflog expiry, Undo of an old operation fails with "commit no
+longer exists" and changes nothing.
+
+## 6. Versioning
+- Header `{"gg-journal":1}` = major version 1. A new major version is only for incompatible
+  changes; the writer then starts a new file `journal.v2` and leaves `journal` as is.
+- Record field `"v"` lets individual records evolve; readers skip records with a higher `v` than
+  they understand.
