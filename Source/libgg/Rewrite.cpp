@@ -645,26 +645,33 @@ Result Rewriter::compute(const Plan& plan)
                 return true;
             });
         }
-        for (const auto& [ref, stepKey] : plan.refsToSteps) {
+        // A step key, or "=<id>" for exactly that commit ("" when unknown).
+        auto target = [&](const std::string& stepKey) -> std::string {
+            if (stepKey.rfind("=", 0) == 0)
+                return stepKey.substr(1);
             auto it = byKey.find(stepKey);
-            if (it == byKey.end())
+            return it == byKey.end() ? std::string() : it->second;
+        };
+        for (const auto& [ref, stepKey] : plan.refsToSteps) {
+            const std::string to = target(stepKey);
+            if (to.empty())
                 continue;
             git_oid current;
             std::string old;
             if (git_reference_name_to_id(&current, m->repo.get(), ref.c_str()) == 0)
                 old = toHex(current);
             git_error_clear();
-            if (old == it->second)
+            if (old == to)
                 continue;
-            result.moves.push_back(RefMove{ref, old, it->second, otherWorktreeBranches.count(ref) > 0});
+            result.moves.push_back(RefMove{ref, old, to, otherWorktreeBranches.count(ref) > 0});
             if (ref == headRef)
-                result.headAfter = it->second;
+                result.headAfter = to;
         }
         if (!plan.detachHeadAt.empty()) {
-            if (auto it = byKey.find(plan.detachHeadAt); it != byKey.end() && it->second != result.headBefore) {
+            if (const std::string to = target(plan.detachHeadAt); !to.empty() && to != result.headBefore) {
                 // HEAD becomes detached: its symbolic value is replaced (see apply).
-                result.moves.push_back(RefMove{"HEAD", result.headBefore, it->second, false});
-                result.headAfter = it->second;
+                result.moves.push_back(RefMove{"HEAD", result.headBefore, to, false});
+                result.headAfter = to;
             }
         } else if (headRef.empty() && !plan.keepHead && !result.headBefore.empty()) {
             if (auto it = result.mapping.find(result.headBefore); it != result.mapping.end()) {

@@ -95,7 +95,8 @@ struct Plan {
     std::string rewriteKind = "rebase";   // post-rewrite argument: "rebase" or "amend"
     bool rebaseLike = false;              // run pre-rebase with `upstream`
     std::string upstream;
-    // Extra refs to create or move to a step's result ("refs/heads/x" → step key).
+    // Extra refs to create or move to a step's result ("refs/heads/x" → step key, or "=<id>"
+    // for exactly that commit).
     std::map<std::string, std::string> refsToSteps;
     // Commits already replaced outside the plan (original → existing commit), e.g. HEAD after
     // `git commit --amend`: children and branches of the original follow the replacement.
@@ -103,7 +104,8 @@ struct Plan {
     // Parents that other steps get instead of an original commit (original → step key), for
     // inserting a commit between a commit and its children. Branches are not affected.
     std::map<std::string, std::string> parentRedirect;
-    // Detach HEAD at a step's result ("" = no): duplicates are checked out as detached copies.
+    // Detach HEAD at a step's result (a step key or "=<id>"; "" = no): duplicates are checked
+    // out as detached copies.
     std::string detachHeadAt;
     // Leave HEAD where it is even if its commit is rewritten (copies, duplicates).
     bool keepHead = false;

@@ -978,7 +978,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   with ggui regions; deleting `.git/gg/` changes nothing.
 - **Done when:** all conflict spec IDs covered; randomized N-way rewrite scenario stable.
 
-### P3-15 Interactive rebase: todo model and validation
+### [~] P3-15 Interactive rebase: todo model and validation
+- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read (starting todo like git), expand, autosquash, squash templates/messages, cleanup, validation, engine choice, exec-each, toPlan. Checked by hand against git 2.55 (todo, autosquash order, messages, trees/branches via Rewriter). No integration test yet: coverage comes with P3-16 … P3-19. Full suite 172/172 passes.
 - **Depends on:** P3-02
 - **Refs:** §4.13
 - **Do:** todo model with actions `pick`, `reword`, `edit`, `squash`, `fixup` (incl. `-C`/
@@ -987,25 +988,56 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   placement for `fixup!`/`squash!`/`amend!`; squash message assembly the way Git does;
   engine selection (in-memory unless `edit`/`break`/`exec` or user choice) with reason.
 - **Done when:** exercised by P3-16 … P3-19.
-- **Design notes (not started):**
-  - **Todo model:** put it in libgg (`Todo.hpp/.cpp`) so `git-gg` can share it.
-    - Parse and format Git's todo, with validation.
-    - Autosquash, with `amend!` placed as `fixup -C`.
-    - Squash messages: fill Git's commented template, then apply `cleanup=strip`. The
-      `squash!` subject line is commented out, as in Git ≥ 2.32.
-  - **In-memory engine:** map the todo onto `gg::rewrite::Plan`.
-    - pick/reword → Pick with a message override.
-    - squash/fixup → `Step::Kind::Squash`.
-    - drop → `dropped`; update-ref → `refsToSteps`.
-    - Run it through `Actions::rewrite` (pre-flight, one update-ref, one Undo).
-    - "Keep committer date" needs a committer override on `Step`/`Plan`. The Rewriter
-      currently always signs with the default committer.
-  - **Native engine:**
-    - `Source/gitgg/SequenceEditor.cpp` is a stub. It should write the prepared todo and
-      messages.
-    - Run `git rebase -i` with `GIT_SEQUENCE_EDITOR`/`GIT_EDITOR` and `GG_OPERATION`.
+- **Design notes:**
+  - **Todo model (built):** `Source/libgg/include/libgg/Todo.hpp` + `Todo.cpp`, namespace
+    `gg::todo`.
+    - `parse`/`format`: Git's todo text. Git ≥ 2.44 writes `pick <id> # <subject>`, older
+      versions `pick <id> <subject>`, and both parse. There is a blank line after each
+      `update-ref`. `.git/rebase-merge/git-rebase-todo` holds full ids with no help text.
+      `done` uses the same format.
+    - `read(repo, {upstream, tip, onto, updateRefs, autosquash})` returns a `Context`: the
+      range, `CommitInfo` (message, author, empty, published), branches at each commit, and
+      the starting todo.
+      - The starting todo drops merges and leaves out commits already upstream (patch-id).
+      - Git lists `update-ref` lines in reverse name order. It skips the rebased branch and
+        branches checked out in other worktrees.
+    - `expand` resolves abbreviated ids. `autosquash`, `groups`, `squashTemplate`,
+      `groupMessage`, `editorText`, `cleanup`, `validate`, `unchangedPrefix`, `chooseEngine`,
+      `addExecEach` and `toPlan` are pure functions of the todo and the `Context`.
+    - A typed reword/squash message lives on the group's first row (`Item::message`). P3-16
+      should reset it when the group's composition changes.
+  - **Git behavior checked by hand against git 2.55** (throwaway driver, not committed):
+    - The starting todo matches git for linear ranges, ranges with merges, cherry-picked
+      commits, several branches on one commit, and a branch checked out in a worktree.
+    - Autosquash order matches: repeated prefixes, `<id>` targets, subject-prefix targets,
+      `amend!`, and `fixup!X` with no space (not a fixup).
+    - Squash templates and final messages match byte for byte for fixup/squash/`-C`/`-c`
+      mixes.
+      - `fixup -C/-c` skips the earlier messages only when no squash came before it.
+      - `amend!` subjects are always commented out. `squash!`/`fixup!` subjects are
+        commented out only under squash or after a squash.
+      - Fixup-only groups keep the message verbatim, with no strip. Comment lines survive.
+    - `toPlan` + `Rewriter` gave the same trees, messages, authors and branch positions as
+      `git rebase -i --autosquash --update-refs`. Also checked on SHA-256 with a root
+      rebase.
+  - **For P3-17/P3-18:**
+    - `toPlan` sets `keepBranches`/`keepHead`, so only the tip ref and `update-ref` lines
+      move, as in git. `Plan::refsToSteps`/`detachHeadAt` now accept `=<id>` (an update-ref
+      before any commit row goes to `onto`). Dropped commits are simply not replayed; they
+      are not in `Plan::dropped`.
+    - The Rewriter maps squashed commits to their first parent's replacement. Git's
+      post-rewrite maps them to the squash result, so fix this before the differential
+      test.
+    - "Keep committer date" still needs a committer override on `Step`/`Plan`.
+    - The patch-id pass walks all of `tip..upstream`, which can be slow on a very stale
+      branch.
+  - **For P3-19:**
+    - `update-ref` in the todo needs git ≥ 2.38, but the minimum is 2.36. With an older git,
+      the native engine must drop those lines or refuse.
+    - Git accepts a duplicate `update-ref`, or one for the rebased branch, and then fails
+      at the end. `validate` reports both as errors.
     - The stop UI builds on `App::drawStateBadge`, `Actions::continueOperation` and
-      `detectState` (`Source/core/Readers.cpp`, which already reads `.git/rebase-merge/`).
+      `detectState`. `Source/gitgg/SequenceEditor.cpp` is still a stub.
   - **Tests:** `Source/tests/test_rebase_i.cpp`, including the differential test against
     `git rebase -i` on a copy.
 
