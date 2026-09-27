@@ -48,7 +48,8 @@ Settings… · Quit `Ctrl+Q`.
 
 **Commit** (M, renamed from "Change"): New commit `Ctrl+N` · New detached commit · Commit… ·
 Amend… · Move HEAD to parent · Move HEAD to child · — · the selected-commit actions of §4
-(below) · Interactive rebase… (N, Phase 3).
+(below) · Interactive rebase… (N, Phase 3: asks for the base in the `Interactive rebase onto` dialog,
+then opens the todo editor for HEAD, §4.13).
 
 **Edit** (K): Undo `Ctrl+Z` · Redo `Ctrl+Y` · Apply patch… (N options: to index / to working tree).
 
@@ -141,7 +142,9 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   branch, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
 - Row context menu: New · New detached · Check out ▸ (branches at the commit, "Detached HEAD") ·
   Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
-  description) · shared commit actions (§4).
+  description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
+  several commits are selected with Ctrl-click: the list starts at the oldest selected commit and
+  the selected commits start selected in the editor).
 - Working tree context menu: Commit… · Amend into HEAD… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.
 - Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase; Shift = move
@@ -183,7 +186,57 @@ New commit, Edit/Check out, Commit…, Amend…, Describe (Save message), Edit a
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
 Abandon/Abandon branch, Simplify parents, Move HEAD to previous/next, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
-plan §4.3 table.
+plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
+commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it
+when HEAD does not; a commit on neither is refused. The *Squash* and *Rebase onto* dialogs have
+*Open as interactive rebase…*: the editor opens with the action as its starting todo (the commit
+moved after the target as squash or fixup; the new base as *Onto*).
+
+## 4.x Interactive rebase todo editor — window `"Interactive rebase"` (N, Phase 3)
+Dockable; opens as a tab next to History while a todo is open and closes on Start (after success)
+or Cancel; its close button cancels. The range is read on a worker; everything else is edited in
+the panel without touching the repository.
+- **Header** (acts like a modal dialog's head): title `###ir_title` ("Rebase N commit(s) of
+  <branch> onto <short ID | the root>"), *Start* `###ir_start` (disabled with the reason as
+  tooltip: errors in the list, busy, or an engine not available yet), *Cancel* `###ir_cancel`;
+  engine line `###ir_engine` ("Engine: in memory" or "git rebase", with the reason); one line per
+  validation issue `###ir_issue_<n>` (error or warning icon, "Row N: …").
+- **Options:** *Onto* `###ir_onto` (Enter applies; empty = the upstream; an unknown revision is an
+  error and the list stays), *Autosquash* `###ir_autosquash` (on: `fixup!`/`squash!`/`amend!`
+  rows are placed and marked; off: back to Git's starting list), *Update refs* `###ir_update_refs`
+  (default on; off removes the `update-ref` rows, on puts them back after their commit's
+  squash/fixup rows), *Autostash* `###ir_autostash`, *Run as git rebase* `###ir_native`, *Exec
+  after every commit* `###ir_exec_each`, *Committer date* `###ir_committer_date` (Use now / Keep
+  original).
+- **Tools:** Undo `###ir_undo` (Ctrl+Z), Redo `###ir_redo` (Ctrl+Y, Ctrl+Shift+Z), *Insert exec*
+  `###ir_insert_exec`, *Insert break* `###ir_insert_break` (after the last selected row, else at the
+  end), *Newest first* `###ir_newest_first`. Undo/Redo apply to the list and its options only; the
+  repository's Undo is untouched while the editor has focus.
+- **List** `##ir_table` (oldest first, Git's order; columns Action, ID, Subject, Author, Date).
+  Commit rows `###ir_<full id>` with the action combo `###ir_action_<full id>` (pick, reword,
+  edit, squash, fixup, fixup -C, fixup -c, drop) and branch badges `###ir_badge_<branch>`; other
+  rows `###ir_row_<index>`: `exec` with its command field `###ir_exec_<index>`, `break`,
+  `update-ref` with a badge `###ir_ref_<branch>`. Dropped rows are dimmed; rows with an issue show
+  its icon (tooltip: the message).
+- **Selection:** click, Ctrl-click (toggle), Shift-click (range from the last clicked row).
+- **Keys** (list focused, not typing): `p r e s f d` set the action of the selected commit rows;
+  `x` / `b` insert exec / break; `Delete` removes selected exec, break and update-ref rows;
+  `Alt+↑`/`Alt+↓` move the selected rows one place as displayed. Rows can also be dragged: dropped
+  below the dragged rows they go after the target, above it before it; a selection moves together.
+- **Messages:** a reword row, and the first row of a group with a squash or `fixup -c`, get an
+  inline editor `###ir_msg_<full id>` below the row, prefilled with Git's text (the commit message,
+  or the commented "This is a combination of N commits." template). A typed message is cleaned
+  like Git's editor output (comments and extra blank lines removed) and goes back to Git's text
+  when the group's rows or actions change.
+- **Start:** the in-memory engine (plan §4.13 R3) through the rewrite pipeline: pre-flight for
+  non-text conflicts, the published-history confirmation, one operation (one Undo). Refused (error
+  popup, the editor stays) when the branch moved since the list was read. With *Autostash* tracked
+  local changes are stashed before and popped after, in the same operation; when they no longer
+  apply they stay in the stash (warning notification). Todos needing `git rebase -i` (edit, break,
+  exec, exec after every commit, Run as git rebase) are validated but cannot start until the native
+  engine exists (Phase 3, P3-19). The live preview (P3-17) goes to the right of the list.
+- Errors are titled `Open interactive rebase` / `Start interactive rebase` (never the panel's
+  name).
 
 ## 5. Change information panel — window `"Change information"`
 - Message editor `##message` with *Save message* `##save_message` (HEAD only until Phase 3).
@@ -220,7 +273,8 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
   Reveal · Copy name · Check out · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
   remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
-  Interactive rebase onto… (Phase 3). Remote-tracking branches are listed under their remote;
+  Interactive rebase onto… (Phase 3: the `Interactive rebase onto` dialog asks for the base; the
+  branch is the tip and only it and its update-ref branches move, HEAD stays). Remote-tracking branches are listed under their remote;
   the remote has the Remotes panel's context menu, and each remote-tracking branch has Reveal ·
   Copy name · Remote <name> ▸ (the same menu). Set upstream… has a filter field (Enter picks
   the first match).
@@ -248,7 +302,8 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
 `Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
-3), `Interactive rebase` (Phase 3), `Settings`.
+3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
+itself is the dockable window `Interactive rebase`, §4.x), `Settings`.
 
 ## 10. States
 - **Busy:** conflicting actions disabled with reason tooltip; browsing stays enabled.

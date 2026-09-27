@@ -4,6 +4,9 @@
 
 #include <core/Types.hpp>
 
+#include <string>
+#include <vector>
+
 namespace ggui {
 
 class Session;
@@ -19,5 +22,12 @@ void showSplitDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
 void showRestoreDialog(Session& session, const core::Oid& commit);
 void showMergeDialog(Session& session, const std::string& branch);
+
+// Interactive rebase (§4.13): the commit and its descendants up to HEAD or the branch containing
+// them ("from here", key I); the commits between the oldest and newest selected ones (the rest of
+// the branch follows as picks); or `tip` ("HEAD" or a branch) onto a base the dialog asks for.
+void openInteractiveRebase(Session& session, const core::Oid& commit);
+void openInteractiveRebaseSelection(Session& session, const std::vector<core::Oid>& commits);
+void showInteractiveRebaseDialog(Session& session, const std::string& tip);
 
 } // namespace ggui

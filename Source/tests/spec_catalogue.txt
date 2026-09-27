@@ -636,6 +636,7 @@ IR-ENGINE-USER-CHOICE | 3 | §4.13 | Run as git rebase (user choice)
 IR-ENGINE-SHOWN | 3 | §4.13 | Engine and reason shown in the editor
 IR-MEMORY-ONE-UNDO | 3 | §4.13 | In-memory rebase = one Undo
 IR-MEMORY-CANCEL | 3 | §4.13 | Cancel before apply changes nothing
+IR-TIP-MOVED | 3 | §4.13 | Start refuses when the branch moved since the list was read
 IR-NATIVE-STOP-EDIT | 3 | §4.13 | Native stop: edit
 IR-NATIVE-STOP-BREAK | 3 | §4.13 | Native stop: break
 IR-NATIVE-STOP-EXEC | 3 | §4.13 | Native stop: failing exec

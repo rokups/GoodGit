@@ -114,6 +114,10 @@ struct Plan {
     // The working tree keeps its files when HEAD moves (only the index follows HEAD): what the
     // rewrite takes out of HEAD's history stays as uncommitted changes ("uncommit").
     bool keepWorktree = false;
+    // New commits keep their source commit's committer date (`git rebase
+    // --committer-date-is-author-date` keeps the author date instead; this keeps the original
+    // committer date). Default: now.
+    bool keepCommitterDate = false;
 };
 
 struct RefMove {

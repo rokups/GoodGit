@@ -979,7 +979,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** all conflict spec IDs covered; randomized N-way rewrite scenario stable.
 
 ### [~] P3-15 Interactive rebase: todo model and validation
-- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read (starting todo like git), expand, autosquash, squash templates/messages, cleanup, validation, engine choice, exec-each, toPlan. Checked by hand against git 2.55 (todo, autosquash order, messages, trees/branches via Rewriter). No integration test yet: coverage comes with P3-16 … P3-19. Full suite 172/172 passes.
+- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read, expand, autosquash, squash templates/messages, cleanup, validation, engine choice, exec-each, toPlan. Exercised through the editor by test_rebase_i.cpp: read, autosquash order vs git's todo, squash/fixup -C/-c messages, validation, engine choice, toPlan (results match git rebase -i --autosquash on a clone). parse/format/expand/addExecEach wait for the native engine (P3-19).
 - **Depends on:** P3-02
 - **Refs:** §4.13
 - **Do:** todo model with actions `pick`, `reword`, `edit`, `squash`, `fixup` (incl. `-C`/
@@ -1041,7 +1041,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - **Tests:** `Source/tests/test_rebase_i.cpp`, including the differential test against
     `git rebase -i` on a copy.
 
-### P3-16 Interactive rebase: todo editor UI and entry points
+### [x] P3-16 Interactive rebase: todo editor UI and entry points
+- **Status:** test_rebase_i.cpp: RebasePanel (tab next to History) with header (Start/Cancel, engine and reason, validation), options, rows and badges, newest first, drag and Alt+↑/↓, p r e s f d x b, multi-select, undo/redo, inline reword/squash messages; entry points I / History menu, selection, Commit menu and Branches (asks for a base), Open as interactive rebase from Squash and Rebase onto. Start runs toPlan + Actions::rewrite; native todos are validated but wait for P3-19. Full suite 180/180.
 - **Depends on:** P3-15
 - **Refs:** §4.13 entry points, todo editor
 - **Do:** dockable panel with modal header; rows (action, short ID, subject, author, date,
@@ -1053,6 +1054,40 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   Branches "Interactive rebase onto…", Commit menu (asks for base), "Open as interactive
   rebase…" from single actions.
 - **Done when:** spec IDs covered.
+- **Design notes:**
+  - **Panel:** `Source/app/panels/RebasePanel.{hpp,cpp}` (`RebasePanel`, window
+    `panel::Rebase` = "Interactive rebase", ui-spec §4.x). `Session::rebase()` owns it; it is drawn
+    only while a todo is open and docks as a tab next to History.
+    - `open(Request)` reads the range on the mutation queue (`Actions::run`, no journal, no
+      refresh): `from` (commit → upstream = its parent), `tipContaining` (HEAD, else the first
+      local branch by name), `onto`, `selected`, and `adjust` (the starting todo for "Open as
+      interactive rebase…").
+    - Always read with update-ref lines and without autosquash. The options edit the list:
+      Update refs off removes the rows and on re-inserts them; Autosquash on runs
+      `todo::autosquash` and off goes back to `Context::initial`. *Onto* re-reads and keeps the list.
+    - Undo steps are `State{todo, context, updateRefs, autosquash}`. A text field gives one step
+      per editing session.
+    - `resetStaleMessages` drops a typed message when its group's rows or actions change.
+  - **Entry points:** `openInteractiveRebase`, `openInteractiveRebaseSelection`,
+    `showInteractiveRebaseDialog` in `CommitMenu.cpp`. "Open as…" buttons are in the Squash and
+    Rebase onto dialogs.
+  - **Start (temporary in-memory path):** `todo::toPlan` + `Actions::rewrite`. The builder
+    refuses when the tip moved since the read.
+    - `Plan::keepCommitterDate` is new in libgg.
+    - `Actions::rewrite(..., autostash)` stashes before apply and pops after, in the same
+      operation. If the pop fails, the changes stay in the stash and `ctx.info` is shown as a
+      warning.
+    - Native todos (edit/break/exec, exec after every commit, Run as git rebase) are edited and
+      validated, but Start is disabled ("not available yet").
+  - **Tests:** `Source/tests/test_rebase_i.cpp` (8 scenarios). Not covered yet, because they
+    need the native engine: IR-ACT-EDIT/EXEC/BREAK, IR-OPT-EXEC-EACH, IR-ENGINE-USER-CHOICE,
+    IR-ENTRY-STOPPED.
+  - **Test-engine pitfalls:**
+    - `BeginCombo` reports no item info, so the panel registers `###ir_action_<id>` itself.
+    - The test engine presses Alt and an arrow in the same frame, which toggles the menu layer
+      on release. The panel owns Alt while it handles Alt+arrows.
+    - An error popup titled like a window collides with it: error titles must differ from
+      "Interactive rebase".
 
 ### P3-17 Interactive rebase: live preview
 - **Depends on:** P3-16
@@ -1061,6 +1096,11 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   list showing first-class conflicts, non-text conflicts needing decisions, empty commits,
   and moving branches.
 - **Done when:** preview matches the executed result in scenarios; no frame stalls.
+- **Notes from P3-16:**
+  - Start the preview from `RebasePanel::onTodoChanged()`, which runs after every edit, undo,
+    option change and re-read. Draw it to the right of the list (`drawList`).
+  - The inputs are `todo()`, `context()` and `options()`. They are plain values, so copy them to
+    the worker.
 
 ### P3-18 Interactive rebase: in-memory engine
 - **Depends on:** P3-17, P3-03
@@ -1070,6 +1110,15 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   journal operation (one Undo); no sequencer state; cancel before apply = no change.
 - **Done when:** randomized differential scenario vs `git rebase -i` on a copy matches trees,
   messages, authors and branch positions; autosquash order verified.
+- **Notes from P3-16:**
+  - Start already goes through `toPlan` + `Actions::rewrite`: pre-flight, published
+    confirmation, one operation. One Undo, Cancel and autosquash order are tested.
+  - Still to do:
+    - The randomized differential test.
+    - The squash mapping for post-rewrite (see P3-15).
+    - Deciding whether the tip-moved check should re-read instead.
+  - `test_rebase_i.cpp` "autosquash" already compares a fixed case with `git rebase -i` on a
+    clone: trees, messages and authors.
 
 ### P3-19 Interactive rebase: native engine and stop handling
 - **Depends on:** P3-16, P2-24, P2-26
@@ -1083,6 +1132,15 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   or plain with hooks installed). Never touch sequencer files otherwise.
 - **Done when:** spec IDs covered for each stop type and for a plain rebase started as a test
   step.
+- **Notes from P3-16:**
+  - Enable Start for `todo::Engine::Native` in `RebasePanel::canStart`/`start`. Apply
+    `m_options.execEach` with `todo::addExecEach`.
+  - Pass Autostash as `--autostash`. Git has no "keep the original committer date" option
+    (`--committer-date-is-author-date` uses the author date), so decide how to offer it natively.
+  - For Edit remaining todo, open `RebasePanel` with a todo parsed from `git-rebase-todo`. That
+    needs a Request variant that skips `todo::read` and uses `todo::parse` + `expand`.
+  - Uncovered spec IDs waiting for this task: IR-ACT-EDIT/EXEC/BREAK, IR-OPT-EXEC-EACH,
+    IR-ENGINE-USER-CHOICE, IR-ENTRY-STOPPED.
 
 ### P3-20 Phase 3 gate
 - **Depends on:** all P3 tasks

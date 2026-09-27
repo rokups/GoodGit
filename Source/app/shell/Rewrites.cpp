@@ -25,6 +25,7 @@ struct Actions::RewriteState {
     std::string label;
     PlanBuilder build;
     Callback done;
+    bool autostash = false;
     std::map<std::string, rw::Resolution> resolutions; // pre-flight decisions so far
     rw::Result preview;
     // Pre-flight: the resolution behind each combo entry, per conflict.
@@ -44,12 +45,13 @@ std::string modeText(std::uint32_t mode)
 
 } // namespace
 
-void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done)
+void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done, bool autostash)
 {
     auto state = std::make_shared<RewriteState>();
     state->label = label;
     state->build = std::move(build);
     state->done = std::move(done);
+    state->autostash = autostash;
     rewritePrepare(state);
 }
 
@@ -187,10 +189,23 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
             if (!r.ok)
                 throw MutationError{Outcome::Refused,
                     r.unresolved.empty() ? r.error : "the history changed while deciding; try again", {}};
+            // Autostash (git rebase --autostash): tracked changes out of the way, back after.
+            auto stashTip = [&] { return ctx.gitMayFail({"rev-parse", "-q", "--verify", "refs/stash"}).out; };
+            bool stashed = false;
+            if (state->autostash) {
+                const std::string before = stashTip();
+                ctx.git({"stash", "push", "-q", "-m", "ggui: autostash"});
+                stashed = stashTip() != before;
+            }
             std::string error;
-            if (!rewriter.apply(plan, r, error))
+            if (!rewriter.apply(plan, r, error)) {
+                if (stashed)
+                    ctx.gitMayFail({"stash", "pop", "-q", "--index"});
                 throw MutationError{Outcome::Failed, error, error};
-            ctx.worktreeFollowsIndex = r.headAfter != r.headBefore;
+            }
+            if (stashed && !ctx.gitMayFail({"stash", "pop", "-q", "--index"}).ok())
+                ctx.info = "Applying the autostash gave conflicts; your changes are safe in the stash.";
+            ctx.worktreeFollowsIndex = r.headAfter != r.headBefore || stashed;
             state->preview = std::move(r);
         },
         [this, state](const core::MutationFinishedEvent& e) {

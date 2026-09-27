@@ -5,6 +5,7 @@
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
+#include "panels/RebasePanel.hpp"
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
 
@@ -34,6 +35,7 @@ Session::Session(App& app, std::filesystem::path path) : m_app(app), m_path(std:
     m_stashes = std::make_unique<StashesPanel>(*this);
     m_reflog = std::make_unique<ReflogPanel>(*this);
     m_operationsPanel = std::make_unique<OperationsPanel>(*this);
+    m_rebase = std::make_unique<RebasePanel>(*this);
     m_openRequest = m_engine->open();
 }
 
@@ -331,6 +333,7 @@ void Session::draw()
     drawPanel(panel::Blame, *m_blame);
     drawPanel(panel::Reflog, *m_reflog);
     drawPanel(panel::Operations, *m_operationsPanel);
+    m_rebase->draw();
     if (!m_pendingFocus.empty()) {
         ImGui::SetWindowFocus(m_pendingFocus.c_str());
         m_pendingFocus.clear();

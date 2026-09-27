@@ -99,6 +99,8 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         showMergeDialog(m_session, b.name);
     if (ImGui::MenuItem("Rebase HEAD onto branch", nullptr, false, free && !b.isHead && headAttached))
         actions.rebaseHeadOnto(b.name);
+    if (ImGui::MenuItem("Interactive rebase onto...", nullptr, false, free))
+        showInteractiveRebaseDialog(m_session, b.name);
     if (ImGui::MenuItem("Push", nullptr, false, free && hasRemotes)) {
         if (!b.upstream.empty()) {
             const auto slash = b.upstream.find('/');

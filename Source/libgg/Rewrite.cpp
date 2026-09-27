@@ -366,8 +366,9 @@ struct Rewriter::Impl {
         return toHex(out);
     }
 
+    // `committedAt`: keep that committer date (the committer is still the current user).
     std::string createCommit(const std::vector<std::string>& parents, const std::string& tree, const std::string& message,
-        const git_signature* author)
+        const git_signature* author, const git_time* committedAt = nullptr)
     {
         git_signature* rawCommitter = nullptr;
         git_signature* rawDefaultAuthor = nullptr;
@@ -375,6 +376,12 @@ struct Rewriter::Impl {
             throw std::runtime_error("please set user.name and user.email (" + lastErrorMessage() + ")");
         Signature committer(rawCommitter);
         Signature defaultAuthor(rawDefaultAuthor);
+        if (committedAt) {
+            git_signature* raw = nullptr;
+            check(git_signature_new(&raw, rawCommitter->name, rawCommitter->email, committedAt->time, committedAt->offset),
+                "git_signature_new");
+            committer.reset(raw);
+        }
         std::vector<Commit> parentCommits;
         std::vector<const git_commit*> ptrs;
         for (const auto& p : parents) {
@@ -469,7 +476,11 @@ Result Rewriter::compute(const Plan& plan)
                     authorSig.reset(raw);
                     author = authorSig.get();
                 }
-                id = m->createCommit(pending->parents, pending->tree, pending->message, author);
+                std::optional<git_time> committedAt;
+                if (plan.keepCommitterDate && !pending->source.empty())
+                    committedAt = git_commit_committer(m->commit(pending->source).get())->when;
+                id = m->createCommit(pending->parents, pending->tree, pending->message, author,
+                    committedAt ? &*committedAt : nullptr);
             }
             byKey[pending->key] = id;
             if (!pending->source.empty() && id != pending->source && pending->mapSource)

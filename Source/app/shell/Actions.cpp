@@ -44,13 +44,14 @@ std::string Actions::busyTooltip() const
 }
 
 core::RequestId Actions::run(std::string label, std::function<void(MutationContext&)> fn, Callback done, bool network,
-    bool journal)
+    bool journal, bool refreshAfter)
 {
     core::MutationSpec spec;
     spec.label = std::move(label);
     spec.run = std::move(fn);
     spec.network = network;
     spec.journal = journal;
+    spec.refreshAfter = refreshAfter;
     const core::RequestId id = m_session.engine().mutate(std::move(spec));
     if (done)
         m_callbacks[id] = std::move(done);

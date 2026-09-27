@@ -621,6 +621,8 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     }
     ImGui::Separator();
     drawCommitEditItems(m_session, row);
+    if (parents.size() > 1 && ImGui::MenuItem("Interactive rebase selection...", nullptr, false, free))
+        openInteractiveRebaseSelection(m_session, parents);
     ImGui::EndPopup();
 }
 

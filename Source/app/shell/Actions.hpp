@@ -34,7 +34,7 @@ public:
     std::string busyTooltip() const;
 
     core::RequestId run(std::string label, std::function<void(core::MutationContext&)> fn, Callback done = {},
-        bool network = false, bool journal = true);
+        bool network = false, bool journal = true, bool refreshAfter = true);
 
     // ---- files (§4.4) ---------------------------------------------------------------------
     void stage(const std::vector<std::string>& paths);
@@ -84,8 +84,9 @@ public:
     using PlanBuilder = std::function<gg::rewrite::Plan(git_repository* repo)>;
     // Computes the rewrite in memory; asks for pre-flight decisions (non-text conflicts) and
     // confirmation (published commits, branches checked out elsewhere); then applies it as one
-    // operation. Newly conflicted commits are reported in a notification.
-    void rewrite(const std::string& label, PlanBuilder build, Callback done = {});
+    // operation. Newly conflicted commits are reported in a notification. With `autostash`
+    // local changes are stashed before applying and popped after, in the same operation.
+    void rewrite(const std::string& label, PlanBuilder build, Callback done = {}, bool autostash = false);
     void reword(const core::Oid& commit, const std::string& message);
     void editAuthor(const core::Oid& commit, const std::string& name, const std::string& email);
     // A detached copy of the commit (or of it and its descendants) on its parent.

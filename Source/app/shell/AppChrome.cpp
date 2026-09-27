@@ -174,6 +174,8 @@ void App::drawMenuBar()
             drawCommitEditItems(*s, *selected);
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem("Interactive rebase...", nullptr, false, free && !s->snapshot()->headUnborn))
+            showInteractiveRebaseDialog(*s, "HEAD");
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Edit")) {

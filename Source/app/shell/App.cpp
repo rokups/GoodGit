@@ -1,5 +1,6 @@
 #include "shell/App.hpp"
 
+#include "panels/RebasePanel.hpp"
 #include "platform/Platform.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
@@ -569,6 +570,7 @@ void App::drawDockHost()
         ImGui::DockBuilderDockWindow(panel::Remotes, leftBottom);
         ImGui::DockBuilderDockWindow(panel::Stashes, leftBottom);
         ImGui::DockBuilderDockWindow(panel::History, center);
+        ImGui::DockBuilderDockWindow(panel::Rebase, center);
         ImGui::DockBuilderDockWindow(panel::Changes, changes);
         ImGui::DockBuilderDockWindow(panel::Info, info);
         ImGui::DockBuilderDockWindow(panel::Diff, rightBottom);

@@ -29,6 +29,7 @@ class RemotesPanel;
 class StashesPanel;
 class ReflogPanel;
 class OperationsPanel;
+class RebasePanel;
 
 enum class SelKind { None, WorkingTree, Index, Commit, Stash };
 
@@ -162,6 +163,8 @@ public:
     TagsPanel& tags() { return *m_tags; }
     ReflogPanel& reflog() { return *m_reflog; }
     OperationsPanel& operationsPanel() { return *m_operationsPanel; }
+    // The interactive rebase todo editor (shown while a todo is open).
+    RebasePanel& rebase() { return *m_rebase; }
 
 private:
     void handle(core::Event& event);
@@ -197,6 +200,7 @@ private:
     std::unique_ptr<StashesPanel> m_stashes;
     std::unique_ptr<ReflogPanel> m_reflog;
     std::unique_ptr<OperationsPanel> m_operationsPanel;
+    std::unique_ptr<RebasePanel> m_rebase;
     std::string m_pendingFocus;
 };
 

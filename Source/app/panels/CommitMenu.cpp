@@ -2,6 +2,7 @@
 
 #include "panels/ChangesPanel.hpp"
 #include "panels/HistoryPanel.hpp"
+#include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
@@ -47,6 +48,8 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         session.actions().duplicate(row.id, true);
     if (ImGui::MenuItem("Rebase onto...", nullptr, false, ok))
         showRebaseDialog(session, row.id);
+    if (ImGui::MenuItem("Interactive rebase from here...", "I", false, ok))
+        openInteractiveRebase(session, row.id);
     if (ImGui::MenuItem("Squash...", "S", false, ok && !merge && !root))
         showSquashDialog(session, row.id);
     if (ImGui::MenuItem("Squash descendants into this", "Shift+S", false, ok))
@@ -73,6 +76,8 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
         return;
     if (ImGui::IsKeyPressed(ImGuiKey_D, false))
         session.actions().duplicate(row.id, io.KeyShift);
+    else if (ImGui::IsKeyPressed(ImGuiKey_I, false) && !io.KeyShift && !io.KeyAlt)
+        openInteractiveRebase(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyAlt)
         showSplitDialog(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyShift)
@@ -97,6 +102,16 @@ void showRebaseDialog(Session& session, const core::Oid& commit)
     f.buttons.push_back({"Rebase",
         [s, commit](Form& form) { s->actions().rebaseOnto(commit, gg::trim(form.text("destination")), form.checked("with_descendants")); },
         [](const Form& form) { return !gg::trim(form.text("destination")).empty(); }});
+    // The commit and its descendants onto the destination, as a starting todo.
+    f.buttons.push_back({"Open as interactive rebase...",
+        [s, commit](Form& form) {
+            RebasePanel::Request r;
+            r.from = commit.hex();
+            r.onto = gg::trim(form.text("destination"));
+            r.selected = {commit.hex()};
+            s->rebase().open(std::move(r));
+        },
+        [](const Form& form) { return !gg::trim(form.text("destination")).empty() && form.checked("with_descendants"); }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }
@@ -112,6 +127,35 @@ void showSquashDialog(Session& session, const core::Oid& commit)
     Session* s = &session;
     f.buttons.push_back({"Squash", [s, commit](Form& form) {
                              s->actions().squash(commit, gg::trim(form.text("target")), form.checked("combine"));
+                         }});
+    // From the target on, with the commit moved after it as squash (or fixup).
+    f.buttons.push_back({"Open as interactive rebase...", [s, commit](Form& form) {
+                             const std::string target = gg::trim(form.text("target"));
+                             const bool squash = form.checked("combine");
+                             RebasePanel::Request r;
+                             r.from = target.empty() ? commit.hex() + "^" : target;
+                             r.tipContaining = commit.hex();
+                             r.selected = {commit.hex()};
+                             const std::string id = commit.hex();
+                             r.adjust = [id, squash](gg::todo::Todo& t, const gg::todo::Context& c) {
+                                 auto& items = t.items;
+                                 auto find = [&](const std::string& commitId) {
+                                     return std::find_if(items.begin(), items.end(),
+                                         [&](const gg::todo::Item& i) { return i.isCommit() && i.commit == commitId; });
+                                 };
+                                 auto src = find(id);
+                                 if (c.range.empty() || src == items.end() || src->commit == c.range.front())
+                                     return;
+                                 gg::todo::Item moved = *src;
+                                 moved.action = squash ? gg::todo::Action::Squash : gg::todo::Action::Fixup;
+                                 items.erase(src);
+                                 auto at = find(c.range.front()) + 1;
+                                 while (at != items.end()
+                                     && (at->action == gg::todo::Action::Squash || at->action == gg::todo::Action::Fixup))
+                                     ++at;
+                                 items.insert(at, moved);
+                             };
+                             s->rebase().open(std::move(r));
                          }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
@@ -223,6 +267,51 @@ void showMergeDialog(Session& session, const std::string& branch)
                              else
                                  s->actions().mergeIntoHead(branch, form.text("message"));
                          }});
+    f.buttons.push_back({"Cancel", {}});
+    session.app().dialogs().open(std::move(f));
+}
+
+void openInteractiveRebase(Session& session, const core::Oid& commit)
+{
+    RebasePanel::Request r;
+    r.from = commit.hex();
+    r.selected = {commit.hex()};
+    session.rebase().open(std::move(r));
+}
+
+void openInteractiveRebaseSelection(Session& session, const std::vector<core::Oid>& commits)
+{
+    // History lists newer commits first: the oldest selected commit is the last one listed.
+    const auto& history = session.history();
+    auto position = [&](const core::Oid& id) {
+        const core::HistoryRow* row = history.row(id);
+        return row ? row - history.rows().data() : -1;
+    };
+    std::vector<core::Oid> sorted = commits;
+    std::sort(sorted.begin(), sorted.end(), [&](const core::Oid& a, const core::Oid& b) { return position(a) < position(b); });
+    RebasePanel::Request r;
+    r.from = sorted.back().hex();
+    r.tipContaining = sorted.front().hex();
+    for (const auto& id : sorted)
+        r.selected.push_back(id.hex());
+    session.rebase().open(std::move(r));
+}
+
+void showInteractiveRebaseDialog(Session& session, const std::string& tip)
+{
+    Form f;
+    f.title = "Interactive rebase onto";
+    f.message = "Rebase " + tip + " interactively: the commits not on the base are listed in the todo editor.";
+    f.add(Field{Field::Text, "base", "Base (branch, tag or commit)"});
+    Session* s = &session;
+    f.buttons.push_back({"Open",
+        [s, tip](Form& form) {
+            RebasePanel::Request r;
+            r.upstream = gg::trim(form.text("base"));
+            r.tip = tip;
+            s->rebase().open(std::move(r));
+        },
+        [](const Form& form) { return !gg::trim(form.text("base")).empty(); }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }
