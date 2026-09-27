@@ -1154,7 +1154,7 @@ reused for UF-06 to UF-09 (explicit exception to the clean-room rule).
 
 ## User feedback, round 2 (2026-09-27)
 
-Requested by the user after P3-14. Not started.
+Requested by the user after P3-14 (UF-10 … UF-31). Not started.
 
 ### UF-10 History tooltips only while the list is not scrolling
 - **Do:** suppress row/graph/badge tooltips while the History list is scrolling (wheel,
@@ -1218,3 +1218,30 @@ Requested by the user after P3-14. Not started.
 ### UF-25 History keeps its scroll position
 - **Do:** any change to History (expanding or collapsing merges, loading more, refreshes)
   keeps the scroll position anchored on the rows being viewed.
+
+### UF-26 Remove Track / Untrack from Changes
+- **Do:** remove the "Track" and "Untrack..." context-menu items in Changes
+  (`ChangesPanel.cpp`), together with the Untrack dialog (`Session::showUntrackDialog`),
+  `Actions::untrack`, and their tests and spec IDs.
+
+### UF-27 Remove the toolbar Previous / Next buttons
+- **Do:** remove the toolbar buttons that move HEAD to its parent or child (`##tb_prev`,
+  `##tb_next` in `AppChrome.cpp`), with their tests and spec IDs.
+
+### UF-28 Toolbar folder button opens the working directory
+- **Do:** the toolbar folder button (`##tb_open`) opens the current repository's working
+  directory in the system file manager instead of "Open repository...". Opening a
+  repository stays available from the menu, Ctrl+O and the repository switcher.
+
+### UF-29 Changes header for the working tree
+- **Do:** when the Working tree is selected, the Changes header shows the zero commit ID
+  before "Working tree", and "Compare with HEAD" (see UF-15) is disabled.
+
+### UF-30 Author in Info is plain text
+- **Do:** the author line in the change information (Info panel) is plain text instead of a
+  selectable item. Its context-menu actions (copy name/email, "Edit author...") stay reachable
+  elsewhere, for example next to the author or in the commit menu.
+
+### UF-31 Toolbar branch label and commit ID are plain text
+- **Do:** the toolbar's branch label and HEAD commit ID are plain text instead of selectables
+  (clicking them does nothing useful). Keep the tooltip if it is still useful.
