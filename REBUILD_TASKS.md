@@ -1089,7 +1089,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     - An error popup titled like a window collides with it: error titles must differ from
       "Interactive rebase".
 
-### P3-17 Interactive rebase: live preview
+### [x] P3-17 Interactive rebase: live preview
+- **Status:** test_rebase_i.cpp: preview beside the list (Queue::Preview worker, latest wins, same toPlan + Rewriter::compute as Start, never applied) with first-class conflicts, non-text decisions, empty / becoming-empty commits, moving and staying branches, detached HEAD; each previewed commit's tree, subject, conflicts, emptiness and branches equal Start's result and git rebase -i --update-refs on a clone; pre-flight lists exactly the previewed decisions; 600 ms slow worker: 5 requests, 1 shown, frames < 33 ms; .git byte-identical. Full suite 183/183 (8 shards).
 - **Depends on:** P3-16
 - **Refs:** §4.13 live preview, §3.1
 - **Do:** compute the plan in memory on a worker (latest edit wins); preview graph beside the
@@ -1101,6 +1102,44 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     option change and re-read. Draw it to the right of the list (`drawList`).
   - The inputs are `todo()`, `context()` and `options()`. They are plain values, so copy them to
     the worker.
+- **Design notes:**
+  - **Engine:** `Engine::rebasePreview(todo, context, options)` runs on a sixth worker queue,
+    `Queue::Preview` (one slot, latest wins), so a slow preview never delays diffs or mutations.
+    It answers with `RebasePreviewEvent` (`core::RebasePreview`, plain values in
+    `core/Types.hpp`). `Source/core/RebasePreview.cpp` (`readRebasePreview`) runs
+    `todo::toPlan(…, replayStops = true)` and `Rewriter::compute(plan, cancel)`, then reads the new
+    commits through `Rewriter::repository()`: per result commit its id, tree, subject, sources,
+    unchanged, empty / was empty, first-class conflicts (`conflicts::commitConflicts`, memory-only
+    cache), "new" conflicts (`Result::conflicted`), non-text decisions (`Result::unresolved`),
+    branches ending there (`Plan::refsToSteps`, `detachHeadAt`), moves (`Result::moves`), branches
+    ending at the base, and branches that stay on the old commits.
+  - **Newest edit wins:** `RebasePanel::startPreview` (from `onTodoChanged`) cancels the pending
+    request and sends a new one. The worker slot drops queued requests and cancels the running
+    one (`Rewriter::compute` now checks a cancel token between steps). Answers to anything but the
+    newest request are ignored. The previous result stays on screen, marked "Updating...". A list
+    with errors gets no preview. A cancel from the toolbar ends in "The preview was cancelled.".
+  - **Nothing is written (decision):** no throwaway ODB is needed on top of what the Rewriter
+    already has. Each preview builds a fresh `Rewriter`, which opens its own repository instance
+    and adds a libgit2 mempack backend at the highest priority. Every object `compute` creates
+    (blobs with markers, trees, commits) goes into that in-memory backend and is gone when the
+    Rewriter is destroyed. `apply` is never called, so refs, index, working tree and object files
+    stay as they were. The only on-disk side effect libgit2 may have is refreshing the mtime of an
+    object that already exists ("freshen", which git does too). The test compares every byte
+    under `.git` before and after.
+  - **Native todos** are previewed with `toPlan(…, replayStops = true)`: edit = pick, exec and
+    break are skipped (the history when every stop just continues). Label/reset/merge still
+    throw, and the preview shows the error.
+  - **UI:** the list table gets a fixed width and the preview is a bordered child to its right
+    (ui-spec §4.x "Live preview"). History's graph cell drawing moved to
+    `panels/Graph.{hpp,cpp}` (`graph::drawCell`, `inset`, `laneX`), which both panels use. The
+    preview is always one lane, newest first, with the base last.
+  - **Tests:** `test_rebase_i.cpp`, three "live preview" scenarios plus the detached-HEAD one.
+    `checkMatches` compares each previewed commit with the executed result: tree, subject,
+    first-class conflicted files, emptiness, unchanged id and branch positions. The comparison
+    runs after Start, and after `git rebase -i --update-refs` on a clone with the same todo.
+    The worker test runs with a 600 ms slow-git latency: 5 requests, 1 shown, frame maximum below
+    33 ms (`frameProbe`). Pre-flight lists exactly the previewed decisions. `.git` stays
+    byte-identical. `Scenario::gitDirBytes` moved into the harness.
 
 ### P3-18 Interactive rebase: in-memory engine
 - **Depends on:** P3-17, P3-03
@@ -1119,6 +1158,19 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     - Deciding whether the tip-moved check should re-read instead.
   - `test_rebase_i.cpp` "autosquash" already compares a fixed case with `git rebase -i` on a
     clone: trees, messages and authors.
+- **Notes from P3-17:**
+  - The preview and Start share `toPlan` + `Rewriter::compute`. Any change to the plan (the
+    squash mapping, empty commits, committer override) shows up in the preview on its own. Keep
+    `checkMatches` in `test_rebase_i.cpp` passing, and reuse it in the differential test (it
+    compares each commit's tree, subject, conflicts, emptiness and branches with a finished
+    rebase).
+  - Commits that *become* empty: `git rebase -i` stops on them (interactive default
+    `--empty=stop`; checked with git 2.55), while the Rewriter keeps them as empty commits. The
+    preview shows "(empty)", and Start currently keeps them. Decide whether to drop, keep or ask
+    before the differential test; commits that were empty from the start are kept by both.
+  - An `update-ref` row between a pick and its squash/fixup rows moves the branch to the
+    squashed result (`toPlan` maps it to the group's step). Git would leave it at the pre-squash
+    commit. Validation does not flag this yet.
 
 ### P3-19 Interactive rebase: native engine and stop handling
 - **Depends on:** P3-16, P2-24, P2-26
@@ -1141,6 +1193,12 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     needs a Request variant that skips `todo::read` and uses `todo::parse` + `expand`.
   - Uncovered spec IDs waiting for this task: IR-ACT-EDIT/EXEC/BREAK, IR-OPT-EXEC-EACH,
     IR-ENGINE-USER-CHOICE, IR-ENTRY-STOPPED.
+- **Notes from P3-17:**
+  - The preview already handles native todos (`toPlan(…, replayStops = true)`). If "Edit remaining
+    todo" opens `RebasePanel` mid-rebase, the Context's onto/range must describe the remaining
+    part (onto = the current HEAD), or the preview will show the whole range again.
+  - `Queue::Preview` / `RebasePreviewEvent` is the pattern for other "compute in memory, show,
+    never apply" features.
 
 ### P3-20 Phase 3 gate
 - **Depends on:** all P3 tasks

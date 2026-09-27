@@ -372,6 +372,45 @@ struct CommitDetails {
 };
 using CommitDetailsPtr = std::shared_ptr<const CommitDetails>;
 
+// ---- Interactive rebase live preview (§4.13) ----------------------------------------------------
+
+// The result of an interactive rebase todo, computed in memory on a worker (nothing is written
+// to the repository). Rows are the resulting commits, oldest first.
+struct RebasePreview {
+    struct NonText {
+        std::string path;
+        std::string kind;                 // binary, modify/delete, rename, … (gg::rewrite::NonTextConflict)
+    };
+    struct Row {
+        std::string id;                   // resulting commit (an unchanged commit keeps its id)
+        std::string tree;                 // its tree (the same as Start's result: trees hold no dates)
+        std::vector<std::string> sources; // original commits: the row's own, then squashed ones
+        size_t todoRow = 0;               // the todo row that starts it
+        std::string subject;              // first line of the resulting message
+        bool unchanged = false;           // same commit as before (keeps its id)
+        bool empty = false;               // same tree as its parent
+        bool wasEmpty = false;            // its commit(s) were already empty before the rebase
+        std::vector<std::pair<std::string, int>> conflicts; // first-class conflicted files: path, sides
+        bool newConflicts = false;        // conflicts this rebase creates (not only carried along)
+        std::vector<NonText> decisions;   // non-text conflicts that need a decision (pre-flight)
+        std::vector<std::string> branches; // short names of branches ending here ("HEAD" = detached HEAD)
+    };
+    struct Move {
+        std::string ref;                  // short branch name, or "HEAD"
+        std::string from;                 // old commit ("" = created)
+        std::string to;
+    };
+    bool ok = false;
+    std::string error;                    // why there is no preview
+    std::string onto;                     // the base ("" = the root)
+    std::string ontoSubject;
+    std::vector<Row> rows;
+    std::vector<Move> moves;              // branches (and a detached HEAD) that move
+    std::vector<std::string> ontoBranches; // branches ending at the base (every commit dropped)
+    std::vector<std::string> staying;     // branches in the range that stay on the old commits
+};
+using RebasePreviewPtr = std::shared_ptr<const RebasePreview>;
+
 // ---- Recent repository summary -----------------------------------------------------------------
 
 struct RepoSummary {

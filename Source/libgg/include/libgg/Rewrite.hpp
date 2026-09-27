@@ -13,6 +13,8 @@
 // old→new mapping to the current journal operation.
 #pragma once
 
+#include "libgg/Cancel.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -150,8 +152,12 @@ public:
     Rewriter& operator=(const Rewriter&) = delete;
 
     // Builds every commit in memory. With unresolved non-text conflicts the result lists them
-    // (provisional choices let later steps be computed) and is not applicable.
-    Result compute(const Plan& plan);
+    // (provisional choices let later steps be computed) and is not applicable. Throws
+    // gg::Cancelled when `cancel` is set between steps.
+    Result compute(const Plan& plan, const gg::CancelToken& cancel = gg::CancelToken::none());
+    // The rewriter's repository instance, whose object store holds the computed objects (same
+    // thread only): reading the new commits' trees and files before (or instead of) applying.
+    git_repository* repository();
     // Writes the computed rewrite (see the file comment). False with `error` on failure, in
     // which case refs, HEAD, index and working tree are unchanged.
     bool apply(const Plan& plan, Result& result, std::string& error);

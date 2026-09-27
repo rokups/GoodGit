@@ -1,5 +1,6 @@
 #include "panels/HistoryPanel.hpp"
 #include "panels/CommitMenu.hpp"
+#include "panels/Graph.hpp"
 
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
@@ -14,23 +15,8 @@
 
 namespace ggui {
 
-namespace {
-
-// The current commit's outline reaches past half a lane: the graph starts this far into its cell
-// so the table's left edge does not clip it.
-float graphInset(float laneWidth)
-{
-    const float rowHeight = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
-    const float thickness = std::max(1.5f, ImGui::GetFontSize() * 0.12f);
-    return std::max(0.0f, rowHeight * 0.32f + thickness * 2.0f - laneWidth * 0.5f);
-}
-
-float laneX(float cellX, int lane, float laneWidth)
-{
-    return cellX + graphInset(laneWidth) + laneWidth * (static_cast<float>(lane) + 0.5f);
-}
-ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
-} // namespace
+using graph::inset;
+using graph::laneX;
 
 HistoryPanel::HistoryPanel(Session& session) : m_session(session) { }
 
@@ -443,46 +429,6 @@ void HistoryPanel::drawDropChooser()
     ImGui::EndPopup();
 }
 
-void HistoryPanel::drawGraphCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin)
-{
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const float top = origin.y - ImGui::GetStyle().CellPadding.y;
-    const float x0 = laneX(origin.x, 0, laneWidth);
-    const float ys[3] = {top, top + rowHeight * 0.5f, top + rowHeight};
-    const Palette& p = theme().palette();
-    const float thickness = std::max(1.5f, ImGui::GetFontSize() * 0.12f);
-    for (const auto& l : row.lines) {
-        const ImVec2 a(x0 + l.fromLane * laneWidth, ys[l.fromPos]);
-        const ImVec2 b(x0 + l.toLane * laneWidth, ys[l.toPos]);
-        const ImU32 col = p.lanes[l.color % 8];
-        if (l.fromLane == l.toLane) {
-            dl->AddLine(a, b, col, thickness);
-        } else {
-            const float dy = (b.y - a.y) * 0.6f;
-            dl->AddBezierCubic(a, ImVec2(a.x, a.y + dy), ImVec2(b.x, b.y - dy), b, col, thickness);
-        }
-    }
-    const ImVec2 c(x0 + row.lane * laneWidth, ys[1]);
-    const ImU32 col = row.conflicted ? p.conflict : p.lanes[row.color % 8];
-    if (row.parents.size() > 1) {
-        // Merge bubble: click toggles its merged history (+ collapsed, − expanded).
-        const float r = rowHeight * 0.32f;
-        const bool hovered = ImGui::IsMouseHoveringRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r));
-        dl->AddCircleFilled(c, r, hovered ? withAlpha(col, 90) : ImGui::GetColorU32(ImGuiCol_WindowBg));
-        dl->AddCircle(c, r, col, 0, thickness);
-        const float a = r * 0.55f;
-        dl->AddLine(ImVec2(c.x - a, c.y), ImVec2(c.x + a, c.y), col, thickness);
-        if (row.collapsed)
-            dl->AddLine(ImVec2(c.x, c.y - a), ImVec2(c.x, c.y + a), col, thickness);
-    } else {
-        const float r = rowHeight * 0.22f;
-        dl->AddCircleFilled(c, r, col);
-    }
-    if (m_session.snapshot() && row.id == m_session.snapshot()->head)
-        dl->AddCircle(c, rowHeight * (row.parents.size() > 1 ? 0.32f : 0.22f) + thickness * 1.5f,
-            ImGui::GetColorU32(ImGuiCol_Text), 0, thickness);
-}
-
 void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth)
 {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2);
@@ -666,7 +612,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     dragAndDrop(row);
     drawRowMenu(row);
     if (m_graphShown)
-        drawGraphCell(row, laneWidth, rowHeight, cellStart);
+        graph::drawCell(row, laneWidth, rowHeight, cellStart, m_session.snapshot() && row.id == m_session.snapshot()->head);
     if (m_graphShown && row.parents.size() > 1) {
         const float r = rowHeight * 0.32f;
         const ImVec2 c(laneX(cellStart.x, row.lane, laneWidth),
@@ -861,7 +807,7 @@ void HistoryPanel::draw(bool* open)
     }
 
     const float laneWidth = ImGui::GetFontSize() * 0.9f;
-    const float graphWidth = std::min(graphInset(laneWidth) + laneWidth * static_cast<float>(std::max(1, m_maxLanes)) + laneWidth * 0.5f,
+    const float graphWidth = std::min(inset(laneWidth) + laneWidth * static_cast<float>(std::max(1, m_maxLanes)) + laneWidth * 0.5f,
         ImGui::GetContentRegionAvail().x * 0.4f);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;

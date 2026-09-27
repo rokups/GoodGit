@@ -6,10 +6,16 @@
 // never touches the repository. Start runs the in-memory engine through gg::todo::toPlan and
 // Actions::rewrite (one operation, one Undo). Todos that need `git rebase -i` (edit, break,
 // exec, "Run as git rebase") are edited and validated here but cannot start until the native
-// engine exists (P3-19). The live preview (P3-17) goes beside the list and restarts from
-// onTodoChanged().
+// engine exists (P3-19).
+//
+// Live preview (P3-17): every change of the list (onTodoChanged) sends the todo, its Context and
+// the options to the engine's preview worker, which runs the same plan through the in-memory
+// rewrite engine without applying it. A newer request cancels the older one and only the answer
+// to the newest request is shown (the previous preview stays, marked as updating, meanwhile).
+// The result is drawn as a graph to the right of the list.
 #pragma once
 
+#include <core/Engine.hpp>
 #include <libgg/Todo.hpp>
 
 #include <functional>
@@ -66,6 +72,19 @@ public:
     // The text of a group's inline message editor (the group whose first row is `row`).
     std::string messageText(size_t row) const;
 
+    // ---- live preview ------------------------------------------------------------------------
+    void onPreview(const core::RebasePreviewEvent& event);
+    void onTaskFinished(const core::TaskFinishedEvent& event);
+    // The newest preview received (null before the first, or while the list has errors).
+    const core::RebasePreviewPtr& preview() const { return m_preview; }
+    // A newer preview is being computed.
+    bool previewPending() const { return m_previewRequest != 0; }
+    // Previews requested and shown since the editor opened (older answers are dropped).
+    int previewsRequested() const { return m_previewsRequested; }
+    int previewsShown() const { return m_previewsShown; }
+    // The todo the shown preview was computed for.
+    const gg::todo::Todo& previewTodo() const { return m_previewTodo; }
+
 private:
     // One undo step: the todo with the options that shaped it.
     struct State {
@@ -83,6 +102,8 @@ private:
     void pushUndo(State before);
     void undo(bool redo);
     void onTodoChanged();
+    void startPreview();
+    void cancelPreview();
     // Typed messages whose group changed (rows, actions) go back to Git's default.
     static void resetStaleMessages(const gg::todo::Todo& before, gg::todo::Todo& after);
 
@@ -98,6 +119,7 @@ private:
     void drawHeader();
     void drawOptions();
     void drawList();
+    void drawPreview();
     void drawRow(size_t row, float messageHeight);
     void handleKeys();
     void clickRow(size_t row);
@@ -120,6 +142,15 @@ private:
     std::string m_onto;
     std::vector<gg::todo::Issue> m_issues;
     gg::todo::EngineChoice m_engine;
+
+    core::RequestId m_previewRequest = 0;
+    gg::todo::Todo m_pendingTodo;          // what the pending request computes
+    core::RebasePreviewPtr m_preview;
+    gg::todo::Todo m_previewTodo;
+    std::vector<core::HistoryRow> m_previewGraph; // graph rows (newest first, then the base)
+    std::string m_previewNote;             // why there is no preview
+    int m_previewsRequested = 0;
+    int m_previewsShown = 0;
 };
 
 } // namespace ggui

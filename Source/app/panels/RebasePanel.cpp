@@ -1,5 +1,6 @@
 #include "panels/RebasePanel.hpp"
 
+#include "panels/Graph.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
@@ -109,6 +110,11 @@ void RebasePanel::open(Request request)
     m_onto.clear();
     m_issues.clear();
     m_engine = {};
+    cancelPreview();
+    m_preview.reset();
+    m_previewGraph.clear();
+    m_previewNote.clear();
+    m_previewsRequested = m_previewsShown = 0;
     read(request, false);
 }
 
@@ -121,6 +127,9 @@ void RebasePanel::close()
     m_redo.clear();
     m_selection.clear();
     m_textEditBefore.reset();
+    cancelPreview();
+    m_preview.reset();
+    m_previewGraph.clear();
 }
 
 void RebasePanel::read(const Request& request, bool keepTodo)
@@ -232,7 +241,68 @@ void RebasePanel::onTodoChanged()
     m_options.autosquash = m_state.autosquash;
     m_issues = m_state.context ? todo::validate(m_state.todo, *m_state.context) : std::vector<todo::Issue>{};
     m_engine = todo::chooseEngine(m_state.todo, m_options);
-    // P3-17: restart the live preview here (the newest edit wins).
+    startPreview();
+}
+
+// ---- live preview -------------------------------------------------------------------------------
+
+void RebasePanel::cancelPreview()
+{
+    if (m_previewRequest != 0)
+        m_session.engine().cancel(m_previewRequest);
+    m_previewRequest = 0;
+}
+
+void RebasePanel::startPreview()
+{
+    // The newest list wins: the request before it is cancelled (and its answer ignored).
+    cancelPreview();
+    if (todo::hasErrors(m_issues)) {
+        m_preview.reset();
+        m_previewGraph.clear();
+        m_previewNote = "Fix the errors in the list to see the result.";
+        return;
+    }
+    m_previewNote.clear();
+    m_pendingTodo = m_state.todo;
+    m_previewRequest = m_session.engine().rebasePreview(m_state.todo, m_state.context, m_options);
+    ++m_previewsRequested;
+}
+
+void RebasePanel::onPreview(const core::RebasePreviewEvent& event)
+{
+    if (!m_open || event.request != m_previewRequest)
+        return; // superseded or closed
+    m_previewRequest = 0;
+    m_preview = event.preview;
+    m_previewTodo = m_pendingTodo;
+    ++m_previewsShown;
+    // One lane: the resulting commits newest first, then the base.
+    m_previewGraph.clear();
+    const size_t n = m_preview->rows.size();
+    const bool root = m_preview->onto.empty();
+    for (size_t k = n; k-- > 0;) {
+        core::HistoryRow g;
+        g.conflicted = !m_preview->rows[k].conflicts.empty();
+        if (k + 1 < n)
+            g.lines.push_back(core::GraphLine{0, 0, 0, 1, 0});
+        if (k > 0 || !root)
+            g.lines.push_back(core::GraphLine{0, 0, 1, 2, 0});
+        m_previewGraph.push_back(std::move(g));
+    }
+    core::HistoryRow base;
+    if (n > 0)
+        base.lines.push_back(core::GraphLine{0, 0, 0, 1, 0});
+    m_previewGraph.push_back(std::move(base));
+}
+
+void RebasePanel::onTaskFinished(const core::TaskFinishedEvent& event)
+{
+    if (event.request != m_previewRequest || !(event.cancelled || event.failed))
+        return;
+    // Cancelled from the toolbar (or failed): the last preview stays, marked as out of date.
+    m_previewRequest = 0;
+    m_previewNote = event.cancelled ? "The preview was cancelled." : "The preview failed.";
 }
 
 void RebasePanel::resetStaleMessages(const todo::Todo& before, todo::Todo& after)
@@ -619,10 +689,13 @@ void RebasePanel::drawOptions()
 
 void RebasePanel::drawList()
 {
-    // P3-17: the preview graph goes to the right of this list.
+    // The list, and the live preview to the right of it.
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float previewWidth = std::max(ImGui::GetFontSize() * 16, avail * 0.38f);
+    const float listWidth = std::max(ImGui::GetFontSize() * 10, avail - previewWidth - ImGui::GetStyle().ItemSpacing.x);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-    if (!ImGui::BeginTable("##ir_table", 5, flags))
+    if (!ImGui::BeginTable("##ir_table", 5, flags, ImVec2(listWidth, 0)))
         return;
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 7);
@@ -635,11 +708,172 @@ void RebasePanel::drawList()
     for (size_t row : displayOrder())
         drawRow(row, messageHeight);
     ImGui::EndTable();
+    ImGui::SameLine();
+    drawPreview();
     if (m_pendingMove) {
         auto [rows, target] = std::move(*m_pendingMove);
         m_pendingMove.reset();
         moveRows(std::move(rows), target);
     }
+}
+
+void RebasePanel::drawPreview()
+{
+    ImGui::BeginChild("##ir_preview", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    const Palette& p = theme().palette();
+    const size_t n = m_session.shortIdLength();
+    ImGui::TextUnformatted("Result");
+    if (m_previewRequest != 0) {
+        ImGui::SameLine();
+        spinner("##irp_busy", ImGui::GetFontSize() * 0.3f);
+        ImGui::SameLine();
+        ImGui::TextDisabled("Updating...");
+    }
+    if (!m_previewNote.empty())
+        ImGui::TextWrapped("%s", m_previewNote.c_str());
+    if (!m_preview) {
+        ImGui::EndChild();
+        return;
+    }
+    const core::RebasePreview& pv = *m_preview;
+    if (!pv.ok) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.error);
+        ImGui::TextWrapped("Cannot compute the result: %s", pv.error.c_str());
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        return;
+    }
+
+    // Summary: what needs attention, and which branches move.
+    size_t conflicted = 0, decisions = 0, empty = 0;
+    for (const auto& row : pv.rows) {
+        conflicted += row.conflicts.empty() ? 0 : 1;
+        decisions += row.decisions.empty() ? 0 : 1;
+        empty += row.empty ? 1 : 0;
+    }
+    std::string summary = std::to_string(pv.rows.size()) + " commit(s)";
+    if (conflicted)
+        summary += ", " + std::to_string(conflicted) + " with conflicts";
+    if (decisions)
+        summary += ", " + std::to_string(decisions) + " need a decision";
+    if (empty)
+        summary += ", " + std::to_string(empty) + " empty";
+    plainText((summary + "###irp_summary").c_str());
+    std::string moves;
+    for (const auto& mv : pv.moves)
+        moves += (moves.empty() ? "" : ", ") + mv.ref;
+    if (!moves.empty())
+        plainText(("Moves: " + moves + "###irp_moves").c_str());
+    if (!pv.staying.empty()) {
+        std::string staying;
+        for (const auto& b : pv.staying)
+            staying += (staying.empty() ? "" : ", ") + b;
+        ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
+        plainText(("Stay on the old commits: " + staying + "###irp_staying").c_str());
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Without an update-ref row these branches keep pointing at the commits before the rebase.");
+    }
+
+    const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+    if (!ImGui::BeginTable("##irp_table", 2, flags)) {
+        ImGui::EndChild();
+        return;
+    }
+    const float laneWidth = ImGui::GetFontSize() * 0.9f;
+    const float rowHeight = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
+    ImGui::TableSetupColumn("##irp_graph", ImGuiTableColumnFlags_WidthFixed, graph::inset(laneWidth) + laneWidth * 1.5f);
+    ImGui::TableSetupColumn("##irp_commit", ImGuiTableColumnFlags_WidthStretch);
+    const todo::Context& c = *m_state.context;
+    const std::string tipName = c.tipRef.empty() ? std::string("HEAD") : branchName(c.tipRef);
+    auto badges = [&](const std::vector<std::string>& names) {
+        for (const auto& b : names) {
+            const bool current = b == tipName && c.tipIsHead;
+            drawBadge((b + "###irp_badge_" + b).c_str(), b == "HEAD" ? p.head : current ? p.branchCurrent : p.branch, current);
+            ImGui::SameLine();
+        }
+    };
+    for (size_t k = pv.rows.size(); k-- > 0;) {
+        const auto& row = pv.rows[k];
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
+        ImGui::TableSetColumnIndex(0);
+        ImGui::PushID(static_cast<int>(k));
+        const ImVec2 cellStart = ImGui::GetCursorScreenPos();
+        // Clicking a result selects its rows in the list.
+        if (ImGui::Selectable(("###irp_row_" + std::to_string(k)).c_str(), m_selection.count(row.todoRow) > 0,
+                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+            m_selection.clear();
+            for (size_t i = 0; i < m_state.todo.items.size(); ++i)
+                if (m_state.todo.items[i].isCommit() && std::find(row.sources.begin(), row.sources.end(),
+                        m_state.todo.items[i].commit) != row.sources.end())
+                    m_selection.insert(i);
+            m_anchor = row.todoRow;
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            std::string tip = row.unchanged ? "Unchanged: " + shortHex(row.id, n) : "New commit from";
+            if (!row.unchanged)
+                for (const auto& src : row.sources)
+                    tip += " " + shortHex(src, n);
+            if (!row.conflicts.empty()) {
+                tip += row.newConflicts ? "\nFirst-class conflicts in:" : "\nConflicts carried along in:";
+                for (const auto& [path, sides] : row.conflicts)
+                    tip += "\n    " + path + (sides > 2 ? " (" + std::to_string(sides) + " sides)" : "");
+            }
+            if (!row.decisions.empty()) {
+                tip += "\nNeeds a decision before it can be written (Start asks):";
+                for (const auto& d : row.decisions)
+                    tip += "\n    " + d.path + " (" + d.kind + ")";
+            }
+            if (row.empty)
+                tip += row.wasEmpty ? "\nAn empty commit (it was empty before)." : "\nBecomes empty: its changes are already in the base.";
+            ImGui::SetTooltip("%s", tip.c_str());
+        }
+        const bool head = c.tipIsHead
+            && std::find_if(row.branches.begin(), row.branches.end(), [&](const std::string& b) { return b == tipName; }) != row.branches.end();
+        graph::drawCell(m_previewGraph[pv.rows.size() - 1 - k], laneWidth, rowHeight, cellStart, head);
+
+        ImGui::TableSetColumnIndex(1);
+        if (!row.conflicts.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.conflict);
+            ImGui::TextUnformatted(ICON_MS_WARNING);
+            ImGui::PopStyleColor();
+            ImGui::SameLine(0, 2);
+        }
+        if (!row.decisions.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
+            ImGui::TextUnformatted(ICON_MS_HELP);
+            ImGui::PopStyleColor();
+            ImGui::SameLine(0, 2);
+        }
+        if (row.empty) {
+            ImGui::TextDisabled("(empty)");
+            ImGui::SameLine();
+        }
+        badges(row.branches);
+        ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+        if (!row.conflicts.empty())
+            color = p.conflict;
+        else if (row.unchanged)
+            color = p.dim;
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::TextUnformatted(row.subject.c_str());
+        ImGui::PopStyleColor();
+        ImGui::PopID();
+    }
+    // The base the commits go onto.
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
+    ImGui::TableSetColumnIndex(0);
+    if (!pv.onto.empty())
+        graph::drawCell(m_previewGraph.back(), laneWidth, rowHeight, ImGui::GetCursorScreenPos(),
+            c.tipIsHead && std::find(pv.ontoBranches.begin(), pv.ontoBranches.end(), tipName) != pv.ontoBranches.end());
+    ImGui::TableSetColumnIndex(1);
+    badges(pv.ontoBranches);
+    if (pv.onto.empty())
+        ImGui::TextDisabled("(the root)");
+    else
+        ImGui::TextDisabled("%s %s", shortHex(pv.onto, n).c_str(), pv.ontoSubject.c_str());
+    ImGui::EndTable();
+    ImGui::EndChild();
 }
 
 void RebasePanel::clickRow(size_t row)

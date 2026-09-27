@@ -984,14 +984,19 @@ void addExecEach(Todo& todo, const std::string& command)
     todo.items = std::move(out);
 }
 
-gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_view comment)
+gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_view comment, bool replayStops)
 {
     namespace rw = gg::rewrite;
     const auto issues = validate(todo, context);
     for (const auto& issue : issues)
         if (issue.error())
             throw std::runtime_error(issue.message);
-    if (const auto engine = chooseEngine(todo, {}); engine.engine != Engine::InMemory)
+    Todo engineCheck = todo;
+    if (replayStops)
+        for (Item& item : engineCheck.items)
+            if (item.action == Action::Edit || item.action == Action::Break || item.action == Action::Exec)
+                item.action = Action::Pick; // what the engine choice looks at: in memory
+    if (const auto engine = chooseEngine(engineCheck, {}); engine.engine != Engine::InMemory)
         throw std::runtime_error("this todo needs git rebase: " + engine.reason);
 
     rw::Plan plan;
@@ -1018,7 +1023,8 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
         const std::string key = "row:" + std::to_string(i);
         switch (item.action) {
         case Action::Pick:
-        case Action::Reword: {
+        case Action::Reword:
+        case Action::Edit: { // edit: only with replayStops (checked above)
             rw::Step s;
             s.kind = rw::Step::Kind::Pick;
             s.source = item.commit;

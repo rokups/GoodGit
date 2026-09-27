@@ -32,6 +32,7 @@ constexpr int kSlotDetails = 40;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotHooks = 5;
+constexpr int kSlotRebasePreview = 1;
 
 std::string firstLines(const std::string& text, int n = 6)
 {
@@ -53,6 +54,7 @@ const char* queueName(Queue q)
     case Queue::History: return "history";
     case Queue::Content: return "content";
     case Queue::Network: return "network";
+    case Queue::Preview: return "preview";
     }
     return "?";
 }
@@ -564,6 +566,16 @@ RequestId Engine::readHooksStatus()
                                                                         : std::filesystem::path(git_repository_path(repo));
         emit(HooksEvent{job.id, gg::hooks::status(dir)});
     });
+}
+
+RequestId Engine::rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::todo::Context> context,
+    gg::todo::Options options)
+{
+    return submit(Queue::Preview, "Previewing the interactive rebase", kSlotRebasePreview, true,
+        [this, todo = std::move(todo), context = std::move(context), options](Job& job) {
+            simulateLatency(job.token);
+            emit(RebasePreviewEvent{job.id, readRebasePreview(job.worker.repoPath(), todo, *context, options, job.token)});
+        });
 }
 
 // ---- SummaryService ------------------------------------------------------------------------------

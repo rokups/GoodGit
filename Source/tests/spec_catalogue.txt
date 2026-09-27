@@ -626,6 +626,8 @@ IR-PREVIEW | 3 | §4.13 | Live preview graph
 IR-PREVIEW-CONFLICTS | 3 | §4.13 | Preview shows first-class and non-text conflicts
 IR-PREVIEW-EMPTY | 3 | §4.13 | Preview shows empty commits
 IR-PREVIEW-BRANCHES | 3 | §4.13 | Preview shows moving branches
+IR-PREVIEW-LATEST | 3 | §4.13 | Preview updates as the list is edited: the newest edit wins, older previews are dropped
+IR-PREVIEW-NO-WRITE | 3 | §4.13, §3.1 | Preview computed in memory on a worker: nothing written, no frame waits
 IR-VALIDATE-FIRST | 3 | §4.13 | First row cannot be squash/fixup
 IR-VALIDATE-DROP-BRANCH | 3 | §4.13 | Warn when dropping a branch's only commits
 IR-VALIDATE-PUBLISHED | 3 | §4.13 | Published-commit warning

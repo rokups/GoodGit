@@ -5,6 +5,7 @@
 
 #include <libgg/Cancel.hpp>
 #include <libgg/Git2.hpp>
+#include <libgg/Todo.hpp>
 
 #include <functional>
 
@@ -31,6 +32,12 @@ RepoSummary readSummary(const std::filesystem::path& path);
 
 // Repository state from Git's state files in the (per-worktree) git dir.
 RepoState detectState(git_repository* repo, std::string& detail);
+
+// The result of an interactive rebase todo, computed in memory by the rewrite engine (its own
+// repository instance with an in-memory object store: nothing is written). Errors are returned
+// in the preview; throws gg::Cancelled when cancelled.
+RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const gg::todo::Todo& todo,
+    const gg::todo::Context& context, const gg::todo::Options& options, const gg::CancelToken& cancel);
 
 // True when `id` is reachable from any remote-tracking ref.
 bool isPublished(git_repository* repo, const git_oid& id);

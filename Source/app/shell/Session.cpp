@@ -126,6 +126,7 @@ void Session::handle(core::Event& event)
                 if (e.request == m_openRequest && !m_opened && (e.cancelled || e.failed))
                     m_failed = true;
                 m_history->onTaskFinished(e);
+                m_rebase->onTaskFinished(e);
             } else if constexpr (std::is_same_v<T, core::WatchEvent>) {
                 if (e.refs && m_reflog)
                     m_reflog->reload();
@@ -150,6 +151,8 @@ void Session::handle(core::Event& event)
                 m_hooksStatus = e.status;
                 m_hooksInstalled = e.status.installed;
                 maybePromptHooks();
+            } else if constexpr (std::is_same_v<T, core::RebasePreviewEvent>) {
+                m_rebase->onPreview(e);
             }
         },
         event);

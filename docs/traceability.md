@@ -1,12 +1,12 @@
 # Traceability matrix (phases 0-2)
 
-Covered: 466/466 required IDs; 604/645 of the whole catalogue.
+Covered: 466/466 required IDs; 610/647 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
-| HARNESS-SMOKE | 0 | §8.1 | ggui --smoke and a trivial --test pass | harness/smoke: welcome screen<br>shell/auto-open argv[1], else the most recent existing repository |
+| HARNESS-SMOKE | 0 | §8.1 | ggui --smoke and a trivial --test pass | shell/auto-open argv[1], else the most recent existing repository<br>harness/smoke: welcome screen |
 | HARNESS-ISOLATION | 0 | §8.1 | tests do not read user-level git config or ggui settings | harness/isolation from user config and settings |
-| HARNESS-FIXTURES | 0 | §8.3 | every fixture recipe builds and passes git fsck | harness/transport fixtures: git daemon and ssh shim<br>harness/fixture recipes build and pass fsck<br>harness/large fixture |
+| HARNESS-FIXTURES | 0 | §8.3 | every fixture recipe builds and passes git fsck | harness/large fixture<br>harness/transport fixtures: git daemon and ssh shim<br>harness/fixture recipes build and pass fsck |
 | HARNESS-ASSERT-HELPERS | 0 | §8.3 | UI readers, repo readers, post-test fsck, git step helper, seeded randomizer | harness/assertion helpers |
 | HARNESS-FAILURE-OUTPUT | 0 | §8.3 | failing test writes screenshot, app log and git command log | harness/failure output: screenshot, app log, git command log |
 | APP-WELCOME-OPEN | 1 | §4.1 | Welcome: Open repository… button opens the picker | shell/open with the picker: Welcome, menu, Ctrl+O, toolbar |
@@ -49,7 +49,7 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | TB-HEAD-PLAIN | 1 | §4.1 | Toolbar branch label and HEAD ID are plain text; clicking does nothing (UF-31) | shell/toolbar HEAD: plain text, copy short or full ID |
 | TB-HEAD-COPY | 1 | §4.1 | HEAD ID context menu copies it | shell/toolbar HEAD: plain text, copy short or full ID |
 | APP-ID-DIMMED | 1 | §4.1 | Full IDs show the short prefix normally and the rest dimmed (UF-14) | info/change information: message, author, committer, date, ID, parents<br>history/copy ID and full description; tooltip ID |
-| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13) | history/copy ID and full description; tooltip ID<br>shell/toolbar HEAD: plain text, copy short or full ID |
+| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13) | shell/toolbar HEAD: plain text, copy short or full ID<br>history/copy ID and full description; tooltip ID |
 | TB-SPINNER | 1 | §4.1 | Activity spinner while working | shell/activity spinner, task tooltip and Cancel |
 | TB-CANCEL | 1 | §4.1 | Activity Cancel button | shell/activity spinner, task tooltip and Cancel |
 | TB-TASK-TOOLTIP | 1 | §4.1 | Background-task tooltip | shell/activity spinner, task tooltip and Cancel |
@@ -62,11 +62,11 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | SET-THEME | 1 | §4.1 | Settings: theme dark/light persists | shell/settings persist across restarts |
 | APP-WATCH-WORKTREE | 1 | §4.1 | Watcher refreshes after worktree changes | engine/watcher: plain git steps update the UI |
 | APP-WATCH-GITDIR | 1 | §4.1 | Watcher refreshes after index/HEAD/refs/stash changes | engine/watcher: plain git steps update the UI |
-| APP-LOG-FILE | 1 | §4.1 | GGUI_LOG_FILE receives the log | shell/settings persist across restarts<br>shell/auto-open argv[1], else the most recent existing repository |
+| APP-LOG-FILE | 1 | §4.1 | GGUI_LOG_FILE receives the log | shell/auto-open argv[1], else the most recent existing repository<br>shell/settings persist across restarts |
 | APP-RESPONSIVE | 1 | §3.1 | No frame > ~33 ms from repository work on the large fixture | engine/responsiveness on the large repository |
 | APP-UI-THREAD-ASSERT | 1 | §3.1 | UI-thread call to libgit2/git trips the assertion | threading/UI-thread call to git trips the assertion |
 | APP-CANCEL-LONG-OPS | 1 | §3.1 | History load, reveal, large diff and blame can be cancelled | history/large history: first page, Show more, reveal, cancel<br>engine/overlapping diff requests: only the newest result is shown<br>history/cancel a long history load and a reveal<br>shell/activity spinner, task tooltip and Cancel |
-| HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges | history/graph, rows, badges and short IDs<br>visual/screenshots of the main views<br>visual/graph lines are continuous from row to row |
+| HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges | visual/graph lines are continuous from row to row<br>visual/screenshots of the main views<br>history/graph, rows, badges and short IDs |
 | HIST-GRAPH-CONTINUOUS | 1 | §4.2 | Graph lines connect row to row at a constant row pitch | visual/graph lines are continuous from row to row |
 | HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge (UF-18) | visual/graph is not clipped at the left edge |
 | HIST-MERGE-COLLAPSED-DEFAULT | 1 | §4.2 | Merge commits start collapsed | history/merges start collapsed; expand and collapse merged history |
@@ -212,7 +212,7 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | TB-COMMIT | 2 | §4.1 | Toolbar Commit/Amend | commit/commit the index from the toolbar; hooks run natively |
 | TB-COMMIT-LABEL | 2 | §4.1 | Commit/Amend label follows the selection | commit/commit the index from the toolbar; hooks run natively |
 | TB-NO-PREV-NEXT | 2 | §4.1 | The toolbar has no Previous / Next buttons (UF-27) | checkout/move HEAD to parent and child |
-| TB-UNDO | 2 | §4.1 | Toolbar Undo | undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way<br>stash/apply, pop with the index, apply one file, branch, drop, undo, clear |
+| TB-UNDO | 2 | §4.1 | Toolbar Undo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear<br>undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way |
 | TB-REDO | 2 | §4.1 | Toolbar Redo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear |
 | TB-FETCH | 2 | §4.1 | Toolbar Fetch fetches all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | TB-FETCH-REMOTE | 2 | §4.1 | Fetch dropdown: a single remote | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
@@ -320,7 +320,7 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | CHG-CTX-EXTDIFF-PARENT | 2 | §4.4 | Context: External diff ▸ vs parent | staging/external editor, folder and diff tools |
 | CHG-CTX-DELETE | 2 | §4.4 | Context: Delete file | staging/intent to add, delete; no Track / Untrack |
 | CHG-NO-TRACK-UNTRACK | 2 | §4.4 | No Track / Untrack items in the Changes menu (UF-26) | staging/intent to add, delete; no Track / Untrack |
-| INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo<br>commit/reword HEAD from Change information (amend mode) |
+| INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | commit/reword HEAD from Change information (amend mode)<br>rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
 | INFO-AMEND-MODE | 2 | §4.4 | Amend mode for HEAD with a clean index | commit/reword HEAD from Change information (amend mode) |
 | INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes |
 | DIFF-STAGE-LINES | 2 | §4.5 | Stage line(s) | linestaging/CRLF lines, missing final newline, new files<br>linestaging/randomized line staging matches the content model |
@@ -582,7 +582,7 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | IR-OPEN-AS | 3 | §4.13 | Open as interactive rebase… from single actions | rebase-i/open as interactive rebase from the Squash and Rebase onto dialogs |
 | IR-ROWS | 3 | §4.13 | Rows: action, short ID, subject, author, date, branch badges | rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches |
 | IR-NEWEST-FIRST | 3 | §4.13 | Newest-first display toggle | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
-| IR-ACT-PICK | 3 | §4.13 | pick | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/a detached HEAD follows the rebase; update-ref moves a branch |
+| IR-ACT-PICK | 3 | §4.13 | pick | rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-ACT-REWORD | 3 | §4.13 | reword | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
 | IR-ACT-EDIT | 3 | §4.13 | edit | — |
 | IR-ACT-SQUASH | 3 | §4.13 | squash | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
@@ -591,7 +591,7 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | IR-ACT-DROP | 3 | §4.13 | drop | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-ACT-EXEC | 3 | §4.13 | exec | — |
 | IR-ACT-BREAK | 3 | §4.13 | break | — |
-| IR-ACT-UPDATE-REF | 3 | §4.13 | update-ref | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo<br>rebase-i/a detached HEAD follows the rebase; update-ref moves a branch |
+| IR-ACT-UPDATE-REF | 3 | §4.13 | update-ref | rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
 | IR-DRAG | 3 | §4.13 | Drag rows to reorder | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-KEY-ALT-UPDOWN | 3 | §4.13 | Alt+↑/↓ reorder | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-KEY-LETTERS | 3 | §4.13 | p/r/e/s/f/d/x/b set the action | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
@@ -606,10 +606,12 @@ Covered: 466/466 required IDs; 604/645 of the whole catalogue.
 | IR-OPT-AUTOSTASH | 3 | §4.13 | Option: --autostash | rebase-i/options: onto, update-refs, autostash, committer date |
 | IR-OPT-EXEC-EACH | 3 | §4.13 | Option: exec after every commit | — |
 | IR-OPT-COMMITTER-DATE | 3 | §4.13 | Option: committer date keep/now | rebase-i/options: onto, update-refs, autostash, committer date |
-| IR-PREVIEW | 3 | §4.13 | Live preview graph | — |
-| IR-PREVIEW-CONFLICTS | 3 | §4.13 | Preview shows first-class and non-text conflicts | — |
-| IR-PREVIEW-EMPTY | 3 | §4.13 | Preview shows empty commits | — |
-| IR-PREVIEW-BRANCHES | 3 | §4.13 | Preview shows moving branches | — |
+| IR-PREVIEW | 3 | §4.13 | Live preview graph | rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written |
+| IR-PREVIEW-CONFLICTS | 3 | §4.13 | Preview shows first-class and non-text conflicts | rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
+| IR-PREVIEW-EMPTY | 3 | §4.13 | Preview shows empty commits | rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
+| IR-PREVIEW-BRANCHES | 3 | §4.13 | Preview shows moving branches | rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i |
+| IR-PREVIEW-LATEST | 3 | §4.13 | Preview updates as the list is edited: the newest edit wins, older previews are dropped | rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written |
+| IR-PREVIEW-NO-WRITE | 3 | §4.13, §3.1 | Preview computed in memory on a worker: nothing written, no frame waits | rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written |
 | IR-VALIDATE-FIRST | 3 | §4.13 | First row cannot be squash/fixup | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
 | IR-VALIDATE-DROP-BRANCH | 3 | §4.13 | Warn when dropping a branch's only commits | rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused |
 | IR-VALIDATE-PUBLISHED | 3 | §4.13 | Published-commit warning | rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused |

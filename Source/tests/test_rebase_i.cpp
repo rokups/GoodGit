@@ -1,13 +1,17 @@
-// Interactive rebase: the todo editor, its entry points and options, run on the in-memory engine
-// (§4.13; P3-15, P3-16).
+// Interactive rebase: the todo editor, its entry points and options, run on the in-memory engine,
+// and the live preview beside the list (§4.13; P3-15, P3-16, P3-17).
 #include "panels/HistoryPanel.hpp"
 #include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+#include "util/FrameProbe.hpp"
 
+#include <libgg/GitRunner.hpp>
 #include <libgg/Todo.hpp>
+
+#include <algorithm>
 
 namespace ggtest {
 
@@ -121,6 +125,95 @@ void key(Scenario& s, const std::string& hex, ImGuiKeyChord chord)
     click(s, hex);
     s.ctx->KeyPress(chord);
     s.ctx->Yield(2);
+}
+
+// ---- live preview helpers --------------------------------------------------------------------
+
+using Preview = ggui::core::RebasePreview;
+
+// The preview once it answers the list as it is now.
+const Preview* previewReady(Scenario& s, float seconds = 30.0f)
+{
+    auto& e = editor(s);
+    const bool ok = s.waitUntil(
+        [&] { return e.isOpen() && !e.previewPending() && e.preview() && e.previewTodo() == e.todo(); }, seconds);
+    s.ctx->Yield(2);
+    return ok ? e.preview().get() : nullptr;
+}
+
+std::string previewPane(Scenario& s) { return s.child("//Interactive rebase", "##ir_preview"); }
+bool previewShows(Scenario& s, const std::string& text) { return s.textShown(previewPane(s).c_str(), text); }
+
+// The preview's rows as "<subject first word>" (oldest first).
+std::vector<std::string> previewSubjects(const Preview& p)
+{
+    std::vector<std::string> out;
+    for (const auto& row : p.rows)
+        out.push_back(row.subject.substr(0, row.subject.find(' ')));
+    return out;
+}
+
+std::vector<std::string> conflictPaths(const Preview::Row& row)
+{
+    std::vector<std::string> out;
+    for (const auto& [path, sides] : row.conflicts)
+        out.push_back(path);
+    return out;
+}
+
+// Files of a commit with first-class conflict regions, as the repository has them.
+std::vector<std::string> conflictedFiles(Scenario& s, const fs::path& repo, const std::string& rev)
+{
+    std::vector<std::string> out;
+    const auto r = s.gitMayFail(repo, {"grep", "-l", "-e", "^<<<<<<< ", rev, "--"});
+    for (const auto& line : gg::splitLines(r.out))
+        if (!line.empty())
+            out.push_back(line.substr(line.find(':') + 1));
+    return out;
+}
+
+// The preview is what `tip` now is: per commit the tree, the subject, the first-class conflicts,
+// emptiness and the branches at it.
+void checkMatches(Scenario& s, const fs::path& repo, const std::string& tip, const Preview& p)
+{
+    const size_t n = p.rows.size();
+    for (size_t k = 0; k < n; ++k) {
+        const auto& row = p.rows[k];
+        const std::string rev = tip + "~" + std::to_string(n - 1 - k);
+        const std::string id = s.revParse(repo, rev);
+        GG_CHECK_STR_EQ(s.revParse(repo, rev + "^{tree}"), row.tree);
+        GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s", rev}), row.subject);
+        GG_CHECK(conflictedFiles(s, repo, rev) == conflictPaths(row));
+        const std::string parentTree = s.gitMayFail(repo, {"rev-parse", "-q", "--verify", rev + "~1^{tree}"}).out;
+        GG_CHECK_EQ(gg::trim(parentTree) == row.tree, row.empty);
+        if (row.unchanged)
+            GG_CHECK_STR_EQ(id, row.id);
+        for (const auto& b : row.branches)
+            GG_CHECK_STR_EQ(s.revParse(repo, b), id);
+    }
+    GG_CHECK_STR_EQ(s.revParse(repo, tip + "~" + std::to_string(n)), p.onto);
+}
+
+// a.txt changed on line 2 by c2 and again by c3 (part1), then c4 adds d.txt.
+struct LineRepo {
+    fs::path path;
+    std::string c1, c2, c3, c4;
+};
+
+LineRepo makeLineRepo(Scenario& s)
+{
+    LineRepo r;
+    r.path = s.fixture(Recipe::Empty);
+    s.commitFile(r.path, "a.txt", "1\n2\n3\n", "c1 add a");
+    r.c1 = s.head(r.path);
+    s.commitFile(r.path, "a.txt", "1\nX\n3\n", "c2 set X");
+    r.c2 = s.head(r.path);
+    s.commitFile(r.path, "a.txt", "1\nY\n3\n", "c3 set Y");
+    r.c3 = s.head(r.path);
+    s.git(r.path, {"branch", "part1"});
+    s.commitFile(r.path, "d.txt", "d\n", "c4 add d");
+    r.c4 = s.head(r.path);
+    return r;
 }
 
 } // namespace
@@ -700,7 +793,8 @@ GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto 
     ctx->ItemClick(irWidget("ir_cancel").c_str());
 }
 
-GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch", "IR-ACT-PICK", "IR-ACT-UPDATE-REF")
+GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch", "IR-ACT-PICK", "IR-ACT-UPDATE-REF",
+    "IR-PREVIEW-BRANCHES")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"switch", "-q", "--detach", r.c[4]});
@@ -715,12 +809,309 @@ GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a bran
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
     GG_CHECK(rows(s) == (Rows{"pick c4", "pick c3", "update-ref refs/heads/part1"}));
+    // The preview: the detached HEAD and part1 end at c3.
+    const Preview* p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 2);
+    GG_CHECK(p->rows[1].branches == (Rows{"part1", "HEAD"}));
+    GG_CHECK(std::any_of(p->moves.begin(), p->moves.end(), [](const auto& m) { return m.ref == "HEAD"; }));
+    GG_CHECK(s.itemExists((previewPane(s) + "/**/###irp_badge_HEAD").c_str()));
+    const Preview expected = *p;
     GG_REQUIRE(start(s));
+    checkMatches(s, r.path, "HEAD", expected);
     GG_CHECK(s.session()->snapshot()->headDetached);
     GG_CHECK(subjects(s, r.path, "HEAD") == (std::vector<std::string>{"c3", "c4", "c2", "c1"}));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[5]); // branches stay
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), s.head(r.path)); // update-ref after c3
     GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+// ---- live preview (P3-17) ------------------------------------------------------------------------
+
+GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, the same as Start and git rebase -i",
+    "IR-PREVIEW", "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-BRANCHES")
+{
+    const LineRepo r = makeLineRepo(s);
+    const fs::path copy = s.root() / "copy";
+    s.git(s.root(), {"clone", "-q", r.path.string(), copy.string()});
+    s.track(copy);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c2));
+    ctx->ItemClick(historyRow(r.c2).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+
+    // Nothing edited yet: every commit stays, no branch moves.
+    const Preview* p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4"}));
+    GG_CHECK(p->rows[0].unchanged && p->rows[1].unchanged && p->rows[2].unchanged);
+    GG_CHECK_STR_EQ(p->rows[2].id, r.c4);
+    GG_CHECK(p->rows[1].branches == (Rows{"part1"}));
+    GG_CHECK(p->rows[2].branches == (Rows{"main"}));
+    GG_CHECK(p->moves.empty());
+    GG_CHECK_STR_EQ(p->onto, r.c1);
+    GG_CHECK(previewShows(s, "3 commit(s)"));
+    GG_CHECK(previewShows(s, "c1 add a"));      // the base
+    GG_CHECK(s.itemExists((previewPane(s) + "/**/###irp_badge_part1").c_str()));
+
+    // c4 before c3 (conflict-free): c2 keeps its id, part1 moves with the update-ref row to the tip.
+    click(s, r.c4);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c4", "pick c3", "update-ref refs/heads/part1"}));
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c4", "c3"}));
+    GG_CHECK(p->rows[0].unchanged && !p->rows[1].unchanged && !p->rows[2].unchanged);
+    GG_CHECK(p->rows[2].branches == (Rows{"main", "part1"}));
+    GG_CHECK(p->moves.size() == 2);
+    GG_CHECK(previewShows(s, "Moves: main, part1"));
+    for (const auto& row : p->rows)
+        GG_CHECK(row.conflicts.empty() && row.decisions.empty() && !row.empty);
+    // git rebase -i with the same todo on a copy: the same trees, subjects and branch positions.
+    s.write(s.root(), "todo.txt", todo::format(editor(s).todo()));
+    s.git(copy, {"-c", "sequence.editor=cp '" + (s.root() / "todo.txt").string() + "'", "-c", "core.editor=true",
+                    "rebase", "-q", "-i", "--update-refs", r.c1});
+    checkMatches(s, copy, "main", *p);
+    GG_CHECK_STR_EQ(s.revParse(copy, "part1"), s.revParse(copy, "main"));
+    // An edit row and an exec row need git rebase, but the preview shows the history all the same.
+    key(s, r.c3, ImGuiKey_E);
+    ctx->KeyPress(ImGuiKey_X);
+    s.setText("//Interactive rebase/**/###ir_exec_3", "true");
+    GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
+    const Preview* native = previewReady(s);
+    GG_REQUIRE(native && native->ok);
+    GG_CHECK(previewSubjects(*native) == (Rows{"c2", "c4", "c3"}));
+    for (int i = 0; i < 3; ++i) // the command, the exec row, the edit action
+        ctx->ItemClick(irWidget("ir_undo").c_str());
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c4", "pick c3", "update-ref refs/heads/part1"}));
+
+    // Without c2, c3 conflicts on a.txt; the conflict is carried into its descendants.
+    key(s, r.c2, ImGuiKey_D);
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c4", "c3"}));
+    GG_CHECK(p->rows[0].conflicts.empty());
+    GG_CHECK(conflictPaths(p->rows[1]) == (Rows{"a.txt"}));
+    GG_CHECK(p->rows[1].newConflicts);
+    GG_CHECK(p->rows[1].decisions.empty());
+    GG_CHECK(previewShows(s, "2 commit(s), 1 with conflicts"));
+    s.screenshot("rebase-i-preview-conflicts");
+    // Without --update-refs part1 stays on the old commits.
+    ctx->ItemUncheck(irWidget("ir_update_refs").c_str());
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(p->staying == (Rows{"part1"}));
+    GG_CHECK(p->rows[1].branches == (Rows{"main"}));
+    GG_CHECK(previewShows(s, "Stay on the old commits: part1"));
+    ctx->ItemCheck(irWidget("ir_update_refs").c_str());
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->staying.empty());
+    // A result row selects its rows in the list; its tooltip lists the conflicted files.
+    ctx->ItemClick((previewPane(s) + "/**/###irp_row_1").c_str());
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{2}));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_1").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "First-class conflicts in:"));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_0").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "New commit from"));
+
+    // Every commit dropped: the branches go to the base.
+    key(s, r.c4, ImGuiKey_D);
+    key(s, r.c3, ImGuiKey_D);
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(p->rows.empty());
+    GG_CHECK(p->ontoBranches == (Rows{"main", "part1"}));
+    GG_CHECK(previewShows(s, "0 commit(s)"));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 2);
+
+    // Start gives exactly the previewed result.
+    const Preview expected = *p;
+    GG_REQUIRE(start(s));
+    checkMatches(s, r.path, "main", expected);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), s.revParse(r.path, "main"));
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, commits that are or become empty",
+    "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-EMPTY")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.write(path, "bin.dat", std::string("A\0", 2));
+    s.commitFile(path, "a.txt", "a\n", "c1 add a");
+    s.git(path, {"add", "bin.dat"});
+    s.git(path, {"commit", "-q", "--amend", "--no-edit"});
+    const std::string c1 = s.head(path);
+    s.write(path, "bin.dat", std::string("B\0", 2));
+    s.git(path, {"commit", "-q", "-am", "c2 binary B"});
+    const std::string c2 = s.head(path);
+    s.write(path, "bin.dat", std::string("C\0", 2));
+    s.git(path, {"commit", "-q", "-am", "c3 binary C"});
+    const std::string c3 = s.head(path);
+    s.git(path, {"commit", "-q", "--allow-empty", "-m", "c4 empty"});
+    s.commitFile(path, "f.txt", "f\n", "c5 add f");
+    s.git(path, {"rm", "-q", "f.txt"});
+    s.git(path, {"commit", "-q", "-m", "c6 remove f"});
+    const std::string c6 = s.head(path);
+    s.commitFile(path, "f.txt", "f\n", "c7 add f again");
+    const std::string c7 = s.head(path);
+
+    GG_REQUIRE(s.openRepository(path));
+    GG_REQUIRE(rowReady(s, c2));
+    ctx->ItemClick(historyRow(c2).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    const Preview* p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4", "c5", "c6", "c7"}));
+    // c4 was empty to begin with (Git keeps it).
+    GG_CHECK(p->rows[2].empty && p->rows[2].wasEmpty);
+    GG_CHECK(!p->rows[3].empty && !p->rows[5].empty);
+    GG_CHECK(previewShows(s, "6 commit(s), 1 empty"));
+
+    // c3 before c2: both change the binary file, which needs a decision (pre-flight).
+    click(s, c3);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c3", "c2", "c4", "c5", "c6", "c7"}));
+    GG_REQUIRE(p->rows[0].decisions.size() == 1 && p->rows[1].decisions.size() == 1);
+    GG_CHECK_STR_EQ(p->rows[0].decisions[0].path, "bin.dat");
+    GG_CHECK_STR_EQ(p->rows[0].decisions[0].kind, "binary");
+    GG_CHECK(p->rows[0].conflicts.empty());
+    GG_CHECK(previewShows(s, "2 need a decision"));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_0").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "bin.dat (binary)"));
+    // Start asks about exactly those; Cancel leaves everything as it was.
+    const std::string tip = s.head(path);
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.dialogOpen("Resolve conflicts before rewriting"));
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_REQUIRE(f->field("conflict_0") && f->field("conflict_1") && !f->field("conflict_2"));
+    GG_CHECK(f->field("conflict_0")->text.find("c3 binary C: bin.dat (binary)") != std::string::npos);
+    GG_CHECK(f->field("conflict_1")->text.find("c2 binary B: bin.dat (binary)") != std::string::npos);
+    s.dialogButton("Resolve conflicts before rewriting", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(path), tip);
+    GG_CHECK(editor(s).isOpen());
+
+    // Back to Git's order, c6 dropped: c7 adds f.txt that is already there, so it becomes empty.
+    // Without an identity for the new commits the preview shows the engine's error.
+    s.git(path, {"config", "user.name", ""});
+    ctx->WindowFocus("//Interactive rebase");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    key(s, c6, ImGuiKey_D);
+    p = previewReady(s);
+    GG_REQUIRE(p && !p->ok);
+    GG_CHECK(previewShows(s, "Cannot compute the result:"));
+    s.git(path, {"config", "--unset", "user.name"});
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4", "c5", "c7"}));
+    GG_CHECK(p->rows[4].empty && !p->rows[4].wasEmpty);
+    GG_CHECK(p->rows[0].unchanged && p->rows[3].unchanged && !p->rows[4].unchanged);
+    GG_CHECK(previewShows(s, "5 commit(s), 2 empty"));
+    s.screenshot("rebase-i-preview-empty");
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_4").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "Becomes empty"));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_2").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "it was empty before"));
+    const Preview expected = *p;
+    GG_REQUIRE(start(s));
+    checkMatches(s, path, "main", expected);
+    GG_CHECK_STR_EQ(s.revParse(path, "main~5"), c1);
+    GG_CHECK(s.statusPorcelain(path).empty());
+    (void)c7;
+}
+
+GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames never wait, nothing is written",
+    "IR-PREVIEW-LATEST", "IR-PREVIEW-NO-WRITE", "IR-PREVIEW")
+{
+    // 30 commits from the root, each adding a file.
+    const fs::path path = s.fixture(Recipe::Empty);
+    std::vector<std::string> c{""};
+    for (int i = 1; i <= 30; ++i) {
+        s.commitFile(path, "f" + std::to_string(i) + ".txt", std::to_string(i) + "\n", "c" + std::to_string(i) + " add f" + std::to_string(i));
+        c.push_back(s.head(path));
+    }
+    const auto before = s.gitDirBytes(path);
+    GG_REQUIRE(s.openRepository(path));
+    GG_REQUIRE(rowReady(s, c[1]));
+    ctx->ItemClick(historyRow(c[1]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    const Preview* p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(p->rows.size() == 30);
+    GG_CHECK(p->onto.empty());
+    GG_CHECK(previewShows(s, "(the root)"));
+
+    // Slow workers: several edits in a row. The list reacts at once, only the newest preview is
+    // shown and no frame waits for the worker.
+    auto& probe = ggui::frameProbe();
+    const int requested = editor(s).previewsRequested();
+    const int shown = editor(s).previewsShown();
+    gg::setSlowGitLatency(std::chrono::milliseconds(600));
+    probe.reset();
+    key(s, c[5], ImGuiKey_D);
+    key(s, c[9], ImGuiKey_D);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    key(s, c[20], ImGuiKey_D);
+    key(s, c[9], ImGuiKey_P);
+    GG_CHECK(editor(s).previewPending());
+    GG_CHECK(previewShows(s, "Updating..."));
+    p = previewReady(s, 60.0f);
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
+    GG_REQUIRE(p && p->ok);
+    ctx->LogInfo("frames %lld, max %.1f ms; previews requested %d, shown %d", probe.frames, probe.maxMs,
+        editor(s).previewsRequested() - requested, editor(s).previewsShown() - shown);
+    GG_CHECK(editor(s).previewsRequested() - requested == 5);
+    GG_CHECK(editor(s).previewsShown() - shown < 5);
+    GG_CHECK(probe.maxMs < 33.0);
+    GG_CHECK(p->rows.size() == 28);
+    const auto names = previewSubjects(*p);
+    GG_CHECK(std::find(names.begin(), names.end(), "c20") == names.end());
+    GG_CHECK(std::find(names.begin(), names.end(), "c5") == names.end());
+    GG_CHECK(std::find(names.begin(), names.end(), "c9") != names.end());
+
+    // Errors in the list: no preview until they are fixed.
+    s.comboSelect(irAction(c[1]).c_str(), "fixup");
+    GG_CHECK(editor(s).preview() == nullptr);
+    GG_CHECK(previewShows(s, "Fix the errors in the list"));
+    ctx->ItemClick(irWidget("ir_undo").c_str());
+    GG_REQUIRE(previewReady(s));
+
+    // Cancelled from the toolbar: the preview says so and the list stays editable.
+    gg::setSlowGitLatency(std::chrono::milliseconds(3000));
+    key(s, c[3], ImGuiKey_D);
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//##Toolbar/Cancel##tb_cancel"); }, 10.0f));
+    ctx->ItemClick("//##Toolbar/Cancel##tb_cancel");
+    GG_CHECK(s.waitUntil([&] { return !editor(s).previewPending(); }));
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
+    GG_CHECK(previewShows(s, "The preview was cancelled."));
+    key(s, c[3], ImGuiKey_P);
+    GG_REQUIRE(previewReady(s));
+
+    // Nothing the previews computed reached the repository.
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    s.settle();
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    const auto after = s.gitDirBytes(path);
+    for (const auto& [name, bytes] : after)
+        if (!before.count(name) || before.at(name) != bytes)
+            ctx->LogError("changed under .git: %s", name.c_str());
+    GG_CHECK(after == before);
 }
 
 } // namespace ggtest

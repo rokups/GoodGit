@@ -216,7 +216,10 @@ void addExecEach(Todo& todo, const std::string& command);
 // The in-memory engine's plan: commit rows replayed in todo order on `onto`, squash/fixup as
 // Squash steps with the group message, update-ref lines and the tip ref moved to the step before
 // them, other branches left alone (as Git does). Step keys are "row:<index>". Throws when the
-// todo has errors or needs the native engine.
-gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_view comment = "#");
+// todo has errors or needs the native engine. With `replayStops` (the live preview) edit rows are
+// replayed as picks and exec/break rows are skipped: the history a native run produces when
+// every stop just continues.
+gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_view comment = "#",
+    bool replayStops = false);
 
 } // namespace gg::todo

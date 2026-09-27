@@ -24,6 +24,7 @@
 #include <functional>
 #include <initializer_list>
 #include <random>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -164,6 +165,8 @@ public:
     std::vector<std::string> refs(const fs::path& repo);    // "<name> <id>" lines
     std::string statusPorcelain(const fs::path& repo);      // git status --porcelain=v2 -z
     bool fsck(const fs::path& repo, std::string* output = nullptr);
+    // Every file under .git with its bytes, except disposable caches (the "byte-identical" check).
+    std::map<std::string, std::string> gitDirBytes(const fs::path& repo);
 
     // ---- UI helpers -----------------------------------------------------------------------
     // Yields frames until `pred` is true or `seconds` elapse. Returns pred().

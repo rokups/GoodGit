@@ -67,23 +67,6 @@ void rebaseTheirs(Scenario& s, const TwoSides& t)
     s.dialogButton("Rebase onto", "Rebase");
 }
 
-// Every file under .git with its bytes (the "byte-identical" check).
-std::map<std::string, std::string> gitDirBytes(const fs::path& repo)
-{
-    std::map<std::string, std::string> out;
-    for (const auto& e : fs::recursive_directory_iterator(repo / ".git")) {
-        if (!e.is_regular_file())
-            continue;
-        if (fs::relative(e.path(), repo / ".git").generic_string().rfind("gg/cache/", 0) == 0)
-            continue; // disposable caches (the history's conflict scan writes one on open)
-        std::ifstream f(e.path(), std::ios::binary);
-        std::ostringstream ss;
-        ss << f.rdbuf();
-        out[fs::relative(e.path(), repo).generic_string()] = ss.str();
-    }
-    return out;
-}
-
 } // namespace
 
 GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the rewrite goes through",
@@ -221,7 +204,7 @@ GG_TEST("preflight", "conflicts are listed per commit in order; Cancel leaves .g
     s.git(t.path, {"add", "b.bin"});
     s.git(t.path, {"commit", "-q", "-m", "theirs second"});
     t.theirs = s.head(t.path);
-    const auto before = gitDirBytes(t.path);
+    const auto before = s.gitDirBytes(t.path);
     GG_REQUIRE(s.openRepository(t.path));
     const std::string first = s.revParse(t.path, "theirs~1");
     s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(first)) != nullptr; });
@@ -238,7 +221,7 @@ GG_TEST("preflight", "conflicts are listed per commit in order; Cancel leaves .g
     s.settle();
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
-    const auto after = gitDirBytes(t.path);
+    const auto after = s.gitDirBytes(t.path);
     for (const auto& [name, bytes] : after)
         if (!before.count(name) || before.at(name) != bytes)
             ctx->LogError("changed under .git: %s", name.c_str());

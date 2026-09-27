@@ -234,7 +234,25 @@ the panel without touching the repository.
   local changes are stashed before and popped after, in the same operation; when they no longer
   apply they stay in the stash (warning notification). Todos needing `git rebase -i` (edit, break,
   exec, exec after every commit, Run as git rebase) are validated but cannot start until the native
-  engine exists (Phase 3, P3-19). The live preview (P3-17) goes to the right of the list.
+  engine exists (Phase 3, P3-19).
+- **Live preview** `##ir_preview` (right of the list, a bordered child; plan §4.13): "Result", and
+  while a newer result is computed a spinner with "Updating..." (the previous result stays). A
+  summary line `###irp_summary` ("N commit(s), K with conflicts, M need a decision, E empty"),
+  `###irp_moves` ("Moves: <branches>", a detached HEAD as `HEAD`), `###irp_staying` (warning
+  colour: "Stay on the old commits: <branches>", branches in the range without an update-ref row).
+  The graph `##irp_table` is one lane, newest first, the base last (dimmed: short ID and subject,
+  or "(the root)"); rows `###irp_row_<k>` (k = result commit, oldest = 0) show the conflict icon
+  and conflict colour for first-class conflicts, a help icon (warning colour) for non-text
+  conflicts Start will ask about (pre-flight), "(empty)" for commits that are or become empty,
+  badges `###irp_badge_<branch>` for branches (and `HEAD`) ending there, and the subject (dimmed
+  when the commit is unchanged and keeps its ID). HEAD's future commit gets History's outline. The
+  row tooltip names the source commits and lists conflicted files, decisions and why it is empty;
+  clicking a row selects its rows in the list. With errors in the list there is no result ("Fix
+  the errors in the list to see the result."); an engine failure shows "Cannot compute the
+  result: …"; a preview cancelled from the toolbar says so. Todos for `git rebase -i` are
+  previewed as if every stop continued at once (edit = pick, exec/break change nothing).
+  Computed on the preview worker by the same plan and in-memory engine as Start, never applied:
+  nothing is written to the repository, the newest edit cancels older computations.
 - Errors are titled `Open interactive rebase` / `Start interactive rebase` (never the panel's
   name).
 

@@ -69,7 +69,6 @@ private:
     core::HistoryScope buildScope() const;
     void drawRow(const core::HistoryRow& row, int index, float laneWidth);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
-    void drawGraphCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin);
     void drawRowMenu(const core::HistoryRow& row);
     void moveSelection(int delta);
 

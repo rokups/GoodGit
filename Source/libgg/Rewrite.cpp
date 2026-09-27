@@ -413,7 +413,9 @@ Rewriter::Rewriter(const fs::path& repoDir) : m(std::make_unique<Impl>())
 
 Rewriter::~Rewriter() = default;
 
-Result Rewriter::compute(const Plan& plan)
+git_repository* Rewriter::repository() { return m->repo.get(); }
+
+Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
 {
     assertNotUiThread("Rewriter::compute");
     Result result;
@@ -494,6 +496,7 @@ Result Rewriter::compute(const Plan& plan)
         };
 
         for (const Step& step : plan.steps) {
+            gg::throwIfCancelled(cancel);
             const std::string key = step.key.empty() ? step.source : step.key;
             if (step.kind == Step::Kind::Squash) {
                 if (!pending)

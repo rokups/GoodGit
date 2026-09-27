@@ -7,6 +7,7 @@
 //   3. history/graph    incremental, cancellable
 //   4. diff/blame/file  latest request per slot wins, stale requests dropped
 //   5. network          git processes
+//   6. preview          interactive rebase preview, latest request wins
 // Results come back through poll() as events holding plain C++ values.
 #pragma once
 
@@ -16,6 +17,7 @@
 #include <libgg/GitRunner.hpp>
 #include <libgg/Hooks.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/Todo.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -148,9 +150,14 @@ struct HooksEvent {
     gg::hooks::Status status;
 };
 
+struct RebasePreviewEvent {
+    RequestId request = 0;
+    RebasePreviewPtr preview;
+};
+
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
-    MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent>;
+    MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent, RebasePreviewEvent>;
 
 class Engine;
 
@@ -210,8 +217,8 @@ struct Activity {
     std::chrono::steady_clock::time_point started;
 };
 
-enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4 };
-constexpr int kQueueCount = 5;
+enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5 };
+constexpr int kQueueCount = 6;
 
 class Worker;
 class Watcher;
@@ -250,6 +257,10 @@ public:
     RequestId scanConflicts(std::vector<Oid> commits);
     RequestId readConfig(std::vector<std::string> keys);
     RequestId readHooksStatus();
+    // The result of an interactive rebase todo, computed in memory (RebasePreviewEvent; nothing
+    // is written). A newer request cancels the older one.
+    RequestId rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::todo::Context> context,
+        gg::todo::Options options);
 
     void cancel(RequestId id);
     void cancelAll();

@@ -134,6 +134,22 @@ std::string Scenario::statusPorcelain(const fs::path& repo)
     return git(repo, {"status", "--porcelain=v2", "-z", "-uall"}).out;
 }
 
+std::map<std::string, std::string> Scenario::gitDirBytes(const fs::path& repo)
+{
+    std::map<std::string, std::string> out;
+    for (const auto& e : fs::recursive_directory_iterator(repo / ".git")) {
+        if (!e.is_regular_file())
+            continue;
+        if (fs::relative(e.path(), repo / ".git").generic_string().rfind("gg/cache/", 0) == 0)
+            continue; // disposable caches (the history's conflict scan writes one on open)
+        std::ifstream f(e.path(), std::ios::binary);
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        out[fs::relative(e.path(), repo).generic_string()] = ss.str();
+    }
+    return out;
+}
+
 bool Scenario::fsck(const fs::path& repo, std::string* output)
 {
     auto r = gitMayFail(repo, {"fsck", "--no-progress", "--strict"});
