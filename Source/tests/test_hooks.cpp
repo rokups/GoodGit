@@ -96,6 +96,25 @@ GG_TEST("hooks", "git gg hooks install/status/uninstall with config-defined hook
     GG_CHECK(r.ok());
     GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
     GG_CHECK_EQ(s.gitgg(repo, {"hooks", "status"}).exitCode, 1);
+
+    // Forced config mode, in a repository whose path has a quote in it (the hook commands quote it);
+    // one hook removed by hand leaves the installation partial.
+    const fs::path quoted = s.path("it's here");
+    s.git(s.root(), {"init", "-q", "-b", "main", quoted.string()});
+    s.track(quoted);
+    s.commitFile(quoted, "a.txt", "a\n", "first");
+    ggui::setEnv("GG_HOOKS_MODE", "config");
+    GG_REQUIRE(s.gitgg(quoted, {"hooks", "install"}).ok());
+    ggui::unsetEnv("GG_HOOKS_MODE");
+    s.git(quoted, {"commit", "-q", "--allow-empty", "-m", "Journaled through a quoted path"});
+    GG_CHECK_EQ(journalOps(quoted, "git").size(), static_cast<size_t>(1));
+    s.git(quoted, {"config", "--local", "--remove-section", "hook.ggui-pre-push"});
+    r = s.gitgg(quoted, {"hooks", "status"});
+    GG_CHECK_EQ(r.exitCode, 1);
+    GG_CHECK(r.out.rfind("partially installed", 0) == 0);
+    GG_REQUIRE(s.gitgg(quoted, {"hooks", "install"}).ok()); // completes it
+    GG_CHECK(s.gitgg(quoted, {"hooks", "status"}).ok());
+    GG_CHECK(s.gitgg(quoted, {"hooks", "uninstall"}).ok());
 }
 
 GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact", "HOOK-WRAPPER",

@@ -28,10 +28,9 @@ struct Status {
     bool gitGgFound = false;       // git-gg reachable through PATH
 };
 
-// Whether the installed git runs config-defined hooks (probed once per process).
+// Whether the installed git runs config-defined hooks (probed once per process; GG_HOOKS_MODE=
+// wrapper or config overrides the probe).
 bool configHooksSupported();
-// Forces a mode for tests of the wrapper fallback (empty = probe).
-void forceMode(const std::string& mode);
 
 Status status(const std::filesystem::path& repoDir);
 bool install(const std::filesystem::path& repoDir, std::string& error);

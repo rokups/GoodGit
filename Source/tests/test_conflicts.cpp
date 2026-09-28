@@ -471,4 +471,58 @@ GG_TEST("conflicts", "first-class: resolve with the merge tool (stages from the 
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
 }
 
+GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-backend rebase, skip and reset a bisect; merge tool on a first-class conflict",
+    "CONF-NATIVE-DETECT", "CONF-NATIVE-CONTINUE", "CONF-NATIVE-MERGETOOL", "TB-STATE-BADGE")
+{
+    auto clean = [&](const fs::path&) {
+        return s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::None; });
+    };
+    const fs::path revert = s.fixture(Recipe::MidRevert);
+    GG_REQUIRE(s.openRepository(revert));
+    ctx->ItemClick("//##Toolbar/Abort##tb_abort");
+    GG_CHECK(clean(revert));
+    GG_CHECK(!fs::exists(revert / ".git" / "REVERT_HEAD"));
+    s.settle();
+    const fs::path apply = s.fixture(Recipe::MidRebaseApply);
+    GG_REQUIRE(s.openRepository(apply));
+    GG_CHECK(s.session()->snapshot()->state == ggui::core::RepoState::Rebasing);
+    ctx->ItemClick("//##Toolbar/Abort##tb_abort");
+    GG_CHECK(clean(apply));
+    GG_CHECK(!fs::exists(apply / ".git" / "rebase-apply"));
+    s.settle();
+    const fs::path bisect = s.fixture(Recipe::Bisecting);
+    GG_REQUIRE(s.openRepository(bisect));
+    const std::string before = s.head(bisect);
+    ctx->ItemClick("//##Toolbar/Skip##tb_skip");
+    GG_CHECK(s.waitUntil([&] { return s.head(bisect) != before; }));
+    s.settle();
+    ctx->ItemClick("//##Toolbar/Reset##tb_abort");
+    GG_CHECK(clean(bisect));
+    GG_CHECK(!fs::exists(bisect / ".git" / "BISECT_LOG"));
+    s.settle();
+
+    // A merge tool on a first-class conflict: stages 1–3 from the regions; the tool's result is
+    // staged. A tool that gives up leaves the index as it was.
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    s.git(repo, {"config", "merge.tool", "fake"});
+    s.git(repo, {"config", "mergetool.fake.cmd", "cp \"$REMOTE\" \"$MERGED\""});
+    s.git(repo, {"config", "mergetool.fake.trustExitCode", "true"});
+    s.git(repo, {"config", "mergetool.keepBackup", "false"});
+    s.git(repo, {"config", "mergetool.gives-up.cmd", "false"});
+    s.git(repo, {"config", "mergetool.gives-up.trustExitCode", "true"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string row = s.child("//Changes", "##files") + "/Conflicted/conflict.txt/###file_conflict.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    s.git(repo, {"config", "merge.tool", "gives-up"});
+    s.contextMenu(row.c_str(), "Resolve with merge tool");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    s.git(repo, {"config", "merge.tool", "fake"});
+    s.contextMenu(row.c_str(), "Resolve with merge tool");
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=2\nbottom\n"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "conflict.txt");
+}
+
 } // namespace ggtest

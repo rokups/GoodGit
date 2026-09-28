@@ -244,4 +244,49 @@ GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui", "TB
     GG_CHECK(s.waitUntil([&] { return badge("tb_push").find("\xe2\x86\x91") == std::string::npos; }));
 }
 
+GG_TEST("setup", "git versions ggui reads: newer major, vendor suffix, no number; a typed path with a trailing slash; copying a notice",
+    "APP-PROMPT-GIT-OLD", "APP-WELCOME-OPEN-PATH", "APP-ERROR-POPUP")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string path = ggui::getEnv("PATH");
+    const fs::path realGit = gg::findInPath("git");
+    // A stand-in git that reports `version` and otherwise runs the real one.
+    auto withGit = [&](const std::string& name, const std::string& version) {
+        const fs::path dir = s.path(name);
+        fs::create_directories(dir);
+        s.write(dir, "git", "#!/bin/sh\nif [ \"$1\" = --version ]; then echo '" + version + "'; exit 0; fi\nexec '" + realGit.string() + "' \"$@\"\n");
+        fs::permissions(dir / "git", fs::perms::owner_all);
+        ggui::setEnv("PATH", dir.string() + ":" + path);
+    };
+    // git 3.x is newer than the minimum; a vendor suffix is ignored. The path ends with a slash.
+    withGit("git3", "git version 3.1.0.vendor.2");
+    ctx->ItemInputValue("//Welcome/##welcome_path", (repo.string() + "/").c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened(); }));
+    ggui::setEnv("PATH", path);
+    GG_CHECK_STR_EQ(s.session()->path().string(), repo.string());
+    s.settle();
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    // No version number at all: not supported.
+    withGit("git-odd", "git version unknown");
+    ctx->ItemInputValue("//Welcome/##welcome_path", repo.string().c_str());
+    const bool shown = s.dialogOpen("Git required");
+    ggui::setEnv("PATH", path);
+    GG_REQUIRE(shown);
+    GG_CHECK(s.app.dialogs().current()->message.find("git version unknown") != std::string::npos);
+    s.dialogButton("Git required", "Retry");
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened(); }));
+    s.settle();
+    // A notice's text can be copied from its menu.
+    s.app.notify(ggui::App::Notice::Warning, "Copy me", "the message");
+    GG_REQUIRE(!s.app.toasts().empty());
+    const std::string toast = "//##toast_" + std::to_string(s.app.toasts().back().id);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((toast + "/###toast_close").c_str()); }));
+    ctx->MouseMove((toast + "/###toast_close").c_str());
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    ctx->ItemClick("//$FOCUSED/Copy message");
+    GG_CHECK_STR_EQ(s.clipboard(), "Copy me: the message");
+}
+
 } // namespace ggtest

@@ -24,7 +24,6 @@ using namespace gg::git2;
 namespace {
 
 constexpr const char* kWrapperMarker = "# ggui managed hook";
-std::string g_forcedMode;
 
 const char* kRunner = R"(#!/bin/sh
 # ggui managed hooks runner (installed by "git gg hooks install", removed by uninstall).
@@ -133,14 +132,10 @@ const std::vector<std::string>& managedHooks()
     return names;
 }
 
-void forceMode(const std::string& mode) { g_forcedMode = mode; }
-
 bool configHooksSupported()
 {
-    std::string forced = g_forcedMode;
-    if (forced.empty())
-        if (const char* e = std::getenv("GG_HOOKS_MODE"))
-            forced = e;
+    const char* env = std::getenv("GG_HOOKS_MODE");
+    const std::string forced = env ? env : "";
     if (forced == "wrapper")
         return false;
     if (forced == "config")

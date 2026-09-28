@@ -374,6 +374,26 @@ GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main 
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main") != mainBefore; }));
     s.settle();
+    // A checkout in wt1 moves only wt1's HEAD: undone there; from the main worktree it is not
+    // visible (the main worktree's newest own operation is undone instead).
+    s.git(repo, {"branch", "side", "main~1"});
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.contextMenu("//Branches/branch_side/###branch_side", "Check out");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitOut(wt1, {"branch", "--show-current"}) == "side"; }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(wt1, {"branch", "--show-current"}) == "wt1"; }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(wt1, {"branch", "--show-current"}) == "side"; }));
+    s.settle();
+    const std::string mainNow = s.revParse(repo, "main");
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main") != mainNow; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"branch", "--show-current"}), "side");
 }
 
 } // namespace ggtest
