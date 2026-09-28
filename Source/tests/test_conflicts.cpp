@@ -203,6 +203,24 @@ GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change i
     ctx->ItemClick("//History/**/###row_wt");
     GG_CHECK(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "conflict.txt").c_str()); }));
     GG_CHECK(s.statusPorcelain(repo).empty());
+    // F7 from the working tree row: the first conflicted commit; past the last one nothing moves.
+    ctx->KeyPress(ImGuiKey_F7);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), head);
+    ctx->KeyPress(ImGuiKey_F7);
+    ctx->KeyPress(ImGuiKey_F7);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), conflictCommit);
+    // Conflicted only, while new commits are scanned, and together with a search.
+    ctx->ItemClick("//History/Conflicted only##hist_conflicted");
+    s.commitFile(repo, "more.txt", "more\n", "Another descendant keeps it");
+    const std::string newer = s.head(repo);
+    GG_CHECK(s.waitUntil([&] { return conflicted(s, newer); }));
+    ctx->ItemClick(("//History/**/###row_" + newer).c_str());
+    ctx->KeyPress(ImGuiKey_F7);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), head);
+    ctx->ItemInputValue("//History/##hist_filter", "keeps the conflict");
+    GG_CHECK(s.waitUntil([&] { return history.visibleIds().size() == 1; }));
+    ctx->ItemInputValue("//History/##hist_filter", "");
+    ctx->ItemClick("//History/Conflicted only##hist_conflicted");
 }
 
 GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out, disposable cache", "CONF-PARSE-NWAY",

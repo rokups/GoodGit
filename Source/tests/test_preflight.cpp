@@ -148,6 +148,12 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
             [](Scenario&, const TwoSides& t) {
                 GG_CHECK(!fs::exists(t.path / "f.txt") && !fs::exists(t.path / "g.txt") && !fs::exists(t.path / "h.txt"));
             }},
+        {"rename-delete", "rename",
+            [rename](Scenario& sc, const fs::path& p) { sc.write(p, "f.txt", rename); sc.git(p, {"add", "f.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "g.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"rm", "-q", "f.txt"}); },
+            "Take side A (",
+            [](Scenario&, const TwoSides& t) { GG_CHECK(fs::exists(t.path / "g.txt") && !fs::exists(t.path / "f.txt")); }},
         {"add-add-mode", "mode",
             [](Scenario&, const fs::path&) {},
             [](Scenario& sc, const fs::path& p) { sc.write(p, "n.sh", "ours\n"); sc.git(p, {"add", "n.sh"}); },

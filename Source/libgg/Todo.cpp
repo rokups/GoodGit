@@ -656,7 +656,8 @@ namespace {
 // Every commit a todo names is in its context (read()/expand() put it there).
 const std::string& messageOf(const Context& context, const Item& item) { return context.commits.at(item.commit).message; }
 
-std::string ordinal(size_t n) { return n == 1 ? "1st" : "#" + std::to_string(n); }
+// Git's "#2", "#3", … (the first message has its own wording).
+std::string ordinal(size_t n) { return "#" + std::to_string(n); }
 
 // Every line commented out ("# line", "#" for an empty line).
 std::string commentOut(std::string_view message)
