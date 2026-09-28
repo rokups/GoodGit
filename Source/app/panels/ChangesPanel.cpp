@@ -555,17 +555,15 @@ void ChangesPanel::dropTarget(FileGroup group)
         return;
     if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES")) {
         const std::string data(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
-        auto lines = gg::splitLines(data);
-        if (!lines.empty()) {
-            const std::string from = lines.front();
-            lines.erase(lines.begin());
-            auto& actions = m_session.actions();
-            if (actions.busy().empty()) {
-                if (group == FileGroup::Staged && from != groupName(FileGroup::Staged))
-                    actions.stage(lines);
-                else if (group == FileGroup::Unstaged && from == groupName(FileGroup::Staged))
-                    actions.unstage(lines);
-            }
+        auto lines = gg::splitLines(data); // the source group, then the paths
+        const std::string from = lines.front();
+        lines.erase(lines.begin());
+        auto& actions = m_session.actions();
+        if (actions.busy().empty()) {
+            if (group == FileGroup::Staged && from != groupName(FileGroup::Staged))
+                actions.stage(lines);
+            else if (group == FileGroup::Unstaged && from == groupName(FileGroup::Staged))
+                actions.unstage(lines);
         }
     }
     ImGui::EndDragDropTarget();

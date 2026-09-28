@@ -591,4 +591,70 @@ GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and se
     s.dialogButton("Add remote", "Cancel");
 }
 
+GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a detached HEAD, fold onto another branch or a deletion, a native merge git refuses",
+    "ACT-REORDER", "HIST-DND-FILES", "ACT-MERGE-NATIVE")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto drag = [&](const std::string& from, const std::string& to, ImGuiKeyChord mods) {
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); }));
+        ctx->KeyDown(mods);
+        ctx->ItemDragAndDrop(from.c_str(), to.c_str());
+        ctx->KeyUp(mods);
+        ctx->Yield(2);
+    };
+    // s1 (on side) cannot move next to c4 (on main): different lines of history.
+    const std::string refs = s.gitOut(r.path, {"for-each-ref"});
+    drag(rowRef(r.s1), rowRef(r.c4), ImGuiMod_Shift);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("same line of history") != std::string::npos);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), refs);
+    // A working tree file cannot be folded into a commit that is not HEAD or before it.
+    s.write(r.path, "b.txt", "b changed\n");
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string bRow = s.child("//Changes", "##files") + "/Unstaged/b.txt/###file_b.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(bRow.c_str()); }));
+    drag(bRow, rowRef(r.s1), 0);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("the checked-out one or one of its ancestors") != std::string::npos);
+    s.git(r.path, {"checkout", "--", "b.txt"});
+    // A deleted file folded into c2: c2 no longer adds it.
+    fs::remove(r.path / "b.txt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(bRow.c_str()); }));
+    const std::string tip = s.head(r.path);
+    drag(bRow, rowRef(r.c2), 0);
+    GG_CHECK(changed(s, r.path, tip));
+    GG_CHECK(!s.gitMayFail(r.path, {"cat-file", "-e", "HEAD:b.txt"}).ok());
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(r.path) == tip; }));
+    s.settle();
+    s.git(r.path, {"checkout", "--", "b.txt"});
+    // A native merge git refuses (a local change in the way): an error, no merge in progress.
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "a.txt", "side's a\n", "s2 change a");
+    s.git(r.path, {"switch", "-q", "main"});
+    s.write(r.path, "a.txt", "local edit\n");
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(!fs::exists(r.path / ".git" / "MERGE_HEAD"));
+    s.git(r.path, {"checkout", "--", "a.txt"});
+    s.settle();
+    // On a detached HEAD a reorder moves HEAD along.
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
+    const std::string detached = s.head(r.path);
+    drag(rowRef(r.c4), rowRef(r.c3), ImGuiMod_Ctrl | ImGuiMod_Shift);
+    GG_CHECK(s.waitUntil([&] { return s.head(r.path) != detached; }));
+    s.settle();
+    GG_CHECK(subjects(s, r.path, "HEAD") == (std::vector<std::string>{"c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), s.head(r.path)); // the branch at the old tip follows
+}
+
 } // namespace ggtest

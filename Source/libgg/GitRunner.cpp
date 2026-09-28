@@ -554,9 +554,10 @@ void clearCommandLog()
 
 std::optional<GitProgress> parseProgressLine(const std::string& line)
 {
-    // "<phase>: <n>% (...)" possibly prefixed by "remote: ".
-    const auto colon = line.find(": ");
-    const auto pct = line.find('%');
+    // "<phase>: <n>% (...)" possibly prefixed by "remote: " (the server's progress).
+    const size_t from = line.rfind("remote: ", 0) == 0 ? 8 : 0;
+    const auto colon = line.find(": ", from);
+    const auto pct = line.find('%', from);
     if (colon == std::string::npos || pct == std::string::npos || pct < colon)
         return std::nullopt;
     size_t start = pct;
@@ -565,9 +566,7 @@ std::optional<GitProgress> parseProgressLine(const std::string& line)
     if (start == pct)
         return std::nullopt;
     GitProgress progress;
-    progress.phase = line.substr(0, colon);
-    if (progress.phase.rfind("remote: ", 0) == 0)
-        progress.phase = progress.phase.substr(8);
+    progress.phase = line.substr(from, colon - from);
     progress.percent = std::clamp(std::atoi(line.c_str() + start), 0, 100);
     progress.line = line;
     return progress;

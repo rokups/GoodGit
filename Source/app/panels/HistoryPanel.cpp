@@ -366,30 +366,29 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
     if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_BRANCH"); p && free)
         actions.moveBranch(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)), row.id.hex());
     if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES"); p && free) {
+        // The source ("@<commit>" or a Changes group), then the paths.
         auto lines = gg::splitLines(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)));
-        if (!lines.empty()) {
-            const std::string from = lines.front();
-            lines.erase(lines.begin());
-            std::erase(lines, std::string());
-            if (from.rfind("@", 0) == 0) {
-                // A commit's files: into its parent, its child or the checked-out commit.
-                const core::Oid source = core::Oid::fromHex(from.substr(1));
-                const auto* src = this->row(source);
-                const bool toParent = src && !src->parents.empty() && src->parents.front() == row.id;
-                const bool toChild = !row.parents.empty() && row.parents.front() == source;
-                const bool toHead = row.id == m_snapshot->head;
-                if (toParent)
-                    actions.moveChanges(source, Actions::MoveTo::Parent, lines, {});
-                else if (toChild)
-                    actions.moveChanges(source, Actions::MoveTo::Child, lines, {});
-                else if (toHead)
-                    actions.moveChanges(source, Actions::MoveTo::Active, lines, {});
-                else
-                    m_session.app().notify(App::Notice::Warning, "Move changes",
-                        "Drop a commit's files on its parent, its child or the checked-out commit.");
-            } else {
-                actions.absorb(row.id, lines); // working tree files folded into the commit
-            }
+        const std::string from = lines.front();
+        lines.erase(lines.begin());
+        std::erase(lines, std::string());
+        if (from.rfind("@", 0) == 0) {
+            // A commit's files: into its parent, its child or the checked-out commit.
+            const core::Oid source = core::Oid::fromHex(from.substr(1));
+            const auto* src = this->row(source);
+            const bool toParent = src && !src->parents.empty() && src->parents.front() == row.id;
+            const bool toChild = !row.parents.empty() && row.parents.front() == source;
+            const bool toHead = row.id == m_snapshot->head;
+            if (toParent)
+                actions.moveChanges(source, Actions::MoveTo::Parent, lines, {});
+            else if (toChild)
+                actions.moveChanges(source, Actions::MoveTo::Child, lines, {});
+            else if (toHead)
+                actions.moveChanges(source, Actions::MoveTo::Active, lines, {});
+            else
+                m_session.app().notify(App::Notice::Warning, "Move changes",
+                    "Drop a commit's files on its parent, its child or the checked-out commit.");
+        } else {
+            actions.absorb(row.id, lines); // working tree files folded into the commit
         }
     }
     ImGui::EndDragDropTarget();

@@ -5,6 +5,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <set>
+
 #include "util/Env.hpp"
 
 #include <libgg/GitRunner.hpp>
@@ -461,6 +463,37 @@ GG_TEST("network", "remote actions are disabled while a mutation runs; browsing 
     GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }));
     s.settle();
     GG_CHECK(!disabled(s, "//##Toolbar/###tb_fetch"));
+}
+
+GG_TEST("network", "clone over git://: the server's progress shows its phase, not \"remote\"", "REMOTE-CLONE", "REMOTE-PROGRESS")
+{
+    // A repository with a few thousand objects, served by git daemon.
+    const fs::path base = s.path("served");
+    const fs::path src = base / "big.git";
+    s.git(s.root(), {"init", "-q", "--bare", src.string()});
+    std::string input;
+    for (int i = 0; i < 3000; ++i)
+        input += "M 100644 inline f" + std::to_string(i) + ".txt\ndata <<EOF\nfile " + std::to_string(i) + "\nEOF\n";
+    s.git(src, {"fast-import", "--quiet"},
+        "commit refs/heads/main\ncommitter T <t@example.com> 0 +0000\ndata <<EOF\nmany files\nEOF\n" + input + "\n");
+    s.git(src, {"symbolic-ref", "HEAD", "refs/heads/main"});
+    const std::string url = s.startGitDaemon(base) + "big.git";
+    const fs::path dest = s.path("big-clone");
+    ctx->ItemClick("//Welcome/###welcome_clone");
+    GG_REQUIRE(s.dialogOpen("Clone repository"));
+    s.dialogText("Clone repository", "url", url);
+    s.dialogText("Clone repository", "destination", dest.string());
+    s.dialogButton("Clone repository", "Clone");
+    std::set<std::string> phases;
+    GG_REQUIRE(s.waitUntil([&] {
+        if (const std::string ph = s.app.clone().phase(); !ph.empty())
+            phases.insert(ph);
+        return s.session() && s.session()->path() == dest && s.session()->snapshot();
+    }, 60.0f));
+    s.settle();
+    s.track(dest);
+    GG_CHECK(!phases.count("remote"));
+    GG_CHECK_STR_EQ(s.head(dest), s.revParse(src, "main"));
 }
 
 } // namespace ggtest
