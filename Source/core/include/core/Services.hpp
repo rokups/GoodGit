@@ -1,4 +1,4 @@
-// Repository-independent background services: the askpass bridge and cloning.
+// Repository-independent background services: the askpass bridge, the todo editor link and cloning.
 #pragma once
 
 #include <libgg/Cancel.hpp>
@@ -12,6 +12,11 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
+
+namespace gg::todo {
+struct Context;
+}
 
 namespace ggui::core {
 
@@ -54,6 +59,70 @@ private:
     std::mutex m_mutex;
     std::condition_variable m_cv;
     std::deque<std::shared_ptr<Slot>> m_slots;
+    std::uint64_t m_next = 1;
+};
+
+// ggui's todo editor as Git's sequence.editor (REBUILD_PLAN §4.13, P4-02; protocol in
+// libgg/SequenceEditorLink.hpp). The server registers this process with the git dir of the open
+// repository; `git gg sequence-editor FILE` run by a plain `git rebase -i` connects, and the list
+// git wrote is read here, on the connection's own thread with its own repository handle. The UI
+// thread shows it in the todo editor and answers with the saved list or a cancel; git-gg blocks
+// meanwhile. A git-gg that goes away (Ctrl+C in the terminal) ends its request.
+class SequenceEditorServer {
+public:
+    struct Request {
+        std::uint64_t id = 0;
+        std::string gitDir;          // the repository's git dir as setRepository() named it
+        std::filesystem::path file;  // <git dir>/rebase-merge/git-rebase-todo
+        bool remaining = false;      // git rebase --edit-todo (a rebase under way), else a starting rebase
+        std::string text;            // the list as git wrote it
+        std::shared_ptr<const gg::todo::Context> context;
+    };
+
+    SequenceEditorServer();
+    ~SequenceEditorServer();
+    bool start();
+    void stop();
+    // UI thread: the git dir of the repository requests are accepted for ("" = none).
+    void setRepository(const std::string& gitDir);
+    // UI thread: the oldest request not yet shown; `shown` marks it as taken.
+    std::optional<Request> pending();
+    void shown(std::uint64_t id);
+    // git-gg still waits for this request's answer.
+    bool waiting(std::uint64_t id);
+    void save(std::uint64_t id, const std::string& text);
+    void cancel(std::uint64_t id);
+    void cancelAll();
+
+private:
+    struct Slot {
+        Request request;
+        bool shown = false;
+        bool done = false;
+        bool saved = false;
+        std::string text;
+    };
+    void loop();
+    void serve(std::intptr_t client);
+    void answer(std::uint64_t id, bool saved, const std::string& text);
+
+    std::intptr_t m_listener = -1;
+    int m_port = 0;
+    std::string m_token;
+    std::atomic<bool> m_stop{false};
+    std::thread m_thread;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::string m_gitDir;           // as named by the UI
+    std::string m_gitDirKey;        // its gitDirKey (computed on the loop thread)
+    bool m_registered = false;
+    std::string m_registeredGitDir;
+    std::vector<std::shared_ptr<Slot>> m_slots;
+    struct Client {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::vector<Client> m_clients; // connection threads (loop thread only)
     std::uint64_t m_next = 1;
 };
 

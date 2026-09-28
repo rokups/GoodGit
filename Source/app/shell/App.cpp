@@ -103,6 +103,9 @@ App::App(Platform& platform, AppOptions options)
 #endif
     if (!m_askpass.start(gitGg))
         spdlog::warn("askpass bridge unavailable");
+    // plain git rebase -i hands its list to the todo editor (sequence.editor = git gg sequence-editor).
+    if (!m_sequenceEditor.start())
+        spdlog::warn("todo editor link unavailable");
     m_settings.load([this](const std::string& ini) { onSettingsLoaded(ini); });
 }
 
@@ -115,12 +118,15 @@ App::~App()
 void App::shutdown()
 {
     m_askpass.cancelAll();
+    m_sequenceEditor.cancelAll();
     m_clone.cancel();
     if (m_session) {
         m_session->cancelAll();
         m_session.reset();
     }
     m_closing.clear();
+    m_sequenceEditor.stop();
+    m_sequenceOpen = 0;
     if (m_settings.loaded()) {
         m_settings.save();
         size_t size = 0;
@@ -146,6 +152,8 @@ void App::resetForTest()
     // Git processes waiting for a credentials answer would never finish: refuse the prompts
     // and stop a clone before joining anything.
     m_askpass.cancelAll();
+    m_sequenceEditor.cancelAll();
+    m_sequenceOpen = m_sequenceNoticed = 0;
     m_clone.cancel();
     if (m_session) {
         m_session->cancelAll();
@@ -441,6 +449,7 @@ void App::frame()
     }
 
     pumpAskpass();
+    pumpSequenceEditor();
     pumpClone();
     handleShortcuts();
     drawMenuBar();

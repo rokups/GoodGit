@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-3)
 
-Covered: 633/633 required IDs; 637/648 of the whole catalogue.
+Covered: 633/633 required IDs; 648/658 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -636,7 +636,7 @@ Covered: 633/633 required IDs; 637/648 of the whole catalogue.
 | IR-AUTOSQUASH-ORDER | 3 | §8.4 | Autosquash order matches git | rebase-i/autosquash places fixup!/squash!/amend! like git rebase -i --autosquash |
 | CLI-NEW-BEFORE | 3 | §6 | git gg new --before | cli/git gg new --before/--after inserts and rebases the descendants |
 | CLI-NEW-AFTER | 3 | §6 | git gg new --after | cli/git gg new --before/--after inserts and rebases the descendants |
-| CLI-SEQ-EDITOR | 3 | §6 | git gg sequence-editor (internal) | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
+| CLI-SEQ-EDITOR | 3 | §6 | git gg sequence-editor (internal) | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal |
 | APP-OPEN-WORKTREE-WINDOW | 4 | §4.1 | Open a linked worktree in a new window | — |
 | WT-ADD | 4 | §4.7 | Worktrees: Add… | — |
 | WT-REMOVE | 4 | §4.7 | Worktrees: Remove… | — |
@@ -651,4 +651,14 @@ Covered: 633/633 required IDs; 637/648 of the whole catalogue.
 | IR-ACT-RESET | 4 | §4.13 | reset (--rebase-merges) | rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git<br>rebase-merges/an octopus merge: git's merge row with three labels, previewed and run like git onto a new base<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy |
 | IR-ACT-MERGE | 4 | §4.13 | merge (--rebase-merges) | rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git<br>rebase-merges/a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts<br>rebase-merges/an octopus merge: git's merge row with three labels, previewed and run like git onto a new base<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy |
 | IR-OPT-REBASE-MERGES | 4 | §4.13 | Option: --rebase-merges | rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git<br>rebase-merges/an octopus merge: git's merge row with three labels, previewed and run like git onto a new base<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy |
-| IR-SEQ-EDITOR | 4 | §4.13 | git gg sequence-editor as sequence.editor | — |
+| IR-SEQ-EDITOR | 4 | §4.13 | git gg sequence-editor as sequence.editor | sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal |
+| IR-SEQ-EDITOR-SETTING | 4 | §4.13 | Settings ▸ Git: Use ggui's todo editor for git rebase -i, per scope; off removes only ggui's value | sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced |
+| IR-SEQ-EDITOR-REPLACE | 4 | §4.13 | Turning it on over a user's own sequence.editor asks (Replace / Cancel); off puts it back | sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced |
+| IR-SEQ-EDITOR-SAVE | 4 | §4.13 | Save hands the edited list to the waiting git rebase -i, which runs it | sequence-editor/git rebase -i --rebase-merges: git's list opens in merges mode with the preview; the edited list runs<br>sequence-editor/no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly<br>sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal |
+| IR-SEQ-EDITOR-CANCEL | 4 | §4.13 | Cancel or closing the editor: git rebase -i stops with nothing changed (empty list) | sequence-editor/Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's |
+| IR-SEQ-EDITOR-EDIT-TODO | 4 | §4.13 | git rebase --edit-todo in a terminal opens the remaining list; Cancel keeps it | sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal |
+| IR-SEQ-EDITOR-MERGES | 4 | §4.13 | A --rebase-merges list opens in merges mode with the preview | sequence-editor/git rebase -i --rebase-merges: git's list opens in merges mode with the preview; the edited list runs |
+| IR-SEQ-EDITOR-WAITING | 4 | §4.13 | While git waits: stop handling disabled; another open todo makes git wait (notice) | sequence-editor/Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's<br>sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal |
+| IR-SEQ-EDITOR-INTERRUPTED | 4 | §4.13 | git interrupted while waiting: the editor closes with a notice | sequence-editor/Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's |
+| IR-SEQ-EDITOR-START-GGUI | 4 | §4.13 | No ggui has the repository open: git gg starts one and waits for it | sequence-editor/no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly |
+| IR-SEQ-EDITOR-NO-DISPLAY | 4 | §4.13 | No display (or no ggui program): git's own editor edits the list | sequence-editor/no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly |

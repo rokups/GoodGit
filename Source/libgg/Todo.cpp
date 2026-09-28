@@ -833,26 +833,17 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
     return problems;
 }
 
-Context readRemaining(git_repository* repo, std::string_view todoText, const std::string& headName)
+namespace {
+
+// The list git wrote (parse + expand), its commits, merges and branches, into `context`.
+void readGitList(git_repository* repo, std::string_view todoText, Context& context, const char* what)
 {
-    assertNotUiThread("todo::readRemaining");
-    Context context;
-    context.continuesHead = true;
-    git_oid head;
-    if (git_reference_name_to_id(&head, repo, "HEAD") != 0) {
-        git_error_clear();
-        throw std::runtime_error("HEAD has no commits");
-    }
-    context.onto = context.upstream = context.tip = toHex(head);
-    const std::string name = std::string(trimRight(trimLeft(headName)));
-    context.tipRef = startsWith(name, "refs/heads/") ? name : std::string();
-    context.tipIsHead = true;
     std::vector<ParseError> problems;
     Todo list = parse(todoText, &problems);
     for (auto& p : expand(repo, list, context))
         problems.push_back(std::move(p));
     if (!problems.empty())
-        throw std::runtime_error("cannot read the remaining todo: " + problems.front().message);
+        throw std::runtime_error(std::string("cannot read ") + what + ": " + problems.front().message);
     for (const Item& item : list.items) {
         std::vector<std::string>& into = item.isCommit() ? context.range : context.merges;
         if ((item.isCommit() || (item.action == Action::Merge && !item.commit.empty()))
@@ -869,6 +860,51 @@ Context readRemaining(git_repository* repo, std::string_view todoText, const std
         return true;
     });
     context.initial = std::move(list);
+}
+
+std::string refFromHeadName(const std::string& headName)
+{
+    const std::string name = std::string(trimRight(trimLeft(headName)));
+    return startsWith(name, "refs/heads/") ? name : std::string();
+}
+
+} // namespace
+
+Context readRemaining(git_repository* repo, std::string_view todoText, const std::string& headName)
+{
+    assertNotUiThread("todo::readRemaining");
+    Context context;
+    context.continuesHead = true;
+    git_oid head;
+    if (git_reference_name_to_id(&head, repo, "HEAD") != 0) {
+        git_error_clear();
+        throw std::runtime_error("HEAD has no commits");
+    }
+    context.onto = context.upstream = context.tip = toHex(head);
+    context.tipRef = refFromHeadName(headName);
+    context.tipIsHead = true;
+    readGitList(repo, todoText, context, "the remaining todo");
+    return context;
+}
+
+Context readStarting(git_repository* repo, std::string_view todoText, const std::string& onto, const std::string& origHead,
+    const std::string& headName)
+{
+    assertNotUiThread("todo::readStarting");
+    Context context;
+    const auto ontoId = resolve(repo, std::string(trimRight(trimLeft(onto))));
+    const auto tipId = resolve(repo, std::string(trimRight(trimLeft(origHead))));
+    git_error_clear();
+    if (!ontoId || !tipId)
+        throw std::runtime_error("cannot read the rebase's onto and orig-head");
+    // git does not record the upstream; it only names the pre-rebase hook's argument.
+    context.onto = context.upstream = toHex(*ontoId);
+    context.tip = toHex(*tipId);
+    context.tipRef = refFromHeadName(headName);
+    context.tipIsHead = true;
+    readGitList(repo, todoText, context, "git's todo");
+    if (hasMergeRows(context.initial))
+        context.initialMerges = context.initial;
     return context;
 }
 

@@ -95,6 +95,8 @@ public:
     Platform& platform() { return m_platform; }
     core::CloneService& clone() { return m_clone; }
     const GitCheck& gitCheck() const { return m_git; }
+    // The todo editor shows a list a waiting `git rebase -i` gets back (sequence.editor).
+    bool editingForGit() const { return m_sequenceOpen != 0; }
     bool settingsOpen() const { return m_showSettings; }
     // Opens Settings on its General tab (unless already open).
     void openSettings()
@@ -132,6 +134,8 @@ private:
     void drawSettingsWindow();
     void pumpSummaries();
     void pumpAskpass();
+    // Hands lists from `git gg sequence-editor` (plain git rebase -i) to the todo editor.
+    void pumpSequenceEditor();
     void pumpClone();
     void saveIniIfNeeded();
     void updateTitle();
@@ -147,6 +151,7 @@ private:
     Dialogs m_dialogs;
     core::SummaryService m_summaries;
     core::AskpassServer m_askpass;
+    core::SequenceEditorServer m_sequenceEditor;
     core::CloneService m_clone;
     GitCheck m_git;
     std::vector<core::RepoSummary> m_recentInfo;
@@ -154,6 +159,8 @@ private:
     std::vector<std::unique_ptr<Session>> m_closing; // sessions whose engines shut down later
     std::vector<std::function<void()>> m_posted;
     std::uint64_t m_askpassShown = 0;
+    std::uint64_t m_sequenceOpen = 0;    // the request the todo editor shows (0 = none)
+    std::uint64_t m_sequenceNoticed = 0; // the request told to wait for the open todo editor
 
     bool m_quit = false;
     bool m_showSettings = false;

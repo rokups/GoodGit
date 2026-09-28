@@ -96,7 +96,12 @@ bool sendAll(Socket s, const std::string& data)
 {
     size_t off = 0;
     while (off < data.size()) {
-        const auto n = ::send(static_cast<int>(s), data.data() + off, static_cast<int>(data.size() - off), 0);
+        #ifdef MSG_NOSIGNAL
+        const int flags = MSG_NOSIGNAL; // a closed peer is an error, not SIGPIPE
+#else
+        const int flags = 0;
+#endif
+        const auto n = ::send(static_cast<int>(s), data.data() + off, static_cast<int>(data.size() - off), flags);
         if (n <= 0)
             return false;
         off += static_cast<size_t>(n);
@@ -118,6 +123,27 @@ bool recvLine(Socket s, std::string& line, int timeoutMs)
             return true;
         line.push_back(c);
     }
+}
+
+bool recvExact(Socket s, std::string& data, size_t size)
+{
+    data.assign(size, '\0');
+    size_t off = 0;
+    while (off < size) {
+        const auto n = ::recv(static_cast<int>(s), data.data() + off, static_cast<int>(size - off), 0);
+        if (n <= 0)
+            return false;
+        off += static_cast<size_t>(n);
+    }
+    return true;
+}
+
+bool peerClosed(Socket s)
+{
+    if (!waitReadable(s, 0))
+        return false;
+    char c = 0;
+    return ::recv(static_cast<int>(s), &c, 1, MSG_PEEK) <= 0;
 }
 
 void closeSocket(Socket s)

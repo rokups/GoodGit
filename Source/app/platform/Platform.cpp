@@ -242,4 +242,12 @@ bool Platform::readPixels(int x, int y, int w, int h, std::uint32_t* out)
 
 void Platform::setTitle(const std::string& title) { SDL_SetWindowTitle(m_window, title.c_str()); }
 
+void Platform::raise()
+{
+    if (!m_window || m_headless)
+        return;
+    SDL_RestoreWindow(m_window);
+    SDL_RaiseWindow(m_window);
+}
+
 } // namespace ggui

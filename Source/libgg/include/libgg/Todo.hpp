@@ -162,6 +162,15 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
 // Throws when the list has lines or ids it cannot read.
 Context readRemaining(git_repository* repo, std::string_view todoText, const std::string& headName);
 
+// The list a starting `git rebase -i` hands to its sequence editor (plain `git rebase -i` with
+// `git gg sequence-editor` as sequence.editor, P4-02): `todoText` is rebase-merge/git-rebase-todo,
+// `onto`, `origHead` and `headName` the files of that name. HEAD is still on the branch then. The
+// Context: onto = upstream = onto, tip = orig-head, the branch as tipRef, HEAD following it;
+// `initial` (and `initialMerges` for a --rebase-merges list) is the parsed list with full ids.
+// Throws when the list has lines or ids it cannot read.
+Context readStarting(git_repository* repo, std::string_view todoText, const std::string& onto, const std::string& origHead,
+    const std::string& headName);
+
 // ---- Autosquash -----------------------------------------------------------------------------
 
 // Moves `fixup!`/`squash!`/`amend!` commits after their target and marks them (fixup, squash,

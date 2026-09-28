@@ -342,7 +342,10 @@ void App::drawStateBadge()
     if (!snap.stateDetail.empty())
         badge += " " + snap.stateDetail;
     drawBadge((badge + "###tb_state").c_str(), theme().palette().conflict);
-    const bool free = s.actions().busy().empty();
+    // While git waits for the todo list (ggui as sequence.editor) the rebase has not started yet.
+    const bool free = s.actions().busy().empty() && !editingForGit();
+    if (editingForGit() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("git rebase -i waits for the list in the todo editor: Save or Cancel it first");
     ImGui::BeginDisabled(!free);
     const bool bisect = snap.state == core::RepoState::Bisecting;
     ImGui::SameLine();
@@ -532,6 +535,56 @@ void App::drawToolbar()
             m_session->cancelAll();
     }
     ImGui::End();
+}
+
+void App::pumpSequenceEditor()
+{
+    Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
+    const std::string gitDir = s ? s->snapshot()->gitDir.string() : std::string();
+    m_sequenceEditor.setRepository(gitDir);
+    if (m_sequenceOpen != 0 && !m_sequenceEditor.waiting(m_sequenceOpen)) {
+        // git-gg went away (the rebase was interrupted in its terminal).
+        m_sequenceOpen = 0;
+        if (s && s->rebase().editingForGit()) {
+            s->rebase().close();
+            notify(Notice::Warning, "git rebase -i stopped waiting",
+                "git no longer waits for the todo list (interrupted in its terminal); nothing was handed over.");
+        }
+    }
+    const auto request = m_sequenceEditor.pending();
+    if (!request)
+        return;
+    if (!s || request->gitDir != gitDir) {
+        m_sequenceEditor.cancel(request->id); // the repository closed meanwhile
+        return;
+    }
+    RebasePanel& panel = s->rebase();
+    if (panel.isOpen()) {
+        if (m_sequenceNoticed != request->id) {
+            m_sequenceNoticed = request->id;
+            notify(Notice::Info, "git rebase -i is waiting",
+                "git rebase -i waits for the todo editor: Start or Cancel the open todo to see git's list.");
+        }
+        return;
+    }
+    const std::uint64_t id = request->id;
+    m_sequenceEditor.shown(id);
+    m_sequenceOpen = id;
+    RebasePanel::Request r;
+    RebasePanel::Request::Sequence sequence;
+    sequence.context = request->context;
+    sequence.remaining = request->remaining;
+    sequence.done = [this, id](std::optional<std::string> text) {
+        if (text)
+            m_sequenceEditor.save(id, *text);
+        else
+            m_sequenceEditor.cancel(id);
+        if (m_sequenceOpen == id)
+            m_sequenceOpen = 0;
+    };
+    r.sequence = std::move(sequence);
+    panel.open(std::move(r));
+    m_platform.raise();
 }
 
 void App::pumpAskpass()

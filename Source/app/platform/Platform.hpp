@@ -51,6 +51,8 @@ public:
     SDL_Window* window() const { return m_window; }
     bool headless() const { return m_headless; }
     void setTitle(const std::string& title);
+    // Brings the window to the front (a request from git needs the user's attention).
+    void raise();
 
 private:
     bool ensureOffscreen(std::uint32_t w, std::uint32_t h);

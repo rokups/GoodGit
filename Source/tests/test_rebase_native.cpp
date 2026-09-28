@@ -293,10 +293,10 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), r.c[3]);
     GG_CHECK_STR_EQ(s.read(r.path, "b.txt"), "b\n");
 
-    // The helper refuses to run without ggui's prepared state.
+    // Without ggui's prepared state the helper only edits git's rebase todo (sequence.editor, P4-02).
     auto cli = s.gitgg(r.path, {"sequence-editor", ".git/COMMIT_EDITMSG"});
     GG_CHECK_EQ(cli.exitCode, 1);
-    GG_CHECK(cli.err.find("no prepared todo") != std::string::npos);
+    GG_CHECK(cli.err.find("is not git's rebase todo") != std::string::npos);
     ggui::setEnv("GG_SEQUENCE_DIR", (s.root() / "missing").string());
     cli = s.gitgg(r.path, {"sequence-editor", ".git/COMMIT_EDITMSG"});
     ggui::unsetEnv("GG_SEQUENCE_DIR");

@@ -1543,7 +1543,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     use `merge -c`); names typed into reset/merge fields must be labels of the list or revisions
     the list was read with (other revisions need a re-read, e.g. Onto).
 
-### P4-02 `git gg sequence-editor` as Git's `sequence.editor`
+### [x] P4-02 `git gg sequence-editor` as Git's `sequence.editor`
+- **Status:** test_sequence_editor.cpp (5 scenarios): Settings ▸ Git option per scope (sets sequence.editor = git gg sequence-editor; off removes only ggui's value; a user's own value is replaced only after the Replace sequence.editor dialog and restored on off); plain git rebase -i (and --rebase-merges) run as background test steps hand git's list to the running ggui over a loopback link (registry per user), edited in RebasePanel (Request::sequence, merges mode, preview on the fresh list), Save → git runs it, checked on disk; Cancel / closing the panel → empty list, git stops with nothing changed; git rebase --edit-todo from a terminal (Cancel keeps the list); an interrupted git closes the editor; another open todo makes git wait and cannot replace git's list; without a ggui for the repository git gg starts one (GG_GGUI) and waits, fails clearly when it exits early, and uses git's editor without a display or ggui program. Full suite 247/247; traceability 633/633 phase 0-3 IDs, 648/658 overall (all 11 P4-02 IDs covered).
 - **Depends on:** P3-19
 - **Refs:** §4.13, §6
 - **Do:** opt-in setting so plain `git rebase -i` opens ggui's todo editor window; saved todo
@@ -1567,6 +1568,69 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     set it when `todo::hasMergeRows` (the Insert label/reset/merge buttons already show then).
   - Messages for `merge -c` rows are keyed by the merge's id like rewords (`editorMessages`); a plain
     `merge` row has no id to key a message by.
+- **Design notes:**
+  - **How the list reaches ggui (decision: hand-over to a running ggui, starting one when needed).**
+    Every ggui runs `core::SequenceEditorServer`: a loopback listener (token, like askpass) that
+    registers the process in `<XDG_RUNTIME_DIR or temp>/ggui[-uid]/<pid>.instance` (port, token,
+    `gitDirKey` of the open repository; libgg `SequenceEditorLink`, protocol in its header). Only the
+    server thread writes the file; the UI passes the raw git dir each frame. The registry is disposable
+    and outside the repository (rule 2).
+    - `git gg sequence-editor FILE` without `GG_SEQUENCE_DIR` (`gitgg/SequenceEditor.cpp`): FILE must be
+      `<git dir>/rebase-merge/git-rebase-todo`; it connects to each instance registered for that git
+      dir (`OK` / `NO`), and blocks for `SAVE <n>` + list, `CANCEL` or `ERROR`. The link reads git's
+      list on the connection's own thread with its own repository handle, so a busy mutation queue
+      (e.g. ggui's own pull with pull.rebase=interactive) cannot deadlock it.
+    - No instance: with a display it starts `ggui <worktree>` detached (setsid, stdio to /dev/null;
+      `GG_GGUI` names the program, default the ggui next to git-gg, else PATH) and polls the registry
+      for up to 2 minutes; a started ggui that exits first fails with "ggui exited before it showed the
+      todo list" (git then stops: "problem with the editor", state cleaned up by git).
+    - No display (Linux: no DISPLAY / WAYLAND_DISPLAY) or no ggui program: git's own editor
+      (`git var GIT_EDITOR` through `system`, so terminal editors work), with a note on stderr.
+  - **Cancel semantics (decision):** Cancel, closing the panel, a closed repository or a ggui that
+    quits answer `CANCEL`. For a starting rebase git-gg writes an empty list: git's own "empty todo
+    aborts" ("error: nothing to do", exit 1, rebase-merge removed, nothing changed). For `git rebase
+    --edit-todo` (rebase-merge/done exists) an empty list would drop the rest, so the file stays as
+    git wrote it. A git-gg that goes away (Ctrl+C) is noticed by the server (`net::peerClosed`); the
+    panel closes with "git rebase -i stopped waiting".
+  - **Editor:** `RebasePanel::Request::sequence` (context read already, `remaining`, `done` callback),
+    the `Request::remaining` pattern: `todo::readStarting` (new) for a starting list (onto = upstream =
+    rebase-merge/onto, tip = orig-head, HEAD still on the branch, `initialMerges` = the list when it has
+    merge rows) or `todo::readRemaining` for --edit-todo. Merges mode when the list has merge rows;
+    the preview runs on the fresh list. No options row (git's command line decides), no inline
+    message editors (git opens the user's own editor for reword/squash/merge -c; a note says so),
+    Save does not need a free mutation queue. `todo::format` writes the saved list (full ids).
+    While git waits: the toolbar's Continue/Skip/Abort/… are disabled (git's rebase-merge exists but
+    the rebase has not started), another open todo makes git wait (notice "git rebase -i is waiting"),
+    and `RebasePanel::open` refuses another todo ("Todo editor in use"). The window is raised.
+  - **Config (decision):** a checkbox per scope tab in Settings ▸ Git (User / Repository / Worktree,
+    like the other git-config options). On writes `sequence.editor = git gg sequence-editor` (needs
+    git-gg on PATH, as the hooks do). Over a user's own value the `Replace sequence.editor` dialog
+    asks; Replace keeps the old value in `gg.previousSequenceEditor` at the same scope. Off removes
+    ggui's value and restores a kept one. A value that is not ggui's shows the option off, so ggui
+    never removes it. A dimmed line shows what `git rebase -i` uses and from which scope.
+  - **Other changes:** `net::sendAll` uses MSG_NOSIGNAL (a closed peer no longer raises SIGPIPE in
+    ggui or git-gg); `net::recvExact`, `net::peerClosed`; `Platform::raise`; `git gg help
+    sequence-editor` documents the setting; tests unset `GG_GGUI`.
+  - **Tests** (`Source/tests/test_sequence_editor.cpp`, 5 scenarios; background git steps through
+    `BackgroundGit`, which kills git and git-gg when a scenario fails; tests wait until this ggui is
+    registered for the repository before starting git):
+    - Settings: Repository and User scopes on/off (config on disk), the effective line, the Replace
+      dialog (Cancel keeps, Replace keeps a copy, off restores it).
+    - Plain `git rebase -i`: the option turned on in Settings; title, engine line, note, no options;
+      toolbar Abort/Continue disabled while git waits; drop, Alt+Up, reword; preview; Save → history
+      on disk; the GG_GGUI stub is never started; `git rebase --edit-todo` from a terminal at an edit
+      stop: Cancel keeps git's file byte for byte, Save writes `drop <id>`; `--continue` finishes.
+    - Cancel (another todo open first: notice, then git's list), closing the window, a refused Commit ▸
+      Interactive rebase… while git waits, an interrupted git: exit 1 "nothing to do", refs unchanged.
+    - `--rebase-merges`: label/merge rows, merges mode tools, merge row, preview with a two-parent row;
+      dropping t1 gives a merge of the rebased a1 and t2 on it.
+    - No ggui for the repository: the stub records `ggui <worktree>`, the test then opens the repository
+      from Welcome and saves; a stub that exits early fails clearly with nothing changed; no display and
+      a missing ggui program use git's editor (a sed script as GIT_EDITOR).
+  - **Not done / limits:** typed messages cannot reach git here (git uses the user's editor for them);
+    on Windows git-gg always assumes a display; a ggui it started stays open after the rebase (it is
+    the user's window now); the Windows paths (CreateProcessW, GetModuleFileNameW) are built but not
+    run here.
 
 ### P4-03 Full worktree management
 - **Depends on:** P2-03, P1-20

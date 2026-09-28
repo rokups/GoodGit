@@ -80,7 +80,9 @@ what to do `###rp_reason` (conflicts, edit, break, a failed exec), and the remai
 `###rp_next_<n>` · activity spinner `##tb_activity` (tooltip lists the background tasks) +
 `Cancel##tb_cancel`. Continue / Skip / Amend and continue that stop again further on (the next
 edit, break, failing exec or conflict) are not errors: a notification "Interactive rebase
-stopped" shows git's message.
+stopped" shows git's message. While a plain `git rebase -i` waits for its list in the todo editor
+(ggui as `sequence.editor`, §4.x) the badge's buttons are disabled (tooltip: "git rebase -i waits
+for the list in the todo editor: Save or Cancel it first").
 
 Mutation buttons are disabled (with a tooltip "Not available yet" until their phase, and
 "Busy: <operation>" while a conflicting mutation runs).
@@ -109,7 +111,13 @@ configuration with scope tabs `##config_scope` User / Repository / Worktree, one
 `pull.ff=only`). An unset field shows the inherited lower-scope value as a hint; a field that
 overrides a lower scope has *Inherit* `Inherit##<key>` to clear the override. Fields apply on
 Enter or when they lose focus; an empty field unsets. The Worktree tab is off until
-`extensions.worktreeConfig` is set (*Enable worktree settings*).),
+`extensions.worktreeConfig` is set (*Enable worktree settings*). Each scope tab also has *Use
+ggui's todo editor for git rebase -i* `##sequence_editor` (Phase 4, P4-02; checked when that
+scope's `sequence.editor` is ggui's, `git gg sequence-editor`): on sets it; when the scope already
+has a `sequence.editor` of the user's own, the dialog `Replace sequence.editor` shows it with
+*Replace* (keeps it in `gg.previousSequenceEditor` at the same scope) / *Cancel*; off removes only
+ggui's value and puts a kept one back. Below it, dimmed: "git rebase -i here uses: ggui's todo
+editor | '<command>' | git's editor (sequence.editor is not set)" and the scope it comes from.),
 **Hooks** (N: status, Install, Remove, first-open answer), **Conflicts** (N, Phase 3: "Expand to
 index stages on checkout"). **D** max-new-file-size.
 
@@ -282,6 +290,26 @@ the panel without touching the repository.
   toolbar's stop handling (§1.4). Refused (error popup, the editor stays) when the branch moved, when
   git refuses (local changes without Autostash), or when the list has update-ref rows and git is
   older than 2.38.
+- **For a plain `git rebase -i`** (Phase 4, P4-02; `sequence.editor = git gg sequence-editor`,
+  §1.6): git runs `git gg sequence-editor <git dir>/rebase-merge/git-rebase-todo` and waits. A ggui
+  with that repository (worktree) open shows git's list here and comes to the front; with none,
+  git gg starts `ggui <worktree>` (`GG_GGUI` names the program; default the `ggui` next to
+  `git-gg`) and waits for it to open the repository; without a display (no `DISPLAY` /
+  `WAYLAND_DISPLAY` on Linux) or without a ggui program git's own editor (`git var GIT_EDITOR`)
+  edits the list, with a note on stderr. The editor: title "git rebase -i: Rebase N commit(s) …",
+  engine line "git rebase (git rebase -i is waiting for this list)", the line "git opens its own
+  editor for reword, squash and merge -c messages." `###ir_git_note` (no inline message editors),
+  no options row (git's options are the command line's), merges mode when git's list has
+  label/reset/merge rows (`--rebase-merges`), the preview on the fresh list (onto = git's `onto`).
+  *Save* (`###ir_start`) hands the list to git, which goes on with it; *Cancel* and closing the
+  panel hand back an empty list, so git stops with "nothing to do" and nothing changes (git's own
+  "empty todo aborts"). `git rebase --edit-todo` from a terminal opens the remaining list the same
+  way (title "Remaining todo of the rebase of …", engine "git rebase --edit-todo is waiting for
+  this list"); there Cancel keeps git's list as it was. When another todo is open in the editor,
+  git waits and a notification "git rebase -i is waiting" says so; the list shows when that todo
+  is started or cancelled; while git's list is shown, opening another todo is refused with the
+  warning "Todo editor in use". When git stops waiting (interrupted in its terminal) the panel closes
+  with the warning "git rebase -i stopped waiting". Saving needs no free mutation queue.
 - **Edit remaining todo** (toolbar, while a `git rebase -i` is stopped): the same editor on the
   rest of git's list (`git-rebase-todo`, ids resolved), with the title "Remaining todo of the rebase
   of <branch>: N commit(s) onto HEAD <short ID>", the engine line "git rebase (the rest of the
@@ -390,7 +418,8 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
 `Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
 3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
-itself is the dockable window `Interactive rebase`, §4.x), `Settings`.
+itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
+*Replace* / *Cancel*, §1.6), `Settings`.
 
 ## 10. States
 - **Busy:** conflicting actions disabled with reason tooltip; browsing stays enabled.

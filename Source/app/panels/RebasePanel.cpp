@@ -118,10 +118,24 @@ std::map<std::string, std::string> groupSignatures(const todo::Todo& t)
 
 RebasePanel::RebasePanel(Session& session) : m_session(session) { }
 
+RebasePanel::~RebasePanel()
+{
+    // The repository closes while git waits for the list: git gets nothing (Cancel).
+    if (m_sequence && m_sequence->done)
+        m_sequence->done(std::nullopt);
+}
+
 // ---- opening ------------------------------------------------------------------------------------
 
 void RebasePanel::open(Request request)
 {
+    if (editingForGit()) {
+        // git waits for the list shown: another todo would leave it without an answer.
+        m_focus = true;
+        m_session.app().notify(App::Notice::Warning, "Todo editor in use",
+            "git rebase -i waits for the list in the todo editor: Save or Cancel it first.");
+        return;
+    }
     m_open = true;
     m_focus = true;
     m_state = State{};
@@ -140,11 +154,19 @@ void RebasePanel::open(Request request)
     m_previewsRequested = m_previewsShown = 0;
     m_remaining = request.remaining;
     m_remainingText.clear();
+    m_sequence = request.sequence;
     read(request, false);
 }
 
 void RebasePanel::close()
 {
+    if (m_sequence) {
+        // Cancel or closing the panel: git gets nothing back.
+        auto done = std::move(m_sequence->done);
+        m_sequence.reset();
+        if (done)
+            done(std::nullopt);
+    }
     m_open = false;
     ++m_generation;
     m_state = State{};
@@ -166,6 +188,11 @@ void RebasePanel::read(const Request& request, bool keepTodo)
     };
     auto result = std::make_shared<Result>();
     const std::uint64_t generation = ++m_generation;
+    if (request.sequence) {
+        // Read already, by the sequence editor link (off the UI thread).
+        onRead(request.sequence->context, {}, request, false);
+        return;
+    }
     if (request.remaining) {
         // The rest of the stopped git rebase -i, from git's own files (read only).
         m_session.actions().run(
@@ -249,6 +276,9 @@ void RebasePanel::onRead(std::shared_ptr<const todo::Context> context, todo::Rea
     }
     m_state.context = std::move(context);
     m_state.todo = m_state.context->initial;
+    // git's own list: merges mode when git wrote a --rebase-merges list.
+    if (m_sequence)
+        m_state.rebaseMerges = todo::hasMergeRows(m_state.todo);
     if (request.adjust)
         request.adjust(m_state.todo, *m_state.context);
     m_onto.clear();
@@ -297,8 +327,12 @@ void RebasePanel::onTodoChanged()
     m_options.autosquash = m_state.autosquash;
     m_options.rebaseMerges = m_state.rebaseMerges;
     m_issues = todo::validate(m_state.todo, *m_state.context);
-    m_engine = m_remaining ? todo::EngineChoice{todo::Engine::Native, "the rest of the rebase in progress"}
-                           : todo::chooseEngine(m_state.todo, m_options);
+    if (m_sequence)
+        m_engine = {todo::Engine::Native,
+            m_sequence->remaining ? "git rebase --edit-todo is waiting for this list" : "git rebase -i is waiting for this list"};
+    else
+        m_engine = m_remaining ? todo::EngineChoice{todo::Engine::Native, "the rest of the rebase in progress"}
+                               : todo::chooseEngine(m_state.todo, m_options);
     startPreview();
 }
 
@@ -642,7 +676,9 @@ bool RebasePanel::canStart(std::string* reason) const
             *reason = why;
         return false;
     };
-    if (!m_session.actions().busy().empty())
+    // (Saving for a waiting git needs no repository access: a running ggui action may be the git
+    // that waits.)
+    if (!m_sequence && !m_session.actions().busy().empty())
         return fail(m_session.actions().busyTooltip());
     if (todo::hasErrors(m_issues))
         return fail("Fix the errors in the list first");
@@ -651,6 +687,8 @@ bool RebasePanel::canStart(std::string* reason) const
 
 void RebasePanel::start()
 {
+    if (m_sequence)
+        return saveForGit();
     if (m_remaining)
         return saveRemaining();
     if (m_engine.engine == todo::Engine::Native)
@@ -753,6 +791,16 @@ void RebasePanel::saveRemaining()
         });
 }
 
+void RebasePanel::saveForGit()
+{
+    const std::string text = todo::format(m_state.todo);
+    auto done = std::move(m_sequence->done);
+    m_sequence.reset();
+    close();
+    if (done)
+        done(text);
+}
+
 // ---- drawing ------------------------------------------------------------------------------------
 
 void RebasePanel::draw()
@@ -815,7 +863,9 @@ void RebasePanel::drawHeader()
     std::string title = "Rebase " + std::to_string(commits) + " commit(s) "
         + (merges ? "and " + std::to_string(merges) + " merge(s) " : std::string()) + "of " + tip + " onto "
         + (c.onto.empty() ? std::string("the root") : shortHex(c.onto, n));
-    if (m_remaining)
+    if (m_sequence && !m_sequence->remaining)
+        title = "git rebase -i: " + title;
+    if (m_remaining || (m_sequence && m_sequence->remaining))
         title = "Remaining todo of the rebase of " + (c.tipRef.empty() ? std::string("detached HEAD") : tip) + ": "
             + std::to_string(commits) + " commit(s) onto HEAD " + shortHex(c.onto, n);
     plainText((title + "###ir_title").c_str());
@@ -825,15 +875,22 @@ void RebasePanel::drawHeader()
     const bool startable = canStart(&reason);
     ImGui::SameLine();
     ImGui::BeginDisabled(!startable);
-    if (ImGui::Button(m_remaining ? ICON_MS_SAVE " Save###ir_start" : ICON_MS_PLAY_ARROW " Start###ir_start"))
+    const bool gitsList = m_remaining || m_sequence;
+    if (ImGui::Button(gitsList ? ICON_MS_SAVE " Save###ir_start" : ICON_MS_PLAY_ARROW " Start###ir_start"))
         start();
-    if (m_remaining && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (m_sequence && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Hand the list to %s, which goes on with it", m_sequence->remaining ? "git rebase --edit-todo" : "git rebase -i");
+    else if (m_remaining && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("Write git-rebase-todo (through git rebase --edit-todo); Continue goes on from there");
     ImGui::EndDisabled();
     if (!startable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("%s", reason.c_str());
     ImGui::SameLine();
-    if (ImGui::Button("Cancel###ir_cancel")) {
+    const bool cancel = ImGui::Button("Cancel###ir_cancel");
+    if (m_sequence && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("%s", m_sequence->remaining ? "git rebase --edit-todo keeps the list as it was"
+                                                      : "git rebase -i stops and nothing changes (git gets an empty list)");
+    if (cancel) {
         close();
         return;
     }
@@ -841,6 +898,8 @@ void RebasePanel::drawHeader()
     // Engine (R3) and why.
     const bool memory = m_engine.engine == todo::Engine::InMemory;
     plainText((std::string("Engine: ") + (memory ? "in memory" : "git rebase") + " (" + m_engine.reason + ")###ir_engine").c_str());
+    if (m_sequence)
+        plainText("git opens its own editor for reword, squash and merge -c messages.###ir_git_note");
 
     // Validation.
     for (size_t i = 0; i < m_issues.size(); ++i) {
@@ -855,7 +914,7 @@ void RebasePanel::drawHeader()
 
 void RebasePanel::drawOptions()
 {
-    if (!m_remaining)
+    if (!m_remaining && !m_sequence)
         drawRunOptions();
     drawTools();
 }
@@ -1350,7 +1409,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
 
     // Inline message editor: reword rows and squash groups (the group's message, prefilled the
     // way Git's editor would be), and `merge -c` rows (the merge's message).
-    if (editsMergeMessage(item)) {
+    if (editsMergeMessage(item) && !m_sequence) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(2);
         std::string text = messageText(row);
@@ -1361,7 +1420,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             onTodoChanged();
         }
     }
-    if (item.isCommit() && item.action != Action::Drop) {
+    if (item.isCommit() && item.action != Action::Drop && !m_sequence) {
         const auto group = todo::groupAt(m_state.todo, row);
         if (group && group->first == row && (item.action == Action::Reword || group->needsEditor)) {
             ImGui::TableNextRow();

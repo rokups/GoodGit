@@ -230,7 +230,7 @@ void Session::requestHooksStatus() { m_engine->readHooksStatus(); }
 void Session::requestConfig()
 {
     m_engine->readConfig({"user.name", "user.email", "core.editor", "merge.tool", "diff.tool", "pull.rebase", "pull.ff",
-        "extensions.worktreeConfig"});
+        "extensions.worktreeConfig", "sequence.editor", "gg.previousSequenceEditor"});
 }
 
 std::string Session::shortId(const core::Oid& id) const

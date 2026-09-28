@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
+#include <libgg/GitRunner.hpp>
 
 #include <set>
 
@@ -40,6 +41,23 @@ int pullMethod(const std::string& rebase, const std::string& ff)
     if (!rebase.empty())
         return 1;
     return 0;
+}
+
+// sequence.editor that makes plain `git rebase -i` open ggui's todo editor (P4-02). git-gg must be
+// on PATH for git (like the managed hooks).
+constexpr const char* kGguiSequenceEditor = "git gg sequence-editor";
+// Where turning the option on keeps a sequence.editor it replaced (same scope), for turning it off.
+constexpr const char* kPreviousSequenceEditor = "gg.previousSequenceEditor";
+
+// ggui's value, also when written with a path to git-gg.
+bool isGguiSequenceEditor(const std::string& value)
+{
+    const std::string v = gg::trim(value);
+    const std::string tail = " sequence-editor";
+    if (v.size() <= tail.size() || v.compare(v.size() - tail.size(), tail.size(), tail) != 0)
+        return false;
+    const std::string program = gg::trim(v.substr(0, v.size() - tail.size()));
+    return program == "git gg" || program.find("git-gg") != std::string::npos;
 }
 
 } // namespace
@@ -173,6 +191,50 @@ void App::drawGitConfigSettings(Session& s)
             if (value(sc.scope, "pull.ff") == "only")
                 set.emplace_back("pull.ff", "");
             setConfig(sc.flag, std::move(set));
+        }
+        ImGui::Separator();
+        // ggui's todo editor for plain `git rebase -i`: sequence.editor at this scope. Turning it on
+        // asks before replacing a sequence.editor of the user's own (kept for turning it off);
+        // turning it off removes only ggui's value.
+        const std::string seqEditor = value(sc.scope, "sequence.editor");
+        bool seqOn = isGguiSequenceEditor(seqEditor);
+        ImGui::BeginDisabled(!editable);
+        if (ImGui::Checkbox("Use ggui's todo editor for git rebase -i##sequence_editor", &seqOn)) {
+            const std::string flag = sc.flag;
+            if (!seqOn) {
+                setConfig(sc.flag, {{"sequence.editor", value(sc.scope, kPreviousSequenceEditor)}, {kPreviousSequenceEditor, ""}});
+            } else if (gg::trim(seqEditor).empty()) {
+                setConfig(sc.flag, {{"sequence.editor", kGguiSequenceEditor}});
+            } else {
+                Form f;
+                f.title = "Replace sequence.editor";
+                f.message = std::string("The ") + sc.label + " configuration already sets sequence.editor to\n\n    " + seqEditor
+                    + "\n\nReplace it with ggui's todo editor? Turning the option off puts it back.";
+                f.buttons.push_back({"Replace", [this, session = &s, setConfig, flag, seqEditor](Form&) {
+                                         if (m_session.get() != session)
+                                             return; // the repository closed meanwhile
+                                         setConfig(flag.c_str(), {{"sequence.editor", kGguiSequenceEditor},
+                                                                     {kPreviousSequenceEditor, seqEditor}});
+                                     }});
+                f.buttons.push_back({"Cancel", {}});
+                m_dialogs.open(std::move(f));
+            }
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Sets sequence.editor = %s: plain git rebase -i shows its list in ggui (this window, or a new\n"
+                              "one) and goes on with the list you save. Needs git-gg on PATH.",
+                kGguiSequenceEditor);
+        {
+            // What git rebase -i uses in this repository (the highest scope that sets it).
+            std::string effective = "git's editor (sequence.editor is not set)";
+            for (size_t k = std::size(kScopes); k-- > 0;)
+                if (const std::string v = value(kScopes[k].scope, "sequence.editor"); !v.empty()) {
+                    effective = (isGguiSequenceEditor(v) ? std::string("ggui's todo editor") : "'" + v + "'") + "  ("
+                        + kScopes[k].label + ")";
+                    break;
+                }
+            ImGui::TextDisabled("git rebase -i here uses: %s", effective.c_str());
         }
         ImGui::EndTabItem();
     }

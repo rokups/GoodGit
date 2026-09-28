@@ -33,6 +33,10 @@ drives the action through the UI and checks its effect) or `missing`.
   read in the same line as another path (dialog checkboxes, `form.checked(...)`) do not show up
   there: grep the tests for the field id instead.
 
+**Phase 4 additions.** P4-02 (ggui's todo editor as Git's `sequence.editor`): the Settings
+option, the *Replace sequence.editor* dialog, and Save / Cancel / closing the todo editor for a
+list a plain `git rebase -i` waits for.
+
 **Audit result (P3-20).** 408 rows, all `tested`. The audit added tests for 19 rows that had
 none and made 14 existing tests check the effect instead of only opening a dialog or counting
 journal entries (see `Source/tests/test_ui_actions.cpp` and the P3-20 commits). One bug was
@@ -177,6 +181,7 @@ removed as dead UI.
 | Git ▸ Pull method | combo | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Inherit | click | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Enable worktree settings | click | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
+| Git ▸ Use ggui's todo editor for git rebase -i (per scope: on, off) | checkbox | `sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced`<br>`sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal` | tested |
 | Hooks ▸ Ask to install the ggui hooks when opening a repository | checkbox | `ui/Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off` | tested |
 | Hooks ▸ Install hooks | click | `hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab` | tested |
 | Hooks ▸ Remove hooks | click | `hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab` | tested |
@@ -234,6 +239,8 @@ Every dialog is a Form (`Source/app/shell/Dialogs.cpp`). A Cancel button that on
 | Drop stash ▸ Drop | dialog | `stash/apply, pop with the index, apply one file, branch, drop, undo, clear` | tested |
 | Clear stashes ▸ Clear all | dialog | `stash/apply, pop with the index, apply one file, branch, drop, undo, clear` | tested |
 | Delete files ▸ Delete | dialog | `staging/intent to add, delete; no Track / Untrack` | tested |
+| Replace sequence.editor ▸ Replace | dialog | `sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced` | tested |
+| Replace sequence.editor ▸ Cancel | dialog | `sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced` | tested |
 | Install ggui hooks? ▸ Install | dialog | `hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab` | tested |
 | Install ggui hooks? ▸ Not now | dialog | `hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab`<br>`ui/Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off` | tested |
 | Install ggui hooks? ▸ Never | dialog | `hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab` | tested |
@@ -555,6 +562,9 @@ Phase 4 (P4-03) items are drawn disabled with a "later" tooltip and are not acti
 |---|---|---|---|
 | Start / Save (remaining todo) | click | `rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase`<br>`rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo` | tested |
 | Cancel | click | `rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused` | tested |
+| Save (a list git rebase -i or git rebase --edit-todo waits for) | click | `sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal`<br>`sequence-editor/git rebase -i --rebase-merges: git's list opens in merges mode with the preview; the edited list runs` | tested |
+| Cancel (git rebase -i stops with an empty list; --edit-todo keeps its list) | click | `sequence-editor/Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's`<br>`sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal` | tested |
+| Close the panel while git waits (cancels) | window close | `sequence-editor/Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's` | tested |
 | Cancel while the commits are being read | click | `ui/Interactive rebase: Cancel while the commits are being read` | tested |
 | Close the panel (cancels) | window close | `rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused` | tested |
 | Onto (Enter applies) | text field | `rebase-i/options: onto, update-refs, autostash, committer date`<br>`rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause` | tested |

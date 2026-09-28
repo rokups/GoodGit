@@ -655,6 +655,16 @@ IR-ACT-RESET | 4 | §4.13 | reset (--rebase-merges)
 IR-ACT-MERGE | 4 | §4.13 | merge (--rebase-merges)
 IR-OPT-REBASE-MERGES | 4 | §4.13 | Option: --rebase-merges
 IR-SEQ-EDITOR | 4 | §4.13 | git gg sequence-editor as sequence.editor
+IR-SEQ-EDITOR-SETTING | 4 | §4.13 | Settings ▸ Git: Use ggui's todo editor for git rebase -i, per scope; off removes only ggui's value
+IR-SEQ-EDITOR-REPLACE | 4 | §4.13 | Turning it on over a user's own sequence.editor asks (Replace / Cancel); off puts it back
+IR-SEQ-EDITOR-SAVE | 4 | §4.13 | Save hands the edited list to the waiting git rebase -i, which runs it
+IR-SEQ-EDITOR-CANCEL | 4 | §4.13 | Cancel or closing the editor: git rebase -i stops with nothing changed (empty list)
+IR-SEQ-EDITOR-EDIT-TODO | 4 | §4.13 | git rebase --edit-todo in a terminal opens the remaining list; Cancel keeps it
+IR-SEQ-EDITOR-MERGES | 4 | §4.13 | A --rebase-merges list opens in merges mode with the preview
+IR-SEQ-EDITOR-WAITING | 4 | §4.13 | While git waits: stop handling disabled; another open todo makes git wait (notice)
+IR-SEQ-EDITOR-INTERRUPTED | 4 | §4.13 | git interrupted while waiting: the editor closes with a notice
+IR-SEQ-EDITOR-START-GGUI | 4 | §4.13 | No ggui has the repository open: git gg starts one and waits for it
+IR-SEQ-EDITOR-NO-DISPLAY | 4 | §4.13 | No display (or no ggui program): git's own editor edits the list
 
 # ---- §6 git gg ----------------------------------------------------------------------------------
 CLI-NEW | 2 | §6 | git gg new

@@ -17,6 +17,11 @@
 //
 // Rebase merges (P4-01): the option switches to Git's --rebase-merges list (label, reset and merge
 // rows), which always runs on the native engine; the preview replays it in memory.
+//
+// Git's sequence.editor (P4-02): a plain `git rebase -i` (or `git rebase --edit-todo`) with
+// `git gg sequence-editor` as sequence.editor opens the list git wrote here (Request::sequence).
+// Save hands the list back to git, Cancel or closing the panel hands back nothing; git waits
+// meanwhile and then goes on with its own engine and editor (no typed messages).
 #pragma once
 
 #include <core/Engine.hpp>
@@ -53,9 +58,20 @@ public:
         std::function<void(gg::todo::Todo&, const gg::todo::Context&)> adjust;
         // "Edit remaining todo" of the stopped `git rebase -i` (the other fields are ignored).
         bool remaining = false;
+        // The list a plain `git rebase -i` hands to `git gg sequence-editor` (already read; the
+        // other fields are ignored). `done` gets the saved list, or nullopt for Cancel / close.
+        struct Sequence {
+            std::shared_ptr<const gg::todo::Context> context;
+            bool remaining = false; // git rebase --edit-todo (a rebase under way)
+            std::function<void(std::optional<std::string>)> done;
+        };
+        std::optional<Sequence> sequence;
     };
 
     explicit RebasePanel(Session& session);
+    ~RebasePanel();
+    RebasePanel(const RebasePanel&) = delete;
+    RebasePanel& operator=(const RebasePanel&) = delete;
 
     void open(Request request);
     void close();
@@ -77,6 +93,8 @@ public:
     bool canStart(std::string* reason = nullptr) const;
     // Editing the remaining todo of a stopped `git rebase -i` (Start saves it).
     bool editingRemaining() const { return m_remaining; }
+    // Showing a list for a waiting `git rebase -i` / `git rebase --edit-todo` (sequence.editor).
+    bool editingForGit() const { return m_open && m_sequence.has_value(); }
     // The text of a group's inline message editor (the group whose first row is `row`).
     std::string messageText(size_t row) const;
 
@@ -132,6 +150,7 @@ private:
     void start();
     void startNative();
     void saveRemaining();
+    void saveForGit();
 
     void drawHeader();
     void drawOptions();
@@ -149,6 +168,7 @@ private:
     bool m_focus = false;
     bool m_remaining = false;         // editing the rest of a stopped git rebase -i
     std::string m_remainingText;      // git-rebase-todo as read
+    std::optional<Request::Sequence> m_sequence; // a waiting git rebase -i (sequence.editor)
     std::uint64_t m_generation = 0;   // results of older reads are ignored
     gg::todo::ReadOptions m_read;     // what the current context was read with (revisions resolved)
     State m_state;

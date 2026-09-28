@@ -7,7 +7,8 @@
 //   git gg hooks install|uninstall|status
 //   git gg hook <name> [ARGS...]     entry point for the managed hooks
 //   git gg ui [PATH]
-//   git gg sequence-editor FILE      internal: GIT_SEQUENCE_EDITOR / GIT_EDITOR of ggui's git rebase -i
+//   git gg sequence-editor FILE      sequence.editor for plain git rebase -i (ggui's todo editor), and
+//                                    internal GIT_SEQUENCE_EDITOR / GIT_EDITOR of ggui's git rebase -i
 //   git gg help [COMMAND]
 //
 // Exit codes follow git: 0 success, 1 "found something" / refused, 128 fatal, 129 usage.
@@ -64,9 +65,15 @@ const std::map<std::string, std::string>& helpTexts()
         {"hooks", "usage: git gg hooks (install | uninstall | status)\n\nManages the chained ggui hooks of this repository.\n"},
         {"hook", "usage: git gg hook <hook-name> [<args>...]\n\nEntry point called by the managed hooks; not for interactive use.\n"},
         {"ui", "usage: git gg ui [<path>]\n\nStarts ggui on the repository.\n"},
-        {"sequence-editor", "usage: git gg sequence-editor <file>\n\nInternal: used as GIT_SEQUENCE_EDITOR / GIT_EDITOR by ggui's native\n"
-                            "interactive rebase: the todo it prepared goes to git-rebase-todo, a message typed in its todo editor\n"
-                            "to the commit git is working on. Needs GG_SEQUENCE_DIR (set by ggui).\n"},
+        {"sequence-editor", "usage: git gg sequence-editor <file>\n\n"
+                            "As sequence.editor (git config sequence.editor \"git gg sequence-editor\", or ggui's Settings):\n"
+                            "plain git rebase -i shows its todo list in ggui's todo editor and goes on with the list saved\n"
+                            "there. A ggui that has the repository open shows it; otherwise a new ggui is started (GG_GGUI\n"
+                            "names the program, default: the ggui next to git-gg). Cancel stops the rebase (empty list; for\n"
+                            "git rebase --edit-todo the list stays). Without a display git's own editor is used.\n\n"
+                            "Internal: also GIT_SEQUENCE_EDITOR / GIT_EDITOR of ggui's native interactive rebase\n"
+                            "(GG_SEQUENCE_DIR set by ggui): the todo it prepared goes to git-rebase-todo, a message typed in\n"
+                            "its todo editor to the commit git is working on.\n"},
     };
     return texts;
 }
@@ -82,6 +89,7 @@ const char* kOverview =
     "    conflicts   list first-class conflicts in a commit (exit 1 when any)\n"
     "    hooks       install, uninstall or show the managed hooks\n"
     "    ui          start ggui on the repository\n"
+    "    sequence-editor  ggui's todo editor as sequence.editor for git rebase -i\n"
     "    help        show help for a command: git gg help <command>\n";
 
 int fatal(const std::string& message)
@@ -299,7 +307,7 @@ int main(int argc, char** argv)
     std::string uiPath;
     uiCmd->add_option("path", uiPath);
 
-    auto* seqCmd = app.add_subcommand("sequence-editor", "Internal: prepared todo/messages for git rebase -i");
+    auto* seqCmd = app.add_subcommand("sequence-editor", "ggui's todo editor as sequence.editor for git rebase -i");
     std::string seqFile;
     seqCmd->add_option("file", seqFile)->required();
 
