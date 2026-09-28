@@ -297,10 +297,14 @@ GG_TEST("edges", "marker-like text: only complete regions are conflicts (CRLF, n
         {"gg-end-in-base.txt", "<<<<<<< gg 2-sided conflict\n+++++++ s1\nx\n------- b\ny\n>>>>>>> end\n"},
         {"gg-order.txt", "<<<<<<< gg 2-sided conflict\n+++++++ s1\nx\n+++++++ s2\nz\n>>>>>>> end\n"},
         {"gg-one.txt", "<<<<<<< gg 1-sided conflict\n+++++++ s1\nx\n>>>>>>> end\n"},
+        // Regions in files whose attributes say they are not text (or opt out): not conflicts.
+        {"attr-binary.txt", diff3}, {"attr-no-text.txt", diff3}, {"attr-no-diff.txt", diff3}, {"attr-opt-out.txt", diff3},
         {"gg-labels.txt", "<<<<<<< gg x-sided conflict\n+++++++ s1\n>>>>>>> e\n<<<<<<< gg 2-sidedness\n+++++++ s\n>>>>>>> e\n"
                           "<<<<<<< gg 2-sided conflicts\n+++++++ s\n>>>>>>> e\n<<<<<<< not gg\n+++++++ s\n>>>>>>> e\n"},
     };
     const fs::path repo = s.fixture(Recipe::Empty);
+    s.write(repo, ".gitattributes", "*attr-binary.txt binary\n*attr-no-text.txt -text\n*attr-no-diff.txt -diff\n"
+                                    "*attr-opt-out.txt -gg-conflicts\n");
     for (const auto& [name, text] : regions)
         s.write(repo, name, text);
     for (const auto& [name, text] : plain)

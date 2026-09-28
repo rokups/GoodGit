@@ -86,18 +86,17 @@ const std::vector<ConflictedFile>& scan(git_repository* repo, const git_oid& tre
     return cache.trees[k] = std::move(result);
 }
 
-bool attrIs(git_repository* repo, git_attr_options* opts, const std::string& path, const char* name,
-    git_attr_value_t* kind, std::string* value)
+// An attribute's kind (unspecified when it cannot be read) and, for a string value, the value.
+git_attr_value_t attr(git_repository* repo, git_attr_options* opts, const std::string& path, const char* name,
+    std::string* value = nullptr)
 {
     const char* v = nullptr;
-    if (git_attr_get_ext(&v, repo, opts, path.c_str(), name) != 0) {
+    if (git_attr_get_ext(&v, repo, opts, path.c_str(), name) != 0)
         git_error_clear();
-        return false;
-    }
-    *kind = git_attr_value(v);
-    if (value)
-        *value = (*kind == GIT_ATTR_VALUE_STRING && v) ? v : "";
-    return true;
+    const git_attr_value_t kind = git_attr_value(v);
+    if (value && kind == GIT_ATTR_VALUE_STRING)
+        *value = v;
+    return kind;
 }
 
 } // namespace
@@ -184,20 +183,15 @@ std::string ineligibleReason(git_repository* repo, const git_oid* commit, const 
     } else {
         opts.flags = GIT_ATTR_CHECK_FILE_THEN_INDEX | GIT_ATTR_CHECK_NO_SYSTEM;
     }
-    git_attr_value_t kind = GIT_ATTR_VALUE_UNSPECIFIED;
-    std::string optOut;
+    std::string optOut, filter;
     // "gg-conflicts=false" (the documented form, a string value) or "-gg-conflicts".
-    if (attrIs(repo, &opts, path, "gg-conflicts", &kind, &optOut)
-        && (kind == GIT_ATTR_VALUE_FALSE || (kind == GIT_ATTR_VALUE_STRING && optOut == "false")))
+    const git_attr_value_t gg = attr(repo, &opts, path, "gg-conflicts", &optOut);
+    if (gg == GIT_ATTR_VALUE_FALSE || optOut == "false")
         return "opt-out";
-    std::string filter;
-    if (attrIs(repo, &opts, path, "filter", &kind, &filter) && kind == GIT_ATTR_VALUE_STRING && !filter.empty())
+    if (attr(repo, &opts, path, "filter", &filter) == GIT_ATTR_VALUE_STRING && !filter.empty())
         return "filtered";
-    if (attrIs(repo, &opts, path, "binary", &kind, nullptr) && kind == GIT_ATTR_VALUE_TRUE)
-        return "filtered";
-    if (attrIs(repo, &opts, path, "text", &kind, nullptr) && kind == GIT_ATTR_VALUE_FALSE)
-        return "filtered";
-    if (attrIs(repo, &opts, path, "diff", &kind, nullptr) && kind == GIT_ATTR_VALUE_FALSE)
+    if (attr(repo, &opts, path, "binary") == GIT_ATTR_VALUE_TRUE || attr(repo, &opts, path, "text") == GIT_ATTR_VALUE_FALSE
+        || attr(repo, &opts, path, "diff") == GIT_ATTR_VALUE_FALSE)
         return "filtered";
     return {};
 }

@@ -185,7 +185,7 @@ int sequenceEditor(const fs::path& file, std::string& error)
     }
     if (file.filename() == "git-rebase-todo") {
         if (prepared->todo.empty())
-            return 0; // git's list as it is
+            return 0; // handed over already (Edit remaining todo): git's list as it is
         if (!writeFile(file, prepared->todo)) {
             error = "cannot write " + file.string();
             return 1;
@@ -202,7 +202,7 @@ int sequenceEditor(const fs::path& file, std::string& error)
         return 0;
     const std::string& current = list.items.back().commit;
     for (const auto& [commit, message] : prepared->messages) {
-        if (current.empty() || !(commit.rfind(current, 0) == 0 || current.rfind(commit, 0) == 0))
+        if (!(commit.rfind(current, 0) == 0 || current.rfind(commit, 0) == 0))
             continue;
         if (!writeFile(file, message)) {
             error = "cannot write " + file.string();

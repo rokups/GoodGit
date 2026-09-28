@@ -128,7 +128,7 @@ void Session::handle(core::Event& event)
                 m_history->onTaskFinished(e);
                 m_rebase->onTaskFinished(e);
             } else if constexpr (std::is_same_v<T, core::WatchEvent>) {
-                if (e.refs && m_reflog)
+                if (e.refs)
                     m_reflog->reload();
                 if (e.journal)
                     m_engine->readOperations();
@@ -248,7 +248,7 @@ size_t Session::shortIdLength() const
 
 core::Oid Session::headChild() const
 {
-    if (!m_snapshot || m_snapshot->head.isNull())
+    if (m_snapshot->head.isNull())
         return {};
     core::Oid child;
     for (const auto& row : m_history->rows()) {
@@ -269,12 +269,9 @@ core::Oid Session::headChild() const
 bool Session::pullAvailable(std::string* reason) const
 {
     auto fail = [&](const char* why) {
-        if (reason)
-            *reason = why;
+        *reason = why;
         return false;
     };
-    if (!m_snapshot)
-        return fail("No repository");
     if (m_snapshot->headDetached)
         return fail("HEAD is detached: check out a branch to pull");
     const auto* b = m_snapshot->currentBranch();
@@ -285,13 +282,13 @@ bool Session::pullAvailable(std::string* reason) const
 
 int Session::incoming() const
 {
-    const auto* b = m_snapshot ? m_snapshot->currentBranch() : nullptr;
+    const auto* b = m_snapshot->currentBranch();
     return b ? b->behind : 0;
 }
 
 int Session::outgoing() const
 {
-    const auto* b = m_snapshot ? m_snapshot->currentBranch() : nullptr;
+    const auto* b = m_snapshot->currentBranch();
     return b ? b->ahead : 0;
 }
 

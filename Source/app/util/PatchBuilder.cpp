@@ -15,15 +15,15 @@ std::string modeText(std::uint32_t mode)
 
 std::string header(const core::DiffFile& f, bool partialReverse, bool partialForward)
 {
-    const std::string oldPath = f.oldPath.empty() ? f.newPath : f.oldPath;
-    const std::string newPath = f.newPath.empty() ? f.oldPath : f.newPath;
+    // (A diff sets both paths, the same unless renamed; a side that does not exist has mode 0.)
+    const std::string& oldPath = f.oldPath;
+    const std::string& newPath = f.newPath;
     // A partial reverse of a new file (or a partial forward of a deletion) is a plain modification.
-    const bool added = (f.kind == core::ChangeKind::Added || f.kind == core::ChangeKind::Untracked || f.oldMode == 0)
-        && !partialReverse;
-    const bool deleted = (f.kind == core::ChangeKind::Deleted || f.newMode == 0) && !partialForward;
+    const bool added = f.oldMode == 0 && !partialReverse;
+    const bool deleted = f.newMode == 0 && !partialForward;
     std::string h = "diff --git a/" + oldPath + " b/" + newPath + "\n";
     if (added)
-        h += "new file mode " + modeText(f.newMode ? f.newMode : 0100644) + "\n";
+        h += "new file mode " + modeText(f.newMode) + "\n";
     else if (deleted)
         h += "deleted file mode " + modeText(f.oldMode) + "\n";
     else if (f.oldMode != f.newMode && f.oldMode != 0 && f.newMode != 0)
@@ -67,7 +67,7 @@ std::string buildPatch(const core::DiffFile& file, LineSet selected, bool revers
     size_t chosen = 0;
     for (const auto& [h, l] : selected) {
         const auto& lines = file.hunks[static_cast<size_t>(h)].lines;
-        if (l >= 0 && static_cast<size_t>(l) < lines.size() && lines[static_cast<size_t>(l)].origin != ' ')
+        if (lines[static_cast<size_t>(l)].origin != ' ') // (selections are lines of the file)
             ++chosen;
     }
     const bool partial = chosen < changed;
