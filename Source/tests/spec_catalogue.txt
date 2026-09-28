@@ -14,6 +14,8 @@ HARNESS-FAILURE-OUTPUT | 0 | §8.3 | failing test writes screenshot, app log and
 # ---- §4.1 Application shell -------------------------------------------------------------------
 APP-WELCOME-OPEN | 1 | §4.1 | Welcome: Open repository… button opens the picker
 APP-WELCOME-OPEN-PATH | 1 | §4.1 | Welcome: open a typed path with the keyboard
+APP-DROP-FOLDER | 1 | §4.1 | A folder dropped on the window opens as a repository (UF-48)
+APP-DROP-FOLDERS | 1 | §4.1 | Several folders dropped: the repositories among them join the recent list, the first opens (UF-49)
 APP-WELCOME-INIT | 2 | §4.1 | Welcome: Initialize repository…
 APP-WELCOME-CLONE | 2 | §4.1 | Welcome: Clone repository…
 APP-WELCOME-RECENT-OPEN | 1 | §4.1 | Welcome: click a recent entry opens it
@@ -130,6 +132,9 @@ SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email (UF-20)
 SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21)
 SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21)
 SET-SCOPE-INHERIT | 2 | §4.1 | Settings: Inherit clears an override so the lower-scope value applies again (UF-21)
+SET-SCOPE-XDG-SYSTEM | 2 | §4.1 | Settings ▸ Git: the User tab reads $XDG_CONFIG_HOME/git/config with ~/.gitconfig; system values show as hints (UF-45)
+SET-WORKTREE-TOGGLE | 2 | §4.1 | Settings ▸ Git: "Worktree settings" checkbox sets extensions.worktreeConfig; the Worktree tab exists only while on (UF-46)
+SET-NOTHING-STAGED-LABEL | 2 | §4.1 | Settings ▸ Git: "Commit with nothing staged" with an explanation of its choices (UF-44)
 SET-COMMIT-ALL-DEFAULT | 2 | §4.1 | Settings: default when nothing is staged
 SET-HOOKS-TAB | 2 | §4.1 | Settings: Hooks tab install/remove/status
 APP-EXT-EDITOR | 2 | §4.1 | Open file in core.editor
@@ -155,6 +160,7 @@ HIST-MERGE-TOGGLE-STABLE | 1 | §4.2 | Expanding or collapsing a merge keeps the
 HIST-LOAD-FAST | 1 | §4.2 | First history rows of a large repository appear quickly
 UI-TEXT-BASELINE | 1 | §6 | Text in one row shares a baseline (labels, buttons, badges, icons)
 UI-ICON-ALIGN | 1 | §6 | Icon glyphs are vertically centred on the text they accompany
+UI-CONTRAST | 1 | §6 | Text colours keep a readable contrast against their backgrounds in both themes; badge fills against their text (UF-50)
 LAYOUT-HIDDEN-PANELS | 1 | §4.1 | Reflog, Operations and Blame are hidden in the default layout
 LAYOUT-TAB-ORDER | 1 | §4.1 | Default layout: Remotes, Stashes, Worktrees tabs in that order (UF-42)
 DIFF-SELECT-TEXT | 1 | §4.5 | Diff text is selectable (mouse) in unified and side-by-side views
@@ -282,7 +288,8 @@ CHG-SELECT-ALL | 1 | §4.4 | Ctrl+A selects all
 CHG-KEY-NAV | 1 | §4.4 | Keyboard navigation
 CHG-STATUS-ICONS | 1 | §4.4 | Status icons
 CHG-RENAMES | 1 | §4.4 | Renames and copies
-CHG-COMPARE-HEAD | 1 | §4.4 | Compare with HEAD toggle
+CHG-COMPARE-HEAD | 1 | §4.4 | Compare a commit with HEAD
+CHG-COMPARE-WITH | 1 | §4.4 | "Compare with" field: HEAD, a revision or Work Tree (any case, trimmed); its menu fills in HEAD or Work Tree; an unknown revision is reported (UF-41)
 CHG-HEADER-WT | 1 | §4.4 | Working tree header shows the zero ID; Compare with HEAD disabled (UF-29)
 CHG-GROUPS | 1 | §4.4 | Staged/Unstaged/Untracked/Conflicted groups
 CHG-SCANNING | 1 | §3.1 | Partial status marked scanning…
@@ -337,16 +344,18 @@ INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed
 DIFF-UNIFIED | 1 | §4.5 | Unified view
 DIFF-SIDE-BY-SIDE | 1 | §4.5 | Side-by-side view
 DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines (UF-11)
-DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all
+DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all, each labelled "Whitespace: ..." (UF-40)
 DIFF-CONTEXT | 1 | §4.5 | Context-line count
 DIFF-EXPAND | 1 | §4.5 | Expand context
+DIFF-EXPAND-SIDES | 1 | §4.5 | A gap's expander has two halves: more lines below the hunk above, or above the hunk below; the first and last gap only the one that applies (UF-39)
 DIFF-EXPAND-SHIFT | 1 | §4.5 | Shift reveals the whole section
 DIFF-SYNTAX | 1 | §4.5 | Syntax highlighting
 DIFF-BINARY | 1 | §4.5 | Binary placeholder
 DIFF-IMAGE | 1 | §4.5 | Image placeholder
 DIFF-SUBMODULE | 1 | §4.5 | Submodule placeholder
 DIFF-MODE-CHANGE | 1 | §4.5 | Mode-change line
-DIFF-VS-HEAD | 1 | §4.5 | Compare with HEAD (this file), on the diff button row (UF-15)
+DIFF-VS-HEAD | 1 | §4.5 | Compare this file with HEAD, on the diff button row (UF-15)
+DIFF-COMPARE-WITH | 1 | §4.5 | "Compare with" for this file: a revision or Work Tree, from the field or its menu; Clear (UF-41)
 DIFF-COPY-KEY | 1 | §4.5 | Ctrl+C copies the selection
 DIFF-LOAD-FULL | 1 | §4.5 | Load full diff for capped files
 DIFF-RENAME | 1 | §4.5 | Renames and copies in diffs
@@ -427,6 +436,8 @@ TAG-ANNOTATED | 2 | §4.7 | Tags: Create annotated with message
 TAG-DELETE | 2 | §4.7 | Tags: Delete
 TAG-PUSH | 2 | §4.7 | Tags: Push tag
 TAG-DELETE-REMOTE | 2 | §4.7 | Tags: Delete a remote tag
+TAG-DELETE-MENU | 2 | §4.7 | Tags: Delete is one item for a tag only here; a submenu (Local, then each remote that has it) otherwise (UF-43)
+TAG-REMOTE-ONLY | 2 | §4.7 | Tags: tags only on a remote are listed (git ls-remote); their Delete ▸ Local is disabled (UF-43)
 WT-LIST | 1 | §4.7 | Worktrees: list with main/stale/locked
 WT-COPY-NAME | 1 | §4.7 | Worktrees: Copy name
 WT-COPY-PATH | 1 | §4.7 | Worktrees: Copy path

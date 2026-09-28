@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -117,6 +118,18 @@ public:
     const std::map<std::string, std::map<std::string, std::string>>& config() const { return m_config; }
     void requestConfig();
 
+    // Tags on each remote (git ls-remote), read while the Tags panel is shown and again after the
+    // remotes change or a network operation (fetch, pull, push) finishes. A remote missing from
+    // the map has not been read yet; `ok` false: it could not be read.
+    struct RemoteTags {
+        bool ok = false;
+        std::set<std::string> tags;
+        std::string error;
+    };
+    const std::map<std::string, RemoteTags>& remoteTags() const { return m_remoteTags; }
+    void requestRemoteTagsIfStale();
+    void markRemoteTagsStale() { m_remoteTagsStale = true; }
+
     // The short (unique) form of a commit ID, as History shows it.
     std::string shortId(const core::Oid& id) const;
     // Length of History's abbreviations (git's grows with the repository).
@@ -197,6 +210,10 @@ private:
     bool m_hooksPromptChecked = false;
     bool m_ggRefsPromptChecked = false;
     std::map<std::string, std::map<std::string, std::string>> m_config;
+    std::map<std::string, RemoteTags> m_remoteTags;
+    std::vector<std::string> m_remoteTagsFor; // the remotes last asked about
+    core::RequestId m_remoteTagsRequest = 0;
+    bool m_remoteTagsStale = true;
 
     std::unique_ptr<HistoryPanel> m_history;
     std::unique_ptr<ChangesPanel> m_changes;

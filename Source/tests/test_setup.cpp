@@ -142,7 +142,7 @@ namespace ggtest {
 
 GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides", "SET-EDITOR-USER",
     "SET-EDITOR-REPO", "SET-EDITOR-WORKTREE", "SET-MERGETOOL", "SET-DIFFTOOL", "SET-PULL-METHOD", "SET-IDENTITY",
-    "SET-SCOPE-TABS", "SET-SCOPE-HINT", "SET-SCOPE-INHERIT")
+    "SET-SCOPE-TABS", "SET-SCOPE-HINT", "SET-SCOPE-INHERIT", "SET-WORKTREE-TOGGLE")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -211,16 +211,15 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     // Emptying a field unsets the value at that scope.
     edit(tab, "merge.tool", "");
     GG_CHECK(s.waitUntil([&] { return config("--local", "merge.tool").empty(); }));
-    // Worktree scope.
-    // Worktree scope: off until extensions.worktreeConfig is set (git would write the repository's
-    // config otherwise).
-    tab = scope("Worktree");
-    GG_CHECK(ctx->ItemInfo((tab + "core.editor##core.editor").c_str()).ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->ItemClick((tab + "Enable worktree settings##enable_worktree_config").c_str());
+    // Worktree scope: its tab exists only while "Worktree settings" (extensions.worktreeConfig) is
+    // on (git would write the repository's config otherwise).
+    const std::string worktreeSettings = "//Settings/##settings_tabs/Git/Worktree settings##worktree_config";
+    GG_CHECK(!s.itemExists("//Settings/##settings_tabs/Git/##config_scope/Worktree"));
+    ctx->ItemCheck(worktreeSettings.c_str());
     GG_CHECK(s.waitUntil([&] { return config("--local", "extensions.worktreeConfig") == "true"; }));
-    GG_REQUIRE(s.waitUntil([&] {
-        return (ctx->ItemInfo((tab + "core.editor##core.editor").c_str()).ItemFlags & ImGuiItemFlags_Disabled) == 0;
-    }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Settings/##settings_tabs/Git/##config_scope/Worktree"); }));
+    tab = scope("Worktree");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "core.editor##core.editor").c_str()); }));
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "editor-for-repo  (Repository)"); }));
     edit(tab, "core.editor", "editor-for-worktree");
     GG_CHECK(s.waitUntil([&] { return config("--worktree", "core.editor") == "editor-for-worktree"; }));
@@ -230,7 +229,41 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     ctx->ItemClick("//Settings/##settings_tabs/General");
     ctx->ItemClick("//Settings/##settings_tabs/Git");
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "changed-outside"); }));
+    // Off again: the extension is unset and the tab goes away.
+    ctx->ItemUncheck(worktreeSettings.c_str());
+    GG_CHECK(s.waitUntil([&] { return config("--local", "extensions.worktreeConfig").empty(); }));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists("//Settings/##settings_tabs/Git/##config_scope/Worktree"); }));
     ctx->WindowClose("//Settings");
+}
+
+GG_TEST("setup", "Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the system config show their values",
+    "SET-SCOPE-XDG-SYSTEM")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    // git config --global reads $XDG_CONFIG_HOME/git/config too (below ~/.gitconfig).
+    const fs::path xdg = fs::path(ggui::getEnv("XDG_CONFIG_HOME")) / "git";
+    fs::create_directories(xdg);
+    s.write(xdg, "config", "[core]\n\teditor = xdg-editor\n");
+    // The system configuration ggui reads in tests (TestRunner points libgit2 at this directory).
+    const fs::path system = s.root().parent_path() / "empty-system-config";
+    fs::create_directories(system);
+    s.write(system, "gitconfig", "[diff]\n\ttool = system-difftool\n");
+    GG_REQUIRE(s.openRepository(repo));
+    s.app.openSettings();
+    ctx->Yield(2);
+    ctx->ItemClick("//Settings/##settings_tabs/Git");
+    const std::string tabs = "//Settings/##settings_tabs/Git/##config_scope/";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tabs + "User").c_str()); }));
+    ctx->ItemClick((tabs + "User").c_str());
+    // The User tab shows the XDG file's value, and the system value as a hint.
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "xdg-editor"); }));
+    GG_CHECK(s.textShown("//Settings", "system-difftool  (System)"));
+    // The Repository tab inherits both.
+    ctx->ItemClick((tabs + "Repository").c_str());
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "xdg-editor  (User)"); }));
+    GG_CHECK(s.textShown("//Settings", "system-difftool  (System)"));
+    ctx->WindowClose("//Settings");
+    fs::remove(system / "gitconfig");
 }
 
 GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui", "TB-AHEAD-BEHIND-REFRESH")

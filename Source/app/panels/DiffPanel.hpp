@@ -26,13 +26,15 @@ public:
     explicit DiffPanel(Session& session);
     ~DiffPanel();
 
-    // The engine query that shows `row` for `sel`.
-    static core::DiffQuery queryFor(const Selection& sel, const FileRow& row, bool compareHead,
+    // The engine query that shows `row` for `sel`; a commit's file compared with `compare`.
+    static core::DiffQuery queryFor(const Selection& sel, const FileRow& row, const CompareTarget& compare,
         const core::SnapshotPtr& snapshot);
 
     void onSelection(const Selection& sel);
-    void showFile(const Selection& sel, const FileRow& row, bool compareHead);
-    bool canCompareWithHead() const;
+    void showFile(const Selection& sel, const FileRow& row, const CompareTarget& compare);
+    // This file can be compared with something else (a commit's or stash's file, while the
+    // Changes panel does not compare the whole commit).
+    bool canCompare() const;
     void refreshIfShowing();
     void clear();
     void onDiff(const core::DiffEvent& event);
@@ -49,11 +51,17 @@ public:
     const std::optional<FileRow>& file() const { return m_file; }
     std::string languageName() const;
     std::string selectedText() const;
-    // Lines revealed in context gap `gap` (-1 = all of it).
-    int gapShown(int gap) const
+    // Lines revealed in a context gap: from its top (below the hunk above) and from its bottom
+    // (above the hunk below); `all` reveals the whole gap.
+    struct GapShown {
+        int top = 0;
+        int bottom = 0;
+        bool all = false;
+    };
+    GapShown gapShown(int gap) const
     {
         auto it = m_gapShown.find(gap);
-        return it == m_gapShown.end() ? 0 : it->second;
+        return it == m_gapShown.end() ? GapShown{} : it->second;
     }
 
     // One rendered row of the unified view.
@@ -106,15 +114,16 @@ private:
     Session& m_session;
     Selection m_selection;
     std::optional<FileRow> m_file;
-    bool m_compareHead = false;   // from the Changes panel (whole commit vs HEAD)
-    bool m_fileVsHead = false;    // "Compare only this file with HEAD"
+    CompareTarget m_compare;      // from the Changes panel (the whole commit)
+    std::string m_fileCompareText; // the Diff panel's "Compare with" field (this file only)
+    CompareTarget m_fileCompare;
     core::DiffPtr m_diff;
     core::RequestId m_request = 0;
     bool m_full = false;
     bool m_loading = false;
 
     std::vector<Row> m_rows;
-    std::map<int, int> m_gapShown; // gap index → lines revealed (from its top); -1 = all
+    std::map<int, GapShown> m_gapShown; // gap index → lines revealed
 
     View m_unified;
     View m_left;

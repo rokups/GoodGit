@@ -904,7 +904,7 @@ void RebasePanel::drawHeader()
     // Validation.
     for (size_t i = 0; i < m_issues.size(); ++i) {
         const auto& issue = m_issues[i];
-        ImGui::PushStyleColor(ImGuiCol_Text, issue.error() ? p.error : p.warning);
+        ImGui::PushStyleColor(ImGuiCol_Text, issue.error() ? p.errorText : p.warning);
         std::string text = std::string(issue.error() ? ICON_MS_ERROR " " : ICON_MS_WARNING " ")
             + (issue.row >= 0 ? "Row " + std::to_string(issue.row + 1) + ": " : std::string()) + issue.message;
         plainText((text + "###ir_issue_" + std::to_string(i)).c_str());
@@ -1088,7 +1088,7 @@ void RebasePanel::drawPreview()
         return;
     }
     if (!pv.ok) {
-        ImGui::PushStyleColor(ImGuiCol_Text, p.error);
+        ImGui::PushStyleColor(ImGuiCol_Text, p.errorText);
         ImGui::TextWrapped("Cannot compute the result: %s", pv.error.c_str());
         ImGui::PopStyleColor();
         ImGui::EndChild();
@@ -1349,7 +1349,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     ImGui::TableSetColumnIndex(2);
     for (const auto& issue : m_issues)
         if (issue.row == static_cast<int>(row)) {
-            ImGui::PushStyleColor(ImGuiCol_Text, issue.error() ? p.error : p.warning);
+            ImGui::PushStyleColor(ImGuiCol_Text, issue.error() ? p.errorText : p.warning);
             ImGui::TextUnformatted(issue.error() ? ICON_MS_ERROR : ICON_MS_WARNING);
             ImGui::PopStyleColor();
             if (ImGui::IsItemHovered())

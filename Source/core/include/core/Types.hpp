@@ -266,12 +266,15 @@ enum class DiffKind {
     Stages,          // native conflict: index stage `stageA` → stage `stageB` of `path`
     Term,            // first-class conflict: base → side `stageB` (0-based) of `path` in commit `a`
                      // (null: the working tree file)
+    WorktreeCommit,  // the working tree (old side) vs commit `b` ("Compare with: Work Tree")
 };
 
 struct DiffQuery {
     DiffKind kind = DiffKind::Commit;
     Oid a;                          // commit / old side
     Oid b;                          // new side for Commits
+    std::string against;            // Commits: the old side as a revision (HEAD, an ID, a ref),
+                                    // resolved by the worker when set ("Compare with")
     std::string path;               // restrict to one file ("" = all files)
     std::vector<std::string> paths; // or to several files (patch of a selection)
     bool withHunks = true;          // false: file list only
@@ -324,6 +327,7 @@ struct DiffResult {
     DiffQuery query;
     std::vector<DiffFile> files;
     std::string patch;               // unified patch text (for Copy/Save patch)
+    std::string error;               // why nothing was compared (an unknown `against` revision)
 };
 using DiffPtr = std::shared_ptr<const DiffResult>;
 

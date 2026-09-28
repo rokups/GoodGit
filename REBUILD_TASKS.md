@@ -1953,7 +1953,7 @@ Requested by the user after P3-14 (UF-10 … UF-31). All done.
 ## User feedback, round 3 (2026-09-28)
 
 From the user's board (`build/gg - Kanban.md`, "In Progress" only; archived items are ignored).
-To do after CI is green.
+All done (2026-09-28).
 
 ### [x] UF-32 Hidden branches lose their History badge
 - **Status:** done. Badges of hidden local, remote-tracking and tag refs are skipped (`BR-BADGE-HIDDEN`).
@@ -1985,15 +1985,18 @@ To do after CI is green.
 - **Status:** done. The walk draws such a merge expanded and without the +/- bubble or menu items when every merged-in parent is shown anyway; one that still ends with 0 hidden commits loses the toggle once History is complete (`HIST-MERGE-NOTHING-HIDDEN`).
 - **Do:** a collapsed merge sometimes shows "0 hidden commits"; such a merge offers no collapse.
 
-### [ ] UF-39 Diff "Show more" per side
+### [x] UF-39 Diff "Show more" per side
+- **Status:** done. Two halves: more lines below the hunk above, more above the hunk below; the first and last gap have only the half that applies; Shift+click reveals the gap (`DIFF-EXPAND-SIDES`).
 - **Do:** the "Show NN more" control in the diff editor shows more context on one side only.
   Split it in two (custom rendering) so the user picks the side that gets more context.
 
-### [ ] UF-40 Diff whitespace combo labels
+### [x] UF-40 Diff whitespace combo labels
+- **Status:** done. "Whitespace: normal / ignore changes / ignore all" (`DIFF-WS-MODES`).
 - **Do:** only "Whitespace: normal" has the "Whitespace" prefix; with another option selected it
   is unclear what the combo sets. Label every option (or the combo) consistently.
 
-### [ ] UF-41 Diff "Compare with" field
+### [x] UF-41 Diff "Compare with" field
+- **Status:** done in Changes (the whole commit) and Diff (this file): HEAD, an ID or ref, or Work Tree; applied on Enter; the menu fills in HEAD or Work Tree, or clears it; an unknown revision is said in the panel (`CHG-COMPARE-WITH`, `DIFF-COMPARE-WITH`). The Diff toolbar now wraps instead of scrolling sideways in a narrow panel.
 - **Do:** replace "Compare with HEAD" with an input hinted "Compare with". It takes HEAD or a
   commit ID, and also "Work Tree" (case-insensitive, trimmed). A context menu fills in "HEAD" or
   "Work Tree".
@@ -2002,20 +2005,24 @@ To do after CI is green.
 - **Status:** done. Tab order follows the panels' drawing order; Remotes is the selected tab (`LAYOUT-TAB-ORDER`).
 - **Do:** in the default layout the tabs are ordered Remotes, Stashes, Worktrees.
 
-### [ ] UF-43 Tag Delete: local and remotes
+### [x] UF-43 Tag Delete: local and remotes
+- **Status:** done. Tags on the remotes come from git ls-remote (no prompts, its own worker) while Tags is shown, and again after fetch, pull or push; tags only on a remote are listed dimmed; a remote not read yet or unreadable is offered with a note (`TAG-DELETE-MENU`, `TAG-REMOTE-ONLY`). "Delete on remote" is gone (the Delete submenu has it).
 - **Do:** a tag's "Delete" is a single item when the tag exists only locally. When it exists on
   remotes it becomes a submenu: "Local" first (disabled when there is no local tag), then each
   remote to delete it from.
 
-### [ ] UF-44 Explain "When nothing is staged"
+### [x] UF-44 Explain "When nothing is staged"
+- **Status:** done. "Commit with nothing staged" (Ask in the Commit dialog / Stage all tracked changes / Stage the selected files) with a help marker (`SET-NOTHING-STAGED-LABEL`).
 - **Do:** the Settings option "When nothing is staged" is unclear; make its label/help say what it
   does.
 
-### [ ] UF-45 Settings show current values as hints
+### [x] UF-45 Settings show current values as hints
+- **Status:** done. The cause: the User tab read only ~/.gitconfig, not $XDG_CONFIG_HOME/git/config; now both, and the system configuration shows as hints (`SET-SCOPE-XDG-SYSTEM`).
 - **Do:** the User/Repository/Worktree scopes do not show the effective value as the input hint
   even when it is configured; show it.
 
-### [ ] UF-46 Worktree settings as a global checkbox
+### [x] UF-46 Worktree settings as a global checkbox
+- **Status:** done (`SET-WORKTREE-TOGGLE`); off unsets extensions.worktreeConfig.
 - **Do:** the "Worktree settings" button becomes a checkbox above the scope tabs; the "Worktree"
   tab is visible only while it is on.
 
@@ -2024,14 +2031,17 @@ To do after CI is green.
 - **Do:** expanding or collapsing a merge briefly draws only part of History, throwing off the
   scrollbar. Keep the full list laid out during the change.
 
-### [ ] UF-48 Drop a folder to open it
+### [x] UF-48 Drop a folder to open it
+- **Status:** done (`APP-DROP-FOLDER`).
 - **Do:** dropping a folder on the window opens it as a repository.
 
-### [ ] UF-49 Dropping several folders
+### [x] UF-49 Dropping several folders
+- **Status:** done: only repositories join the recent list; files are ignored (`APP-DROP-FOLDERS`).
 - **Do:** dropping several folders on the window adds them all to recent repositories and opens
   only the first.
 
-### [ ] UF-50 Readable colours
+### [x] UF-50 Readable colours
+- **Status:** done. Text colours are adjusted to a contrast of 4.5 (dimmed text 3.5) against window, field, row and popup backgrounds when a theme is applied; badge colours used as text have text variants; badge fills keep 4.5 against their text; errors drawn on panels use errorText (`UI-CONTRAST`).
 - **Do:** some text uses dark colours on dark backgrounds. Make the colour scheme choose text
   colours with enough contrast against their background.
 

@@ -13,11 +13,51 @@
 #include <libgg/GitRunner.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 
 namespace ggui {
 
 namespace fs = std::filesystem;
+
+CompareTarget CompareTarget::parse(const std::string& text)
+{
+    const std::string t = gg::trim(text);
+    CompareTarget target;
+    if (t.empty())
+        return target;
+    std::string lower;
+    for (char c : t)
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    if (lower == "work tree") {
+        target.kind = WorkTree;
+        return target;
+    }
+    target.kind = Rev;
+    target.rev = t;
+    return target;
+}
+
+bool compareWithField(const char* id, std::string& text)
+{
+    bool apply = ImGui::InputTextWithHint(id, "Compare with", &text, ImGuiInputTextFlags_EnterReturnsTrue);
+    apply = apply || ImGui::IsItemDeactivatedAfterEdit();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        ImGui::SetTooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
+    if (ImGui::BeginPopupContextItem((std::string(id) + "_menu").c_str())) {
+        for (const char* choice : {"HEAD", "Work Tree"})
+            if (ImGui::MenuItem(choice)) {
+                text = choice;
+                apply = true;
+            }
+        if (ImGui::MenuItem("Clear", nullptr, false, !text.empty())) {
+            text.clear();
+            apply = true;
+        }
+        ImGui::EndPopup();
+    }
+    return apply;
+}
 
 const char* groupName(FileGroup g)
 {
@@ -98,16 +138,12 @@ void ChangesPanel::requestFiles()
     auto& engine = m_session.engine();
     const auto snap = m_session.snapshot();
     if (m_selection.kind == SelKind::Commit) {
-        core::DiffQuery q;
+        FileRow commitFiles;
+        commitFiles.group = FileGroup::Commit;
+        core::DiffQuery q = DiffPanel::queryFor(m_selection, commitFiles, m_compare, snap);
+        q.path.clear();
         q.withHunks = false;
-        if (m_compareHead && !snap->head.isNull()) {
-            q.kind = core::DiffKind::Commits;
-            q.a = snap->head;
-            q.b = m_selection.id;
-        } else {
-            q.kind = core::DiffKind::Commit;
-            q.a = m_selection.id;
-        }
+        m_filesError.clear();
         m_loading = true;
         engine.diff(q, kSlotFiles);
     } else if (m_selection.kind == SelKind::Stash) {
@@ -189,9 +225,11 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
     // Ignore results for an older selection.
     if (m_selection.kind == SelKind::Commit) {
         const bool matches = (d.query.kind == core::DiffKind::Commit && d.query.a == m_selection.id)
-            || (d.query.kind == core::DiffKind::Commits && d.query.b == m_selection.id);
+            || ((d.query.kind == core::DiffKind::Commits || d.query.kind == core::DiffKind::WorktreeCommit)
+                && d.query.b == m_selection.id);
         if (!matches) // (a commit's files come in kSlotFiles)
             return;
+        m_filesError = d.error;
         m_rows = rowsFromDiff(FileGroup::Commit, d);
     } else if (m_selection.kind == SelKind::Stash) {
         if (d.query.a != m_selection.id)
@@ -228,7 +266,7 @@ std::vector<const FileRow*> ChangesPanel::visibleRows() const
 void ChangesPanel::setCurrent(const std::string& key)
 {
     m_current = key;
-    m_session.diff().showFile(m_selection, *current(), m_compareHead);
+    m_session.diff().showFile(m_selection, *current(), m_compare);
 }
 
 void ChangesPanel::moveCurrent(int direction)
@@ -250,7 +288,7 @@ void ChangesPanel::moveCurrent(int direction)
 
 core::DiffQuery ChangesPanel::patchQuery(const FileRow& row) const
 {
-    core::DiffQuery q = DiffPanel::queryFor(m_selection, row, m_compareHead, m_session.snapshot());
+    core::DiffQuery q = DiffPanel::queryFor(m_selection, row, m_compare, m_session.snapshot());
     q.context = 3;
     q.whitespace = core::Whitespace::Normal;
     return q;
@@ -632,18 +670,28 @@ void ChangesPanel::draw(bool* open)
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
     ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter);
     ImGui::SameLine();
-    // Compares a commit with HEAD; the working tree and index already are.
+    // Compares the whole commit with a revision or the working tree; the working tree and index
+    // already compare with HEAD's side.
     ImGui::BeginDisabled(m_selection.kind != SelKind::Commit);
-    bool compare = m_compareHead && m_selection.kind == SelKind::Commit;
-    if (ImGui::Checkbox("Compare with HEAD##compare_head", &compare)) {
-        m_compareHead = compare;
-        m_rows.clear();
-        m_current.clear();
-        m_selected.clear();
-        requestFiles();
-        m_session.diff().clear();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+    if (compareWithField("##compare_with", m_compareText)) {
+        const CompareTarget target = CompareTarget::parse(m_compareText);
+        if (target != m_compare) {
+            m_compare = target;
+            m_rows.clear();
+            m_current.clear();
+            m_selected.clear();
+            m_filesError.clear();
+            requestFiles();
+            m_session.diff().clear();
+        }
     }
     ImGui::EndDisabled();
+    if (!m_filesError.empty() && m_selection.kind == SelKind::Commit) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().conflict);
+        plainText((m_filesError + "###compare_error").c_str());
+        ImGui::PopStyleColor();
+    }
     ImGui::Separator();
 
     ImGui::BeginChild("##files", ImVec2(0, 0), ImGuiChildFlags_None);

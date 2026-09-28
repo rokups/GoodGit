@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct SDL_Window;
@@ -38,6 +39,8 @@ public:
     // Polls events. Returns false when the user asked to quit.
     bool pollEvents();
     bool quitRequested() const { return m_quit; }
+    // Paths dropped on the window since the last call, one list per drop (in the order given).
+    std::vector<std::vector<std::string>> takeDrops() { return std::exchange(m_drops, {}); }
     void requestQuit() { m_quit = true; }
     void cancelQuit() { m_quit = false; }
 
@@ -65,6 +68,9 @@ private:
     int m_format = 0; // SDL_GPUTextureFormat
     bool m_headless = false;
     bool m_quit = false;
+    std::vector<std::vector<std::string>> m_drops;
+    std::vector<std::string> m_dropping; // between SDL_EVENT_DROP_BEGIN and _COMPLETE
+    bool m_inDrop = false;
     bool m_imguiReady = false;
     bool m_minimized = false;
 };

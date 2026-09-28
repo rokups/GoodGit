@@ -217,12 +217,35 @@ GG_TEST("refs", "delete a branch on its remote, and everywhere", "BR-DELETE-REMO
     GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "both"}).empty());
 }
 
-GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote", "TAG-CREATE", "TAG-ANNOTATED", "TAG-DELETE",
-    "TAG-PUSH", "TAG-DELETE-REMOTE")
+GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote", "TAG-CREATE",
+    "TAG-ANNOTATED", "TAG-DELETE", "TAG-PUSH", "TAG-DELETE-REMOTE", "TAG-DELETE-MENU", "TAG-REMOTE-ONLY")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    // A tag only on origin.
+    s.git(origin(s, repo), {"tag", "remote-only", "main"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Tags");
+    auto remoteHas = [&](const std::string& tag) {
+        const auto& tags = s.session()->remoteTags();
+        auto it = tags.find("origin");
+        return it != tags.end() && it->second.ok && it->second.tags.count(tag) != 0;
+    };
+    // Listed (read with git ls-remote while the panel is shown); Delete ▸ Local is disabled for it.
+    GG_REQUIRE(s.waitUntil([&] { return remoteHas("remote-only"); }));
+    const std::string remoteOnly = "//Tags/rtag_remote-only/###rtag_remote-only";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(remoteOnly.c_str()); }));
+    GG_CHECK(s.itemText(remoteOnly.c_str()).rfind("remote-only  (origin)", 0) == 0);
+    s.contextMenu(remoteOnly.c_str(), "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "remote-only");
+    ctx->ItemClick(remoteOnly.c_str(), ImGuiMouseButton_Right);
+    ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Delete");
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Local").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(remoteOnly.c_str(), "Delete/origin");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/remote-only"); }));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(remoteOnly.c_str()); }));
+    s.settle();
     ctx->ItemClick("//Tags/###create_tag");
     GG_REQUIRE(s.dialogOpen("Create tag"));
     s.dialogText("Create tag", "name", "v9");
@@ -243,9 +266,20 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote", 
     s.contextMenu(tagRow("v10").c_str(), "Push tag/origin");
     GG_CHECK(s.waitUntil([&] { return refExists(s, origin(s, repo), "refs/tags/v10"); }));
     s.settle();
-    s.contextMenu(tagRow("v10").c_str(), "Delete on remote/origin");
+    // On origin now (read again after the push): Delete is a submenu, Local first.
+    GG_REQUIRE(s.waitUntil([&] { return remoteHas("v10"); }));
+    s.contextMenu(tagRow("v10").c_str(), "Delete/Local");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/v10"); }));
+    s.settle();
+    GG_CHECK(refExists(s, origin(s, repo), "refs/tags/v10"));
+    // Now only on origin: deleted there from its row.
+    const std::string v10 = "//Tags/rtag_v10/###rtag_v10";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(v10.c_str()); }));
+    s.contextMenu(v10.c_str(), "Delete/origin");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/v10"); }));
     s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return !remoteHas("v10"); }));
+    // Only here: a single Delete item.
     s.contextMenu(tagRow("v9").c_str(), "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/v9"); }));
     s.settle();

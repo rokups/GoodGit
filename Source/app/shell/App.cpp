@@ -431,9 +431,37 @@ void App::clearError()
 
 void App::resetLayout() { m_layoutPending = true; }
 
+void App::openDropped(const std::vector<std::string>& paths)
+{
+    std::vector<fs::path> folders;
+    for (const auto& p : paths) {
+        std::error_code ec;
+        fs::path path = fs::absolute(fs::path(p), ec).lexically_normal();
+        if (!path.has_filename())
+            path = path.parent_path(); // a trailing separator
+        if (fs::is_directory(path, ec))
+            folders.push_back(path);
+    }
+    if (folders.empty())
+        return;
+    // A repository's top: a .git entry (a work tree), or HEAD and objects (a bare repository).
+    auto isRepository = [](const fs::path& dir) {
+        std::error_code ec;
+        return fs::exists(dir / ".git", ec) || (fs::exists(dir / "HEAD", ec) && fs::is_directory(dir / "objects", ec));
+    };
+    // Last first, so the list reads in the dropped order below the one that opens.
+    for (auto it = folders.rbegin(); it != folders.rend(); ++it)
+        if (isRepository(*it))
+            m_settings.addRecent(it->string());
+    m_summaries.request(std::vector<fs::path>(m_settings.data().recent.begin(), m_settings.data().recent.end()));
+    openRepository(folders.front());
+}
+
 void App::frame()
 {
     m_io.pump();
+    for (const auto& drop : m_platform.takeDrops())
+        openDropped(drop);
     auto posted = std::move(m_posted);
     m_posted.clear();
     for (auto& fn : posted)

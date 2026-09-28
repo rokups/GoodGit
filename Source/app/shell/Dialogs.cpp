@@ -60,7 +60,7 @@ void Dialogs::draw()
         return;
     }
     if (form.icon) {
-        ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().errorBg);
+        ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().errorText);
         ImGui::TextUnformatted(form.icon);
         ImGui::PopStyleColor();
         ImGui::SameLine();

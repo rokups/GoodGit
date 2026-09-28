@@ -182,6 +182,8 @@ covered by `cli/` tests), P4-05 changes two labels. A test that needs a newer gi
 | Recent entry | click | `shell/recent repositories: Welcome list, Recent menu, switcher` | tested |
 | Recent entry: Delete key forgets it | key | `shell/recent repositories: Welcome list, Recent menu, switcher` | tested |
 | Recent entry ▸ Forget | context menu | `shell/recent repositories: Welcome list, Recent menu, switcher` | tested |
+| Drop a folder on the window (any screen) | drag and drop | `shell/folders dropped on the window: the first opens, the repositories among them join the recent list` | tested |
+| Drop several folders on the window | drag and drop | `shell/folders dropped on the window: the first opens, the repositories among them join the recent list` | tested |
 
 ## Settings window
 
@@ -189,13 +191,13 @@ covered by `cli/` tests), P4-05 changes two labels. A test that needs a newer gi
 |---|---|---|---|
 | General ▸ UI scale | slider | `shell/settings persist across restarts` | tested |
 | General ▸ Theme | combo | `diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit`<br>`shell/settings persist across restarts` | tested |
-| Git ▸ When nothing is staged | combo | `commit/nothing staged: stage all tracked or the selected files`<br>`commit/default for nothing staged comes from Settings` | tested |
+| Git ▸ Commit with nothing staged | combo | `commit/nothing staged: stage all tracked or the selected files`<br>`commit/default for nothing staged comes from Settings` | tested |
 | Git ▸ Expand to index stages on checkout | checkbox | `conflicts/checking out a conflicted commit: clean status by default, index stages when asked` | tested |
 | Git ▸ scope tabs (User, Repository, Worktree) | tab | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ user.name, user.email, core.editor, merge.tool, diff.tool | text field | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Pull method | combo | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Inherit | click | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
-| Git ▸ Enable worktree settings | click | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
+| Git ▸ Worktree settings (on and off; the Worktree tab follows) | checkbox | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Use ggui's todo editor for git rebase -i (per scope: on, off) | checkbox | `sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced`<br>`sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal` | tested |
 | Hooks ▸ Ask to install the ggui hooks when opening a repository | checkbox | `ui/Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off` | tested |
 | Hooks ▸ Install hooks | click | `hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab` | tested |
@@ -238,7 +240,7 @@ Every dialog is a Form (`Source/app/shell/Dialogs.cpp`). A Cancel button that on
 | Create branch ▸ Name, Create | dialog | `refs/create, check out, rename and delete branches`<br>`edit/by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch` | tested |
 | Create branch ▸ Check out after creating | checkbox | `refs/create, check out, rename and delete branches` | tested |
 | Create tag ▸ Name, Create | dialog | `edit/by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch`<br>`edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults` | tested |
-| Create tag ▸ Annotated, Message | checkbox | `refs/tags: lightweight, annotated, delete, push, delete on remote`<br>`edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults` | tested |
+| Create tag ▸ Annotated, Message | checkbox | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote`<br>`edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults` | tested |
 | Add remote ▸ Name, URL, Add | dialog | `refs/remotes: add, edit URL, prune on fetch, delete` | tested |
 | Edit remote URL ▸ URL, Save | dialog | `refs/remotes: add, edit URL, prune on fetch, delete` | tested |
 | Delete remote ▸ Delete | dialog | `refs/remotes: add, edit URL, prune on fetch, delete` | tested |
@@ -390,7 +392,10 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 | Space / Enter toggle staging | key | `staging/Space and Enter toggle staging` | tested |
 | Double-click: open in the editor or the diff tool | double-click | `staging/double-click opens new files in the editor, others in the diff tool` | tested |
 | Filter field | type | `changes/commit files, filter, compare with HEAD, header` | tested |
-| Compare with HEAD (commit) | checkbox | `changes/commit files, filter, compare with HEAD, header` | tested |
+| Compare with (commit): HEAD, a revision or Work Tree, Enter | type | `changes/commit files, filter, compare with HEAD, header` | tested |
+| Compare with (commit) ▸ HEAD | context menu | `changes/commit files, filter, compare with HEAD, header` | tested |
+| Compare with (commit) ▸ Work Tree | context menu | `changes/commit files, filter, compare with HEAD, header` | tested |
+| Compare with (commit) ▸ Clear | context menu | `changes/commit files, filter, compare with HEAD, header` | tested |
 | Stage all / Stage modified / Unstage all (group buttons) | click | `staging/stage all, unstage all, stage modified` | tested |
 | Drag files between Staged and Unstaged | drag | `staging/drag files between Staged and Unstaged` | tested |
 | File ▸ Open working-copy file | context menu | `conflicts/first-class: take a side in one region; resolve in the editor and commit on top`<br>`staging/external editor, folder and diff tools` | tested |
@@ -426,12 +431,16 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 | Context lines | number field | `diff/unified view, context lines, expandable context` | tested |
 | First-class conflict: Raw markers / Base → side N | combo | `conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too`<br>`diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit` | tested |
 | Native conflict: Working tree / Base → ours / Base → theirs / Ours → theirs | combo | `conflicts/native merge: three-way diff, take ours, edit the message, continue` | tested |
-| Compare with HEAD (this file) | checkbox | `diff/renames, compare this file with HEAD, large diffs` | tested |
-| Load full diff | click | `diff/renames, compare this file with HEAD, large diffs` | tested |
+| Compare with (this file): a revision, Enter | type | `diff/renames, compare this file with HEAD or the working tree, large diffs` | tested |
+| Compare with (this file) ▸ HEAD | context menu | `diff/renames, compare this file with HEAD or the working tree, large diffs` | tested |
+| Compare with (this file) ▸ Work Tree | context menu | `diff/renames, compare this file with HEAD or the working tree, large diffs` | tested |
+| Compare with (this file) ▸ Clear | context menu | `diff/renames, compare this file with HEAD or the working tree, large diffs` | tested |
+| Load full diff | click | `diff/renames, compare this file with HEAD or the working tree, large diffs` | tested |
 | Select lines in the gutter (Shift+click extends) | click | `diff/select lines, Ctrl+C and the context menu`<br>`linestaging/hunks from the context menu in the side-by-side view` | tested |
 | Select text with the mouse | drag | `diff/text is selectable with the mouse in both views` | tested |
 | Ctrl+C copies the selection | key | `diff/select lines, Ctrl+C and the context menu`<br>`diff/text is selectable with the mouse in both views` | tested |
-| Show 10 more unchanged lines (Shift+click: all) | click | `diff/unified view, context lines, expandable context` | tested |
+| Gap ▸ Show 10 more lines below the hunk above (Shift+click: all) | click | `diff/unified view, context lines, expandable context` | tested |
+| Gap ▸ Show 10 more lines above the hunk below (Shift+click: all) | click | `diff/unified view, context lines, expandable context` | tested |
 | Hunk buttons: Stage / Discard / Unstage hunk | click | `linestaging/stage, discard and unstage hunks`<br>`linestaging/CRLF lines, missing final newline, new files` | tested |
 | Side by side scroll stays in sync | mouse wheel | `diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit` | tested |
 | Line menu ▸ Copy | context menu | `diff/select lines, Ctrl+C and the context menu` | tested |
@@ -510,14 +519,17 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 
 | Action | Trigger | Test(s) | Status |
 |---|---|---|---|
-| Create tag (+) | click | `edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults`<br>`refs/tags: lightweight, annotated, delete, push, delete on remote` | tested |
+| Create tag (+) | click | `edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults`<br>`refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
 | Filter field | type | `panels/tags: filter, visibility, reveal, copy`<br>`history/large history: first page, Show more, reveal, cancel` | tested |
 | Tag row eye icon: show/hide in History (Ctrl+click: only this one) | click | `panels/tags: filter, visibility, reveal, copy` | tested |
 | Tag ▸ Reveal | context menu | `panels/tags: filter, visibility, reveal, copy` | tested |
 | Tag ▸ Copy name | context menu | `panels/tags: filter, visibility, reveal, copy` | tested |
-| Tag ▸ Delete | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote` | tested |
-| Tag ▸ Push tag ▸ <remote> | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote` | tested |
-| Tag ▸ Delete on remote ▸ <remote> | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote` | tested |
+| Tag ▸ Delete (only here) | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
+| Tag ▸ Delete ▸ Local (also on a remote) | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
+| Tag ▸ Delete ▸ <remote> | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
+| Tag ▸ Push tag ▸ <remote> | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
+| Remote-only tag ▸ Copy name | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
+| Remote-only tag ▸ Delete ▸ <remote> | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote` | tested |
 
 ## Worktrees panel
 

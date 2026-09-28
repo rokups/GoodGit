@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <optional>
 #include <string>
@@ -222,6 +223,7 @@ private:
 
     Session& m_session;
     std::map<core::RequestId, Callback> m_callbacks;
+    std::set<core::RequestId> m_networkRuns; // fetch, pull, push...: the remotes' tags may have changed
 };
 
 // `git rebase <args>` moving a stopped rebase on (ActionsRebase.cpp): git's editor gets the

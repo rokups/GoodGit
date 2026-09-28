@@ -53,6 +53,8 @@ core::RequestId Actions::run(std::string label, std::function<void(MutationConte
     spec.journal = journal;
     spec.refreshAfter = refreshAfter;
     const core::RequestId id = m_session.engine().mutate(std::move(spec));
+    if (network)
+        m_networkRuns.insert(id);
     if (done)
         m_callbacks[id] = std::move(done);
     return id;
@@ -60,6 +62,8 @@ core::RequestId Actions::run(std::string label, std::function<void(MutationConte
 
 void Actions::onFinished(const core::MutationFinishedEvent& event)
 {
+    if (m_networkRuns.erase(event.request))
+        m_session.markRemoteTagsStale();
     if (!event.journalError.empty())
         m_session.app().notify(App::Notice::Warning, "Undo journal",
             "\"" + event.label + "\" was not recorded, so Undo cannot restore it: " + event.journalError);

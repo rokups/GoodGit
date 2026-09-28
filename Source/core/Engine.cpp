@@ -33,6 +33,7 @@ constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotHooks = 5;
 constexpr int kSlotRebasePreview = 1;
+constexpr int kSlotRemoteTags = 1;
 
 std::string firstLines(const std::string& text, int n = 6)
 {
@@ -55,6 +56,7 @@ const char* queueName(Queue q)
     case Queue::Content: return "content";
     case Queue::Network: return "network";
     case Queue::Preview: return "preview";
+    case Queue::Remote: return "remote";
     }
     return "?";
 }
@@ -534,23 +536,32 @@ RequestId Engine::readConfig(std::vector<std::string> keys)
         git_config* rawAll = nullptr;
         gg::git2::check(git_repository_config(&rawAll, repo), "git_repository_config");
         gg::git2::Config all(rawAll);
-        const std::pair<const char*, git_config_level_t> levels[] = {{"user", GIT_CONFIG_LEVEL_GLOBAL},
-            {"repository", GIT_CONFIG_LEVEL_LOCAL}, {"worktree", GIT_CONFIG_LEVEL_WORKTREE}};
+        // Each scope's files, lowest precedence first: "user" is what git config --global reads
+        // ($XDG_CONFIG_HOME/git/config, then ~/.gitconfig); "system" is shown as hints only.
+        struct ScopeLevels {
+            const char* name;
+            std::vector<git_config_level_t> levels;
+        };
+        const ScopeLevels scopes[] = {{"system", {GIT_CONFIG_LEVEL_PROGRAMDATA, GIT_CONFIG_LEVEL_SYSTEM}},
+            {"user", {GIT_CONFIG_LEVEL_XDG, GIT_CONFIG_LEVEL_GLOBAL}}, {"repository", {GIT_CONFIG_LEVEL_LOCAL}},
+            {"worktree", {GIT_CONFIG_LEVEL_WORKTREE}}};
         ev.values["effective"]; // every scope is present, even with nothing set ("loaded")
-        for (const auto& [name, level] : levels) {
-            ev.values[name];
-            git_config* raw = nullptr;
-            if (git_config_open_level(&raw, all.get(), level) != 0) {
-                git_error_clear();
-                continue;
-            }
-            gg::git2::Config cfg(raw);
-            for (const auto& key : keys) {
-                git_buf buf = GIT_BUF_INIT;
-                if (git_config_get_string_buf(&buf, cfg.get(), key.c_str()) == 0)
-                    ev.values[name][key] = std::string(buf.ptr, buf.size);
-                git_buf_dispose(&buf);
-                git_error_clear();
+        for (const auto& scope : scopes) {
+            ev.values[scope.name];
+            for (const git_config_level_t level : scope.levels) {
+                git_config* raw = nullptr;
+                if (git_config_open_level(&raw, all.get(), level) != 0) {
+                    git_error_clear();
+                    continue;
+                }
+                gg::git2::Config cfg(raw);
+                for (const auto& key : keys) {
+                    git_buf buf = GIT_BUF_INIT;
+                    if (git_config_get_string_buf(&buf, cfg.get(), key.c_str()) == 0)
+                        ev.values[scope.name][key] = std::string(buf.ptr, buf.size);
+                    git_buf_dispose(&buf);
+                    git_error_clear();
+                }
             }
         }
         gg::git2::Config snap = gg::git2::repositoryConfig(repo);
@@ -559,6 +570,38 @@ RequestId Engine::readConfig(std::vector<std::string> keys)
                 ev.values["effective"][key] = *v;
         emit(std::move(ev));
     });
+}
+
+RequestId Engine::readRemoteTags(std::vector<std::string> remotes)
+{
+    return submit(Queue::Remote, "Reading tags on remotes", kSlotRemoteTags, true,
+        [this, remotes = std::move(remotes)](Job& job) {
+            for (const auto& remote : remotes) {
+                gg::throwIfCancelled(job.token);
+                gg::RunRequest r;
+                r.args = {"git", "ls-remote", "--tags", "--refs", remote};
+                r.cwd = path();
+                r.cancel = job.token;
+                // No prompt: ggui's credentials dialog is for what the user started.
+                r.env = {{"GIT_ASKPASS", std::nullopt}, {"SSH_ASKPASS", std::nullopt},
+                    {"SSH_ASKPASS_REQUIRE", std::nullopt}};
+                const gg::RunResult res = gg::run(r);
+                gg::throwIfCancelled(job.token);
+                RemoteTagsEvent ev;
+                ev.request = job.id;
+                ev.remote = remote;
+                ev.ok = res.ok();
+                if (!ev.ok)
+                    ev.error = res.message();
+                for (const auto& line : gg::splitLines(res.out)) {
+                    const auto tab = line.find('\t');
+                    const std::string prefix = "refs/tags/";
+                    if (tab != std::string::npos && line.compare(tab + 1, prefix.size(), prefix) == 0)
+                        ev.tags.push_back(line.substr(tab + 1 + prefix.size()));
+                }
+                emit(std::move(ev));
+            }
+        });
 }
 
 RequestId Engine::readHooksStatus()

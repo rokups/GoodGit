@@ -194,6 +194,63 @@ GG_TEST("visual", "text shares a baseline across widgets on one line", "UI-TEXT-
     GG_CHECK(ok);
 }
 
+GG_TEST("visual", "readable colours: text keeps its contrast in the dark and the light theme", "UI-CONTRAST")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"tag", "v1"});
+    s.git(repo, {"branch", "topic"});
+    GG_REQUIRE(s.openRepository(repo));
+    for (const char* name : {"Light", "Dark"}) {
+        s.app.openSettings();
+        ctx->Yield(2);
+        ctx->SetRef("Settings");
+        s.comboSelect("//Settings/##settings_tabs/General/Theme##theme", name);
+        ctx->WindowClose("//Settings");
+        ctx->SetRef("");
+        ctx->Yield(3);
+        const auto& p = ggui::theme().palette();
+        const ImU32 window = ImGui::GetColorU32(ImGuiCol_WindowBg, 1.0f);
+        auto check = [&](const char* what, ImU32 c, ImU32 bg, float ratio) {
+            const float r = ggui::contrastRatio(c, bg);
+            if (r < ratio)
+                ctx->LogError("%s theme: %s has contrast %.2f (needs %.1f)", name, what, r, ratio);
+            GG_CHECK(r >= ratio);
+        };
+        const std::pair<const char*, ImU32> text[] = {{"branchText", p.branchText},
+            {"branchCurrentText", p.branchCurrentText}, {"remoteText", p.remoteText}, {"tagText", p.tagText},
+            {"errorText", p.errorText}, {"unpublished", p.unpublished}, {"conflict", p.conflict}, {"added", p.added},
+            {"removed", p.removed}, {"hunkHeader", p.hunkHeader}, {"warning", p.warning}, {"staged", p.staged},
+            {"unstaged", p.unstaged}, {"Text", ImGui::GetColorU32(ImGuiCol_Text)}};
+        for (const auto& [what, c] : text)
+            check(what, c, window, ggui::kTextContrast);
+        const std::pair<const char*, ImU32> dim[] = {{"lineNumber", p.lineNumber}, {"dim", p.dim},
+            {"untracked", p.untracked}, {"TextDisabled", ImGui::GetColorU32(ImGuiCol_TextDisabled)}};
+        for (const auto& [what, c] : dim)
+            check(what, c, window, ggui::kDimContrast);
+        const std::pair<const char*, ImU32> badges[] = {{"branch", p.branch}, {"branchCurrent", p.branchCurrent},
+            {"remote", p.remote}, {"tag", p.tag}, {"head", p.head}, {"worktree", p.worktree}, {"stash", p.stash}};
+        for (const auto& [what, c] : badges)
+            check(what, p.badgeText, c, ggui::kTextContrast);
+        // What the side panels draw: every letter readable on the panel.
+        for (const char* panel : {"Branches", "Tags"}) {
+            s.showPanel(panel);
+            ctx->Yield(2);
+            ImGuiWindow* w = ctx->GetWindowByRef((std::string("//") + panel).c_str());
+            GG_REQUIRE(w != nullptr);
+            int letters = 0;
+            for (const auto& g : Scenario::drawnGlyphs(w))
+                if (g.codepoint < 0x80 && g.codepoint > ' ') {
+                    ++letters;
+                    const float r = ggui::contrastRatio(g.col | IM_COL32_A_MASK, window);
+                    if (r < ggui::kDimContrast)
+                        ctx->LogError("%s theme, %s: '%c' drawn with contrast %.2f", name, panel, static_cast<char>(g.codepoint), r);
+                    GG_CHECK(r >= ggui::kDimContrast);
+                }
+            GG_CHECK(letters > 5);
+        }
+    }
+}
+
 GG_TEST("visual", "icon glyphs are vertically centred on the text", "UI-ICON-ALIGN")
 {
     // Compare glyph boxes as baked for the UI and mono fonts at a few sizes: an icon's centre sits

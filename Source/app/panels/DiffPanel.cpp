@@ -73,16 +73,19 @@ std::string modeText(std::uint32_t mode)
 DiffPanel::DiffPanel(Session& session) : m_session(session) { }
 DiffPanel::~DiffPanel() = default;
 
-core::DiffQuery DiffPanel::queryFor(const Selection& sel, const FileRow& row, bool compareHead,
-    const core::SnapshotPtr& snapshot)
+core::DiffQuery DiffPanel::queryFor(const Selection& sel, const FileRow& row, const CompareTarget& compare,
+    const core::SnapshotPtr&)
 {
     core::DiffQuery q;
     q.path = row.path;
     switch (row.group) {
     case FileGroup::Commit:
-        if (compareHead && !snapshot->head.isNull()) {
+        if (compare.kind == CompareTarget::Rev) {
             q.kind = core::DiffKind::Commits;
-            q.a = snapshot->head;
+            q.against = compare.rev;
+            q.b = sel.id;
+        } else if (compare.kind == CompareTarget::WorkTree) {
+            q.kind = core::DiffKind::WorktreeCommit;
             q.b = sel.id;
         } else {
             q.kind = core::DiffKind::Commit;
@@ -100,11 +103,12 @@ core::DiffQuery DiffPanel::queryFor(const Selection& sel, const FileRow& row, bo
     return q;
 }
 
-bool DiffPanel::canCompareWithHead() const
+bool DiffPanel::canCompare() const
 {
     // A commit's or stash's file (the working tree and index already compare with HEAD's side);
-    // not when the Changes panel already compares the whole commit with HEAD.
-    return m_file && (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash) && !m_compareHead;
+    // not when the Changes panel already compares the whole commit.
+    return m_file && (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash)
+        && m_compare.kind == CompareTarget::None;
 }
 
 void DiffPanel::onSelection(const Selection& sel)
@@ -121,23 +125,25 @@ void DiffPanel::clear()
     m_gapShown.clear();
     m_anchorRow = -1;
     m_full = false;
-    m_fileVsHead = false;
+    m_fileCompareText.clear();
+    m_fileCompare = {};
     m_loading = false;
     m_request = 0; // a diff still on its way is for the old selection
     m_viewsDirty = true;
 }
 
-void DiffPanel::showFile(const Selection& sel, const FileRow& row, bool compareHead)
+void DiffPanel::showFile(const Selection& sel, const FileRow& row, const CompareTarget& compare)
 {
     const bool sameFile = m_file && m_file->key() == row.key() && m_selection == sel;
     m_selection = sel;
     m_file = row;
-    m_compareHead = compareHead;
+    m_compare = compare;
     if (!sameFile) {
         m_gapShown.clear();
         m_anchorRow = -1;
         m_full = false;
-        m_fileVsHead = false;
+        m_fileCompareText.clear();
+        m_fileCompare = {};
         m_conflictView = 0;
         m_termView = 0;
     }
@@ -153,7 +159,7 @@ void DiffPanel::refreshIfShowing()
 DiffPanel::StagingMode DiffPanel::stagingMode() const
 {
     // Only asked while a diff is shown (so there is a file).
-    if (m_fileVsHead)
+    if (m_fileCompare.kind != CompareTarget::None)
         return StagingMode::None;
     if (m_diff->query.kind == core::DiffKind::Unstaged
         && (m_file->group == FileGroup::Unstaged || m_file->group == FileGroup::Untracked))
@@ -218,12 +224,18 @@ void DiffPanel::request()
     if (!m_file)
         return;
     const auto& settings = m_session.app().settings().data();
-    core::DiffQuery q = queryFor(m_selection, *m_file, m_compareHead, m_session.snapshot());
-    const auto snap = m_session.snapshot();
-    if (m_fileVsHead && !snap->head.isNull() && canCompareWithHead()) {
-        q.kind = core::DiffKind::Commits;
-        q.a = snap->head;
+    core::DiffQuery q = queryFor(m_selection, *m_file, m_compare, m_session.snapshot());
+    if (m_fileCompare.kind != CompareTarget::None && canCompare()) {
+        // This file of the commit (or stash) against the revision or the working tree.
+        q.a = {};
         q.b = m_selection.id;
+        q.against.clear();
+        if (m_fileCompare.kind == CompareTarget::WorkTree) {
+            q.kind = core::DiffKind::WorktreeCommit;
+        } else {
+            q.kind = core::DiffKind::Commits;
+            q.against = m_fileCompare.rev;
+        }
     }
     q.context = settings.diffContext;
     q.whitespace = static_cast<core::Whitespace>(settings.diffWhitespace);
@@ -379,22 +391,29 @@ void DiffPanel::buildViews()
     m_viewsDirty = false;
     const core::DiffFile& f = m_diff->files.front();
     const auto palette = theme().theme() == Theme::Light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
+    // A gap: the lines revealed from its top, the placeholder for the rest, the lines revealed
+    // from its bottom.
     auto gapLines = [&](const Row& r, auto&& emit) {
-        auto it = m_gapShown.find(r.gap);
-        const int shown = it == m_gapShown.end() ? 0 : (it->second < 0 ? r.gapCount : std::min(it->second, r.gapCount));
-        for (int k = 0; k < shown; ++k) {
+        const GapShown g = gapShown(r.gap);
+        const int top = g.all ? r.gapCount : std::min(g.top, r.gapCount);
+        const int bottom = g.all ? 0 : std::min(g.bottom, r.gapCount - top);
+        auto line = [&](int k) {
             const int newNo = r.gapStart + k;
             EditorLine l{EditorLine::GapLine};
             l.gap = r.gap;
             l.newNo = newNo;
             l.oldNo = newNo + r.oldOffset;
             emit(l, stripCr((*f.newText)[static_cast<size_t>(newNo - 1)]));
-        }
-        if (shown < r.gapCount) {
+        };
+        for (int k = 0; k < top; ++k)
+            line(k);
+        if (top + bottom < r.gapCount) {
             EditorLine l{EditorLine::GapHidden};
             l.gap = r.gap;
-            emit(l, "\xe2\x8b\xaf " + std::to_string(r.gapCount - shown) + " unchanged lines");
+            emit(l, "\xe2\x8b\xaf " + std::to_string(r.gapCount - top - bottom) + " unchanged lines");
         }
+        for (int k = r.gapCount - bottom; k < r.gapCount; ++k)
+            line(k);
     };
 
     // Unified: one line per row (gaps: revealed lines + a placeholder).
@@ -594,16 +613,35 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
     }
     case EditorLine::GapHidden:
         if (primary) {
+            // Two halves: more lines below the hunk above, more lines above the hunk below. The gap
+            // before the first hunk has only the second; the one after the last only the first.
+            const bool first = l.row == 0;
+            const bool last = l.row + 1 == static_cast<int>(m_rows.size());
+            const int buttons = (first ? 0 : 1) + (last ? 0 : 1);
+            const float w = buttons == 2 ? (width - ImGui::GetStyle().ItemSpacing.x) * 0.5f : width;
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
-            if (ImGui::Button((std::string(ICON_MS_UNFOLD_MORE) + "###expand_" + std::to_string(l.gap)).c_str(),
-                    ImVec2(width, ImGui::GetTextLineHeight()))) {
-                auto& shown = m_gapShown[l.gap];
-                shown = ImGui::GetIO().KeyShift ? -1 : shown + 10;
-                m_viewsDirty = true;
-            }
+            auto expand = [&](const char* icon, const char* id, const char* tip, int GapShown::*side) {
+                if (ImGui::Button((std::string(icon) + "###" + id + std::to_string(l.gap)).c_str(),
+                        ImVec2(std::max(1.0f, w), ImGui::GetTextLineHeight()))) {
+                    auto& shown = m_gapShown[l.gap];
+                    if (ImGui::GetIO().KeyShift)
+                        shown.all = true;
+                    else
+                        shown.*side += 10;
+                    m_viewsDirty = true;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", tip);
+            };
+            if (!first)
+                expand(ICON_MS_KEYBOARD_ARROW_DOWN, "expand_down_", "Show 10 more lines below the hunk above (Shift+click: all)",
+                    &GapShown::top);
+            if (!first && !last)
+                ImGui::SameLine();
+            if (!last)
+                expand(ICON_MS_KEYBOARD_ARROW_UP, "expand_up_", "Show 10 more lines above the hunk below (Shift+click: all)",
+                    &GapShown::bottom);
             ImGui::PopStyleVar();
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Show 10 more unchanged lines (Shift+click: all)");
         }
         break;
     case EditorLine::Filler:
@@ -615,22 +653,30 @@ void DiffPanel::drawToolbar()
 {
     auto& settings = m_session.app().settings();
     auto& d = settings.data();
+    // The controls flow like words: one that does not fit starts the next line (the panel never
+    // scrolls sideways).
+    const float em = ImGui::GetFontSize();
+    auto next = [](float width) {
+        ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x < width)
+            ImGui::NewLine();
+    };
     const char* views[] = {"Unified", "Side by side"};
     int view = d.diffSideBySide ? 1 : 0;
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
+    ImGui::SetNextItemWidth(em * 7);
     if (ImGui::Combo("##diff_view", &view, views, 2)) {
         d.diffSideBySide = view == 1;
         settings.save();
     }
-    ImGui::SameLine();
-    const char* ws[] = {"Whitespace: normal", "Ignore changes", "Ignore all"};
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11);
+    const char* ws[] = {"Whitespace: normal", "Whitespace: ignore changes", "Whitespace: ignore all"};
+    next(em * 11);
+    ImGui::SetNextItemWidth(em * 11);
     if (ImGui::Combo("##diff_ws", &d.diffWhitespace, ws, 3)) {
         settings.save();
         request();
     }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    next(em * 4.5f + ImGui::CalcTextSize("Context").x + ImGui::GetStyle().ItemInnerSpacing.x);
+    ImGui::SetNextItemWidth(em * 4.5f);
     if (ImGui::InputInt("Context##diff_context", &d.diffContext, 1, 5)) {
         d.diffContext = std::clamp(d.diffContext, 0, 100);
         settings.save();
@@ -641,8 +687,8 @@ void DiffPanel::drawToolbar()
         std::vector<std::string> terms{"Raw markers"};
         for (int k = 1; k <= sides; ++k)
             terms.push_back("Base \xe2\x86\x92 side " + std::to_string(k));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+        next(em * 10);
+        ImGui::SetNextItemWidth(em * 10);
         if (ImGui::BeginCombo("##term_view", terms[static_cast<size_t>(std::clamp(m_termView, 0, sides))].c_str())) {
             for (int k = 0; k <= sides; ++k)
                 if (ImGui::Selectable(terms[static_cast<size_t>(k)].c_str(), k == m_termView)) {
@@ -653,18 +699,25 @@ void DiffPanel::drawToolbar()
         }
     }
     if (m_file && m_file->group == FileGroup::Conflicted && !m_file->firstClass) {
-        ImGui::SameLine();
         const char* stageViews[] = {"Working tree", "Base \xe2\x86\x92 ours", "Base \xe2\x86\x92 theirs", "Ours \xe2\x86\x92 theirs"};
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11);
+        next(em * 11);
+        ImGui::SetNextItemWidth(em * 11);
         if (ImGui::Combo("##conflict_view", &m_conflictView, stageViews, 4))
             request();
     }
-    ImGui::SameLine();
-    // This file only; the Changes panel's "Compare with HEAD" switches the whole commit.
-    ImGui::BeginDisabled(!canCompareWithHead());
-    if (ImGui::Checkbox("Compare with HEAD##diff_vs_head", &m_fileVsHead)) {
-        m_gapShown.clear();
-        request();
+    // This file only; the Changes panel's "Compare with" switches the whole commit. It takes the
+    // rest of the line (at least 6 em), leaving room for "loading...".
+    const float loading = ImGui::CalcTextSize("loading...").x + ImGui::GetStyle().ItemSpacing.x;
+    next(em * 6 + loading);
+    ImGui::BeginDisabled(!canCompare());
+    ImGui::SetNextItemWidth(std::max(em * 6, ImGui::GetContentRegionAvail().x - loading));
+    if (compareWithField("##diff_compare_with", m_fileCompareText)) {
+        const CompareTarget target = CompareTarget::parse(m_fileCompareText);
+        if (target != m_fileCompare) {
+            m_fileCompare = target;
+            m_gapShown.clear();
+            request();
+        }
     }
     ImGui::EndDisabled();
     if (m_loading) {
@@ -841,8 +894,13 @@ void DiffPanel::draw(bool* open)
     }
     ImGui::Separator();
     if (!m_diff || m_diff->files.empty()) {
-        if (m_file && !m_loading)
+        if (m_file && !m_loading && m_diff && !m_diff->error.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().conflict);
+            plainText((m_diff->error + "###diff_error").c_str());
+            ImGui::PopStyleColor();
+        } else if (m_file && !m_loading) {
             ImGui::TextDisabled("No differences");
+        }
         else if (!m_file)
             ImGui::TextDisabled("Select a file to see its changes");
         ImGui::End();

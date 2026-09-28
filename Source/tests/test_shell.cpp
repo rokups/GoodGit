@@ -9,6 +9,7 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <SDL3/SDL_events.h>
 #include <imgui_internal.h>
 
 #include <fstream>
@@ -73,6 +74,52 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu", "APP
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_CHECK(s.waitUntil([&] { return closed(s); }));
     GG_CHECK(s.itemExists("//Welcome/##welcome_path"));
+}
+
+GG_TEST("shell", "folders dropped on the window: the first opens, the repositories among them join the recent list",
+    "APP-DROP-FOLDER", "APP-DROP-FOLDERS")
+{
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    const fs::path plain = s.path("plain-folder");
+    fs::create_directories(plain);
+    s.write(s.root(), "a-file.txt", "not a folder\n");
+    s.track(first);
+    s.track(second);
+    // One drop as SDL delivers it: BEGIN, a FILE per path, COMPLETE. The paths must outlive the
+    // frames that poll the events.
+    std::vector<std::string> paths;
+    auto drop = [&](std::vector<std::string> dropped) {
+        paths = std::move(dropped);
+        SDL_Event ev{};
+        ev.type = SDL_EVENT_DROP_BEGIN;
+        SDL_PushEvent(&ev);
+        for (const auto& p : paths) {
+            SDL_Event file{};
+            file.type = SDL_EVENT_DROP_FILE;
+            file.drop.data = p.c_str();
+            SDL_PushEvent(&file);
+        }
+        SDL_Event done{};
+        done.type = SDL_EVENT_DROP_COMPLETE;
+        SDL_PushEvent(&done);
+        ctx->Yield(3);
+    };
+    drop({first.string(), plain.string(), second.string(), (s.root() / "a-file.txt").string()});
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened(); }));
+    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    s.settle();
+    const auto& recent = s.app.settings().data().recent;
+    GG_REQUIRE(recent.size() >= 2);
+    GG_CHECK(fs::equivalent(recent[0], first));
+    GG_CHECK(fs::equivalent(recent[1], second));
+    for (const auto& r : recent)
+        GG_CHECK(!fs::equivalent(r, plain));
+    // One folder: it opens.
+    drop({second.string()});
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+    s.settle();
+    GG_CHECK(fs::equivalent(s.app.settings().data().recent.front(), second));
 }
 
 GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar", "APP-WELCOME-OPEN", "MENU-REPO-OPEN",

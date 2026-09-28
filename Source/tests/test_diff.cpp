@@ -104,7 +104,7 @@ const ggui::core::DiffFile* file(Scenario& s)
 } // namespace
 
 GG_TEST("diff", "unified view, context lines, expandable context", "DIFF-UNIFIED", "DIFF-CONTEXT", "DIFF-EXPAND",
-    "DIFF-EXPAND-SHIFT")
+    "DIFF-EXPAND-SIDES", "DIFF-EXPAND-SHIFT")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -116,20 +116,46 @@ GG_TEST("diff", "unified view, context lines, expandable context", "DIFF-UNIFIED
     GG_CHECK_EQ(f->additions, 2);
     GG_CHECK_EQ(f->deletions, 2);
     GG_CHECK(s.itemExists((body(s) + "/###hunk_0").c_str()));
-    GG_CHECK(s.itemExists((body(s) + "/###expand_0").c_str()));
+    // The gap before the first hunk reveals only upwards from it.
+    GG_CHECK(s.itemExists((body(s) + "/###expand_up_0").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###expand_down_0").c_str()));
     // Context 1: shorter hunks.
     ctx->ItemInputValue("//Diff/Context##diff_context", 1);
     GG_CHECK(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 2 && file(s)->hunks[0].lines.size() == 4; }));
     ctx->ItemInputValue("//Diff/Context##diff_context", 3);
     GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->hunks[0].lines.size() == 8; }));
-    // Gap 1 lies between the two hunks: click reveals 10 lines, Shift+click the rest.
-    ctx->ItemClick((body(s) + "/###expand_1").c_str());
-    GG_CHECK_EQ(s.session()->diff().gapShown(1), 10);
+    // The views are rebuilt from the new diff on the next frames: let the rows settle first.
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###expand_down_1").c_str()); }));
+    ctx->Yield(2);
+    // Gap 1 lies between the two hunks (lines 9-31): each half reveals 10 lines on its side,
+    // Shift+click the rest.
+    auto shows = [&](int n) { // drawn as "<old> <new> intline<n>=0;" (the helper drops spaces in code)
+        const std::string no = std::to_string(n);
+        const std::string want = no + " " + no + " intline" + no + "=0;";
+        for (const auto& line : s.drawnText(body(s).c_str()))
+            if (line == want)
+                return true;
+        return false;
+    };
+    GG_CHECK(!shows(9) && !shows(31));
+    ctx->ItemClick((body(s) + "/###expand_down_1").c_str());
+    GG_CHECK_EQ(s.session()->diff().gapShown(1).top, 10);
+    GG_CHECK_EQ(s.session()->diff().gapShown(1).bottom, 0);
+    ctx->Yield(2);
+    GG_CHECK(shows(9) && shows(18) && !shows(19) && !shows(31));
+    ctx->ItemClick((body(s) + "/###expand_up_1").c_str());
+    GG_CHECK_EQ(s.session()->diff().gapShown(1).top, 10);
+    GG_CHECK_EQ(s.session()->diff().gapShown(1).bottom, 10);
+    ctx->Yield(2);
+    // Lines 22-31 now sit right above the second hunk (the list runs past the panel's bottom).
+    GG_CHECK(shows(22) && !shows(21) && !shows(19));
     ctx->KeyDown(ImGuiMod_Shift);
-    ctx->ItemClick((body(s) + "/###expand_1").c_str());
+    ctx->ItemClick((body(s) + "/###expand_up_1").c_str());
     ctx->KeyUp(ImGuiMod_Shift);
-    GG_CHECK_EQ(s.session()->diff().gapShown(1), -1);
-    GG_CHECK(!s.itemExists((body(s) + "/###expand_1").c_str()));
+    GG_CHECK(s.session()->diff().gapShown(1).all);
+    GG_CHECK(!s.itemExists((body(s) + "/###expand_up_1").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###expand_down_1").c_str()));
 }
 
 GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE", "DIFF-SYNTAX", "DIFF-SBS-CODE-ONLY")
@@ -153,7 +179,7 @@ GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE
         for (const auto& line : lines)
             GG_CHECK(line.find("@@") == std::string::npos);
     }
-    GG_CHECK(s.itemExists((s.child(body(s).c_str(), "##sbs_left") + "/###expand_0").c_str()));
+    GG_CHECK(s.itemExists((s.child(body(s).c_str(), "##sbs_left") + "/###expand_up_0").c_str()));
     s.comboSelect("//Diff/##diff_view", "Unified");
     ctx->Yield(2);
     GG_CHECK(!s.app.settings().data().diffSideBySide);
@@ -207,9 +233,9 @@ GG_TEST("diff", "whitespace modes", "DIFF-WS-MODES")
     showFile(s, r.change, "ws.txt");
     GG_REQUIRE(file(s) != nullptr);
     GG_CHECK_EQ(file(s)->hunks.size(), static_cast<size_t>(1));
-    s.comboSelect("//Diff/##diff_ws", "Ignore changes");
+    s.comboSelect("//Diff/##diff_ws", "Whitespace: ignore changes");
     GG_CHECK(s.waitUntil([&] { return !file(s) || file(s)->hunks.empty(); }));
-    s.comboSelect("//Diff/##diff_ws", "Ignore all");
+    s.comboSelect("//Diff/##diff_ws", "Whitespace: ignore all");
     GG_CHECK(s.waitUntil([&] { return !file(s) || file(s)->hunks.empty(); }));
     s.comboSelect("//Diff/##diff_ws", "Whitespace: normal");
     GG_CHECK(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 1; }));
@@ -238,7 +264,8 @@ GG_TEST("diff", "binary, image, submodule and mode-change placeholders", "DIFF-B
     GG_CHECK_STR_EQ(file(s)->newId.hex(), s.revParse(super, "HEAD:sub"));
 }
 
-GG_TEST("diff", "renames, compare this file with HEAD, large diffs", "DIFF-RENAME", "DIFF-VS-HEAD", "DIFF-LOAD-FULL")
+GG_TEST("diff", "renames, compare this file with HEAD or the working tree, large diffs", "DIFF-RENAME", "DIFF-VS-HEAD",
+    "DIFF-COMPARE-WITH", "DIFF-LOAD-FULL")
 {
     const DiffRepo r = makeRepo(s);
     s.commitFile(r.path, "code.cpp", numbered(40, 20), "Later change");
@@ -250,17 +277,47 @@ GG_TEST("diff", "renames, compare this file with HEAD, large diffs", "DIFF-RENAM
     // Compare only code.cpp of the "change" commit with HEAD; the control sits on the button row.
     showFile(s, r.change, "code.cpp");
     const ImGuiTestItemInfo view = ctx->ItemInfo("//Diff/##diff_view");
-    const ImGuiTestItemInfo vsHead = ctx->ItemInfo("//Diff/Compare with HEAD##diff_vs_head");
-    GG_CHECK(std::abs(view.RectFull.GetCenter().y - vsHead.RectFull.GetCenter().y) < 1.0f);
+    const ImGuiTestItemInfo vsHead = ctx->ItemInfo("//Diff/##diff_compare_with");
+    // In the toolbar (it wraps in a narrow panel): above the diff itself.
+    ImGuiWindow* diffBody = ctx->GetWindowByRef(body(s).c_str());
+    GG_REQUIRE(diffBody != nullptr);
+    GG_CHECK(vsHead.RectFull.Max.y <= diffBody->Pos.y && vsHead.RectFull.Min.y >= view.RectFull.Min.y);
     GG_CHECK((vsHead.ItemFlags & ImGuiItemFlags_Disabled) == 0);
-    ctx->ItemClick("//Diff/Compare with HEAD##diff_vs_head");
+    ctx->ItemInputValue("//Diff/##diff_compare_with", "HEAD");
     GG_CHECK(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
-        return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.a.hex() == s.head(r.path);
+        return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.against == "HEAD" && !d->files.empty();
     }));
     GG_REQUIRE(file(s) != nullptr);
     GG_CHECK_EQ(file(s)->hunks.size(), static_cast<size_t>(3));
-    ctx->ItemClick("//Diff/Compare with HEAD##diff_vs_head");
+    // The working tree, from the field's menu: HEAD's content plus a local edit.
+    s.write(r.path, "code.cpp", s.read(r.path, "code.cpp") + "local\n");
+    s.contextMenu("//Diff/##diff_compare_with", "Work Tree");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::WorktreeCommit && !d->files.empty();
+    }));
+    GG_REQUIRE(file(s) != nullptr);
+    // "local" is only in the working tree, the old side: a removed line.
+    bool localRemoved = false;
+    for (const auto& h : file(s)->hunks)
+        for (const auto& l : h.lines)
+            localRemoved = localRemoved || (l.origin == '-' && l.text == "local");
+    GG_CHECK(localRemoved);
+    s.contextMenu("//Diff/##diff_compare_with", "Clear");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::Commit;
+    }));
+    // The menu's HEAD: as typed.
+    s.contextMenu("//Diff/##diff_compare_with", "HEAD");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.against == "HEAD" && file(s)
+            && file(s)->hunks.size() == 3;
+    }));
+    s.contextMenu("//Diff/##diff_compare_with", "Clear");
+    s.git(r.path, {"checkout", "--", "code.cpp"});
     // Large diff: capped, then loaded in full.
     showFile(s, r.change, "big.txt");
     GG_REQUIRE(file(s) != nullptr);

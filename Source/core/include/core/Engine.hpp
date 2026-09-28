@@ -140,6 +140,15 @@ struct ConflictsEvent {
     std::vector<Oid> scanned;
 };
 
+// The tags on one remote (git ls-remote --tags), or why they could not be read.
+struct RemoteTagsEvent {
+    RequestId request = 0;
+    std::string remote;
+    bool ok = false;
+    std::vector<std::string> tags; // names without refs/tags/
+    std::string error;
+};
+
 struct ConfigEvent {
     RequestId request = 0;
     // key → value per scope ("user", "repository", "worktree", "effective").
@@ -158,7 +167,8 @@ struct RebasePreviewEvent {
 
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
-    MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent, RebasePreviewEvent>;
+    MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent, RebasePreviewEvent,
+    RemoteTagsEvent>;
 
 class Engine;
 
@@ -221,8 +231,8 @@ struct Activity {
     std::chrono::steady_clock::time_point started;
 };
 
-enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5 };
-constexpr int kQueueCount = 6;
+enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5, Remote = 6 };
+constexpr int kQueueCount = 7;
 
 class Worker;
 class Watcher;
@@ -260,6 +270,9 @@ public:
     RequestId readOperations();
     RequestId scanConflicts(std::vector<Oid> commits);
     RequestId readConfig(std::vector<std::string> keys);
+    // The tags on each remote, one RemoteTagsEvent per remote. Never asks for credentials (a remote
+    // that needs them reports an error); on its own queue so a slow remote holds up nothing else.
+    RequestId readRemoteTags(std::vector<std::string> remotes);
     RequestId readHooksStatus();
     // The result of an interactive rebase todo, computed in memory (RebasePreviewEvent; nothing
     // is written). A newer request cancels the older one.

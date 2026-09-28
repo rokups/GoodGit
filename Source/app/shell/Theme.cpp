@@ -2,6 +2,9 @@
 
 #include <imgui_internal.h>
 
+#include <algorithm>
+#include <cmath>
+
 extern "C" {
 extern const unsigned char ggui_font_material_symbols[];
 unsigned long long ggui_font_material_symbols_size_value(void);
@@ -41,7 +44,45 @@ ImFont* addFont(const unsigned char* data, unsigned long long size, const char* 
 
 ImU32 rgb(int r, int g, int b, int a = 255) { return IM_COL32(r, g, b, a); }
 
+float luminance(ImU32 c)
+{
+    auto channel = [](unsigned v) {
+        const float s = static_cast<float>(v) / 255.0f;
+        return s <= 0.03928f ? s / 12.92f : std::pow((s + 0.055f) / 1.055f, 2.4f);
+    };
+    return 0.2126f * channel((c >> IM_COL32_R_SHIFT) & 0xFF) + 0.7152f * channel((c >> IM_COL32_G_SHIFT) & 0xFF)
+        + 0.0722f * channel((c >> IM_COL32_B_SHIFT) & 0xFF);
+}
+
+// `over` composited on the opaque `under`.
+ImU32 over(ImU32 top, ImU32 under)
+{
+    const ImVec4 t = ImGui::ColorConvertU32ToFloat4(top);
+    const ImVec4 u = ImGui::ColorConvertU32ToFloat4(under);
+    return ImGui::ColorConvertFloat4ToU32(ImVec4(t.x * t.w + u.x * (1 - t.w), t.y * t.w + u.y * (1 - t.w),
+        t.z * t.w + u.z * (1 - t.w), 1.0f));
+}
+
 } // namespace
+
+float contrastRatio(ImU32 a, ImU32 b)
+{
+    const float la = luminance(a), lb = luminance(b);
+    return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+
+ImU32 readableOn(ImU32 fg, ImU32 bg, float minRatio)
+{
+    const ImVec4 target = luminance(bg) < 0.18f ? ImVec4(1, 1, 1, 1) : ImVec4(0, 0, 0, 1);
+    const ImVec4 from = ImGui::ColorConvertU32ToFloat4(fg);
+    ImU32 c = fg;
+    for (int step = 1; step <= 20 && contrastRatio(c, bg) < minRatio; ++step) {
+        const float t = static_cast<float>(step) / 20.0f;
+        c = ImGui::ColorConvertFloat4ToU32(ImVec4(from.x + (target.x - from.x) * t, from.y + (target.y - from.y) * t,
+            from.z + (target.z - from.z) * t, from.w));
+    }
+    return c;
+}
 
 ThemeManager& theme()
 {
@@ -139,6 +180,35 @@ void ThemeManager::apply(Theme t, float scale)
         p.unstaged = rgb(170, 110, 0);
         p.untracked = rgb(110, 110, 110);
     }
+    p.branchText = p.branch;
+    p.branchCurrentText = p.branchCurrent;
+    p.remoteText = p.remote;
+    p.tagText = p.tag;
+    p.errorText = p.conflict;
+
+    // Readable text (UF-50): every colour drawn as text keeps its contrast against the backgrounds
+    // text sits on (windows, and fields and table rows over them).
+    const ImU32 window = ImGui::GetColorU32(ImGuiCol_WindowBg, 1.0f);
+    const ImU32 backgrounds[] = {window, over(ImGui::GetColorU32(ImGuiCol_FrameBg), window),
+        over(ImGui::GetColorU32(ImGuiCol_TableRowBgAlt), window), over(ImGui::GetColorU32(ImGuiCol_Header), window),
+        over(ImGui::GetColorU32(ImGuiCol_PopupBg), window)};
+    auto readable = [&](ImU32& c, float ratio) {
+        for (int pass = 0; pass < 2; ++pass)
+            for (ImU32 bg : backgrounds)
+                c = readableOn(c, bg, ratio);
+    };
+    for (ImU32* c : {&p.branchText, &p.branchCurrentText, &p.remoteText, &p.tagText, &p.errorText, &p.unpublished,
+             &p.conflict, &p.added, &p.removed, &p.hunkHeader, &p.warning, &p.staged, &p.unstaged})
+        readable(*c, kTextContrast);
+    for (ImU32* c : {&p.lineNumber, &p.dim, &p.untracked})
+        readable(*c, kDimContrast);
+    // Badge fills against their text.
+    for (ImU32* c : {&p.branch, &p.branchCurrent, &p.remote, &p.tag, &p.head, &p.worktree, &p.stash})
+        *c = readableOn(*c, p.badgeText, kTextContrast);
+    ImGuiStyle& live = ImGui::GetStyle();
+    ImU32 disabled = ImGui::ColorConvertFloat4ToU32(live.Colors[ImGuiCol_TextDisabled]);
+    readable(disabled, kDimContrast);
+    live.Colors[ImGuiCol_TextDisabled] = ImGui::ColorConvertU32ToFloat4(disabled);
 }
 
 } // namespace ggui

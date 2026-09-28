@@ -86,7 +86,8 @@ GG_TEST("changes", "working tree groups: staged, unstaged, untracked, conflicted
     GG_CHECK(s.itemText(fileRef(s, "Conflicted", "f.txt").c_str()).rfind("U  f.txt", 0) == 0);
 }
 
-GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES", "CHG-FILTER", "CHG-COMPARE-HEAD", "CHG-HEADER-WT")
+GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES", "CHG-FILTER", "CHG-COMPARE-HEAD",
+    "CHG-COMPARE-WITH", "CHG-HEADER-WT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "changed\n");
@@ -106,7 +107,7 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES
     // Compare an older commit with HEAD: everything that differs between them.
     selectCommit(s, s.revParse(repo, "HEAD~3"));
     GG_CHECK(paths(s, FileGroup::Commit) == (V{"f3.txt"}));
-    ctx->ItemClick("//Changes/Compare with HEAD##compare_head");
+    ctx->ItemInputValue("//Changes/##compare_with", "HEAD");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f1.txt", "f4.txt", "f5.txt", "sub/x.txt"}); }));
     // A file of that comparison: its diff is HEAD against the commit, and plain text has no highlighting.
     ctx->ItemClick(fileRef(s, nullptr, "f4.txt").c_str());
@@ -115,16 +116,38 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES
         return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.b.hex() == s.revParse(repo, "HEAD~3");
     }));
     GG_CHECK_STR_EQ(s.session()->diff().languageName(), "None");
-    ctx->ItemClick("//Changes/Compare with HEAD##compare_head");
+    // The working tree ("Work Tree" in any case, spaces around): a local edit to f2.txt joins in.
+    s.write(repo, "f2.txt", "edited\n");
+    ctx->ItemInputValue("//Changes/##compare_with", "  work TREE ");
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f1.txt", "f2.txt", "f4.txt", "f5.txt", "sub/x.txt"}); }));
+    s.git(repo, {"checkout", "--", "f2.txt"});
+    // The field's menu fills in HEAD.
+    s.contextMenu("//Changes/##compare_with", "HEAD");
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f1.txt", "f4.txt", "f5.txt", "sub/x.txt"}); }));
+    // An unknown revision: said so, no files.
+    ctx->ItemInputValue("//Changes/##compare_with", "no-such-rev");
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//Changes/###compare_error"); }));
+    GG_CHECK_STR_EQ(s.itemText("//Changes/###compare_error"), "Unknown revision: no-such-rev");
+    GG_CHECK(paths(s, FileGroup::Commit).empty());
+    // Empty: the commit's own changes again.
+    ctx->ItemInputValue("//Changes/##compare_with", "");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
+    GG_CHECK(!s.itemExists("//Changes/###compare_error"));
+    // The menu's Work Tree, then Clear.
+    s.write(repo, "f2.txt", "edited again\n");
+    s.contextMenu("//Changes/##compare_with", "Work Tree");
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f1.txt", "f2.txt", "f4.txt", "f5.txt", "sub/x.txt"}); }));
+    s.contextMenu("//Changes/##compare_with", "Clear");
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
+    s.git(repo, {"checkout", "--", "f2.txt"});
     GG_CHECK(s.itemText("//Changes/###changes_title").rfind(s.gitOut(repo, {"rev-parse", "--short", "HEAD~3"}) + " ", 0) == 0);
     // The working tree: the zero ID before "Working tree"; Compare with HEAD disabled, in both panels.
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::WorkingTree; }));
     const std::string zeros(s.gitOut(repo, {"rev-parse", "--short", "HEAD"}).size(), '0');
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), zeros + " Working tree");
-    GG_CHECK(ctx->ItemInfo("//Changes/Compare with HEAD##compare_head").ItemFlags & ImGuiItemFlags_Disabled);
-    GG_CHECK(ctx->ItemInfo("//Diff/Compare with HEAD##diff_vs_head").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_CHECK(ctx->ItemInfo("//Changes/##compare_with").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);
 }
 
 GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation", "CHG-MULTISELECT-CTRL",

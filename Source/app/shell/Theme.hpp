@@ -9,15 +9,19 @@
 
 namespace ggui {
 
+// Colours used as text are adjusted when a theme is applied so they keep a readable contrast
+// against the window background (UF-50); badge fills keep one against badgeText.
 struct Palette {
     ImU32 lanes[8];
-    ImU32 branch, branchCurrent, remote, tag, head, worktree, stash;
+    ImU32 branch, branchCurrent, remote, tag, head, worktree, stash; // badge fills
+    ImU32 branchText, branchCurrentText, remoteText, tagText;        // the same, as text colours
     ImU32 badgeText;
     ImU32 unpublished;      // text colour of commits not on any remote
     ImU32 conflict;
     ImU32 added, removed, addedBg, removedBg, hunkHeader, lineNumber;
     ImU32 dim;
-    ImU32 error, errorBg, warning;
+    ImU32 error, errorBg, warning;  // error: text on errorBg
+    ImU32 errorText;                 // an error as text on the panel
     ImU32 selection;
     ImU32 staged, unstaged, untracked;
 };
@@ -44,5 +48,14 @@ private:
 };
 
 ThemeManager& theme();
+
+// WCAG contrast ratio of two colours (1 to 21; alpha ignored).
+float contrastRatio(ImU32 a, ImU32 b);
+// `fg` moved towards white or black (whichever `bg` is further from) until its contrast with `bg`
+// reaches `minRatio`.
+ImU32 readableOn(ImU32 fg, ImU32 bg, float minRatio);
+// Minimum contrasts: body text and coloured text; dimmed/disabled text.
+constexpr float kTextContrast = 4.5f;
+constexpr float kDimContrast = 3.5f;
 
 } // namespace ggui

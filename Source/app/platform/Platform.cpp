@@ -106,6 +106,19 @@ bool Platform::pollEvents()
             m_quit = true;
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(m_window))
             m_quit = true;
+        // Files and folders dropped on the window: one drop is BEGIN, a FILE per path, COMPLETE.
+        if (event.type == SDL_EVENT_DROP_BEGIN) {
+            m_inDrop = true;
+            m_dropping.clear();
+        } else if (event.type == SDL_EVENT_DROP_FILE && event.drop.data) {
+            m_dropping.emplace_back(event.drop.data);
+            if (!m_inDrop)
+                m_drops.push_back(std::exchange(m_dropping, {}));
+        } else if (event.type == SDL_EVENT_DROP_COMPLETE) {
+            if (!m_dropping.empty())
+                m_drops.push_back(std::exchange(m_dropping, {}));
+            m_inDrop = false;
+        }
     }
     m_minimized = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) != 0;
     return !m_quit;

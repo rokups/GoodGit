@@ -145,6 +145,13 @@ void Session::handle(core::Event& event)
                 for (auto& c : e.commits)
                     m_conflicts[c.commit] = std::move(c.files);
                 m_history->onConflicts(e);
+            } else if constexpr (std::is_same_v<T, core::RemoteTagsEvent>) {
+                if (e.request == m_remoteTagsRequest) {
+                    auto& r = m_remoteTags[e.remote];
+                    r.ok = e.ok;
+                    r.tags = std::set<std::string>(e.tags.begin(), e.tags.end());
+                    r.error = e.error;
+                }
             } else if constexpr (std::is_same_v<T, core::ConfigEvent>) {
                 m_config = std::move(e.values);
             } else if constexpr (std::is_same_v<T, core::HooksEvent>) {
@@ -226,6 +233,22 @@ const ConflictList* Session::conflictsOf(const core::Oid& id) const
 }
 
 void Session::requestHooksStatus() { m_engine->readHooksStatus(); }
+
+void Session::requestRemoteTagsIfStale()
+{
+    std::vector<std::string> remotes;
+    for (const auto& r : m_snapshot->remotes)
+        remotes.push_back(r.name);
+    if (!m_remoteTagsStale && remotes == m_remoteTagsFor)
+        return;
+    m_remoteTagsStale = false;
+    m_remoteTagsFor = remotes;
+    // Remotes that are gone lose their list; the others keep theirs until the new one arrives.
+    std::erase_if(m_remoteTags, [&](const auto& kv) {
+        return std::find(remotes.begin(), remotes.end(), kv.first) == remotes.end();
+    });
+    m_remoteTagsRequest = remotes.empty() ? 0 : m_engine->readRemoteTags(remotes);
+}
 
 void Session::requestConfig()
 {

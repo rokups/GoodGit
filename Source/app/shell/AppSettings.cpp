@@ -73,7 +73,7 @@ void App::drawGitConfigSettings(Session& s)
         return k == it->second.end() ? std::string() : k->second;
     };
     // Sets (or, for empty values, unsets) keys at one scope in one mutation.
-    auto setConfig = [&s](const char* flag, std::vector<std::pair<std::string, std::string>> values) {
+    auto setConfig = [this, &s](const char* flag, std::vector<std::pair<std::string, std::string>> values) {
         const std::string f = flag;
         s.actions().run("set " + values.front().first, [f, values](core::MutationContext& ctx) {
             for (const auto& [k, v] : values) {
@@ -82,9 +82,11 @@ void App::drawGitConfigSettings(Session& s)
                 else
                     ctx.git({"config", f, k, v});
             }
-        }, [&s](const core::MutationFinishedEvent& e) {
-            if (e.outcome != core::Outcome::Ok)
+        }, [this, &s](const core::MutationFinishedEvent& e) {
+            if (e.outcome != core::Outcome::Ok) {
                 s.app().showError(e.label, e.message);
+                m_worktreeConfigWanted.reset(); // the checkbox shows the configuration again
+            }
             s.requestConfig();
         }, false, false);
     };
@@ -93,29 +95,38 @@ void App::drawGitConfigSettings(Session& s)
     ImGui::SameLine();
     helpMarker("Each tab edits one scope. A value set in a later tab overrides the earlier ones for this "
                "repository; an empty field inherits (shown as a hint).");
+    // Per-worktree settings (extensions.worktreeConfig): the Worktree tab exists only while on;
+    // without it `git config --worktree` would write the repository's config.
+    const bool configured = value("effective", "extensions.worktreeConfig") == "true";
+    if (m_worktreeConfigWanted == configured)
+        m_worktreeConfigWanted.reset();
+    bool worktreeConfig = m_worktreeConfigWanted.value_or(configured);
+    ImGui::BeginDisabled(!free);
+    if (ImGui::Checkbox("Worktree settings##worktree_config", &worktreeConfig)) {
+        m_worktreeConfigWanted = worktreeConfig;
+        setConfig("--local", {{"extensions.worktreeConfig", worktreeConfig ? "true" : ""}});
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Sets extensions.worktreeConfig: each worktree of this repository can then override\n"
+                          "settings in its own config (the Worktree tab). Off: one config for all worktrees.");
     if (!ImGui::BeginTabBar("##config_scope"))
         return;
     for (size_t si = 0; si < std::size(kScopes); ++si) {
         const Scope& sc = kScopes[si];
+        if (std::string(sc.scope) == "worktree" && !worktreeConfig)
+            continue;
         if (!ImGui::BeginTabItem(sc.label))
             continue;
-        // Without extensions.worktreeConfig, `git config --worktree` writes the repository's config.
-        const bool worktreeOff = std::string(sc.scope) == "worktree" && value("effective", "extensions.worktreeConfig") != "true";
-        if (worktreeOff) {
-            ImGui::TextWrapped("Worktree settings are off in this repository: git keeps one config for all its "
-                               "worktrees until extensions.worktreeConfig is set.");
-            ImGui::BeginDisabled(!free);
-            if (ImGui::Button("Enable worktree settings##enable_worktree_config"))
-                setConfig("--local", {{"extensions.worktreeConfig", "true"}});
-            ImGui::EndDisabled();
-            ImGui::Separator();
-        }
-        const bool editable = free && !worktreeOff;
-        // The value this scope would inherit: the nearest lower-precedence scope that sets it.
+        const bool editable = free;
+        // The value this scope would inherit: the nearest lower-precedence scope that sets it, down
+        // to the system configuration (read-only here).
         auto inherited = [&](const std::string& key) -> std::pair<std::string, const char*> {
             for (size_t k = si; k-- > 0;)
                 if (auto v = value(kScopes[k].scope, key); !v.empty())
                     return {v, kScopes[k].label};
+            if (auto v = value("system", key); !v.empty())
+                return {v, "System"};
             return {std::string(), nullptr};
         };
         auto inheritButton = [&](const char* id, const std::string& lower, const char* from) {
@@ -165,6 +176,11 @@ void App::drawGitConfigSettings(Session& s)
             if (int m = pullMethod(value(kScopes[k].scope, "pull.rebase"), value(kScopes[k].scope, "pull.ff")); m != 0) {
                 lowerMethod = m;
                 lowerFrom = kScopes[k].label;
+            }
+        if (!lowerFrom)
+            if (int m = pullMethod(value("system", "pull.rebase"), value("system", "pull.ff")); m != 0) {
+                lowerMethod = m;
+                lowerFrom = "System";
             }
         std::string preview = kPullMethods[method];
         if (method == 0)
@@ -271,12 +287,15 @@ void App::drawSettingsWindow()
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Git")) {
-            const char* staged[] = {"Ask", "Stage all tracked changes", "Stage the selected files"};
+            const char* staged[] = {"Ask in the Commit dialog", "Stage all tracked changes", "Stage the selected files"};
             int ns = static_cast<int>(d.nothingStaged);
-            if (ImGui::Combo("When nothing is staged##nothing_staged", &ns, staged, 3)) {
+            if (ImGui::Combo("Commit with nothing staged##nothing_staged", &ns, staged, 3)) {
                 d.nothingStaged = static_cast<NothingStaged>(ns);
                 m_settings.save();
             }
+            ImGui::SameLine();
+            helpMarker("What Commit does when no changes are staged: ask in the Commit dialog, stage every change to "
+                       "tracked files first (like git commit -a), or stage the files selected in Changes first.");
             if (ImGui::Checkbox("Expand to index stages on checkout##expand_stages", &d.expandConflictStages))
                 m_settings.save();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))

@@ -68,6 +68,9 @@ public:
     // ---- actions (menus, toolbar, Welcome) --------------------------------------------------
     // Checks git first (G2), then opens.
     void openRepository(const std::filesystem::path& path);
+    // Folders dropped on the window: every repository among them joins the recent list, the
+    // first folder opens (UF-48, UF-49). Files are ignored.
+    void openDropped(const std::vector<std::string>& paths);
     void closeRepository();
     void pickAndOpenRepository();
     void initializeRepository();
@@ -183,6 +186,7 @@ private:
     // last synchronised from (a change made elsewhere replaces the text unless it is being edited).
     std::map<std::string, std::string> m_configEdit;
     std::map<std::string, std::string> m_configSeen;
+    std::optional<bool> m_worktreeConfigWanted; // "Worktree settings" as clicked, until the config shows it
     bool m_configLoaded = false;
     void drawGitConfigSettings(Session& s);
 };

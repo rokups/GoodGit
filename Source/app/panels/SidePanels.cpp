@@ -320,7 +320,7 @@ void BranchesPanel::draw(bool* open)
         const std::string full = "refs/heads/" + b.name;
         ImGui::PushOverrideID(windowId);
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
-            b.isHead ? p.branchCurrent : ImGui::GetColorU32(ImGuiCol_Text), true);
+            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true);
         if (shortName != b.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             ImGui::SetTooltip("%s", b.name.c_str());
         if (events.toggle)
@@ -360,7 +360,7 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PushID(("remote_group_" + remote).c_str());
                 ImGui::PushID(remote.c_str());
                 const RowEvents events = visibilityRow("rbranch_" + r.name, shortName == r.name.substr(remote.size() + 1) ? r.name : shortName,
-                    history.refVisible(full), false, p.remote, false);
+                    history.refVisible(full), false, p.remoteText, false);
                 if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
                 if (ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r.name)).c_str())) {
@@ -405,11 +405,50 @@ void TagsPanel::draw(bool* open)
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
     auto& history = m_session.history();
+    // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
+    m_session.requestRemoteTagsIfStale();
+    const auto& remoteTags = m_session.remoteTags();
+    auto& actions = m_session.actions();
+    const bool free = actions.busy().empty();
+    // Delete: one item for a tag only here; a submenu (Local, then each remote that has it) when a
+    // remote has it too. A remote whose tags are still being read or could not be read is offered
+    // with a note (the tag may be there).
+    auto deleteItems = [&](const std::string& name, bool local) {
+        std::vector<std::string> remotes; // menu labels, the remote's name first
+        std::vector<std::string> names;
+        for (const auto& r : m_snapshot->remotes) {
+            auto it = remoteTags.find(r.name);
+            if (it == remoteTags.end()) {
+                remotes.push_back(r.name + " (checking...)");
+                names.push_back(r.name);
+            } else if (!it->second.ok) {
+                remotes.push_back(r.name + " (not checked)");
+                names.push_back(r.name);
+            } else if (it->second.tags.count(name)) {
+                remotes.push_back(r.name);
+                names.push_back(r.name);
+            }
+        }
+        if (local && remotes.empty()) {
+            if (ImGui::MenuItem("Delete", nullptr, false, free))
+                actions.deleteTag(name);
+            return;
+        }
+        if (!ImGui::BeginMenu("Delete", free))
+            return;
+        if (ImGui::MenuItem("Local", nullptr, false, local))
+            actions.deleteTag(name);
+        ImGui::Separator();
+        for (size_t i = 0; i < remotes.size(); ++i)
+            if (ImGui::MenuItem(remotes[i].c_str()))
+                actions.deleteRemoteTag(names[i], name);
+        ImGui::EndMenu();
+    };
     for (const auto& t : m_snapshot->tags) {
         if (!containsNoCase(t.name, m_filter))
             continue;
         const std::string full = "refs/tags/" + t.name;
-        if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tag, false).toggle)
+        if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tagText, false).toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty())
             ImGui::SetTooltip("%s", t.message.c_str());
@@ -419,24 +458,44 @@ void TagsPanel::draw(bool* open)
             if (ImGui::MenuItem("Copy name"))
                 ImGui::SetClipboardText(t.name.c_str());
             ImGui::Separator();
-            auto& actions = m_session.actions();
-            const bool free = actions.busy().empty();
-            if (ImGui::MenuItem("Delete", nullptr, false, free))
-                actions.deleteTag(t.name);
+            deleteItems(t.name, true);
             if (ImGui::BeginMenu("Push tag", free && !m_snapshot->remotes.empty())) {
                 for (const auto& r : m_snapshot->remotes)
                     if (ImGui::MenuItem(r.name.c_str()))
                         actions.pushTag(r.name, t.name);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Delete on remote", free && !m_snapshot->remotes.empty())) {
-                for (const auto& r : m_snapshot->remotes)
-                    if (ImGui::MenuItem(r.name.c_str()))
-                        actions.deleteRemoteTag(r.name, t.name);
-                ImGui::EndMenu();
-            }
             ImGui::EndPopup();
         }
+    }
+    // Tags only on remotes: listed dimmed, with where they are.
+    std::map<std::string, std::vector<std::string>> remoteOnly;
+    for (const auto& [remote, r] : remoteTags)
+        for (const auto& name : r.tags)
+            if (containsNoCase(name, m_filter)
+                && std::none_of(m_snapshot->tags.begin(), m_snapshot->tags.end(), [&](const auto& t) { return t.name == name; }))
+                remoteOnly[name].push_back(remote);
+    for (const auto& [name, remotes] : remoteOnly) {
+        std::string where;
+        for (const auto& r : remotes)
+            where += (where.empty() ? "" : ", ") + r;
+        const std::string id = "rtag_" + rowId(name);
+        ImGui::PushID(id.c_str());
+        ImGui::TextDisabled(ICON_MS_CLOUD);
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        plainText((name + "  (" + where + ")###" + id).c_str());
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("Only on %s: fetch to get it here", where.c_str());
+        if (ImGui::BeginPopupContextItem("##rtag_menu")) {
+            if (ImGui::MenuItem("Copy name"))
+                ImGui::SetClipboardText(name.c_str());
+            ImGui::Separator();
+            deleteItems(name, false);
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
     }
     ImGui::End();
 }

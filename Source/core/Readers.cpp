@@ -852,11 +852,39 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         b = treeOf(repo, q.a);
         check(git_diff_tree_to_tree(&raw, repo, a.get(), b.get(), &opts), "git_diff_tree_to_tree");
         break;
-    case DiffKind::Commits:
-        a = treeOf(repo, q.a);
+    case DiffKind::Commits: {
+        Oid old = q.a;
+        if (!q.against.empty()) {
+            const auto resolved = gg::git2::resolve(repo, q.against);
+            if (!resolved) {
+                result->error = "Unknown revision: " + q.against;
+                return result;
+            }
+            old = toOid(*resolved);
+            try {
+                a = treeOf(repo, old);
+            } catch (const gg::git2::Error&) {
+                result->error = "Not a commit: " + q.against;
+                return result;
+            }
+        } else {
+            a = treeOf(repo, old);
+        }
         b = treeOf(repo, q.b);
         check(git_diff_tree_to_tree(&raw, repo, a.get(), b.get(), &opts), "git_diff_tree_to_tree");
         break;
+    }
+    case DiffKind::WorktreeCommit: {
+        // libgit2 diffs a tree against the working tree; reversed, the working tree is the old side.
+        b = treeOf(repo, q.b);
+        git_index* ri = nullptr;
+        check(git_repository_index(&ri, repo), "git_repository_index");
+        index.reset(ri);
+        git_index_read(index.get(), 0);
+        opts.flags |= GIT_DIFF_REVERSE;
+        check(git_diff_tree_to_workdir_with_index(&raw, repo, b.get(), &opts), "git_diff_tree_to_workdir_with_index");
+        break;
+    }
     case DiffKind::Staged: {
         git_oid head;
         if (git_reference_name_to_id(&head, repo, "HEAD") == 0)

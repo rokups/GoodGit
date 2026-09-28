@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-4)
 
-Covered: 668/668 required IDs; 668/668 of the whole catalogue.
+Covered: 679/679 required IDs; 679/679 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -11,6 +11,8 @@ Covered: 668/668 required IDs; 668/668 of the whole catalogue.
 | HARNESS-FAILURE-OUTPUT | 0 | §8.3 | failing test writes screenshot, app log and git command log | harness/failure output: screenshot, app log, git command log |
 | APP-WELCOME-OPEN | 1 | §4.1 | Welcome: Open repository… button opens the picker | shell/open with the picker: Welcome, menu, Ctrl+O, toolbar |
 | APP-WELCOME-OPEN-PATH | 1 | §4.1 | Welcome: open a typed path with the keyboard | setup/git versions ggui reads: newer major, vendor suffix, no number; a typed path with a trailing slash; copying a notice<br>shell/open by typed path, default layout, close from the menu |
+| APP-DROP-FOLDER | 1 | §4.1 | A folder dropped on the window opens as a repository (UF-48) | shell/folders dropped on the window: the first opens, the repositories among them join the recent list |
+| APP-DROP-FOLDERS | 1 | §4.1 | Several folders dropped: the repositories among them join the recent list, the first opens (UF-49) | shell/folders dropped on the window: the first opens, the repositories among them join the recent list |
 | APP-WELCOME-RECENT-OPEN | 1 | §4.1 | Welcome: click a recent entry opens it | shell/recent repositories: Welcome list, Recent menu, switcher |
 | APP-WELCOME-RECENT-DELETE | 1 | §4.1 | Welcome: Delete key forgets a recent entry | shell/recent repositories: Welcome list, Recent menu, switcher |
 | APP-WELCOME-RECENT-INFO | 1 | §4.1 | Welcome: recent entries show branch, upstream, ahead/behind | shell/recent repositories whose state changed: upstream gone, unborn branch with an upstream, no longer a repository<br>shell/recent repositories: Welcome list, Recent menu, switcher |
@@ -75,6 +77,7 @@ Covered: 668/668 required IDs; 668/668 of the whole catalogue.
 | HIST-LOAD-FAST | 1 | §4.2 | First history rows of a large repository appear quickly | history/first rows of a large history appear quickly |
 | UI-TEXT-BASELINE | 1 | §6 | Text in one row shares a baseline (labels, buttons, badges, icons) | visual/text shares a baseline across widgets on one line |
 | UI-ICON-ALIGN | 1 | §6 | Icon glyphs are vertically centred on the text they accompany | visual/icon glyphs are vertically centred on the text |
+| UI-CONTRAST | 1 | §6 | Text colours keep a readable contrast against their backgrounds in both themes; badge fills against their text (UF-50) | visual/readable colours: text keeps its contrast in the dark and the light theme |
 | LAYOUT-HIDDEN-PANELS | 1 | §4.1 | Reflog, Operations and Blame are hidden in the default layout | shell/open by typed path, default layout, close from the menu |
 | LAYOUT-TAB-ORDER | 1 | §4.1 | Default layout: Remotes, Stashes, Worktrees tabs in that order (UF-42) | shell/open by typed path, default layout, close from the menu |
 | DIFF-SELECT-TEXT | 1 | §4.5 | Diff text is selectable (mouse) in unified and side-by-side views | diff/text is selectable with the mouse in both views |
@@ -106,7 +109,8 @@ Covered: 668/668 required IDs; 668/668 of the whole catalogue.
 | CHG-KEY-NAV | 1 | §4.4 | Keyboard navigation | changes/multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation |
 | CHG-STATUS-ICONS | 1 | §4.4 | Status icons | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-RENAMES | 1 | §4.4 | Renames and copies | changes/working tree groups: staged, unstaged, untracked, conflicted |
-| CHG-COMPARE-HEAD | 1 | §4.4 | Compare with HEAD toggle | changes/commit files, filter, compare with HEAD, header |
+| CHG-COMPARE-HEAD | 1 | §4.4 | Compare a commit with HEAD | changes/commit files, filter, compare with HEAD, header |
+| CHG-COMPARE-WITH | 1 | §4.4 | "Compare with" field: HEAD, a revision or Work Tree (any case, trimmed); its menu fills in HEAD or Work Tree; an unknown revision is reported (UF-41) | changes/commit files, filter, compare with HEAD, header |
 | CHG-HEADER-WT | 1 | §4.4 | Working tree header shows the zero ID; Compare with HEAD disabled (UF-29) | changes/commit files, filter, compare with HEAD, header |
 | CHG-GROUPS | 1 | §4.4 | Staged/Unstaged/Untracked/Conflicted groups | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-SCANNING | 1 | §3.1 | Partial status marked scanning… | engine/partial status on a huge worktree is marked scanning |
@@ -129,19 +133,21 @@ Covered: 668/668 required IDs; 668/668 of the whole catalogue.
 | DIFF-UNIFIED | 1 | §4.5 | Unified view | diff/unified view, context lines, expandable context |
 | DIFF-SIDE-BY-SIDE | 1 | §4.5 | Side-by-side view | diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule<br>diff/side-by-side view with syntax highlighting |
 | DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines (UF-11) | diff/side-by-side view with syntax highlighting |
-| DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all | diff/whitespace modes |
+| DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all, each labelled "Whitespace: ..." (UF-40) | diff/whitespace modes |
 | DIFF-CONTEXT | 1 | §4.5 | Context-line count | diff/unified view, context lines, expandable context |
 | DIFF-EXPAND | 1 | §4.5 | Expand context | diff/unified view, context lines, expandable context |
+| DIFF-EXPAND-SIDES | 1 | §4.5 | A gap's expander has two halves: more lines below the hunk above, or above the hunk below; the first and last gap only the one that applies (UF-39) | diff/unified view, context lines, expandable context |
 | DIFF-EXPAND-SHIFT | 1 | §4.5 | Shift reveals the whole section | diff/unified view, context lines, expandable context |
 | DIFF-SYNTAX | 1 | §4.5 | Syntax highlighting | diff/side-by-side view with syntax highlighting |
 | DIFF-BINARY | 1 | §4.5 | Binary placeholder | diff/binary, image, submodule and mode-change placeholders<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule |
 | DIFF-IMAGE | 1 | §4.5 | Image placeholder | diff/binary, image, submodule and mode-change placeholders<br>diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit<br>diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file |
 | DIFF-SUBMODULE | 1 | §4.5 | Submodule placeholder | diff/binary, image, submodule and mode-change placeholders<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule |
 | DIFF-MODE-CHANGE | 1 | §4.5 | Mode-change line | diff/binary, image, submodule and mode-change placeholders |
-| DIFF-VS-HEAD | 1 | §4.5 | Compare with HEAD (this file), on the diff button row (UF-15) | diff/renames, compare this file with HEAD, large diffs |
+| DIFF-VS-HEAD | 1 | §4.5 | Compare this file with HEAD, on the diff button row (UF-15) | diff/renames, compare this file with HEAD or the working tree, large diffs |
+| DIFF-COMPARE-WITH | 1 | §4.5 | "Compare with" for this file: a revision or Work Tree, from the field or its menu; Clear (UF-41) | diff/renames, compare this file with HEAD or the working tree, large diffs |
 | DIFF-COPY-KEY | 1 | §4.5 | Ctrl+C copies the selection | diff/select lines, Ctrl+C and the context menu |
-| DIFF-LOAD-FULL | 1 | §4.5 | Load full diff for capped files | diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file<br>diff/renames, compare this file with HEAD, large diffs |
-| DIFF-RENAME | 1 | §4.5 | Renames and copies in diffs | diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file<br>diff/renames, compare this file with HEAD, large diffs |
+| DIFF-LOAD-FULL | 1 | §4.5 | Load full diff for capped files | diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file<br>diff/renames, compare this file with HEAD or the working tree, large diffs |
+| DIFF-RENAME | 1 | §4.5 | Renames and copies in diffs | diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file<br>diff/renames, compare this file with HEAD or the working tree, large diffs |
 | DIFF-CTX-COPY | 1 | §4.5 | Context: Copy | diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit<br>diff/select lines, Ctrl+C and the context menu |
 | DIFF-CTX-BLAME | 1 | §4.5 | Context: Blame file | diff/select lines, Ctrl+C and the context menu<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule |
 | DIFF-STASH-PARTS | 1 | §4.5 | Stash diff: working tree / index / untracked parts | changes/stash contents: working tree, index and untracked parts |
@@ -258,6 +264,9 @@ Covered: 668/668 required IDs; 668/668 of the whole catalogue.
 | SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-SCOPE-INHERIT | 2 | §4.1 | Settings: Inherit clears an override so the lower-scope value applies again (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-XDG-SYSTEM | 2 | §4.1 | Settings ▸ Git: the User tab reads $XDG_CONFIG_HOME/git/config with ~/.gitconfig; system values show as hints (UF-45) | setup/Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the system config show their values |
+| SET-WORKTREE-TOGGLE | 2 | §4.1 | Settings ▸ Git: "Worktree settings" checkbox sets extensions.worktreeConfig; the Worktree tab exists only while on (UF-46) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-NOTHING-STAGED-LABEL | 2 | §4.1 | Settings ▸ Git: "Commit with nothing staged" with an explanation of its choices (UF-44) | commit/default for nothing staged comes from Settings |
 | SET-COMMIT-ALL-DEFAULT | 2 | §4.1 | Settings: default when nothing is staged | commit/default for nothing staged comes from Settings |
 | SET-HOOKS-TAB | 2 | §4.1 | Settings: Hooks tab install/remove/status | hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab<br>ui/Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off |
 | APP-EXT-EDITOR | 2 | §4.1 | Open file in core.editor | staging/external editor, folder and diff tools |
@@ -356,11 +365,13 @@ Covered: 668/668 required IDs; 668/668 of the whole catalogue.
 | BR-PULL | 2 | §4.7 | Branches: Pull (current branch) | network/pull follows pull.rebase; dropdown overrides; menu and panels |
 | BR-MOVE | 2 | §4.7 | Move branch to the selected commit | refs/move a branch; warning for a branch checked out elsewhere |
 | BR-MOVE-WORKTREE-WARN | 2 | §4.7 | Warn when moving a branch checked out elsewhere | refs/move a branch; warning for a branch checked out elsewhere |
-| TAG-CREATE | 2 | §4.7 | Tags: Create (lightweight) | edit/by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch<br>edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults<br>refs/tags: lightweight, annotated, delete, push, delete on remote |
-| TAG-ANNOTATED | 2 | §4.7 | Tags: Create annotated with message | refs/tags: lightweight, annotated, delete, push, delete on remote |
-| TAG-DELETE | 2 | §4.7 | Tags: Delete | refs/tags: lightweight, annotated, delete, push, delete on remote |
-| TAG-PUSH | 2 | §4.7 | Tags: Push tag | refs/tags: lightweight, annotated, delete, push, delete on remote |
-| TAG-DELETE-REMOTE | 2 | §4.7 | Tags: Delete a remote tag | refs/tags: lightweight, annotated, delete, push, delete on remote |
+| TAG-CREATE | 2 | §4.7 | Tags: Create (lightweight) | edit/by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch<br>edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults<br>refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-ANNOTATED | 2 | §4.7 | Tags: Create annotated with message | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-DELETE | 2 | §4.7 | Tags: Delete | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-PUSH | 2 | §4.7 | Tags: Push tag | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-DELETE-REMOTE | 2 | §4.7 | Tags: Delete a remote tag | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-DELETE-MENU | 2 | §4.7 | Tags: Delete is one item for a tag only here; a submenu (Local, then each remote that has it) otherwise (UF-43) | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-REMOTE-ONLY | 2 | §4.7 | Tags: tags only on a remote are listed (git ls-remote); their Delete ▸ Local is disabled (UF-43) | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
 | REM-ADD | 2 | §4.7 | Remotes: Add remote | edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults<br>refs/remotes: add, edit URL, prune on fetch, delete |
 | REM-DELETE | 2 | §4.7 | Remotes: Delete | refs/remotes: add, edit URL, prune on fetch, delete |
 | REM-EDIT-URL | 2 | §4.7 | Remotes: Edit URL | refs/remotes: add, edit URL, prune on fetch, delete |

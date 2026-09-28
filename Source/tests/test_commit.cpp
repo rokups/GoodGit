@@ -79,7 +79,7 @@ GG_TEST("commit", "nothing staged: stage all tracked or the selected files", "AC
     GG_CHECK(s.gitOut(repo, {"diff", "--name-only"}) == "f4.txt");
 }
 
-GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-ALL-DEFAULT")
+GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-ALL-DEFAULT", "SET-NOTHING-STAGED-LABEL")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "one changed\n");
@@ -87,7 +87,7 @@ GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-
     s.app.openSettings();
     ctx->Yield(2);
     ctx->ItemClick("//Settings/##settings_tabs/Git");
-    s.comboSelect("//Settings/##settings_tabs/Git/When nothing is staged##nothing_staged", "Stage all tracked changes");
+    s.comboSelect("//Settings/##settings_tabs/Git/Commit with nothing staged##nothing_staged", "Stage all tracked changes");
     GG_CHECK(s.app.settings().data().nothingStaged == ggui::NothingStaged::StageAll);
     ctx->WindowClose("//Settings");
     ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
@@ -101,7 +101,7 @@ GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-
     s.app.openSettings();
     ctx->Yield(2);
     ctx->ItemClick("//Settings/##settings_tabs/Git");
-    s.comboSelect("//Settings/##settings_tabs/Git/When nothing is staged##nothing_staged", "Stage the selected files");
+    s.comboSelect("//Settings/##settings_tabs/Git/Commit with nothing staged##nothing_staged", "Stage the selected files");
     ctx->WindowClose("//Settings");
     s.write(repo, "f2.txt", "two changed\n");
     s.write(repo, "f3.txt", "three changed\n");

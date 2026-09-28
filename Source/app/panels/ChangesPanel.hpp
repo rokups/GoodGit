@@ -13,6 +13,22 @@
 namespace ggui {
 
 enum class FileGroup { Commit, Staged, Unstaged, Untracked, Conflicted, StashWorktree, StashIndex, StashUntracked };
+
+// What a commit is compared with ("Compare with" in Changes and Diff, UF-41): nothing (its parent),
+// a revision (HEAD, an ID, a ref), or the working tree.
+struct CompareTarget {
+    enum Kind { None, Rev, WorkTree };
+    Kind kind = None;
+    std::string rev;
+    bool operator==(const CompareTarget&) const = default;
+    // "" = None; "Work Tree" (any case, spaces around) = WorkTree; anything else a revision.
+    static CompareTarget parse(const std::string& text);
+};
+
+// The "Compare with" field: a text input hinted "Compare with" with a menu that fills in HEAD or
+// Work Tree. Returns true when the text should be applied (Enter, leaving the field after an
+// edit, a menu choice).
+bool compareWithField(const char* id, std::string& text);
 const char* groupName(FileGroup g);
 
 struct FileRow {
@@ -47,7 +63,7 @@ public:
     void moveCurrent(int direction);
     const FileRow* current() const;
     const std::vector<FileRow>& rows() const { return m_rows; }
-    bool compareWithHead() const { return m_compareHead; }
+    const CompareTarget& compareTarget() const { return m_compare; }
     const std::set<std::string>& selectedKeys() const { return m_selected; }
     bool scanning() const { return m_scanning; }
     bool everScanned() const { return m_everScanned; }
@@ -75,7 +91,9 @@ private:
     std::string m_current;
     std::string m_anchor;
     std::string m_filter;
-    bool m_compareHead = false;
+    std::string m_compareText;   // the "Compare with" field
+    CompareTarget m_compare;     // applied: the whole commit is compared with it
+    std::string m_filesError;    // the file list could not be read (an unknown revision)
     bool m_loading = false;
     bool m_scanning = false;
     bool m_everScanned = false; // a partial ("scanning…") status was shown
