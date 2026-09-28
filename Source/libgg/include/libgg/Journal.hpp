@@ -49,7 +49,6 @@ struct Operation {
 
     bool isUndo() const { return !undoes.empty() && !redo; }
     bool isRedo() const { return !undoes.empty() && redo; }
-    const RefChange* findRef(const std::string& ref) const;
 };
 
 class Journal {

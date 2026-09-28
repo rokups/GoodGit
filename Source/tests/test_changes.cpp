@@ -108,6 +108,13 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES
     GG_CHECK(paths(s, FileGroup::Commit) == (V{"f3.txt"}));
     ctx->ItemClick("//Changes/Compare with HEAD##compare_head");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f1.txt", "f4.txt", "f5.txt", "sub/x.txt"}); }));
+    // A file of that comparison: its diff is HEAD against the commit, and plain text has no highlighting.
+    ctx->ItemClick(fileRef(s, nullptr, "f4.txt").c_str());
+    GG_CHECK(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.b.hex() == s.revParse(repo, "HEAD~3");
+    }));
+    GG_CHECK_STR_EQ(s.session()->diff().languageName(), "None");
     ctx->ItemClick("//Changes/Compare with HEAD##compare_head");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
     GG_CHECK(s.itemText("//Changes/###changes_title").rfind(s.gitOut(repo, {"rev-parse", "--short", "HEAD~3"}) + " ", 0) == 0);

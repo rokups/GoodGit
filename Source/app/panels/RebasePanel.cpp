@@ -276,7 +276,7 @@ void RebasePanel::onTodoChanged()
 {
     m_options.updateRefs = m_state.updateRefs;
     m_options.autosquash = m_state.autosquash;
-    m_issues = m_state.context ? todo::validate(m_state.todo, *m_state.context) : std::vector<todo::Issue>{};
+    m_issues = todo::validate(m_state.todo, *m_state.context);
     m_engine = m_remaining ? todo::EngineChoice{todo::Engine::Native, "the rest of the rebase in progress"}
                            : todo::chooseEngine(m_state.todo, m_options);
     startPreview();
@@ -510,7 +510,7 @@ std::vector<size_t> RebasePanel::displayOrder() const
 std::string RebasePanel::messageText(size_t row) const
 {
     const auto group = todo::groupAt(m_state.todo, row);
-    if (!group || !m_state.context)
+    if (!group)
         return {};
     return todo::editorText(m_state.todo, *group, *m_state.context);
 }
@@ -522,8 +522,6 @@ bool RebasePanel::canStart(std::string* reason) const
             *reason = why;
         return false;
     };
-    if (!m_state.context)
-        return fail("Reading the commits...");
     if (!m_session.actions().busy().empty())
         return fail(m_session.actions().busyTooltip());
     if (todo::hasErrors(m_issues))
@@ -1062,7 +1060,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     todo::Item& item = m_state.todo.items[row];
     const size_t n = m_session.shortIdLength();
     const auto info = c.commits.find(item.commit);
-    const bool hasInfo = item.isCommit() && info != c.commits.end();
+    const bool hasInfo = item.isCommit(); // every commit of the list is in the context
     const std::string key = item.isCommit() ? item.commit : "row_" + std::to_string(row);
     ImGui::PushID(static_cast<int>(row));
     ImGui::TableNextRow();

@@ -80,7 +80,7 @@ core::DiffQuery DiffPanel::queryFor(const Selection& sel, const FileRow& row, bo
     q.path = row.path;
     switch (row.group) {
     case FileGroup::Commit:
-        if (compareHead && snapshot && !snapshot->head.isNull()) {
+        if (compareHead && !snapshot->head.isNull()) {
             q.kind = core::DiffKind::Commits;
             q.a = snapshot->head;
             q.b = sel.id;
@@ -220,7 +220,7 @@ void DiffPanel::request()
     const auto& settings = m_session.app().settings().data();
     core::DiffQuery q = queryFor(m_selection, *m_file, m_compareHead, m_session.snapshot());
     const auto snap = m_session.snapshot();
-    if (m_fileVsHead && snap && !snap->head.isNull() && canCompareWithHead()) {
+    if (m_fileVsHead && !snap->head.isNull() && canCompareWithHead()) {
         q.kind = core::DiffKind::Commits;
         q.a = snap->head;
         q.b = m_selection.id;

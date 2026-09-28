@@ -106,14 +106,6 @@ void mergeRefs(Operation& op, const json& updates)
 
 } // namespace
 
-const RefChange* Operation::findRef(const std::string& ref) const
-{
-    for (const auto& r : refs)
-        if (r.ref == ref)
-            return &r;
-    return nullptr;
-}
-
 Journal::Journal(fs::path commonDir) : m_dir(std::move(commonDir) / "gg"), m_path(m_dir / "journal") { }
 
 std::string Journal::newOperationId()

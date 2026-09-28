@@ -238,6 +238,20 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     GG_CHECK(s.gitOut(repo, {"show", "HEAD~2:old.txt"}).find("line FIVE") != std::string::npos);
     GG_CHECK(!s.gitMayFail(repo, {"cat-file", "-e", "HEAD~1:old.txt"}).ok());
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
+    // The CRLF file's line to the child (Y): X no longer changes it, Y does; the tip is the same.
+    const std::string x2 = s.revParse(repo, "HEAD~1"), tip2 = s.head(repo);
+    selectCommit(s, x2, 4);
+    ctx->ItemClick(fileRef(s, "crlf.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && !d->files.empty() && d->files[0].path() == "crlf.txt" && d->query.a.hex() == x2;
+    }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
+    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to child");
+    GG_REQUIRE(moved(s, repo, tip2));
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1:crlf.txt"), s.revParse(repo, base + ":crlf.txt"));
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
 }
 
 } // namespace ggtest

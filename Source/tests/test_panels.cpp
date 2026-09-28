@@ -171,4 +171,89 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal", "REFLOG-H
     GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/heads/temp" && reflog.reflog()->entries.size() == 1; }));
 }
 
+GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation",
+    "BR-TOGGLE", "TAG-TOGGLE", "WT-LIST", "REM-LIST", "REFLOG-FILTER", "OPS-LIST", "OPS-RESTORE", "STASH-PANEL")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"tag", "-a", "-m", "An annotated tag", "ann"});
+    const fs::path locked = s.root() / "locked-wt";
+    s.git(repo, {"worktree", "add", "-q", "--detach", locked.string()});
+    s.git(repo, {"worktree", "lock", "--reason", "on a USB stick", locked.string()});
+    GG_REQUIRE(s.openRepository(repo));
+    auto hover = [&](const std::string& ref) {
+        ctx->MouseMove(ref.c_str());
+        ctx->SleepNoSkip(1.0f, 0.1f);
+    };
+
+    // A remote-tracking branch: its menu, and its visibility in History.
+    s.showPanel("Branches");
+    const std::string rbranch = "//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rbranch.c_str()); }));
+    s.contextMenu(rbranch.c_str(), "Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "origin/main");
+    s.contextMenu(rbranch.c_str(), "Reveal");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "origin/main"); }));
+    auto& history = s.session()->history();
+    ctx->ItemClick(rbranch.c_str());
+    GG_CHECK(!history.refVisible("refs/remotes/origin/main"));
+    ctx->ItemClick(rbranch.c_str());
+    GG_CHECK(history.refVisible("refs/remotes/origin/main"));
+    // Tooltips: an annotated tag's message, a remote's URLs, a locked worktree's reason.
+    s.showPanel("Tags");
+    hover("//Tags/tag_ann/###tag_ann");
+    s.showPanel("Remotes");
+    hover("//Remotes/remote_origin/###row");
+    s.showPanel("Worktrees");
+    const std::string wtRow = "//Worktrees/worktree_" + locked.filename().string() + "/###row";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtRow.c_str()); }));
+    hover(wtRow);
+    ctx->ItemClick(wtRow.c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(s.itemExists("//$FOCUSED/Unlock"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    // The reflog filtered by a commit ID.
+    s.showPanel("Reflog");
+    const std::string head = s.head(repo);
+    ctx->ItemInputValue("//Reflog/##reflog_filter", head.substr(0, 12).c_str());
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//Reflog/##reflog_table/r0/###reflog_0"));
+    ctx->ItemInputValue("//Reflog/##reflog_filter", "");
+    // Stash changes from the Stashes panel.
+    s.write(repo, "dirty.txt", "dirty\n");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->untracked.empty(); }));
+    s.showPanel("Stashes");
+    ctx->ItemClick("//Stashes/Stash changes...##stash_changes");
+    GG_REQUIRE(s.dialogOpen("Stash changes"));
+    s.dialogButton("Stash changes", "Cancel");
+
+    // Operations: a commit its pre-commit hook refuses is listed as failed; the buttons undo and redo.
+    s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\necho no >&2\nexit 1\n");
+    fs::permissions(repo / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
+    s.git(repo, {"add", "dirty.txt"});
+    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Refused");
+    s.dialogButton("Commit", "Commit");
+    GG_CHECK(s.dismissError());
+    fs::remove(repo / ".git" / "hooks" / "pre-commit");
+    s.showPanel("Operations");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Operations", "(failed)"); }));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty() && s.session()->operations().back().label == "new commit"; }));
+    s.settle();
+    const std::string made = s.head(repo);
+    const auto& op = s.session()->operations().back();
+    const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + op.id + "/###row";
+    hover(row);
+    s.contextMenu(row.c_str(), "Copy operation ID");
+    GG_CHECK_STR_EQ(s.clipboard(), op.id);
+    ctx->ItemClick("//Operations/###ops_undo");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != made; }));
+    s.settle();
+    ctx->ItemClick("//Operations/###ops_redo");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == made; }));
+    s.settle();
+    s.git(repo, {"worktree", "unlock", locked.string()});
+    s.git(repo, {"worktree", "remove", "--force", locked.string()});
+}
+
 } // namespace ggtest

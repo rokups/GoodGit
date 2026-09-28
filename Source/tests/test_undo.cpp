@@ -343,4 +343,37 @@ GG_TEST("undo", "journal variants: foreign, torn and future records are skipped;
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
+GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it",
+    "MENU-EDIT-UNDO-KEY", "OPS-LIST")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    const std::string mainBefore = s.revParse(repo, "main");
+    const std::string wt1Before = s.revParse(repo, "wt1");
+    // A commit in the main worktree, then one in wt1.
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(repo, "main") != mainBefore; }));
+    s.settle();
+    GG_REQUIRE(s.openRepository(wt1));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(repo, "wt1") != wt1Before; }));
+    s.settle();
+    // Undo in wt1: its own commit first (its HEAD and branch)...
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "wt1") == wt1Before; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(wt1), wt1Before);
+    // ... then the main worktree's commit: its branch goes back; its HEAD is not wt1's to restore.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main") == mainBefore; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/main");
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"symbolic-ref", "HEAD"}), "refs/heads/wt1");
+    // Redo from wt1 brings the main worktree's commit back.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main") != mainBefore; }));
+    s.settle();
+}
+
 } // namespace ggtest

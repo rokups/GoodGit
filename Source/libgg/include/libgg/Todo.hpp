@@ -181,7 +181,6 @@ struct Issue {
     enum class Severity { Error, Warning };
     enum class Code {
         SquashWithoutCommit,   // a squash/fixup with no commit before it
-        UnknownCommit,         // a commit the context does not know
         EmptyExec,             // exec without a command
         BadRef,                // update-ref without a full refs/ name, or twice
         DuplicateCommit,       // the same commit on two rows
@@ -189,7 +188,7 @@ struct Issue {
         Published,             // rewrites or drops commits already on a remote
     };
     Severity severity = Severity::Error;
-    Code code = Code::UnknownCommit;
+    Code code = Code::SquashWithoutCommit;
     int row = -1;              // item index, -1 = the whole todo
     std::string message;
     bool error() const { return severity == Severity::Error; }

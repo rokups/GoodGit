@@ -518,8 +518,7 @@ void autosquash(Todo& todo, const Context& context)
         Item& item = todo.items[i];
         if (item.action != Action::Pick && item.action != Action::Reword && item.action != Action::Edit)
             continue;
-        auto info = context.commits.find(item.commit);
-        subjects[i] = info != context.commits.end() ? info->second.subject : item.subject;
+        subjects[i] = context.commits.at(item.commit).subject; // every listed commit is in the context
         const std::string& subject = subjects[i];
         std::string_view target;
         if (skipFixupish(subject, target)) {
@@ -654,12 +653,8 @@ std::optional<Group> groupAt(const Todo& todo, size_t row)
 
 namespace {
 
-const std::string& messageOf(const Context& context, const Item& item)
-{
-    static const std::string none;
-    auto it = context.commits.find(item.commit);
-    return it == context.commits.end() ? none : it->second.message;
-}
+// Every commit a todo names is in its context (read()/expand() put it there).
+const std::string& messageOf(const Context& context, const Item& item) { return context.commits.at(item.commit).message; }
 
 std::string ordinal(size_t n) { return n == 1 ? "1st" : "#" + std::to_string(n); }
 
@@ -824,10 +819,7 @@ size_t unchangedPrefix(const Todo& todo, const Context& context)
             continue;
         if (item.action != Action::Pick || item.message)
             return i;
-        auto info = context.commits.find(item.commit);
-        if (info == context.commits.end())
-            return i;
-        const auto& parents = info->second.parents;
+        const auto& parents = context.commits.at(item.commit).parents;
         if (current.empty() ? !parents.empty() : (parents.size() != 1 || parents.front() != current))
             return i;
         // A squash/fixup coming next changes this commit too (after an update-ref row it amends
@@ -859,8 +851,6 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
         const Item& item = todo.items[i];
         const int row = static_cast<int>(i);
         if (item.isCommit()) {
-            if (!context.commits.count(item.commit))
-                add(Severity::Error, Code::UnknownCommit, row, "unknown commit '" + item.commit + "'");
             if ((item.action == Action::Squash || item.action == Action::Fixup) && !seenCommit && !context.continuesHead)
                 add(Severity::Error, Code::SquashWithoutCommit, row,
                     std::string("cannot '") + actionName(item.action) + "' without a previous commit");
@@ -937,22 +927,13 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
     // Published commits that are rewritten or dropped.
     {
         const size_t prefix = unchangedPrefix(todo, context);
-        std::set<std::string> listed;
-        for (size_t i = 0; i < todo.items.size(); ++i) {
+        // (Rows are never removed from the list, only dropped: every listed commit has a row.)
+        for (size_t i = prefix; i < todo.items.size(); ++i) {
             const Item& item = todo.items[i];
-            if (!item.isCommit())
-                continue;
-            listed.insert(item.commit);
-            auto info = context.commits.find(item.commit);
-            if (i >= prefix && info != context.commits.end() && info->second.published)
+            if (item.isCommit() && context.commits.at(item.commit).published)
                 add(Severity::Warning, Code::Published, static_cast<int>(i),
                     "commit " + shortId(item.commit) + " is already on a remote");
         }
-        const auto missing = std::count_if(context.range.begin(), context.range.end(),
-            [&](const std::string& id) { return !listed.count(id) && context.commits.at(id).published; });
-        if (missing > 0)
-            add(Severity::Warning, Code::Published, -1,
-                std::to_string(missing) + " commit(s) left out of the list are already on a remote");
     }
     return issues;
 }
@@ -1045,8 +1026,8 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
                 continue;
             if (item.action != Action::Pick || base.empty())
                 break;
-            const auto info = context.commits.find(item.commit);
-            if (info == context.commits.end() || info->second.parents.size() != 1 || info->second.parents.front() != base)
+            const auto& parents = context.commits.at(item.commit).parents;
+            if (parents.size() != 1 || parents.front() != base)
                 break;
             plan.unreported.insert(item.commit);
             base = last = item.commit;
