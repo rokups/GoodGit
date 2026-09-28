@@ -17,8 +17,12 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <mutex>
+#include <thread>
 #include <fstream>
 #include <map>
 
@@ -41,6 +45,55 @@ std::string sanitize(const std::string& s)
     for (char c : s)
         out.push_back((std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_') ? c : '_');
     return out;
+}
+
+// Watchdog: a test that runs longer than GGUI_TEST_TIMEOUT seconds (default 600) is reported with
+// what it waits for (running commands, the last log lines) and the run ends, instead of hanging
+// until a CI job's time limit with nothing to show.
+std::mutex g_watchMutex;
+std::string g_watchTest;
+std::chrono::steady_clock::time_point g_watchStart;
+
+void watchTest(const std::string& name)
+{
+    std::lock_guard lock(g_watchMutex);
+    g_watchTest = name;
+    g_watchStart = std::chrono::steady_clock::now();
+}
+
+void startWatchdog()
+{
+    const char* env = std::getenv("GGUI_TEST_TIMEOUT");
+    const int limit = env && *env ? std::atoi(env) : 600;
+    if (limit <= 0)
+        return;
+    std::thread([limit] {
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            std::string test;
+            {
+                std::lock_guard lock(g_watchMutex);
+                if (g_watchTest.empty()
+                    || std::chrono::steady_clock::now() - g_watchStart < std::chrono::seconds(limit))
+                    continue;
+                test = g_watchTest;
+            }
+            std::fprintf(stderr, "ggui: TIMEOUT: %s ran longer than %d s\n", test.c_str(), limit);
+            for (const auto& c : gg::runningCommands()) {
+                std::string line;
+                for (const auto& a : c.args)
+                    line += " " + a;
+                std::fprintf(stderr, "ggui:   running for %lld ms in %s:%s\n", static_cast<long long>(c.duration.count()),
+                    c.cwd.string().c_str(), line.c_str());
+            }
+            const auto lines = ggui::recentLogLines();
+            const size_t from = lines.size() > 40 ? lines.size() - 40 : 0;
+            for (size_t i = from; i < lines.size(); ++i)
+                std::fprintf(stderr, "ggui:   log: %s\n", lines[i].c_str());
+            std::fflush(stderr);
+            std::_Exit(3);
+        }
+    }).detach();
 }
 
 // A test's directory name: the start of its name and a hash of all of it. Full names run past
@@ -173,6 +226,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     static int started = 0;
     std::fprintf(stderr, "ggui: [%d] %s/%s\n", ++started, info.category.c_str(), info.name.c_str());
     std::fflush(stderr);
+    watchTest(info.category + "/" + info.name);
 
     g_app->resetForTest();
     ctx->Yield(2);
@@ -372,6 +426,7 @@ TestRunner::~TestRunner()
 void TestRunner::start(const std::string& filter, const std::string& traceFile, int shard, int shards)
 {
     m_traceFile = traceFile;
+    startWatchdog();
     std::vector<ImGuiTest*> registered;
     for (const auto& info : registry()) {
         ImGuiTest* t = ImGuiTestEngine_RegisterTest(m_engine, info.category.c_str(), info.name.c_str(), info.file, info.line);

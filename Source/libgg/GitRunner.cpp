@@ -37,6 +37,11 @@ std::atomic<long long> g_slowGitMs{0};
 std::mutex g_logMutex;
 bool g_logEnabled = false;
 std::vector<CommandLogEntry> g_log;
+struct Running {
+    const RunRequest* request;
+    std::chrono::steady_clock::time_point start;
+};
+std::vector<Running> g_running;
 
 using EnvMap = std::map<std::string, std::string>;
 
@@ -491,7 +496,14 @@ RunResult run(const RunRequest& request)
     if (request.cancel.cancelled()) {
         result.cancelled = true;
     } else {
+        {
+            std::lock_guard lock(g_logMutex);
+            if (g_logEnabled)
+                g_running.push_back(Running{&request, start});
+        }
         result = runProcess(request);
+        std::lock_guard lock(g_logMutex);
+        std::erase_if(g_running, [&](const Running& r) { return r.request == &request; });
     }
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
     logCommand(request, result);
@@ -549,6 +561,17 @@ void setCommandLogEnabled(bool enabled)
 {
     std::lock_guard lock(g_logMutex);
     g_logEnabled = enabled;
+}
+
+std::vector<CommandLogEntry> runningCommands()
+{
+    std::lock_guard lock(g_logMutex);
+    std::vector<CommandLogEntry> out;
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& r : g_running)
+        out.push_back(CommandLogEntry{r.request->args, r.request->cwd, -1,
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - r.start), {}});
+    return out;
 }
 
 std::vector<CommandLogEntry> commandLog()

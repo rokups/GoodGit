@@ -86,6 +86,9 @@ struct CommandLogEntry {
 void setCommandLogEnabled(bool enabled);
 std::vector<CommandLogEntry> commandLog();
 void clearCommandLog();
+// Commands running now (while the log is enabled): what a hung test waits for. `duration` is how
+// long each has run so far.
+std::vector<CommandLogEntry> runningCommands();
 
 // ---- Helpers -----------------------------------------------------------------------------
 
