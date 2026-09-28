@@ -28,6 +28,7 @@
 #endif
 
 #include <atomic>
+#include <cstring>
 #include <exception>
 #include <chrono>
 #include <cstdio>
@@ -107,10 +108,18 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info)
         IMAGEHLP_LINE64 line{};
         line.SizeOfStruct = sizeof(line);
         DWORD column = 0;
+        // The module and the offset in it: addr2line/llvm-symbolizer on the uploaded binary.
+        const DWORD64 base = SymGetModuleBase64(process, frame.AddrPC.Offset);
+        char module[MAX_PATH] = "?";
+        if (base)
+            GetModuleFileNameA(reinterpret_cast<HMODULE>(base), module, MAX_PATH);
+        const char* moduleName = std::strrchr(module, '\\') ? std::strrchr(module, '\\') + 1 : module;
         if (SymGetLineFromAddr64(process, frame.AddrPC.Offset, &column, &line))
-            std::fprintf(stderr, "ggui:   #%d %s (%s:%lu)\n", i, name, line.FileName, line.LineNumber);
+            std::fprintf(stderr, "ggui:   #%d %s (%s:%lu) %s+0x%llx\n", i, name, line.FileName, line.LineNumber, moduleName,
+                static_cast<unsigned long long>(frame.AddrPC.Offset - base));
         else
-            std::fprintf(stderr, "ggui:   #%d %s (0x%llx)\n", i, name, static_cast<unsigned long long>(frame.AddrPC.Offset));
+            std::fprintf(stderr, "ggui:   #%d %s %s+0x%llx\n", i, name, moduleName,
+                static_cast<unsigned long long>(frame.AddrPC.Offset - base));
     }
     std::fflush(stderr);
     return EXCEPTION_EXECUTE_HANDLER; // ends the process

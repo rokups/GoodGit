@@ -214,6 +214,12 @@ jobs:
             trace-mingw.json
             traceability-mingw.md
             test-artifacts/
+      # The binaries, for symbolizing a crash report's module offsets (addr2line).
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-mingw-bin
+          path: build/mingw-x64-static/bin/
 
   windows-msvc:
     needs: catalogue
@@ -250,6 +256,11 @@ jobs:
             trace-msvc.json
             traceability-msvc.md
             test-artifacts/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-msvc-bin
+          path: build/msvc-x64/bin/
 
   # Release packages (task P4-04): release presets (no test engine), CPack, then the package
   # smoke checks. Packages are uploaded as artifacts.
