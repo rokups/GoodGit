@@ -133,6 +133,10 @@ Config repositoryConfig(git_repository* repo);
 std::optional<std::string> configString(git_config* cfg, const char* name);
 std::optional<bool> configBool(git_config* cfg, const char* name);
 
+// What HEAD points at ("refs/heads/x", also when that branch has no commit yet), "" when detached.
+// (Every opened repository has a HEAD.)
+std::string headTarget(git_repository* repo);
+
 // Branches checked out in the other worktrees of `repo`'s repository ("refs/heads/x" → worktree
 // name, "main" for the main worktree): the linked ones, and the main one when `repo` is linked.
 std::map<std::string, std::string> branchesInOtherWorktrees(git_repository* repo);

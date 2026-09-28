@@ -333,12 +333,7 @@ Context read(git_repository* repo, const ReadOptions& options)
     std::string headRef; // this worktree's branch
     std::optional<git_oid> headId;
     {
-        git_reference* raw = nullptr;
-        if (git_reference_lookup(&raw, repo, "HEAD") == 0) {
-            Reference head(raw);
-            if (git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC)
-                headRef = git_reference_symbolic_target(head.get());
-        }
+        headRef = headTarget(repo);
         git_oid oid;
         if (git_reference_name_to_id(&oid, repo, "HEAD") == 0)
             headId = oid;

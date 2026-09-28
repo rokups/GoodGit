@@ -191,12 +191,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     snap->headUnborn = git_repository_head_unborn(repo) == 1;
     snap->headDetached = git_repository_head_detached(repo) == 1;
     {
-        git_reference* raw = nullptr;
-        if (git_reference_lookup(&raw, repo, "HEAD") == 0) {
-            Reference head(raw);
-            if (git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC)
-                snap->headBranch = stripPrefix(git_reference_symbolic_target(head.get()), "refs/heads/");
-        }
+        snap->headBranch = stripPrefix(headTarget(repo), "refs/heads/");
         git_oid oid;
         if (git_reference_name_to_id(&oid, repo, "HEAD") == 0) // fails when unborn
             snap->head = toOid(oid);
@@ -1217,23 +1212,18 @@ RepoSummary readSummary(const fs::path& path)
     Repository repo(raw);
     s.exists = true;
     s.detached = git_repository_head_detached(repo.get()) == 1;
-    git_reference* rawHead = nullptr;
-    if (git_reference_lookup(&rawHead, repo.get(), "HEAD") == 0) {
-        Reference head(rawHead);
-        if (git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC) {
-            const std::string target = git_reference_symbolic_target(head.get());
-            s.branch = stripPrefix(target, "refs/heads/");
-            Buf up;
-            if (git_branch_upstream_name(&up.buf, repo.get(), target.c_str()) == 0) {
-                s.upstream = stripPrefix(up.str(), "refs/remotes/");
-                git_oid local, remote;
-                if (git_reference_name_to_id(&local, repo.get(), target.c_str()) == 0
-                    && git_reference_name_to_id(&remote, repo.get(), up.str().c_str()) == 0) {
-                    size_t ahead = 0, behind = 0;
-                    if (git_graph_ahead_behind(&ahead, &behind, repo.get(), &local, &remote) == 0) {
-                        s.ahead = static_cast<int>(ahead);
-                        s.behind = static_cast<int>(behind);
-                    }
+    if (const std::string target = headTarget(repo.get()); !target.empty()) {
+        s.branch = stripPrefix(target, "refs/heads/");
+        Buf up;
+        if (git_branch_upstream_name(&up.buf, repo.get(), target.c_str()) == 0) {
+            s.upstream = stripPrefix(up.str(), "refs/remotes/");
+            git_oid local, remote;
+            if (git_reference_name_to_id(&local, repo.get(), target.c_str()) == 0
+                && git_reference_name_to_id(&remote, repo.get(), up.str().c_str()) == 0) {
+                size_t ahead = 0, behind = 0;
+                if (git_graph_ahead_behind(&ahead, &behind, repo.get(), &local, &remote) == 0) {
+                    s.ahead = static_cast<int>(ahead);
+                    s.behind = static_cast<int>(behind);
                 }
             }
         }

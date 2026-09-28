@@ -172,17 +172,21 @@ Config repositoryConfig(git_repository* repo)
     return Config(raw);
 }
 
+std::string headTarget(git_repository* repo)
+{
+    git_reference* raw = nullptr;
+    check(git_reference_lookup(&raw, repo, "HEAD"), "git_reference_lookup HEAD");
+    Reference head(raw);
+    return git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC ? git_reference_symbolic_target(head.get()) : "";
+}
+
 std::map<std::string, std::string> branchesInOtherWorktrees(git_repository* repo)
 {
     assertNotUiThread("git2::branchesInOtherWorktrees");
     std::map<std::string, std::string> out;
     auto add = [&](git_repository* r, const std::string& name) {
-        git_reference* raw = nullptr;
-        if (git_reference_lookup(&raw, r, "HEAD") != 0)
-            return;
-        Reference head(raw);
-        if (git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC)
-            out[git_reference_symbolic_target(head.get())] = name;
+        if (const std::string target = headTarget(r); !target.empty())
+            out[target] = name;
     };
     // A linked worktree's git dir is <common>/worktrees/<name>/.
     std::string self;

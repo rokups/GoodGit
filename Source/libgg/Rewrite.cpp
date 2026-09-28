@@ -666,13 +666,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         const std::map<std::string, std::string> otherWorktreeBranches = branchesInOtherWorktrees(m->repo.get());
         std::string headRef; // this worktree's branch, "" when detached
         {
-            git_reference* raw = nullptr;
-            if (git_reference_lookup(&raw, m->repo.get(), "HEAD") == 0) {
-                Reference h(raw);
-                if (git_reference_type(h.get()) == GIT_REFERENCE_SYMBOLIC)
-                    headRef = git_reference_symbolic_target(h.get());
-            }
-            git_error_clear();
+            headRef = headTarget(m->repo.get());
             git_oid head;
             if (git_reference_name_to_id(&head, m->repo.get(), "HEAD") == 0)
                 result.headBefore = toHex(head);

@@ -76,13 +76,7 @@ NewCommitResult newCommit(git_repository* repo, const NewCommitOptions& options)
     // Move HEAD through git.
     std::string headTarget;
     {
-        git_reference* rawHead = nullptr;
-        if (git_reference_lookup(&rawHead, repo, "HEAD") == 0) {
-            Reference head(rawHead);
-            if (git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC)
-                headTarget = git_reference_symbolic_target(head.get());
-        }
-        git_error_clear();
+        headTarget = git2::headTarget(repo);
     }
     std::string headCommit;
     if (!unborn) {

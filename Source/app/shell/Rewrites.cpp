@@ -703,15 +703,10 @@ void Actions::mergeIntoHead(const std::string& branch, const std::string& messag
         merge.message = msg;
         plan.steps.push_back(merge);
         plan.reflogMessage = "ggui: merge " + branch;
-        git_reference* rawHead = nullptr;
-        if (git_reference_lookup(&rawHead, repo, "HEAD") == 0) {
-            gg::git2::Reference h(rawHead);
-            if (git_reference_type(h.get()) == GIT_REFERENCE_SYMBOLIC)
-                plan.refsToSteps[git_reference_symbolic_target(h.get())] = "merge";
-            else
-                plan.detachHeadAt = "merge";
-        }
-        git_error_clear();
+        if (const std::string target = gg::git2::headTarget(repo); !target.empty())
+            plan.refsToSteps[target] = "merge";
+        else
+            plan.detachHeadAt = "merge";
         return plan;
     });
 }
