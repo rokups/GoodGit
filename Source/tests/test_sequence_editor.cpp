@@ -203,7 +203,7 @@ void rereadConfig(Scenario& s)
 fs::path gguiStub(Scenario& s, const std::string& name, const std::string& body)
 {
     s.fakeTool(name, body);
-    return s.root() / "fake-bin" / name;
+    return s.toolPath(name);
 }
 
 bool disabled(Scenario& s, const char* ref) { return (s.ctx->ItemInfo(ref).ItemFlags & ImGuiItemFlags_Disabled) != 0; }

@@ -169,6 +169,10 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     if (const char* s = std::getenv("GGUI_TEST_SEED"); s && *s)
         seed = std::strtoull(s, nullptr, 10);
     spdlog::info("=== test {}/{} seed={}", info.category, info.name, seed);
+    // On stderr too, flushed: a run that dies (a crash, a CI timeout) shows which test it was in.
+    static int started = 0;
+    std::fprintf(stderr, "ggui: [%d] %s/%s\n", ++started, info.category.c_str(), info.name.c_str());
+    std::fflush(stderr);
 
     g_app->resetForTest();
     ctx->Yield(2);

@@ -38,6 +38,13 @@ namespace ggtest {
 
 namespace fs = std::filesystem;
 
+// The separator of PATH's entries.
+#ifdef _WIN32
+inline constexpr const char* kPathSep = ";";
+#else
+inline constexpr const char* kPathSep = ":";
+#endif
+
 class Scenario;
 using TestBody = void (*)(ImGuiTestContext* ctx, Scenario& s);
 
@@ -249,6 +256,12 @@ public:
     // Puts an executable script named `name` first on PATH for this test; returns its log file
     // (each invocation appends its arguments, one per line).
     fs::path fakeTool(const std::string& name, const std::string& body = {});
+    // The path that starts fake tool `name` (a program path for GG_GGUI and the like).
+    fs::path toolPath(const std::string& name) const;
+    // Writes a stand-in program: a POSIX shell script `dir`/`name`; on Windows also `name`.cmd,
+    // which runs the script with Git's sh (CreateProcess cannot start a script). Returns the path
+    // to start it by (the .cmd on Windows).
+    static fs::path writeTool(const fs::path& dir, const std::string& name, const std::string& script);
     // Opens the combo `combo` (any ref, "**/" wildcards allowed) and clicks `item` in it.
     void comboSelect(const char* combo, const char* item);
     // Opens the context menu of `ref` and clicks `path` in it ("Copy/ID" for submenus).
@@ -269,6 +282,7 @@ private:
     int m_commitCounter = 0;
     std::set<std::string> m_plantedGgRefs; // refs/gg/* names the test passed to git itself
     std::vector<fs::path> m_daemonPidFiles;
+    std::vector<std::string> m_daemonPids; // read once running: the pid files go with the test's directory
 };
 
 } // namespace ggtest

@@ -427,15 +427,22 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Worktrees");
     // Open in new window: GG_GGUI names the program. The stand-in logs its arguments and whether
-    // it runs in a session of its own (detached from this ggui).
+    // it runs in a session of its own (detached from this ggui; Windows has no sessions to check).
     const fs::path log = s.root() / "ggui-stub.log";
+#ifdef _WIN32
+    const size_t stubLines = 1;
+    s.fakeTool("ggui-stub");
+#else
+    const size_t stubLines = 2;
     s.fakeTool("ggui-stub", "sid=$(cut -d' ' -f6 /proc/$$/stat)\n[ \"$sid\" = \"$$\" ] && echo detached >> '"
             + log.string() + "'\n");
-    ggui::setEnv("GG_GGUI", (s.root() / "fake-bin" / "ggui-stub").string());
+#endif
+    ggui::setEnv("GG_GGUI", s.toolPath("ggui-stub").string());
     s.contextMenu(wtRow(n1).c_str(), "Open in new window");
     GG_CHECK(s.waitUntil([&] {
         const auto lines = gg::splitLines(s.read(s.root(), "ggui-stub.log"));
-        return lines.size() == 2 && gg::worktrees::samePath(lines[0], wt1) && lines[1] == "detached";
+        return lines.size() == stubLines && gg::worktrees::samePath(lines[0], wt1)
+            && (stubLines == 1 || lines[1] == "detached");
     }));
     GG_CHECK(s.waitUntil([&] { return toastShown(s, "Open in new window", n1); }));
     // A missing worktree cannot be opened.
@@ -449,7 +456,7 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
     s.contextMenu(wtRow("main").c_str(), "Open in new window");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("not found") != std::string::npos);
-    GG_CHECK_EQ(gg::splitLines(s.read(s.root(), "ggui-stub.log")).size(), 2u);
+    GG_CHECK_EQ(gg::splitLines(s.read(s.root(), "ggui-stub.log")).size(), stubLines);
 
     // Open here: this window shows wt1 now.
     s.contextMenu(wtRow(n1).c_str(), "Open here");

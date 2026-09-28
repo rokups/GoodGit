@@ -59,7 +59,10 @@ void scrollToRow(Scenario& s, const std::string& item)
         if (info.TimestampMain < ImGui::GetFrameCount() - 1)
             return false;
         const float pad = ImGui::GetCurrentContext()->WindowsBorderHoverPadding + 1.0f;
-        return info.RectFull.Min.y >= w->InnerClipRect.Min.y + pad && info.RectFull.Max.y <= w->InnerClipRect.Max.y - pad;
+        // The first row sits on the top edge: at the top of the list the engine cannot scroll it
+        // away, so the padding matters there only once the list is scrolled.
+        const float top = w->Scroll.y > 0.0f ? w->InnerClipRect.Min.y + pad : w->InnerClipRect.Min.y;
+        return info.RectFull.Min.y >= top && info.RectFull.Max.y <= w->InnerClipRect.Max.y - pad;
     };
     // A wheel step scrolls on the frame after it: let each one land before looking.
     for (int i = 0; i < 40 && w->Scroll.y > 0.0f; ++i) {

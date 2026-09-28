@@ -292,9 +292,8 @@ GG_TEST("ui", "Git required: Quit asks the app to quit; the refused open does no
     const std::string path = ggui::getEnv("PATH");
     const fs::path oldGit = s.path("old-git");
     fs::create_directories(oldGit);
-    s.write(oldGit, "git", "#!/bin/sh\necho 'git version 2.20.0'\n");
-    fs::permissions(oldGit / "git", fs::perms::owner_all);
-    ggui::setEnv("PATH", oldGit.string() + ":" + path);
+    Scenario::writeTool(oldGit, "git", "#!/bin/sh\necho 'git version 2.20.0'\n");
+    ggui::setEnv("PATH", oldGit.string() + kPathSep + path);
     ctx->ItemInputValue("//Welcome/##welcome_path", repo.string().c_str());
     const bool shown = s.dialogOpen("Git required");
     ggui::setEnv("PATH", path);

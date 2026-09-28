@@ -52,9 +52,8 @@ GG_TEST("setup", "git missing or too old: a blocking prompt with Retry", "APP-PR
     // Too old.
     const fs::path oldGit = s.path("old-git");
     fs::create_directories(oldGit);
-    s.write(oldGit, "git", "#!/bin/sh\necho 'git version 2.30.1'\n");
-    fs::permissions(oldGit / "git", fs::perms::owner_all);
-    ggui::setEnv("PATH", oldGit.string() + ":" + path);
+    Scenario::writeTool(oldGit, "git", "#!/bin/sh\necho 'git version 2.30.1'\n");
+    ggui::setEnv("PATH", oldGit.string() + kPathSep + path);
     ctx->ItemInputValue("//Welcome/##welcome_path", repo.string().c_str());
     const bool oldShown = s.dialogOpen("Git required");
     ggui::setEnv("PATH", path);
@@ -289,9 +288,9 @@ GG_TEST("setup", "git versions ggui reads: newer major, vendor suffix, no number
     auto withGit = [&](const std::string& name, const std::string& version) {
         const fs::path dir = s.path(name);
         fs::create_directories(dir);
-        s.write(dir, "git", "#!/bin/sh\nif [ \"$1\" = --version ]; then echo '" + version + "'; exit 0; fi\nexec '" + realGit.string() + "' \"$@\"\n");
-        fs::permissions(dir / "git", fs::perms::owner_all);
-        ggui::setEnv("PATH", dir.string() + ":" + path);
+        Scenario::writeTool(dir, "git", "#!/bin/sh\nif [ \"$1\" = --version ]; then echo '" + version + "'; exit 0; fi\nexec '"
+                + realGit.generic_string() + "' \"$@\"\n");
+        ggui::setEnv("PATH", dir.string() + kPathSep + path);
     };
     // git 3.x is newer than the minimum; a vendor suffix is ignored. The path ends with a slash.
     withGit("git3", "git version 3.1.0.vendor.2");

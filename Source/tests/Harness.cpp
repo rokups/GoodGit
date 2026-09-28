@@ -266,11 +266,10 @@ bool Scenario::openRepository(const fs::path& repo)
 
 Scenario::~Scenario()
 {
-    for (const auto& pidFile : m_daemonPidFiles) {
-        const std::string pid = gg::trim(read(pidFile.parent_path(), pidFile.filename().string()));
-        if (!pid.empty())
-            run(m_root, {"kill", pid});
-    }
+    // By the pids read when the daemons started: the test's directory (with the pid files) may
+    // already be gone.
+    for (const auto& pid : m_daemonPids)
+        run(fs::temp_directory_path(), {"kill", pid});
     ggui::unsetEnv("GIT_SSH_COMMAND");
 }
 
@@ -286,13 +285,15 @@ std::string Scenario::startGitDaemon(const fs::path& baseDir)
         if (!r.ok())
             continue;
         m_daemonPidFiles.push_back(pidFile);
-        // Wait until it accepts connections.
+        // Wait until it accepts connections (the pid file is written by then).
         const std::string url = "git://127.0.0.1:" + std::to_string(port) + "/";
         for (int i = 0; i < 50; ++i) {
             if (gitMayFail(m_root, {"ls-remote", url + "does-not-exist"}).err.find("Connection refused") == std::string::npos)
-                return url;
+                break;
             ctx->SleepNoSkip(0.05f, 0.05f);
         }
+        if (const std::string pid = gg::trim(read(pidFile.parent_path(), pidFile.filename().string())); !pid.empty())
+            m_daemonPids.push_back(pid);
         return url;
     }
     IM_CHECK_NO_RET(false && "git daemon did not start");
@@ -605,17 +606,69 @@ gg::RunResult Scenario::runGgui(std::vector<std::string> args,
     return gg::run(r);
 }
 
+namespace {
+
+#ifdef _WIN32
+// Git for Windows' (or MSYS2's) sh.exe: on PATH, else next to git.
+fs::path shellProgram()
+{
+    static const fs::path sh = [] {
+        if (fs::path p = gg::findInPath("sh"); !p.empty())
+            return p;
+        const fs::path git = gg::findInPath("git");
+        std::error_code ec;
+        for (fs::path dir = git.parent_path(); !dir.empty() && dir != dir.parent_path(); dir = dir.parent_path())
+            if (fs::is_regular_file(dir / "usr" / "bin" / "sh.exe", ec))
+                return dir / "usr" / "bin" / "sh.exe";
+        return fs::path("sh.exe");
+    }();
+    return sh;
+}
+#endif
+
+} // namespace
+
+fs::path Scenario::writeTool(const fs::path& dir, const std::string& name, const std::string& script)
+{
+    fs::create_directories(dir);
+    {
+        std::ofstream f(dir / name, std::ios::binary);
+        f << script;
+    }
+    fs::permissions(dir / name, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+#ifdef _WIN32
+    const fs::path sh = shellProgram();
+    std::ofstream cmd(dir / (name + ".cmd"), std::ios::binary);
+    cmd << "@echo off\r\nset \"PATH=" << sh.parent_path().string() << ";%PATH%\"\r\n\"" << sh.string() << "\" \""
+        << (dir / name).generic_string() << "\" %*\r\nexit /b %ERRORLEVEL%\r\n";
+    return dir / (name + ".cmd");
+#else
+    return dir / name;
+#endif
+}
+
+fs::path Scenario::toolPath(const std::string& name) const
+{
+#ifdef _WIN32
+    return m_root / "fake-bin" / (name + ".cmd");
+#else
+    return m_root / "fake-bin" / name;
+#endif
+}
+
 fs::path Scenario::fakeTool(const std::string& name, const std::string& body)
 {
     const fs::path dir = m_root / "fake-bin";
-    fs::create_directories(dir);
     const fs::path log = m_root / (name + ".log");
-    std::string script = "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> '" + log.string() + "'; done\n" + body;
-    write(dir, name, script);
-    fs::permissions(dir / name, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+    writeTool(dir, name, "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> '" + log.generic_string() + "'; done\n" + body);
+#ifdef _WIN32
+    const char sep = ';';
+#else
+    const char sep = ':';
+#endif
     const std::string path = ggui::getEnv("PATH");
     if (path.rfind(dir.string(), 0) != 0)
-        ggui::setEnv("PATH", dir.string() + ":" + path);
+        ggui::setEnv("PATH", dir.string() + sep + path);
     return log;
 }
 

@@ -560,9 +560,18 @@ GG_TEST("shell", "unusual repository states: sequences between commits, detached
     const fs::path orphan = s.root() / "orphan-wt";
     s.git(repo, {"worktree", "add", "-q", "--detach", orphan.string()});
     s.git(orphan, {"checkout", "-q", "--orphan", "fresh"});
-    // A file replaced by a symlink (a type change).
+    // A file replaced by a symlink (a type change). Windows makes symlinks only with Developer
+    // Mode (or as administrator), and git there keeps them as files unless core.symlinks is set.
+    std::error_code symlinkError;
     fs::remove(repo / "a.txt");
-    fs::create_symlink("s.txt", repo / "a.txt");
+    fs::create_symlink("s.txt", repo / "a.txt", symlinkError);
+#ifdef _WIN32
+    const bool typeChange = false;
+#else
+    const bool typeChange = !symlinkError;
+#endif
+    if (!typeChange)
+        s.git(repo, {"checkout", "a.txt"});
     ctx->KeyPress(ImGuiKey_F5);
     GG_REQUIRE(s.waitUntil([&] { return snap()->tags.size() == 2 && snap()->worktrees.size() == 2; }));
     std::vector<std::string> remotes;
@@ -585,10 +594,11 @@ GG_TEST("shell", "unusual repository states: sequences between commits, detached
     GG_CHECK(s.textShown("//Remotes", "pushonly"));
     s.showPanel("Worktrees");
     GG_CHECK(s.textShown("//Worktrees", "fresh"));
-    GG_CHECK(s.waitUntil([&] {
-        const auto st = s.session()->status();
-        return st && !st->unstaged.empty() && st->unstaged[0].kind == ggui::core::ChangeKind::TypeChanged;
-    }));
+    if (typeChange)
+        GG_CHECK(s.waitUntil([&] {
+            const auto st = s.session()->status();
+            return st && !st->unstaged.empty() && st->unstaged[0].kind == ggui::core::ChangeKind::TypeChanged;
+        }));
     fs::remove(repo / "a.txt");
     s.git(repo, {"checkout", "a.txt"});
     s.git(repo, {"update-ref", "-d", "refs/stash"});

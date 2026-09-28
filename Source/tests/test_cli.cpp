@@ -136,12 +136,11 @@ GG_TEST("cli", "git gg ui starts ggui on the repository", "CLI-UI")
     fs::copy_file(real, dir / "git-gg");
     fs::permissions(dir / "git-gg", fs::perms::owner_all);
     const fs::path log = s.path("ggui-started.log");
-    s.write(dir, "ggui", "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + log.string() + "'\nexit 7\n");
-    fs::permissions(dir / "ggui", fs::perms::owner_all);
+    Scenario::writeTool(dir, "ggui", "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + log.generic_string() + "'\nexit 7\n");
     gg::RunRequest r;
     r.args = {(dir / "git-gg").string(), "ui", "."};
     r.cwd = repo;
-    r.env.emplace_back("PATH", dir.string() + ":" + ggui::getEnv("PATH"));
+    r.env.emplace_back("PATH", dir.string() + kPathSep + ggui::getEnv("PATH"));
     const auto res = gg::run(r);
     GG_CHECK_EQ(res.exitCode, 7); // ggui's exit code is passed on
     GG_CHECK_STR_EQ(s.read(log.parent_path(), log.filename().string()), fs::canonical(repo).string() + "\n");
