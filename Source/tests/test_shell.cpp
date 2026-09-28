@@ -737,4 +737,33 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     s.git(repo, {"rebase", "--abort"});
 }
 
+GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn branch with an upstream, no longer a repository",
+    "APP-WELCOME-RECENT-INFO")
+{
+    const fs::path gone = s.fixture(Recipe::WithRemote, "upstream-gone");
+    const fs::path unborn = s.fixture(Recipe::Empty, "unborn-upstream");
+    const fs::path notRepo = s.path("was-a-repo"); // not tracked: it stops being a repository
+    s.git(s.root(), {"init", "-q", "-b", "main", notRepo.string()});
+    s.commitFile(notRepo, "a.txt", "a\n", "first");
+    for (const fs::path& p : {gone, unborn, notRepo})
+        GG_REQUIRE(s.openRepository(p));
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    s.git(gone, {"remote", "set-head", "origin", "-d"});
+    s.git(gone, {"update-ref", "-d", "refs/remotes/origin/main"});
+    s.git(unborn, {"config", "branch.main.remote", "origin"});
+    s.git(unborn, {"config", "branch.main.merge", "refs/heads/main"});
+    fs::rename(notRepo / ".git", s.path("was-a-repo.git")); // back at the end
+    // Opening Welcome again reads the summaries anew.
+    GG_REQUIRE(s.openRepository(gone));
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main \xe2\x86\x92 origin/main") != std::string::npos; }));
+    GG_CHECK(s.app.recentRowText(0).find("\xe2\x86\x91") == std::string::npos); // no ahead/behind without the ref
+    GG_CHECK(s.app.recentRowText(1).rfind(notRepo.string(), 0) == 0);
+    GG_CHECK(s.app.recentRowText(2).find("  \xe2\x80\x94  main") != std::string::npos);
+    fs::rename(s.path("was-a-repo.git"), notRepo / ".git");
+}
+
 } // namespace ggtest

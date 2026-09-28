@@ -416,7 +416,6 @@ ChangeKind kindFromDelta(git_delta_t s)
     case GIT_DELTA_TYPECHANGE: return ChangeKind::TypeChanged;
     case GIT_DELTA_UNTRACKED: return ChangeKind::Untracked;
     case GIT_DELTA_CONFLICTED: return ChangeKind::Conflicted;
-    case GIT_DELTA_UNMODIFIED: return ChangeKind::Unmodified;
     default: return ChangeKind::Modified;
     }
 }

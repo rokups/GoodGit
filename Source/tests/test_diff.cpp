@@ -410,4 +410,79 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
     }));
 }
 
+GG_TEST("diff", "more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file",
+    "DIFF-RENAME", "DIFF-IMAGE", "DIFF-LOAD-FULL", "BLAME-BEFORE", "BLAME-WORKTREE")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "more-edges");
+    std::string original;
+    for (int i = 0; i < 30; ++i)
+        original += "original line " + std::to_string(i) + "\n";
+    // Lines of about 1 MB each: 3 MB of text in 3 lines.
+    const std::string mb(1024 * 1024, 'x');
+    s.write(repo, "source.txt", original);
+    s.write(repo, "huge.txt", mb + "1\n" + mb + "2\n" + mb + "3\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "base"});
+    // A copy of source.txt (and a small change to it) is detected as a copy.
+    s.write(repo, "copy.txt", original);
+    s.write(repo, "source.txt", original + "one more\n");
+    s.write(repo, "huge.txt", mb + "1\n" + mb + "two\n" + mb + "3\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "copy and grow"});
+    const std::string commit = s.head(repo);
+    s.write(repo, "huge.txt", mb + "one\n" + mb + "two\n" + mb + "3\n");
+    s.write(repo, "new.png", pngHeader(4, 5));
+    s.write(repo, "scratch.txt", "not committed\n");
+    GG_REQUIRE(s.openRepository(repo));
+
+    showFile(s, commit, "copy.txt");
+    GG_REQUIRE(file(s) != nullptr);
+    GG_CHECK(file(s)->kind == ggui::core::ChangeKind::Copied);
+    GG_CHECK_STR_EQ(file(s)->oldPath, "source.txt");
+    // Blame before the copy: source.txt in the parent.
+    s.contextMenu((s.child("//Changes", "##files") + "/copy.txt/###file_copy.txt").c_str(), "Blame file");
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "copy.txt" && !b->lines.empty();
+    }));
+    ctx->Yield(3);
+    {
+        // (Near the row's left edge: its middle is on a column border in this layout.)
+        const ImGuiTestItemInfo row = ctx->ItemInfo("//Blame/##blame_table/l1/###blame_line_1");
+        ctx->MouseMoveToPos(ImVec2(row.RectFull.Min.x + 10.0f, row.RectFull.GetCenter().y));
+        ctx->MouseClick(ImGuiMouseButton_Right);
+        ctx->MenuClick("//$FOCUSED/Blame before this change");
+    }
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "source.txt";
+    }));
+    // Over the text limit: the hunks are there, the full texts (for more context) are not.
+    showFile(s, commit, "huge.txt");
+    GG_REQUIRE(file(s) != nullptr);
+    GG_CHECK(!file(s)->hunks.empty());
+    GG_CHECK(!file(s)->oldText || file(s)->oldText->empty());
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string unstaged = s.child("//Changes", "##files") + "/Unstaged/huge.txt/###file_huge.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(unstaged.c_str()); }));
+    ctx->ItemClick(unstaged.c_str());
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && !d->files.empty() && d->files[0].path() == "huge.txt";
+    }));
+    GG_CHECK(!file(s)->newText);
+    // An untracked image: its size read from the working tree.
+    const std::string png = s.child("//Changes", "##files") + "/Untracked/new.png/###file_new.png";
+    ctx->ItemClick(png.c_str());
+    GG_CHECK(s.waitUntil([&] { return file(s) && file(s)->path() == "new.png" && file(s)->newImage == "4x5"; }));
+    // Blame of a file git does not know yet: every line is uncommitted.
+    s.contextMenu((s.child("//Changes", "##files") + "/Untracked/scratch.txt/###file_scratch.txt").c_str(), "Blame file");
+    s.showPanel("Blame");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "scratch.txt" && b->lines.size() == 1 && b->lines[0].author == "Not committed yet";
+    }));
+}
+
 } // namespace ggtest

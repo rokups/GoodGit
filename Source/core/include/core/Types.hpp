@@ -167,7 +167,6 @@ enum class ChangeKind : char {
     TypeChanged = 'T',
     Untracked = '?',
     Conflicted = 'U',
-    Unmodified = ' ',
 };
 
 struct StatusEntry {
