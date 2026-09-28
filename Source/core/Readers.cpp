@@ -764,6 +764,59 @@ std::string blobText(git_repository* repo, const git_oid& id, std::uint64_t* siz
 
 } // namespace
 
+namespace {
+
+// The hunks of `patch` into `f`: at most kMaxDiffLines lines (then `truncated`) unless `full`.
+// (Binary patches have no hunks.)
+void readHunks(git_patch* patch, DiffFile& f, bool full)
+{
+    size_t total = 0;
+    const size_t hunks = git_patch_num_hunks(patch);
+    for (size_t h = 0; h < hunks && !f.truncated; ++h) {
+        const git_diff_hunk* gh = nullptr;
+        size_t lines = 0;
+        git_patch_get_hunk(&gh, &lines, patch, h);
+        DiffHunk hunk;
+        hunk.header = std::string(gh->header, gh->header_len);
+        while (!hunk.header.empty() && (hunk.header.back() == '\n' || hunk.header.back() == '\r'))
+            hunk.header.pop_back();
+        hunk.oldStart = gh->old_start;
+        hunk.oldLines = gh->old_lines;
+        hunk.newStart = gh->new_start;
+        hunk.newLines = gh->new_lines;
+        for (size_t l = 0; l < lines; ++l) {
+            const git_diff_line* gl = nullptr;
+            git_patch_get_line_in_hunk(&gl, patch, h, l);
+            if (gl->origin == GIT_DIFF_LINE_CONTEXT_EOFNL || gl->origin == GIT_DIFF_LINE_ADD_EOFNL
+                || gl->origin == GIT_DIFF_LINE_DEL_EOFNL) {
+                hunk.lines.back().noNewline = true; // always after the line it is about
+                continue;
+            }
+            if (!full && total >= kMaxDiffLines) {
+                f.truncated = true;
+                break;
+            }
+            DiffLine line;
+            line.origin = gl->origin;
+            line.oldNo = gl->old_lineno;
+            line.newNo = gl->new_lineno;
+            line.text.assign(gl->content, gl->content_len); // never empty: a line or its "\n"
+            if (line.text.back() == '\n') {
+                line.text.pop_back();
+                if (!line.text.empty() && line.text.back() == '\r') {
+                    line.text.pop_back();
+                    line.crlf = true;
+                }
+            }
+            hunk.lines.push_back(std::move(line));
+            ++total;
+        }
+        f.hunks.push_back(std::move(hunk));
+    }
+}
+
+} // namespace
+
 DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken& cancel)
 {
     gg::assertNotUiThread("readDiff");
@@ -848,37 +901,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
             f.oldId = toOid(*oldId);
         if (newId)
             f.newId = toOid(*newId);
-        for (size_t h = 0; h < git_patch_num_hunks(patch.get()); ++h) {
-            const git_diff_hunk* gh = nullptr;
-            size_t lines = 0;
-            git_patch_get_hunk(&gh, &lines, patch.get(), h);
-            DiffHunk hunk;
-            hunk.header = std::string(gh->header, gh->header_len);
-            while (!hunk.header.empty() && (hunk.header.back() == '\n' || hunk.header.back() == '\r'))
-                hunk.header.pop_back();
-            hunk.oldStart = gh->old_start;
-            hunk.oldLines = gh->old_lines;
-            hunk.newStart = gh->new_start;
-            hunk.newLines = gh->new_lines;
-            for (size_t l = 0; l < lines; ++l) {
-                const git_diff_line* gl = nullptr;
-                git_patch_get_line_in_hunk(&gl, patch.get(), h, l);
-                if (gl->origin != ' ' && gl->origin != '+' && gl->origin != '-') {
-                    if (!hunk.lines.empty())
-                        hunk.lines.back().noNewline = true;
-                    continue;
-                }
-                DiffLine line;
-                line.origin = gl->origin;
-                line.oldNo = gl->old_lineno;
-                line.newNo = gl->new_lineno;
-                line.text.assign(gl->content, gl->content_len);
-                while (!line.text.empty() && (line.text.back() == '\n' || line.text.back() == '\r'))
-                    line.text.pop_back();
-                hunk.lines.push_back(std::move(line));
-            }
-            f.hunks.push_back(std::move(hunk));
-        }
+        readHunks(patch.get(), f, true);
         result->files.push_back(std::move(f));
     };
     if (q.kind == DiffKind::Term) {
@@ -979,52 +1002,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
                 git_patch_line_stats(&ctxLines, &adds, &dels, patch.get());
                 f.additions = static_cast<int>(adds);
                 f.deletions = static_cast<int>(dels);
-                size_t total = 0;
-                const size_t hunks = git_patch_num_hunks(patch.get());
-                for (size_t h = 0; h < hunks && !f.binary; ++h) {
-                    const git_diff_hunk* gh = nullptr;
-                    size_t lines = 0;
-                    git_patch_get_hunk(&gh, &lines, patch.get(), h);
-                    DiffHunk hunk;
-                    hunk.header = std::string(gh->header, gh->header_len);
-                    while (!hunk.header.empty() && (hunk.header.back() == '\n' || hunk.header.back() == '\r'))
-                        hunk.header.pop_back();
-                    hunk.oldStart = gh->old_start;
-                    hunk.oldLines = gh->old_lines;
-                    hunk.newStart = gh->new_start;
-                    hunk.newLines = gh->new_lines;
-                    for (size_t l = 0; l < lines; ++l) {
-                        const git_diff_line* gl = nullptr;
-                        git_patch_get_line_in_hunk(&gl, patch.get(), h, l);
-                        if (gl->origin == GIT_DIFF_LINE_CONTEXT_EOFNL || gl->origin == GIT_DIFF_LINE_ADD_EOFNL
-                            || gl->origin == GIT_DIFF_LINE_DEL_EOFNL) {
-                            if (!hunk.lines.empty())
-                                hunk.lines.back().noNewline = true;
-                            continue;
-                        }
-                        if (!q.full && total >= kMaxDiffLines) {
-                            f.truncated = true;
-                            break;
-                        }
-                        DiffLine line;
-                        line.origin = gl->origin;
-                        line.oldNo = gl->old_lineno;
-                        line.newNo = gl->new_lineno;
-                        line.text.assign(gl->content, gl->content_len);
-                        if (!line.text.empty() && line.text.back() == '\n') {
-                            line.text.pop_back();
-                            if (!line.text.empty() && line.text.back() == '\r') {
-                                line.text.pop_back();
-                                line.crlf = true;
-                            }
-                        }
-                        hunk.lines.push_back(std::move(line));
-                        ++total;
-                    }
-                    f.hunks.push_back(std::move(hunk));
-                    if (f.truncated)
-                        break;
-                }
+                readHunks(patch.get(), f, q.full);
                 Buf buf;
                 if (!f.truncated && git_patch_to_buf(&buf.buf, patch.get()) == 0)
                     result->patch += buf.str();

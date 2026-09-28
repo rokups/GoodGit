@@ -86,10 +86,35 @@ GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, loca
     ctx->ItemClick("//##Toolbar/###tb_undo");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("Nothing to undo") != std::string::npos);
+    // Nothing to redo: nothing was undone, or something new came after the undo.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("Nothing to redo") != std::string::npos);
+    {
+        const std::string start = s.head(repo);
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+        GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != start; }));
+        s.settle();
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+        GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == start; }));
+        s.settle();
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+        GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != start; }));
+        s.settle();
+        const std::string newer = s.head(repo);
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+        GG_CHECK(s.dismissError());
+        GG_CHECK(s.app.errorMessage().find("Nothing to redo") != std::string::npos);
+        GG_CHECK_STR_EQ(s.head(repo), newer);
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+        GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == start; }));
+        s.settle();
+    }
 
     // A plain git commit (no hooks) moves main behind the journal's back: refused.
+    const size_t opsBefore = opsFrom(s, "ggui");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
-    GG_REQUIRE(s.waitUntil([&] { return opsFrom(s, "ggui") == 1; }));
+    GG_REQUIRE(s.waitUntil([&] { return opsFrom(s, "ggui") == opsBefore + 1; }));
     s.settle();
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Plain git"});
     const std::string moved = repoState(s, repo);

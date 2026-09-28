@@ -668,4 +668,17 @@ GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not
     GG_CHECK(types.find("scale=1.00 theme=dark recent=0") != std::string::npos);
 }
 
+GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a second path are reported", "APP-AUTOOPEN-ARG",
+    "HARNESS-SMOKE")
+{
+    auto r = s.runGgui({"--list-tests"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.out.find("command line: --list-tests") != std::string::npos);
+    const fs::path repo = s.fixture(Recipe::Linear);
+    r = s.runGgui({"--headless", "--bogus", repo.string(), "second-path", "--smoke"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.err.find("ggui: unknown option --bogus") != std::string::npos);
+    GG_CHECK(r.err.find("ggui: unknown option second-path") != std::string::npos);
+}
+
 } // namespace ggtest

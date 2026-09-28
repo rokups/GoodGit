@@ -183,6 +183,34 @@ GG_TEST("hooks", "plain git commands are journaled one operation each and Undo r
     step({"-c", "core.abbrev=12", "--no-pager", "reset", "-q", "--keep", "HEAD~1"});
     step({"-C", repo.string(), "reset", "-q", "--merge", "HEAD~1"});
     step({"reset", "-q", "--soft", "HEAD~1"});
+    // A fast-forward merge (post-merge runs).
+    s.git(repo, {"branch", "ahead", s.gitOut(repo, {"commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "ahead"})});
+    step({"merge", "-q", "--ff-only", "ahead"});
+    // GG_NO_JOURNAL set: the hooks leave the command out of the journal.
+    {
+        const size_t ops = journalOps(repo, "git").size();
+        ggui::setEnv("GG_NO_JOURNAL", "1");
+        s.git(repo, {"branch", "unjournaled"});
+        ggui::unsetEnv("GG_NO_JOURNAL");
+        GG_CHECK_EQ(journalOps(repo, "git").size(), ops);
+        s.git(repo, {"branch", "-D", "unjournaled"});
+        s.settle();
+    }
+    // Switching to another commit: Undo carries the (clean) working tree back too.
+    s.git(repo, {"branch", "plain-older", "HEAD~1"});
+    step({"switch", "-q", "plain-older"});
+    step({"checkout", "-q", "--detach", "HEAD~1"});
+    // With a local change Undo moves only HEAD back; the change stays.
+    s.git(repo, {"switch", "-q", "plain-older"});
+    s.settle();
+    const std::string onOlder = s.head(repo);
+    s.write(repo, "f1.txt", "a local change\n");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != onOlder; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "a local change\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+    s.git(repo, {"reset", "-q", "--hard"}); // (the index stayed where it was too)
     step({"tag", "-a", "-m", "annotated", "plain-tag"});
     // post-rewrite adds the rewritten commits to the amend's operation.
     s.git(repo, {"commit", "-q", "--amend", "-m", "Amended plainly"});

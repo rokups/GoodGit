@@ -7,11 +7,10 @@
 //   ggui --trace=FILE           with --test: write the spec-ID traceability data to FILE
 //   ggui --shard=I/N            with --test: run only shard I of N
 //   ggui --list-tests           print the registered tests and their spec IDs
-//   ggui --askpass PROMPT       act as GIT_ASKPASS/SSH_ASKPASS (see Askpass.hpp)
+//   (Credential prompts go through `git gg askpass`, which asks the running ggui.)
 
 #include "platform/Platform.hpp"
 #include "shell/App.hpp"
-#include "shell/Askpass.hpp"
 #include "util/FrameProbe.hpp"
 #include "util/Logging.hpp"
 
@@ -45,8 +44,6 @@ struct Options {
     int shard = 0;
     int shards = 1;
     std::string repoPath;
-    bool askpass = false;
-    std::string askpassPrompt;
 };
 
 bool startsWith(const char* s, const char* prefix) { return std::strncmp(s, prefix, std::strlen(prefix)) == 0; }
@@ -73,10 +70,6 @@ Options parseArgs(int argc, char** argv)
             std::sscanf(a + 8, "%d/%d", &o.shard, &o.shards);
         } else if (startsWith(a, "--trace=")) {
             o.traceFile = a + 8;
-        } else if (std::strcmp(a, "--askpass") == 0) {
-            o.askpass = true;
-            if (i + 1 < argc)
-                o.askpassPrompt = argv[++i];
         } else if (a[0] != '-' && o.repoPath.empty()) {
             o.repoPath = a;
         } else {
@@ -92,8 +85,6 @@ int main(int argc, char** argv)
 {
     SDL_SetMainReady();
     const Options options = parseArgs(argc, argv);
-    if (options.askpass)
-        return ggui::runAskpassClient(options.askpassPrompt);
 
     ggui::initLogging();
     gg::registerUiThread();
