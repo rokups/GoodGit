@@ -1,4 +1,5 @@
 // History editing actions on the in-memory rewrite engine (§4.3; P3-08 … P3-12).
+#include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
@@ -655,6 +656,103 @@ GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a 
     GG_CHECK(subjects(s, r.path, "HEAD") == (std::vector<std::string>{"c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
     GG_CHECK(s.session()->snapshot()->headDetached);
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), s.head(r.path)); // the branch at the old tip follows
+}
+
+GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch",
+    "ACT-DUPLICATE-COMMIT", "ACT-DUPLICATE-BRANCH", "ACT-SQUASH-DESCENDANTS", "ACT-SPLIT", "ACT-ABANDON", "ACT-ABANDON-BRANCH",
+    "TAG-CREATE", "ACT-NEW-DETACHED", "INFO-CONFLICTED-FILES", "BLAME-SELECT-BLOCK", "CONF-NATIVE-TAKE-SIDE",
+    "STASH-APPLY", "REFLOG-BRANCH")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    // Each menu item runs one operation (checked through the journal the Operations panel reads).
+    auto viaMenu = [&](const std::string& row, const char* item) {
+        s.settle();
+        const size_t before = s.session()->operations().size();
+        s.contextMenu(rowRef(row).c_str(), item);
+        const bool ran = s.waitUntil([&] { return s.session()->operations().size() > before; });
+        if (!ran)
+            ctx->LogError("'%s' did nothing", item);
+        GG_CHECK(ran);
+        s.settle();
+    };
+    viaMenu(r.c4, "Duplicate");
+    viaMenu(r.c3, "Duplicate branch");
+    viaMenu(r.c3, "Squash descendants into this");
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(rowReady(s, tip));
+    s.contextMenu(rowRef(tip).c_str(), "Split...");
+    GG_REQUIRE(s.dialogOpen("Split"));
+    s.dialogButton("Split", "Cancel");
+    s.contextMenu(rowRef(r.s1).c_str(), "Abandon branch...");
+    GG_REQUIRE(s.dialogOpen("Abandon branch"));
+    s.dialogCheck("Abandon branch", "delete_branches", "Delete the branches that only point into it", false);
+    s.dialogButton("Abandon branch", "Abandon");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c2; }));
+    s.settle();
+    viaMenu(tip, "Abandon");
+    const std::string head = s.head(r.path);
+    GG_REQUIRE(rowReady(s, head));
+    s.contextMenu(rowRef(head).c_str(), "Create tag...");
+    GG_REQUIRE(s.dialogOpen("Create tag"));
+    s.dialogButton("Create tag", "Cancel");
+    ctx->MenuClick("//##MainMenuBar/Commit/New detached commit");
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
+    s.settle();
+    // Reflog: a branch from an entry's new commit.
+    s.showPanel("Reflog");
+    s.contextMenu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    s.dialogButton("Create branch", "Cancel");
+
+    // A conflicted commit: its file in Change information opens the blame; lines select by click.
+    const fs::path conflicted = s.fixture(Recipe::Conflicted2);
+    const std::string cc = s.revParse(conflicted, "HEAD~1");
+    GG_REQUIRE(s.openRepository(conflicted));
+    GG_REQUIRE(rowReady(s, cc));
+    ctx->ItemClick(rowRef(cc).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/**/###conflict_0"); }));
+    ctx->ItemClick("//Change information/**/###conflict_0");
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "conflict.txt" && b->lines.size() > 3;
+    }));
+    ctx->Yield(3);
+    auto clickLine = [&](int n, ImGuiKeyChord mods) {
+        const ImGuiTestItemInfo row = ctx->ItemInfo(("//Blame/##blame_table/l" + std::to_string(n) + "/###blame_line_" + std::to_string(n)).c_str());
+        ctx->MouseMoveToPos(ImVec2(row.RectFull.Min.x + 10.0f, row.RectFull.GetCenter().y));
+        if (mods)
+            ctx->KeyDown(mods);
+        ctx->MouseClick(ImGuiMouseButton_Left);
+        if (mods)
+            ctx->KeyUp(mods);
+        ctx->Yield(2);
+    };
+    clickLine(1, 0);
+    clickLine(3, ImGuiMod_Shift);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), 0);
+    GG_CHECK_EQ(s.session()->blame().selectionLast(), 2);
+
+    // A native conflict resolved with their side.
+    const fs::path merge = s.fixture(Recipe::MidMerge);
+    GG_REQUIRE(s.openRepository(merge));
+    const std::string f = s.child("//Changes", "##files") + "/Conflicted/f.txt/###file_f.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(f.c_str()); }));
+    s.contextMenu(f.c_str(), "Take theirs");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(merge, {"ls-files", "-u"}).empty(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(merge, "f.txt"), s.gitOut(merge, {"show", "MERGE_HEAD:f.txt"}) + "\n");
+
+    // A stash applied with its index.
+    const fs::path stashes = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(stashes));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    s.contextMenu("//Stashes/stash_0/###row", "Apply (restore index)");
+    GG_CHECK(s.waitUntil([&] { return !s.statusPorcelain(stashes).empty(); }));
+    s.settle();
 }
 
 } // namespace ggtest

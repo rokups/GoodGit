@@ -217,15 +217,14 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
                              const bool deleteRemote = form.checked("delete_remote");
                              // Branches at or after the commit (read now, before the rewrite moves them).
                              std::vector<std::pair<std::string, std::vector<std::string>>> doomed;
-                             if (const auto snap = s->snapshot())
-                                 for (const auto& b : snap->branches) {
-                                     if (b.target == commit || s->history().descendsFrom(b.target, commit)) {
-                                         std::vector<std::string> remotes;
-                                         if (deleteRemote && !b.upstream.empty())
-                                             remotes.push_back(b.upstream.substr(0, b.upstream.find('/')));
-                                         doomed.emplace_back(b.name, remotes);
-                                     }
+                             for (const auto& b : s->snapshot()->branches) {
+                                 if (b.target == commit || s->history().descendsFrom(b.target, commit)) {
+                                     std::vector<std::string> remotes;
+                                     if (deleteRemote && !b.upstream.empty())
+                                         remotes.push_back(b.upstream.substr(0, b.upstream.find('/')));
+                                     doomed.emplace_back(b.name, remotes);
                                  }
+                             }
                              s->actions().abandon(commit, true, [s, doomed, deleteBranches]() {
                                  if (!deleteBranches)
                                      return;
