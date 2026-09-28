@@ -21,35 +21,16 @@ namespace fs = std::filesystem;
 
 const char* groupName(FileGroup g)
 {
-    switch (g) {
-    case FileGroup::Commit: return "Files";
-    case FileGroup::Staged: return "Staged";
-    case FileGroup::Unstaged: return "Unstaged";
-    case FileGroup::Untracked: return "Untracked";
-    case FileGroup::Conflicted: return "Conflicted";
-    case FileGroup::StashWorktree: return "Working tree";
-    case FileGroup::StashIndex: return "Index";
-    case FileGroup::StashUntracked: return "Untracked files";
-    }
-    return "";
+    // In FileGroup's order.
+    static const char* const kNames[] = {"Files", "Staged", "Unstaged", "Untracked", "Conflicted", "Working tree", "Index",
+        "Untracked files"};
+    return kNames[static_cast<size_t>(g)];
 }
 
 namespace {
 
-const char* kindIcon(core::ChangeKind k)
-{
-    switch (k) {
-    case core::ChangeKind::Added: return "A";
-    case core::ChangeKind::Deleted: return "D";
-    case core::ChangeKind::Renamed: return "R";
-    case core::ChangeKind::Copied: return "C";
-    case core::ChangeKind::TypeChanged: return "T";
-    case core::ChangeKind::Untracked: return "?";
-    case core::ChangeKind::Conflicted: return "U";
-    case core::ChangeKind::Unmodified: return " ";
-    default: return "M";
-    }
-}
+// The status letter (ChangeKind's values are git's letters: A M D R C T ? U).
+std::string kindIcon(core::ChangeKind k) { return std::string(1, static_cast<char>(k)); }
 
 ImU32 kindColor(core::ChangeKind k)
 {
@@ -504,7 +485,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     ImGui::PushID(row.path.c_str());
     const std::string key = row.key();
     const bool selected = m_selected.count(key) != 0;
-    std::string label = std::string(kindIcon(row.kind)) + "  ";
+    std::string label = kindIcon(row.kind) + "  ";
     if (!row.oldPath.empty())
         label += row.oldPath + " \xe2\x86\x92 " + row.path;
     else

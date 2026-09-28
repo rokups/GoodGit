@@ -106,6 +106,7 @@ private:
     // modifier waiting for the chooser (source, target).
     std::unordered_map<core::Oid, std::vector<std::pair<ImRect, std::string>>, core::OidHash> m_badgeRects;
     std::optional<std::pair<core::Oid, core::Oid>> m_pendingDrop;
+    bool m_openChooser = false; // the drop just happened: open the chooser (once; closing it cancels)
     std::vector<std::pair<ImRect, std::string>> m_dragBadges;
     void dragAndDrop(const core::HistoryRow& row);
     void drawDropChooser();

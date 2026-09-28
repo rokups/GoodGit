@@ -235,6 +235,29 @@ GG_TEST("staging", "double-click opens new files in the editor, others in the di
     ctx->ItemDoubleClick(fileRef(s, nullptr, "f2.txt").c_str());
     GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= before + 2; }));
     s.settle();
+    // A staged file, and a stash's working tree and index parts.
+    s.write(repo, "f4.txt", "in the index\n");
+    s.git(repo, {"add", "f4.txt"});
+    s.write(repo, "f4.txt", "and in the working tree\n");
+    s.git(repo, {"stash", "push", "-q"});
+    s.write(repo, "f3.txt", "staged\n");
+    s.git(repo, {"add", "f3.txt"});
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Staged", "f3.txt").c_str()); }));
+    size_t n = lines(diffLog).size();
+    ctx->ItemDoubleClick(fileRef(s, "Staged", "f3.txt").c_str());
+    GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= n + 2; }));
+    s.settle();
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    ctx->ItemClick("//Stashes/stash_0/###row");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Index", "f4.txt").c_str()); }));
+    for (const char* part : {"Working tree", "Index"}) {
+        n = lines(diffLog).size();
+        ctx->ItemDoubleClick(fileRef(s, part, "f4.txt").c_str());
+        GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= n + 2; }));
+        s.settle();
+    }
 }
 
 } // namespace ggtest

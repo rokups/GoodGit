@@ -7,7 +7,10 @@
 #
 # Environment:
 #   FILTER=...        test filter passed to ggui --test=FILTER
-#   SHARDS=N          run the suite as N sequential shards (same as CI)
+#   SHARDS=N          run the suite as N shards (same as CI)
+#   PARALLEL=1        run the shards at the same time (each under its own virtual display)
+#   GGUI_HEADLESS=1   no display: SDL's offscreen driver (default: a virtual display through
+#                     xvfb-run when it is installed, as CI does, else headless)
 #   MIN_LINE, MIN_BRANCH   gate thresholds (default 90)
 #   NO_GATE=1         report only
 set -euo pipefail
@@ -24,17 +27,35 @@ cmake --build --preset "$PRESET"
 OUT="$BUILD/coverage"
 rm -rf "$OUT"
 mkdir -p "$OUT/profiles" "$OUT/traces"
-export GGUI_HEADLESS="${GGUI_HEADLESS:-1}"
 export GGUI_TEST_ARTIFACTS="$OUT/test-artifacts"
 # Every process (ggui and each git-gg child started by git hooks) writes its own profile.
 export LLVM_PROFILE_FILE="$OUT/profiles/%p-%m.profraw"
 
+# Like CI: a window on a virtual X display (the windowed code paths run too).
+run_ggui() {
+    if [[ -z "${GGUI_HEADLESS:-}" ]] && command -v xvfb-run >/dev/null; then
+        xvfb-run -a -s "-screen 0 1920x1080x24" "$@"
+    else
+        GGUI_HEADLESS=1 "$@"
+    fi
+}
+
 status=0
+pids=()
 for ((i = 0; i < SHARDS; i++)); do
     args=(--test${FILTER:+=$FILTER} --trace="$OUT/traces/trace$i.json")
     if ((SHARDS > 1)); then args+=(--shard="$i/$SHARDS"); fi
-    "$BUILD/bin/ggui" "${args[@]}" || status=$?
+    if [[ -n "${PARALLEL:-}" ]]; then
+        run_ggui "$BUILD/bin/ggui" "${args[@]}" > "$OUT/shard$i.log" 2>&1 &
+        pids+=($!)
+    else
+        run_ggui "$BUILD/bin/ggui" "${args[@]}" || status=$?
+    fi
 done
+for pid in "${pids[@]}"; do
+    wait "$pid" || status=$?
+done
+if [[ -n "${PARALLEL:-}" ]]; then cat "$OUT"/shard*.log | grep -E "tests passed|^FAILED" || true; fi
 
 if [[ "$TOOL" == "gcov" ]]; then
     gcovr --root "$ROOT" --object-directory "$BUILD" \

@@ -108,7 +108,7 @@ GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNS
     ctx->Yield(2);
     s.dialogButton("Set upstream", "Set");
     GG_CHECK(s.waitUntil([&] {
-        return s.gitOut(repo, {"rev-parse", "--abbrev-ref", "loose@{upstream}"}) == "origin/feature";
+        return gg::trim(s.gitMayFail(repo, {"rev-parse", "--abbrev-ref", "loose@{upstream}"}).out) == "origin/feature";
     }));
     s.settle();
     s.contextMenu(branchRow("loose").c_str(), "Unset upstream");

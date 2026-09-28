@@ -1,5 +1,6 @@
 // Application shell, Welcome screen, menus, toolbar, layout and settings (§4.1; P1-12 … P1-14).
 #include "panels/ChangesPanel.hpp"
+#include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
@@ -533,6 +534,113 @@ GG_TEST("shell", "unusual repository states: sequences between commits, detached
     s.git(repo, {"checkout", "a.txt"});
     s.git(repo, {"update-ref", "-d", "refs/stash"});
     s.git(repo, {"worktree", "remove", "--force", orphan.string()});
+}
+
+GG_TEST("shell", "while a mutation runs every menu disables what would conflict; browsing still works",
+    "TB-REMOTE-BUSY")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "other", "HEAD~1"});
+    s.git(repo, {"tag", "-a", "-m", "v1", "v1"});
+    s.write(repo, "stashed.txt", "stash me\n");
+    s.git(repo, {"add", "stashed.txt"});
+    s.git(repo, {"stash", "push", "-q", "-m", "a stash"});
+    s.write(repo, "staged.txt", "staged\n");
+    s.git(repo, {"add", "staged.txt"});
+    s.write(repo, "untracked.txt", "untracked\n");
+    const std::string tracked = gg::splitLines(s.gitOut(repo, {"ls-files"})).front();
+    s.write(repo, tracked, s.read(repo, tracked) + "unstaged\n");
+    // The commit waits in pre-commit until the test lets it go.
+    const fs::path go = s.root() / "go";
+    s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    fs::permissions(repo / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N); // an operation for the Operations panel
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty(); }));
+    s.settle();
+    const std::string head = s.head(repo);
+    const std::string refsBefore = s.gitOut(repo, {"for-each-ref"});
+
+    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Waits for the hook");
+    s.dialogButton("Commit", "Commit");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
+
+    // Opens the context menu of `ref`, checks that `item` is disabled, closes it.
+    auto menu = [&](const std::string& ref, const char* item) {
+        ctx->ItemClick(ref.c_str(), ImGuiMouseButton_Right);
+        ctx->Yield(2);
+        if (item) {
+            const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + item).c_str());
+            if (!(info.ItemFlags & ImGuiItemFlags_Disabled))
+                ctx->LogError("'%s' in the menu of %s is enabled while busy", item, ref.c_str());
+            GG_CHECK((info.ItemFlags & ImGuiItemFlags_Disabled) != 0);
+        }
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+    };
+    const std::string files = s.child("//Changes", "##files");
+    auto fileRef = [&](const char* group, const std::string& path) { return files + "/" + group + "/" + path + "/###file_" + path; };
+    menu("//History/**/###row_wt", "Stage all");
+    menu(fileRef("Staged", "staged.txt"), "Unstage");
+    menu(fileRef("Unstaged", tracked), "Stage");
+    menu(fileRef("Untracked", "untracked.txt"), "Intent to add");
+    ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
+    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Stage line(s)");
+    ctx->ItemClick(fileRef("Staged", "staged.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && !d->files.empty() && d->files[0].path() == "staged.txt" && s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str());
+    }));
+    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Unstage line(s)");
+    // A commit: its row, its files, its lines, its author; the Commit menu.
+    const std::string older = s.revParse(repo, "HEAD~1");
+    ctx->ItemClick(("//History/**/###row_" + older).c_str());
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), older); // browsing works
+    menu("//History/**/###row_" + older, "Duplicate");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    const std::string first = s.session()->changes().rows().front().path;
+    menu(files + "/" + first + "/###file_" + first, "Move to parent");
+    ctx->ItemClick((files + "/" + first + "/###file_" + first).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
+    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Revert line(s)");
+    menu("//Change information/**/###author", "Edit author...");
+    ctx->MenuAction(ImGuiTestAction_Hover, "//##MainMenuBar/Commit/Commit...");
+    GG_CHECK((ctx->ItemInfo("//$FOCUSED/Commit...").ItemFlags & ImGuiItemFlags_Disabled) != 0);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // Keys do nothing either.
+    ctx->ItemClick(("//History/**/###row_" + older).c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    // The side panels.
+    s.showPanel("Branches");
+    menu("//Branches/branch_main/###branch_main", "Push");
+    menu("//Branches/branch_other/###branch_other", "Check out");
+    s.showPanel("Tags");
+    menu("//Tags/tag_v1/###tag_v1", nullptr);
+    s.showPanel("Stashes");
+    menu("//Stashes/stash_0/###row", "Apply (restore index)");
+    s.showPanel("Remotes");
+    menu("//Remotes/remote_origin/###row", nullptr);
+    s.showPanel("Reflog");
+    menu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...");
+    s.showPanel("Operations");
+    const std::string opRow = s.child("//Operations", "##ops_table") + "/**/op_" + s.session()->operations().back().id + "/###row";
+    menu(opRow, "Restore (undo this operation)");
+
+    // Let the hook go: the commit lands; nothing else happened meanwhile.
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != head; }, 30.0f));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s"}), "Waits for the hook");
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), head);
+    GG_CHECK_EQ(gg::splitLines(s.gitOut(repo, {"for-each-ref"})).size(), gg::splitLines(refsBefore).size());
+    GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
 } // namespace ggtest

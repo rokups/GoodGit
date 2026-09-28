@@ -357,8 +357,10 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
                 actions.squash(source, row.id.hex(), true);
             else if (io.KeyAlt)
                 actions.rebaseOnto(source, row.id.hex(), true);
-            else
+            else {
                 m_pendingDrop = std::make_pair(source, row.id);
+                m_openChooser = true;
+            }
         }
     }
     if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_BRANCH"); p && free)
@@ -397,9 +399,11 @@ void HistoryPanel::drawDropChooser()
 {
     if (!m_pendingDrop)
         return;
-    if (!ImGui::IsPopupOpen("##dnd_chooser"))
+    if (m_openChooser) {
         ImGui::OpenPopup("##dnd_chooser");
-    if (!ImGui::BeginPopup("##dnd_chooser")) {
+        m_openChooser = false;
+    }
+    if (!ImGui::BeginPopup("##dnd_chooser")) { // closed without a choice (Escape, a click elsewhere)
         m_pendingDrop.reset();
         return;
     }
