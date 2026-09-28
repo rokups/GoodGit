@@ -78,18 +78,35 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
             return;
     }
     if (batch.reset) {
-        m_rows.clear();
-        m_index.clear();
-        m_visibleDirty = true;
+        m_stagedRows.clear();
+        m_stagedIndex.clear();
+        m_staging = !m_rows.empty();
+        m_stageTarget = m_rows.size();
+        if (!m_staging) {
+            m_rows.clear();
+            m_index.clear();
+            m_visibleDirty = true;
+        }
     }
+    auto& rows = m_staging ? m_stagedRows : m_rows;
+    auto& index = m_staging ? m_stagedIndex : m_index;
     for (auto& row : batch.rows) {
-        m_index[row.id] = static_cast<int>(m_rows.size());
-        m_rows.push_back(std::move(row));
+        index[row.id] = static_cast<int>(rows.size());
+        rows.push_back(std::move(row));
     }
     batch.rows.clear();
     for (const auto& [merge, count] : batch.collapsedCounts)
-        if (auto it = m_index.find(merge); it != m_index.end())
-            m_rows[static_cast<size_t>(it->second)].collapsedCount = count;
+        if (auto it = index.find(merge); it != index.end())
+            rows[static_cast<size_t>(it->second)].collapsedCount = count;
+    if (m_staging) {
+        if (m_stagedRows.size() < m_stageTarget && !batch.complete && !batch.truncated)
+            return; // the previous rows stay until the new ones fill their place
+        m_rows = std::move(m_stagedRows);
+        m_index = std::move(m_stagedIndex);
+        m_stagedRows.clear();
+        m_stagedIndex.clear();
+        m_staging = false;
+    }
     m_complete = batch.complete;
     m_truncated = batch.truncated;
     m_maxLanes = std::max(1, batch.maxLanes);
@@ -221,6 +238,17 @@ void HistoryPanel::toggleRef(const std::string& fullName, bool only)
 void HistoryPanel::showAllRefs()
 {
     m_hidden.clear();
+    reload();
+}
+
+void HistoryPanel::setRefsVisible(const std::vector<std::string>& fullNames, bool visible)
+{
+    for (const auto& name : fullNames) {
+        if (visible)
+            m_hidden.erase(name);
+        else
+            m_hidden.insert(name);
+    }
     reload();
 }
 
@@ -558,7 +586,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         }
         ImGui::EndMenu();
     }
-    if (row.parents.size() > 1) {
+    if (mergeToggle(row)) {
         ImGui::Separator();
         if (ImGui::MenuItem(row.collapsed ? "Expand merged history" : "Collapse merged history"))
             toggleMerge(row.id);
@@ -610,8 +638,8 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     dragAndDrop(row);
     drawRowMenu(row);
     if (m_graphShown)
-        graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head);
-    if (m_graphShown && row.parents.size() > 1) {
+        graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head, mergeToggle(row));
+    if (m_graphShown && mergeToggle(row)) {
         const float r = rowHeight * 0.32f;
         const ImVec2 c(laneX(cellStart.x, row.lane, laneWidth),
             cellStart.y - ImGui::GetStyle().CellPadding.y + rowHeight * 0.5f);
@@ -633,6 +661,11 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     const bool showStashes = m_session.app().settings().data().historyShowStashes;
     for (const auto& ref : row.refs) {
         if (ref.kind == core::RefKind::Stash && !showStashes)
+            continue;
+        // A hidden ref loses its badge even where other refs keep the commit in view.
+        if ((ref.kind == core::RefKind::LocalBranch && !refVisible("refs/heads/" + ref.name))
+            || (ref.kind == core::RefKind::RemoteBranch && !refVisible("refs/remotes/" + ref.name))
+            || (ref.kind == core::RefKind::Tag && !refVisible("refs/tags/" + ref.name)))
             continue;
         ImGui::SameLine();
         ImU32 color = p.branch;

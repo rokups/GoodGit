@@ -150,10 +150,13 @@ HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges
 HIST-GRAPH-CONTINUOUS | 1 | §4.2 | Graph lines connect row to row at a constant row pitch
 HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge (UF-18)
 HIST-MERGE-COLLAPSED-DEFAULT | 1 | §4.2 | Merge commits start collapsed
+HIST-MERGE-NOTHING-HIDDEN | 1 | §4.2 | A merge whose collapse would hide no commits offers no Collapse/Expand (UF-38)
+HIST-MERGE-TOGGLE-STABLE | 1 | §4.2 | Expanding or collapsing a merge keeps the previous rows until the reloaded list replaces them (UF-47)
 HIST-LOAD-FAST | 1 | §4.2 | First history rows of a large repository appear quickly
 UI-TEXT-BASELINE | 1 | §6 | Text in one row shares a baseline (labels, buttons, badges, icons)
 UI-ICON-ALIGN | 1 | §6 | Icon glyphs are vertically centred on the text they accompany
 LAYOUT-HIDDEN-PANELS | 1 | §4.1 | Reflog, Operations and Blame are hidden in the default layout
+LAYOUT-TAB-ORDER | 1 | §4.1 | Default layout: Remotes, Stashes, Worktrees tabs in that order (UF-42)
 DIFF-SELECT-TEXT | 1 | §4.5 | Diff text is selectable (mouse) in unified and side-by-side views
 DIFF-EDITOR-VIEWS | 1 | §4.5 | Unified and side-by-side diffs both use the text editor widget
 HIST-ROW-FIELDS | 1 | §4.2 | Rows show ID prefix, subject, author, date
@@ -383,7 +386,11 @@ BLAME-COPY-BLOCK | 1 | §4.6 | Copy a change block
 
 # ---- §4.7 Side panels -------------------------------------------------------------------------
 BR-FILTER | 1 | §4.7 | Branches: filter
-BR-TOGGLE | 1 | §4.7 | Branches: click toggles visibility in History
+BR-TOGGLE | 1 | §4.7 | Branches: the eye icon toggles visibility in History; a click on the row does not (UF-36)
+BR-SHOW-HIDE-ALL | 1 | §4.7 | Branches: Show all / Hide all branches in History (UF-33)
+BR-BADGE-HIDDEN | 1 | §4.7 | A hidden branch has no badge in History, even on a commit other refs keep in view (UF-32)
+BR-TREE | 1 | §4.7 | Branches: names as a tree split on '/', a group named by its members' longest common prefix (UF-34)
+BR-DOUBLE-CLICK-CHECKOUT | 2 | §4.7 | Branches: double-click checks the branch out (UF-37)
 BR-CTRL-ONLY | 1 | §4.7 | Branches: Ctrl-click shows only this branch
 BR-CURRENT-OUTLINE | 1 | §4.7 | Branches: current branch outlined
 BR-REVEAL | 1 | §4.7 | Branches: Reveal
@@ -391,6 +398,7 @@ BR-COPY | 1 | §4.7 | Branches: Copy name
 BR-REMOTE-MENU | 2 | §4.7 | Branches: a remote and its remote-tracking branches have the Remotes panel's menu (UF-12)
 BR-UPSTREAM-INFO | 1 | §4.7 | Branches: upstream and ahead/behind shown
 BR-CREATE | 2 | §4.7 | Branches: Create branch
+BR-CREATE-CHECKOUT-DEFAULT | 2 | §4.7 | Create branch: "Check out after creating" is on by default (UF-35)
 BR-CHECKOUT | 2 | §4.7 | Branches: Check out
 BR-PUSH | 2 | §4.7 | Branches: Push
 BR-PUSH-TO | 2 | §4.7 | Branches: Push to…

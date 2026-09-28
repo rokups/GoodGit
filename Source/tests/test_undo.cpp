@@ -230,6 +230,7 @@ GG_TEST("undo", "every everyday mutation can be undone", "UNDO-ALL-MUTATIONS")
         ctx->ItemClick("//Branches/###create_branch");
         s.dialogOpen("Create branch");
         s.dialogText("Create branch", "name", "undo-me");
+        s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
         s.dialogButton("Create branch", "Create");
     });
     s.git(repo, {"branch", "victim"});

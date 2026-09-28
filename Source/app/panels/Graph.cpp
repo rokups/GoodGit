@@ -22,7 +22,7 @@ float laneX(float cellX, int lane, float laneWidth)
     return cellX + inset(laneWidth) + laneWidth * (static_cast<float>(lane) + 0.5f);
 }
 
-void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head)
+void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head, bool mergeToggle)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float top = origin.y - ImGui::GetStyle().CellPadding.y;
@@ -46,13 +46,15 @@ void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImV
     if (row.parents.size() > 1) {
         // Merge bubble: click toggles its merged history (+ collapsed, − expanded).
         const float r = rowHeight * 0.32f;
-        const bool hovered = ImGui::IsMouseHoveringRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r));
+        const bool hovered = mergeToggle && ImGui::IsMouseHoveringRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r));
         dl->AddCircleFilled(c, r, hovered ? withAlpha(col, 90) : ImGui::GetColorU32(ImGuiCol_WindowBg));
         dl->AddCircle(c, r, col, 0, thickness);
-        const float a = r * 0.55f;
-        dl->AddLine(ImVec2(c.x - a, c.y), ImVec2(c.x + a, c.y), col, thickness);
-        if (row.collapsed)
-            dl->AddLine(ImVec2(c.x, c.y - a), ImVec2(c.x, c.y + a), col, thickness);
+        if (mergeToggle) {
+            const float a = r * 0.55f;
+            dl->AddLine(ImVec2(c.x - a, c.y), ImVec2(c.x + a, c.y), col, thickness);
+            if (row.collapsed)
+                dl->AddLine(ImVec2(c.x, c.y - a), ImVec2(c.x, c.y + a), col, thickness);
+        }
     } else {
         const float r = rowHeight * 0.22f;
         dl->AddCircleFilled(c, r, col);

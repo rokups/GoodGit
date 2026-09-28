@@ -32,7 +32,7 @@ fs::path origin(Scenario& s, const fs::path& repo) { return s.root() / (repo.fil
 
 } // namespace
 
-GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "BR-CHECKOUT", "BR-RENAME",
+GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "BR-CREATE-CHECKOUT-DEFAULT", "BR-CHECKOUT", "BR-RENAME",
     "BR-DELETE-LOCAL", "HIST-CTX-CREATE-BRANCH", "HIST-CTX-DELETE-BRANCH")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -41,7 +41,8 @@ GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "B
     ctx->ItemClick("//Branches/###create_branch");
     GG_REQUIRE(s.dialogOpen("Create branch"));
     s.dialogText("Create branch", "name", "feature-x");
-    s.dialogCheck("Create branch", "checkout", "Check out after creating");
+    // Checked out after creating by default.
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->checked("checkout"));
     s.dialogButton("Create branch", "Create");
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "feature-x"; }));
     s.settle();
@@ -64,6 +65,7 @@ GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "B
     s.contextMenu(("//History/**/###row_" + older).c_str(), "Create branch...");
     GG_REQUIRE(s.dialogOpen("Create branch"));
     s.dialogText("Create branch", "name", "from-history");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
     s.dialogButton("Create branch", "Create");
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/from-history"); }));
     s.settle();
@@ -73,6 +75,41 @@ GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "B
     s.dialogButton("Delete branch", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/from-history"); }));
     s.settle();
+}
+
+GG_TEST("refs", "Branches: a tree split on '/', groups named by their common prefix; double-click checks out",
+    "BR-TREE", "BR-DOUBLE-CLICK-CHECKOUT")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* b : {"feature/one", "feature/two", "user/rk/a", "user/rk/b", "solo/x"})
+        s.git(repo, {"branch", b});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    // Groups: "feature" and "user/rk" (the longest shared prefix); "solo/x" alone is not split.
+    GG_CHECK(s.itemExists("//Branches/###group_local:feature:"));
+    GG_CHECK(s.itemExists("//Branches/###group_local:user:rk:"));
+    GG_CHECK(!s.itemExists("//Branches/###group_local:user:"));
+    GG_CHECK(!s.itemExists("//Branches/###group_local:solo:"));
+    // Rows keep their IDs and show the name below their group.
+    GG_CHECK_STR_EQ(s.itemText(branchRow("user/rk/a").c_str()), "a");
+    GG_CHECK_STR_EQ(s.itemText(branchRow("feature/two").c_str()), "two");
+    GG_CHECK_STR_EQ(s.itemText(branchRow("solo/x").c_str()), "solo/x");
+    GG_CHECK(s.itemExists(branchRow("main").c_str()));
+    // A collapsed group hides its rows; filtering opens it again.
+    ctx->ItemClick("//Branches/###group_local:user:rk:");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists(branchRow("user/rk/a").c_str()));
+    ctx->ItemInputValue("//Branches/##branch_filter", "rk/b");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(branchRow("user/rk/b").c_str()));
+    GG_CHECK(!s.itemExists(branchRow("feature/one").c_str()));
+    ctx->ItemInputValue("//Branches/##branch_filter", "");
+    ctx->Yield(2);
+    // Double-click checks a branch out.
+    ctx->ItemDoubleClick(branchRow("feature/one").c_str());
+    GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "feature/one"; }));
+    s.settle();
+    GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
 GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNSET-UPSTREAM", "BR-FF-UPSTREAM",
@@ -257,6 +294,7 @@ GG_TEST("refs", "create a branch from a reflog entry", "REFLOG-BRANCH")
     s.contextMenu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from old...");
     GG_REQUIRE(s.dialogOpen("Create branch"));
     s.dialogText("Create branch", "name", "rescued");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
     s.dialogButton("Create branch", "Create");
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/rescued"); }));
     s.settle();

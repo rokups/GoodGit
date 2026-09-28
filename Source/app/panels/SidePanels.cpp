@@ -17,7 +17,6 @@ namespace ggui {
 
 namespace {
 
-// A row whose click toggles visibility in History (Ctrl-click: only this ref).
 // Row IDs replace '/' with ':' so test references can address them (ref names contain '/').
 std::string rowId(std::string id)
 {
@@ -25,21 +24,122 @@ std::string rowId(std::string id)
     return id;
 }
 
-bool visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color)
+struct RowEvents {
+    bool toggle = false;        // the eye icon was clicked (Ctrl: only this ref)
+    bool doubleClicked = false; // the row itself (only rows with a double-click action react)
+};
+
+// A ref row: the eye icon toggles visibility in History; the label is the row's item (menus and
+// tooltips attach to it). Rows without a double-click action are plain text.
+RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
+    bool doubleClickable)
 {
+    RowEvents events;
     const std::string id = rowId(rawId);
     ImGui::PushID(id.c_str());
-    ImGui::TextUnformatted(visible ? ICON_MS_VISIBILITY : ICON_MS_VISIBILITY_OFF);
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+    events.toggle = ImGui::SmallButton(visible ? ICON_MS_VISIBILITY "###eye" : ICON_MS_VISIBILITY_OFF "###eye");
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        ImGui::SetTooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
-    const bool clicked = ImGui::Selectable((label + "###" + id).c_str(), false);
+    const std::string item = label + "###" + id;
+    if (doubleClickable) {
+        ImGui::Selectable(item.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick);
+        events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+    } else {
+        plainText(item.c_str());
+    }
     ImGui::PopStyleColor();
     if (outlined) {
         ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
             ImGui::GetColorU32(ImGuiCol_Text), 2.0f, 0, 1.5f);
     }
     ImGui::PopID();
-    return clicked;
+    return events;
+}
+
+// Ref names as a tree split on '/'. A group is named by the longest '/'-separated prefix its
+// members share; a group of one is shown as that ref, unsplit.
+struct NameTree {
+    struct Entry {
+        std::string label;           // group prefix, or the ref's name below its group
+        size_t item = 0;             // leaf: index into the names
+        std::vector<Entry> children; // group
+        bool group = false;
+    };
+    std::vector<Entry> entries;
+};
+
+std::vector<std::string> splitSegments(const std::string& name)
+{
+    std::vector<std::string> out;
+    size_t start = 0;
+    for (size_t slash; (slash = name.find('/', start)) != std::string::npos; start = slash + 1)
+        out.push_back(name.substr(start, slash - start));
+    out.push_back(name.substr(start));
+    return out;
+}
+
+std::vector<NameTree::Entry> buildTree(const std::vector<std::pair<size_t, std::string>>& items)
+{
+    std::vector<NameTree::Entry> out;
+    std::map<std::string, std::vector<std::pair<size_t, std::string>>> groups;
+    for (const auto& [index, rest] : items) {
+        const auto slash = rest.find('/');
+        if (slash == std::string::npos)
+            out.push_back({rest, index, {}, false});
+        else
+            groups[rest.substr(0, slash)].push_back({index, rest});
+    }
+    for (auto& [first, members] : groups) {
+        if (members.size() == 1) {
+            out.push_back({members.front().second, members.front().first, {}, false});
+            continue;
+        }
+        // The longest common prefix of whole segments, leaving each member a name below it.
+        std::vector<std::string> common = splitSegments(members.front().second);
+        common.pop_back();
+        for (const auto& m : members) {
+            const auto segs = splitSegments(m.second);
+            size_t k = 0;
+            while (k < common.size() && k + 1 < segs.size() && segs[k] == common[k])
+                ++k;
+            common.resize(k);
+        }
+        std::string prefix;
+        for (const auto& seg : common)
+            prefix += (prefix.empty() ? "" : "/") + seg;
+        std::vector<std::pair<size_t, std::string>> below;
+        for (const auto& m : members)
+            below.push_back({m.first, m.second.substr(prefix.size() + 1)});
+        out.push_back({prefix, 0, buildTree(below), true});
+    }
+    std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.label < b.label; });
+    return out;
+}
+
+// Draws `entries`; `leaf(index, label)` draws one ref. Groups open by default and while filtering.
+template <typename Leaf>
+void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& idPrefix, bool filtering, Leaf&& leaf)
+{
+    for (const auto& e : entries) {
+        if (!e.group) {
+            leaf(e.item, e.label);
+            continue;
+        }
+        if (filtering)
+            ImGui::SetNextItemOpen(true);
+        const std::string id = idPrefix + e.label + "/";
+        if (ImGui::TreeNodeEx((e.label + "###group_" + rowId(id)).c_str(),
+                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            drawTree(e.children, id, filtering, leaf);
+            ImGui::TreePop();
+        }
+    }
 }
 
 // The Remotes panel's menu for a remote; also on the remote and its remote-tracking branches in
@@ -174,15 +274,38 @@ void BranchesPanel::draw(bool* open)
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Create branch at HEAD...");
+    auto& history = m_session.history();
+    // Show all / Hide all: every local and remote-tracking branch in History.
+    std::vector<std::string> all;
+    for (const auto& b : m_snapshot->branches)
+        all.push_back("refs/heads/" + b.name);
+    for (const auto& r : m_snapshot->remoteBranches)
+        all.push_back("refs/remotes/" + r.name);
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_branches"))
+        history.setRefsVisible(all, true);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        ImGui::SetTooltip("Show all branches in History");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_branches"))
+        history.setRefsVisible(all, false);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        ImGui::SetTooltip("Hide all branches in History");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter);
     const Palette& p = theme().palette();
-    auto& history = m_session.history();
-    for (const auto& b : m_snapshot->branches) {
-        if (!containsNoCase(b.name, m_filter))
-            continue;
-        std::string label = b.name;
+    const bool filtering = !m_filter.empty();
+    // Rows keep IDs directly under the window ("branch_<name>") whatever group they sit in.
+    const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
+
+    std::vector<std::pair<size_t, std::string>> locals;
+    for (size_t i = 0; i < m_snapshot->branches.size(); ++i)
+        if (containsNoCase(m_snapshot->branches[i].name, m_filter))
+            locals.push_back({i, m_snapshot->branches[i].name});
+    drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
+        const auto& b = m_snapshot->branches[index];
+        std::string label = shortName;
         if (!b.upstream.empty()) {
             label += "  \xe2\x86\x92 " + b.upstream;
             if (b.upstreamGone)
@@ -195,16 +318,27 @@ void BranchesPanel::draw(bool* open)
         if (!b.worktree.empty())
             label += "  [" + b.worktree + "]";
         const std::string full = "refs/heads/" + b.name;
-        if (visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
-                b.isHead ? p.branchCurrent : ImGui::GetColorU32(ImGuiCol_Text)))
+        ImGui::PushOverrideID(windowId);
+        const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
+            b.isHead ? p.branchCurrent : ImGui::GetColorU32(ImGuiCol_Text), true);
+        if (shortName != b.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("%s", b.name.c_str());
+        if (events.toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+        // Double-click checks the branch out.
+        if (events.doubleClicked && free && !b.isHead)
+            m_session.actions().checkout(b.name, false);
         branchMenu(b);
-    }
+        ImGui::PopID();
+    });
+
     // Remote-tracking branches under their remote.
-    std::map<std::string, std::vector<const core::RemoteBranchInfo*>> byRemote;
-    for (const auto& r : m_snapshot->remoteBranches)
+    std::map<std::string, std::vector<std::pair<size_t, std::string>>> byRemote;
+    for (size_t i = 0; i < m_snapshot->remoteBranches.size(); ++i) {
+        const auto& r = m_snapshot->remoteBranches[i];
         if (containsNoCase(r.name, m_filter))
-            byRemote[r.remote].push_back(&r);
+            byRemote[r.remote].push_back({i, r.name.substr(std::min(r.name.size(), r.remote.size() + 1))});
+    }
     for (const auto& [remote, list] : byRemote) {
         ImGui::PushID(("remote_group_" + remote).c_str());
         const core::RemoteInfo* info = nullptr;
@@ -218,15 +352,22 @@ void BranchesPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         if (nodeOpen) {
-            for (const auto* r : list) {
-                const std::string full = "refs/remotes/" + r->name;
-                if (visibilityRow("rbranch_" + r->name, r->name, history.refVisible(full), false, p.remote))
+            drawTree(buildTree(list), "remote:" + remote + "/", filtering, [&](size_t index, const std::string& shortName) {
+                const auto& r = m_snapshot->remoteBranches[index];
+                const std::string full = "refs/remotes/" + r.name;
+                // Rows keep the IDs they had before groups: <window>/remote_group_<remote>/<remote>/...
+                ImGui::PushOverrideID(windowId);
+                ImGui::PushID(("remote_group_" + remote).c_str());
+                ImGui::PushID(remote.c_str());
+                const RowEvents events = visibilityRow("rbranch_" + r.name, shortName == r.name.substr(remote.size() + 1) ? r.name : shortName,
+                    history.refVisible(full), false, p.remote, false);
+                if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
-                if (ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r->name)).c_str())) {
+                if (ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r.name)).c_str())) {
                     if (ImGui::MenuItem("Reveal"))
-                        m_session.revealCommit(r->target);
+                        m_session.revealCommit(r.target);
                     if (ImGui::MenuItem("Copy name"))
-                        ImGui::SetClipboardText(r->name.c_str());
+                        ImGui::SetClipboardText(r.name.c_str());
                     // ... and its remote's menu.
                     if (info && ImGui::BeginMenu(("Remote " + remote).c_str())) {
                         remoteMenuItems(m_session, *info);
@@ -234,7 +375,10 @@ void BranchesPanel::draw(bool* open)
                     }
                     ImGui::EndPopup();
                 }
-            }
+                ImGui::PopID();
+                ImGui::PopID();
+                ImGui::PopID();
+            });
             ImGui::TreePop();
         }
         ImGui::PopID();
@@ -265,7 +409,7 @@ void TagsPanel::draw(bool* open)
         if (!containsNoCase(t.name, m_filter))
             continue;
         const std::string full = "refs/tags/" + t.name;
-        if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tag))
+        if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tag, false).toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty())
             ImGui::SetTooltip("%s", t.message.c_str());

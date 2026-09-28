@@ -138,7 +138,9 @@ void Session::showCreateBranchDialog(const std::string& at)
     f.title = "Create branch";
     f.add(Field{Field::Text, "name", "Name"});
     f.add(Field{Field::Info, "at", "", "At " + shortName(at)});
-    f.add(Field{Field::Check, "checkout", "Check out after creating"});
+    Field checkout{Field::Check, "checkout", "Check out after creating"};
+    checkout.checked = true;
+    f.add(checkout);
     f.buttons.push_back({"Create", [this, at](Form& form) { m_actions->createBranch(gg::trim(form.text("name")), at, form.checked("checkout")); },
         [](const Form& form) { return nonEmpty(form, "name"); }});
     f.buttons.push_back({"Cancel", {}});

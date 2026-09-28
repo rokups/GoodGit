@@ -128,28 +128,52 @@ GG_TEST("history", "stash badges on base commits", "HIST-STASH-BADGES")
     GG_CHECK(s.itemExists(("//History/**/" + base + "/###badge_stash@{0}").c_str()));
 }
 
-GG_TEST("history", "scope follows the side panels", "HIST-SCOPE", "BR-TOGGLE", "BR-CTRL-ONLY")
+GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all",
+    "HIST-SCOPE", "BR-TOGGLE", "BR-CTRL-ONLY", "BR-BADGE-HIDDEN", "BR-SHOW-HIDE-ALL")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
+    s.git(repo, {"branch", "alias", "main"});
     GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
     const std::string topic = s.revParse(repo, "topic");
     const std::string mainTip = s.revParse(repo, "main");
     GG_CHECK(findRow(s, topic) != nullptr);
-    // Click hides the branch.
+    // A click on the row itself changes nothing.
     ctx->ItemClick("//Branches/branch_topic/###branch_topic");
+    ctx->Yield(3);
+    GG_CHECK(s.session()->history().refVisible("refs/heads/topic"));
+    // The eye icon hides the branch.
+    ctx->ItemClick("//Branches/branch_topic/###eye");
     GG_CHECK(s.waitUntil([&] { return findRow(s, topic) == nullptr && !s.session()->history().loading(); }));
     GG_CHECK(findRow(s, mainTip) != nullptr);
-    // Click again shows it.
-    ctx->ItemClick("//Branches/branch_topic/###branch_topic");
+    // Again shows it.
+    ctx->ItemClick("//Branches/branch_topic/###eye");
     GG_CHECK(s.waitUntil([&] { return findRow(s, topic) != nullptr; }));
+    // A hidden branch whose commit other refs keep in view loses its badge there.
+    GG_CHECK(s.itemExists(("//History/**/" + mainTip + "/###badge_alias").c_str()));
+    ctx->ItemClick("//Branches/branch_alias/###eye");
+    GG_CHECK(s.waitUntil([&] { return !s.session()->history().loading() && findRow(s, mainTip) != nullptr; }));
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists(("//History/**/" + mainTip + "/###badge_alias").c_str()));
+    GG_CHECK(s.itemExists(("//History/**/" + mainTip + "/###badge_main").c_str()));
+    ctx->ItemClick("//Branches/branch_alias/###eye");
     // Ctrl-click: only this branch.
     ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick("//Branches/branch_feature/###branch_feature");
+    ctx->ItemClick("//Branches/branch_feature/###eye");
     ctx->KeyUp(ImGuiMod_Ctrl);
     GG_CHECK(s.waitUntil([&] { return findRow(s, mainTip) == nullptr && findRow(s, topic) == nullptr; }));
     GG_CHECK(findRow(s, s.revParse(repo, "feature")) != nullptr);
     ctx->ItemClick("//History/Show all refs##hist_all");
     GG_CHECK(s.waitUntil([&] { return findRow(s, mainTip) != nullptr && findRow(s, topic) != nullptr; }));
+    // Hide all, then Show all, from the Branches panel.
+    ctx->ItemClick("//Branches/###hide_all_branches");
+    GG_CHECK(s.waitUntil([&] { return !s.session()->history().loading() && findRow(s, mainTip) == nullptr && findRow(s, topic) == nullptr; }));
+    for (const char* b : {"main", "topic", "feature", "alias"})
+        GG_CHECK(!s.session()->history().refVisible(std::string("refs/heads/") + b));
+    ctx->ItemClick("//Branches/###show_all_branches");
+    GG_CHECK(s.waitUntil([&] { return findRow(s, mainTip) != nullptr && findRow(s, topic) != nullptr; }));
+    for (const char* b : {"main", "topic", "feature", "alias"})
+        GG_CHECK(s.session()->history().refVisible(std::string("refs/heads/") + b));
 }
 
 GG_TEST("history", "search by message, ID, branch and tag; no graph while filtering", "HIST-SEARCH",
@@ -225,6 +249,78 @@ GG_TEST("history", "merges start collapsed; expand and collapse merged history",
     GG_CHECK(s.waitUntil([&] { return findRow(s, f1) != nullptr; }));
     s.contextMenu(rowRef(merge).c_str(), "Collapse merged history");
     GG_CHECK(s.waitUntil([&] { return findRow(s, f1) == nullptr; }));
+}
+
+GG_TEST("history", "a merge offers collapse only when collapsing hides commits", "HIST-MERGE-NOTHING-HIDDEN")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string merge = s.revParse(repo, "main");
+    const std::string f2 = s.revParse(repo, "feature");
+    const std::string f1 = s.revParse(repo, "feature~1");
+    // The merged branch still exists: its commits stay in view, so the merge has nothing to hide.
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
+    GG_CHECK(!findRow(s, merge)->collapsed);
+    GG_CHECK(!findRow(s, merge)->collapsible);
+    GG_CHECK(findRow(s, f1) != nullptr && findRow(s, f2) != nullptr);
+    GG_CHECK(!s.itemExists(("//History/**/" + merge + "/###merge_toggle").c_str()));
+    ctx->ItemClick(rowRef(merge).c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(!s.itemExists("//$FOCUSED/Collapse merged history"));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Expand merged history"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    s.app.closeRepository();
+
+    // Deleted, but an older commit on top of its tip keeps it in view; the walk only finds that
+    // after the merge. Once History is complete the merge (0 hidden) offers no toggle either.
+    s.git(repo, {"branch", "-D", "feature"});
+    const long long f2Time = std::stoll(s.gitOut(repo, {"log", "-1", "--format=%ct", f2}));
+    const std::string when = std::to_string(f2Time + 1) + " +0000";
+    const std::string object = "tree " + s.revParse(repo, f2 + "^{tree}") + "\nparent " + f2 + "\nauthor Test User <test@example.com> "
+        + when + "\ncommitter Test User <test@example.com> " + when + "\n\nKeep\n";
+    const std::string keep = gg::trim(s.git(repo, {"hash-object", "-w", "-t", "commit", "--stdin"}, object).out);
+    s.git(repo, {"update-ref", "refs/heads/keep", keep});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
+    GG_CHECK(findRow(s, f1) != nullptr && findRow(s, f2) != nullptr);
+    GG_CHECK(findRow(s, merge)->collapsedCount == 0);
+    GG_CHECK(!s.itemExists(("//History/**/" + merge + "/###merge_toggle").c_str()));
+    ctx->ItemClick(rowRef(merge).c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(!s.itemExists("//$FOCUSED/Expand merged history"));
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("history", "expanding or collapsing a merge keeps the whole list in view while History reloads",
+    "HIST-MERGE-TOGGLE-STABLE")
+{
+    const fs::path repo = s.largeFixture();
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 120.0f));
+    std::string merge;
+    for (const auto& row : history.rows())
+        if (history.mergeToggle(row) && row.collapsed) {
+            merge = row.id.hex();
+            break;
+        }
+    GG_REQUIRE(!merge.empty());
+    // Bring the merge into view (setup; the toggle below is clicked like a user).
+    s.session()->revealCommit(ggui::core::Oid::fromHex(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/" + merge + "/###merge_toggle").c_str()); }));
+    for (const char* step : {"expand", "collapse"}) {
+        const size_t before = history.rows().size();
+        GG_REQUIRE(before > 200); // more than the walk's first batch
+        ctx->ItemClick(("//History/**/" + merge + "/###merge_toggle").c_str());
+        // Every frame until the reload ends shows at least as many rows as before (or the new list).
+        size_t fewest = before;
+        for (int frame = 0; frame < 2000 && (frame < 3 || history.loading()); ++frame) {
+            fewest = std::min(fewest, history.rows().size());
+            ctx->Yield();
+        }
+        const size_t after = history.rows().size();
+        ctx->LogInfo("%s: %zu rows before, %zu after, fewest %zu", step, before, after, fewest);
+        GG_CHECK(!history.loading());
+        GG_CHECK(fewest >= std::min(before, after));
+    }
 }
 
 GG_TEST("history", "keyboard navigation", "HIST-KEY-UPDOWN")

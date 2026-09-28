@@ -28,13 +28,13 @@ bool closed(Scenario& s) { return s.session() == nullptr; }
 } // namespace
 
 GG_TEST("shell", "open by typed path, default layout, close from the menu", "APP-WELCOME-OPEN-PATH",
-    "LAYOUT-DEFAULT", "LAYOUT-HIDDEN-PANELS", "TB-BRANCH", "MENU-REPO-CLOSE", "APP-OPEN-STATES")
+    "LAYOUT-DEFAULT", "LAYOUT-HIDDEN-PANELS", "LAYOUT-TAB-ORDER", "TB-BRANCH", "MENU-REPO-CLOSE", "APP-OPEN-STATES")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.session() && s.session()->opened());
     GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_branch"), "main");
-    // Default dock layout: Branches|Tags, Worktrees|Remotes|Stashes, History, Changes,
+    // Default dock layout: Branches|Tags, Remotes|Stashes|Worktrees, History, Changes,
     // Change information, Diff (Blame, Reflog and Operations join it when shown; hidden at first).
     ctx->Yield(3);
     for (const char* hidden : {"Blame", "Reflog", "Operations"}) {
@@ -49,6 +49,16 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu", "APP
     GG_CHECK(branches == dockOf(ctx, "//Tags"));
     GG_CHECK(dockOf(ctx, "//Worktrees") == dockOf(ctx, "//Remotes"));
     GG_CHECK(dockOf(ctx, "//Worktrees") == dockOf(ctx, "//Stashes"));
+    // Tabs in that node: Remotes, Stashes, Worktrees.
+    if (ImGuiDockNode* node = dockOf(ctx, "//Remotes"); node && node->TabBar) {
+        std::vector<std::string> tabs;
+        for (const ImGuiTabItem& tab : node->TabBar->Tabs)
+            if (tab.Window)
+                tabs.emplace_back(tab.Window->Name);
+        GG_CHECK(tabs == (std::vector<std::string>{"Remotes", "Stashes", "Worktrees"}));
+    } else {
+        GG_CHECK(false && "no tab bar for Remotes");
+    }
     GG_CHECK(dockOf(ctx, "//Diff") == dockOf(ctx, "//Blame"));
     GG_CHECK(dockOf(ctx, "//Diff") == dockOf(ctx, "//Reflog"));
     GG_CHECK(dockOf(ctx, "//Diff") == dockOf(ctx, "//Operations"));

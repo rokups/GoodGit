@@ -230,6 +230,7 @@ struct HistoryRow {
     std::vector<GraphLine> lines;
     int collapsedCount = 0;           // merge rows: commits hidden when collapsed
     bool collapsed = false;
+    bool collapsible = false;         // merge rows: collapsing would hide commits (UF-38)
 };
 
 struct HistoryScope {

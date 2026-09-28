@@ -312,7 +312,7 @@ Every dialog is a Form (`Source/app/shell/Dialogs.cpp`). A Cancel button that on
 | Filter field | type | `conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes`<br>`history/search by message, ID, branch and tag; no graph while filtering` | tested |
 | Conflicted only | checkbox | `conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes`<br>`history/search by message, ID, branch and tag; no graph while filtering` | tested |
 | Stashes | checkbox | `history/stash badges on base commits` | tested |
-| Show all refs | click | `history/scope follows the side panels` | tested |
+| Show all refs | click | `history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all` | tested |
 | Load more | click | `history/large history: first page, Show more, reveal, cancel` | tested |
 | Scroll (tooltips wait, scroll position anchored) | mouse wheel | `history/tooltips wait until scrolling stops` | tested |
 | Up/Down move the selection | key | `history/keyboard navigation`<br>`history/scroll position stays anchored on the rows in view` | tested |
@@ -478,8 +478,12 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 |---|---|---|---|
 | Create branch (+) | click | `refs/create, check out, rename and delete branches`<br>`undo/every everyday mutation can be undone` | tested |
 | Filter field | type | `panels/branches: filter, current, upstream, reveal, copy`<br>`dnd/the chooser's choices and Escape; a commit's files onto its child, HEAD or elsewhere; a commit onto itself` | tested |
-| Branch row: show/hide in History (Ctrl+click: only this one) | click | `history/scope follows the side panels` | tested |
-| Remote-tracking row: show/hide in History | click | `panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation` | tested |
+| Show all branches (eye) | click | `history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all` | tested |
+| Hide all branches (crossed eye) | click | `history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all` | tested |
+| Branch row eye icon: show/hide in History (Ctrl+click: only this one) | click | `history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all` | tested |
+| Branch row: check out | double-click | `refs/Branches: a tree split on '/', groups named by their common prefix; double-click checks out` | tested |
+| Branch group (name prefix): collapse/expand | click | `refs/Branches: a tree split on '/', groups named by their common prefix; double-click checks out` | tested |
+| Remote-tracking row eye icon: show/hide in History | click | `panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation` | tested |
 | Branch ▸ Reveal | context menu | `panels/branches: filter, current, upstream, reveal, copy` | tested |
 | Branch ▸ Copy name | context menu | `panels/branches: filter, current, upstream, reveal, copy` | tested |
 | Branch ▸ Check out | context menu | `checkout/local changes block a switch: Stash and switch`<br>`undo/in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it` | tested |
@@ -508,7 +512,7 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 |---|---|---|---|
 | Create tag (+) | click | `edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults`<br>`refs/tags: lightweight, annotated, delete, push, delete on remote` | tested |
 | Filter field | type | `panels/tags: filter, visibility, reveal, copy`<br>`history/large history: first page, Show more, reveal, cancel` | tested |
-| Tag row: show/hide in History (Ctrl+click: only this one) | click | `panels/tags: filter, visibility, reveal, copy` | tested |
+| Tag row eye icon: show/hide in History (Ctrl+click: only this one) | click | `panels/tags: filter, visibility, reveal, copy` | tested |
 | Tag ▸ Reveal | context menu | `panels/tags: filter, visibility, reveal, copy` | tested |
 | Tag ▸ Copy name | context menu | `panels/tags: filter, visibility, reveal, copy` | tested |
 | Tag ▸ Delete | context menu | `refs/tags: lightweight, annotated, delete, push, delete on remote` | tested |

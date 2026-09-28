@@ -69,12 +69,12 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-T
     ctx->ItemInputValue("//Tags/##tag_filter", "");
     ctx->Yield(2);
     ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick("//Tags/tag_v1.0/###tag_v1.0");
+    ctx->ItemClick("//Tags/tag_v1.0/###eye");
     ctx->KeyUp(ImGuiMod_Ctrl);
     auto& history = s.session()->history();
     GG_CHECK(s.waitUntil([&] { return !history.loading() && history.rows().size() == 2; }));
     GG_CHECK(!history.refVisible("refs/tags/v2.0"));
-    ctx->ItemClick("//Tags/tag_v2.0/###tag_v2.0");
+    ctx->ItemClick("//Tags/tag_v2.0/###eye");
     GG_CHECK(s.waitUntil([&] { return history.refVisible("refs/tags/v2.0") && history.rows().size() == 4; }));
 }
 
@@ -199,9 +199,10 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     s.contextMenu(rbranch.c_str(), "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "origin/main"); }));
     auto& history = s.session()->history();
-    ctx->ItemClick(rbranch.c_str());
+    const std::string rbranchEye = "//Branches/remote_group_origin/origin/rbranch_origin:main/###eye";
+    ctx->ItemClick(rbranchEye.c_str());
     GG_CHECK(!history.refVisible("refs/remotes/origin/main"));
-    ctx->ItemClick(rbranch.c_str());
+    ctx->ItemClick(rbranchEye.c_str());
     GG_CHECK(history.refVisible("refs/remotes/origin/main"));
     // Tooltips: an annotated tag's message, a remote's URLs, a locked worktree's reason.
     s.showPanel("Tags");

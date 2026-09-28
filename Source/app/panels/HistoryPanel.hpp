@@ -41,8 +41,15 @@ public:
     bool refVisible(const std::string& fullName) const { return !m_hidden.count(fullName); }
     void toggleRef(const std::string& fullName, bool only);
     void showAllRefs();
+    // Shows or hides every ref in `fullNames` at once (Branches: Show all / Hide all).
+    void setRefsVisible(const std::vector<std::string>& fullNames, bool visible);
 
     void toggleMerge(const core::Oid& id);
+    // A merge row offers Collapse/Expand only when collapsing hides commits (UF-38).
+    bool mergeToggle(const core::HistoryRow& row) const
+    {
+        return row.parents.size() > 1 && row.collapsible && !(row.collapsed && m_complete && row.collapsedCount == 0);
+    }
     const core::HistoryRow* row(const core::Oid& id) const;
     // Whether `id` has `ancestor` among its ancestors in the loaded history (UI thread).
     bool descendsFrom(const core::Oid& id, const core::Oid& ancestor) const;
@@ -76,6 +83,12 @@ private:
     core::SnapshotPtr m_snapshot;
     std::vector<core::HistoryRow> m_rows;
     std::unordered_map<core::Oid, int, core::OidHash> m_index;
+    // A reload's rows gather here while the previous rows stay on screen, until there are as
+    // many or the walk ends (UF-47: no short list and scrollbar jump in between).
+    bool m_staging = false;
+    size_t m_stageTarget = 0;
+    std::vector<core::HistoryRow> m_stagedRows;
+    std::unordered_map<core::Oid, int, core::OidHash> m_stagedIndex;
     core::RequestId m_query = 0;
     core::RequestId m_revealRequest = 0;
     bool m_loading = false;

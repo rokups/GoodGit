@@ -739,6 +739,7 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     s.contextMenu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...");
     GG_REQUIRE(s.dialogOpen("Create branch"));
     s.dialogText("Create branch", "name", "from-reflog");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
     s.dialogButton("Create branch", "Create");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(r.path, {"rev-parse", "-q", "--verify", "refs/heads/from-reflog"}).ok(); }));
     s.settle();

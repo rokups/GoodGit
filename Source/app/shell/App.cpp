@@ -580,9 +580,9 @@ void App::drawDockHost()
         ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Up, 0.55f, &changes, &info);
         ImGui::DockBuilderDockWindow(panel::Branches, leftTop);
         ImGui::DockBuilderDockWindow(panel::Tags, leftTop);
-        ImGui::DockBuilderDockWindow(panel::Worktrees, leftBottom);
         ImGui::DockBuilderDockWindow(panel::Remotes, leftBottom);
         ImGui::DockBuilderDockWindow(panel::Stashes, leftBottom);
+        ImGui::DockBuilderDockWindow(panel::Worktrees, leftBottom);
         ImGui::DockBuilderDockWindow(panel::History, center);
         ImGui::DockBuilderDockWindow(panel::Rebase, center);
         ImGui::DockBuilderDockWindow(panel::Changes, changes);
@@ -596,7 +596,7 @@ void App::drawDockHost()
         for (const char* name : panel::All)
             panels[name] = panel::defaultVisible(name);
         m_session->focusPanel(panel::Branches);
-        m_session->focusPanel(panel::Worktrees);
+        m_session->focusPanel(panel::Remotes);
         m_session->focusPanel(panel::Diff);
         m_session->focusPanel(panel::History);
     }

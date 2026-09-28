@@ -180,9 +180,14 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         if (auto it = st.badges.find(id); it != st.badges.end())
             row.refs = it->second;
         if (parents.size() > 1) {
+            // Collapsing hides nothing when every merged-in parent is shown anyway (a ref points at
+            // it, a shown child already leads to it, or it is shown): such a merge stays expanded.
+            for (size_t i = 1; i < parents.size(); ++i)
+                if (!st.scopeTips.count(parents[i]) && !st.reach.count(parents[i]) && !st.rowOf.count(parents[i]))
+                    row.collapsible = true;
             const bool toggled = std::find(st.scope.toggledMerges.begin(), st.scope.toggledMerges.end(), id)
                 != st.scope.toggledMerges.end();
-            row.collapsed = st.scope.mergesCollapsed != toggled;
+            row.collapsed = row.collapsible && st.scope.mergesCollapsed != toggled;
         }
         for (size_t i = 0; i < parents.size(); ++i) {
             if (i == 0 || !row.collapsed)

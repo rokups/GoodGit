@@ -14,7 +14,9 @@ float inset(float laneWidth);
 // Centre of `lane` in a cell starting at `cellX`.
 float laneX(float cellX, int lane, float laneWidth);
 // Edges, the commit dot (conflicted commits in the conflict colour, merges as a bubble) and,
-// for `head`, the outline of the checked-out commit.
-void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head);
+// for `head`, the outline of the checked-out commit. A merge that cannot be collapsed or expanded
+// (`mergeToggle` false) has a plain bubble without the +/- sign.
+void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head,
+    bool mergeToggle = true);
 
 } // namespace ggui::graph

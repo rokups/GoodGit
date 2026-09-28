@@ -1955,27 +1955,34 @@ Requested by the user after P3-14 (UF-10 … UF-31). All done.
 From the user's board (`build/gg - Kanban.md`, "In Progress" only; archived items are ignored).
 To do after CI is green.
 
-### [ ] UF-32 Hidden branches lose their History badge
+### [x] UF-32 Hidden branches lose their History badge
+- **Status:** done. Badges of hidden local, remote-tracking and tag refs are skipped (`BR-BADGE-HIDDEN`).
 - **Do:** hiding a branch also hides its badge in History, even when something else keeps the
   commit visible.
 
-### [ ] UF-33 Show all / hide all branches
+### [x] UF-33 Show all / hide all branches
+- **Status:** done. Eye and crossed-eye buttons next to +: every local and remote-tracking branch (`BR-SHOW-HIDE-ALL`).
 - **Do:** controls in Branches that show or hide all branches at once.
 
-### [ ] UF-34 Branches as a tree
+### [x] UF-34 Branches as a tree
+- **Status:** done. Local branches, and remote-tracking branches under each remote; a group of one is not split; groups open while filtering; rows keep their IDs (`BR-TREE`).
 - **Do:** Branches lists branch names as a tree split on "/". A group's name is the longest
   common prefix of its members.
 
-### [ ] UF-35 "Checkout after creating" on by default
+### [x] UF-35 "Checkout after creating" on by default
+- **Status:** done (`BR-CREATE-CHECKOUT-DEFAULT`).
 - **Do:** the Create branch dialog has "Checkout after creating" checked by default.
 
-### [ ] UF-36 Branch visibility from the eye icon only
+### [x] UF-36 Branch visibility from the eye icon only
+- **Status:** done. Also in Tags; a tag row is plain text (its click does nothing) (`BR-TOGGLE`).
 - **Do:** a branch's visibility toggles by clicking its eye icon, not the row.
 
-### [ ] UF-37 Double-click checks out a branch
+### [x] UF-37 Double-click checks out a branch
+- **Status:** done. Local branches only (`BR-DOUBLE-CLICK-CHECKOUT`).
 - **Do:** double-clicking a branch row checks the branch out.
 
-### [ ] UF-38 No collapse for a merge with 0 hidden commits
+### [x] UF-38 No collapse for a merge with 0 hidden commits
+- **Status:** done. The walk draws such a merge expanded and without the +/- bubble or menu items when every merged-in parent is shown anyway; one that still ends with 0 hidden commits loses the toggle once History is complete (`HIST-MERGE-NOTHING-HIDDEN`).
 - **Do:** a collapsed merge sometimes shows "0 hidden commits"; such a merge offers no collapse.
 
 ### [ ] UF-39 Diff "Show more" per side
@@ -1991,7 +1998,8 @@ To do after CI is green.
   commit ID, and also "Work Tree" (case-insensitive, trimmed). A context menu fills in "HEAD" or
   "Work Tree".
 
-### [ ] UF-42 Default tab order Remotes, Stashes, Worktrees
+### [x] UF-42 Default tab order Remotes, Stashes, Worktrees
+- **Status:** done. Tab order follows the panels' drawing order; Remotes is the selected tab (`LAYOUT-TAB-ORDER`).
 - **Do:** in the default layout the tabs are ordered Remotes, Stashes, Worktrees.
 
 ### [ ] UF-43 Tag Delete: local and remotes
@@ -2011,7 +2019,8 @@ To do after CI is green.
 - **Do:** the "Worktree settings" button becomes a checkbox above the scope tabs; the "Worktree"
   tab is visible only while it is on.
 
-### [ ] UF-47 History keeps its layout while merges expand or collapse
+### [x] UF-47 History keeps its layout while merges expand or collapse
+- **Status:** done. A reload's rows are staged while the previous rows stay, and swap in once as many or the walk ends (`HIST-MERGE-TOGGLE-STABLE`).
 - **Do:** expanding or collapsing a merge briefly draws only part of History, throwing off the
   scrollbar. Keep the full list laid out during the change.
 

@@ -275,14 +275,14 @@ GG_TEST("ui", "dialogs: Escape cancels; Enter in a text field confirms when the 
     ctx->KeyPress(ImGuiKey_Enter);
     ctx->Yield(3);
     GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->title == "Create branch");
-    // Enter with a name: created (not checked out).
+    // Enter with a name: created and checked out (the default).
     s.dialogText("Create branch", "name", "entered");
     ctx->KeyPress(ImGuiKey_Enter);
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/entered"); }));
     s.settle();
     GG_CHECK(s.app.dialogs().current() == nullptr);
     GG_CHECK_STR_EQ(s.revParse(repo, "entered"), tip);
-    GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
+    GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "entered"; }));
 }
 
 GG_TEST("ui", "Git required: Quit asks the app to quit; the refused open does not block later opens",
