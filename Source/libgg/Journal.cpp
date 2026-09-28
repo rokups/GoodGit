@@ -434,7 +434,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
         return plan;
     }
     for (const auto& i : target->index)
-        if (i.wt == wt && !i.before.empty())
+        if (i.wt == wt && !i.before.empty() && !i.after.empty()) // (a step stopped at conflicts has no tree)
             plan.index = IndexChange{wt, i.after, i.before, i.worktree};
     plan.ok = true;
     return plan;

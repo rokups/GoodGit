@@ -130,12 +130,16 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     // The rebase this operation started or joined: open while it is stopped, ended with it.
     const bool rebasing = !native::rebaseIdentity(m_repo).empty();
     const bool startsGroup = !m_resumed && rebasing && !m_rebaseAtBegin && m_op.undoes.empty();
-    if (m_captureIndex && !m_indexBefore.empty()) {
+    if (m_captureIndex) {
         // A rebase group's steps record the index even when a step leaves it as it was: the group
         // then keeps its first index and its latest one, although the user may stage changes
-        // between the steps (for an edit stop) outside any operation.
+        // between the steps (for an edit stop) outside any operation. An index with conflicts has
+        // no tree (""): a step that stops at conflicts records its start, and the step that goes
+        // on from there its end, so the group still has both.
         const std::string indexAfter = indexTree(m_workdir);
-        if (!indexAfter.empty() && (indexAfter != m_indexBefore || m_resumed || startsGroup))
+        const bool groupStep = m_resumed || startsGroup;
+        if (groupStep ? !m_indexBefore.empty() || !indexAfter.empty()
+                      : !m_indexBefore.empty() && !indexAfter.empty() && indexAfter != m_indexBefore)
             m_journal.appendIndex(m_op.id, journal::IndexChange{m_op.wt, m_indexBefore, indexAfter, worktreeFollowsIndex},
                 &error);
     }
