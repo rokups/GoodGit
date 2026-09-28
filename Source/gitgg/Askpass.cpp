@@ -9,9 +9,8 @@ namespace gitgg {
 
 int runAskpass(const std::string& prompt)
 {
-    // GG_ASKPASS_ENDPOINT = "<port>:<token>" (loopback only).
-    const char* endpoint = std::getenv("GG_ASKPASS_ENDPOINT");
-    const std::string value = endpoint ? endpoint : "";
+    // GG_ASKPASS_ENDPOINT = "<port>:<token>" (loopback only; set, or this is not askpass mode).
+    const std::string value = std::getenv("GG_ASKPASS_ENDPOINT");
     const auto colon = value.find(':');
     if (colon == std::string::npos)
         return 1;

@@ -1,6 +1,7 @@
 #include "core/Types.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 
@@ -31,13 +32,8 @@ Oid Oid::fromHex(std::string_view hex)
     if (hex.size() != 40 && hex.size() != 64)
         return oid;
     auto val = [](char c) -> int {
-        if (c >= '0' && c <= '9')
-            return c - '0';
-        if (c >= 'a' && c <= 'f')
-            return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F')
-            return c - 'A' + 10;
-        return -1;
+        const auto u = static_cast<unsigned char>(c);
+        return std::isxdigit(u) ? (std::isdigit(u) ? u - '0' : (u | 0x20) - 'a' + 10) : -1;
     };
     for (size_t i = 0; i < hex.size() / 2; ++i) {
         const int hi = val(hex[2 * i]);

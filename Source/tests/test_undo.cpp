@@ -421,4 +421,41 @@ GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main 
     GG_CHECK_STR_EQ(s.gitOut(wt1, {"branch", "--show-current"}), "side");
 }
 
+GG_TEST("undo", "failed operations are passed over by Undo and Redo", "MENU-EDIT-UNDO-KEY", "MENU-EDIT-REDO-KEY",
+    "HOOK-FAIL-POPUP")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string start = s.head(repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != start; }));
+    s.settle();
+    const std::string made = s.head(repo);
+    // A commit its pre-commit hook refuses: a failed operation, the newest in the journal.
+    const fs::path hook = repo / ".git" / "hooks" / "pre-commit";
+    auto refusedCommit = [&] {
+        s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\nexit 1\n");
+        fs::permissions(hook, fs::perms::owner_all);
+        s.write(repo, "f1.txt", "staged\n");
+        s.git(repo, {"add", "f1.txt"});
+        GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
+        ctx->ItemClick("//##Toolbar/###tb_commit");
+        GG_REQUIRE(s.dialogOpen("Commit"));
+        s.dialogText("Commit", "message", "Refused");
+        s.dialogButton("Commit", "Commit");
+        GG_CHECK(s.dismissError());
+        fs::remove(hook);
+        s.git(repo, {"reset", "-q", "--hard"});
+        s.settle();
+    };
+    refusedCommit();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == start; }));
+    s.settle();
+    refusedCommit();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == made; }));
+    s.settle();
+}
+
 } // namespace ggtest

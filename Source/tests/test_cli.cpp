@@ -222,6 +222,15 @@ GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the
     GG_CHECK_EQ(r.exitCode, 128);
     GG_CHECK(r.err.find("cannot start ggui") != std::string::npos);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "uninstall"}).ok());
+    // git-gg as GIT_ASKPASS (git runs it with the prompt) when no ggui answers: no answer (exit 1).
+    for (const char* endpoint : {"no-port-here", "1:token"}) {
+        gg::RunRequest req;
+        req.args = {gitgg.string(), "Password for x:"};
+        req.cwd = repo;
+        req.gitEnvironment = false; // (not ggui's own endpoint)
+        req.env.emplace_back("GG_ASKPASS_ENDPOINT", endpoint);
+        GG_CHECK_EQ(gg::run(req).exitCode, 1);
+    }
 }
 
 } // namespace ggtest

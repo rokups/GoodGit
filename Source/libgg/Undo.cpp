@@ -116,19 +116,18 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     // index): carry a clean index and working tree back along with HEAD, like a checkout would.
     // With local changes only the refs move (nothing is lost). A plain commit keeps its changes.
     if (!plan.index && !bare && plan.target->src == "git" && updatesWorktree(plan.target->cmd)) {
-        // A HEAD value: an id, or "ref:<name>" followed to that ref's value now or after the restore.
+        // A HEAD value: an id, or "ref:<branch>" followed to that branch's value now or after the
+        // restore ("" when it has none).
         auto resolve = [&](const std::string& value, bool afterRestore) -> std::string {
-            std::string v = value;
-            for (int depth = 0; depth < 5 && isSymbolic(v); ++depth) {
-                const std::string name = trim(v.substr(4));
-                std::string next = currentValue(name);
-                if (afterRestore)
-                    for (const auto& c : plan.restore)
-                        if (c.ref == name)
-                            next = c.newValue;
-                v = next;
-            }
-            return isZero(v) || isSymbolic(v) ? std::string() : v;
+            if (!isSymbolic(value))
+                return value;
+            const std::string name = trim(value.substr(4));
+            std::string v = currentValue(name);
+            if (afterRestore)
+                for (const auto& c : plan.restore)
+                    if (c.ref == name)
+                        v = c.newValue;
+            return isZero(v) ? std::string() : v;
         };
         const std::string headKey = journal::headKey(wt);
         std::string headNow = currentValue(headKey);
@@ -146,8 +145,7 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
                 carry.before = trim(git(cwd, {"rev-parse", from + "^{tree}"}).out);
                 carry.after = trim(git(cwd, {"rev-parse", to + "^{tree}"}).out);
                 carry.worktree = true;
-                if (!carry.before.empty() && !carry.after.empty())
-                    plan.index = carry;
+                plan.index = carry; // (both are commits: their trees exist)
             }
         }
     }
