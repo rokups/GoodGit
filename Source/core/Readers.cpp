@@ -1141,10 +1141,10 @@ BlamePtr readBlame(git_repository* repo, const BlameQuery& q, const gg::CancelTo
         BlameLine line;
         line.lineNo = static_cast<int>(i + 1);
         line.text = (*lines)[i];
-        const git_blame_hunk* h = use ? git_blame_get_hunk_byline(use, i + 1) : nullptr;
+        const git_blame_hunk* h = git_blame_get_hunk_byline(use, i + 1);
         if (h && !git_oid_is_zero(&h->final_commit_id)) {
             line.commit = toOid(h->final_commit_id);
-            line.origPath = h->orig_path ? h->orig_path : q.path;
+            line.origPath = h->orig_path;
             line.origLine = static_cast<int>(h->orig_start_line_number + (i + 1 - h->final_start_line_number));
             if (h->final_signature) {
                 line.author = h->final_signature->name;
@@ -1194,11 +1194,9 @@ ReflogPtr readReflog(git_repository* repo, const std::string& ref)
         entry.newId = toOid(*git_reflog_entry_id_new(e));
         const char* msg = git_reflog_entry_message(e);
         entry.message = msg ? msg : "";
-        const git_signature* sig = git_reflog_entry_committer(e);
-        if (sig) {
-            entry.committer = sig->name;
-            entry.time = sig->when.time;
-        }
+        const git_signature* sig = git_reflog_entry_committer(e); // always parsed with the entry
+        entry.committer = sig->name;
+        entry.time = sig->when.time;
         result->entries.push_back(std::move(entry));
     }
     return result;

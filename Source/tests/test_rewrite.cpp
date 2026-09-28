@@ -200,4 +200,43 @@ GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the ma
     s.git(repo, {"worktree", "remove", "--force", wt.string()});
 }
 
+GG_TEST("rewrite", "in a bare repository, and at the root: reword, abandon the root commit",
+    "ACT-DESCRIBE-ANY", "ACT-ABANDON", "REWRITE-INVARIANTS", "APP-OPEN-STATES")
+{
+    // Bare: the branch moves, nothing needs a working tree.
+    const fs::path bare = s.fixture(Recipe::Bare);
+    const std::string target = s.revParse(bare, "HEAD~1");
+    GG_REQUIRE(s.openRepository(bare));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(target)) != nullptr; }));
+    selectCommit(s, target);
+    s.setText("//Change information/##message", "Reworded in a bare repository");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return info(s, bare, "HEAD~1", "%s") == "Reworded in a bare repository"; }));
+    s.settle();
+    GG_CHECK(s.fsck(bare));
+
+    // The root commit: reworded (its descendants follow), then abandoned (they become roots' children).
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string root = s.revParse(repo, "HEAD~4");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(root)) != nullptr; }));
+    selectCommit(s, root);
+    s.setText("//Change information/##message", "Reworded root");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "HEAD~4", "%s") == "Reworded root"; }));
+    s.settle();
+    const std::string newRoot = s.revParse(repo, "HEAD~4");
+    const std::string second = s.revParse(repo, "HEAD~3");
+    const std::string tip = s.head(repo);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(newRoot)) != nullptr; }));
+    ctx->ItemClick(("//History/**/###row_" + newRoot).c_str());
+    ctx->KeyPress(ImGuiKey_A);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != tip; }));
+    s.settle();
+    GG_CHECK_STR_EQ(gg::trim(s.gitOut(repo, {"rev-list", "--count", "HEAD"})), "4");
+    GG_CHECK(s.gitOut(repo, {"rev-list", "--max-parents=0", "HEAD"}) != second); // the old second commit, re-rooted
+    GG_CHECK_STR_EQ(info(s, repo, "HEAD~3", "%s"), info(s, repo, second, "%s"));
+    GG_CHECK(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "HEAD~4"}).out.empty());
+}
+
 } // namespace ggtest

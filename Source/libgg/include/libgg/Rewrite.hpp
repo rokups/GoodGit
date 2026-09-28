@@ -52,9 +52,8 @@ struct Step {
     std::optional<std::string> message;
     std::optional<Person> author;
     std::optional<std::string> tree; // fixed resulting tree
-    // Apply only these paths of the source's change (empty = all), or all but these.
+    // Apply only these paths of the source's change (empty = all).
     std::vector<std::string> onlyPaths;
-    std::vector<std::string> exceptPaths;
     // Files set in the result (bytes; nullopt = removed), e.g. working tree files absorbed
     // into the commit. Blobs go to the in-memory store like everything else.
     std::vector<std::pair<std::string, std::optional<std::string>>> setFiles;

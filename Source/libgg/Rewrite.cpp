@@ -87,8 +87,7 @@ struct Rewriter::Impl {
     }
 
     // A tree with the source's change restricted to (or excluding) some paths, against `base`.
-    std::string filteredChange(const std::string& baseTree, const std::string& sourceTree,
-        const std::vector<std::string>& only, const std::vector<std::string>& except)
+    std::string filteredChange(const std::string& baseTree, const std::string& sourceTree, const std::vector<std::string>& only)
     {
         Tree base = lookupTree(repo.get(), *fromHex(baseTree));
         Tree source = lookupTree(repo.get(), *fromHex(sourceTree));
@@ -96,17 +95,14 @@ struct Rewriter::Impl {
         check(git_diff_tree_to_tree(&rawDiff, repo.get(), base.get(), source.get(), nullptr), "git_diff_tree_to_tree");
         Diff diff(rawDiff);
         auto selected = [&](const std::string& path) {
-            auto under = [&](const std::string& p) { return path == p || path.rfind(p + "/", 0) == 0; };
-            if (!only.empty())
-                return std::any_of(only.begin(), only.end(), under);
-            return !std::any_of(except.begin(), except.end(), under);
+            return std::any_of(only.begin(), only.end(), [&](const std::string& p) { return path == p || path.rfind(p + "/", 0) == 0; });
         };
         std::vector<git_tree_update> updates;
         std::vector<std::string> keep; // path storage
         keep.reserve(git_diff_num_deltas(diff.get()) * 2);
         for (size_t i = 0; i < git_diff_num_deltas(diff.get()); ++i) {
             const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
-            const std::string path = d->new_file.path ? d->new_file.path : d->old_file.path;
+            const std::string path = d->new_file.path; // set for every delta (old == new unless renamed)
             if (!selected(path))
                 continue;
             keep.push_back(path);
@@ -197,14 +193,10 @@ struct Rewriter::Impl {
             // Rename conflicts are decided per rename (below), not per path.
             if (renamePaths.count(c.ancPath) || renamePaths.count(c.oursPath) || renamePaths.count(c.theirsPath))
                 continue;
-            const bool renamed = (!c.ancPath.empty() && !c.oursPath.empty() && c.ancPath != c.oursPath)
-                || (!c.ancPath.empty() && !c.theirsPath.empty() && c.ancPath != c.theirsPath)
-                || (!c.oursPath.empty() && !c.theirsPath.empty() && c.oursPath != c.theirsPath);
-            // Kind of conflict.
+            // Kind of conflict (an index conflict has one path for all its stages; renames were
+            // taken out above).
             std::string kind;
-            if (renamed || renamePaths.count(path) || renamePaths.count(c.ancPath))
-                kind = "rename";
-            else if (!c.ours || !c.theirs)
+            if (!c.ours || !c.theirs)
                 kind = "modify/delete";
             else if (c.ours->mode == kModeLink || c.theirs->mode == kModeLink)
                 kind = "symlink";
@@ -248,14 +240,14 @@ struct Rewriter::Impl {
             // Non-text: the decision, or a provisional one (the replayed side) to go on.
             const Resolution r = decided != plan.resolutions.end() ? decided->second : Resolution{Choice::Theirs, {}, {}};
             // (Only mode conflicts carry a chosen mode, and they are merged as text above.)
-            auto take = [&](const std::optional<git_index_entry>& e, const std::string& p) {
+            auto take = [&](const std::optional<git_index_entry>& e) {
                 if (e)
-                    addEntry(p.empty() ? path : p, e->id, e->mode);
+                    addEntry(path, e->id, e->mode);
             };
             switch (r.choice) {
-            case Choice::Ours: take(c.ours, c.oursPath); break;
-            case Choice::Theirs: take(c.theirs, c.theirsPath); break;
-            case Choice::Base: take(c.anc, c.ancPath); break;
+            case Choice::Ours: take(c.ours); break;
+            case Choice::Theirs: take(c.theirs); break;
+            case Choice::Base: take(c.anc); break;
             case Choice::Delete: break;
             case Choice::File: {
                 const std::uint32_t mode = c.theirs ? c.theirs->mode : c.ours ? c.ours->mode : 0100644;
@@ -339,21 +331,18 @@ struct Rewriter::Impl {
             const git_index_entry* merged = git_index_get_bypath(index.get(), path.c_str(), 0);
             if (!merged)
                 continue;
-            auto entryOf = [&](git_tree* t) -> std::optional<git_oid> {
+            auto entryOf = [&](git_tree* t) { // modified on both sides: in all three trees
                 git_tree_entry* raw = nullptr;
-                if (git_tree_entry_bypath(&raw, t, path.c_str()) != 0) {
-                    git_error_clear();
-                    return std::nullopt;
-                }
+                check(git_tree_entry_bypath(&raw, t, path.c_str()), "git_tree_entry_bypath");
                 TreeEntry e(raw);
                 return *git_tree_entry_id(e.get());
             };
-            const auto b = entryOf(base.get());
-            const auto o = entryOf(ours.get());
-            const auto t = entryOf(theirs.get());
-            if (!b || !o || !t || isBinary(*o) || isBinary(*t) || !gg::conflicts::eligible(repo.get(), &sourceOid, path))
+            const git_oid b = entryOf(base.get());
+            const git_oid o = entryOf(ours.get());
+            const git_oid t = entryOf(theirs.get());
+            if (isBinary(o) || isBinary(t) || !gg::conflicts::eligible(repo.get(), &sourceOid, path))
                 continue;
-            const std::string bt = blobText(*b), ot = blobText(*o), tt = blobText(*t);
+            const std::string bt = blobText(b), ot = blobText(o), tt = blobText(t);
             if (!gg::markers::isConflicted(bt) && !gg::markers::isConflicted(ot) && !gg::markers::isConflicted(tt))
                 continue;
             const std::uint32_t mode = merged->mode;
@@ -578,9 +567,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 pending->unchanged = false;
                 if (step.message)
                     pending->message = *step.message;
-                if (step.author)
-                    pending->author = step.author;
-                continue;
+                continue; // (the group keeps its first commit's author)
             }
             flush();
             currentKey = key;
@@ -628,8 +615,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 const std::string srcTree = toHex(*git_commit_tree_id(src.get()));
                 const std::string oldBaseTree = originalParents.empty() ? m->emptyTree() : m->treeOf(originalParents.front());
                 std::string change = srcTree;
-                if (!step.onlyPaths.empty() || !step.exceptPaths.empty())
-                    change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths, step.exceptPaths);
+                if (!step.onlyPaths.empty())
+                    change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths);
                 p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result);
             }
             if (!step.setFiles.empty()) {

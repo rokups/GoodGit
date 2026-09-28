@@ -161,6 +161,20 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks", 
     GG_CHECK_EQ(s.session()->blame().selectionLast(), 1);
     s.contextMenu(lineRef(s, 2).c_str(), "Copy change block");
     GG_CHECK_STR_EQ(s.clipboard(), "L1\nL2\n");
+    // Nothing comes before the first commit, nor before the commit that added a file.
+    s.contextMenu(lineRef(s, 1).c_str(), "Blame before this change");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("The commit has no parent") != std::string::npos);
+    s.commitFile(r.path, "fresh.txt", "new\n", "Add a fresh file");
+    const std::string c4 = s.head(r.path);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + c4).c_str()); }));
+    ctx->ItemClick(("//History/**/###row_" + c4).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+    blameFromChanges(s, nullptr, "fresh.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "fresh.txt", c4); }));
+    s.contextMenu(lineRef(s, 1).c_str(), "Blame before this change");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("The file did not exist before this change") != std::string::npos);
 }
 
 } // namespace ggtest

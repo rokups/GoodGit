@@ -271,4 +271,66 @@ GG_TEST("edges", "plain git keeps first-class conflicts: rebase, cherry-pick, am
     }));
 }
 
+GG_TEST("edges", "marker-like text: only complete regions are conflicts (CRLF, no final newline, long markers, flags); the rest is plain text",
+    "CONF-WELLFORMED-ONLY", "CONF-PARSE-DIFF3", "CONF-PARSE-NWAY", "CONF-MARKER-LENGTH")
+{
+    const std::string diff3 = "<<<<<<< side 1\nx\n||||||| base\ny\n=======\nz\n>>>>>>> side 2\n";
+    const std::vector<std::pair<std::string, std::string>> regions{
+        {"crlf.txt", "a\r\n<<<<<<< side 1\r\nx\r\n||||||| base\r\ny\r\n=======\r\nz\r\n>>>>>>> side 2\r\nb\r\n"},
+        {"no-final-newline.txt", "a\n<<<<<<< side 1\nx\n||||||| base\ny\n=======\nz\n>>>>>>> side 2"},
+        {"long-markers.txt", "<<<<<<<<<< side 1\n<<<<<<< not a marker here\n||||||||||\nbase\n==========\n>>>>>>> nor here\n>>>>>>>>>> side 2\n"},
+        {"flags.txt", "<<<<<<< side 1 [no newline]\nx\n||||||| [no newline]\ny\n=======\nz\n>>>>>>> side 2\n"},
+        {"restart.txt", "<<<<<<< lone opener\n" + diff3},
+        {"gg.txt", "<<<<<<< gg 2-sided conflict with a note\n+++++++ side 1\nx\n------- base\ny\n+++++++ side 2\nz\n>>>>>>> end\n"},
+    };
+    const std::vector<std::pair<std::string, std::string>> plain{
+        {"lists.txt", "- item\n+ item\n======= not a separator\n<<<<<<<x\n>>>>>>>y\n"},
+        {"git-two-way.txt", "<<<<<<< a\nx\n=======\ny\n>>>>>>> b\n"},
+        {"no-separator.txt", "<<<<<<< a\nx\n||||||| base\ny\n"},
+        {"no-end.txt", "<<<<<<< a\nx\n||||||| base\ny\n=======\nz\n"},
+        {"wrong-end.txt", "<<<<<<< a\nx\n||||||| base\ny\n=======\nz\n||||||| again\n"},
+        {"base-restart.txt", "<<<<<<< a\nx\n||||||| base\n<<<<<<< b\n"},
+        {"end-restart.txt", "<<<<<<< a\nx\n||||||| base\ny\n=======\n<<<<<<< b\n"},
+        {"gg-truncated.txt", "<<<<<<< gg 2-sided conflict\n+++++++ side 1\nx\n"},
+        {"gg-restart.txt", "<<<<<<< gg 2-sided conflict\n+++++++ side 1\n<<<<<<< again\n"},
+        {"gg-count.txt", "<<<<<<< gg 3-sided conflict\n+++++++ s1\nx\n------- b\ny\n+++++++ s2\nz\n>>>>>>> end\n"},
+        {"gg-end-in-base.txt", "<<<<<<< gg 2-sided conflict\n+++++++ s1\nx\n------- b\ny\n>>>>>>> end\n"},
+        {"gg-order.txt", "<<<<<<< gg 2-sided conflict\n+++++++ s1\nx\n+++++++ s2\nz\n>>>>>>> end\n"},
+        {"gg-one.txt", "<<<<<<< gg 1-sided conflict\n+++++++ s1\nx\n>>>>>>> end\n"},
+        {"gg-labels.txt", "<<<<<<< gg x-sided conflict\n+++++++ s1\n>>>>>>> e\n<<<<<<< gg 2-sidedness\n+++++++ s\n>>>>>>> e\n"
+                          "<<<<<<< gg 2-sided conflicts\n+++++++ s\n>>>>>>> e\n<<<<<<< not gg\n+++++++ s\n>>>>>>> e\n"},
+    };
+    const fs::path repo = s.fixture(Recipe::Empty);
+    for (const auto& [name, text] : regions)
+        s.write(repo, name, text);
+    for (const auto& [name, text] : plain)
+        s.write(repo, name, text);
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Marker-like text"});
+    const auto r = s.gitgg(repo, {"conflicts", "HEAD"});
+    GG_CHECK_EQ(r.exitCode, 1);
+    for (const auto& [name, text] : regions)
+        if (r.out.find(name + " (2 sides)") == std::string::npos)
+            ctx->LogError("%s: not a conflict:\n%s", name.c_str(), r.out.c_str());
+    for (const auto& [name, text] : plain)
+        if (r.out.find(name) != std::string::npos)
+            ctx->LogError("%s: taken for a conflict", name.c_str());
+    GG_CHECK_EQ(gg::splitLines(gg::trim(r.out)).size(), regions.size());
+    // ggui's scan of the working tree agrees.
+    for (const auto& [name, text] : regions)
+        s.write(repo, "wt-" + name, text);
+    for (const auto& [name, text] : plain)
+        s.write(repo, "wt-" + name, text);
+    GG_REQUIRE(s.openRepository(repo));
+    // The files with regions (committed or not) are listed as first-class conflicts; the rest are
+    // just untracked.
+    GG_CHECK(s.waitUntil([&] {
+        const auto st = s.session()->status();
+        if (!st)
+            return false;
+        const auto firstClass = std::count_if(st->conflicted.begin(), st->conflicted.end(), [](const auto& e) { return e.firstClass; });
+        return static_cast<size_t>(firstClass) == 2 * regions.size() && st->untracked.size() == regions.size() + plain.size();
+    }));
+}
+
 } // namespace ggtest
