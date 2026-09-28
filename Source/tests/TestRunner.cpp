@@ -176,7 +176,13 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     Scenario scenario(ctx, *g_app, dir, seed);
     g_skipped.erase(&info);
     g_current = &info;
-    info.body(ctx, scenario);
+    // An exception fails this test (the rest of the run goes on) instead of ending the process.
+    try {
+        info.body(ctx, scenario);
+    } catch (const std::exception& e) {
+        ctx->LogError("uncaught exception: %s", e.what());
+        IM_CHECK_NO_RET(false);
+    }
     g_current = nullptr;
 
     // Post-test hook: every repository the test touched must pass git fsck, be in a state

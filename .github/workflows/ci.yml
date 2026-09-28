@@ -192,6 +192,8 @@ jobs:
           cmake --preset mingw-x64-static -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE"
           cmake --build --preset mingw-x64-static
       - name: Tests (headless, D3D12/WARP)
+        # A hang fails the job instead of holding the runner for the 6 h default.
+        timeout-minutes: 45
         env:
           GGUI_HEADLESS: "1"
         run: build/mingw-x64-static/bin/ggui.exe --test --trace=trace-mingw.json
@@ -225,6 +227,8 @@ jobs:
           cmake --preset msvc-x64 -DCPM_SOURCE_CACHE="${{ github.workspace }}/.cache/CPM"
           cmake --build --preset msvc-x64
       - name: Tests (headless, D3D12/WARP)
+        # A hang fails the job instead of holding the runner for the 6 h default.
+        timeout-minutes: 45
         env:
           GGUI_HEADLESS: "1"
         run: build/msvc-x64/bin/ggui.exe --test --trace=trace-msvc.json

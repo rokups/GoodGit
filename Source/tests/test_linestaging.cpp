@@ -42,7 +42,8 @@ bool showFile(Scenario& s, const char* group, const std::string& path)
 }
 
 // The diff body only draws the rows in view: scroll it with the mouse wheel (from the top) until
-// the row's gutter handle `item` is fully visible.
+// the row's gutter handle `item` is inside the area the test engine clicks without scrolling
+// (the clip rect less the hover padding). An engine scroll of the body can lose the row.
 void scrollToRow(Scenario& s, const std::string& item)
 {
     const std::string ref = body(s) + "/" + item;
@@ -54,12 +55,21 @@ void scrollToRow(Scenario& s, const std::string& item)
         if (!s.ctx->ItemExists(ref.c_str()))
             return false;
         const ImGuiTestItemInfo info = s.ctx->ItemInfo(ref.c_str());
-        return info.RectFull.Min.y >= w->InnerRect.Min.y && info.RectFull.Max.y <= w->InnerRect.Max.y;
+        // The engine remembers rows it saw before a scroll: only one drawn on the last frame counts.
+        if (info.TimestampMain < ImGui::GetFrameCount() - 1)
+            return false;
+        const float pad = ImGui::GetCurrentContext()->WindowsBorderHoverPadding + 1.0f;
+        return info.RectFull.Min.y >= w->InnerClipRect.Min.y + pad && info.RectFull.Max.y <= w->InnerClipRect.Max.y - pad;
     };
-    for (int i = 0; i < 40 && w->Scroll.y > 0.0f; ++i)
+    // A wheel step scrolls on the frame after it: let each one land before looking.
+    for (int i = 0; i < 40 && w->Scroll.y > 0.0f; ++i) {
         s.ctx->MouseWheelY(10.0f);
-    for (int i = 0; i < 400 && !visible(); ++i)
+        s.ctx->Yield();
+    }
+    for (int i = 0; i < 400 && !visible() && w->Scroll.y < w->ScrollMax.y; ++i) {
         s.ctx->MouseWheelY(-1.0f);
+        s.ctx->Yield();
+    }
     s.ctx->Yield(2);
 }
 
