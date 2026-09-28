@@ -51,6 +51,16 @@ GG_TEST("patches", "apply from the clipboard or a file, to the working tree or t
     s.settle();
     GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "line 1\n");
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":f1.txt"}), "patched 1");
+    // Clipboard → index, and file → working tree.
+    s.git(repo, {"reset", "-q"});
+    applyPatch(s, "Clipboard", "Index (git apply --cached)");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}) == "f1.txt"; }));
+    s.settle();
+    s.git(repo, {"reset", "-q"});
+    applyPatch(s, "File", "Working tree", (s.root() / "change.patch").string());
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f1.txt") == "patched 1\n"; }));
+    s.settle();
+    s.git(repo, {"checkout", "-q", "--", "f1.txt"});
 }
 
 GG_TEST("patches", "a patch that does not apply is reported and changes nothing", "PATCH-APPLY-FAIL")

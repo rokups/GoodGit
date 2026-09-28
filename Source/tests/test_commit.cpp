@@ -97,6 +97,31 @@ GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-
     s.dialogButton("Commit", "Commit");
     GG_CHECK(s.waitUntil([&] { return s.statusPorcelain(repo).empty(); }));
     s.settle();
+    // "Stage the selected files" as the default: only the file selected in Changes is committed.
+    s.app.openSettings();
+    ctx->Yield(2);
+    ctx->ItemClick("//Settings/##settings_tabs/Git");
+    s.comboSelect("//Settings/##settings_tabs/Git/When nothing is staged##nothing_staged", "Stage the selected files");
+    ctx->WindowClose("//Settings");
+    s.write(repo, "f2.txt", "two changed\n");
+    s.write(repo, "f3.txt", "three changed\n");
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Unstaged", "f3.txt").c_str()); }));
+    ctx->ItemClick(fileRef(s, "Unstaged", "f2.txt").c_str());
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Default stage selected");
+    s.dialogButton("Commit", "Commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Default stage selected"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "--name-only", "--format=", "HEAD"}), "f2.txt");
+    // Amend with HEAD selected: the message field starts with HEAD's message.
+    ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
+    GG_REQUIRE(s.dialogOpen("Amend"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("message"), "Default stage selected\n");
+    s.dialogButton("Amend", "Cancel");
 }
 
 GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks", "ACT-COMMIT-HOOK-FAIL", "ACT-COMMIT-SKIP-HOOKS",
