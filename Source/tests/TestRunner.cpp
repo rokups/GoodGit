@@ -19,6 +19,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <dbghelp.h>
 #undef Yield // winbase.h's, not ImGuiTestContext::Yield
 #endif
 #ifdef _MSC_VER
@@ -27,6 +28,7 @@
 #endif
 
 #include <atomic>
+#include <exception>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -68,6 +70,73 @@ void watchTest(const std::string& name)
     std::lock_guard lock(g_watchMutex);
     g_watchTest = name;
     g_watchStart = std::chrono::steady_clock::now();
+}
+
+// Crash report for a test run: which test, what happened and (Windows) where, on stderr, instead
+// of a silent exit code.
+std::string currentTestName()
+{
+    std::lock_guard lock(g_watchMutex);
+    return g_watchTest;
+}
+
+#ifdef _WIN32
+LONG WINAPI crashFilter(EXCEPTION_POINTERS* info)
+{
+    std::fprintf(stderr, "ggui: CRASH in %s: exception 0x%08lx at %p\n", currentTestName().c_str(),
+        info->ExceptionRecord->ExceptionCode, info->ExceptionRecord->ExceptionAddress);
+    HANDLE process = GetCurrentProcess();
+    HANDLE thread = GetCurrentThread();
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+    SymInitialize(process, nullptr, TRUE);
+    CONTEXT context = *info->ContextRecord;
+    STACKFRAME64 frame{};
+    frame.AddrPC.Offset = context.Rip;
+    frame.AddrFrame.Offset = context.Rbp;
+    frame.AddrStack.Offset = context.Rsp;
+    frame.AddrPC.Mode = frame.AddrFrame.Mode = frame.AddrStack.Mode = AddrModeFlat;
+    for (int i = 0; i < 40 && StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &context, nullptr,
+                              SymFunctionTableAccess64, SymGetModuleBase64, nullptr);
+         ++i) {
+        alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 256] = {};
+        auto* symbol = reinterpret_cast<SYMBOL_INFO*>(buffer);
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol->MaxNameLen = 255;
+        DWORD64 displacement = 0;
+        const char* name = SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol) ? symbol->Name : "?";
+        IMAGEHLP_LINE64 line{};
+        line.SizeOfStruct = sizeof(line);
+        DWORD column = 0;
+        if (SymGetLineFromAddr64(process, frame.AddrPC.Offset, &column, &line))
+            std::fprintf(stderr, "ggui:   #%d %s (%s:%lu)\n", i, name, line.FileName, line.LineNumber);
+        else
+            std::fprintf(stderr, "ggui:   #%d %s (0x%llx)\n", i, name, static_cast<unsigned long long>(frame.AddrPC.Offset));
+    }
+    std::fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER; // ends the process
+}
+#endif
+
+void installCrashReport()
+{
+    std::set_terminate([] {
+        std::string what = "no exception";
+        if (auto e = std::current_exception()) {
+            try {
+                std::rethrow_exception(e);
+            } catch (const std::exception& ex) {
+                what = ex.what();
+            } catch (...) {
+                what = "an exception of unknown type";
+            }
+        }
+        std::fprintf(stderr, "ggui: TERMINATE in %s: %s\n", currentTestName().c_str(), what.c_str());
+        std::fflush(stderr);
+        std::abort();
+    });
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(crashFilter);
+#endif
 }
 
 void startWatchdog()
@@ -436,6 +505,7 @@ void TestRunner::start(const std::string& filter, const std::string& traceFile, 
 {
     m_traceFile = traceFile;
     startWatchdog();
+    installCrashReport();
 #ifdef _WIN32
     // No dialogs in a test run (nobody clicks them on a CI runner): failed assertions and crashes
     // are reported on stderr and end the run.

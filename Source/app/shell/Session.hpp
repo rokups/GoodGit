@@ -211,6 +211,7 @@ private:
     bool m_ggRefsPromptChecked = false;
     std::map<std::string, std::map<std::string, std::string>> m_config;
     std::map<std::string, RemoteTags> m_remoteTags;
+    std::string m_journalError; // the undo journal's problem last reported ("" = none)
     std::vector<std::string> m_remoteTagsFor; // the remotes last asked about
     core::RequestId m_remoteTagsRequest = 0;
     bool m_remoteTagsStale = true;

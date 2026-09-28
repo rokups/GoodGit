@@ -137,8 +137,10 @@ void Session::handle(core::Event& event)
             } else if constexpr (std::is_same_v<T, core::OperationsEvent>) {
                 m_operations = std::move(e.operations);
                 m_hooksInstalled = e.hooksInstalled;
-                if (!e.error.empty())
+                // Once per problem: the watcher and a refresh may both read the same journal.
+                if (!e.error.empty() && e.error != m_journalError)
                     m_app.showError("Undo journal", e.error);
+                m_journalError = e.error;
             } else if constexpr (std::is_same_v<T, core::ConflictsEvent>) {
                 for (const auto& id : e.scanned)
                     m_conflicts.erase(id);

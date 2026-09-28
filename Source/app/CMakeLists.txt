@@ -9,6 +9,9 @@ target_include_directories(ggui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SO
 target_link_libraries(ggui PRIVATE ggui_core imgui imgui_color_text_edit icon_font_headers
     nfd nlohmann_json::nlohmann_json spdlog::spdlog)
 target_compile_definitions(ggui PRIVATE GGUI_VERSION="${PROJECT_VERSION}")
+if(WIN32 AND GGUI_ENABLE_IMGUI_TEST_ENGINE)
+    target_link_libraries(ggui PRIVATE dbghelp) # the test runner's crash report
+endif()
 set_target_properties(ggui PROPERTIES WIN32_EXECUTABLE $<NOT:$<BOOL:${GGUI_ENABLE_IMGUI_TEST_ENGINE}>>)
 ggui_embed_font(ggui ggui_font_material_symbols ${GGUI_FONT_DIR}/MaterialSymbolsOutlined.ttf)
 ggui_embed_font(ggui ggui_font_noto_sans_mono ${GGUI_FONT_DIR}/NotoSansMono.ttf)
