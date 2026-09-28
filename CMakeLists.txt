@@ -63,7 +63,8 @@ function(ggui_first_party target)
         target_compile_definitions(${target} PRIVATE $<$<CONFIG:Debug>:GGUI_THREAD_CHECKS=1>)
     endif()
     if(WIN32)
-        target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+        target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE
+            _CRT_SECURE_NO_WARNINGS)
     endif()
 endfunction()
 

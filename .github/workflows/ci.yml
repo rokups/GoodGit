@@ -65,6 +65,8 @@ jobs:
             mesa-vulkan-drivers libvulkan1 libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
             libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
+          # lavapipe's ICD is lvp_icd.x86_64.json on older Mesa, lvp_icd.json from Mesa 25.
+          echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)" >> "$GITHUB_ENV"
       - uses: actions/cache@v4
         with:
           path: ~/git-2.36
@@ -86,7 +88,6 @@ jobs:
           cmake --build --preset coverage
       - name: Tests (shard ${{ matrix.shard }}/4, Xvfb, lavapipe)
         env:
-          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           LLVM_PROFILE_FILE: ${{ github.workspace }}/out/profiles/%p-%m.profraw
           GGUI_TEST_ARTIFACTS: ${{ github.workspace }}/out/test-artifacts
         run: |
@@ -153,7 +154,7 @@ jobs:
         with:
           msystem: MINGW64
           install: >-
-            git mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            git patch mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-python
       - uses: actions/cache@v4
         with:
@@ -232,13 +233,13 @@ jobs:
             mesa-vulkan-drivers libvulkan1 libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
             libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
+          # lavapipe's ICD is lvp_icd.x86_64.json on older Mesa, lvp_icd.json from Mesa 25.
+          echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)" >> "$GITHUB_ENV"
       - uses: actions/cache@v4
         with:
           path: .cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build, package and check (tar.gz, zip, deb; deb installed with apt in a clean container)
-        env:
-          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: scripts/package_smoke.sh --container ubuntu:24.04
       - name: No old gg files in the packages (REBUILD_PLAN §9)
         run: bash scripts/removal_audit.sh --packages build/packages
@@ -262,7 +263,7 @@ jobs:
         with:
           msystem: MINGW64
           install: >-
-            git unzip mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            git patch unzip mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-python
       - uses: actions/cache@v4
         with:
