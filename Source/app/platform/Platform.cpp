@@ -74,6 +74,10 @@ void Platform::shutdown()
 {
     if (m_device)
         SDL_WaitForGPUIdle(m_device);
+    if (m_frameFence) {
+        SDL_ReleaseGPUFence(m_device, m_frameFence);
+        m_frameFence = nullptr;
+    }
     if (m_imguiReady) {
         ImGui_ImplSDL3_Shutdown();
         ImGui_ImplSDLGPU3_Shutdown();
@@ -194,7 +198,16 @@ void Platform::endFrame()
             SDL_BlitGPUTexture(cmd, &blit);
         }
     }
-    SDL_SubmitGPUCommandBuffer(cmd);
+    if (m_headless) {
+        // One frame in flight at most: wait for the previous one before queuing this one.
+        if (m_frameFence) {
+            SDL_WaitForGPUFences(m_device, true, &m_frameFence, 1);
+            SDL_ReleaseGPUFence(m_device, m_frameFence);
+        }
+        m_frameFence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    } else {
+        SDL_SubmitGPUCommandBuffer(cmd);
+    }
 }
 
 bool Platform::readPixels(int x, int y, int w, int h, std::uint32_t* out)

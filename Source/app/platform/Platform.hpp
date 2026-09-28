@@ -13,6 +13,7 @@
 struct SDL_Window;
 struct SDL_GPUDevice;
 struct SDL_GPUTexture;
+struct SDL_GPUFence;
 union SDL_Event;
 
 namespace ggui {
@@ -63,6 +64,9 @@ private:
     SDL_Window* m_window = nullptr;
     SDL_GPUDevice* m_device = nullptr;
     SDL_GPUTexture* m_offscreen = nullptr;
+    // Headless: the last frame's fence. Without a swapchain nothing else stops frames piling up
+    // on the GPU (a slow software device runs out of descriptor heaps, and SDL's D3D12 crashes).
+    SDL_GPUFence* m_frameFence = nullptr;
     std::uint32_t m_offW = 0;
     std::uint32_t m_offH = 0;
     int m_format = 0; // SDL_GPUTextureFormat
