@@ -168,7 +168,7 @@ GG_TEST("staging", "external editor, folder and diff tools", "CHG-CTX-OPEN", "CH
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "edited\n");
     const fs::path editorLog = s.fakeTool("fake-editor");
-    const fs::path folderLog = s.fakeTool("xdg-open");
+    const fs::path folderLog = s.fakeTool(kFileManager);
     const fs::path diffLog = s.fakeTool("fake-difftool");
     ggui::unsetEnv("GIT_EDITOR");
     ggui::unsetEnv("EDITOR");

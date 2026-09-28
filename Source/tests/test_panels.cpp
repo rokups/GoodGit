@@ -82,7 +82,7 @@ GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open", "WT-LIST
     "WT-REVEAL-HEAD", "WT-OPEN-DIR")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
-    const fs::path opened = s.fakeTool("xdg-open");
+    const fs::path opened = s.fakeTool(kFileManager);
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Worktrees");
     const auto snapshot = s.session()->snapshot(); // keeps wts alive while the UI refreshes

@@ -319,7 +319,7 @@ GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settin
     "MENU-REPO-QUIT")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    const fs::path opened = s.fakeTool("xdg-open");
+    const fs::path opened = s.fakeTool(kFileManager);
     GG_REQUIRE(s.openRepository(repo));
     ctx->MenuClick("//##MainMenuBar/Repository/Copy path");
     GG_CHECK_STR_EQ(s.clipboard(), repo.string());

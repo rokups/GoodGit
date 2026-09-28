@@ -648,7 +648,11 @@ gg::RunResult Scenario::runGgui(std::vector<std::string> args,
     std::vector<std::pair<std::string, std::optional<std::string>>> env)
 {
     gg::RunRequest r;
+#ifdef _WIN32
+    r.args.push_back((fs::path(ggui::executableDir()) / "ggui.exe").string());
+#else
     r.args.push_back((fs::path(ggui::executableDir()) / "ggui").string());
+#endif
     for (auto& a : args)
         r.args.push_back(std::move(a));
     r.cwd = m_root;

@@ -133,12 +133,12 @@ GG_TEST("cli", "git gg ui starts ggui on the repository", "CLI-UI")
     fs::create_directories(dir);
     const fs::path real = gg::findInPath("git-gg");
     GG_REQUIRE(!real.empty());
-    fs::copy_file(real, dir / "git-gg");
-    fs::permissions(dir / "git-gg", fs::perms::owner_all);
+    fs::copy_file(real, dir / real.filename()); // git-gg, or git-gg.exe
+    fs::permissions(dir / real.filename(), fs::perms::owner_all);
     const fs::path log = s.path("ggui-started.log");
     Scenario::writeTool(dir, "ggui", "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + log.generic_string() + "'\nexit 7\n");
     gg::RunRequest r;
-    r.args = {(dir / "git-gg").string(), "ui", "."};
+    r.args = {(dir / real.filename()).string(), "ui", "."};
     r.cwd = repo;
     r.env.emplace_back("PATH", dir.string() + kPathSep + ggui::getEnv("PATH"));
     const auto res = gg::run(r);

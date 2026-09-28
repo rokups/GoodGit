@@ -38,11 +38,13 @@ namespace ggtest {
 
 namespace fs = std::filesystem;
 
-// The separator of PATH's entries.
+// The separator of PATH's entries, and the program ggui opens folders with (a test fakes it).
 #ifdef _WIN32
 inline constexpr const char* kPathSep = ";";
+inline constexpr const char* kFileManager = "explorer";
 #else
 inline constexpr const char* kPathSep = ":";
+inline constexpr const char* kFileManager = "xdg-open";
 #endif
 
 class Scenario;
