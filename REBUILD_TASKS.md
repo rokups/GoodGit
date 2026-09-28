@@ -979,7 +979,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** all conflict spec IDs covered; randomized N-way rewrite scenario stable.
 
 ### [~] P3-15 Interactive rebase: todo model and validation
-- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read, expand, autosquash, squash templates/messages, cleanup, validation, engine choice, exec-each, toPlan. Exercised through the editor by test_rebase_i.cpp: read, autosquash order vs git's todo, squash/fixup -C/-c messages, validation, engine choice, toPlan (results match git rebase -i --autosquash on a clone). parse/format/expand/addExecEach wait for the native engine (P3-19).
+- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read, expand, autosquash, squash templates/messages, cleanup, validation, engine choice, exec-each, toPlan. Exercised through the editor by test_rebase_i.cpp: read, autosquash order vs git's todo, squash/fixup -C/-c messages, validation, engine choice, toPlan. P3-18's randomized differential compares toPlan results with git rebase -i. groups() now ends a group at exec/break/update-ref (Group::amends), as git does. parse/expand/addExecEach wait for the native engine (P3-19).
 - **Depends on:** P3-02
 - **Refs:** §4.13
 - **Do:** todo model with actions `pick`, `reword`, `edit`, `squash`, `fixup` (incl. `-C`/
@@ -1027,7 +1027,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
       are not in `Plan::dropped`.
     - The Rewriter maps squashed commits to their first parent's replacement. Git's
       post-rewrite maps them to the squash result, so fix this before the differential
-      test.
+      test. (Fixed in P3-18: `Result::rewritten`.)
     - "Keep committer date" still needs a committer override on `Step`/`Plan`.
     - The patch-id pass walks all of `tip..upstream`, which can be slow on a very stale
       branch.
@@ -1141,7 +1141,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     33 ms (`frameProbe`). Pre-flight lists exactly the previewed decisions. `.git` stays
     byte-identical. `Scenario::gitDirBytes` moved into the harness.
 
-### P3-18 Interactive rebase: in-memory engine
+### [x] P3-18 Interactive rebase: in-memory engine
+- **Status:** test_rebase_i.cpp: randomized differential vs git rebase -i on a copy (seed 0x1818d1ff, 6 rounds; seeds 1–25 × 25 rounds also pass). Todos are entered through the UI: reorders, drops, squash/fixup/-C/-c, reword, autosquash, update-ref rows anywhere, onto, Keep/Drop/Ask for commits that become empty. Checked: trees, messages, authors, every branch position, post-rewrite mapping, one committed ref transaction, clean worktree, no sequencer state; one Undo restores all refs. Rewriter: squash/amend chains and post-rewrite as git reports them (Result::rewritten). An update-ref row before squash/fixup rows keeps the finished commit (Step::amend), as git does. New option Becoming empty (Keep/Drop/Ask, Ask asks at Start). A moved tip is still refused (decision). Full suite 185/185 (8 shards); coverage 92.4 % line / 78.6 % branch overall.
 - **Depends on:** P3-17, P3-03
 - **Refs:** §4.13 execution 1, §5 R3
 - **Do:** run the todo through the rewrite engine; pre-flight for non-text conflicts; one
@@ -1171,6 +1172,77 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - An `update-ref` row between a pick and its squash/fixup rows moves the branch to the
     squashed result (`toPlan` maps it to the group's step). Git would leave it at the pre-squash
     commit. Validation does not flag this yet.
+- **Design notes:**
+  - **Git's behavior, checked by hand against git 2.55** (throwaway scripts, not committed), then
+    held by the differential test:
+    - An exec, break or update-ref row *finishes* the current squash chain (`is_final_fixup`
+      only skips drop/noop rows). A squash/fixup after it amends that finished commit as a new
+      chain whose template starts with HEAD's message. The update-ref branch keeps the finished
+      commit. Post-rewrite maps each chain's commits to that chain's result.
+    - Post-rewrite (`rebase`): the leading picks that stay as they are are skipped
+      (`skip_unnecessary_picks`, drop rows do not stop it) and not reported, except the last one
+      when a squash/fixup comes next. Every later replayed commit is reported, fast-forwarded
+      ones as `X X`. Squashed commits map to their chain's result. A commit dropped by
+      `--empty=drop` maps to the commit it would have gone onto.
+    - `--empty=drop` drops a becoming-empty pick even when fixups follow it; they then amend the
+      commit before it. A squash chain that ends up empty stops git ("No changes").
+  - **Model (libgg):**
+    - `todo::groups` now ends a group at exec/break/update-ref rows. A later squash/fixup starts
+      a group with `Group::amends` (the previous group's first row). Its template's first
+      message is the previous group's message (`baseMessage`); `keptMessage` and
+      `squashTemplate` walk `foldedRows`. This fixes the P3-17 note: git leaves an update-ref
+      before squash rows at the pre-squash commit, and so does ggui now.
+    - `toPlan` emits such rows as `Step::amend` Squash steps. The Rewriter writes the previous
+      commit (the branch can point at it) and amends it: same parents and author, the new key.
+    - `Result::rewritten` is what post-rewrite and the journal get, git's list as described
+      above. `Result::mapping` (parents, branch moves) is unchanged for other rewrites. So the
+      non-interactive squash actions now also report squashed commits → squash result.
+    - `Plan::reportUnchanged` / `unreported` carry git's skipped prefix (set by `toPlan`).
+  - **Commits that become empty (decision):** a new option *Becoming empty* `###ir_empty`, Keep /
+    Drop / **Ask** (default). It maps to git's `--empty=keep|drop|stop`, and stop is git's
+    interactive default.
+    - `Plan::emptied` + `Result::becameEmpty`. A commit "becomes empty" when its finished commit
+      (after its squash/fixup rows) has its parent's tree although some of its original commits
+      changed something. Commits empty from the start are always kept, as in git.
+    - Drop leaves it out: later rows go onto its parent, and post-rewrite maps it there.
+    - Ask: the preview shows it kept ("(empty)", tooltip "Start asks…"). Start's rewrite
+      pipeline shows "Commits become empty" (after the pre-flight, before the published
+      confirmation) with Keep them / Drop them / Cancel. Drop recomputes; Cancel changes nothing.
+    - Divergence kept on purpose: a becoming-empty commit with squash/fixup rows after it is judged
+      by the whole group. Git's `--empty=drop` would fold those rows into the commit before it.
+  - **Tip moved (decision): still refused**, not re-read. A silent re-read would either drop the
+    new commits or change the list the user edited. git would also fail its final ref update on
+    a moved branch. The builder checks the tip both when preparing and when applying, and the
+    `update-ref --stdin` transaction carries old values, so a move during the pre-flight or a
+    last-moment race fails atomically too. The editor stays open with the list.
+  - **Preview:** amended rows take the amending step's commit. `RebasePreview::aside` lists
+    branches left on a finished pre-squash commit (`###irp_aside_<n>`). `droppedEmpty` lists
+    commits dropped because they became empty (`###irp_dropped_empty`). Rows of dropped commits
+    are left out.
+  - **Tests** (`test_rebase_i.cpp`):
+    - "update-ref before squash/fixup rows": a fixed case against `git rebase -i` on a copy.
+      Checks the template, preview aside, trees, messages, authors, both branches, post-rewrite
+      (3 entries, equal to git's), one committed ref transaction and no sequencer state.
+    - "randomized differential": fixture with chains of commits per file, fixup!/squash!/amend!
+      commits, a commit that becomes empty onto `up`, an empty commit and two stacked branches.
+      Each round picks random options (onto, autosquash, update-refs, Keep/Drop/Ask). It makes a
+      random todo: chain-preserving interleaving (no conflicts: git would stop), dropped chain
+      tails, random pick/reword/squash/fixup/-C/-c, and update-ref rows anywhere. The todo is
+      entered through the UI (Alt+↑, action combos). Every message editor gets the text git's
+      editor script produces (" reworded" on the first non-comment line).
+      - After Start, the same todo runs through `git rebase -i --empty=…` on a copy with that
+        editor (`GIT_EDITOR` set per call: the runner's `GIT_EDITOR=true` beats core.editor).
+      - Compared: `checkMatches` on both, aside branches, full history (trees, messages, authors)
+        of main/stack1/stack2/up, post-rewrite, HEAD tree, a clean worktree, no sequencer state,
+        one committed ref transaction (none when nothing moves). One Undo then restores every ref.
+      - Seed `0x1818d1ff`, 6 rounds, logged. `GGUI_IR_SEED` / `GGUI_IR_ROUNDS` replay or
+        explore. Seeds 1–25 × 25 rounds all passed.
+      - Kept out of the generator: rewords with squash rows after them (git opens its editor
+        twice, ggui has one editor per group). Also, under Drop, squash/fixup right after the
+        becoming-empty commit.
+    - "commits that are or become empty": Ask → Cancel / Keep them / Drop them, and the Drop
+      option (preview and Start).
+    - IR-OPT-EMPTY added to the catalogue.
 
 ### P3-19 Interactive rebase: native engine and stop handling
 - **Depends on:** P3-16, P2-24, P2-26
@@ -1199,6 +1271,18 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     part (onto = the current HEAD), or the preview will show the whole range again.
   - `Queue::Preview` / `RebasePreviewEvent` is the pattern for other "compute in memory, show,
     never apply" features.
+- **Notes from P3-18:**
+  - *Becoming empty* maps directly to `--empty=keep|drop|stop` (Ask = stop). A stop on a
+    becoming-empty commit is another native stop to handle.
+  - Git opens its editor once per finished squash chain that needs it (before an exec, break or
+    update-ref row, or at the chain's end) and once per reword. Chains after such a row amend
+    the finished commit (`Group::amends`). A reword with squash rows after it gets the editor
+    twice in git but has one message in ggui. The `GIT_EDITOR` helper must hand the typed text to
+    the right invocation and keep the other one as it is.
+  - The test runner sets `GIT_EDITOR=true`, which beats `core.editor`. Tests that need git's
+    editor set it around the call (`ggui::setEnv`, see `gitRebase` in `test_rebase_i.cpp`).
+  - The differential helpers in `test_rebase_i.cpp` can drive native-engine comparisons too:
+    `gitRebase`, `rewordAll`, `postRewrite`, `history`, `checkAside`, `installRecordingHooks`.
 
 ### P3-20 Phase 3 gate
 - **Depends on:** all P3 tasks

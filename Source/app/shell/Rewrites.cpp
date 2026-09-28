@@ -27,6 +27,9 @@ struct Actions::RewriteState {
     Callback done;
     bool autostash = false;
     std::map<std::string, rw::Resolution> resolutions; // pre-flight decisions so far
+    // Commits that become empty: the plan asks (Emptied::Ask) until the user answers.
+    bool askEmpty = false;
+    std::optional<rw::Emptied> emptied;
     rw::Result preview;
     // Pre-flight: the resolution behind each combo entry, per conflict.
     std::vector<std::vector<rw::Resolution>> choices;
@@ -63,6 +66,9 @@ void Actions::rewritePrepare(const std::shared_ptr<RewriteState>& state)
         [state](MutationContext& ctx) {
             rw::Plan plan = state->build(ctx.repo());
             plan.resolutions = state->resolutions;
+            state->askEmpty = plan.emptied == rw::Emptied::Ask;
+            if (state->emptied)
+                plan.emptied = *state->emptied;
             rw::Rewriter rewriter(ctx.cwd());
             state->preview = rewriter.compute(plan);
             if (!state->preview.ok && state->preview.unresolved.empty())
@@ -153,11 +159,34 @@ void Actions::rewriteDecide(const std::shared_ptr<RewriteState>& state)
         dialogs.open(std::move(f));
         return;
     }
+    // 2. Commits that become empty (git rebase -i stops on them): keep or drop them.
+    if (state->askEmpty && !state->emptied && !r.becameEmpty.empty()) {
+        Form f;
+        f.title = "Commits become empty";
+        f.message = "The changes of these commits are already in the commits they go onto. Keep them as "
+                    "empty commits or drop them?";
+        for (size_t i = 0; i < r.becameEmpty.size(); ++i) {
+            const auto& e = r.becameEmpty[i];
+            f.add(Field{Field::Info, "empty_" + std::to_string(i), "",
+                (e.commit.empty() ? std::string() : shortId(e.commit) + " ") + e.subject});
+        }
+        f.buttons.push_back({"Keep them", [this, state](Form&) {
+                                 state->emptied = rw::Emptied::Keep;
+                                 rewriteDecide(state); // the computed result already keeps them
+                             }});
+        f.buttons.push_back({"Drop them", [this, state](Form&) {
+                                 state->emptied = rw::Emptied::Drop;
+                                 rewritePrepare(state);
+                             }});
+        f.buttons.push_back({"Cancel", {}});
+        dialogs.open(std::move(f));
+        return;
+    }
     if (!r.changed()) {
         m_session.app().notify(App::Notice::Info, state->label, "Nothing to change.");
         return;
     }
-    // 2. Confirmation for published commits and branches checked out in other worktrees.
+    // 3. Confirmation for published commits and branches checked out in other worktrees.
     std::string warnings;
     if (!r.published.empty())
         warnings += std::to_string(r.published.size()) + " of the rewritten commits are already on a remote. "
@@ -184,6 +213,8 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
         [state](MutationContext& ctx) {
             rw::Plan plan = state->build(ctx.repo());
             plan.resolutions = state->resolutions;
+            if (state->emptied)
+                plan.emptied = *state->emptied;
             rw::Rewriter rewriter(ctx.cwd());
             rw::Result r = rewriter.compute(plan);
             if (!r.ok)

@@ -622,6 +622,7 @@ IR-OPT-UPDATE-REFS | 3 | §4.13 | Option: --update-refs (default on)
 IR-OPT-AUTOSTASH | 3 | §4.13 | Option: --autostash
 IR-OPT-EXEC-EACH | 3 | §4.13 | Option: exec after every commit
 IR-OPT-COMMITTER-DATE | 3 | §4.13 | Option: committer date keep/now
+IR-OPT-EMPTY | 3 | §4.13 | Option: commits that become empty are kept, dropped or asked about at Start (git --empty)
 IR-PREVIEW | 3 | §4.13 | Live preview graph
 IR-PREVIEW-CONFLICTS | 3 | §4.13 | Preview shows first-class and non-text conflicts
 IR-PREVIEW-EMPTY | 3 | §4.13 | Preview shows empty commits

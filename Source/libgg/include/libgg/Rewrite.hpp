@@ -20,6 +20,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -59,6 +60,10 @@ struct Step {
     std::vector<std::pair<std::string, std::optional<std::string>>> setFiles;
     bool forceNew = false;   // a new commit even when nothing changed (duplicates)
     bool mapSource = true;   // the result replaces the source (children and branches follow it)
+    // Squash only: the previous step's commit is finished first (a ref can point at it) and this
+    // step amends it, as `git rebase -i` does for a squash/fixup after an update-ref, exec or break
+    // row. The amended commit keeps that commit's parents and author; this step's key names it.
+    bool amend = false;
 };
 
 enum class Choice { Ours, Theirs, Base, File, Delete };
@@ -85,6 +90,14 @@ struct NonTextConflict {
     std::string oursPath;   // renames: where each side moved the file
     std::string theirsPath;
     static std::string key(const std::string& step, const std::string& path) { return step + "\n" + path; }
+};
+
+// Commits whose replayed change adds nothing although the originals changed something (Git's
+// "becomes empty"; commits that were empty to begin with are always kept).
+enum class Emptied {
+    Keep,  // kept as empty commits (git rebase --empty=keep)
+    Drop,  // left out; what came after goes onto their parent (--empty=drop)
+    Ask,   // kept by compute(), listed in Result::becameEmpty for the caller to ask (--empty=stop)
 };
 
 struct Plan {
@@ -120,6 +133,11 @@ struct Plan {
     // --committer-date-is-author-date` keeps the author date instead; this keeps the original
     // committer date). Default: now.
     bool keepCommitterDate = false;
+    Emptied emptied = Emptied::Keep;
+    // Post-rewrite also lists commits replayed as they were (old = new), as `git rebase -i` does
+    // for the picks it fast-forwards, except `unreported` ones (the leading picks Git skips).
+    bool reportUnchanged = false;
+    std::set<std::string> unreported;
 };
 
 struct RefMove {
@@ -129,15 +147,27 @@ struct RefMove {
     bool otherWorktree = false; // a branch checked out in another worktree
 };
 
+struct BecameEmpty {
+    std::string step;       // step key (the step that starts the commit)
+    std::string commit;     // its source commit ("" for an amending step)
+    std::string subject;
+    bool dropped = false;   // Emptied::Drop: left out (the step's key names its parent)
+};
+
 struct Result {
     bool ok = false;
     std::string error;
     std::vector<NonTextConflict> unresolved;         // pre-flight needed (nothing may be applied)
     std::map<std::string, std::string> mapping;      // original → new, rewritten commits only
+    // What `post-rewrite` and the journal get, as Git reports it: like `mapping`, except that
+    // squashed commits map to the commit they were squashed into, dropped empty commits to the
+    // commit they would have gone onto, and (Plan::reportUnchanged) unchanged commits to themselves.
+    std::map<std::string, std::string> rewritten;
     std::map<std::string, std::string> steps;        // step key → new commit
     std::vector<RefMove> moves;
     std::vector<std::string> conflicted;             // new commits that gained first-class conflicts
     std::vector<std::string> published;              // rewritten originals already on a remote
+    std::vector<BecameEmpty> becameEmpty;            // in step order
     std::string headBefore;                          // this worktree's HEAD commit
     std::string headAfter;
     bool changed() const { return !mapping.empty() || !moves.empty(); }

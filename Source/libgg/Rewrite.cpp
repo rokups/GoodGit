@@ -445,7 +445,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
 
         struct Pending {
             std::string key;
-            std::string source;              // "" for Empty
+            std::string source;              // "" for Empty and amending steps
             std::vector<std::string> squashed;
             std::vector<std::string> parents;
             std::string tree;
@@ -453,11 +453,47 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             std::optional<Person> author;
             bool unchanged = false;
             bool mapSource = true;
+            std::vector<std::string> contributors; // original commits whose changes it holds
+            std::string dateFrom;            // keepCommitterDate: the commit whose date it keeps
         };
         std::optional<Pending> pending;
+        std::map<std::string, std::string> reported; // Result::rewritten entries that differ from mapping
+        auto originallyEmpty = [&](const std::string& id) {
+            Commit c = m->commit(id);
+            const std::string base = git_commit_parentcount(c.get()) > 0 ? m->treeOf(toHex(*git_commit_parent_id(c.get(), 0))) : m->emptyTree();
+            return toHex(*git_commit_tree_id(c.get())) == base;
+        };
         auto flush = [&] {
             if (!pending)
                 return;
+            // A commit that becomes empty: its change is already in its new parent.
+            if (!pending->unchanged && !pending->contributors.empty() && pending->parents.size() <= 1
+                && pending->tree == (pending->parents.empty() ? m->emptyTree() : m->treeOf(pending->parents.front()))
+                && !std::all_of(pending->contributors.begin(), pending->contributors.end(), originallyEmpty)) {
+                BecameEmpty e{pending->key, pending->source, firstLine(pending->message), plan.emptied == Emptied::Drop};
+                result.becameEmpty.push_back(e);
+                if (e.dropped) {
+                    // Left out: what comes after goes onto the parent, and Git reports the commit
+                    // as rewritten to that parent.
+                    const std::string parent = pending->parents.empty() ? std::string() : pending->parents.front();
+                    byKey[pending->key] = parent;
+                    result.steps[pending->key] = parent;
+                    std::vector<std::string> gone = pending->squashed;
+                    if (!pending->source.empty() && pending->mapSource) {
+                        if (parent.empty())
+                            gone.push_back(pending->source);
+                        else
+                            newOf[pending->source] = parent;
+                    }
+                    for (const auto& sq : gone) {
+                        droppedSet.insert(sq);
+                        if (!parent.empty())
+                            reported[sq] = parent;
+                    }
+                    pending.reset();
+                    return;
+                }
+            }
             std::string id;
             if (pending->unchanged) {
                 id = pending->source;
@@ -479,18 +515,23 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     author = authorSig.get();
                 }
                 std::optional<git_time> committedAt;
-                if (plan.keepCommitterDate && !pending->source.empty())
-                    committedAt = git_commit_committer(m->commit(pending->source).get())->when;
+                if (plan.keepCommitterDate && !pending->dateFrom.empty())
+                    committedAt = git_commit_committer(m->commit(pending->dateFrom).get())->when;
                 id = m->createCommit(pending->parents, pending->tree, pending->message, author,
                     committedAt ? &*committedAt : nullptr);
             }
             byKey[pending->key] = id;
             if (!pending->source.empty() && id != pending->source && pending->mapSource)
                 newOf[pending->source] = id;
+            if (pending->unchanged && plan.reportUnchanged && pending->mapSource && !plan.unreported.count(pending->source))
+                reported[pending->source] = id;
             // A squashed commit leaves its place: what pointed at it goes to its first parent's
-            // replacement (for a squash into the parent that is this very commit).
-            for (const auto& sq : pending->squashed)
+            // replacement (for a squash into the parent that is this very commit). Git's
+            // post-rewrite reports it as rewritten to the squash result.
+            for (const auto& sq : pending->squashed) {
                 droppedSet.insert(sq);
+                reported[sq] = id;
+            }
             result.steps[pending->key] = id;
             pending.reset();
         };
@@ -501,6 +542,30 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             if (step.kind == Step::Kind::Squash) {
                 if (!pending)
                     throw std::runtime_error("squash without a commit to squash into");
+                if (step.amend) {
+                    // Finish the previous commit, then amend it (the result gets this key).
+                    const std::string previous = pending->key;
+                    std::vector<std::string> contributors = pending->contributors;
+                    const std::string dateFrom = pending->dateFrom;
+                    flush();
+                    const std::string target = byKey.at(previous);
+                    if (target.empty())
+                        throw std::runtime_error("nothing to amend: every commit before it was dropped");
+                    Commit t = m->commit(target);
+                    Pending p;
+                    p.key = key;
+                    for (unsigned i = 0; i < git_commit_parentcount(t.get()); ++i)
+                        p.parents.push_back(toHex(*git_commit_parent_id(t.get(), i)));
+                    p.tree = toHex(*git_commit_tree_id(t.get()));
+                    p.message = commitMessage(t.get());
+                    const git_signature* a = git_commit_author(t.get());
+                    p.author = Person{a->name ? a->name : "", a->email ? a->email : "", a->when.time, a->when.offset};
+                    p.mapSource = false;
+                    p.contributors = std::move(contributors);
+                    p.dateFrom = dateFrom;
+                    pending = std::move(p);
+                    currentKey = key;
+                }
                 Commit src = m->commit(step.source);
                 const std::string srcTree = toHex(*git_commit_tree_id(src.get()));
                 const std::string srcBase = git_commit_parentcount(src.get()) > 0
@@ -508,6 +573,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     : m->emptyTree();
                 pending->tree = m->mergeTrees(srcBase, pending->tree, srcTree, key, step.source, plan, result);
                 pending->squashed.push_back(step.source);
+                pending->contributors.push_back(step.source);
                 pending->unchanged = false;
                 if (step.message)
                     pending->message = *step.message;
@@ -521,6 +587,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             p.key = key;
             p.source = step.kind == Step::Kind::Pick ? step.source : std::string();
             p.mapSource = step.mapSource;
+            if (!p.source.empty())
+                p.contributors = {p.source};
+            p.dateFrom = p.source;
             std::vector<std::string> originalParents;
             if (!step.source.empty()) {
                 Commit src = m->commit(step.source);
@@ -601,6 +670,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         for (const auto& [orig, now] : newOf)
             if (orig != now)
                 result.mapping[orig] = now;
+        result.rewritten = result.mapping;
+        for (const auto& [orig, now] : reported)
+            result.rewritten[orig] = now;
 
         // Ref moves: local branches (never remote-tracking ones) and a detached HEAD.
         std::map<std::string, std::string> otherWorktreeBranches;
@@ -818,7 +890,7 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
     }
     // 6. Hooks git would have run, and the mapping in the journal.
     std::vector<std::pair<std::string, std::string>> rewrites;
-    for (const auto& [orig, now] : result.mapping)
+    for (const auto& [orig, now] : result.rewritten)
         rewrites.emplace_back(orig, now);
     if (!rewrites.empty() && !m->bare) {
         const fs::path mapFile = fs::path(git_repository_commondir(m->repo.get())) / "gg" / ("rewrite-" + journal::Journal::newOperationId());

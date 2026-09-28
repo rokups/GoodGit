@@ -207,7 +207,8 @@ the panel without touching the repository.
   (default on; off removes the `update-ref` rows, on puts them back after their commit's
   squash/fixup rows), *Autostash* `###ir_autostash`, *Run as git rebase* `###ir_native`, *Exec
   after every commit* `###ir_exec_each`, *Committer date* `###ir_committer_date` (Use now / Keep
-  original).
+  original), *Becoming empty* `###ir_empty` (Keep / Drop / Ask, default Ask: what happens to
+  commits whose changes are already in the new base, like `git rebase --empty=keep|drop|stop`).
 - **Tools:** Undo `###ir_undo` (Ctrl+Z), Redo `###ir_redo` (Ctrl+Y, Ctrl+Shift+Z), *Insert exec*
   `###ir_insert_exec`, *Insert break* `###ir_insert_break` (after the last selected row, else at the
   end), *Newest first* `###ir_newest_first`. Undo/Redo apply to the list and its options only; the
@@ -229,7 +230,9 @@ the panel without touching the repository.
   like Git's editor output (comments and extra blank lines removed) and goes back to Git's text
   when the group's rows or actions change.
 - **Start:** the in-memory engine (plan §4.13 R3) through the rewrite pipeline: pre-flight for
-  non-text conflicts, the published-history confirmation, one operation (one Undo). Refused (error
+  non-text conflicts, then (with *Becoming empty* = Ask and commits that become empty) the dialog
+  "Commits become empty" listing them (`empty_<n>`: short ID and subject) with *Keep them* / *Drop
+  them* / *Cancel*, the published-history confirmation, one operation (one Undo). Refused (error
   popup, the editor stays) when the branch moved since the list was read. With *Autostash* tracked
   local changes are stashed before and popped after, in the same operation; when they no longer
   apply they stay in the stash (warning notification). Todos needing `git rebase -i` (edit, break,
@@ -239,7 +242,11 @@ the panel without touching the repository.
   while a newer result is computed a spinner with "Updating..." (the previous result stays). A
   summary line `###irp_summary` ("N commit(s), K with conflicts, M need a decision, E empty"),
   `###irp_moves` ("Moves: <branches>", a detached HEAD as `HEAD`), `###irp_staying` (warning
-  colour: "Stay on the old commits: <branches>", branches in the range without an update-ref row).
+  colour: "Stay on the old commits: <branches>", branches in the range without an update-ref row),
+  `###irp_aside_<n>` ("<branch>: <short ID> <subject>, before the squash": an update-ref row before
+  squash/fixup rows leaves the branch on the commit as it was then, beside the result that amends
+  it, as `git rebase -i` does) and `###irp_dropped_empty` ("Dropped, became empty: <subjects>",
+  with *Becoming empty* = Drop).
   The graph `##irp_table` is one lane, newest first, the base last (dimmed: short ID and subject,
   or "(the root)"); rows `###irp_row_<k>` (k = result commit, oldest = 0) show the conflict icon
   and conflict colour for first-class conflicts, a help icon (warning colour) for non-text

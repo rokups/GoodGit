@@ -500,10 +500,11 @@ void RebasePanel::start()
     const todo::Todo list = m_state.todo;
     const auto context = m_state.context;
     const bool keepDate = m_options.keepCommitterDate;
+    const gg::rewrite::Emptied emptied = m_options.emptied;
     const std::uint64_t generation = m_generation;
     m_session.actions().rewrite(
         "interactive rebase",
-        [list, context, keepDate](git_repository* repo) {
+        [list, context, keepDate, emptied](git_repository* repo) {
             // The branch must still be where the editor read it.
             git_oid now;
             const std::string ref = !context->tipRef.empty() ? context->tipRef : std::string("HEAD");
@@ -513,6 +514,7 @@ void RebasePanel::start()
                 throw std::runtime_error(branchName(ref) + " moved since the list was read; open the editor again");
             gg::rewrite::Plan plan = todo::toPlan(list, *context);
             plan.keepCommitterDate = keepDate;
+            plan.emptied = emptied;
             return plan;
         },
         [this, generation](const core::MutationFinishedEvent& e) {
@@ -658,6 +660,17 @@ void RebasePanel::drawOptions()
     const char* dates[] = {"Use now", "Keep original"};
     if (ImGui::Combo("Committer date###ir_committer_date", &date, dates, 2))
         m_options.keepCommitterDate = date == 1;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    int emptied = static_cast<int>(m_options.emptied);
+    const char* emptyChoices[] = {"Keep", "Drop", "Ask"}; // gg::rewrite::Emptied order
+    if (ImGui::Combo("Becoming empty###ir_empty", &emptied, emptyChoices, 3)) {
+        m_options.emptied = static_cast<gg::rewrite::Emptied>(emptied);
+        onTodoChanged();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Commits whose changes are already in the new base (git rebase --empty): keep them as "
+                          "empty commits, drop them, or ask at Start (Git's default).");
 
     // List tools.
     ImGui::BeginDisabled(m_undo.empty());
@@ -774,6 +787,19 @@ void RebasePanel::drawPreview()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Without an update-ref row these branches keep pointing at the commits before the rebase.");
     }
+    for (size_t k = 0; k < pv.aside.size(); ++k) {
+        const auto& a = pv.aside[k];
+        plainText((a.branch + ": " + shortHex(a.id, n) + " " + a.subject + ", before the squash###irp_aside_" + std::to_string(k)).c_str());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Its update-ref row comes before squash/fixup rows: the branch keeps the commit as it was "
+                              "then, and the squash/fixup amends a copy (as git rebase -i does).");
+    }
+    if (!pv.droppedEmpty.empty()) {
+        std::string dropped;
+        for (const auto& subject : pv.droppedEmpty)
+            dropped += (dropped.empty() ? "" : ", ") + subject;
+        plainText(("Dropped, became empty: " + dropped + "###irp_dropped_empty").c_str());
+    }
 
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
     if (!ImGui::BeginTable("##irp_table", 2, flags)) {
@@ -825,7 +851,10 @@ void RebasePanel::drawPreview()
                     tip += "\n    " + d.path + " (" + d.kind + ")";
             }
             if (row.empty)
-                tip += row.wasEmpty ? "\nAn empty commit (it was empty before)." : "\nBecomes empty: its changes are already in the base.";
+                tip += row.wasEmpty ? "\nAn empty commit (it was empty before)."
+                    : m_options.emptied == gg::rewrite::Emptied::Ask
+                    ? "\nBecomes empty: its changes are already in the base. Start asks whether to keep it."
+                    : "\nBecomes empty: its changes are already in the base.";
             ImGui::SetTooltip("%s", tip.c_str());
         }
         const bool head = c.tipIsHead

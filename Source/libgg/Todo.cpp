@@ -624,26 +624,42 @@ std::string cleanup(std::string_view message, Cleanup mode, std::string_view com
 std::vector<Group> groups(const Todo& todo)
 {
     std::vector<Group> out;
-    bool open = false; // the last group still takes followers
+    bool open = false;     // the last group still takes followers
+    bool finished = false; // an exec/break/update-ref row finished its commit: the next follower amends it
     for (size_t i = 0; i < todo.items.size(); ++i) {
         const Item& item = todo.items[i];
         switch (item.action) {
         case Action::Pick:
         case Action::Reword:
         case Action::Edit:
-            out.push_back(Group{i, {}, false});
+            out.push_back(Group{i, {}, false, std::nullopt});
             open = true;
+            finished = false;
             break;
         case Action::Squash:
-        case Action::Fixup:
+        case Action::Fixup: {
+            const bool editor = item.action == Action::Squash || item.fixup == FixupMessage::Edit;
             if (!open) {
-                out.push_back(Group{i, {}, false});
+                out.push_back(Group{i, {}, false, std::nullopt});
                 open = true;
+                finished = false;
+                break;
+            }
+            if (finished) {
+                const size_t previous = out.back().first;
+                out.push_back(Group{i, {}, editor, previous});
+                finished = false;
                 break;
             }
             out.back().followers.push_back(i);
-            if (item.action == Action::Squash || item.fixup == FixupMessage::Edit)
+            if (editor)
                 out.back().needsEditor = true;
+            break;
+        }
+        case Action::Exec:
+        case Action::Break:
+        case Action::UpdateRef:
+            finished = open; // Git finishes the commit before running these (is_final_fixup)
             break;
         case Action::Label:
         case Action::Reset:
@@ -651,9 +667,7 @@ std::vector<Group> groups(const Todo& todo)
             open = false; // HEAD moves elsewhere
             break;
         default:
-            // drop, exec, break and update-ref leave HEAD where it is: a later fixup still
-            // amends the same commit.
-            break;
+            break; // drop: as if the row were not there
         }
     }
     return out;
@@ -693,11 +707,33 @@ std::string commentOut(std::string_view message, std::string_view comment)
     return out;
 }
 
+// The rows after the group's starting commit: its followers, or for a group that amends a
+// finished commit every row of it.
+std::vector<size_t> foldedRows(const Group& group)
+{
+    std::vector<size_t> rows;
+    if (group.amends)
+        rows.push_back(group.first);
+    rows.insert(rows.end(), group.followers.begin(), group.followers.end());
+    return rows;
+}
+
+// The first message of the group: its first commit's, or the message of the commit it amends.
+std::string baseMessage(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
+{
+    if (group.amends)
+        for (const Group& g : groups(todo))
+            if (g.first == *group.amends)
+                return groupMessage(todo, g, context, comment);
+    return messageOf(context, todo.items[group.first]);
+}
+
 // The message a fixup-only group keeps (no editor): the last `fixup -C` commit's message without
 // its `amend!` subject, else the first commit's.
-std::string keptMessage(const Todo& todo, const Group& group, const Context& context)
+std::string keptMessage(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
 {
-    for (auto it = group.followers.rbegin(); it != group.followers.rend(); ++it) {
+    const std::vector<size_t> rows = foldedRows(group);
+    for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
         const Item& item = todo.items[*it];
         if (item.action != Action::Fixup || item.fixup == FixupMessage::None)
             continue;
@@ -711,7 +747,7 @@ std::string keptMessage(const Todo& todo, const Group& group, const Context& con
         }
         return message;
     }
-    return messageOf(context, todo.items[group.first]);
+    return baseMessage(todo, group, context, comment);
 }
 
 } // namespace
@@ -724,9 +760,9 @@ std::string squashTemplate(const Todo& todo, const Group& group, const Context& 
         bool commentSubject = false;
     };
     std::vector<Entry> entries;
-    entries.push_back({messageOf(context, todo.items[group.first]), true, false});
+    entries.push_back({baseMessage(todo, group, context, comment), true, false});
     bool seenSquash = false;
-    for (size_t row : group.followers) {
+    for (size_t row : foldedRows(group)) {
         const Item& item = todo.items[row];
         const std::string& message = messageOf(context, item);
         const bool fixupish = startsWith(message, "squash!") || startsWith(message, "fixup!");
@@ -776,7 +812,7 @@ std::string groupMessage(const Todo& todo, const Group& group, const Context& co
         return cleanup(squashTemplate(todo, group, context, comment), Cleanup::Strip, comment);
     if (first.action == Action::Reword && group.followers.empty())
         return cleanup(messageOf(context, first), Cleanup::Strip, comment);
-    return keptMessage(todo, group, context);
+    return keptMessage(todo, group, context, comment);
 }
 
 std::string editorText(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
@@ -786,7 +822,7 @@ std::string editorText(const Todo& todo, const Group& group, const Context& cont
         return *first.message;
     if (group.needsEditor)
         return squashTemplate(todo, group, context, comment);
-    return keptMessage(todo, group, context);
+    return keptMessage(todo, group, context, comment);
 }
 
 // ---- Validation -------------------------------------------------------------------------------
@@ -806,12 +842,13 @@ size_t unchangedPrefix(const Todo& todo, const Context& context)
         const auto& parents = info->second.parents;
         if (current.empty() ? !parents.empty() : (parents.size() != 1 || parents.front() != current))
             return i;
-        // A squash/fixup coming next changes this commit too.
+        // A squash/fixup coming next changes this commit too (after an update-ref row it amends
+        // a copy: this commit is kept for the branch).
         for (size_t j = i + 1; j < todo.items.size(); ++j) {
             const Action a = todo.items[j].action;
             if (a == Action::Squash || a == Action::Fixup)
                 return i;
-            if (a != Action::Drop && a != Action::UpdateRef)
+            if (a != Action::Drop)
                 break;
         }
         current = item.commit;
@@ -1006,14 +1043,40 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
     plan.upstream = context.upstream;
     plan.keepBranches = true; // like git: only the rebased branch and update-ref lines move
     plan.keepHead = true;
+    // Post-rewrite as Git reports it: the leading picks that stay as they are are skipped
+    // (skip_unnecessary_picks; drop rows do not stop it) and not reported, except the last one when
+    // a squash/fixup comes next; every later commit is, fast-forwarded ones as themselves.
+    plan.reportUnchanged = true;
+    {
+        std::string base = context.onto;
+        std::string last;
+        size_t i = 0;
+        for (; i < todo.items.size(); ++i) {
+            const Item& item = todo.items[i];
+            if (item.action == Action::Drop)
+                continue;
+            if (item.action != Action::Pick || base.empty())
+                break;
+            const auto info = context.commits.find(item.commit);
+            if (info == context.commits.end() || info->second.parents.size() != 1 || info->second.parents.front() != base)
+                break;
+            plan.unreported.insert(item.commit);
+            base = last = item.commit;
+        }
+        if (i < todo.items.size() && !last.empty()
+            && (todo.items[i].action == Action::Squash || todo.items[i].action == Action::Fixup))
+            plan.unreported.erase(last);
+    }
 
-    std::map<size_t, const Group*> lastFollower; // last follower row → its group
     const std::vector<Group> all = groups(todo);
     std::map<size_t, const Group*> byFirst;
+    std::map<size_t, const Group*> lastRow; // a group's last squash/fixup row → the group
     for (const Group& g : all) {
         byFirst[g.first] = &g;
         if (!g.followers.empty())
-            lastFollower[g.followers.back()] = &g;
+            lastRow[g.followers.back()] = &g;
+        else if (g.amends)
+            lastRow[g.first] = &g;
     }
 
     // The step the next commit goes onto: a step key, or "=<onto>" before the first one.
@@ -1045,10 +1108,16 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
             s.kind = rw::Step::Kind::Squash;
             s.source = item.commit;
             s.key = key;
-            if (auto it = lastFollower.find(i); it != lastFollower.end())
+            if (auto it = byFirst.find(i); it != byFirst.end() && it->second->amends) {
+                // After an exec/break/update-ref row: amends the finished commit, which the
+                // update-ref rows before it keep pointing at (as in Git).
+                s.amend = true;
+                current = key;
+            }
+            if (auto it = lastRow.find(i); it != lastRow.end())
                 s.message = groupMessage(todo, *it->second, context, comment);
             plan.steps.push_back(std::move(s));
-            break; // the group's commit stays the current step
+            break; // otherwise the group's commit stays the current step
         }
         case Action::UpdateRef:
             if (!current.empty())

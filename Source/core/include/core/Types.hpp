@@ -408,6 +408,17 @@ struct RebasePreview {
     std::vector<Move> moves;              // branches (and a detached HEAD) that move
     std::vector<std::string> ontoBranches; // branches ending at the base (every commit dropped)
     std::vector<std::string> staying;     // branches in the range that stay on the old commits
+    // A branch whose update-ref row comes before a squash/fixup row: Git finishes the commit for
+    // it and the squash/fixup amends a copy, so the branch ends beside the result.
+    struct Aside {
+        std::string branch;               // short name
+        std::string id;
+        std::string tree;
+        std::string subject;
+        size_t row = 0;                   // the result row that amends it (same parent)
+    };
+    std::vector<Aside> aside;
+    std::vector<std::string> droppedEmpty; // subjects of commits left out because they became empty
 };
 using RebasePreviewPtr = std::shared_ptr<const RebasePreview>;
 

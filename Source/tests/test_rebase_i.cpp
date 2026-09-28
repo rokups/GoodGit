@@ -1,17 +1,23 @@
 // Interactive rebase: the todo editor, its entry points and options, run on the in-memory engine,
-// and the live preview beside the list (§4.13; P3-15, P3-16, P3-17).
+// the live preview beside the list, and the in-memory engine against git rebase -i (§4.13, §8.4;
+// P3-15 … P3-18).
 #include "panels/HistoryPanel.hpp"
 #include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+#include "util/Env.hpp"
 #include "util/FrameProbe.hpp"
 
 #include <libgg/GitRunner.hpp>
 #include <libgg/Todo.hpp>
 
 #include <algorithm>
+#include <cstdlib>
+#include <deque>
+#include <fstream>
+#include <random>
 
 namespace ggtest {
 
@@ -939,7 +945,7 @@ GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, th
 }
 
 GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, commits that are or become empty",
-    "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-EMPTY")
+    "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-EMPTY", "IR-OPT-EMPTY", "IR-MEMORY-CANCEL")
 {
     const fs::path path = s.fixture(Recipe::Empty);
     s.write(path, "bin.dat", std::string("A\0", 2));
@@ -956,6 +962,7 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     s.git(path, {"commit", "-q", "--allow-empty", "-m", "c4 empty"});
     s.commitFile(path, "f.txt", "f\n", "c5 add f");
     s.git(path, {"rm", "-q", "f.txt"});
+    const std::string c5 = s.head(path);
     s.git(path, {"commit", "-q", "-m", "c6 remove f"});
     const std::string c6 = s.head(path);
     s.commitFile(path, "f.txt", "f\n", "c7 add f again");
@@ -1026,12 +1033,89 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_2").c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "it was empty before"));
+    // Start asks about the commit that becomes empty (git rebase -i stops there); Cancel changes
+    // nothing, "Keep them" gives the previewed result.
     const Preview expected = *p;
-    GG_REQUIRE(start(s));
+    const std::string before = s.head(path);
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.dialogOpen("Commits become empty"));
+    f = s.app.dialogs().current();
+    GG_REQUIRE(f->field("empty_0") && !f->field("empty_1"));
+    GG_CHECK(f->field("empty_0")->text.find(c7.substr(0, 10) + " c7 add f again") != std::string::npos);
+    s.dialogButton("Commits become empty", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(path), before);
+    GG_CHECK(editor(s).isOpen());
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.dialogOpen("Commits become empty"));
+    s.dialogButton("Commits become empty", "Keep them");
+    GG_REQUIRE(s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f));
+    s.settle();
     checkMatches(s, path, "main", expected);
     GG_CHECK_STR_EQ(s.revParse(path, "main~5"), c1);
     GG_CHECK(s.statusPorcelain(path).empty());
-    (void)c7;
+
+    // Again from the original history, answered with "Drop them": c7 is left out.
+    ctx->ItemClick("//History/**/###row_wt");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(path) == before; }));
+    s.settle();
+    GG_REQUIRE(rowReady(s, c2));
+    ctx->ItemClick(historyRow(c2).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    key(s, c6, ImGuiKey_D);
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.dialogOpen("Commits become empty"));
+    s.dialogButton("Commits become empty", "Drop them");
+    GG_REQUIRE(s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f));
+    s.settle();
+    GG_CHECK(subjects(s, path, "main") == (std::vector<std::string>{"c5", "c4", "c3", "c2", "c1"}));
+    GG_CHECK_STR_EQ(s.revParse(path, "main"), c5);
+    GG_CHECK(s.statusPorcelain(path).empty());
+
+    // With "Drop" chosen in the options the preview leaves it out and Start does not ask.
+    ctx->ItemClick("//History/**/###row_wt");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(path) == before; }));
+    s.settle();
+    GG_REQUIRE(rowReady(s, c2));
+    ctx->ItemClick(historyRow(c2).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    key(s, c6, ImGuiKey_D);
+    s.comboSelect(irWidget("ir_empty").c_str(), "Drop");
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4", "c5"}));
+    GG_CHECK(p->droppedEmpty == (Rows{"c7 add f again"}));
+    GG_CHECK(previewShows(s, "Dropped, became empty: c7 add f again"));
+    GG_CHECK(p->rows[3].branches == (Rows{"main"}));
+    const Preview dropped = *p;
+    GG_REQUIRE(start(s));
+    checkMatches(s, path, "main", dropped);
+    GG_CHECK_STR_EQ(s.revParse(path, "main"), c5);
+
+    // A squash group that ends up empty (c6 fixed up into c5 undoes it) is dropped as a whole.
+    ctx->ItemClick("//History/**/###row_wt");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(path) == before; }));
+    s.settle();
+    GG_REQUIRE(rowReady(s, c2));
+    ctx->ItemClick(historyRow(c2).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    key(s, c6, ImGuiKey_F);
+    s.comboSelect(irWidget("ir_empty").c_str(), "Drop");
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok);
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4", "c7"}));
+    GG_CHECK(p->droppedEmpty == (Rows{"c5 add f"}));
+    const Preview group = *p;
+    GG_REQUIRE(start(s));
+    checkMatches(s, path, "main", group);
+    GG_CHECK_STR_EQ(s.read(path, "f.txt"), "f\n");
+    GG_CHECK(s.statusPorcelain(path).empty());
 }
 
 GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames never wait, nothing is written",
@@ -1112,6 +1196,475 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
         if (!before.count(name) || before.at(name) != bytes)
             ctx->LogError("changed under .git: %s", name.c_str());
     GG_CHECK(after == before);
+}
+
+
+// ---- in-memory engine against git rebase -i (P3-18) -----------------------------------------------
+
+namespace {
+
+// Git's editor as the tests use it (core.editor): " reworded" appended to the first line that is
+// not a comment and not blank. The same text is typed into ggui's message editors.
+std::string reworded(const std::string& text)
+{
+    std::string out;
+    bool done = false;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find('\n', pos);
+        const bool last = end == std::string::npos;
+        std::string line = text.substr(pos, last ? std::string::npos : end - pos);
+        if (!done && !line.empty() && line[0] != '#' && line.find_first_not_of(" \t") != std::string::npos) {
+            line += " reworded";
+            done = true;
+        }
+        out += line;
+        if (!last)
+            out += '\n';
+        pos = last ? text.size() : end + 1;
+    }
+    return out;
+}
+
+const char* kRewordEditor = "#!/bin/sh\n"
+                            "awk '!d && !/^#/ && NF { $0 = $0 \" reworded\"; d = 1 } { print }' \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\"\n";
+
+// Hooks that record what the rewrite reports: post-rewrite's mapping and each committed ref
+// transaction, in files under .git.
+void installRecordingHooks(Scenario& s, const fs::path& repo)
+{
+    s.write(repo, ".git/hooks/post-rewrite",
+        "#!/bin/sh\nd=$(git rev-parse --git-dir)\necho \"== $1\" >> \"$d/post-rewrite.log\"\ncat >> \"$d/post-rewrite.log\"\n");
+    s.write(repo, ".git/hooks/reference-transaction",
+        "#!/bin/sh\n[ \"$1\" = committed ] && echo committed >> \"$(git rev-parse --git-dir)/ref-transactions.log\"\nexit 0\n");
+    for (const char* hook : {"post-rewrite", "reference-transaction"})
+        fs::permissions(repo / ".git" / "hooks" / hook, fs::perms::owner_all, fs::perm_options::add);
+}
+
+// A commit described by what it is, not its id: its tree and subject and those of its first-parent
+// history (ids differ between ggui and git because of the committer date).
+std::string describe(Scenario& s, const fs::path& repo, const std::string& id)
+{
+    return s.gitOut(repo, {"log", "--first-parent", "--format=%T %s", id});
+}
+
+// post-rewrite's "rebase" mapping: original id → the new commit described.
+std::vector<std::string> postRewrite(Scenario& s, const fs::path& repo)
+{
+    std::vector<std::string> out;
+    bool rebase = false;
+    for (const auto& line : gg::splitLines(s.read(repo, ".git/post-rewrite.log"))) {
+        if (line.rfind("== ", 0) == 0) {
+            rebase = line == "== rebase";
+            continue;
+        }
+        if (!rebase || line.empty())
+            continue;
+        const auto space = line.find(' ');
+        out.push_back(line.substr(0, space) + " -> " + describe(s, repo, line.substr(space + 1, line.find(' ', space + 1) - space - 1)));
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+// Messages, authors and trees of a branch's history.
+std::string history(Scenario& s, const fs::path& repo, const std::string& ref)
+{
+    return s.gitOut(repo, {"log", "--format=%T %an <%ae> %at%n%B%n--", ref});
+}
+
+// The branches `aside` names (update-ref before squash/fixup rows) as git and ggui leave them.
+void checkAside(Scenario& s, const fs::path& repo, const std::string& tip, const Preview& p)
+{
+    const size_t n = p.rows.size();
+    for (const auto& a : p.aside) {
+        GG_CHECK_STR_EQ(s.revParse(repo, a.branch + "^{tree}"), a.tree);
+        GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s", a.branch}), a.subject);
+        // Beside the commit that amends it: the same parent.
+        const std::string amender = tip + "~" + std::to_string(n - 1 - a.row);
+        GG_CHECK_STR_EQ(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", a.branch + "~1"}).out,
+            s.gitMayFail(repo, {"rev-parse", "-q", "--verify", amender + "~1"}).out);
+    }
+}
+
+// Runs `git rebase -i` on `copy` with ggui's todo text and the rewording editor.
+void gitRebase(Scenario& s, const fs::path& copy, const std::string& todoText, const std::string& upstream,
+    const std::string& onto, const char* empty)
+{
+    const fs::path todoFile = copy.parent_path() / (copy.filename().string() + "-todo.txt");
+    const fs::path editorFile = copy.parent_path() / "reword-editor.sh";
+    {
+        std::ofstream(todoFile, std::ios::binary) << todoText;
+        std::ofstream(editorFile, std::ios::binary) << kRewordEditor;
+        fs::permissions(editorFile, fs::perms::owner_all, fs::perm_options::add);
+    }
+    std::vector<std::string> args{"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i",
+        std::string("--empty=") + empty};
+    if (!onto.empty()) {
+        args.push_back("--onto");
+        args.push_back(onto);
+    }
+    args.push_back(upstream);
+    ggui::setEnv("GIT_EDITOR", editorFile.string()); // the test runner's GIT_EDITOR=true beats core.editor
+    s.git(copy, args);
+    ggui::setEnv("GIT_EDITOR", "true");
+}
+
+// A copy of a repository (every branch, hooks included) for git to rebase.
+fs::path copyRepo(Scenario& s, const fs::path& repo, const std::string& name)
+{
+    const fs::path copy = s.root() / name;
+    fs::copy(repo, copy, fs::copy_options::recursive);
+    s.track(copy);
+    return copy;
+}
+
+// Types Git's reworded default into every message editor the list shows (reword rows and groups
+// Git would open its editor for), as the rewording editor does for git.
+void rewordAll(Scenario& s)
+{
+    const auto list = editor(s).todo();
+    for (const auto& g : todo::groups(list)) {
+        const auto& item = list.items[g.first];
+        if (item.action != todo::Action::Reword && !g.needsEditor)
+            continue;
+        const std::string ref = "//Interactive rebase/**/###ir_msg_" + item.commit;
+        GG_CHECK(s.waitUntil([&] { return s.itemExists(ref.c_str()); }));
+        s.setText(ref, reworded(editor(s).messageText(g.first)));
+    }
+}
+
+// Clicks Start and answers "Commits become empty" (if it comes) with `answer`.
+bool startAnswering(Scenario& s, const char* answer)
+{
+    s.ctx->ItemClick(irWidget("ir_start").c_str());
+    auto asking = [&] { return s.app.dialogs().current() && s.app.dialogs().current()->title == "Commits become empty"; };
+    s.waitUntil([&] { return !editor(s).isOpen() || asking(); }, 60.0f);
+    if (asking())
+        s.dialogButton("Commits become empty", answer);
+    const bool done = s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f);
+    s.settle();
+    return done;
+}
+
+// Every file in the repository's working tree is what HEAD has, and no sequencer state is left.
+void checkClean(Scenario& s, const fs::path& repo)
+{
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    for (const char* dir : {"rebase-merge", "rebase-apply", "sequencer"})
+        GG_CHECK(!fs::exists(repo / ".git" / dir));
+    GG_CHECK(!fs::exists(repo / ".git" / "CHERRY_PICK_HEAD") && !fs::exists(repo / ".git" / "REBASE_HEAD"));
+}
+
+} // namespace
+
+GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i",
+    "IR-ACT-UPDATE-REF", "IR-ACT-SQUASH", "IR-ACT-FIXUP", "IR-PREVIEW-BRANCHES", "IR-ENGINE-MEMORY", "HOOK-REWRITE-RUN")
+{
+    const Repo r = makeRepo(s);
+    installRecordingHooks(s, r.path);
+    const fs::path copy = copyRepo(s, r.path, "git-copy");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[3]));
+    ctx->ItemClick(historyRow(r.c[3]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    // [c3, update-ref part1, c4, c5] → c4 fixup before the update-ref row, c5 squash after it.
+    click(s, r.c[4]);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    key(s, r.c[4], ImGuiKey_F);
+    key(s, r.c[5], ImGuiKey_S);
+    GG_CHECK(rows(s) == (Rows{"pick c3", "fixup c4", "update-ref refs/heads/part1", "squash c5"}));
+    // Two groups: c3+c4 is finished for part1, c5 amends it with c3's message first in the template.
+    const auto gs = todo::groups(editor(s).todo());
+    GG_REQUIRE(gs.size() == 2);
+    GG_CHECK(gs[1].first == 3 && gs[1].amends == std::optional<size_t>(0) && gs[1].needsEditor);
+    GG_CHECK(editor(s).messageText(3).rfind("# This is a combination of 2 commits.\n# This is the 1st commit message:\n\nc3 add c\n\n"
+                                            "# This is the commit message #2:\n\nc5 add e\n", 0) == 0);
+    rewordAll(s);
+    const Preview* p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 1);
+    GG_CHECK(p->rows[0].branches == (Rows{"main"}));
+    GG_REQUIRE(p->aside.size() == 1);
+    GG_CHECK_STR_EQ(p->aside[0].branch, "part1");
+    GG_CHECK_STR_EQ(p->aside[0].subject, "c3 add c");
+    GG_CHECK(previewShows(s, "part1: "));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_aside_0").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "the squash/fixup amends a copy"));
+    const Preview expected = *p;
+    const std::string todoText = todo::format(editor(s).todo());
+
+    fs::remove(r.path / ".git" / "ref-transactions.log");
+    GG_REQUIRE(start(s));
+    checkMatches(s, r.path, "main", expected);
+    checkAside(s, r.path, "main", expected);
+    checkClean(s, r.path);
+    // One ref transaction moved both branches.
+    GG_CHECK_STR_EQ(s.read(r.path, ".git/ref-transactions.log"), "committed\n");
+
+    gitRebase(s, copy, todoText, r.c[2], "", "keep");
+    checkMatches(s, copy, "main", expected);
+    checkAside(s, copy, "main", expected);
+    for (const char* ref : {"main", "part1"})
+        GG_CHECK_STR_EQ(history(s, r.path, ref), history(s, copy, ref));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main"}), "c3 add c reworded\n\nc5 add e");
+    // post-rewrite: c3 and c4 → the commit part1 keeps, c5 → the squash result (as git reports it).
+    const auto ours = postRewrite(s, r.path);
+    GG_CHECK(ours.size() == 3);
+    GG_CHECK(ours == postRewrite(s, copy));
+    for (const auto& line : ours)
+        ctx->LogInfo("post-rewrite: %s", line.substr(0, line.find('\n')).c_str());
+}
+
+GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i on a copy", "IR-DIFFERENTIAL",
+    "IR-ENGINE-MEMORY", "IR-MEMORY-ONE-UNDO", "IR-ACT-PICK", "IR-ACT-REWORD", "IR-ACT-SQUASH", "IR-ACT-FIXUP",
+    "IR-ACT-FIXUP-C", "IR-ACT-DROP", "IR-ACT-UPDATE-REF", "IR-OPT-AUTOSQUASH", "IR-OPT-ONTO", "IR-OPT-UPDATE-REFS",
+    "IR-PREVIEW", "IR-PREVIEW-EMPTY", "HOOK-REWRITE-RUN")
+{
+    // Fixed seed (logged), overridable with GGUI_IR_SEED to replay or explore.
+    std::uint64_t seed = 0x1818d1ffULL;
+    if (const char* env = std::getenv("GGUI_IR_SEED"))
+        seed = std::strtoull(env, nullptr, 0);
+    int rounds = 6;
+    if (const char* env = std::getenv("GGUI_IR_ROUNDS"))
+        rounds = std::atoi(env);
+    ctx->LogInfo("differential seed 0x%llx, %d rounds", static_cast<unsigned long long>(seed), rounds);
+    std::mt19937_64 rng(seed);
+    auto chance = [&](double p) { return std::uniform_real_distribution<double>(0, 1)(rng) < p; };
+    auto below = [&](size_t n) { return static_cast<size_t>(std::uniform_int_distribution<size_t>(0, n - 1)(rng)); };
+
+    // c0 ─ up: u1 (adds q.txt, changes p.txt)
+    //    └ main: a1 b1 e1 a2 c1(stack1) b2 m1 d1 a3(stack2) c2
+    // Commits of one "chain" change the same file and keep their order; e1 adds q.txt as u1 does
+    // (it becomes empty onto up); m1 is empty; a2/b2/a3 are fixup!/squash!/amend! commits.
+    const fs::path path = s.fixture(Recipe::Empty);
+    auto commit = [&](const std::string& file, const std::string& content, const std::string& message,
+                      const std::string& author = "Tess Ter <tess@example.com>") {
+        if (file.empty()) {
+            s.git(path, {"commit", "-q", "--allow-empty", "--author=" + author, "-m", message});
+        } else {
+            s.write(path, file, content);
+            s.git(path, {"add", file});
+            s.git(path, {"commit", "-q", "--author=" + author, "-m", message});
+        }
+        return s.head(path);
+    };
+    s.write(path, "p.txt", "p\n");
+    s.git(path, {"add", "p.txt"});
+    const std::string c0 = commit("base.txt", "base\n", "c0 base");
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.write(path, "p.txt", "p up\n");
+    s.git(path, {"add", "p.txt"});
+    const std::string u1 = commit("q.txt", "q\n", "u1 add q, change p");
+    s.git(path, {"switch", "-q", "main"});
+    std::map<std::string, std::string> chainOf; // commit → chain
+    auto add = [&](const std::string& chain, const std::string& id) { chainOf[id] = chain; return id; };
+    const std::string a1 = add("a", commit("a.txt", "a1\n", "a1 add a", "Alice Liddell <alice@example.com>"));
+    add("b", commit("b.txt", "b1\n", "b1 add b\n\nb body", "Bob Builder <bob@example.com>"));
+    const std::string e1 = add("q", commit("q.txt", "q\n", "e1 add q"));
+    add("a", commit("a.txt", "a1\na2\n", "fixup! a1 add a"));
+    add("c", commit("c.txt", "c1\n", "c1 add c", "Carol Danvers <carol@example.com>"));
+    s.git(path, {"branch", "stack1"});
+    add("b", commit("b.txt", "b1\nb2\n", "squash! b1 add b\n\nsquash body"));
+    add("m", commit("", "", "m1 empty"));
+    add("d", commit("d.txt", "d1\n", "d1 add d\n\nd body", "Dan Dare <dan@example.com>"));
+    add("a", commit("a.txt", "a1\na2\na3\n", "amend! a1 add a\n\na1 add a, amended\n\namended body"));
+    s.git(path, {"branch", "stack2"});
+    add("c", commit("c.txt", "c1\nc2\n", "c2 change c"));
+    installRecordingHooks(s, path);
+    const fs::path pristine = copyRepo(s, path, "pristine");
+    const auto refsBefore = s.refs(path);
+
+    GG_REQUIRE(s.openRepository(path));
+    for (int round = 0; round < rounds; ++round) {
+        // ---- the options ----------------------------------------------------------------------
+        const bool ontoUp = chance(0.5);
+        const bool autosquash = chance(0.5);
+        const bool updateRefs = !chance(0.2);
+        const int emptyMode = static_cast<int>(below(3)); // Keep, Drop, Ask (answered Keep)
+        const char* emptyNames[] = {"Keep", "Drop", "Ask"};
+        GG_REQUIRE(rowReady(s, a1));
+        ctx->ItemClick(historyRow(a1).c_str());
+        ctx->KeyPress(ImGuiKey_I);
+        GG_REQUIRE(editorReady(s));
+        if (ontoUp) {
+            ctx->ItemClick(irWidget("ir_onto").c_str());
+            ctx->KeyChars("up");
+            ctx->KeyPress(ImGuiKey_Enter);
+            GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
+        }
+        if (autosquash)
+            ctx->ItemCheck(irWidget("ir_autosquash").c_str());
+        if (!updateRefs)
+            ctx->ItemUncheck(irWidget("ir_update_refs").c_str());
+        s.comboSelect(irWidget("ir_empty").c_str(), emptyNames[emptyMode]);
+
+        // ---- a random todo --------------------------------------------------------------------
+        const todo::Todo start = editor(s).todo();
+        std::map<std::string, std::deque<todo::Item>> chains;
+        std::vector<todo::Item> refRows;
+        for (const auto& item : start.items) {
+            if (item.isCommit())
+                chains[chainOf.at(item.commit)].push_back(item);
+            else
+                refRows.push_back(item);
+        }
+        // Commits of a chain keep their order (no conflicts: git would stop); a chain may lose
+        // its tail.
+        std::set<std::string> dropped;
+        for (auto& [name, list] : chains)
+            if (chance(0.25))
+                for (size_t k = below(list.size()); k < list.size(); ++k)
+                    dropped.insert(list[k].commit);
+        std::vector<todo::Item> want;
+        while (true) {
+            std::vector<std::string> open;
+            for (const auto& [name, list] : chains)
+                if (!list.empty())
+                    open.push_back(name);
+            if (open.empty())
+                break;
+            auto& list = chains[open[below(open.size())]];
+            want.push_back(list.front());
+            list.pop_front();
+        }
+        using A = todo::Action;
+        using F = todo::FixupMessage;
+        bool first = true;
+        for (auto& item : want) {
+            if (dropped.count(item.commit)) {
+                item.action = A::Drop;
+                item.fixup = F::None;
+                continue;
+            }
+            if (!first && chance(0.55)) {
+                const size_t k = below(6);
+                item.action = k == 0 ? A::Pick : k == 1 ? A::Reword : k == 2 ? A::Squash : A::Fixup;
+                item.fixup = k == 4 ? F::Use : k == 5 ? F::Edit : F::None;
+            } else if (first && item.action != A::Pick) {
+                item.action = chance(0.3) ? A::Reword : A::Pick;
+                item.fixup = F::None;
+            }
+            first = false;
+        }
+        for (const auto& ref : refRows)
+            want.insert(want.begin() + static_cast<std::ptrdiff_t>(below(want.size() + 1)), ref);
+        auto isFollower = [](const todo::Item& i) { return i.action == A::Squash || i.action == A::Fixup; };
+        for (size_t i = 0; i < want.size(); ++i) {
+            // Git asks twice for a reword with squash rows after it (drop rows in between do not
+            // count); ggui has one editor for the group: keep rewords single.
+            if (want[i].action == A::Reword) {
+                size_t j = i + 1;
+                while (j < want.size() && want[j].action == A::Drop)
+                    ++j;
+                if (j < want.size() && isFollower(want[j]))
+                    want[i].action = A::Pick;
+            }
+            // Dropping e1 when it becomes empty: Git then folds a squash/fixup right after it into
+            // the commit before it (ggui keeps the group); keep that case out.
+            if (want[i].commit == e1 && emptyMode == 1 && ontoUp) {
+                if (isFollower(want[i])) {
+                    want[i].action = A::Pick;
+                    want[i].fixup = F::None;
+                }
+                for (size_t j = i + 1; j < want.size(); ++j) {
+                    if (!want[j].isCommit() || want[j].action == A::Drop)
+                        continue;
+                    if (isFollower(want[j])) {
+                        want[j].action = A::Pick;
+                        want[j].fixup = F::None;
+                    }
+                    break;
+                }
+            }
+        }
+        std::string wantText;
+        for (const auto& item : want)
+            wantText += std::string(todo::actionName(item.action)) + (item.fixup == F::Use ? " -C" : item.fixup == F::Edit ? " -c" : "")
+                + " " + (item.isCommit() ? item.commit.substr(0, 7) : item.arg) + "; ";
+        ctx->LogInfo("round %d: onto %s, autosquash %d, update-refs %d, empty %s: %s", round, ontoUp ? "up" : "c0",
+            autosquash, updateRefs, emptyNames[emptyMode], wantText.c_str());
+
+        // ---- entered like a user: Alt+Up into place, then the action combos, then the messages ---
+        auto indexOf = [&](const todo::Item& w) {
+            const auto& items = editor(s).todo().items;
+            for (size_t i = 0; i < items.size(); ++i)
+                if (w.isCommit() ? items[i].commit == w.commit : (items[i].action == A::UpdateRef && items[i].arg == w.arg))
+                    return i;
+            return items.size();
+        };
+        for (size_t target = 0; target < want.size(); ++target) {
+            size_t at = indexOf(want[target]);
+            GG_REQUIRE(at < want.size());
+            if (at == target)
+                continue;
+            ctx->ItemClick(irRow(want[target].isCommit() ? want[target].commit : "row_" + std::to_string(at)).c_str());
+            for (; at > target; --at)
+                ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+            ctx->Yield(2);
+            GG_REQUIRE(indexOf(want[target]) == target);
+        }
+        for (const auto& item : want) {
+            if (!item.isCommit())
+                continue;
+            const auto& now = editor(s).todo().items[indexOf(item)];
+            if (now.action == item.action && now.fixup == item.fixup)
+                continue;
+            const std::string label = std::string(todo::actionName(item.action))
+                + (item.fixup == F::Use ? " -C" : item.fixup == F::Edit ? " -c" : "");
+            s.comboSelect(irAction(item.commit).c_str(), label.c_str());
+        }
+        {
+            const auto& items = editor(s).todo().items;
+            GG_REQUIRE(items.size() == want.size());
+            for (size_t i = 0; i < want.size(); ++i)
+                GG_CHECK(items[i].action == want[i].action && items[i].fixup == want[i].fixup
+                    && items[i].commit == want[i].commit && items[i].arg == want[i].arg);
+        }
+        GG_CHECK(!todo::hasErrors(editor(s).issues()));
+        GG_CHECK(editor(s).engine().engine == todo::Engine::InMemory);
+        rewordAll(s);
+        const std::string todoText = todo::format(editor(s).todo());
+        const Preview* p = previewReady(s);
+        GG_REQUIRE(p && p->ok);
+        const Preview expected = *p;
+
+        // ---- Start, then the same todo with git on a copy -------------------------------------
+        const fs::path copy = copyRepo(s, pristine, "git-" + std::to_string(round));
+        fs::remove(path / ".git" / "post-rewrite.log");
+        fs::remove(path / ".git" / "ref-transactions.log");
+        GG_REQUIRE(startAnswering(s, "Keep them"));
+        GG_CHECK(!editor(s).isOpen());
+        gitRebase(s, copy, todoText, c0, ontoUp ? "up" : "", emptyMode == 1 ? "drop" : "keep");
+
+        checkMatches(s, path, "main", expected);
+        checkMatches(s, copy, "main", expected);
+        checkAside(s, path, "main", expected);
+        checkAside(s, copy, "main", expected);
+        for (const char* ref : {"main", "stack1", "stack2", "up"})
+            GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
+        GG_CHECK(postRewrite(s, path) == postRewrite(s, copy));
+        checkClean(s, path);
+        GG_CHECK_STR_EQ(s.gitOut(path, {"symbolic-ref", "HEAD"}), "refs/heads/main");
+        GG_CHECK_STR_EQ(s.revParse(path, "HEAD^{tree}"), s.revParse(copy, "HEAD^{tree}"));
+        // Nothing to move gives no transaction; otherwise exactly one.
+        const std::string tx = fs::exists(path / ".git" / "ref-transactions.log") ? s.read(path, ".git/ref-transactions.log") : "";
+        GG_CHECK(tx == (expected.moves.empty() ? "" : "committed\n"));
+        if (ctx->IsError()) {
+            ctx->LogError("differential round %d failed (seed 0x%llx): %s", round, static_cast<unsigned long long>(seed), wantText.c_str());
+            return;
+        }
+
+        // One Undo restores every ref.
+        if (s.refs(path) != refsBefore) {
+            ctx->ItemClick("//History/**/###row_wt");
+            ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+            GG_REQUIRE(s.waitUntil([&] { return s.refs(path) == refsBefore; }));
+            s.settle();
+        }
+        GG_CHECK(s.statusPorcelain(path).empty());
+    }
 }
 
 } // namespace ggtest

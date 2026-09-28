@@ -142,12 +142,15 @@ enum class Cleanup { Strip, Whitespace, Verbatim, Scissors };
 // Git's commit message cleanup (`git commit --cleanup`).
 std::string cleanup(std::string_view message, Cleanup mode = Cleanup::Strip, std::string_view comment = "#");
 
-// A squash group: a pick/reword/edit row and the squash/fixup rows right after it (exec, break
-// and update-ref rows in between end the group, as in Git).
+// A squash group: a pick/reword/edit row and the squash/fixup rows after it (drop rows in between
+// do not matter). As in Git, an exec, break or update-ref row finishes the group's commit: squash/
+// fixup rows after it form a new group that amends that commit (`amends`; its `first` is then the
+// first squash/fixup row and the previous commit's message is the template's first message).
 struct Group {
     size_t first = 0;
     std::vector<size_t> followers;
     bool needsEditor = false;  // a squash or fixup -c: Git would open its editor
+    std::optional<size_t> amends; // first row of the group whose finished commit this one amends
 };
 // Every commit row that is not dropped, with its followers. A squash/fixup without a commit
 // before it gets a group of its own with it as `first` (validate() reports it).
@@ -200,6 +203,9 @@ struct Options {
     std::string execEach;          // "exec after every commit" ("" = none)
     bool keepCommitterDate = false;
     bool runAsGitRebase = false;   // the user's choice
+    // Commits that become empty (git rebase --empty): Ask = Start asks (Git's interactive
+    // default, --empty=stop), Keep or Drop.
+    gg::rewrite::Emptied emptied = gg::rewrite::Emptied::Ask;
 };
 
 enum class Engine { InMemory, Native };
@@ -214,8 +220,10 @@ EngineChoice chooseEngine(const Todo& todo, const Options& options);
 void addExecEach(Todo& todo, const std::string& command);
 
 // The in-memory engine's plan: commit rows replayed in todo order on `onto`, squash/fixup as
-// Squash steps with the group message, update-ref lines and the tip ref moved to the step before
-// them, other branches left alone (as Git does). Step keys are "row:<index>". Throws when the
+// Squash steps with the group message (amending steps after an exec/break/update-ref row),
+// update-ref lines and the tip ref moved to the commit finished before them, other branches left
+// alone (as Git does). Post-rewrite gets Git's mapping: each group's commits map to the group's
+// commit. Step keys are "row:<index>". Throws when the
 // todo has errors or needs the native engine. With `replayStops` (the live preview) edit rows are
 // replayed as picks and exec/break rows are skipped: the history a native run produces when
 // every stop just continues.

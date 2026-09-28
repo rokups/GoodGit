@@ -49,6 +49,7 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
     try {
         rw::Plan plan = todo::toPlan(list, context, "#", true);
         plan.keepCommitterDate = options.keepCommitterDate;
+        plan.emptied = options.emptied == rw::Emptied::Drop ? rw::Emptied::Drop : rw::Emptied::Keep;
         rw::Rewriter rewriter(repoPath);
         const rw::Result result = rewriter.compute(plan, cancel);
         if (!result.ok && result.unresolved.empty()) {
@@ -58,26 +59,57 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
         git_repository* repo = rewriter.repository();
         if (!context.onto.empty())
             out->ontoSubject = summaryOf(repo, context.onto);
+        std::set<std::string> dropped; // step keys of commits left out because they became empty
+        for (const auto& e : result.becameEmpty)
+            if (e.dropped) {
+                dropped.insert(e.step);
+                out->droppedEmpty.push_back(e.subject);
+            }
 
-        // One row per commit row that starts a commit; squash/fixup rows join the current one.
+        // One row per commit row that starts a commit; squash/fixup rows join the current one. A
+        // squash/fixup that amends a finished commit (after an update-ref row) replaces its row's
+        // commit; the finished one stays only for the branches pointing at it.
         std::map<size_t, size_t> rowOf; // todo row → preview row
+        std::map<std::string, size_t> amended; // finished commit → the row that amends it
+        bool skipping = false; // followers of a commit that was left out
         for (size_t i = 0; i < list.items.size(); ++i) {
             const todo::Item& item = list.items[i];
+            const std::string key = "row:" + std::to_string(i);
             switch (item.action) {
             case todo::Action::Pick:
             case todo::Action::Reword:
             case todo::Action::Edit: {
+                skipping = dropped.count(key) > 0;
+                if (skipping)
+                    break;
                 RebasePreview::Row row;
                 row.todoRow = i;
                 row.sources = {item.commit};
-                row.id = result.steps.at("row:" + std::to_string(i));
+                row.id = result.steps.at(key);
                 rowOf[i] = out->rows.size();
                 out->rows.push_back(std::move(row));
                 break;
             }
             case todo::Action::Squash:
             case todo::Action::Fixup:
-                if (!out->rows.empty()) { // validation keeps a squash from coming first
+                if (auto st = result.steps.find(key); st != result.steps.end()) { // amends
+                    skipping = false;
+                    if (out->rows.empty()) { // amends the base: a commit of its own
+                        RebasePreview::Row row;
+                        row.todoRow = i;
+                        out->rows.push_back(std::move(row));
+                    } else {
+                        amended[out->rows.back().id] = out->rows.size() - 1;
+                    }
+                    if (dropped.count(key)) {
+                        out->rows.pop_back();
+                        skipping = true;
+                        break;
+                    }
+                    out->rows.back().id = st->second;
+                    out->rows.back().sources.push_back(item.commit);
+                    rowOf[i] = out->rows.size() - 1;
+                } else if (!skipping && !out->rows.empty()) { // validation keeps a squash from coming first
                     out->rows.back().sources.push_back(item.commit);
                     rowOf[i] = out->rows.size() - 1;
                 }
@@ -131,6 +163,8 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                 out->rows[it->second].branches.push_back(name);
             else if (!target.empty() && target == context.onto)
                 out->ontoBranches.push_back(name);
+            else if (auto am = amended.find(target); am != amended.end() && am->second < out->rows.size())
+                out->aside.push_back({name, target, treeOf(repo, target), summaryOf(repo, target), am->second});
         };
         for (const auto& [ref, stepKey] : plan.refsToSteps)
             place(shortRef(ref), stepKey);
