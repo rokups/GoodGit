@@ -80,6 +80,9 @@ GG_TEST("blame", "blame at a commit and on the working tree", "BLAME-AT-COMMIT",
     GG_CHECK_STR_EQ(line(s, 5)->commit.hex(), r.c3);
     GG_CHECK_STR_EQ(line(s, 2)->commit.hex(), r.c1);
     GG_CHECK(s.itemText(lineRef(s, 1).c_str()).rfind("Not committed", 0) == 0);
+    // The header names the file and where it is blamed in words, never "@" (UI wording rule).
+    GG_CHECK(s.textShown("//Blame", "tale.txt at working tree"));
+    GG_CHECK(!s.textShown("//Blame", "@"));
     // Same as git blame --porcelain for the committed version.
     const std::string porcelain = s.git(r.path, {"blame", "--porcelain", "HEAD", "--", "tale.txt"}).out;
     GG_CHECK(porcelain.find(r.c2 + " 3 3") != std::string::npos);
@@ -92,6 +95,7 @@ GG_TEST("blame", "blame at a commit and on the working tree", "BLAME-AT-COMMIT",
     GG_CHECK_STR_EQ(line(s, 3)->author, "Other Author");
     GG_CHECK_STR_EQ(line(s, 3)->summary, "Edit line 3");
     GG_CHECK_STR_EQ(line(s, 1)->commit.hex(), r.c1);
+    GG_CHECK(s.textShown("//Blame", "story.txt at " + r.c2.substr(0, 10)));
 }
 
 GG_TEST("blame", "filter, history, tooltips", "BLAME-FILTER", "BLAME-BACK-FWD", "BLAME-MOUSE-BUTTONS", "BLAME-TOOLTIP")

@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-3)
 
-Covered: 633/633 required IDs; 658/658 of the whole catalogue.
+Covered: 633/633 required IDs; 660/660 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -662,3 +662,5 @@ Covered: 633/633 required IDs; 658/658 of the whole catalogue.
 | IR-SEQ-EDITOR-INTERRUPTED | 4 | §4.13 | git interrupted while waiting: the editor closes with a notice | sequence-editor/Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's |
 | IR-SEQ-EDITOR-START-GGUI | 4 | §4.13 | No ggui has the repository open: git gg starts one and waits for it | sequence-editor/no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly |
 | IR-SEQ-EDITOR-NO-DISPLAY | 4 | §4.13 | No display (or no ggui program): git's own editor edits the list | sequence-editor/no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly |
+| REMOVAL-NO-GG-STATE | 4 | §9 | ggui, git gg and hooked plain git write nothing under refs/gg; .git/gg holds only journal, caches and hook runner, and deleting it changes no commit, file or conflict | removal/ggui, git gg and plain git leave no refs/gg; .git/gg is only journal and caches, deleting it changes nothing |
+| REMOVAL-NO-OLD-CLI | 4 | §9 | git gg has none of the old gg CLI families (branch, file, util, workspace, config, operation restore, next/prev) and no revsets | removal/git gg has none of the old gg command families |

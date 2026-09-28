@@ -146,6 +146,8 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal", "REFLOG-H
     GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries.size() == headLines.size(); }));
     GG_CHECK_STR_EQ(reflog.reflog()->entries[0].newId.hex(), headLines[0]);
     GG_CHECK(reflog.reflog()->entries[0].message.find("checkout: moving from temp to main") != std::string::npos);
+    // Column headers use Git words (no "Change" column: a row is a ref moving between commits).
+    GG_CHECK(s.textShown("//Reflog", "Commits"));
     const std::string table = "//Reflog/##reflog_table";
     s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID");
     GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", headLines[0]}));

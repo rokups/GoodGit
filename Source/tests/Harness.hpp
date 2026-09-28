@@ -25,6 +25,7 @@
 #include <initializer_list>
 #include <random>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -165,6 +166,10 @@ public:
     std::vector<std::string> refs(const fs::path& repo);    // "<name> <id>" lines
     std::string statusPorcelain(const fs::path& repo);      // git status --porcelain=v2 -z
     bool fsck(const fs::path& repo, std::string* output = nullptr);
+    // Git transparency (rule 2, REBUILD_PLAN §9), checked after every test: no ref under refs/gg/
+    // except those the test itself planted (old gg leftovers for the C3 cleanup), and $GIT_COMMON_DIR/gg
+    // holds only the journal, disposable caches, the managed-hook runner and journal bookkeeping.
+    bool gitTransparent(const fs::path& repo, std::string* why = nullptr);
     // Every file under .git with its bytes, except disposable caches (the "byte-identical" check).
     std::map<std::string, std::string> gitDirBytes(const fs::path& repo);
 
@@ -242,6 +247,7 @@ private:
     std::uint64_t m_seed;
     std::mt19937_64 m_rng;
     int m_commitCounter = 0;
+    std::set<std::string> m_plantedGgRefs; // refs/gg/* names the test passed to git itself
     std::vector<fs::path> m_daemonPidFiles;
 };
 

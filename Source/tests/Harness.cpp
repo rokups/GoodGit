@@ -31,6 +31,16 @@ Scenario::Scenario(ImGuiTestContext* c, ggui::App& a, fs::path root, std::uint64
 
 gg::RunResult Scenario::gitMayFail(const fs::path& cwd, std::vector<std::string> args, std::string input)
 {
+    // Old gg refs a test creates on purpose (C3 fixtures) are not ggui's writes.
+    auto plant = [&](const std::string& word) {
+        if (word.rfind("refs/gg/", 0) == 0 && word.size() > 8)
+            m_plantedGgRefs.insert(word);
+    };
+    for (const auto& a : args)
+        plant(a);
+    std::istringstream words(input);
+    for (std::string word; words >> word;)
+        plant(word);
     gg::RunRequest r;
     r.args.reserve(args.size() + 1);
     r.args.emplace_back("git");
@@ -148,6 +158,35 @@ std::map<std::string, std::string> Scenario::gitDirBytes(const fs::path& repo)
         out[fs::relative(e.path(), repo).generic_string()] = ss.str();
     }
     return out;
+}
+
+bool Scenario::gitTransparent(const fs::path& repo, std::string* why)
+{
+    std::string problems;
+    const auto common = gitMayFail(repo, {"rev-parse", "--path-format=absolute", "--git-common-dir"});
+    if (!common.ok())
+        return true; // not a repository any more (fsck reports it)
+    for (const auto& ref : gg::splitLines(gitMayFail(repo, {"for-each-ref", "--format=%(refname)", "refs/gg"}).out))
+        if (!ref.empty() && !m_plantedGgRefs.count(ref))
+            problems += "\n  ref written under refs/gg/: " + ref;
+    const fs::path ggDir = fs::path(gg::trim(common.out)) / "gg";
+    std::error_code ec;
+    if (fs::is_directory(ggDir, ec)) {
+        for (const auto& e : fs::directory_iterator(ggDir, ec)) {
+            const std::string name = e.path().filename().string();
+            const bool dir = e.is_directory();
+            // journal (+ .lock): undo history. cache/: disposable (conflict scan). hooks/: the managed-hook
+            // runner (H1). rebase/: journal grouping of a native rebase in progress. symref-*: a
+            // hook's note between the prepared and committed reference-transaction calls.
+            const bool ok = (!dir && (name == "journal" || name == "journal.lock" || name.rfind("symref-", 0) == 0))
+                || (dir && (name == "cache" || name == "hooks" || name == "rebase"));
+            if (!ok)
+                problems += "\n  unexpected entry in " + ggDir.generic_string() + ": " + name;
+        }
+    }
+    if (why)
+        *why = problems;
+    return problems.empty();
 }
 
 bool Scenario::fsck(const fs::path& repo, std::string* output)

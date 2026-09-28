@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/traceability.py --check
+      # REBUILD_PLAN §9: the removed jj-style parts of the old gg stay out (docs/removal-audit.md).
+      - run: bash scripts/removal_audit.sh
 
   git-min:
     # Builds and caches git 2.36.0, the minimum supported version (G2).
@@ -215,6 +217,8 @@ jobs:
         env:
           VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: scripts/package_smoke.sh --container ubuntu:24.04
+      - name: No old gg files in the packages (REBUILD_PLAN §9)
+        run: bash scripts/removal_audit.sh --packages build/packages
       - uses: actions/upload-artifact@v4
         with:
           name: package-linux

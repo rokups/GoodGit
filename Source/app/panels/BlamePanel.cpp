@@ -138,7 +138,7 @@ void BlamePanel::draw(bool* open)
     if (m_pos >= 0) {
         const auto& q = m_history[static_cast<size_t>(m_pos)];
         ImGui::SameLine();
-        ImGui::Text("%s @ %s", q.path.c_str(), q.commit.isNull() ? "working tree" : q.commit.shortHex(10).c_str());
+        ImGui::Text("%s at %s", q.path.c_str(), q.commit.isNull() ? "working tree" : q.commit.shortHex(10).c_str());
     }
     if (m_loading) {
         ImGui::SameLine();

@@ -539,7 +539,7 @@ void ReflogPanel::draw(bool* open)
         if (ImGui::BeginTable("##reflog_table", 3,
                 ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable)) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("Change");
+            ImGui::TableSetupColumn("Commits");
             ImGui::TableSetupColumn("Message", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Date");
             ImGui::TableHeadersRow();

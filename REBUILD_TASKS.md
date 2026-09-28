@@ -77,6 +77,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - Regenerate the traceability matrix:
     `scripts/traceability.py --phase N --out docs/traceability.md trace.json`.
   - Measure coverage: `NO_GATE=1 scripts/run_software_coverage.sh`.
+  - §9 removal audit: `scripts/removal_audit.sh [--packages build/packages]` (exits 1 on a violation).
 - **Test-engine pitfalls:**
   - Combo labels must not contain `##`, and menu labels must not contain `/`.
   - Items inside tables or child windows need `s.child(...)` or `**/` paths.
@@ -1742,7 +1743,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     in the other deps), `ggui.exe` starting from Explorer, `git gg` from cmd/PowerShell with the
     unzipped directory on PATH, the `--version` console attach.
 
-### P4-05 Removal checklist audit
+### [x] P4-05 Removal checklist audit
+- **Status:** docs/removal-audit.md: all §9 items absent, with grep evidence per item; scripts/removal_audit.sh re-runs the checks (CI catalogue job, and --packages in package-linux). Fixed: the journal skipped refs/gg/cache*, so the C3 cleanup of such a leftover could not be undone; the Blame header said "file @ commit" and Reflog had a "Change" column. The post-test hook now fails any test that leaves an unplanted refs/gg ref or an unknown .git/gg entry; removal/ scenarios (REMOVAL-NO-GG-STATE, REMOVAL-NO-OLD-CLI). Suite 256/256 (4 shards).
 - **Depends on:** all earlier tasks
 - **Refs:** §9
 - **Do:** verify none of the following exist: `<gg/gg.h>`, `gg::gg`/`ggConfig.cmake`, gg CLI
@@ -1750,6 +1752,13 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   max-new-file-size, revsets/filesets, old gg CLI families, fetch auto-fast-forward, "@ is a
   change you edit" wording.
 - **Done when:** a documented audit with grep evidence.
+- **Notes:** re-run `scripts/removal_audit.sh` (`-v` shows each allowed hit and why) after any
+  change. A new `refs/gg` mention outside the C3 files, a new `.git/gg` entry, a new `git gg`
+  subcommand or a new executable or install rule must either pass it or be added to its
+  allowlist, with the reason recorded in `docs/removal-audit.md`. The transparency check after
+  every test (`Scenario::gitTransparent`) allows only the `refs/gg/*` names a test passes to git
+  itself. Old CLI names must be tested outside ggui's git environment: with
+  `GG_ASKPASS_ENDPOINT` set, `git-gg <one unknown word>` is askpass and waits for ggui.
 
 ### P4-06 Final release gate
 - **Depends on:** all tasks

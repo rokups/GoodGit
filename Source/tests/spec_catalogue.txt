@@ -695,3 +695,7 @@ GGREFS-IGNORE | 2 | §5 C3 | Ignore is remembered per repository
 FAIL-LOCKED-REF | 2 | §8.4 | Locked ref makes the mutation fail cleanly
 FAIL-NETWORK | 2 | §8.4 | Unreachable remote
 FAIL-CANCEL | 2 | §8.4 | Cancelled network operation leaves a plain-git state
+
+# ---- §9 removal checklist (P4-05; see docs/removal-audit.md) --------------------------------------
+REMOVAL-NO-GG-STATE | 4 | §9 | ggui, git gg and hooked plain git write nothing under refs/gg; .git/gg holds only journal, caches and hook runner, and deleting it changes no commit, file or conflict
+REMOVAL-NO-OLD-CLI | 4 | §9 | git gg has none of the old gg CLI families (branch, file, util, workspace, config, operation restore, next/prev) and no revsets

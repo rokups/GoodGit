@@ -156,8 +156,8 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     Scenario scenario(ctx, *g_app, dir, seed);
     info.body(ctx, scenario);
 
-    // Post-test hook: every repository the test touched must pass git fsck and be in a state
-    // plain git understands (§8.3).
+    // Post-test hook: every repository the test touched must pass git fsck, be in a state
+    // plain git understands (§8.3) and hold no private gg metadata (rule 2, §9).
     for (const auto& repo : scenario.tracked()) {
         if (!fs::exists(repo))
             continue;
@@ -166,6 +166,11 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
         if (!ok)
             ctx->LogError("git fsck failed for %s:\n%s", repo.string().c_str(), output.c_str());
         IM_CHECK_NO_RET(ok);
+        std::string why;
+        const bool transparent = scenario.gitTransparent(repo, &why);
+        if (!transparent)
+            ctx->LogError("git transparency (REBUILD_PLAN §9) broken for %s:%s", repo.string().c_str(), why.c_str());
+        IM_CHECK_NO_RET(transparent);
     }
     const auto violations = gg::uiThreadViolations();
     for (const auto& v : violations)

@@ -92,11 +92,13 @@ GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoab
     s.git(repo, {"update-ref", "refs/gg/heads/a", lost1});
     s.git(repo, {"update-ref", "refs/gg/heads/b", lost2});
     s.git(repo, {"update-ref", "refs/gg/op/reachable", "HEAD"});
+    // Under refs/gg/cache too: the journal records it like any other ref, so Undo restores it.
+    s.git(repo, {"update-ref", "refs/gg/cache/heads", "HEAD"});
     const std::string before = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"});
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.dialogOpen("Old gg data found"));
     const ggui::Form* f = s.app.dialogs().current();
-    GG_CHECK(f->message.find("3 refs under refs/gg/") != std::string::npos);
+    GG_CHECK(f->message.find("4 refs under refs/gg/") != std::string::npos);
     // Only the two lost commits are listed (the reachable one is not).
     int listed = 0;
     for (const auto& field : f->fields)
@@ -131,7 +133,7 @@ GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoab
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     GG_CHECK(s.app.dialogs().current() == nullptr);
-    GG_CHECK_EQ(ggRefs(s, repo).size(), static_cast<size_t>(3));
+    GG_CHECK_EQ(ggRefs(s, repo).size(), static_cast<size_t>(4));
 }
 
 } // namespace ggtest
