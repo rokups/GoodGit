@@ -135,7 +135,9 @@ private:
     void pumpClone();
     void saveIniIfNeeded();
     void updateTitle();
-    void checkGit(std::function<void()> then);
+    // Runs `git --version` off the UI thread, then `done(ok)`. When git is missing or too old a
+    // blocking prompt offers Retry (calls `retry`) and Quit.
+    void checkGit(std::function<void(bool ok)> done, std::function<void()> retry);
     void openNow(const std::filesystem::path& path);
 
     Platform& m_platform;

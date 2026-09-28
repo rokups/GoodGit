@@ -229,12 +229,15 @@ void App::openRepository(const fs::path& path)
     if (path.empty())
         return;
     // G2: git must be present and new enough; checked (off the UI thread) before every open.
+    // The open is pending until the check ends either way (Retry starts a new open).
     ++m_pendingOpens;
-    checkGit([this, path] {
-        --m_pendingOpens;
-        if (m_git.found && m_git.supported)
-            openNow(path);
-    });
+    checkGit(
+        [this, path](bool ok) {
+            --m_pendingOpens;
+            if (ok)
+                openNow(path);
+        },
+        [this, path] { openRepository(path); });
 }
 
 void App::openNow(const fs::path& path)
@@ -256,10 +259,10 @@ void App::openNow(const fs::path& path)
     m_session = std::make_unique<Session>(*this, fs::path(s));
 }
 
-void App::checkGit(std::function<void()> then)
+void App::checkGit(std::function<void(bool ok)> done, std::function<void()> retry)
 {
     m_git.running = true;
-    m_io.post([this, then]() -> std::function<void()> {
+    m_io.post([this, done, retry]() -> std::function<void()> {
         gg::RunRequest r;
         r.args = {"git", "--version"};
         r.gitEnvironment = false;
@@ -276,21 +279,20 @@ void App::checkGit(std::function<void()> then)
             std::sscanf(result.version.c_str(), "%d.%d", &major, &minor);
             result.supported = major > 2 || (major == 2 && minor >= 36);
         }
-        return [this, result, then] {
+        return [this, result, done, retry] {
             m_git = result;
-            if (!result.found || !result.supported) {
+            const bool ok = result.found && result.supported;
+            done(ok);
+            if (!ok) {
                 Form f;
                 f.title = "Git required";
                 f.message = result.found ? "ggui needs git 2.36 or newer. Found git " + result.version + "."
                                          : "ggui needs git (2.36 or newer), but git was not found on PATH.";
                 f.message += "\n\nInstall or update git, then choose Retry.";
-                f.buttons.push_back({"Retry", [this, then](Form&) { checkGit(then); }});
+                f.buttons.push_back({"Retry", [retry](Form&) { retry(); }});
                 f.buttons.push_back({"Quit", [this](Form&) { requestQuit(); }});
                 m_dialogs.open(std::move(f));
-                return;
             }
-            if (then)
-                then();
         };
     });
 }
