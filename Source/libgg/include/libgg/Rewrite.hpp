@@ -210,8 +210,11 @@ Plan replayPlan(git_repository* repo, const std::vector<std::string>& changed);
 
 // A tree with a unified patch (old → new, as `git diff` writes it) applied to it.
 std::string applyPatchToTree(git_repository* repo, const std::string& tree, const std::string& patch);
-// The same patch in the other direction (new → old). Handles what ggui's patch builder writes
-// (diff --git, mode, rename, ---/+++ and hunk lines; no index lines).
+// ggui's patch of some lines of one file (the patch builder's output) as a plain change of the
+// file where it is in the tree it applies to: at its old path (`atOld`, the parent's tree) or at
+// its new one. Moving lines never moves the file's rename or mode change.
+std::string contentPatch(const std::string& patch, bool atOld);
+// A contentPatch() in the other direction (new → old).
 std::string reversePatch(const std::string& patch);
 
 // A new empty commit inserted before or after `at` (its descendants rebased onto it). When

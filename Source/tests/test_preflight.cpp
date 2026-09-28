@@ -128,6 +128,50 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
             [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "h.txt"}); },
             "Take side B (",
             [](Scenario&, const TwoSides& t) { GG_CHECK(fs::exists(t.path / "h.txt")); }},
+        {"rename-a", "rename",
+            [rename](Scenario& sc, const fs::path& p) { sc.write(p, "f.txt", rename); sc.git(p, {"add", "f.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "g.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "h.txt"}); },
+            "Take side A (",
+            [](Scenario&, const TwoSides& t) { GG_CHECK(fs::exists(t.path / "g.txt") && !fs::exists(t.path / "h.txt")); }},
+        {"rename-base", "rename",
+            [rename](Scenario& sc, const fs::path& p) { sc.write(p, "f.txt", rename); sc.git(p, {"add", "f.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "g.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "h.txt"}); },
+            "Take the base (",
+            [](Scenario&, const TwoSides& t) { GG_CHECK(fs::exists(t.path / "f.txt") && !fs::exists(t.path / "g.txt")); }},
+        {"rename-none", "rename",
+            [rename](Scenario& sc, const fs::path& p) { sc.write(p, "f.txt", rename); sc.git(p, {"add", "f.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "g.txt"}); },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "h.txt"}); },
+            "Keep deleted",
+            [](Scenario&, const TwoSides& t) {
+                GG_CHECK(!fs::exists(t.path / "f.txt") && !fs::exists(t.path / "g.txt") && !fs::exists(t.path / "h.txt"));
+            }},
+        {"add-add-mode", "mode",
+            [](Scenario&, const fs::path&) {},
+            [](Scenario& sc, const fs::path& p) { sc.write(p, "n.sh", "ours\n"); sc.git(p, {"add", "n.sh"}); },
+            [](Scenario& sc, const fs::path& p) {
+                sc.write(p, "n.sh", "theirs\n");
+                fs::permissions(p / "n.sh", fs::perms::owner_exec, fs::perm_options::add);
+                sc.git(p, {"add", "n.sh"});
+            },
+            "Keep mode 100644",
+            [](Scenario& sc, const TwoSides& t) { GG_CHECK(sc.gitOut(t.path, {"ls-tree", "HEAD", "n.sh"}).rfind("100644", 0) == 0); }},
+        {"deleted-from-disk", "modify/delete",
+            [](Scenario& sc, const fs::path& p) { sc.write(p, "e.sh", "x\n"); sc.git(p, {"add", "e.sh"}); },
+            [](Scenario& sc, const fs::path& p) {
+                sc.write(p, "e.sh", "changed\n");
+                fs::permissions(p / "e.sh", fs::perms::owner_exec, fs::perm_options::add);
+                sc.git(p, {"add", "e.sh"});
+            },
+            [](Scenario& sc, const fs::path& p) { sc.git(p, {"rm", "-q", "e.sh"}); },
+            "Use a file from disk",
+            [](Scenario& sc, const TwoSides& t) {
+                GG_CHECK_STR_EQ(sc.read(t.path, "e.sh"), "picked\n");
+                GG_CHECK(sc.gitOut(t.path, {"ls-tree", "HEAD", "e.sh"}).rfind("100755", 0) == 0); // side A's mode
+            },
+            "picked\n"},
         {"filtered", "filtered",
             [](Scenario& sc, const fs::path& p) {
                 sc.write(p, ".gitattributes", "*.lfs filter=lfs\n");

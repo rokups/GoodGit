@@ -896,11 +896,13 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
                 check(git_tree_create_updated(&out, repo, target.get(), updates.size(), updates.data()), "git_tree_create_updated");
                 return toHex(out);
             };
+            // Lines: the file is at its old path in the parent's tree, at its new one in this commit's.
             auto forward = [&](const std::string& tree) {
-                return patch.empty() ? withFiles(tree, ownTree) : rw::applyPatchToTree(repo, tree, patch);
+                return patch.empty() ? withFiles(tree, ownTree) : rw::applyPatchToTree(repo, tree, rw::contentPatch(patch, true));
             };
             auto backward = [&](const std::string& tree) {
-                return patch.empty() ? withFiles(tree, parentTree) : rw::applyPatchToTree(repo, tree, rw::reversePatch(patch));
+                return patch.empty() ? withFiles(tree, parentTree)
+                                     : rw::applyPatchToTree(repo, tree, rw::reversePatch(rw::contentPatch(patch, false)));
             };
             rw::Plan plan;
             plan.reflogMessage = "ggui: move changes";

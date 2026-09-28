@@ -457,4 +457,88 @@ GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected c
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~3"), r.c2);
 }
 
+GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant destinations, nothing redundant, already merged",
+    "ACT-SQUASH-DESCENDANTS", "ACT-SQUASH", "ACT-REBASE-COMMIT", "ACT-SIMPLIFY-PARENTS", "ACT-MOVE-CHANGES-PARENT",
+    "ACT-MOVE-CHANGES-CHILD", "ACT-MERGE-INTO-HEAD", "ACT-REBASE-HEAD-ONTO")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string before = s.gitOut(r.path, {"for-each-ref"});
+    // Each attempt is refused with `why` and changes nothing.
+    auto refused = [&](const char* why) {
+        GG_CHECK(s.dismissError());
+        if (s.app.errorMessage().find(why) == std::string::npos)
+            ctx->LogError("expected \"%s\", got \"%s\"", why, s.app.errorMessage().c_str());
+        GG_CHECK(s.app.errorMessage().find(why) != std::string::npos);
+        GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), before);
+    };
+    auto fileMenu = [&](const std::string& commit, const std::string& path, size_t files, const char* item) {
+        GG_REQUIRE(rowReady(s, commit));
+        ctx->ItemClick(rowRef(commit).c_str());
+        GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == files; }));
+        s.contextMenu((s.child("//Changes", "##files") + "/" + path + "/###file_" + path).c_str(), item);
+    };
+    // HEAD (c4) has no child to move changes to, nor descendants to squash.
+    fileMenu(r.c4, "c.txt", 2, "Move to child");
+    refused("the commit has no child on its line");
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_S);
+    refused("the commit has no descendants");
+    // The root commit has no parent to take changes.
+    fileMenu(r.c1, "a.txt", 1, "Move to parent");
+    refused("moving changes needs a commit with exactly one parent");
+    // Squash into a commit that is not an ancestor.
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiKey_S);
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    s.dialogText("Squash", "target", r.c4);
+    s.dialogButton("Squash", "Squash");
+    refused("the target must be an ancestor of the commit");
+    // Rebase onto an unknown revision, or onto the commit's own descendant.
+    s.contextMenu(rowRef(r.c2).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "no-such-branch");
+    s.dialogButton("Rebase onto", "Rebase");
+    refused("unknown revision 'no-such-branch'");
+    s.contextMenu(rowRef(r.c2).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "main");
+    s.dialogButton("Rebase onto", "Rebase");
+    refused("cannot rebase onto the commit's own descendant");
+    // HEAD already contains c2: merging it or rebasing HEAD onto it changes nothing.
+    s.contextMenu(rowRef(r.c2).c_str(), "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogButton("Merge into HEAD", "Merge");
+    refused("is already merged");
+    s.contextMenu(rowRef(r.c2).c_str(), "Rebase HEAD onto this");
+    GG_CHECK(s.waitUntil([&] {
+        for (const auto& t : s.app.toasts())
+            if (t.message == "Nothing to change.")
+                return true;
+        return false;
+    }));
+    // A commit ahead of HEAD: HEAD is already on its line.
+    const std::string a1 = s.gitOut(r.path, {"commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Ahead"});
+    s.git(r.path, {"branch", "ahead", a1});
+    GG_REQUIRE(rowReady(s, a1));
+    const std::string withAhead = s.gitOut(r.path, {"for-each-ref"});
+    s.contextMenu(rowRef(a1).c_str(), "Rebase HEAD onto this");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("HEAD is already on") != std::string::npos);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withAhead);
+
+    // A real merge (plain git): its parents are not redundant; the line below it is not single.
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "Merge side", "side"});
+    const std::string m = s.head(r.path);
+    GG_REQUIRE(rowReady(s, m));
+    const std::string withMerge = s.gitOut(r.path, {"for-each-ref"});
+    s.contextMenu(rowRef(m).c_str(), "Simplify parents");
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("no parent is redundant") != std::string::npos);
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_S);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("not a single line") != std::string::npos);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withMerge);
+}
+
 } // namespace ggtest

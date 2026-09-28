@@ -6,6 +6,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <functional>
+
 namespace ggtest {
 
 namespace {
@@ -163,6 +165,79 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit", "DIFF-CT
     GG_CHECK(s.read(r.path, "a.txt").find("LINE 2") != std::string::npos); // uncommitted now
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--name-only"}), "a.txt");
     // And to the child: HEAD~1 (X) has no line changes left; nothing selectable is fine.
+}
+
+GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode change: revert them in a commit",
+    "DIFF-CTX-REVERT", "DIFF-CTX-MOVE-PARENT")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    s.write(repo, "crlf.txt", "one\r\ntwo\r\nthree\r\n");
+    s.write(repo, "old.txt", "rename me\nline two\nline three\nline four\nline five\n");
+    s.write(repo, "run.sh", "#!/bin/sh\necho one\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "base"});
+    const std::string base = s.head(repo);
+    s.write(repo, "crlf.txt", "one\r\nTWO\r\nthree\r\n");
+    s.write(repo, "added.txt", "new 1\nnew 2\n");
+    s.git(repo, {"mv", "old.txt", "renamed.txt"});
+    s.write(repo, "renamed.txt", "rename me\nline two\nline three\nline four\nline FIVE\n");
+    s.write(repo, "run.sh", "#!/bin/sh\necho two\n");
+    fs::permissions(repo / "run.sh", fs::perms::owner_exec, fs::perm_options::add);
+    s.git(repo, {"add", "-A"});
+    s.git(repo, {"commit", "-q", "-m", "X"});
+    const std::string x = s.head(repo);
+    s.commitFile(repo, "later.txt", "later\n", "Y");
+    const std::string y = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+
+    // Each file's hunk reverted in X (Y rebased on top), checked, then undone.
+    auto revert = [&](const std::string& path, const std::function<void(const std::string& newX)>& check) {
+        selectCommit(s, x, 4);
+        ctx->ItemClick(fileRef(s, path).c_str());
+        s.showPanel("Diff");
+        GG_REQUIRE(s.waitUntil([&] {
+            const auto& d = s.session()->diff().diff();
+            return d && !d->files.empty() && d->files[0].path() == path && !d->files[0].hunks.empty();
+        }));
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
+        ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+        s.contextMenu((body(s) + "/###hunk_0").c_str(), "Revert line(s)");
+        const bool ok = moved(s, repo, y);
+        if (!ok)
+            ctx->LogError("reverting the lines of %s changed nothing", path.c_str());
+        GG_REQUIRE(ok);
+        GG_CHECK(s.fsck(repo));
+        check(s.revParse(repo, "HEAD~1"));
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+        GG_CHECK(s.waitUntil([&] { return s.head(repo) == y; }));
+        s.settle();
+    };
+    revert("crlf.txt", [&](const std::string& nx) {
+        GG_CHECK_STR_EQ(s.revParse(repo, nx + ":crlf.txt"), s.revParse(repo, base + ":crlf.txt"));
+    });
+    revert("added.txt", [&](const std::string& nx) {
+        GG_CHECK(!s.gitMayFail(repo, {"cat-file", "-e", nx + ":added.txt"}).ok());
+    });
+    revert("renamed.txt", [&](const std::string& nx) {
+        GG_CHECK_STR_EQ(s.revParse(repo, nx + ":renamed.txt"), s.revParse(repo, base + ":old.txt"));
+        GG_CHECK(!s.gitMayFail(repo, {"cat-file", "-e", nx + ":old.txt"}).ok());
+    });
+    revert("run.sh", [&](const std::string& nx) {
+        GG_CHECK_STR_EQ(s.gitOut(repo, {"show", nx + ":run.sh"}), "#!/bin/sh\necho one");
+        GG_CHECK_STR_EQ(s.gitOut(repo, {"ls-tree", nx, "run.sh"}).substr(0, 6), "100755"); // lines only
+    });
+    // The renamed file's line to the parent: the parent changes the file at its old path; X keeps
+    // the rename, and the tip's tree stays the same.
+    const std::string tipTree = s.revParse(repo, "HEAD^{tree}");
+    selectCommit(s, x, 4);
+    ctx->ItemClick(fileRef(s, "renamed.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
+    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to parent");
+    GG_REQUIRE(moved(s, repo, y));
+    GG_CHECK(s.gitOut(repo, {"show", "HEAD~2:old.txt"}).find("line FIVE") != std::string::npos);
+    GG_CHECK(!s.gitMayFail(repo, {"cat-file", "-e", "HEAD~1:old.txt"}).ok());
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
 }
 
 } // namespace ggtest

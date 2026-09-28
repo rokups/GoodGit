@@ -247,9 +247,10 @@ struct Rewriter::Impl {
             }
             // Non-text: the decision, or a provisional one (the replayed side) to go on.
             const Resolution r = decided != plan.resolutions.end() ? decided->second : Resolution{Choice::Theirs, {}, {}};
+            // (Only mode conflicts carry a chosen mode, and they are merged as text above.)
             auto take = [&](const std::optional<git_index_entry>& e, const std::string& p) {
                 if (e)
-                    addEntry(p.empty() ? path : p, e->id, r.mode ? *r.mode : e->mode);
+                    addEntry(p.empty() ? path : p, e->id, e->mode);
             };
             switch (r.choice) {
             case Choice::Ours: take(c.ours, c.oursPath); break;
@@ -257,7 +258,7 @@ struct Rewriter::Impl {
             case Choice::Base: take(c.anc, c.ancPath); break;
             case Choice::Delete: break;
             case Choice::File: {
-                const std::uint32_t mode = r.mode ? *r.mode : c.theirs ? c.theirs->mode : c.ours ? c.ours->mode : 0100644;
+                const std::uint32_t mode = c.theirs ? c.theirs->mode : c.ours ? c.ours->mode : 0100644;
                 addEntry(path, writeBlob(readFileBytes(r.file)), mode);
                 break;
             }
@@ -309,14 +310,11 @@ struct Rewriter::Impl {
             case Choice::Ours: keep = treeEntry(ours.get(), n->ours); where = n->ours ? n->ours : ""; break;
             case Choice::Theirs: keep = treeEntry(theirs.get(), n->theirs); where = n->theirs ? n->theirs : ""; break;
             case Choice::Base: keep = treeEntry(base.get(), n->ancestor); where = anc; break;
-            case Choice::File:
-                keep = std::make_pair(writeBlob(readFileBytes(r.file)), std::uint32_t{0100644});
-                where = n->theirs ? n->theirs : anc;
-                break;
-            case Choice::Delete: break;
+            case Choice::Delete:
+            case Choice::File: break; // renames offer no file from disk
             }
             if (keep && !where.empty())
-                addEntry(where, keep->first, r.mode ? *r.mode : keep->second);
+                addEntry(where, keep->first, keep->second);
         }
 
         // 2. Files both sides changed and libgit2 merged cleanly: when any version holds
@@ -1027,69 +1025,85 @@ std::string applyPatchToTree(git_repository* repo, const std::string& tree, cons
     git_apply_options opts = GIT_APPLY_OPTIONS_INIT;
     check(git_apply_to_tree(&rawIndex, repo, base.get(), diff.get(), &opts), "git_apply_to_tree");
     Index index(rawIndex);
+    // A patch without mode lines keeps the file's mode (libgit2 would write 100644).
+    for (size_t i = 0; i < git_diff_num_deltas(diff.get()); ++i) {
+        const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
+        if (d->status != GIT_DELTA_MODIFIED || d->new_file.mode != 0)
+            continue; // added or deleted, or the patch says
+        git_tree_entry* rawEntry = nullptr; // applied, so it is there
+        check(git_tree_entry_bypath(&rawEntry, base.get(), d->old_file.path), "git_tree_entry_bypath");
+        TreeEntry entry(rawEntry);
+        const git_index_entry* now = git_index_get_bypath(index.get(), d->new_file.path, 0);
+        git_index_entry kept = *now;
+        kept.mode = git_tree_entry_filemode(entry.get());
+        check(git_index_add(index.get(), &kept), "git_index_add");
+    }
     git_oid out;
     check(git_index_write_tree_to(&out, index.get(), repo), "git_index_write_tree_to");
     return toHex(out);
 }
 
+std::string contentPatch(const std::string& patch, bool atOld)
+{
+    // "diff --git a/<old> b/<new>"
+    const size_t firstEnd = patch.find('\n');
+    const std::string names = patch.substr(11, firstEnd - 11);
+    const size_t sep = names.find(" b/");
+    const std::string path = atOld ? names.substr(2, sep - 2) : names.substr(sep + 3);
+    std::string out = "diff --git a/" + path + " b/" + path + "\n";
+    size_t pos = firstEnd + 1;
+    while (patch.compare(pos, 3, "@@ ") != 0) {
+        const size_t end = patch.find('\n', pos);
+        const std::string line = patch.substr(pos, end - pos);
+        pos = end + 1;
+        if (line.rfind("new file mode ", 0) == 0 || line.rfind("deleted file mode ", 0) == 0 || line.find("/dev/null") != std::string::npos)
+            out += line + "\n";
+        else if (line.rfind("--- ", 0) == 0)
+            out += "--- a/" + path + "\n";
+        else if (line.rfind("+++ ", 0) == 0)
+            out += "+++ b/" + path + "\n";
+        // "old mode"/"new mode", "rename from"/"rename to": not part of the lines
+    }
+    return out + patch.substr(pos);
+}
+
 std::string reversePatch(const std::string& patch)
 {
     std::istringstream in(patch);
-    std::string out, line, minus;
+    std::string out, line;
+    std::string minus;    // the "--- " line until its "+++ " partner
+    bool inHunks = false; // after the first "@@": body lines only (a removed "-- x" line is not a header)
     while (std::getline(in, line)) {
         const bool cr = !line.empty() && line.back() == '\r';
         if (cr)
             line.pop_back();
-        std::string rewritten = line;
-        // Names swap sides, and with them their a/ and b/ prefixes.
-        auto swapPrefix = [](std::string name) {
-            if (name.rfind("a/", 0) == 0)
-                name[0] = 'b';
-            else if (name.rfind("b/", 0) == 0)
-                name[0] = 'a';
-            return name;
-        };
-        if (line.rfind("diff --git ", 0) == 0) {
-            const std::string names = line.substr(11);
-            const auto sep = names.find(" b/");
-            if (sep != std::string::npos)
-                rewritten = "diff --git a/" + names.substr(sep + 3) + " b/" + names.substr(2, sep - 2);
-            out += rewritten + (cr ? "\r\n" : "\n");
-            continue;
-        }
-        if (line.rfind("--- ", 0) == 0) {
-            minus = line.substr(4); // held until the "+++" line
-            continue;
-        }
-        if (line.rfind("+++ ", 0) == 0) {
-            out += "--- " + swapPrefix(line.substr(4)) + (cr ? "\r\n" : "\n");
-            out += "+++ " + swapPrefix(minus) + (cr ? "\r\n" : "\n");
-            continue;
-        }
-        if (line.rfind("new file mode ", 0) == 0)
-            rewritten = "deleted file mode " + line.substr(14);
-        else if (line.rfind("deleted file mode ", 0) == 0)
-            rewritten = "new file mode " + line.substr(18);
-        else if (line.rfind("old mode ", 0) == 0)
-            rewritten = "new mode " + line.substr(9);
-        else if (line.rfind("new mode ", 0) == 0)
-            rewritten = "old mode " + line.substr(9);
-        else if (line.rfind("@@ ", 0) == 0) {
-            // @@ -a,b +c,d @@ tail
-            const auto minusPos = line.find(" -", 2);
-            const auto plusPos = line.find(" +", minusPos + 2);
+        auto emit = [&](const std::string& text) { out += text + (cr ? "\r\n" : "\n"); };
+        if (line.rfind("@@ ", 0) == 0) {
+            // @@ -a,b +c,d @@
+            inHunks = true;
+            const auto plusPos = line.find(" +", 3);
             const auto end = line.find(" @@", plusPos + 2);
-            if (minusPos != std::string::npos && plusPos != std::string::npos && end != std::string::npos) {
-                const std::string oldRange = line.substr(minusPos + 2, plusPos - minusPos - 2);
-                const std::string newRange = line.substr(plusPos + 2, end - plusPos - 2);
-                rewritten = "@@ -" + newRange + " +" + oldRange + line.substr(end);
-            }
-        } else if (!line.empty() && line[0] == '+') {
-            rewritten[0] = '-';
-        } else if (!line.empty() && line[0] == '-') {
-            rewritten[0] = '+';
+            emit("@@ -" + line.substr(plusPos + 2, end - plusPos - 2) + " +" + line.substr(4, plusPos - 4) + line.substr(end));
+        } else if (inHunks) {
+            if (line[0] == '+')
+                line[0] = '-';
+            else if (line[0] == '-')
+                line[0] = '+';
+            emit(line);
+        } else if (line.rfind("--- ", 0) == 0) {
+            minus = line.substr(4);
+        } else if (line.rfind("+++ ", 0) == 0) {
+            // Both name the same path (contentPatch); "/dev/null" changes sides.
+            const std::string plus = line.substr(4);
+            emit("--- " + (plus == "/dev/null" ? plus : "a/" + plus.substr(2)));
+            emit("+++ " + (minus == "/dev/null" ? minus : "b/" + minus.substr(2)));
+        } else if (line.rfind("new file mode ", 0) == 0) {
+            emit("deleted file mode " + line.substr(14));
+        } else if (line.rfind("deleted file mode ", 0) == 0) {
+            emit("new file mode " + line.substr(18));
+        } else {
+            emit(line); // diff --git a/<path> b/<path>
         }
-        out += rewritten + (cr ? "\r\n" : "\n");
     }
     return out;
 }
