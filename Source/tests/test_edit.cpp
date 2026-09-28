@@ -666,45 +666,82 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c4));
-    // Each menu item runs one operation (checked through the journal the Operations panel reads).
-    auto viaMenu = [&](const std::string& row, const char* item) {
-        s.settle();
-        const size_t before = s.session()->operations().size();
-        s.contextMenu(rowRef(row).c_str(), item);
-        const bool ran = s.waitUntil([&] { return s.session()->operations().size() > before; });
-        if (!ran)
-            ctx->LogError("'%s' did nothing", item);
-        GG_CHECK(ran);
-        s.settle();
-    };
-    viaMenu(r.c4, "Duplicate");
-    viaMenu(r.c3, "Duplicate branch");
-    viaMenu(r.c3, "Squash descendants into this");
-    const std::string tip = s.head(r.path);
-    GG_REQUIRE(rowReady(s, tip));
-    s.contextMenu(rowRef(tip).c_str(), "Split...");
+    const std::string c4Tree = s.revParse(r.path, r.c4 + "^{tree}");
+    // Duplicate: a detached copy of c4 on its parent; the branches stay.
+    s.contextMenu(rowRef(r.c4).c_str(), "Duplicate");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.c3);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), c4Tree);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
+    // Duplicate branch: c3 and c4 copied onto c2.
+    const std::string copy = s.head(r.path);
+    s.contextMenu(rowRef(r.c3).c_str(), "Duplicate branch");
+    GG_CHECK(changed(s, r.path, copy));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c2);
+    GG_CHECK(s.revParse(r.path, "HEAD~1") != r.c3);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), c4Tree);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
+    const std::string branchCopy = s.head(r.path);
+    // Squash descendants into this: c4 folded into c3 on main.
+    s.contextMenu(rowRef(r.c3).c_str(), "Squash descendants into this");
+    GG_CHECK(changed(s, r.path, r.c4, "main"));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c3 change a", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), c4Tree);
+    // Split by mouse: a.txt goes into a new first commit.
+    const std::string squashed = s.revParse(r.path, "main");
+    GG_REQUIRE(rowReady(s, squashed));
+    ctx->ItemClick(rowRef(squashed).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 3; }));
+    s.contextMenu(rowRef(squashed).c_str(), "Split...");
     GG_REQUIRE(s.dialogOpen("Split"));
-    s.dialogButton("Split", "Cancel");
+    for (const auto& field : s.app.dialogs().current()->fields)
+        if (field.kind == ggui::Field::Check && field.label == "a.txt")
+            s.dialogCheck("Split", field.id.c_str(), "a.txt");
+    s.dialogText("Split", "message", "c3a first part");
+    s.dialogButton("Split", "Split");
+    GG_CHECK(changed(s, r.path, squashed, "main"));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c3 change a", "c3a first part", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--name-only", "main~2", "main~1"}), "a.txt");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), c4Tree);
+    // Abandon branch: s1 dropped; side (which only pointed into it) is kept at its parent.
     s.contextMenu(rowRef(r.s1).c_str(), "Abandon branch...");
     GG_REQUIRE(s.dialogOpen("Abandon branch"));
     s.dialogCheck("Abandon branch", "delete_branches", "Delete the branches that only point into it", false);
     s.dialogButton("Abandon branch", "Abandon");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c2; }));
     s.settle();
-    viaMenu(tip, "Abandon");
-    const std::string head = s.head(r.path);
-    GG_REQUIRE(rowReady(s, head));
-    s.contextMenu(rowRef(head).c_str(), "Create tag...");
+    // Abandon the detached copy's tip: HEAD moves to its parent.
+    GG_REQUIRE(rowReady(s, branchCopy));
+    const std::string copyParent = s.revParse(r.path, branchCopy + "^");
+    s.contextMenu(rowRef(branchCopy).c_str(), "Abandon");
+    GG_CHECK(changed(s, r.path, branchCopy));
+    GG_CHECK_STR_EQ(s.head(r.path), copyParent);
+    // Create tag... on a commit other than HEAD tags that commit.
+    GG_REQUIRE(rowReady(s, r.c1));
+    s.contextMenu(rowRef(r.c1).c_str(), "Create tag...");
     GG_REQUIRE(s.dialogOpen("Create tag"));
-    s.dialogButton("Create tag", "Cancel");
-    ctx->MenuClick("//##MainMenuBar/Commit/New detached commit");
-    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
+    s.dialogText("Create tag", "name", "v-row");
+    s.dialogButton("Create tag", "Create");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(r.path, {"rev-parse", "-q", "--verify", "refs/tags/v-row"}).ok(); }));
     s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "v-row"), r.c1);
+    const std::string beforeDetached = s.head(r.path);
+    ctx->MenuClick("//##MainMenuBar/Commit/New detached commit");
+    GG_CHECK(changed(s, r.path, beforeDetached));
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.c1); // on the selected commit
     // Reflog: a branch from an entry's new commit.
     s.showPanel("Reflog");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Reflog/##reflog_table/r0/###reflog_0"); }));
+    const std::string newest = s.revParse(r.path, "HEAD@{0}");
     s.contextMenu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...");
     GG_REQUIRE(s.dialogOpen("Create branch"));
-    s.dialogButton("Create branch", "Cancel");
+    s.dialogText("Create branch", "name", "from-reflog");
+    s.dialogButton("Create branch", "Create");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(r.path, {"rev-parse", "-q", "--verify", "refs/heads/from-reflog"}).ok(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "from-reflog"), newest);
 
     // A conflicted commit: its file in Change information opens the blame; lines select by click.
     const fs::path conflicted = s.fixture(Recipe::Conflicted2);
@@ -750,9 +787,15 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     GG_REQUIRE(s.openRepository(stashes));
     s.showPanel("Stashes");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
-    s.contextMenu("//Stashes/stash_0/###row", "Apply (restore index)");
+    // stash@{1} has a staged a.txt and an unstaged b.txt: both come back where they were.
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_1/###row"); }));
+    s.contextMenu("//Stashes/stash_1/###row", "Apply (restore index)");
     GG_CHECK(s.waitUntil([&] { return !s.statusPorcelain(stashes).empty(); }));
     s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(stashes, {"diff", "--cached", "--name-only"}), "a.txt");
+    GG_CHECK_STR_EQ(s.gitOut(stashes, {"diff", "--name-only"}), "b.txt");
+    GG_CHECK_STR_EQ(s.gitOut(stashes, {"show", ":a.txt"}), "a staged");
+    GG_CHECK_EQ(s.gitOut(stashes, {"stash", "list"}).find("index and worktree") != std::string::npos, true);
 }
 
 } // namespace ggtest

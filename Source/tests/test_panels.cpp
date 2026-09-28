@@ -223,7 +223,14 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     s.showPanel("Stashes");
     ctx->ItemClick("//Stashes/Stash changes...##stash_changes");
     GG_REQUIRE(s.dialogOpen("Stash changes"));
-    s.dialogButton("Stash changes", "Cancel");
+    s.dialogText("Stash changes", "message", "from the Stashes panel");
+    s.dialogCheck("Stash changes", "untracked", "Include untracked files");
+    s.dialogButton("Stash changes", "Stash");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"stash", "list"}).find("from the Stashes panel") != std::string::npos; }));
+    s.settle();
+    GG_CHECK(!fs::exists(repo / "dirty.txt"));
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    s.write(repo, "dirty.txt", "dirty\n");
 
     // Operations: a commit its pre-commit hook refuses is listed as failed; the buttons undo and redo.
     s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\necho no >&2\nexit 1\n");
