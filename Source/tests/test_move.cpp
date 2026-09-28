@@ -174,6 +174,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     s.write(repo, "crlf.txt", "one\r\ntwo\r\nthree\r\n");
     s.write(repo, "old.txt", "rename me\nline two\nline three\nline four\nline five\n");
     s.write(repo, "run.sh", "#!/bin/sh\necho one\n");
+    s.write(repo, "doomed.txt", "going\naway\n");
     s.git(repo, {"add", "."});
     s.git(repo, {"commit", "-q", "-m", "base"});
     const std::string base = s.head(repo);
@@ -183,6 +184,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     s.write(repo, "renamed.txt", "rename me\nline two\nline three\nline four\nline FIVE\n");
     s.write(repo, "run.sh", "#!/bin/sh\necho two\n");
     fs::permissions(repo / "run.sh", fs::perms::owner_exec, fs::perm_options::add);
+    fs::remove(repo / "doomed.txt");
     s.git(repo, {"add", "-A"});
     s.git(repo, {"commit", "-q", "-m", "X"});
     const std::string x = s.head(repo);
@@ -192,7 +194,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
 
     // Each file's hunk reverted in X (Y rebased on top), checked, then undone.
     auto revert = [&](const std::string& path, const std::function<void(const std::string& newX)>& check) {
-        selectCommit(s, x, 4);
+        selectCommit(s, x, 5);
         ctx->ItemClick(fileRef(s, path).c_str());
         s.showPanel("Diff");
         GG_REQUIRE(s.waitUntil([&] {
@@ -222,6 +224,9 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
         GG_CHECK_STR_EQ(s.revParse(repo, nx + ":renamed.txt"), s.revParse(repo, base + ":old.txt"));
         GG_CHECK(!s.gitMayFail(repo, {"cat-file", "-e", nx + ":old.txt"}).ok());
     });
+    revert("doomed.txt", [&](const std::string& nx) {
+        GG_CHECK_STR_EQ(s.revParse(repo, nx + ":doomed.txt"), s.revParse(repo, base + ":doomed.txt"));
+    });
     revert("run.sh", [&](const std::string& nx) {
         GG_CHECK_STR_EQ(s.gitOut(repo, {"show", nx + ":run.sh"}), "#!/bin/sh\necho one");
         GG_CHECK_STR_EQ(s.gitOut(repo, {"ls-tree", nx, "run.sh"}).substr(0, 6), "100755"); // lines only
@@ -229,7 +234,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     // The renamed file's line to the parent: the parent changes the file at its old path; X keeps
     // the rename, and the tip's tree stays the same.
     const std::string tipTree = s.revParse(repo, "HEAD^{tree}");
-    selectCommit(s, x, 4);
+    selectCommit(s, x, 5);
     ctx->ItemClick(fileRef(s, "renamed.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
     ctx->ItemClick((body(s) + "/###hunk_0").c_str());
@@ -240,7 +245,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
     // The CRLF file's line to the child (Y): X no longer changes it, Y does; the tip is the same.
     const std::string x2 = s.revParse(repo, "HEAD~1"), tip2 = s.head(repo);
-    selectCommit(s, x2, 4);
+    selectCommit(s, x2, 5);
     ctx->ItemClick(fileRef(s, "crlf.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();

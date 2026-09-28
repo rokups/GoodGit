@@ -178,7 +178,7 @@ private:
     void drawGitConfigSettings(Session& s);
 };
 
-// Draws a button with an icon and optional label; returns true when clicked.
+// Draws a toolbar button: `icon` (and label) as its text, `id` ("##name") as its stable ID, `tooltip` on hover.
 bool iconButton(const char* icon, const char* id, const char* tooltip, bool enabled = true);
 
 } // namespace ggui

@@ -53,8 +53,7 @@ void iniReadLine(ImGuiContext*, ImGuiSettingsHandler*, void* entry, const char* 
 
 void iniWriteAll(ImGuiContext*, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf)
 {
-    if (!g_app)
-        return;
+    // (Registered by the App, which sets g_app first.)
     SDL_Window* w = g_app->platform().window();
     int x = 0, y = 0, width = 0, height = 0;
     SDL_GetWindowPosition(w, &x, &y);
@@ -70,12 +69,12 @@ void iniWriteAll(ImGuiContext*, ImGuiSettingsHandler* handler, ImGuiTextBuffer* 
 bool iconButton(const char* icon, const char* id, const char* tooltip, bool enabled)
 {
     ImGui::BeginDisabled(!enabled);
-    // "##tb_x" ids become "###tb_x": the ID does not depend on the icon glyph.
+    // The "##tb_x" ids become "###tb_x": the ID does not depend on the icon glyph.
     char label[128];
-    std::snprintf(label, sizeof(label), "%s%s%s", icon, id[0] == '#' && id[1] == '#' && id[2] != '#' ? "#" : "", id);
+    std::snprintf(label, sizeof(label), "%s#%s", icon, id);
     const bool clicked = ImGui::Button(label);
     ImGui::EndDisabled();
-    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("%s", tooltip);
     return clicked;
 }

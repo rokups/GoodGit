@@ -1008,8 +1008,8 @@ std::string applyPatchToTree(git_repository* repo, const std::string& tree, cons
     // A patch without mode lines keeps the file's mode (libgit2 would write 100644).
     for (size_t i = 0; i < git_diff_num_deltas(diff.get()); ++i) {
         const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
-        if (d->status != GIT_DELTA_MODIFIED || d->new_file.mode != 0)
-            continue; // added or deleted, or the patch says
+        if (d->status != GIT_DELTA_MODIFIED)
+            continue; // added or deleted: the patch has the mode
         git_tree_entry* rawEntry = nullptr; // applied, so it is there
         check(git_tree_entry_bypath(&rawEntry, base.get(), d->old_file.path), "git_tree_entry_bypath");
         TreeEntry entry(rawEntry);
@@ -1054,7 +1054,7 @@ std::string reversePatch(const std::string& patch)
     std::string minus;    // the "--- " line until its "+++ " partner
     bool inHunks = false; // after the first "@@": body lines only (a removed "-- x" line is not a header)
     while (std::getline(in, line)) {
-        const bool cr = !line.empty() && line.back() == '\r';
+        const bool cr = line.back() == '\r'; // (no line of a patch is empty)
         if (cr)
             line.pop_back();
         auto emit = [&](const std::string& text) { out += text + (cr ? "\r\n" : "\n"); };
