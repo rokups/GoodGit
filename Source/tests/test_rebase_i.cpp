@@ -1195,7 +1195,7 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
         editor(s).previewsRequested() - requested, editor(s).previewsShown() - shown);
     GG_CHECK(editor(s).previewsRequested() - requested == 5);
     GG_CHECK(editor(s).previewsShown() - shown < 5);
-    GG_CHECK(probe.maxMs < 33.0);
+    GG_CHECK(probe.maxMs < timeBudgetMs(33.0));
     GG_CHECK(p->rows.size() == 28);
     const auto names = previewSubjects(*p);
     GG_CHECK(std::find(names.begin(), names.end(), "c20") == names.end());

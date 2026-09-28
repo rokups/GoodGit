@@ -1,11 +1,11 @@
 # ggui CI (REBUILD_PLAN §7 Phase 0, §8.2, §8.3; task P0-14).
 #
-# Linux: Xvfb + software Vulkan (lavapipe), clang source-based coverage, the suite split into
-# shards, git 2.36 (pinned minimum) and the distribution's latest git. Windows: MinGW-static
-# and MSVC. Release packages (P4-04): Linux tar.gz/zip/deb, MinGW and MSVC ZIPs, each checked
-# by the package smoke scripts. Gates (standing rule 8, P4-06): every spec ID of the delivered
-# phases has a passing test and no test fails (traceability.py), and every row of
-# docs/ui-actions.md names a test that passed (ui_actions_check.py), on Linux (both git versions
+# Linux: Xvfb + software Vulkan (lavapipe), clang source-based coverage built once, the suite split
+# into shards that download those binaries, git 2.36 (pinned minimum) and the distribution's latest
+# git. Windows: MinGW-static and MSVC. Release packages (P4-04): Linux tar.gz/zip/deb, MinGW and
+# MSVC ZIPs, each checked by the package smoke scripts. Gates (standing rule 8, P4-06): every spec
+# ID of the delivered phases has a passing test and no test fails (traceability.py), and every row
+# of docs/ui-actions.md names a test that passed (ui_actions_check.py), on Linux (both git versions
 # merged: a test skipped on git 2.36 must pass on the latest git) and on each Windows job. The
 # coverage report is published but does not gate; COVERAGE_EXCL markers may not grow past the
 # allowlist. Every shard runs with the UI-thread assertion on (the default in test builds).
@@ -21,6 +21,9 @@ env:
   # Highest phase whose spec IDs must all have passing tests.
   GGUI_DELIVERED_PHASE: "4"
   SHARDS: "4"
+  # Timing budgets (HIST-LOAD-FAST, the 33 ms frame limit, HOOK-FAST) x2 on shared runners with
+  # software rendering and coverage; the release gate runs them unscaled (docs/release-checklist.md).
+  GGUI_TIMING_SLACK: "2"
 
 jobs:
   catalogue:
@@ -47,8 +50,37 @@ jobs:
           tar xf git-2.36.0.tar.xz && cd git-2.36.0
           make -j"$(nproc)" prefix="$HOME/git-2.36" NO_GETTEXT=1 NO_TCLTK=1 all install
 
+  linux-build:
+    # One instrumented build; every shard runs these binaries.
+    needs: catalogue
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build clang llvm lld pkg-config \
+            libvulkan-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+            libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Build (clang, coverage)
+        run: |
+          cmake --preset coverage
+          cmake --build --preset coverage
+      # A tarball keeps the executable bits that upload-artifact drops.
+      - run: tar -C build/coverage -cf linux-bin.tar bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-bin
+          path: linux-bin.tar
+          retention-days: 3
+
   linux:
-    needs: [catalogue, git-min]
+    needs: [linux-build, git-min]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -57,14 +89,12 @@ jobs:
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
-      - name: Dependencies
+      - name: Dependencies (runtime only)
         run: |
           sudo add-apt-repository -y ppa:git-core/ppa
           sudo apt-get update
-          sudo apt-get install -y git ninja-build clang llvm lld pkg-config xvfb \
-            mesa-vulkan-drivers libvulkan1 libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
-            libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
-            libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
+          sudo apt-get install -y git xvfb mesa-vulkan-drivers libvulkan1 libx11-6 libxext6 \
+            libxrandr2 libxcursor1 libxi6 libxss1 libxfixes3 libxkbcommon0 libdecor-0-0
           # lavapipe's ICD is lvp_icd.x86_64.json on older Mesa, lvp_icd.json from Mesa 25.
           echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)" >> "$GITHUB_ENV"
       - uses: actions/cache@v4
@@ -76,16 +106,12 @@ jobs:
       - run: git --version
       - uses: actions/cache@v4
         with:
-          path: .cache/CPM
-          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
-      - uses: actions/cache@v4
-        with:
           path: .cache/ggui-fixtures
           key: fixtures-large-v1
-      - name: Build (clang, coverage)
-        run: |
-          cmake --preset coverage
-          cmake --build --preset coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-bin
+      - run: mkdir -p build/coverage && tar -C build/coverage -xf linux-bin.tar && rm linux-bin.tar
       - name: Tests (shard ${{ matrix.shard }}/4, Xvfb, lavapipe)
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/out/profiles/%p-%m.profraw
@@ -99,9 +125,7 @@ jobs:
         if: always()
         with:
           name: linux-${{ matrix.git }}-${{ matrix.shard }}
-          path: |
-            out/
-            build/coverage/bin/
+          path: out/
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -121,15 +145,16 @@ jobs:
       - name: Functional gate (traceability; no failing test)
         run: |
           python3 scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability.md \
-            shards/linux-*/out/trace-*.json
+            shards/linux-*/trace-*.json
       - name: UI-action gate (every docs/ui-actions.md row has a passing test)
         if: always()
-        run: python3 scripts/ui_actions_check.py shards/linux-*/out/trace-*.json
+        run: python3 scripts/ui_actions_check.py shards/linux-*/trace-*.json
       - name: Coverage report (informational; ggui + git-gg profiles merged; COVERAGE_EXCL allowlist)
         if: always()
         run: |
-          bin=$(ls -d shards/linux-latest-0/build/coverage/bin)
-          llvm-profdata merge -sparse shards/linux-latest-*/out/profiles/*.profraw -o coverage.profdata
+          tar -C shards -xf shards/linux-bin/linux-bin.tar
+          bin=shards/bin
+          llvm-profdata merge -sparse shards/linux-latest-*/profiles/*.profraw -o coverage.profdata
           llvm-cov export -format=lcov -instr-profile=coverage.profdata "$bin/ggui" -object "$bin/git-gg" \
             -ignore-filename-regex='(_deps|\.cache/CPM|generated|Source/tests)' > coverage.lcov
           python3 scripts/coverage_report.py --lcov coverage.lcov --root "$PWD" \

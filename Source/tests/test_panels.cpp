@@ -50,7 +50,8 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-T
     s.git(repo, {"branch", "-f", "side", "HEAD~3"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Tags");
-    const auto& tags = s.session()->snapshot()->tags;
+    const auto snapshot = s.session()->snapshot(); // keeps tags alive while the UI refreshes
+    const auto& tags = snapshot->tags;
     GG_REQUIRE(tags.size() == 2);
     GG_CHECK(!tags[0].annotated && tags[1].annotated);
     GG_CHECK_STR_EQ(tags[1].message, "Release two\n");
@@ -84,7 +85,8 @@ GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open", "WT-LIST
     const fs::path opened = s.fakeTool("xdg-open");
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Worktrees");
-    const auto& wts = s.session()->snapshot()->worktrees;
+    const auto snapshot = s.session()->snapshot(); // keeps wts alive while the UI refreshes
+    const auto& wts = snapshot->worktrees;
     GG_REQUIRE(wts.size() == 4);
     GG_CHECK(wts[0].isMain && wts[0].isCurrent);
     const std::string wt1 = repo.filename().string() + "-wt1";
@@ -124,7 +126,8 @@ GG_TEST("panels", "remotes: list and copy", "REM-LIST", "REM-COPY")
     s.git(repo, {"config", "remote.backup.prune", "true"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Remotes");
-    const auto& remotes = s.session()->snapshot()->remotes;
+    const auto snapshot = s.session()->snapshot(); // keeps remotes alive while the UI refreshes
+    const auto& remotes = snapshot->remotes;
     GG_REQUIRE(remotes.size() == 2);
     GG_CHECK_STR_EQ(remotes[0].name, "backup");
     GG_CHECK(remotes[0].pruneOnFetch);
@@ -250,11 +253,12 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty() && s.session()->operations().back().label == "new commit"; }));
     s.settle();
     const std::string made = s.head(repo);
-    const auto& op = s.session()->operations().back();
-    const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + op.id + "/###row";
+    // A copy: the operations list is reloaded while the UI runs.
+    const std::string opId = s.session()->operations().back().id;
+    const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + opId + "/###row";
     hover(row);
     s.contextMenu(row.c_str(), "Copy operation ID");
-    GG_CHECK_STR_EQ(s.clipboard(), op.id);
+    GG_CHECK_STR_EQ(s.clipboard(), opId);
     ctx->ItemClick("//Operations/###ops_undo");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != made; }));
     s.settle();

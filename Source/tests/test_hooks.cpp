@@ -309,7 +309,7 @@ GG_TEST("hooks", "a fetch of thousands of refs stays fast with the hooks", "HOOK
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
     ctx->LogInfo("fetch of %d refs with hooks: %lld ms", count, static_cast<long long>(ms));
     if (batched)
-        GG_CHECK(ms < 5000);
+        GG_CHECK(ms < timeBudgetMs(5000));
     const auto ops = journalOps(repo, "git");
     GG_REQUIRE(ops.size() == 1);
     GG_CHECK(ops.back().refs.size() >= static_cast<size_t>(count));

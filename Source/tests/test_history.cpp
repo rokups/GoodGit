@@ -419,7 +419,7 @@ GG_TEST("history", "first rows of a large history appear quickly", "HIST-LOAD-FA
             history.rows().size());
         spdlog::info("history timing {}: first rows {} ms, page {} ms, {} rows", repo.string(), ms(first), ms(done),
             history.rows().size());
-        GG_CHECK(ms(first) < 700);
+        GG_CHECK(ms(first) < timeBudgetMs(700));
         ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
         ctx->Yield(3);
     }

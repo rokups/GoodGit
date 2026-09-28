@@ -101,7 +101,8 @@ must be green:
 |---|---|
 | `catalogue` | `traceability.py --check`; `removal_audit.sh` |
 | `git-min` | builds and caches git 2.36.0 |
-| `linux` (8 jobs: git minimum/latest × shards 0–3) | the suite under Xvfb + lavapipe with coverage instrumentation; first CI restore of the large fixture cache (`fixtures-large-v1`, P0-11) |
+| `linux-build` | one clang coverage build; the binaries are the `linux-bin` artifact |
+| `linux` (8 jobs: git minimum/latest × shards 0–3) | the suite from `linux-bin` under Xvfb + lavapipe; first CI restore of the large fixture cache (`fixtures-large-v1`, P0-11) |
 | `gates` | functional gate 660/660 with no failing test; UI-action gate; coverage report uploaded (`reports` artifact: `traceability.md`, `coverage.md`), COVERAGE_EXCL within the allowlist |
 | `windows-mingw` | first run of the suite on Windows (headless, D3D12/WARP) incl. the responsiveness scenario (P1-21); gates on its own trace |
 | `windows-msvc` | first native MSVC build (P0-06) and suite run; gates on its own trace |
@@ -112,7 +113,9 @@ Watch: the Windows gates see one git version. With git older than 2.54 on the ru
 config-defined hooks test is skipped there and the traceability step reports HOOK-CONFIG-DEFINED
 missing. MSYS2's git is current; for the MSVC job check the logged `git --version` and install a
 current Git for Windows if needed. Timing tests (`HIST-LOAD-FAST` 0.7 s, the 33 ms frame limit,
-`HOOK-FAST` 5 s) have not been seen on shared runners yet.
+`HOOK-FAST` 5 s) run with `GGUI_TIMING_SLACK=2` in CI: the first run measured 0.88 s first rows
+(git 2.36) and a 38.9 ms worst frame under lavapipe with coverage on a shared runner. The budgets
+count unscaled only in the local gate (§1).
 
 ### 4.2 Manual checks on clean machines
 

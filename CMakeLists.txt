@@ -38,7 +38,8 @@ include(cmake/EmbedFont.cmake)
 # Warning, sanitizer-free coverage and UI-thread-check settings shared by first-party targets.
 function(ggui_first_party target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus)
+        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus
+            /wd4127)  # conditional expression is constant: do/while(0) in IM_CHECK and friends
         if(GGUI_WERROR)
             target_compile_options(${target} PRIVATE /WX)
         endif()

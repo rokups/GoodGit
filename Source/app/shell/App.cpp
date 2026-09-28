@@ -253,6 +253,8 @@ void App::openNow(const fs::path& path)
     if (m_session) {
         m_session->cancelAll();
         m_closing.push_back(std::move(m_session));
+        // Refuse git-gg hand-overs for the old repository now, not on the next frame.
+        m_sequenceEditor.setRepository({});
     }
     clearError();
     std::error_code ec;
@@ -311,6 +313,8 @@ void App::closeRepository()
         return;
     m_session->cancelAll();
     m_closing.push_back(std::move(m_session));
+    // Refuse git-gg hand-overs for this repository now, not on the next frame.
+    m_sequenceEditor.setRepository({});
     std::vector<fs::path> paths(m_settings.data().recent.begin(), m_settings.data().recent.end());
     m_summaries.request(paths);
 }

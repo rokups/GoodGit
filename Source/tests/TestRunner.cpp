@@ -43,6 +43,22 @@ std::string sanitize(const std::string& s)
     return out;
 }
 
+// A test's directory name: the start of its name and a hash of all of it. Full names run past
+// 200 characters, and a repository inside them past Windows' MAX_PATH.
+std::string testDirName(const TestInfo& info)
+{
+    const std::string full = info.category + "_" + info.name;
+    std::uint32_t hash = 2166136261u; // FNV-1a
+    for (unsigned char c : full)
+        hash = (hash ^ c) * 16777619u;
+    char suffix[10];
+    std::snprintf(suffix, sizeof suffix, "-%08x", hash);
+    std::string name = sanitize(full.substr(0, 40));
+    while (!name.empty() && name.back() == '_')
+        name.pop_back();
+    return name + suffix;
+}
+
 void writeGlobalGitConfig(const fs::path& home)
 {
     std::ofstream f(home / ".gitconfig", std::ios::binary);
@@ -71,6 +87,8 @@ void isolateEnvironment(const fs::path& dir)
     ggui::setEnv("XDG_CONFIG_HOME", (home / ".config").string());
     ggui::setEnv("GIT_CONFIG_GLOBAL", (home / ".gitconfig").string());
     ggui::setEnv("GIT_CONFIG_NOSYSTEM", "1");
+    // git config --system reads the system file despite NOSYSTEM: name one that does not exist.
+    ggui::setEnv("GIT_CONFIG_SYSTEM", (home / "no-system-gitconfig").string());
     ggui::setEnv("GGUI_PREF_PATH", (dir / "prefs").string());
     // Deterministic dates for fixtures are set per command by the harness, not globally.
     ggui::unsetEnv("GIT_DIR");
@@ -137,7 +155,7 @@ namespace {
 
 void runTest(ImGuiTestContext* ctx, const TestInfo& info)
 {
-    const fs::path dir = g_root / sanitize(info.category + "_" + info.name);
+    const fs::path dir = g_root / testDirName(info);
     std::error_code ec;
     fs::remove_all(dir, ec);
     fs::create_directories(dir);
@@ -182,7 +200,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
         ctx->LogError("UI-thread violation: %s", v.c_str());
 
     if (ctx->IsError())
-        writeFailureOutput(ctx, info, scenario, g_artifacts / sanitize(info.category + "_" + info.name));
+        writeFailureOutput(ctx, info, scenario, g_artifacts / testDirName(info));
 
     g_app->resetForTest();
     ctx->Yield(2);
@@ -226,6 +244,13 @@ Registrar::Registrar(const char* category, const char* name, std::initializer_li
 }
 
 fs::path artifactsDir() { return g_artifacts; }
+
+double timeBudgetMs(double ms)
+{
+    const char* slack = std::getenv("GGUI_TIMING_SLACK");
+    const double factor = slack && *slack ? std::strtod(slack, nullptr) : 1.0;
+    return ms * (factor >= 1.0 ? factor : 1.0);
+}
 
 void markCurrentTestSkipped(const std::string& reason)
 {

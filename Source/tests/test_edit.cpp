@@ -151,8 +151,9 @@ GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants i
     const std::string root = s.revParse(r.path, "HEAD~1");
     GG_REQUIRE(rowReady(s, root));
     ctx->ItemClick(rowRef(root).c_str());
+    const std::string beforeAll = s.head(r.path);
     ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_S);
-    GG_CHECK(changed(s, r.path, s.head(r.path)));
+    GG_CHECK(changed(s, r.path, beforeAll));
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c1 add a"}));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
 }

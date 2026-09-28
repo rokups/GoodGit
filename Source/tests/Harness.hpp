@@ -56,6 +56,9 @@ std::vector<TestInfo>& registry();
 fs::path fixtureCacheDir();
 // Directory for failure output and explicit screenshots (--artifacts, default ./test-artifacts).
 fs::path artifactsDir();
+// A timing budget scaled by GGUI_TIMING_SLACK (default 1): shared CI runners with software
+// rendering and coverage instrumentation are slower than the machines the budgets are set for.
+double timeBudgetMs(double ms);
 
 class Scenario;
 // Writes screenshot.png, app.log, git-commands.log and info.txt for a failing test into `dir`.

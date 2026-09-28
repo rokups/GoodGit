@@ -213,7 +213,8 @@ GG_TEST("changes", "stash contents: working tree, index and untracked parts", "S
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     GG_REQUIRE(s.openRepository(repo));
-    const auto& stashes = s.session()->snapshot()->stashes;
+    const auto snapshot = s.session()->snapshot(); // keeps stashes alive while the UI refreshes
+    const auto& stashes = snapshot->stashes;
     GG_REQUIRE(stashes.size() == 3);
     GG_CHECK_STR_EQ(stashes[0].message, "On main: with untracked");
     GG_CHECK_STR_EQ(stashes[1].message, "On main: index and worktree");
