@@ -127,18 +127,22 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
             changes.push_back(journal::RefChange{ref, value, zero});
     std::string error;
     m_journal.appendRefs(m_op.id, changes, &error);
+    // The rebase this operation started or joined: open while it is stopped, ended with it.
+    const bool rebasing = !native::rebaseIdentity(m_repo).empty();
+    const bool startsGroup = !m_resumed && rebasing && !m_rebaseAtBegin && m_op.undoes.empty();
     if (m_captureIndex && !m_indexBefore.empty()) {
+        // A rebase group's steps record the index even when a step leaves it as it was: the group
+        // then keeps its first index and its latest one, although the user may stage changes
+        // between the steps (for an edit stop) outside any operation.
         const std::string indexAfter = indexTree(m_workdir);
-        if (!indexAfter.empty() && indexAfter != m_indexBefore)
+        if (!indexAfter.empty() && (indexAfter != m_indexBefore || m_resumed || startsGroup))
             m_journal.appendIndex(m_op.id, journal::IndexChange{m_op.wt, m_indexBefore, indexAfter, worktreeFollowsIndex},
                 &error);
     }
-    // The rebase this operation started or joined: open while it is stopped, ended with it.
-    const bool rebasing = !native::rebaseIdentity(m_repo).empty();
     if (m_resumed) {
         if (!rebasing)
             native::finishGroup(m_repo, m_journal, ok);
-    } else if (rebasing && !m_rebaseAtBegin && m_op.undoes.empty()) {
+    } else if (startsGroup) {
         native::rememberGroup(m_repo, m_journal, m_op.id);
     } else {
         m_journal.end(m_op.id, ok, &error);

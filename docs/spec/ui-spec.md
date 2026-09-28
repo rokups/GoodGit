@@ -201,6 +201,9 @@ commit and its descendants up to HEAD, or up to the first local branch (by name)
 when HEAD does not; a commit on neither is refused. The *Squash* and *Rebase onto* dialogs have
 *Open as interactive rebase…*: the editor opens with the action as its starting todo (the commit
 moved after the target as squash or fixup; the new base as *Onto*).
+*Merge into HEAD…* and *Rebase HEAD onto this* in the shared commit actions act on the selected commit
+(disabled on HEAD itself; Rebase needs an attached HEAD); a commit is merged with Git's default message
+"Merge commit '<short ID>'". Branches offers the same two for a branch (§8).
 
 ## 4.x Interactive rebase todo editor — window `"Interactive rebase"` (N, Phase 3)
 Dockable; opens as a tab next to History while a todo is open and closes on Start (after success)
@@ -265,7 +268,8 @@ the panel without touching the repository.
   Errors are titled `Save the remaining todo`.
 - **Live preview** `##ir_preview` (right of the list, a bordered child; plan §4.13): "Result", and
   while a newer result is computed a spinner with "Updating..." (the previous result stays). A
-  summary line `###irp_summary` ("N commit(s), K with conflicts, M need a decision, E empty"),
+  summary line `###irp_summary` ("N commit(s), K with conflicts, R resolve conflicts, M need a decision, E empty"; R = commits whose
+  original commits had first-class conflicts that are gone, the tooltip lists the files),
   `###irp_moves` ("Moves: <branches>", a detached HEAD as `HEAD`), `###irp_staying` (warning
   colour: "Stay on the old commits: <branches>", branches in the range without an update-ref row),
   `###irp_aside_<n>` ("<branch>: <short ID> <subject>, before the squash": an update-ref row before

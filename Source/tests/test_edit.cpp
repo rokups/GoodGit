@@ -328,19 +328,82 @@ GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a br
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), s.revParse(r.path, "side"));
 }
 
+GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit", "ACT-MERGE-INTO-HEAD",
+    "ACT-REBASE-HEAD-ONTO", "MENU-COMMIT-ACTIONS")
+{
+    const EditRepo r = makeRepo(s);
+    // s1 is not a branch tip any more: it can only be picked as a commit.
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "t.txt", "t\n", "s2 add t");
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.s1));
+    const std::string shortS1 = s.session()->shortId(ggui::core::Oid::fromHex(r.s1));
+    s.contextMenu(rowRef(r.s1).c_str(), "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    GG_CHECK(s.textShown("//Merge into HEAD", "Merge commit " + shortS1 + " into HEAD."));
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^1"), r.c4);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), r.s1);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Merge commit '" + shortS1 + "'");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
+    GG_CHECK(!fs::exists(r.path / "t.txt") && fs::exists(r.path / "s.txt"));
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(r.path) == r.c4; }));
+    s.settle();
+    // Not offered on HEAD itself.
+    GG_REQUIRE(rowReady(s, r.c4));
+    ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Merge into HEAD...").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Rebase HEAD onto this").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // The Commit menu: main's own commits (c3, c4) onto s1.
+    ctx->ItemClick(rowRef(r.s1).c_str());
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Rebase HEAD onto this");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.s1);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+namespace {
+
+// Drags commit `from` onto commit `to` in History with `mods` held (ui-spec §2.x: Ctrl+Shift = Move
+// before, Shift = Move after); without modifiers the chooser's `choice` is clicked.
+void dragCommit(Scenario& s, const std::string& from, const std::string& to, ImGuiKeyChord mods, const char* choice = nullptr)
+{
+    s.waitUntil([&] { return s.itemExists(rowRef(from).c_str()) && s.itemExists(rowRef(to).c_str()); });
+    if (mods)
+        s.ctx->KeyDown(mods);
+    s.ctx->ItemDragAndDrop(rowRef(from).c_str(), rowRef(to).c_str());
+    if (mods)
+        s.ctx->KeyUp(mods);
+    s.ctx->Yield(2);
+    if (choice) {
+        const std::string item = std::string("//$FOCUSED/") + choice;
+        s.waitUntil([&] { return s.itemExists(item.c_str()); });
+        s.ctx->ItemClick(item.c_str());
+    }
+}
+
+} // namespace
+
 GG_TEST("edit", "reorder: move a commit before another, and copy one", "ACT-REORDER", "ACT-REORDER-COPY")
 {
     const EditRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "main^{tree}");
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c4));
-    // Through the drag-and-drop chooser (the same actions): c4 before c3.
-    s.session()->actions().reorder(ggui::core::Oid::fromHex(r.c4), ggui::core::Oid::fromHex(r.c3), false, false);
+    // Dragged in History: c4 before c3 (Ctrl+Shift).
+    dragCommit(s, r.c4, r.c3, ImGuiMod_Ctrl | ImGuiMod_Shift);
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
     const std::string tip = s.head(r.path);
-    s.session()->actions().reorder(ggui::core::Oid::fromHex(r.c2), ggui::core::Oid::fromHex(tip), true, true);
+    dragCommit(s, r.c2, tip, 0, "Copy after"); // the chooser
     GG_CHECK(changed(s, r.path, tip));
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2 add b", "c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
 }
@@ -369,14 +432,14 @@ GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a l
     GG_CHECK(s.waitUntil([&] { return s.head(r.path) == c5; }));
     s.settle();
     // Moving c5 before c3 conflicts; moving it back resolves (no nested markers).
-    s.session()->actions().reorder(ggui::core::Oid::fromHex(c5), ggui::core::Oid::fromHex(r.c3), false, false);
+    dragCommit(s, c5, r.c3, ImGuiMod_Ctrl | ImGuiMod_Shift);
     GG_CHECK(changed(s, r.path, c5));
     const std::string moved = s.head(r.path);
     // The moved c5 conflicts (c3 is not under it any more); at the tip the terms cancel out.
     GG_CHECK(s.gitOut(r.path, {"show", "HEAD~2:a.txt"}).find("<<<<<<<") != std::string::npos);
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD:a.txt"}), "one\nTWO!\nthree");
     const std::string c5moved = s.revParse(r.path, "HEAD~2");
-    s.session()->actions().reorder(ggui::core::Oid::fromHex(c5moved), ggui::core::Oid::fromHex(s.head(r.path)), true, false);
+    dragCommit(s, c5moved, s.head(r.path), ImGuiMod_Shift);
     GG_CHECK(changed(s, r.path, moved));
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD:a.txt"}), "one\nTWO!\nthree");
     GG_CHECK(!s.gitMayFail(r.path, {"grep", "-q", "<<<<<<<", "HEAD"}).ok()); // no markers anywhere

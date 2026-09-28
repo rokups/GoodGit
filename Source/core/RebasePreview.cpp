@@ -144,6 +144,15 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
             for (const auto& f : gg::conflicts::commitConflicts(repo, *fromHex(row.id), cache, cancel))
                 row.conflicts.emplace_back(f.path, f.sides);
             row.newConflicts = conflicted.count(row.id) > 0;
+            if (!row.unchanged) {
+                std::set<std::string> before;
+                for (const auto& src : row.sources)
+                    for (const auto& f : gg::conflicts::commitConflicts(repo, *fromHex(src), cache, cancel))
+                        before.insert(f.path);
+                for (const auto& [path, sides] : row.conflicts)
+                    before.erase(path);
+                row.resolved.assign(before.begin(), before.end());
+            }
             parent = row.id;
         }
         for (const auto& c : result.unresolved) {

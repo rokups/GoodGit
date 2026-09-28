@@ -1667,4 +1667,229 @@ GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i 
     }
 }
 
+// ---- commits that already carry first-class conflicts (P3-20) -------------------------------------
+
+namespace {
+
+// Newest toast id so far (to look only at notices that come after it).
+std::uint64_t lastToast(Scenario& s)
+{
+    std::uint64_t id = 0;
+    for (const auto& t : s.app.toasts())
+        id = std::max(id, t.id);
+    return id;
+}
+
+// A notice newer than `after` whose message contains `text` (waits up to `seconds`).
+bool noticeSays(Scenario& s, std::uint64_t after, const std::string& text, float seconds = 20.0f)
+{
+    return s.waitUntil([&] {
+        for (const auto& t : s.app.toasts())
+            if (t.id > after && t.message.find(text) != std::string::npos)
+                return true;
+        return false;
+    }, seconds);
+}
+
+} // namespace
+
+GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause",
+    "IR-CONFLICTED-INPUT", "IR-PREVIEW-CONFLICTS", "CONF-AUTO-RESOLVE", "IR-ACT-FIXUP", "IR-ACT-REWORD", "IR-OPT-ONTO",
+    "IR-ACT-DROP", "IR-MEMORY-ONE-UNDO")
+{
+    // c1 a.txt = 1 2 3 and b.txt; c2 sets line 2 to X; c3 changes b.txt; c4 sets line 2 to Y (part1);
+    // c5 adds d.txt.
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.write(path, "b.txt", "b\n");
+    s.commitFile(path, "a.txt", "1\n2\n3\n", "c1 add a and b");
+    const std::string c1 = s.head(path);
+    s.commitFile(path, "a.txt", "1\nX\n3\n", "c2 set X");
+    const std::string c2 = s.head(path);
+    s.commitFile(path, "b.txt", "b\nmore\n", "c3 change b");
+    s.commitFile(path, "a.txt", "1\nY\n3\n", "c4 set Y");
+    const std::string c4 = s.head(path);
+    s.git(path, {"branch", "part1"});
+    s.commitFile(path, "d.txt", "d\n", "c5 add d");
+    const std::string c5 = s.head(path);
+    installRecordingHooks(s, path);
+    GG_REQUIRE(s.openRepository(path));
+
+    // Setup through ggui: drop c2. c4 conflicts on a.txt (X→Y onto 2) and c5 carries it.
+    GG_REQUIRE(rowReady(s, c2));
+    ctx->ItemClick(historyRow(c2).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    key(s, c2, ImGuiKey_D);
+    const Preview* p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 3);
+    GG_CHECK(p->rows[0].conflicts.empty());
+    GG_CHECK(conflictPaths(p->rows[1]) == (Rows{"a.txt"}) && p->rows[1].newConflicts);
+    GG_CHECK(conflictPaths(p->rows[2]) == (Rows{"a.txt"}) && p->rows[2].newConflicts);
+    GG_CHECK(previewShows(s, "3 commit(s), 2 with conflicts"));
+    std::uint64_t seen = lastToast(s);
+    GG_REQUIRE(start(s));
+    GG_CHECK(noticeSays(s, seen, "2 commit(s) now have first-class conflicts"));
+    const std::string c3a = s.revParse(path, "main~2"), c4a = s.revParse(path, "main~1"), c5a = s.revParse(path, "main");
+    const std::string conflictBlob = s.revParse(path, "main:a.txt");
+    GG_CHECK(conflictedFiles(s, path, "main~1") == (Rows{"a.txt"}));
+    GG_CHECK_STR_EQ(s.revParse(path, "part1"), c4a);
+
+    // 1. Carried along: the list starts as it is (every commit unchanged, the conflicts carried, none
+    //    new), then c4 is folded into the clean c3 and c5 reworded.
+    const fs::path copy = copyRepo(s, path, "git-copy");
+    GG_REQUIRE(rowReady(s, c3a));
+    ctx->ItemClick(historyRow(c3a).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s) == (Rows{"pick c3", "pick c4", "update-ref refs/heads/part1", "pick c5"}));
+    GG_CHECK(editor(s).issues().empty());
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 3);
+    for (const auto& row : p->rows)
+        GG_CHECK(row.unchanged && !row.newConflicts && row.resolved.empty());
+    GG_CHECK(conflictPaths(p->rows[1]) == (Rows{"a.txt"}) && conflictPaths(p->rows[2]) == (Rows{"a.txt"}));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_2").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "Conflicts carried along in:"));
+    key(s, c4a, ImGuiKey_F);
+    key(s, c5a, ImGuiKey_R);
+    GG_CHECK(rows(s) == (Rows{"pick c3", "fixup c4", "update-ref refs/heads/part1", "reword c5"}));
+    rewordAll(s);
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 2);
+    // The clean c3 takes c4's conflict: carried along, not new.
+    for (const auto& row : p->rows)
+        GG_CHECK(conflictPaths(row) == (Rows{"a.txt"}) && !row.newConflicts && row.resolved.empty());
+    GG_CHECK(p->rows[0].branches == (Rows{"part1"}));
+    GG_CHECK(previewShows(s, "2 commit(s), 2 with conflicts"));
+    GG_CHECK(!previewShows(s, "resolve conflicts"));
+    const Preview carried = *p;
+    const std::string todoText = todo::format(editor(s).todo());
+    seen = lastToast(s);
+    GG_REQUIRE(start(s));
+    checkMatches(s, path, "main", carried);
+    checkClean(s, path);
+    // The regions are the same bytes as before; no commit is reported as newly conflicted.
+    GG_CHECK_STR_EQ(s.revParse(path, "main:a.txt"), conflictBlob);
+    GG_CHECK_STR_EQ(s.revParse(path, "main~1:a.txt"), conflictBlob);
+    GG_CHECK(!noticeSays(s, seen, "first-class conflicts", 1.0f));
+    // git rebase -i with the same todo on a copy sees the regions as text: the same result.
+    gitRebase(s, copy, todoText, c1, "", "keep");
+    checkMatches(s, copy, "main", carried);
+    for (const char* ref : {"main", "part1"})
+        GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
+    GG_CHECK(postRewrite(s, path) == postRewrite(s, copy));
+
+    // 2. Resolved: onto c2 (the dropped cause, kept as branch "x") the terms cancel out. Every commit
+    //    gets the tree it had before the drop.
+    s.git(path, {"branch", "x", c2});
+    const auto refsBefore = s.refs(path);
+    const std::string r1 = s.revParse(path, "main~1");
+    GG_REQUIRE(rowReady(s, r1));
+    ctx->ItemClick(historyRow(r1).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    ctx->ItemClick(irWidget("ir_onto").c_str());
+    ctx->KeyChars("x");
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == c2; }));
+    GG_CHECK(rows(s) == (Rows{"pick c3", "update-ref refs/heads/part1", "pick c5"}));
+    p = previewReady(s);
+    GG_REQUIRE(p && p->ok && p->rows.size() == 2);
+    for (const auto& row : p->rows)
+        GG_CHECK(row.conflicts.empty() && row.resolved == (Rows{"a.txt"}));
+    GG_CHECK(previewShows(s, "2 commit(s), 2 resolve conflicts"));
+    ctx->MouseMove((previewPane(s) + "/**/###irp_row_0").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "Conflicts resolved in:"));
+    const Preview resolved = *p;
+    const fs::path copy2 = copyRepo(s, path, "git-copy-2");
+    seen = lastToast(s);
+    GG_REQUIRE(start(s));
+    GG_CHECK(noticeSays(s, seen, "2 commit(s) no longer have first-class conflicts"));
+    checkMatches(s, path, "main", resolved);
+    checkClean(s, path);
+    GG_CHECK_STR_EQ(s.read(path, "a.txt"), "1\nY\n3\n");
+    GG_CHECK_STR_EQ(s.revParse(path, "main^{tree}"), s.revParse(path, c5 + "^{tree}"));
+    GG_CHECK_STR_EQ(s.revParse(path, "part1^{tree}"), s.revParse(path, c4 + "^{tree}"));
+    GG_CHECK_STR_EQ(s.revParse(path, "part1~1"), c2);
+    // git rebase -i cannot do this one: it replays the regions as text and stops with a conflict.
+    const auto git = s.gitMayFail(copy2, {"-c", "sequence.editor=true", "rebase", "-q", "-i", "--onto", "x", c1});
+    GG_CHECK(!git.ok() && fs::exists(copy2 / ".git" / "rebase-merge"));
+    s.git(copy2, {"rebase", "--abort"});
+
+    // One Undo brings the conflicted history back.
+    ctx->ItemClick("//##Toolbar/###tb_undo");
+    GG_REQUIRE(s.waitUntil([&] { return s.refs(path) == refsBefore; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(path, "main:a.txt"), conflictBlob);
+    GG_CHECK(s.statusPorcelain(path).empty());
+}
+
+GG_TEST("rebase-i", "failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal",
+    "IR-ENGINE-MEMORY", "REWRITE-FAIL-UNTOUCHED", "HOOK-REWRITE-RUN", "HOOK-JOURNAL-CORRUPT", "IR-MEMORY-ONE-UNDO")
+{
+    const Repo r = makeRepo(s);
+    const auto refsBefore = s.refs(r.path);
+    const fs::path hooks = r.path / ".git" / "hooks";
+    auto hook = [&](const char* name, const std::string& body) {
+        s.write(r.path, std::string(".git/hooks/") + name, "#!/bin/sh\n" + body);
+        fs::permissions(hooks / name, fs::perms::owner_all, fs::perm_options::add);
+    };
+    // Nothing moved: refs, a clean index and working tree with every file, the editor still open.
+    auto untouched = [&] {
+        GG_CHECK(s.refs(r.path) == refsBefore);
+        GG_CHECK(s.statusPorcelain(r.path).empty());
+        GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");
+        GG_CHECK(editor(s).isOpen());
+    };
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    key(s, r.c[4], ImGuiKey_D); // drops d.txt from HEAD
+    GG_REQUIRE(previewReady(s));
+
+    // pre-rebase says no (before anything is written).
+    hook("pre-rebase", "echo \"no rebasing today\" >&2\nexit 1\n");
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.app.errorMessage().find("no rebasing today") != std::string::npos; }));
+    GG_CHECK(s.app.errorMessage().find("pre-rebase") != std::string::npos);
+    GG_CHECK(s.dismissError());
+    untouched();
+    fs::remove(hooks / "pre-rebase");
+
+    // reference-transaction refuses the one transaction: no ref moves, the working tree stays.
+    hook("reference-transaction", "[ \"$1\" = prepared ] && { echo \"refs are frozen\" >&2; exit 1; }\nexit 0\n");
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
+    GG_CHECK(s.dismissError());
+    untouched();
+    fs::remove(hooks / "reference-transaction");
+
+    // A local change to a file the rebase removes: refused before the transaction.
+    s.write(r.path, "d.txt", "my local edit\n");
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.app.errorMessage().find("local changes would be overwritten") != std::string::npos; }));
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.refs(r.path) == refsBefore);
+    GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "my local edit\n");
+    GG_CHECK(editor(s).isOpen());
+    s.git(r.path, {"checkout", "--", "d.txt"});
+
+    // A corrupt journal line is skipped: Start works and one Undo restores every ref.
+    {
+        std::ofstream(r.path / ".git" / "gg" / "journal", std::ios::app | std::ios::binary) << "{\"t\":\"refs\",broken\n";
+    }
+    GG_REQUIRE(start(s));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
+    GG_CHECK(!fs::exists(r.path / "d.txt"));
+    ctx->ItemClick("//##Toolbar/###tb_undo");
+    GG_REQUIRE(s.waitUntil([&] { return s.refs(r.path) == refsBefore; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
 } // namespace ggtest

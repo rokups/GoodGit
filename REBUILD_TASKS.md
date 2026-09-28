@@ -1360,7 +1360,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     - Refusals: a moved branch, git 2.37 (a fake `git version`) with update-ref and then
       `--empty=ask`, local changes without Autostash, Abort, `--root` with Keep.
 
-### P3-20 Phase 3 gate
+### [~] P3-20 Phase 3 gate
+- **Status:** Functional gate green: 194/194 scenarios pass (8 shards, 50 s), 633/633 phase 0-3 spec IDs covered (docs/traceability.md; 633/648 overall, the rest is Phase 4). IR-CONFLICTED-INPUT covered in memory (carried along like git rebase -i on a copy, resolved by rebasing onto the cause) and natively (edit stop on a conflicted commit). Parity: Merge into HEAD / Rebase HEAD onto added to the shared commit actions; reorder tests now drag in History instead of calling actions. Phase 3 failure paths (pre-rebase veto, refusing reference-transaction hook, locked refs, local changes in the way, cancel, corrupt journal) have scenarios for rewrites and both rebase engines. Fixed: carried conflicts reported as new after a squash; Undo of a native rebase lost the index/worktree when a step left the index unchanged; Commit menu crashed without a repository. Code gate: line 93.2 % (met), branch 79.6 % (target > 90 %): branch-coverage push pending.
 - **Depends on:** all P3 tasks
 - **Do:** every action of today's app available under Git semantics; both gates green.
 - **Notes from P3-19:**
@@ -1369,6 +1370,32 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - Any ggui mutation while a `rebase-merge` rebase is in progress joins that rebase's journal
     operation, and it stays open (not undoable) until the rebase ends. A ggui `pull --rebase` that
     stops is grouped the same way.
+- **Design notes (functional half):**
+  - **Conflicted input** (`test_rebase_i.cpp` "conflicted input", `test_rebase_native.cpp`
+    "conflicted input"): the Rewriter already merges region-carrying files with the term algebra.
+    - `Result::conflicted` now compares each new commit with *all* its original commits
+      (`Pending::contributors`): a conflicted commit squashed into a clean one is carried, not new.
+      `Result::resolved` lists new commits whose originals' conflicts are gone.
+    - Preview: `RebasePreview::Row::resolved` (files), summary "R resolve conflicts", tooltip
+      "Conflicts resolved in:". Start's completion adds an Info notice "N commit(s) no longer have
+      first-class conflicts".
+    - Differential: carrying (reorder/fixup/reword around conflicted commits) equals
+      `git rebase -i` on a copy (regions are text to git). Resolving by rebasing onto the cause
+      is ggui-only: git stops with a text conflict there (checked, then aborted).
+  - **Undo of a native rebase (fix):** each step of a rebase group records its index even when it
+    left it unchanged (`OperationRecorder::finish`), so the group keeps its first and latest index
+    and Undo carries the worktree back after changes staged at an edit stop.
+  - **Parity:** the shared commit actions (History row menu, Commit ▸ Selected commit) gained
+    *Merge into HEAD…* (any commit; "Merge commit '<short>'") and *Rebase HEAD onto this*.
+    `Actions::mergeIntoHead` accepts any revision.
+  - **Commit menu without a repository** dereferenced a null session (crash); fixed and checked in
+    "harness/smoke".
+- **Notes for the coverage step** (branch 79.6 %; missed branches by file, largest first):
+  `libgg/Todo.cpp` 199 (73.6 %), `core/Readers.cpp` 190 (71.4 %), `libgg/Rewrite.cpp` 170
+  (76.2 %), `app/panels/DiffPanel.cpp` 150 (76.4 %), `app/panels/HistoryPanel.cpp` 106,
+  `app/shell/Rewrites.cpp` 102 (77.6 %), `app/panels/ChangesPanel.cpp` 97, `libgg/Journal.cpp` 92
+  (65.9 %), `app/shell/Actions.cpp` 76, `app/panels/SidePanels.cpp` 72, `app/shell/App.cpp` 68
+  (68.2 %). By directory: libgg 75.1 %, core 78.1 %, gitgg 78.8 %, app 82.3 %.
 
 ---
 

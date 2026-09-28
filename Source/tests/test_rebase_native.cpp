@@ -593,4 +593,105 @@ GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git 
     GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
 }
 
+GG_TEST("rebase-native", "conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along",
+    "IR-CONFLICTED-INPUT", "IR-NATIVE-STOP-EDIT", "IR-ACT-EDIT", "CONF-NATIVE-AMEND-CONTINUE", "IR-NATIVE-UNDO")
+{
+    // Base, "Conflicted commit" (conflict.txt with a region), "Descendant keeps the conflict".
+    const fs::path path = s.fixture(Recipe::Conflicted2);
+    const std::string tip = s.head(path);
+    const std::string conflicted = s.revParse(path, "HEAD~1");
+    const std::string descendant = tip;
+    const std::string blob = s.revParse(path, "HEAD:conflict.txt");
+    GG_REQUIRE(s.openRepository(path));
+    GG_REQUIRE(openFrom(s, conflicted));
+    // The descendant first, then edit the conflicted commit.
+    click(s, descendant);
+    s.ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    key(s, conflicted, ImGuiKey_E);
+    GG_CHECK(rows(s) == (Rows{"pick Descendant", "edit Conflicted"}));
+    GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
+    GG_CHECK(s.waitUntil([&] {
+        const auto p = editor(s).preview();
+        return p && p->ok && p->rows.size() == 2 && editor(s).previewTodo() == editor(s).todo();
+    }));
+    {
+        const auto p = editor(s).preview();
+        GG_CHECK(p->rows[0].conflicts.empty());
+        GG_REQUIRE(p->rows[1].conflicts.size() == 1);
+        GG_CHECK(p->rows[1].conflicts[0].first == "conflict.txt" && !p->rows[1].newConflicts);
+    }
+    GG_REQUIRE(start(s));
+
+    // Stopped at the edit: the regions are committed text, so git has no conflict and neither does
+    // ggui (Edit, not Conflicts; Amend and continue, no Commit with conflicts).
+    GG_REQUIRE(stoppedAt(s, "edit"));
+    GG_CHECK(s.statusPorcelain(path).empty());
+    GG_CHECK(s.read(path, "conflict.txt").find("<<<<<<< side 1\n") != std::string::npos);
+    const auto lines = progress(s);
+    GG_CHECK(contains(lines, "Edit: change the commit (Amend and continue), or Continue as it is."));
+    GG_CHECK(!contains(lines, "Conflicts:"));
+    GG_CHECK(s.itemExists(kAmendContinue));
+    GG_CHECK(!s.itemExists(kCommitConflicts));
+    s.write(path, "e.txt", "e\n");
+    s.git(path, {"add", "e.txt"});
+    ctx->ItemClick(kAmendContinue);
+    GG_REQUIRE(finished(s, path));
+    GG_CHECK(subjects(s, path, "main") == (Rows{"Conflicted", "Descendant", "Base"}));
+    // The region is carried byte for byte; the amended file is there.
+    GG_CHECK_STR_EQ(s.revParse(path, "main:conflict.txt"), blob);
+    GG_CHECK_STR_EQ(s.gitOut(path, {"show", "main:e.txt"}), "e");
+    GG_CHECK(s.gitMayFail(path, {"grep", "-l", "-e", "^<<<<<<< ", "main~1", "--"}).out.empty()); // Descendant, first now
+    GG_CHECK(s.statusPorcelain(path).empty());
+
+    // One operation: one Undo restores the original commits.
+    GG_CHECK_EQ(countWith(operations(s, path), "interactive rebase (git rebase -i)"), 1u);
+    ctx->ItemClick("//##Toolbar/###tb_undo");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(path, "main") == tip; }));
+    s.settle();
+    GG_CHECK(!fs::exists(path / "e.txt"));
+}
+
+GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo",
+    "IR-ENGINE-NATIVE", "IR-NATIVE-UNDO", "HOOK-JOURNAL-CORRUPT", "REWRITE-FAIL-UNTOUCHED")
+{
+    const Repo r = makeRepo(s);
+    const auto refsBefore = s.refs(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(openFrom(s, r.c[2]));
+    key(s, r.c[3], ImGuiKey_E);
+    key(s, r.c[4], ImGuiKey_D);
+    GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
+
+    // git runs pre-rebase itself: refused, nothing starts, nothing moves.
+    s.write(r.path, ".git/hooks/pre-rebase", "#!/bin/sh\necho \"no rebasing today\" >&2\nexit 1\n");
+    fs::permissions(r.path / ".git" / "hooks" / "pre-rebase", fs::perms::owner_all, fs::perm_options::add);
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.errorMessage().empty(); }, 30.0f));
+    GG_CHECK(s.app.errorMessage().find("pre-rebase") != std::string::npos);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(!fs::exists(r.path / ".git" / "rebase-merge"));
+    GG_CHECK(s.refs(r.path) == refsBefore);
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    GG_CHECK(editor(s).isOpen());
+    fs::remove(r.path / ".git" / "hooks" / "pre-rebase");
+
+    // Broken journal lines before the start and while stopped are skipped.
+    auto corrupt = [&] { std::ofstream(r.path / ".git" / "gg" / "journal", std::ios::app | std::ios::binary) << "not json at all\n"; };
+    corrupt();
+    GG_REQUIRE(start(s));
+    GG_REQUIRE(stoppedAt(s, "edit"));
+    corrupt();
+    ctx->ItemClick(kContinue);
+    GG_REQUIRE(finished(s, r.path));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
+    // The refused start is listed as failed; the rebase is one operation.
+    const auto ops = operations(s, r.path);
+    GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i)"), 2u);
+    GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i) (failed)"), 1u);
+    ctx->ItemClick("//##Toolbar/###tb_undo");
+    GG_CHECK(s.waitUntil([&] { return s.refs(r.path) == refsBefore; }));
+    s.settle();
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
 } // namespace ggtest

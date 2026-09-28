@@ -884,15 +884,18 @@ void RebasePanel::drawPreview()
     }
 
     // Summary: what needs attention, and which branches move.
-    size_t conflicted = 0, decisions = 0, empty = 0;
+    size_t conflicted = 0, resolved = 0, decisions = 0, empty = 0;
     for (const auto& row : pv.rows) {
         conflicted += row.conflicts.empty() ? 0 : 1;
+        resolved += row.resolved.empty() ? 0 : 1;
         decisions += row.decisions.empty() ? 0 : 1;
         empty += row.empty ? 1 : 0;
     }
     std::string summary = std::to_string(pv.rows.size()) + " commit(s)";
     if (conflicted)
         summary += ", " + std::to_string(conflicted) + " with conflicts";
+    if (resolved)
+        summary += ", " + std::to_string(resolved) + " resolve conflicts";
     if (decisions)
         summary += ", " + std::to_string(decisions) + " need a decision";
     if (empty)
@@ -970,6 +973,11 @@ void RebasePanel::drawPreview()
                 tip += row.newConflicts ? "\nFirst-class conflicts in:" : "\nConflicts carried along in:";
                 for (const auto& [path, sides] : row.conflicts)
                     tip += "\n    " + path + (sides > 2 ? " (" + std::to_string(sides) + " sides)" : "");
+            }
+            if (!row.resolved.empty()) {
+                tip += "\nConflicts resolved in:";
+                for (const auto& path : row.resolved)
+                    tip += "\n    " + path;
             }
             if (!row.decisions.empty()) {
                 tip += "\nNeeds a decision before it can be written (Start asks):";

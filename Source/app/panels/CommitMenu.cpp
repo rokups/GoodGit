@@ -50,6 +50,14 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         showRebaseDialog(session, row.id);
     if (ImGui::MenuItem("Interactive rebase from here...", "I", false, ok))
         openInteractiveRebase(session, row.id);
+    // HEAD and this commit (plan §4.3 "Merge into @", "Rebase @ onto"): also in Branches.
+    const auto snap = session.snapshot();
+    const bool isHead = snap && !snap->headUnborn && snap->head == row.id;
+    const bool headCommit = snap && !snap->headUnborn;
+    if (ImGui::MenuItem("Merge into HEAD...", nullptr, false, ok && headCommit && !isHead))
+        showMergeDialog(session, session.shortId(row.id), true);
+    if (ImGui::MenuItem("Rebase HEAD onto this", nullptr, false, ok && headCommit && !snap->headDetached && !isHead))
+        session.actions().rebaseHeadOnto(session.shortId(row.id));
     if (ImGui::MenuItem("Squash...", "S", false, ok && !merge && !root))
         showSquashDialog(session, row.id);
     if (ImGui::MenuItem("Squash descendants into this", "Shift+S", false, ok))
@@ -253,12 +261,12 @@ void showRestoreDialog(Session& session, const core::Oid& commit)
     session.app().dialogs().open(std::move(f));
 }
 
-void showMergeDialog(Session& session, const std::string& branch)
+void showMergeDialog(Session& session, const std::string& branch, bool commit)
 {
     Form f;
     f.title = "Merge into HEAD";
-    f.message = "Merge " + branch + " into HEAD.";
-    f.add(Field{Field::Text, "message", "Message", "Merge branch '" + branch + "'"});
+    f.message = "Merge " + std::string(commit ? "commit " : "") + branch + " into HEAD.";
+    f.add(Field{Field::Text, "message", "Message", (commit ? "Merge commit '" : "Merge branch '") + branch + "'"});
     f.add(Field{Field::Check, "native", "Use native git merge (stops with index conflicts)"});
     Session* s = &session;
     f.buttons.push_back({"Merge", [s, branch](Form& form) {

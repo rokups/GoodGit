@@ -177,7 +177,7 @@ void App::drawMenuBar()
         if (ImGui::MenuItem("Move HEAD to child", nullptr, false, free && !s->headChild().isNull()))
             s->actions().moveHead(true, s->headChild());
         // The selected commit's history editing actions.
-        const core::HistoryRow* selected = s->selection().kind == SelKind::Commit ? s->history().row(s->selection().id) : nullptr;
+        const core::HistoryRow* selected = s && s->selection().kind == SelKind::Commit ? s->history().row(s->selection().id) : nullptr;
         ImGui::Separator();
         if (ImGui::BeginMenu("Selected commit", selected != nullptr)) {
             drawCommitEditItems(*s, *selected);

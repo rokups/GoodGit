@@ -19,6 +19,17 @@ GG_TEST("harness", "smoke: welcome screen", "HARNESS-SMOKE", "APP-WELCOME-TAGLIN
     ImGuiWindow* w = ctx->GetWindowByRef("//Welcome");
     GG_REQUIRE(w != nullptr);
     GG_CHECK(s.itemExists("//##Toolbar/###tb_open"));
+    // Every main menu opens without a repository; what needs one is disabled.
+    for (const char* menu : {"Repository", "Commit", "Edit", "View"}) {
+        ctx->MenuClick((std::string("//##MainMenuBar/") + menu).c_str());
+        ctx->Yield(2);
+        if (std::string(menu) == "Commit") {
+            GG_CHECK(ctx->ItemInfo("//$FOCUSED/New commit").ItemFlags & ImGuiItemFlags_Disabled);
+            GG_CHECK(ctx->ItemInfo("//$FOCUSED/Selected commit").ItemFlags & ImGuiItemFlags_Disabled);
+        }
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+    }
 }
 
 GG_TEST("harness", "isolation from user config and settings", "HARNESS-ISOLATION")

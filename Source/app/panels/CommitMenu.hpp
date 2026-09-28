@@ -21,7 +21,9 @@ void showSquashDialog(Session& session, const core::Oid& commit);
 void showSplitDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
 void showRestoreDialog(Session& session, const core::Oid& commit);
-void showMergeDialog(Session& session, const std::string& branch);
+// Merge `rev` into HEAD: a branch name, or a commit (`commit` = true: git's "Merge commit '<rev>'"
+// message).
+void showMergeDialog(Session& session, const std::string& rev, bool commit = false);
 
 // Interactive rebase (§4.13): the commit and its descendants up to HEAD or the branch containing
 // them ("from here", key I); the commits between the oldest and newest selected ones (the rest of

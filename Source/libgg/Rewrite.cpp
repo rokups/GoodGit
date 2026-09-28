@@ -457,6 +457,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             std::string dateFrom;            // keepCommitterDate: the commit whose date it keeps
         };
         std::optional<Pending> pending;
+        std::map<std::string, std::vector<std::string>> contributorsOf; // new commit → its originals
         std::map<std::string, std::string> reported; // Result::rewritten entries that differ from mapping
         auto originallyEmpty = [&](const std::string& id) {
             Commit c = m->commit(id);
@@ -521,6 +522,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     committedAt ? &*committedAt : nullptr);
             }
             byKey[pending->key] = id;
+            if (!pending->unchanged && !pending->contributors.empty())
+                contributorsOf[id] = pending->contributors;
             if (!pending->source.empty() && id != pending->source && pending->mapSource)
                 newOf[pending->source] = id;
             if (pending->unchanged && plan.reportUnchanged && pending->mapSource && !plan.unreported.count(pending->source))
@@ -766,16 +769,26 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             }
         }
 
-        // Newly conflicted commits, and rewritten commits already published.
-        for (const auto& [orig, now] : result.mapping) {
-            if (droppedSet.count(orig))
-                continue;
-            const auto after = gg::conflicts::commitConflicts(m->repo.get(), *fromHex(now), m->conflictCache);
-            if (after.empty())
-                continue;
-            const auto before = gg::conflicts::commitConflicts(m->repo.get(), *fromHex(orig), m->conflictCache);
-            if (before != after)
+        // Commits that gain or lose first-class conflicts, compared with every original commit
+        // they hold (a squashed conflicted commit carries its conflicts along, it adds none).
+        for (const auto& [now, sources] : contributorsOf) {
+            std::set<std::pair<std::string, int>> before;
+            std::set<std::string> beforePaths;
+            for (const auto& src : sources)
+                for (const auto& f : gg::conflicts::commitConflicts(m->repo.get(), *fromHex(src), m->conflictCache)) {
+                    before.emplace(f.path, f.sides);
+                    beforePaths.insert(f.path);
+                }
+            std::set<std::string> afterPaths;
+            bool gained = false;
+            for (const auto& f : gg::conflicts::commitConflicts(m->repo.get(), *fromHex(now), m->conflictCache)) {
+                afterPaths.insert(f.path);
+                gained = gained || !before.count({f.path, f.sides});
+            }
+            if (gained)
                 result.conflicted.push_back(now);
+            if (std::any_of(beforePaths.begin(), beforePaths.end(), [&](const std::string& p) { return !afterPaths.count(p); }))
+                result.resolved.push_back(now);
         }
         std::vector<git_oid> remoteTips;
         forEachReference(m->repo.get(), [&](git_reference* ref) {

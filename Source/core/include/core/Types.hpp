@@ -406,6 +406,7 @@ struct RebasePreview {
         bool wasEmpty = false;            // its commit(s) were already empty before the rebase
         std::vector<std::pair<std::string, int>> conflicts; // first-class conflicted files: path, sides
         bool newConflicts = false;        // conflicts this rebase creates (not only carried along)
+        std::vector<std::string> resolved; // files whose first-class conflicts in the original commits are gone
         std::vector<NonText> decisions;   // non-text conflicts that need a decision (pre-flight)
         std::vector<std::string> branches; // short names of branches ending here ("HEAD" = detached HEAD)
     };

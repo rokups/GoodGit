@@ -165,7 +165,10 @@ struct Result {
     std::map<std::string, std::string> rewritten;
     std::map<std::string, std::string> steps;        // step key → new commit
     std::vector<RefMove> moves;
-    std::vector<std::string> conflicted;             // new commits that gained first-class conflicts
+    // New commits with first-class conflicts their original commits (the commit and any squashed
+    // into it) did not have; conflicts carried along from the originals do not count.
+    std::vector<std::string> conflicted;
+    std::vector<std::string> resolved;               // new commits whose originals' conflicts are gone
     std::vector<std::string> published;              // rewritten originals already on a remote
     std::vector<BecameEmpty> becameEmpty;            // in step order
     std::string headBefore;                          // this worktree's HEAD commit

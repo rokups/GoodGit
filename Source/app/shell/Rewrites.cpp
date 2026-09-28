@@ -247,6 +247,13 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
                 m_session.app().notify(App::Notice::Warning, state->label,
                     std::to_string(state->preview.conflicted.size()) + " commit(s) now have first-class conflicts: " + list);
             }
+            if (e.outcome == Outcome::Ok && !state->preview.resolved.empty()) {
+                std::string list;
+                for (const auto& id : state->preview.resolved)
+                    list += (list.empty() ? "" : ", ") + shortId(id);
+                m_session.app().notify(App::Notice::Info, state->label,
+                    std::to_string(state->preview.resolved.size()) + " commit(s) no longer have first-class conflicts: " + list);
+            }
             if (state->done)
                 state->done(e);
             else
@@ -679,9 +686,10 @@ void Actions::mergeIntoHead(const std::string& branch, const std::string& messag
         git_oid head, other;
         if (git_reference_name_to_id(&head, repo, "HEAD") != 0)
             refuse("HEAD has no commit to merge into");
+        // A branch (local or remote-tracking) by name, else any revision (a commit from History).
         if (git_reference_name_to_id(&other, repo, ("refs/heads/" + branch).c_str()) != 0
             && git_reference_name_to_id(&other, repo, ("refs/remotes/" + branch).c_str()) != 0)
-            refuse("unknown branch " + branch);
+            other = *fromHex(resolveCommit(repo, branch));
         git_error_clear();
         if (isAncestor(repo, toHex(other), toHex(head)))
             refuse(branch + " is already merged");

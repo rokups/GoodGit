@@ -1,10 +1,10 @@
-# Traceability matrix (phases 0-2)
+# Traceability matrix (phases 0-3)
 
-Covered: 466/466 required IDs; 632/648 of the whole catalogue.
+Covered: 633/633 required IDs; 633/648 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
-| HARNESS-SMOKE | 0 | §8.1 | ggui --smoke and a trivial --test pass | harness/smoke: welcome screen<br>shell/auto-open argv[1], else the most recent existing repository |
+| HARNESS-SMOKE | 0 | §8.1 | ggui --smoke and a trivial --test pass | shell/auto-open argv[1], else the most recent existing repository<br>harness/smoke: welcome screen |
 | HARNESS-ISOLATION | 0 | §8.1 | tests do not read user-level git config or ggui settings | harness/isolation from user config and settings |
 | HARNESS-FIXTURES | 0 | §8.3 | every fixture recipe builds and passes git fsck | harness/fixture recipes build and pass fsck<br>harness/large fixture<br>harness/transport fixtures: git daemon and ssh shim |
 | HARNESS-ASSERT-HELPERS | 0 | §8.3 | UI readers, repo readers, post-test fsck, git step helper, seeded randomizer | harness/assertion helpers |
@@ -49,7 +49,7 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | TB-HEAD-PLAIN | 1 | §4.1 | Toolbar branch label and HEAD ID are plain text; clicking does nothing (UF-31) | shell/toolbar HEAD: plain text, copy short or full ID |
 | TB-HEAD-COPY | 1 | §4.1 | HEAD ID context menu copies it | shell/toolbar HEAD: plain text, copy short or full ID |
 | APP-ID-DIMMED | 1 | §4.1 | Full IDs show the short prefix normally and the rest dimmed (UF-14) | info/change information: message, author, committer, date, ID, parents<br>history/copy ID and full description; tooltip ID |
-| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13) | history/copy ID and full description; tooltip ID<br>shell/toolbar HEAD: plain text, copy short or full ID |
+| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13) | shell/toolbar HEAD: plain text, copy short or full ID<br>history/copy ID and full description; tooltip ID |
 | TB-SPINNER | 1 | §4.1 | Activity spinner while working | shell/activity spinner, task tooltip and Cancel |
 | TB-CANCEL | 1 | §4.1 | Activity Cancel button | shell/activity spinner, task tooltip and Cancel |
 | TB-TASK-TOOLTIP | 1 | §4.1 | Background-task tooltip | shell/activity spinner, task tooltip and Cancel |
@@ -65,8 +65,8 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | APP-LOG-FILE | 1 | §4.1 | GGUI_LOG_FILE receives the log | shell/settings persist across restarts<br>shell/auto-open argv[1], else the most recent existing repository |
 | APP-RESPONSIVE | 1 | §3.1 | No frame > ~33 ms from repository work on the large fixture | engine/responsiveness on the large repository |
 | APP-UI-THREAD-ASSERT | 1 | §3.1 | UI-thread call to libgit2/git trips the assertion | threading/UI-thread call to git trips the assertion |
-| APP-CANCEL-LONG-OPS | 1 | §3.1 | History load, reveal, large diff and blame can be cancelled | engine/overlapping diff requests: only the newest result is shown<br>history/large history: first page, Show more, reveal, cancel<br>history/cancel a long history load and a reveal<br>shell/activity spinner, task tooltip and Cancel |
-| HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges | history/graph, rows, badges and short IDs<br>visual/graph lines are continuous from row to row<br>visual/screenshots of the main views |
+| APP-CANCEL-LONG-OPS | 1 | §3.1 | History load, reveal, large diff and blame can be cancelled | history/large history: first page, Show more, reveal, cancel<br>engine/overlapping diff requests: only the newest result is shown<br>history/cancel a long history load and a reveal<br>shell/activity spinner, task tooltip and Cancel |
+| HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges | visual/graph lines are continuous from row to row<br>history/graph, rows, badges and short IDs<br>visual/screenshots of the main views |
 | HIST-GRAPH-CONTINUOUS | 1 | §4.2 | Graph lines connect row to row at a constant row pitch | visual/graph lines are continuous from row to row |
 | HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge (UF-18) | visual/graph is not clipped at the left edge |
 | HIST-MERGE-COLLAPSED-DEFAULT | 1 | §4.2 | Merge commits start collapsed | history/merges start collapsed; expand and collapse merged history |
@@ -212,7 +212,7 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | TB-COMMIT | 2 | §4.1 | Toolbar Commit/Amend | commit/commit the index from the toolbar; hooks run natively |
 | TB-COMMIT-LABEL | 2 | §4.1 | Commit/Amend label follows the selection | commit/commit the index from the toolbar; hooks run natively |
 | TB-NO-PREV-NEXT | 2 | §4.1 | The toolbar has no Previous / Next buttons (UF-27) | checkout/move HEAD to parent and child |
-| TB-UNDO | 2 | §4.1 | Toolbar Undo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear<br>undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way |
+| TB-UNDO | 2 | §4.1 | Toolbar Undo | undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way<br>stash/apply, pop with the index, apply one file, branch, drop, undo, clear |
 | TB-REDO | 2 | §4.1 | Toolbar Redo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear |
 | TB-FETCH | 2 | §4.1 | Toolbar Fetch fetches all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | TB-FETCH-REMOTE | 2 | §4.1 | Fetch dropdown: a single remote | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
@@ -320,7 +320,7 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | CHG-CTX-EXTDIFF-PARENT | 2 | §4.4 | Context: External diff ▸ vs parent | staging/external editor, folder and diff tools |
 | CHG-CTX-DELETE | 2 | §4.4 | Context: Delete file | staging/intent to add, delete; no Track / Untrack |
 | CHG-NO-TRACK-UNTRACK | 2 | §4.4 | No Track / Untrack items in the Changes menu (UF-26) | staging/intent to add, delete; no Track / Untrack |
-| INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | commit/reword HEAD from Change information (amend mode)<br>rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
+| INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo<br>commit/reword HEAD from Change information (amend mode) |
 | INFO-AMEND-MODE | 2 | §4.4 | Amend mode for HEAD with a clean index | commit/reword HEAD from Change information (amend mode) |
 | INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes |
 | DIFF-STAGE-LINES | 2 | §4.5 | Stage line(s) | linestaging/CRLF lines, missing final newline, new files<br>linestaging/randomized line staging matches the content model |
@@ -447,7 +447,7 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | HOOK-LOOP-GUARD | 2 | §4.12 | GG_OPERATION joins the open operation | hooks/plain git commands are journaled one operation each and Undo restores them |
 | HOOK-MISSING-SILENT | 2 | §4.12 | git-gg missing: wrapper does nothing | hooks/without git-gg on PATH the hooks do nothing, pre-push warns |
 | HOOK-MISSING-PREPUSH-WARN | 2 | §4.12 | git-gg missing: pre-push warns | hooks/without git-gg on PATH the hooks do nothing, pre-push warns |
-| HOOK-JOURNAL-CORRUPT | 2 | §4.12 | Corrupt journal skipped, not fatal | undo/a corrupt journal line is skipped, not fatal |
+| HOOK-JOURNAL-CORRUPT | 2 | §4.12 | Corrupt journal skipped, not fatal | rebase-native/failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo<br>rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>undo/a corrupt journal line is skipped, not fatal |
 | HOOK-FAST | 2 | §4.12 | Fetch of thousands of refs stays fast | hooks/a fetch of thousands of refs stays fast with the hooks |
 | CLI-NEW | 2 | §6 | git gg new | cli/git gg new: on HEAD, with a message, detached, merge |
 | CLI-NEW-MSG | 2 | §6 | git gg new -m | cli/git gg new: on HEAD, with a message, detached, merge |
@@ -470,7 +470,7 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | FAIL-LOCKED-REF | 2 | §8.4 | Locked ref makes the mutation fail cleanly | undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way |
 | FAIL-NETWORK | 2 | §8.4 | Unreachable remote | network/clone from Welcome and the menu; unreachable remote fails cleanly |
 | FAIL-CANCEL | 2 | §8.4 | Cancelled network operation leaves a plain-git state | network/cancel a clone: no directory left behind |
-| MENU-COMMIT-ACTIONS | 3 | §4.1 | Commit menu carries the selected-commit actions | edit/no-op rewrites keep ids; the Commit menu carries the selected commit's actions |
+| MENU-COMMIT-ACTIONS | 3 | §4.1 | Commit menu carries the selected-commit actions | edit/no-op rewrites keep ids; the Commit menu carries the selected commit's actions<br>edit/History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit |
 | HIST-KEY-D | 3 | §4.2 | D: duplicate commit | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
 | HIST-KEY-SHIFT-D | 3 | §4.2 | Shift+D: duplicate branch | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
 | HIST-KEY-S | 3 | §4.2 | S: squash | edit/squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S) |
@@ -495,7 +495,7 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | REWRITE-POST-REWRITE | 3 | §4.12 | post-rewrite runs with the old→new mapping | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
 | REWRITE-UNDO | 3 | §5 U1 | One journal operation per rewrite; Undo restores exactly | rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
 | REWRITE-PUBLISHED-WARN | 3 | §4.3 | Rewriting published commits asks first; remote-tracking refs never move | rewrite/published history asks first; a locked ref leaves everything untouched |
-| REWRITE-FAIL-UNTOUCHED | 3 | §8.4 | A failing rewrite leaves refs, HEAD, index and working tree untouched | rewrite/published history asks first; a locked ref leaves everything untouched |
+| REWRITE-FAIL-UNTOUCHED | 3 | §8.4 | A failing rewrite leaves refs, HEAD, index and working tree untouched | rebase-native/failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo<br>rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>rewrite/published history asks first; a locked ref leaves everything untouched |
 | ACT-DUPLICATE-COMMIT | 3 | §4.3 | Duplicate a commit onto its parent (detached copy) | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
 | ACT-DUPLICATE-BRANCH | 3 | §4.3 | Duplicate a branch range | edit/duplicate a commit (D) and a branch (Shift+D) as detached copies |
 | ACT-REBASE-COMMIT | 3 | §4.3 | Rebase one commit onto a destination | edit/rebase one commit, and a commit with its descendants, onto another branch |
@@ -516,9 +516,9 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | ACT-MOVE-CHANGES-PARENT | 3 | §4.3 | Move files/hunks/lines to the parent | move/files: to the parent, to the child, to the working tree, revert |
 | ACT-MOVE-CHANGES-CHILD | 3 | §4.3 | Move files/hunks/lines to the child | move/files: to the parent, to the child, to the working tree, revert |
 | ACT-MOVE-CHANGES-WORKTREE | 3 | §4.3 | Move changes to the working tree (uncommit) | move/files: to the parent, to the child, to the working tree, revert |
-| ACT-MERGE-INTO-HEAD | 3 | §4.3 | Merge into HEAD in memory | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| ACT-MERGE-INTO-HEAD | 3 | §4.3 | Merge into HEAD in memory | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile<br>edit/History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit |
 | ACT-MERGE-NATIVE | 3 | §4.3 | Merge using native git merge | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
-| ACT-REBASE-HEAD-ONTO | 3 | §4.3 | Rebase HEAD onto branch | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
+| ACT-REBASE-HEAD-ONTO | 3 | §4.3 | Rebase HEAD onto branch | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile<br>edit/History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit |
 | ACT-RECONCILE | 3 | §4.3 | Reconcile a diverged branch with its upstream | edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile |
 | ACT-REWRITE-TEXT-CONFLICT | 3 | §4.3 | Rewrites continue with first-class text conflicts | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
 | ACT-REWRITE-COMPLETION-MSG | 3 | §4.3 | Completion message lists newly conflicted commits | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
@@ -544,8 +544,8 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | CONF-EDGE-EMPTY | 3 | §4.10 | Empty sides round-trip | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
 | CONF-EDGE-MARKERLIKE | 3 | §4.10 | Marker-like content round-trips (longer markers) | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
 | CONF-NWAY-MERGE | 3 | §4.10 | N-way term merge and simplification | edges/N-way: merging two conflicted lines gives three sides; merging again simplifies |
-| CONF-NO-NESTING | 3 | §4.10 | No nested markers after cancellation sequences | edges/randomized reorders of N changes to one place always come back exact<br>edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
-| CONF-AUTO-RESOLVE | 3 | §4.10 | Reordering back / dropping the cause resolves | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| CONF-NO-NESTING | 3 | §4.10 | No nested markers after cancellation sequences | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them<br>edges/randomized reorders of N changes to one place always come back exact |
+| CONF-AUTO-RESOLVE | 3 | §4.10 | Reordering back / dropping the cause resolves | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause |
 | CONF-PREFLIGHT-BINARY | 3 | §4.10 | Pre-flight: binary conflict | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
 | CONF-PREFLIGHT-MODIFY-DELETE | 3 | §4.10 | Pre-flight: modify/delete | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
 | CONF-PREFLIGHT-TYPE | 3 | §4.10 | Pre-flight: type / file-directory / symlink | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
@@ -569,9 +569,9 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | CONF-GIT-MERGE-GGUI-REGIONS | 3 | §4.10 | Plain git merging a file with ggui regions | edges/plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push |
 | CONF-PREPUSH-HOOK | 3 | §4.10 | Managed pre-push refuses conflicted commits for plain git push | hooks/managed pre-push refuses plain git pushes of conflicted commits |
 | CONF-NATIVE-IREBASE-EDIT-TODO | 3 | §4.10 | Stopped interactive rebase: Edit remaining todo | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
-| CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
+| CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along |
 | CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation |
-| HOOK-REWRITE-RUN | 3 | §4.12 | pre-rebase/post-rewrite/post-checkout run via git hook run for rewrites | rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rewrite/pre-rebase can veto a rebase; post-checkout runs when HEAD moves |
+| HOOK-REWRITE-RUN | 3 | §4.12 | pre-rebase/post-rewrite/post-checkout run via git hook run for rewrites | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>rewrite/pre-rebase can veto a rebase; post-checkout runs when HEAD moves<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i |
 | HOOK-PREPUSH | 3 | §4.12 | pre-push refuses conflicted commits | hooks/managed pre-push refuses plain git pushes of conflicted commits |
 | IR-ENTRY-HISTORY-KEY | 3 | §4.13 | History: I key | rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches |
 | IR-ENTRY-HISTORY-MENU | 3 | §4.13 | History: Interactive rebase from here… | rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches |
@@ -582,16 +582,16 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | IR-OPEN-AS | 3 | §4.13 | Open as interactive rebase… from single actions | rebase-i/open as interactive rebase from the Squash and Rebase onto dialogs |
 | IR-ROWS | 3 | §4.13 | Rows: action, short ID, subject, author, date, branch badges | rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches |
 | IR-NEWEST-FIRST | 3 | §4.13 | Newest-first display toggle | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
-| IR-ACT-PICK | 3 | §4.13 | pick | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-ACT-REWORD | 3 | §4.13 | reword | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-ACT-EDIT | 3 | §4.13 | edit | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
-| IR-ACT-SQUASH | 3 | §4.13 | squash | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-ACT-FIXUP | 3 | §4.13 | fixup | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-ACT-FIXUP-C | 3 | §4.13 | fixup -C / fixup -c | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-ACT-DROP | 3 | §4.13 | drop | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
+| IR-ACT-PICK | 3 | §4.13 | pick | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
+| IR-ACT-REWORD | 3 | §4.13 | reword | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause<br>rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
+| IR-ACT-EDIT | 3 | §4.13 | edit | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along |
+| IR-ACT-SQUASH | 3 | §4.13 | squash | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i |
+| IR-ACT-FIXUP | 3 | §4.13 | fixup | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause<br>rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i |
+| IR-ACT-FIXUP-C | 3 | §4.13 | fixup -C / fixup -c | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
+| IR-ACT-DROP | 3 | §4.13 | drop | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause<br>rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-ACT-EXEC | 3 | §4.13 | exec | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | IR-ACT-BREAK | 3 | §4.13 | break | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
-| IR-ACT-UPDATE-REF | 3 | §4.13 | update-ref | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo<br>rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
+| IR-ACT-UPDATE-REF | 3 | §4.13 | update-ref | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i |
 | IR-DRAG | 3 | §4.13 | Drag rows to reorder | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-KEY-ALT-UPDOWN | 3 | §4.13 | Alt+↑/↓ reorder | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-KEY-LETTERS | 3 | §4.13 | p/r/e/s/f/d/x/b set the action | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
@@ -600,36 +600,36 @@ Covered: 466/466 required IDs; 632/648 of the whole catalogue.
 | IR-UNDO-REDO | 3 | §4.13 | Undo/redo inside the editor | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-MSG-REWORD | 3 | §4.13 | Inline message editor for reword | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
 | IR-MSG-SQUASH | 3 | §4.13 | Combined squash message prefilled like Git | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
-| IR-OPT-ONTO | 3 | §4.13 | Option: onto | rebase-i/options: onto, update-refs, autostash, committer date<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-OPT-AUTOSQUASH | 3 | §4.13 | Option: --autosquash | rebase-i/autosquash places fixup!/squash!/amend! like git rebase -i --autosquash<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-OPT-UPDATE-REFS | 3 | §4.13 | Option: --update-refs (default on) | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
+| IR-OPT-ONTO | 3 | §4.13 | Option: onto | rebase-i/options: onto, update-refs, autostash, committer date<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause |
+| IR-OPT-AUTOSQUASH | 3 | §4.13 | Option: --autosquash | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/autosquash places fixup!/squash!/amend! like git rebase -i --autosquash |
+| IR-OPT-UPDATE-REFS | 3 | §4.13 | Option: --update-refs (default on) | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
 | IR-OPT-AUTOSTASH | 3 | §4.13 | Option: --autostash | rebase-i/options: onto, update-refs, autostash, committer date<br>rebase-native/git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort |
 | IR-OPT-EXEC-EACH | 3 | §4.13 | Option: exec after every commit | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
 | IR-OPT-COMMITTER-DATE | 3 | §4.13 | Option: committer date keep/now | rebase-i/options: onto, update-refs, autostash, committer date<br>rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | IR-OPT-EMPTY | 3 | §4.13 | Option: commits that become empty are kept, dropped or asked about at Start (git --empty) | rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty<br>rebase-native/git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort |
-| IR-PREVIEW | 3 | §4.13 | Live preview graph | rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-PREVIEW-CONFLICTS | 3 | §4.13 | Preview shows first-class and non-text conflicts | rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
-| IR-PREVIEW-EMPTY | 3 | §4.13 | Preview shows empty commits | rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
+| IR-PREVIEW | 3 | §4.13 | Live preview graph | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written |
+| IR-PREVIEW-CONFLICTS | 3 | §4.13 | Preview shows first-class and non-text conflicts | rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause<br>rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
+| IR-PREVIEW-EMPTY | 3 | §4.13 | Preview shows empty commits | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
 | IR-PREVIEW-BRANCHES | 3 | §4.13 | Preview shows moving branches | rebase-i/a detached HEAD follows the rebase; update-ref moves a branch<br>rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i |
 | IR-PREVIEW-LATEST | 3 | §4.13 | Preview updates as the list is edited: the newest edit wins, older previews are dropped | rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written |
 | IR-PREVIEW-NO-WRITE | 3 | §4.13, §3.1 | Preview computed in memory on a worker: nothing written, no frame waits | rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written |
 | IR-VALIDATE-FIRST | 3 | §4.13 | First row cannot be squash/fixup | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
 | IR-VALIDATE-DROP-BRANCH | 3 | §4.13 | Warn when dropping a branch's only commits | rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused |
 | IR-VALIDATE-PUBLISHED | 3 | §4.13 | Published-commit warning | rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused |
-| IR-CONFLICTED-INPUT | 3 | §4.13 | Rebasing conflicted commits carries terms along | — |
-| IR-ENGINE-MEMORY | 3 | §4.13 | In-memory engine (one update-ref transaction) | rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-ENGINE-NATIVE | 3 | §4.13 | Native engine for edit/break/exec | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
+| IR-CONFLICTED-INPUT | 3 | §4.13 | Rebasing conflicted commits carries terms along | rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause<br>rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along |
+| IR-ENGINE-MEMORY | 3 | §4.13 | In-memory engine (one update-ref transaction) | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i |
+| IR-ENGINE-NATIVE | 3 | §4.13 | Native engine for edit/break/exec | rebase-native/failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo<br>rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | IR-ENGINE-USER-CHOICE | 3 | §4.13 | Run as git rebase (user choice) | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
 | IR-ENGINE-SHOWN | 3 | §4.13 | Engine and reason shown in the editor | rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine |
-| IR-MEMORY-ONE-UNDO | 3 | §4.13 | In-memory rebase = one Undo | rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
-| IR-MEMORY-CANCEL | 3 | §4.13 | Cancel before apply changes nothing | preflight/conflicts are listed per commit in order; Cancel leaves .git byte-identical<br>rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused<br>rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
+| IR-MEMORY-ONE-UNDO | 3 | §4.13 | In-memory rebase = one Undo | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause<br>rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo |
+| IR-MEMORY-CANCEL | 3 | §4.13 | Cancel before apply changes nothing | rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused<br>preflight/conflicts are listed per commit in order; Cancel leaves .git byte-identical<br>rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty |
 | IR-TIP-MOVED | 3 | §4.13 | Start refuses when the branch moved since the list was read | rebase-i/validation warnings, Cancel changes nothing, a branch moved meanwhile is refused |
-| IR-NATIVE-STOP-EDIT | 3 | §4.13 | Native stop: edit | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
+| IR-NATIVE-STOP-EDIT | 3 | §4.13 | Native stop: edit | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along |
 | IR-NATIVE-STOP-BREAK | 3 | §4.13 | Native stop: break | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | IR-NATIVE-STOP-EXEC | 3 | §4.13 | Native stop: failing exec | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | IR-NATIVE-STOP-CONFLICT | 3 | §4.13 | Native stop: conflict | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
 | IR-NATIVE-TERMINAL-FOLLOW | 3 | §4.13 | Follow a rebase finished in a terminal | rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation |
-| IR-NATIVE-UNDO | 3 | §4.13 | Native rebase = one journal operation | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation |
+| IR-NATIVE-UNDO | 3 | §4.13 | Native rebase = one journal operation | rebase-native/failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo<br>rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation<br>rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along |
 | IR-PLAIN-DETECT | 3 | §4.13 | Detect plain git rebase -i | rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation |
 | IR-PLAIN-EDIT-TODO | 3 | §4.13 | Edit remaining todo writes git-rebase-todo like --edit-todo | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
 | IR-DIFFERENTIAL | 3 | §8.4 | Randomized differential test vs git rebase -i | rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy |
