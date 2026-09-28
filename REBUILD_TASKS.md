@@ -1949,3 +1949,90 @@ Requested by the user after P3-14 (UF-10 … UF-31). All done.
 - **Status:** done. Click no longer reveals; tooltip and Copy ID stay (`TB-HEAD-PLAIN`).
 - **Do:** the toolbar's branch label and HEAD commit ID are plain text instead of selectables
   (clicking them does nothing useful). Keep the tooltip if it is still useful.
+
+## User feedback, round 3 (2026-09-28)
+
+From the user's board (`build/gg - Kanban.md`, "In Progress" only; archived items are ignored).
+To do after CI is green.
+
+### [ ] UF-32 Hidden branches lose their History badge
+- **Do:** hiding a branch also hides its badge in History, even when something else keeps the
+  commit visible.
+
+### [ ] UF-33 Show all / hide all branches
+- **Do:** controls in Branches that show or hide all branches at once.
+
+### [ ] UF-34 Branches as a tree
+- **Do:** Branches lists branch names as a tree split on "/". A group's name is the longest
+  common prefix of its members.
+
+### [ ] UF-35 "Checkout after creating" on by default
+- **Do:** the Create branch dialog has "Checkout after creating" checked by default.
+
+### [ ] UF-36 Branch visibility from the eye icon only
+- **Do:** a branch's visibility toggles by clicking its eye icon, not the row.
+
+### [ ] UF-37 Double-click checks out a branch
+- **Do:** double-clicking a branch row checks the branch out.
+
+### [ ] UF-38 No collapse for a merge with 0 hidden commits
+- **Do:** a collapsed merge sometimes shows "0 hidden commits"; such a merge offers no collapse.
+
+### [ ] UF-39 Diff "Show more" per side
+- **Do:** the "Show NN more" control in the diff editor shows more context on one side only.
+  Split it in two (custom rendering) so the user picks the side that gets more context.
+
+### [ ] UF-40 Diff whitespace combo labels
+- **Do:** only "Whitespace: normal" has the "Whitespace" prefix; with another option selected it
+  is unclear what the combo sets. Label every option (or the combo) consistently.
+
+### [ ] UF-41 Diff "Compare with" field
+- **Do:** replace "Compare with HEAD" with an input hinted "Compare with". It takes HEAD or a
+  commit ID, and also "Work Tree" (case-insensitive, trimmed). A context menu fills in "HEAD" or
+  "Work Tree".
+
+### [ ] UF-42 Default tab order Remotes, Stashes, Worktrees
+- **Do:** in the default layout the tabs are ordered Remotes, Stashes, Worktrees.
+
+### [ ] UF-43 Tag Delete: local and remotes
+- **Do:** a tag's "Delete" is a single item when the tag exists only locally. When it exists on
+  remotes it becomes a submenu: "Local" first (disabled when there is no local tag), then each
+  remote to delete it from.
+
+### [ ] UF-44 Explain "When nothing is staged"
+- **Do:** the Settings option "When nothing is staged" is unclear; make its label/help say what it
+  does.
+
+### [ ] UF-45 Settings show current values as hints
+- **Do:** the User/Repository/Worktree scopes do not show the effective value as the input hint
+  even when it is configured; show it.
+
+### [ ] UF-46 Worktree settings as a global checkbox
+- **Do:** the "Worktree settings" button becomes a checkbox above the scope tabs; the "Worktree"
+  tab is visible only while it is on.
+
+### [ ] UF-47 History keeps its layout while merges expand or collapse
+- **Do:** expanding or collapsing a merge briefly draws only part of History, throwing off the
+  scrollbar. Keep the full list laid out during the change.
+
+### [ ] UF-48 Drop a folder to open it
+- **Do:** dropping a folder on the window opens it as a repository.
+
+### [ ] UF-49 Dropping several folders
+- **Do:** dropping several folders on the window adds them all to recent repositories and opens
+  only the first.
+
+### [ ] UF-50 Readable colours
+- **Do:** some text uses dark colours on dark backgrounds. Make the colour scheme choose text
+  colours with enough contrast against their background.
+
+## Windows test suite
+
+### [ ] WIN-01 The suite passes on Windows (MinGW and MSVC CI jobs)
+- **Status:** first CI runs on 2026-09-28: builds and packages pass; the MinGW run segfaults, MSVC
+  has failing CLI and conflict tests; under wine (MinGit 2.55) about 70 of 257 tests fail.
+- **Do:** after UF-32 … UF-50. Port what assumes POSIX: `fakeTool` stand-ins are `#!/bin/sh`
+  scripts (not startable by CreateProcess), PATH is joined with ":", stubs read `/proc`, fixtures
+  create symlinks (needs Developer Mode). Find the exception that escapes on the UI thread
+  ("reference 'HEAD' not found", seen under wine) and the MinGW segfault. Both Windows jobs green,
+  with their traceability and UI-action gates.
