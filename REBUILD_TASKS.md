@@ -42,9 +42,14 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
    on-disk repository (`git fsck` after every mutating test). Every test declares the spec
    IDs it covers; keyboard and mouse paths count separately. Failure paths are triggered from
    the scenario, never simulated in code.
-8. **Coverage.** First-party code (`ggui`, `ggui_core`, `libgg`, `git-gg`) stays > 90 % line
-   and > 90 % branch from the integration suite. Any `COVERAGE_EXCL` needs a one-line reason
-   and an allowlist update. Coverage is never deferred to the end.
+8. **Acceptance: every feature and every UI action is tested** (owner decision 2026-09-28,
+   replacing the > 90 % line/branch gate). Every implemented feature has a scenario that
+   checks its result (UI and on-disk repository). Every UI action the app implements is
+   exercised by at least one test: menu items, context-menu items, buttons, toolbar items,
+   keyboard shortcuts, drag and drop, dialog controls and options. A feature or action
+   counts as done only when its test exists and passes. Line/branch coverage is still
+   measured, but only as a report that points at untested code, not as a gate. Any
+   `COVERAGE_EXCL` still needs a one-line reason and an allowlist update.
 9. **Platforms.** Linux and Windows (MinGW-static and MSVC) for the first release. macOS
    is out of scope.
 10. **UI wording.** Git terms: HEAD, branch, commit, staged, unstaged. Never "@ is a change you
@@ -243,7 +248,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** CI fails on a deliberately uncovered ID and passes once covered.
 
 ### [~] P0-13 Coverage pipeline and code gate
-- **Status:** Pipeline done: `scripts/run_software_coverage.sh` (clang profiles with `%p-%m` per process, llvm-profdata merge, llvm-cov lcov for ggui + git-gg; gcov/gcovr fallback) and `scripts/coverage_report.py` (first-party filter, COVERAGE_EXCL with mandatory reasons and `scripts/coverage_excl_allowlist.txt`, > 90 % gate). Runs locally; not yet run in CI. Current numbers (49 % line / 29 % branch) are below the gate until the Phase 1 scenarios exist.
+- **Status:** Pipeline done and runs locally (scripts/run_software_coverage.sh, PARALLEL=1, Xvfb unless GGUI_HEADLESS; coverage_report.py with COVERAGE_EXCL allowlist). The coverage gate was dropped on 2026-09-28 (rule 8), so this is now an informational report. Last run: 96.9 % line / 88.0 % branch. Missing: running it in CI (P0-14).
 - **Depends on:** P0-07
 - **Refs:** §8.2
 - **Do:**
@@ -256,8 +261,9 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     the described behavior).
   - Exclude third-party and generated fonts. Count `COVERAGE_EXCL` markers (each needs a
     reason), fail if the count grows without an allowlist change. Start with zero.
-  - Gate: > 90 % line and > 90 % branch.
-- **Done when:** the gate runs on every CI build and merges `ggui` + `git-gg` profiles.
+  - ~~Gate: > 90 % line and > 90 % branch.~~ Dropped 2026-09-28 (rule 8): coverage is a
+    report that points at untested code, not a gate.
+- **Done when:** the report runs on every CI build and merges `ggui` + `git-gg` profiles.
 
 ### [~] P0-14 CI matrix
 - **Status:** Written: `.github/workflows/ci.yml` (catalogue check, git 2.36 built and cached, Linux Xvfb + lavapipe with 4 shards × {git 2.36, latest}, gates job merging traces and profiles, MinGW-static and MSVC jobs). Not run: no remote or CI runner is reachable from this environment.
@@ -267,7 +273,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - Linux under Xvfb with software Vulkan; Windows (MinGW-static and MSVC).
   - Test against git 2.36 (pinned minimum) and the latest git.
   - Shard the suite; every shard runs with the UI-thread assertion on.
-  - Both gates (P0-12, P0-13) switched on.
+  - Functional gate (P0-12) switched on; coverage report (P0-13) published, not gating.
 - **Done when:** all jobs green on the skeleton.
 
 ---
@@ -500,12 +506,12 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   large diff and blame.
 - **Done when:** passes on Linux and Windows CI and beats the 30 s+ baseline.
 
-### [~] P1-22 Phase 1 gate
-- **Status:** Functional gate: green — 163/163 phase 0–1 spec IDs have passing tests (56 scenarios, all passing in one 2m41s run). Code gate: not met yet — 88.4 % line / 72.8 % branch (target > 90 % each). Remaining gaps are mostly the git runner's cancel/progress/askpass paths and placeholder menus that Phase 2 replaces; the coverage push is scheduled after P2's UI lands (see P2-31).
+### [x] P1-22 Phase 1 gate
+- **Status:** Functional gate green: all phase 0–1 spec IDs have passing tests. The coverage gate was dropped on 2026-09-28 (rule 8). The every-UI-action check for phases 0–3 is done once, in P3-20. Windows CI for P1-21 is still pending.
 - **Depends on:** all P1 tasks
-- **Do:** browse any fixture repository with today's layout; functional gate for Phase 1 IDs
-  and > 90 % line/branch coverage.
-- **Done when:** both gates green.
+- **Do:** browse any fixture repository with today's layout; functional gate for Phase 1 IDs.
+- **Done when:** functional gate green. (The coverage gate was dropped on 2026-09-28; the
+  every-UI-action check for phases 0–3 is done once, in P3-20.)
 
 ---
 
@@ -826,12 +832,13 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   (undoable via journal); "Ignore" remembered per repository.
 - **Done when:** spec IDs covered incl. undo of the cleanup.
 
-### [~] P2-31 Phase 2 gate
-- **Status:** Functional gate green: 134/134 scenarios pass, 452/452 phase 0-2 spec IDs covered (docs/traceability.md). Code gate: line 91.8 % (met), branch 76.9 % (target > 90 %: in progress — largest gaps Readers, DiffPanel, Markers, ChangesPanel, Journal).
+### [x] P2-31 Phase 2 gate
+- **Status:** Functional gate green: all phase 0–2 spec IDs covered and the §8.4 failure paths that apply have scenarios. The coverage gate was dropped on 2026-09-28 (rule 8). The every-UI-action check for phases 0–3 is done once, in P3-20.
 - **Depends on:** all P2 tasks
 - **Do:** everyday-use exit criterion; all failure paths from §8.4 that apply so far (hook
   rejection, git missing/old, locked refs, checkout collision, network failure, cancel,
-  corrupt journal); both gates green.
+  corrupt journal); functional gate green. (The coverage gate was dropped on 2026-09-28; the
+  every-UI-action check for phases 0–3 is done once, in P3-20.)
 
 ---
 
@@ -1361,9 +1368,17 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
       `--empty=ask`, local changes without Autostash, Abort, `--root` with Keep.
 
 ### [~] P3-20 Phase 3 gate
-- **Status:** Functional gate green: 194/194 scenarios pass (8 shards, 50 s), 633/633 phase 0-3 spec IDs covered (docs/traceability.md; 633/648 overall, the rest is Phase 4). IR-CONFLICTED-INPUT covered in memory (carried along like git rebase -i on a copy, resolved by rebasing onto the cause) and natively (edit stop on a conflicted commit). Parity: Merge into HEAD / Rebase HEAD onto added to the shared commit actions; reorder tests now drag in History instead of calling actions. Phase 3 failure paths (pre-rebase veto, refusing reference-transaction hook, locked refs, local changes in the way, cancel, corrupt journal) have scenarios for rewrites and both rebase engines. Fixed: carried conflicts reported as new after a squash; Undo of a native rebase lost the index/worktree when a step left the index unchanged; Commit menu crashed without a repository. Code gate: line 93.2 % (met), branch 79.6 % (target > 90 %): branch-coverage push pending.
+- **Status:** Functional gate green: 223/223 scenarios, 633/633 phase 0–3 spec IDs covered. Parity and Phase 3 failure paths are done. Missing: the UI-action audit (rule 8) — docs/ui-actions.md mapping every phase 0–3 UI action to its test, plus tests for any action without one. The coverage gate was dropped on 2026-09-28; the last report was 96.9 % line / 88.0 % branch.
 - **Depends on:** all P3 tasks
-- **Do:** every action of today's app available under Git semantics; both gates green.
+- **Do:**
+  - Every action of today's app is available under Git semantics, and the functional gate is
+    green.
+  - **UI-action audit (rule 8):** list every UI action implemented in phases 0–3 (menus,
+    context menus, buttons, toolbar, shortcuts, drag and drop, dialog controls and options).
+    Map each one to the test that exercises it, write the list to `docs/ui-actions.md`, and
+    add tests for every action that has none.
+- **Done when:** the functional gate is green and every entry in `docs/ui-actions.md` has a
+  passing test.
 - **Notes from P3-19:**
   - All §4.13 IDs except IR-CONFLICTED-INPUT are covered. IR-CONFLICTED-INPUT (rebasing commits
     that already have first-class conflicts) has no scenario yet.
@@ -1390,13 +1405,25 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     `Actions::mergeIntoHead` accepts any revision.
   - **Commit menu without a repository** dereferenced a null session (crash); fixed and checked in
     "harness/smoke".
-- **Notes for the coverage step** (branch 79.6 %; missed branches by file, largest first):
-  `libgg/Todo.cpp` 199 (73.6 %), `core/Readers.cpp` 190 (71.4 %), `libgg/Rewrite.cpp` 170
-  (76.2 %), `app/panels/DiffPanel.cpp` 150 (76.4 %), `app/panels/HistoryPanel.cpp` 106,
-  `app/shell/Rewrites.cpp` 102 (77.6 %), `app/panels/ChangesPanel.cpp` 97, `libgg/Journal.cpp` 92
-  (65.9 %), `app/shell/Actions.cpp` 76, `app/panels/SidePanels.cpp` 72, `app/shell/App.cpp` 68
-  (68.2 %). By directory: libgg 75.1 %, core 78.1 %, gitgg 78.8 %, app 82.3 %.
-
+- **Coverage push (stopped 2026-09-28 when the gate was dropped):**
+  - Line 93.1 → 96.9 %, branch 79.5 → 88.0 %, with no new `COVERAGE_EXCL`. By directory,
+    branch coverage: app 89.3 %, core 87.4 %, gitgg 89.6 %, libgg 85.6 %.
+  - Suite: 223/223 tests (29 new), 57 s in 8 headless shards. Under coverage instrumentation
+    only, "history/first rows of a large history appear quickly" goes over its 700 ms limit.
+  - Commits: 0a9e8a1 … c538423.
+  - Bugs fixed:
+    - A rewrite started from a linked worktree warned about the wrong worktree's branch.
+    - A journal write failure was silently dropped; it now shows a warning.
+    - The Diff panel could show a stale diff after the selection changed.
+    - Image sizes showed as "(none)" in commit diffs.
+    - Moving or reverting lines of a renamed or mode-changed file failed; an executable file
+      lost its mode.
+    - The History drag-and-drop chooser could not be closed.
+    - Server-side progress lines were reported with the phase "remote".
+  - Removed: the `DiffPanel::revealRow` test backdoor, the `ggui --askpass` stub, and several
+    pieces of dead code.
+  - `scripts/run_software_coverage.sh` has `PARALLEL=1` and runs under Xvfb unless
+    `GGUI_HEADLESS` is set.
 ---
 
 ## Phase 4 — Worktrees, polish and parity
@@ -1456,8 +1483,10 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 ### P4-06 Final release gate
 - **Depends on:** all tasks
 - **Refs:** §7 Phase 4, §8.2
-- **Do:** 100 % of §4 spec IDs covered; > 90 % line and branch coverage on Linux and Windows
-  CI; responsiveness scenario passes on both; `COVERAGE_EXCL` count within allowlist.
+- **Do:** 100 % of §4 spec IDs covered; every implemented feature and every UI action in
+  `docs/ui-actions.md` exercised by a passing test (rule 8) on Linux and Windows CI;
+  responsiveness scenario passes on both; `COVERAGE_EXCL` count within allowlist; coverage
+  report published (informational).
 - **Done when:** all gates green on release candidate.
 
 ## User feedback (2026-09-27)
