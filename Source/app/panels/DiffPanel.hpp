@@ -49,8 +49,6 @@ public:
     const std::optional<FileRow>& file() const { return m_file; }
     std::string languageName() const;
     std::string selectedText() const;
-    // Scrolls the row into view (rows as in the unified view: gaps, hunk headers, lines).
-    void revealRow(int row);
     // Lines revealed in context gap `gap` (-1 = all of it).
     int gapShown(int gap) const
     {

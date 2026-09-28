@@ -588,6 +588,9 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     menu(fileRef("Staged", "staged.txt"), "Unstage");
     menu(fileRef("Unstaged", tracked), "Stage");
     menu(fileRef("Untracked", "untracked.txt"), "Intent to add");
+    // Space (stage/unstage) waits too.
+    ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
+    ctx->KeyPress(ImGuiKey_Space);
     ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
     menu(s.child("//Diff", "##diff_body") + "/###line_1", "Stage line(s)");
@@ -640,6 +643,7 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != head; }, 30.0f));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s"}), "Waits for the hook");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--name-only"}), tracked); // Space did not stage it
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), head);
     GG_CHECK_EQ(gg::splitLines(s.gitOut(repo, {"for-each-ref"})).size(), gg::splitLines(refsBefore).size());
     GG_CHECK(s.app.dialogs().current() == nullptr);

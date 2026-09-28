@@ -485,4 +485,45 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
     }));
 }
 
+GG_TEST("diff", "side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule",
+    "DIFF-SIDE-BY-SIDE", "DIFF-BINARY", "DIFF-SUBMODULE", "DIFF-CTX-BLAME")
+{
+    const DiffRepo r = makeRepo(s);
+    s.write(r.path, "code.cpp", numbered(40, 12));
+    GG_REQUIRE(s.openRepository(r.path));
+    showFile(s, r.change, "code.cpp");
+    s.comboSelect("//Diff/##diff_view", "Side by side");
+    ctx->Yield(3);
+    // Another file while side by side: both editors start at the top; a binary file has no editors.
+    showFile(s, r.change, "new.txt");
+    GG_CHECK(s.itemExists(s.child(body(s).c_str(), "##sbs_left").c_str()));
+    showFile(s, r.change, "blob.bin");
+    GG_CHECK(s.itemText("//Diff/###diff_binary").find("Binary file") != std::string::npos);
+    GG_CHECK(!s.itemExists(body(s).c_str()));
+    s.comboSelect("//Diff/##diff_view", "Unified");
+    // Shift+click with nothing selected yet selects from that line.
+    showFile(s, r.change, "code.cpp");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_4").c_str()); }));
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick((body(s) + "/###line_4").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK(!s.session()->diff().selectedText().empty());
+    // Blame from a working tree file's diff: the working tree version.
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string wtFile = s.child("//Changes", "##files") + "/Unstaged/code.cpp/###file_code.cpp";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile.c_str()); }));
+    ctx->ItemClick(wtFile.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_2").c_str()); }));
+    s.contextMenu((body(s) + "/###line_2").c_str(), "Blame file");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "code.cpp" && b->query.commit.isNull();
+    }));
+    // The commit that added a submodule: "(none)" on the old side.
+    const fs::path super = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(super));
+    showFile(s, s.revParse(super, "HEAD~1"), "sub");
+    GG_CHECK(s.itemText("//Diff/###diff_submodule").find("(none)") != std::string::npos);
+}
+
 } // namespace ggtest

@@ -190,7 +190,7 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
     if (m_selection.kind == SelKind::Commit) {
         const bool matches = (d.query.kind == core::DiffKind::Commit && d.query.a == m_selection.id)
             || (d.query.kind == core::DiffKind::Commits && d.query.b == m_selection.id);
-        if (!matches || event.slot != kSlotFiles)
+        if (!matches) // (a commit's files come in kSlotFiles)
             return;
         m_rows = rowsFromDiff(FileGroup::Commit, d);
     } else if (m_selection.kind == SelKind::Stash) {
@@ -225,15 +225,10 @@ std::vector<const FileRow*> ChangesPanel::visibleRows() const
     return out;
 }
 
-void ChangesPanel::setCurrent(const std::string& key, bool notify)
+void ChangesPanel::setCurrent(const std::string& key)
 {
     m_current = key;
-    if (!notify)
-        return;
-    if (const FileRow* r = current())
-        m_session.diff().showFile(m_selection, *r, m_compareHead);
-    else
-        m_session.diff().clear();
+    m_session.diff().showFile(m_selection, *current(), m_compareHead);
 }
 
 void ChangesPanel::moveCurrent(int direction)

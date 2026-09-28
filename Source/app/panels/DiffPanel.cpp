@@ -308,21 +308,6 @@ DiffPanel::View& DiffPanel::primaryView()
     return m_session.app().settings().data().diffSideBySide ? m_left : m_unified;
 }
 
-void DiffPanel::revealRow(int row)
-{
-    View& v = primaryView();
-    if (!v.editor || row < 0 || row >= static_cast<int>(v.firstLine.size()))
-        return;
-    int line = v.firstLine[static_cast<size_t>(row)];
-    if (line < 0 && &v == &m_left)
-        line = m_right.firstLine[static_cast<size_t>(row)];
-    if (line >= 0) {
-        v.editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
-        if (&v == &m_left)
-            m_right.editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
-    }
-}
-
 void DiffPanel::setupView(View& v, Side side)
 {
     if (!v.editor) {

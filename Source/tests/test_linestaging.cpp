@@ -41,11 +41,26 @@ bool showFile(Scenario& s, const char* group, const std::string& path)
     });
 }
 
-// The diff body is virtualised: scroll row `row` into view before interacting with it.
-void scrollToRow(Scenario& s, int row)
+// The diff body only draws the rows in view: scroll it with the mouse wheel (from the top) until
+// the row's gutter handle `item` is fully visible.
+void scrollToRow(Scenario& s, const std::string& item)
 {
-    s.session()->diff().revealRow(row);
-    s.ctx->Yield(3);
+    const std::string ref = body(s) + "/" + item;
+    ImGuiWindow* w = s.ctx->GetWindowByRef(body(s).c_str());
+    if (!w)
+        return;
+    s.ctx->MouseMoveToPos(w->InnerRect.GetCenter());
+    auto visible = [&] {
+        if (!s.ctx->ItemExists(ref.c_str()))
+            return false;
+        const ImGuiTestItemInfo info = s.ctx->ItemInfo(ref.c_str());
+        return info.RectFull.Min.y >= w->InnerRect.Min.y && info.RectFull.Max.y <= w->InnerRect.Max.y;
+    };
+    for (int i = 0; i < 40 && w->Scroll.y > 0.0f; ++i)
+        s.ctx->MouseWheelY(10.0f);
+    for (int i = 0; i < 400 && !visible(); ++i)
+        s.ctx->MouseWheelY(-1.0f);
+    s.ctx->Yield(2);
 }
 
 std::vector<std::string> linesOf(const std::string& text)
@@ -292,13 +307,13 @@ GG_TEST("linestaging", "randomized line staging matches the content model", "DIF
                                                                         : "line_" + std::to_string(rowIndex[a]));
         const std::string last = "###" + std::string(rows[b].second < 0 ? "hunk_" + std::to_string(rows[b].first)
                                                                        : "line_" + std::to_string(rowIndex[b]));
-        scrollToRow(s, rowIndex[a]);
+        scrollToRow(s, first);
         ctx->ItemClick((body(s) + "/" + first).c_str());
-        scrollToRow(s, rowIndex[b]);
+        scrollToRow(s, last);
         ctx->KeyDown(ImGuiMod_Shift);
         ctx->ItemClick((body(s) + "/" + last).c_str());
         ctx->KeyUp(ImGuiMod_Shift);
-        scrollToRow(s, rowIndex[a]);
+        scrollToRow(s, first);
         std::string expected;
         if (unstage) {
             expected = applyModel(file, selected, base, true);
