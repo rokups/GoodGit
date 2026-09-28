@@ -132,7 +132,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         git(repo, {"worktree", "add", "-q", "-b", "wt2", wt2.string()});
         git(repo, {"worktree", "lock", "--reason", "test lock", wt2.string()});
         git(repo, {"worktree", "add", "-q", "--detach", wt3.string(), "HEAD~1"});
-        fs::remove_all(wt3); // stale
+        removeAll(wt3); // stale
         track(wt1);
         break;
     }
@@ -143,7 +143,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         git(m_root, {"clone", "-q", "file://" + origin.generic_string(), other.string()});
         linear(*this, other, 3, "o");
         git(other, {"push", "-q", "origin", "main"});
-        fs::remove_all(repo);
+        removeAll(repo);
         git(m_root, {"clone", "-q", "file://" + origin.generic_string(), repo.string()});
         commitFile(other, "remote-only.txt", "r\n", "Remote only");
         git(other, {"push", "-q", "origin", "main"});
@@ -157,7 +157,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         fs::create_directories(src);
         git(m_root, {"init", "-q", "-b", "main", src.string()});
         linear(*this, src, 4);
-        fs::remove_all(repo);
+        removeAll(repo);
         git(m_root, {"clone", "-q", "--bare", src.string(), repo.string()});
         break;
     }

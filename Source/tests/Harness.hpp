@@ -59,6 +59,9 @@ struct TestInfo {
 
 std::vector<TestInfo>& registry();
 
+// Like fs::remove_all (errors ignored), but it also removes read-only files: git's objects are
+// read-only, and Windows refuses to delete those.
+void removeAll(const fs::path& path);
 // Directory for cached fixtures, resolved before the test environment is isolated.
 fs::path fixtureCacheDir();
 // Directory for failure output and explicit screenshots (--artifacts, default ./test-artifacts).
@@ -281,8 +284,8 @@ private:
     std::mt19937_64 m_rng;
     int m_commitCounter = 0;
     std::set<std::string> m_plantedGgRefs; // refs/gg/* names the test passed to git itself
-    std::vector<fs::path> m_daemonPidFiles;
     std::vector<std::string> m_daemonPids; // read once running: the pid files go with the test's directory
+    std::vector<void*> m_daemonJobs;       // Windows: job objects that end the daemons when closed
 };
 
 } // namespace ggtest

@@ -157,7 +157,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
 {
     const fs::path dir = g_root / testDirName(info);
     std::error_code ec;
-    fs::remove_all(dir, ec);
+    removeAll(dir);
     fs::create_directories(dir);
     isolateEnvironment(dir);
     gg::clearCommandLog();
@@ -215,7 +215,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     g_app->resetForTest();
     ctx->Yield(2);
     if (!ctx->IsError() && !std::getenv("GGUI_KEEP_TEST_DIRS"))
-        fs::remove_all(dir, ec);
+        removeAll(dir);
 }
 
 bool screenCapture(ImGuiID, int x, int y, int w, int h, unsigned int* pixels, void* user)
@@ -255,6 +255,18 @@ Registrar::Registrar(const char* category, const char* name, std::initializer_li
 
 fs::path artifactsDir() { return g_artifacts; }
 
+void removeAll(const fs::path& path)
+{
+    std::error_code ec;
+    fs::remove_all(path, ec);
+    if (!ec || !fs::exists(path, ec))
+        return;
+    for (auto it = fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+        fs::permissions(it->path(), fs::perms::owner_write, fs::perm_options::add | fs::perm_options::nofollow, ec);
+    fs::remove_all(path, ec);
+}
+
 double timeBudgetMs(double ms)
 {
     const char* slack = std::getenv("GGUI_TIMING_SLACK");
@@ -287,7 +299,7 @@ void prepareProcessForTests(const char* argv0)
     else
         g_root = fs::temp_directory_path() / ("ggui-tests-" + std::to_string(ggui::processId()));
     std::error_code ec;
-    fs::remove_all(g_root, ec);
+    removeAll(g_root);
     fs::create_directories(g_root);
     g_root = fs::canonical(g_root);
     if (const char* a = std::getenv("GGUI_TEST_ARTIFACTS"); a && *a)
@@ -442,7 +454,7 @@ void TestRunner::stop()
     if (!g_root.empty() && !std::getenv("GGUI_KEEP_TEST_DIRS")) {
         g_app->resetForTest(); // close the last repository first (Windows cannot delete open files)
         std::error_code ec;
-        fs::remove_all(g_root, ec);
+        removeAll(g_root);
     }
 }
 

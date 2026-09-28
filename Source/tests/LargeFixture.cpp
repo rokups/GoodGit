@@ -104,7 +104,7 @@ fs::path Scenario::largeFixture()
     if (fs::exists(stamp))
         return repo;
     std::error_code ec;
-    fs::remove_all(repo, ec);
+    removeAll(repo);
     fs::create_directories(repo);
     const auto start = std::chrono::steady_clock::now();
     git(repo, {"init", "-q", "-b", "main"});

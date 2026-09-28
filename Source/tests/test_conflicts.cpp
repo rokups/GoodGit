@@ -258,7 +258,7 @@ GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out
     // The cache under .git/gg is disposable: without it the same is reported.
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
-    fs::remove_all(repo / ".git" / "gg");
+    removeAll(repo / ".git" / "gg");
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(scanned(s, nway));
     GG_CHECK(s.waitUntil([&] { return files(optout) == before; }));

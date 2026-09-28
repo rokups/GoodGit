@@ -132,7 +132,7 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "uninstall"}).ok());
-    fs::remove_all(repo / ".git" / "gg");
+    removeAll(repo / ".git" / "gg");
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     GG_CHECK(s.refs(repo) == refsBefore);

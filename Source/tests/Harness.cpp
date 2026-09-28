@@ -11,9 +11,15 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <functional>
 #include <map>
 #include <fstream>
 #include <sstream>
+
+#ifdef _WIN32
+#include <windows.h>
+#undef Yield // winbase.h's, not ImGuiTestContext::Yield
+#endif
 
 namespace ggtest {
 
@@ -270,31 +276,77 @@ Scenario::~Scenario()
     // already be gone.
     for (const auto& pid : m_daemonPids)
         run(fs::temp_directory_path(), {"kill", pid});
+#ifdef _WIN32
+    for (void* job : m_daemonJobs)
+        CloseHandle(static_cast<HANDLE>(job)); // kill-on-close: ends the daemon and its children
+#endif
     ggui::unsetEnv("GIT_SSH_COMMAND");
 }
 
 std::string Scenario::startGitDaemon(const fs::path& baseDir)
 {
-    // Pick a free port by trying a few; git daemon exits when the port is taken.
-    const fs::path pidFile = m_root / ("daemon-" + std::to_string(m_daemonPidFiles.size()) + ".pid");
-    for (int attempt = 0; attempt < 20; ++attempt) {
-        const int port = 20000 + static_cast<int>(m_rng() % 30000);
-        auto r = gitMayFail(m_root, {"daemon", "--reuseaddr", "--listen=127.0.0.1", "--port=" + std::to_string(port),
-                                        "--base-path=" + baseDir.string(), "--export-all", "--enable=receive-pack",
-                                        "--detach", "--pid-file=" + pidFile.string(), baseDir.string()});
-        if (!r.ok())
-            continue;
-        m_daemonPidFiles.push_back(pidFile);
-        // Wait until it accepts connections (the pid file is written by then).
-        const std::string url = "git://127.0.0.1:" + std::to_string(port) + "/";
-        for (int i = 0; i < 50; ++i) {
-            if (gitMayFail(m_root, {"ls-remote", url + "does-not-exist"}).err.find("Connection refused") == std::string::npos)
-                break;
+    // Pick a free port by trying a few; git daemon exits when the port is taken. It is ready when
+    // it answers: a repository it does not serve is a "remote error" (any platform's wording).
+    auto ready = [&](const std::string& url, const std::function<bool()>& alive) {
+        for (int i = 0; i < 100 && alive(); ++i) {
+            if (gitMayFail(m_root, {"ls-remote", url + "does-not-exist"}).err.find("remote error") != std::string::npos)
+                return true;
             ctx->SleepNoSkip(0.05f, 0.05f);
         }
+        return false;
+    };
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        const int port = 20000 + static_cast<int>(m_rng() % 30000);
+        const std::string url = "git://127.0.0.1:" + std::to_string(port) + "/";
+        std::vector<std::string> args{"daemon", "--reuseaddr", "--listen=127.0.0.1", "--port=" + std::to_string(port),
+            "--base-path=" + baseDir.string(), "--export-all", "--enable=receive-pack"};
+#ifdef _WIN32
+        // No --detach on Windows: started here, in a job object that ends it (and its children).
+        const fs::path git = gg::findInPath("git");
+        std::wstring cmd = L"\"" + git.wstring() + L"\"";
+        for (const auto& a : args)
+            cmd += L" \"" + fs::path(a).wstring() + L"\"";
+        cmd += L" \"" + baseDir.wstring() + L"\"";
+        HANDLE job = CreateJobObjectW(nullptr, nullptr);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi{};
+        const std::wstring cwd = m_root.wstring();
+        if (!job || !CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                        nullptr, cwd.c_str(), &si, &pi)) {
+            if (job)
+                CloseHandle(job);
+            continue;
+        }
+        AssignProcessToJobObject(job, pi.hProcess);
+        ResumeThread(pi.hThread);
+        CloseHandle(pi.hThread);
+        const HANDLE process = pi.hProcess;
+        const bool up = ready(url, [process] { return WaitForSingleObject(process, 0) == WAIT_TIMEOUT; });
+        CloseHandle(process);
+        if (!up) {
+            CloseHandle(job); // ends it
+            continue;
+        }
+        m_daemonJobs.push_back(job);
+        return url;
+#else
+        const fs::path pidFile = m_root / ("daemon-" + std::to_string(m_daemonPids.size()) + ".pid");
+        args.push_back("--detach");
+        args.push_back("--pid-file=" + pidFile.string());
+        args.push_back(baseDir.string());
+        if (!gitMayFail(m_root, args).ok())
+            continue;
+        // The pid is read now: the test's directory (with the file) may be gone when it ends.
+        const bool up = ready(url, [] { return true; });
         if (const std::string pid = gg::trim(read(pidFile.parent_path(), pidFile.filename().string())); !pid.empty())
             m_daemonPids.push_back(pid);
-        return url;
+        if (up)
+            return url;
+#endif
     }
     IM_CHECK_NO_RET(false && "git daemon did not start");
     return {};
