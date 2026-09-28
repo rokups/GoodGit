@@ -271,13 +271,15 @@ void Actions::mergeToolFirstClass(const std::string& path)
             const std::string text = ss.str();
             if (gg::markers::parse(text).maxSides() != 2)
                 throw MutationError{Outcome::Refused, "merge tools handle two-sided conflicts only; take a side first", {}};
-            const std::string mode = gg::trim(ctx.git({"ls-files", "--format=%(objectmode)", "--", path}).out);
+            std::string mode = gg::trim(ctx.git({"ls-files", "--format=%(objectmode)", "--", path}).out);
+            if (mode.empty())
+                mode = "100644"; // not in the index yet
             auto blob = [&](const std::string& content) { return gg::trim(ctx.git({"hash-object", "-w", "--stdin"}, content).out); };
             const std::string zero(gg::git2::hexSize(gg::git2::oidType(ctx.repo())), '0');
             std::string input = "0 " + zero + "\t" + path + "\n";
-            input += (mode.empty() ? std::string("100644") : mode) + " " + blob(gg::markers::takeBase(text)) + " 1\t" + path + "\n";
-            input += (mode.empty() ? std::string("100644") : mode) + " " + blob(gg::markers::takeSide(text, 0)) + " 2\t" + path + "\n";
-            input += (mode.empty() ? std::string("100644") : mode) + " " + blob(gg::markers::takeSide(text, 1)) + " 3\t" + path + "\n";
+            input += mode + " " + blob(gg::markers::takeBase(text)) + " 1\t" + path + "\n";
+            input += mode + " " + blob(gg::markers::takeSide(text, 0)) + " 2\t" + path + "\n";
+            input += mode + " " + blob(gg::markers::takeSide(text, 1)) + " 3\t" + path + "\n";
             ctx.git({"update-index", "--index-info"}, input);
             const auto r = ctx.gitMayFail(withPaths({"mergetool", "-y"}, {path}));
             if (!r.ok()) {
@@ -384,17 +386,8 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst)
 
 void Actions::moveHead(bool toChild, const core::Oid& child)
 {
-    const auto snap = m_session.snapshot();
-    if (snap->head.isNull())
-        return;
-    std::string target;
-    if (toChild) {
-        if (child.isNull())
-            return;
-        target = child.hex();
-    } else {
-        target = snap->head.hex() + "^";
-    }
+    // (Offered only when HEAD has a commit, and for toChild a child.)
+    const std::string target = toChild ? child.hex() : m_session.snapshot()->head.hex() + "^";
     // A branch tip becomes a branch switch; anything else detaches.
     const bool expand = m_session.app().settings().data().expandConflictStages;
     run(toChild ? "move HEAD to child" : "move HEAD to parent", [target, expand](MutationContext& ctx) {

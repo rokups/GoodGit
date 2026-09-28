@@ -88,6 +88,15 @@ GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNS
     s.contextMenu(branchRow("behind").c_str(), "Fast-forward to upstream");
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "behind") == s.revParse(repo, "origin/main"); }));
     s.settle();
+    // The checked-out branch fast-forwards with its working tree.
+    const std::string mainBefore = s.head(repo);
+    s.git(repo, {"reset", "-q", "--hard", "HEAD~1"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->head.hex() == s.head(repo); }));
+    s.contextMenu(branchRow("main").c_str(), "Fast-forward to upstream");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == s.revParse(repo, "origin/main"); }));
+    s.settle();
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    s.git(repo, {"reset", "-q", "--hard", mainBefore});
     s.contextMenu(branchRow("loose").c_str(), "Set upstream...");
     GG_REQUIRE(s.dialogOpen("Set upstream"));
     s.comboSelect("//Set upstream/Upstream of loose##upstream", "origin/main");
@@ -134,6 +143,16 @@ GG_TEST("refs", "move a branch; warning for a branch checked out elsewhere", "BR
     GG_CHECK(s.app.dialogs().current()->message.find("checked out in worktree") != std::string::npos);
     s.dialogButton("Move branch", "Cancel");
     s.settle();
+    // The checked-out branch moves with its working tree (a local change stays).
+    s.write(repo, "untracked-note.txt", "kept\n");
+    s.contextMenu(("//History/**/###row_" + target).c_str(), "Move branch/main");
+    GG_REQUIRE(s.dialogOpen("Move branch"));
+    s.dialogButton("Move branch", "Move");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == target; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+    GG_CHECK_STR_EQ(s.read(repo, "untracked-note.txt"), "kept\n");
+    fs::remove(repo / "untracked-note.txt");
 }
 
 GG_TEST("refs", "delete a branch on its remote, and everywhere", "BR-DELETE-REMOTE", "BR-DELETE-ALL",
@@ -216,6 +235,9 @@ GG_TEST("refs", "remotes: add, edit URL, prune on fetch, delete", "REM-ADD", "RE
     s.settle();
     s.contextMenu("//Remotes/remote_backup/###row", "Prune on fetch");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "remote.backup.prune"}).out == "true\n"; }));
+    s.settle();
+    s.contextMenu("//Remotes/remote_backup/###row", "Prune on fetch");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "remote.backup.prune"}).out == "false\n"; }));
     s.settle();
     s.contextMenu("//Remotes/remote_backup/###row", "Delete");
     GG_REQUIRE(s.dialogOpen("Delete remote"));

@@ -681,6 +681,13 @@ GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a 
     GG_CHECK(r.ok());
     GG_CHECK(r.err.find("ggui: unknown option --bogus") != std::string::npos);
     GG_CHECK(r.err.find("ggui: unknown option second-path") != std::string::npos);
+    // No usable display, or no usable GPU driver: ggui says why and exits.
+    r = s.runGgui({"--smoke"}, {{"SDL_VIDEO_DRIVER", "no-such-driver"}});
+    GG_CHECK_EQ(r.exitCode, 1);
+    GG_CHECK(r.err.find("SDL_Init failed") != std::string::npos);
+    r = s.runGgui({"--smoke"}, {{"SDL_GPU_DRIVER", "no-such-driver"}});
+    GG_CHECK_EQ(r.exitCode, 1);
+    GG_CHECK(r.err.find("SDL_CreateGPUDevice failed") != std::string::npos);
 }
 
 GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress",
