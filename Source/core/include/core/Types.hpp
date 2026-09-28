@@ -109,6 +109,19 @@ struct StashInfo {
     bool hasUntracked = false;
 };
 
+// A `git rebase -i` in progress (rebase-merge/), as git's todo files have it (§4.10 progress view).
+struct RebaseStep {
+    std::string action;              // "pick", "edit", "exec", "break", "update-ref", …
+    std::string commit;              // full id for commit rows
+    std::string text;                // the subject for commit rows, the argument otherwise
+};
+struct RebaseProgress {
+    std::vector<RebaseStep> done;    // done/: the last one is where the rebase stopped
+    std::vector<RebaseStep> remaining; // git-rebase-todo
+    std::string todoText;            // git-rebase-todo as read ("Edit remaining todo" starts from it)
+    std::string headName;            // head-name: "refs/heads/<branch>" or "detached HEAD"
+};
+
 struct Snapshot {
     std::uint64_t generation = 0;
     std::filesystem::path workdir;   // empty for bare
@@ -126,6 +139,7 @@ struct Snapshot {
     std::string stateDetail;         // e.g. "2/5" while rebasing
     std::string stateOnto;           // rebase onto / merge head description
     std::string mergeMessage;        // MERGE_MSG while in progress
+    std::optional<RebaseProgress> rebase; // interactive rebase in progress
     std::vector<BranchInfo> branches;
     std::vector<RemoteBranchInfo> remoteBranches;
     std::vector<TagInfo> tags;

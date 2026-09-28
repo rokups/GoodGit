@@ -125,6 +125,7 @@ private:
     void drawToolbar();
     void drawRepositoryButtons();
     void drawStateBadge();
+    void drawRebaseProgress(Session& s, const core::RebaseProgress& rebase);
     void drawToasts();
     void drawWelcome();
     void drawDockHost();

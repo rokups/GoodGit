@@ -405,7 +405,7 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
     GG_CHECK(rows(s)[2] == "edit c4");
     GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
     GG_CHECK(editor(s).engine().reason.find("row 3 is edit") != std::string::npos);
-    GG_CHECK(!editor(s).canStart());
+    GG_CHECK(editor(s).canStart()); // runs as git rebase -i (P3-19)
     ctx->ItemCheck(irWidget("ir_native").c_str()); // the user's choice
     GG_CHECK(editor(s).engine().reason.find("you chose") != std::string::npos);
     ctx->ItemUncheck(irWidget("ir_native").c_str());

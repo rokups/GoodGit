@@ -7,6 +7,7 @@
 //   git gg hooks install|uninstall|status
 //   git gg hook <name> [ARGS...]     entry point for the managed hooks
 //   git gg ui [PATH]
+//   git gg sequence-editor FILE      internal: GIT_SEQUENCE_EDITOR / GIT_EDITOR of ggui's git rebase -i
 //   git gg help [COMMAND]
 //
 // Exit codes follow git: 0 success, 1 "found something" / refused, 128 fatal, 129 usage.
@@ -64,7 +65,8 @@ const std::map<std::string, std::string>& helpTexts()
         {"hook", "usage: git gg hook <hook-name> [<args>...]\n\nEntry point called by the managed hooks; not for interactive use.\n"},
         {"ui", "usage: git gg ui [<path>]\n\nStarts ggui on the repository.\n"},
         {"sequence-editor", "usage: git gg sequence-editor <file>\n\nInternal: used as GIT_SEQUENCE_EDITOR / GIT_EDITOR by ggui's native\n"
-                            "interactive rebase.\n"},
+                            "interactive rebase: the todo it prepared goes to git-rebase-todo, a message typed in its todo editor\n"
+                            "to the commit git is working on. Needs GG_SEQUENCE_DIR (set by ggui).\n"},
     };
     return texts;
 }

@@ -519,6 +519,42 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
     return problems;
 }
 
+Context readRemaining(git_repository* repo, std::string_view todoText, const std::string& headName)
+{
+    assertNotUiThread("todo::readRemaining");
+    Context context;
+    context.continuesHead = true;
+    git_oid head;
+    if (git_reference_name_to_id(&head, repo, "HEAD") != 0) {
+        git_error_clear();
+        throw std::runtime_error("HEAD has no commits");
+    }
+    context.onto = context.upstream = context.tip = toHex(head);
+    const std::string name = std::string(trimRight(trimLeft(headName)));
+    context.tipRef = startsWith(name, "refs/heads/") ? name : std::string();
+    context.tipIsHead = true;
+    std::vector<ParseError> problems;
+    Todo list = parse(todoText, &problems);
+    for (auto& p : expand(repo, list, context))
+        problems.push_back(std::move(p));
+    if (!problems.empty())
+        throw std::runtime_error("cannot read the remaining todo: " + problems.front().message);
+    for (const Item& item : list.items)
+        if (item.isCommit() && std::find(context.range.begin(), context.range.end(), item.commit) == context.range.end())
+            context.range.push_back(item.commit);
+    forEachReference(repo, [&](git_reference* ref) {
+        const std::string refName = git_reference_name(ref);
+        if (startsWith(refName, "refs/heads/") && git_reference_type(ref) == GIT_REFERENCE_DIRECT) {
+            const std::string target = toHex(*git_reference_target(ref));
+            if (context.commits.count(target))
+                context.branchesAt[target].push_back(refName);
+        }
+        return true;
+    });
+    context.initial = std::move(list);
+    return context;
+}
+
 // ---- Autosquash -------------------------------------------------------------------------------
 
 void autosquash(Todo& todo, const Context& context)
@@ -825,6 +861,23 @@ std::string editorText(const Todo& todo, const Group& group, const Context& cont
     return keptMessage(todo, group, context, comment);
 }
 
+std::map<std::string, std::string> editorMessages(const Todo& todo)
+{
+    std::map<std::string, std::string> out;
+    for (const Group& g : groups(todo)) {
+        const Item& first = todo.items[g.first];
+        if (!first.message)
+            continue;
+        size_t row = g.first;
+        if (g.needsEditor)
+            row = g.followers.empty() ? g.first : g.followers.back(); // the combined message
+        else if (first.action != Action::Reword)
+            continue; // Git asks for no message here
+        out[todo.items[row].commit] = *first.message;
+    }
+    return out;
+}
+
 // ---- Validation -------------------------------------------------------------------------------
 
 size_t unchangedPrefix(const Todo& todo, const Context& context)
@@ -873,7 +926,7 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
         if (item.isCommit()) {
             if (!context.commits.count(item.commit))
                 add(Severity::Error, Code::UnknownCommit, row, "unknown commit '" + item.commit + "'");
-            if ((item.action == Action::Squash || item.action == Action::Fixup) && !seenCommit)
+            if ((item.action == Action::Squash || item.action == Action::Fixup) && !seenCommit && !context.continuesHead)
                 add(Severity::Error, Code::SquashWithoutCommit, row,
                     std::string("cannot '") + actionName(item.action) + "' without a previous commit");
             if (item.action == Action::Drop)
@@ -1081,6 +1134,7 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
 
     // The step the next commit goes onto: a step key, or "=<onto>" before the first one.
     std::string current = context.onto.empty() ? std::string() : "=" + context.onto;
+    bool started = false; // a commit row came
     for (size_t i = 0; i < todo.items.size(); ++i) {
         const Item& item = todo.items[i];
         const std::string key = "row:" + std::to_string(i);
@@ -1100,6 +1154,7 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
                 s.message = groupMessage(todo, *g, context, comment);
             plan.steps.push_back(std::move(s));
             current = key;
+            started = true;
             break;
         }
         case Action::Squash:
@@ -1108,6 +1163,18 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
             s.kind = rw::Step::Kind::Squash;
             s.source = item.commit;
             s.key = key;
+            if (!started && context.continuesHead) {
+                // The rest of a stopped rebase: folded into HEAD as it is (amended).
+                rw::Step head;
+                head.kind = rw::Step::Kind::Pick;
+                head.source = context.onto;
+                head.key = "head";
+                head.mapSource = false;
+                plan.steps.push_back(std::move(head));
+                s.amend = true;
+                current = key;
+            }
+            started = true;
             if (auto it = byFirst.find(i); it != byFirst.end() && it->second->amends) {
                 // After an exec/break/update-ref row: amends the finished commit, which the
                 // update-ref rows before it keep pointing at (as in Git).

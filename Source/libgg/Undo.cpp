@@ -2,6 +2,7 @@
 
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
+#include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Thread.hpp"
 
@@ -54,6 +55,8 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     const bool bare = git_repository_is_bare(repo) == 1;
     const fs::path cwd = bare ? fs::path(git_repository_path(repo)) : fs::path(git_repository_workdir(repo));
     journal::Journal journal{fs::path(git_repository_commondir(repo))};
+    // A native rebase finished where the hooks could not see it: its operation ends now.
+    native::closeFinishedGroup(repo, journal);
     std::string readError;
     auto ops = journal.read(&readError);
     if (!readError.empty()) {

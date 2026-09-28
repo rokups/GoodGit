@@ -202,6 +202,11 @@ bool Journal::appendRewrites(const std::string& id, const std::vector<std::pair<
     return appendLine(json{{"v", 1}, {"t", "map"}, {"op", id}, {"m", m}}.dump(), error);
 }
 
+bool Journal::markRebase(const std::string& id, std::string* error)
+{
+    return appendLine(json{{"v", 1}, {"t", "rebase"}, {"op", id}}.dump(), error);
+}
+
 bool Journal::end(const std::string& id, bool ok, std::string* error)
 {
     json j{{"v", 1}, {"t", "end"}, {"op", id}};
@@ -291,6 +296,8 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
                 for (const auto& p : j["m"])
                     if (p.is_array() && p.size() == 2 && p[0].is_string() && p[1].is_string())
                         op.rewrites.emplace_back(p[0].get<std::string>(), p[1].get<std::string>());
+        } else if (type == "rebase") {
+            op.spansRebase = true;
         } else if (type == "end") {
             op.ended = true;
             op.ok = j.value("ok", true);
@@ -298,10 +305,10 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
         // Unknown record types are ignored (minor additions stay compatible).
     }
     // Operations opened by hooks for plain git commands close when that git process is gone
-    // (or after 10 minutes).
+    // (or after 10 minutes). One that spans a native rebase stays open until its end record.
     const std::int64_t now = nowMs();
     for (auto& op : ops) {
-        if (op.ended || op.src != "git")
+        if (op.ended || op.src != "git" || op.spansRebase)
             continue;
         long long pid = 0;
         unsigned long long start = 0;
@@ -427,6 +434,8 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
     for (const auto& r : target->refs) {
         if (isHeadKey(r.ref) && r.ref != headKey(wt))
             continue; // another worktree's HEAD is not ours to restore
+        if (r.oldValue == r.newValue)
+            continue; // back where it started (HEAD during a rebase): nothing to restore
         const std::string now = current(r.ref);
         if (now != r.newValue)
             plan.movedRefs.push_back(r.ref);

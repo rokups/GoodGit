@@ -978,8 +978,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   with ggui regions; deleting `.git/gg/` changes nothing.
 - **Done when:** all conflict spec IDs covered; randomized N-way rewrite scenario stable.
 
-### [~] P3-15 Interactive rebase: todo model and validation
-- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read, expand, autosquash, squash templates/messages, cleanup, validation, engine choice, exec-each, toPlan. Exercised through the editor by test_rebase_i.cpp: read, autosquash order vs git's todo, squash/fixup -C/-c messages, validation, engine choice, toPlan. P3-18's randomized differential compares toPlan results with git rebase -i. groups() now ends a group at exec/break/update-ref (Group::amends), as git does. parse/expand/addExecEach wait for the native engine (P3-19).
+### [x] P3-15 Interactive rebase: todo model and validation
+- **Status:** Model built in libgg (Todo.hpp/.cpp): parse/format, read, readRemaining, expand, autosquash, squash templates/messages, editorMessages, cleanup, validation, engine choice, exec-each, toPlan. Exercised by P3-16..P3-19: the editor (read, autosquash vs git, messages, validation, engine choice), the randomized differential vs git rebase -i (toPlan), the native engine (format for the prepared todo, parse for the progress view, expand for Edit remaining todo, addExecEach for exec after every commit).
 - **Depends on:** P3-02
 - **Refs:** §4.13
 - **Do:** todo model with actions `pick`, `reword`, `edit`, `squash`, `fixup` (incl. `-C`/
@@ -1244,7 +1244,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
       option (preview and Start).
     - IR-OPT-EMPTY added to the catalogue.
 
-### P3-19 Interactive rebase: native engine and stop handling
+### [x] P3-19 Interactive rebase: native engine and stop handling
+- **Status:** test_rebase_native.cpp (4 scenarios): git rebase -i through git gg sequence-editor (prepared todo, typed messages by the commit on done's last line); stops at edit, break, failing exec, conflicts and a commit that becomes empty, with Continue/Skip/Abort, Amend and continue, Commit with conflicts and a progress popup; Edit remaining todo saved through git rebase --edit-todo (byte-identical to git on a copy); a plain git rebase -i test step detected, edited and finished in a terminal; one journal operation per rebase (ggui, or plain with hooks) and one Undo. Refuses update-ref rows with git < 2.38; Keep committer date is in-memory only. Fixed: hook recorded a detached symbolic HEAD's old value as an oid; Undo of rebases tried to move HEAD and its branch together. Full suite 189/189; coverage 93.0 % line / 79.2 % branch; traceability 632/648 (phase 3: all but IR-CONFLICTED-INPUT).
 - **Depends on:** P3-16, P2-24, P2-26
 - **Refs:** §4.13 execution 2, plain rebase -i, §4.10 native
 - **Do:** `git gg sequence-editor FILE` helper writing prepared todo/messages; run
@@ -1283,10 +1284,91 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     editor set it around the call (`ggui::setEnv`, see `gitRebase` in `test_rebase_i.cpp`).
   - The differential helpers in `test_rebase_i.cpp` can drive native-engine comparisons too:
     `gitRebase`, `rewordAll`, `postRewrite`, `history`, `checkAside`, `installRecordingHooks`.
+- **Design notes:**
+  - **libgg `NativeRebase.{hpp,cpp}`** (namespace `gg::native`), shared by ggui and git-gg.
+    - A rebase's identity is `orig-head onto head-name` from `rebase-merge/` ("" = none).
+    - Per-worktree state lives in `$GIT_COMMON_DIR/gg/rebase/<wt>/`. It is disposable.
+      - `operation`: the journal group (op id and identity).
+      - `prepared.json`: the todo, the typed messages and the identity.
+  - **`git gg sequence-editor FILE`** (`gg::native::sequenceEditor`) needs `GG_SEQUENCE_DIR`.
+    - A file named `git-rebase-todo` gets the prepared todo.
+    - Any other file (`COMMIT_EDITMSG`) gets the message prepared for the commit on the last line of
+      `rebase-merge/done`. Without one it stays as git wrote it, which is git's default message.
+    - `todo::editorMessages` keys a typed message by the row where git opens its editor for it: the
+      reword row, or a group's last squash/fixup row when git asks for the combined message. A
+      reword followed by squash rows gets the typed text at the end of the chain and git's text at
+      the reword. This matches `groupMessage` (checked by the tests' typed messages).
+  - **Start** (`RebasePanel::startNative`, `Actions::nativeRebase`):
+    - `todo::addExecEach` adds "exec after every commit", then `todo::format`.
+    - It runs `git rebase -i --empty=<keep|drop|stop> [--autostash] [--root] [--onto X] <upstream>
+      [<branch>]`, with `GIT_SEQUENCE_EDITOR`/`GIT_EDITOR` = `'<dir>/git-gg' sequence-editor`,
+      through the mutation queue (`ctx.gitMayFail`, never on the UI thread).
+    - The tip-moved check is the same as in memory.
+    - `git version` is checked on the worker: git older than 2.45 gets `--empty=ask`.
+    - **update-ref with git < 2.38: refused (decision)** ("turn off Update refs…"). Dropping the
+      rows silently would leave stacked branches behind.
+    - A `--root` run first writes the empty tree (`git mktree`). git's squash-onto commit refers to
+      it without writing it, and `git fsck --strict` then fails.
+    - Stopped = `rebase-merge/` exists after the run. That is Ok, not an error (git exits 1 for a
+      failing exec or conflicts). The panel closes and shows a notification with git's message.
+  - **Keep committer date (decision):** git always sets the committer date to now, and
+    `--committer-date-is-author-date` means something else. With the native engine the combo is
+    disabled at "Use now" (tooltip). Keep original stays an in-memory option.
+  - **Stops** (`ActionsRebase.cpp`):
+    - `rebaseStep` runs Continue/Skip/Abort/Commit with conflicts/Amend and continue for any
+      `rebase-merge` rebase. git's editor gets the prepared messages when `preparedFor` (identity)
+      matches; otherwise `GIT_EDITOR=true`, as before.
+    - A step that fails but moved `done` on (the next stop) is information, not an error
+      (`Actions::onRebaseStep` notification).
+    - Amend and continue: `git commit --amend --no-edit` when the index differs from HEAD, then
+      `--continue`. It is offered only without native conflicts.
+    - Progress: `Snapshot::rebase` (`RebaseProgress`: `done`, `remaining`, `todoText`,
+      `headName`), read with `todo::parse` on the snapshot worker. Missing subjects come from the
+      commits. The toolbar popup `##rebase_progress` shows them. Why it stopped comes from the last
+      done action and the native conflicts.
+  - **Edit remaining todo:** `RebasePanel::Request::remaining`.
+    - `todo::readRemaining` does parse + expand: onto = upstream = HEAD, `tipRef` = head-name,
+      `Context::continuesHead`. A leading squash/fixup is valid, and `toPlan` previews it as
+      amending HEAD.
+    - Save = `Actions::editRemainingTodo`. It refuses when `git-rebase-todo` changed since the
+      read. It merges the typed messages into `prepared.json`, then runs `git rebase --edit-todo`
+      with the helper, so git itself validates and writes `git-rebase-todo` (and `update-refs`).
+      ggui never writes sequencer files.
+  - **One journal operation** (undo-journal.md §4.1):
+    - `OperationRecorder` joins the remembered group op while its rebase is in progress (not
+      undo/redo), and withholds `end` until the rebase is gone.
+    - An op that saw a rebase start (ggui's Start, or `pull --rebase` stopping) becomes the group.
+      The hooks do the same for plain git: a `rebase` record keeps a `src:git` op open after its
+      process exits, `post-rewrite rebase` ends it, and later commands join it.
+    - `closeFinishedGroup` ends a group whose rebase is gone. It runs in the recorder, the hooks and
+      before Undo plans.
+    - Fixed along the way (both broke Undo of any rebase):
+      - The hook recorded HEAD's old value as the branch's commit when git detached a symbolic
+        HEAD. It now records `ref:<branch>`.
+      - `planUndo` skips refs with equal old/new values, since HEAD ends on its branch again.
+      - Resumed operations of a plain rebase record no index (mid-rebase trees broke Undo's
+        worktree carry). Ones ggui opened keep the latest index, and the hook adds the final one.
+  - **Tests:** `Source/tests/test_rebase_native.cpp` (4 scenarios).
+    - edit / break / failing exec with Amend and continue, the progress popup, a typed reword via
+      the helper, one op and one Undo, and the CLI refusals.
+    - A conflict stop with Run as git rebase and exec each. Edit remaining todo is compared byte for
+      byte with `git rebase --edit-todo` on a copy, a changed list is refused, and Commit with
+      conflicts runs twice.
+    - A plain `git rebase -i` test step, edited in ggui and finished in a terminal: with hooks one
+      `[git]` op that Undo restores; ggui-started and terminal-finished is one op; without hooks
+      Undo refuses and the group is closed.
+    - Refusals: a moved branch, git 2.37 (a fake `git version`) with update-ref and then
+      `--empty=ask`, local changes without Autostash, Abort, `--root` with Keep.
 
 ### P3-20 Phase 3 gate
 - **Depends on:** all P3 tasks
 - **Do:** every action of today's app available under Git semantics; both gates green.
+- **Notes from P3-19:**
+  - All §4.13 IDs except IR-CONFLICTED-INPUT are covered. IR-CONFLICTED-INPUT (rebasing commits
+    that already have first-class conflicts) has no scenario yet.
+  - Any ggui mutation while a `rebase-merge` rebase is in progress joins that rebase's journal
+    operation, and it stays open (not undoable) until the rebase ends. A ggui `pull --rebase` that
+    stops is grouped the same way.
 
 ---
 
@@ -1298,6 +1380,13 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Do:** `label`, `reset`, `merge` in the todo model and editor; route to the native engine
   unless the in-memory engine supports it; extend the differential test.
 - **Done when:** spec IDs covered.
+- **Notes from P3-19:**
+  - The native path already hands any todo to git (`todo::format` writes label/reset/merge back
+    as parsed). `RebasePanel::startNative` needs `--rebase-merges` in `Actions::NativeRebase::args`.
+  - The preview throws on label/reset/merge (`toPlan`), and so does Edit remaining todo's preview
+    for a `--rebase-merges` rebase: the list stays editable and savable.
+  - `rebaseStep`/`onRebaseStep` and the progress popup are action-agnostic. The stop reason
+    only knows edit/break/exec/conflicts.
 
 ### P4-02 `git gg sequence-editor` as Git's `sequence.editor`
 - **Depends on:** P3-19
@@ -1305,6 +1394,13 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Do:** opt-in setting so plain `git rebase -i` opens ggui's todo editor window; saved todo
   goes back to git.
 - **Done when:** scenario runs plain `git rebase -i` as a step and edits in ggui.
+- **Notes from P3-19:**
+  - `git gg sequence-editor FILE` exists (`gg::native::sequenceEditor`). Without
+    `GG_SEQUENCE_DIR` it exits 1 with "no prepared todo". P4-02 replaces that branch: open ggui's
+    editor on FILE and write the saved list back.
+  - `todo::readRemaining(repo, text, headName)` builds the Context from a todo text. For a fresh
+    `git rebase -i` the head-name/onto files already exist when the sequence editor runs.
+  - `RebasePanel::Request::remaining` is the pattern for opening the editor on git's own list.
 
 ### P4-03 Full worktree management
 - **Depends on:** P2-03, P1-20

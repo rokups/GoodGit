@@ -47,6 +47,7 @@ a shared ref or *W*'s own HEAD/index (§5.1).
 | `refs` | `op`, `u`: list of `[ref, old, new]` | Ref updates that happened in `op` |
 | `index` | `op`, `wt`, `before`, `after` | Index tree of worktree `wt` before/after (tree IDs) |
 | `map` | `op`, `m`: list of `[old commit, new commit]` | Rewrite mapping (post-rewrite) |
+| `rebase` | `op` | `op` spans a native rebase (§4.1): open until its `end` record |
 | `end` | `op`, optional `ok` (false = failed) | Closes operation `op` |
 
 - `op` — operation ID: `<unix-ms>-<8 hex>` for ggui/git-gg; `git-<pid>-<start>` for operations
@@ -105,8 +106,29 @@ operation older than 10 minutes, or whose process no longer exists, as closed.
   operation: `map` records (post-rewrite stdin), index trees, and `end` when the command is known
   to be finished (post-merge, post-commit and post-checkout of a top-level command; post-rewrite
   of `rebase`).
-- One plain git command therefore yields exactly one operation, e.g. a whole `git rebase -i`
-  from `rebase (start)` to `rebase (finish)`.
+- One plain git command therefore yields exactly one operation.
+
+### 4.1 Native rebases (several git commands, one operation)
+A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git commands
+(`git rebase -i`, `git rebase --continue`, …). From `rebase (start)` to `rebase (finish)` it is
+**one** operation:
+- The operation that first changes refs while a rebase is in progress in worktree *W* (ggui's
+  Start, or the hooks for the plain `git rebase -i` process) is remembered in
+  `$GIT_COMMON_DIR/gg/rebase/<W>/operation` with the rebase's identity (`orig-head`, `onto` and
+  `head-name` from `rebase-merge/`), and a `rebase` record is appended: the operation stays open
+  (and cannot be undone) until its `end`, even after the git process that began it is gone.
+- While that rebase is in progress, ggui and git-gg operations (other than undo/redo) and the hooks
+  of later git commands (`git rebase --continue` in a terminal) join it instead of opening their own.
+- It ends when the rebase is gone: ggui's step that finished it writes `end`; the
+  `post-rewrite rebase` hook of a terminal command does (adding the final index tree for an
+  operation ggui opened). A remembered operation whose rebase is no longer in progress (aborted,
+  or finished without the hooks) gets its `end` the next time ggui, git-gg or a hook records
+  anything, and before Undo plans.
+- Deleting `gg/rebase/` only splits the rebase into several operations.
+- When git detaches a symbolic HEAD (a rebase starting), the transaction reports the branch's commit
+  as HEAD's old value; the hook records `ref:<branch>` instead (the branch is not in the same
+  transaction). Undo skips refs whose recorded old and new values are equal (HEAD back on its
+  branch at the end of a rebase).
 
 ## 5. Undo and redo
 

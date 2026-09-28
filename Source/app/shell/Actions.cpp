@@ -755,13 +755,15 @@ void Actions::continueOperation()
         return;
     const std::string cmd = operationCommand(snap->state);
     run(cmd + " --continue", [cmd](MutationContext& ctx) {
+        if (cmd == "rebase")
+            return rebaseStep(ctx, {"--continue"});
         ctx.env.emplace_back("GIT_EDITOR", "true");
         if (cmd == "merge")
             ctx.git({"commit", "--no-edit", "-q"});
         else
             ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
-    });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
 }
 
 void Actions::skipOperation()
@@ -771,13 +773,15 @@ void Actions::skipOperation()
         return;
     const std::string cmd = operationCommand(snap->state);
     run(cmd + " --skip", [cmd](MutationContext& ctx) {
+        if (cmd == "rebase")
+            return rebaseStep(ctx, {"--skip"});
         ctx.env.emplace_back("GIT_EDITOR", "true");
         if (cmd == "bisect")
             ctx.git({"bisect", "skip"});
         else
             ctx.git({cmd, "--skip"});
         ctx.worktreeFollowsIndex = true;
-    });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
 }
 
 void Actions::abortOperation()
@@ -787,6 +791,8 @@ void Actions::abortOperation()
         return;
     const std::string cmd = operationCommand(snap->state);
     run(cmd + " --abort", [cmd](MutationContext& ctx) {
+        if (cmd == "rebase")
+            return rebaseStep(ctx, {"--abort"});
         if (cmd == "bisect")
             ctx.git({"bisect", "reset"});
         else
@@ -838,13 +844,15 @@ void Actions::commitWithConflicts()
         }
         if (!paths.empty())
             ctx.git(withPaths({"add"}, paths));
+        if (cmd == "rebase")
+            return rebaseStep(ctx, {"--continue"});
         ctx.env.emplace_back("GIT_EDITOR", "true");
         if (cmd == "merge" || cmd.empty())
             ctx.git({"commit", "--no-edit", "-q", "--no-verify"});
         else
             ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
-    });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
 }
 
 void Actions::saveMergeMessage(const std::string& message)

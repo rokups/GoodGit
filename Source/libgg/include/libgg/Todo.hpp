@@ -118,6 +118,9 @@ struct Context {
     std::map<std::string, std::vector<std::string>> branchesAt; // commit → local branch refs
     std::set<std::string> checkedOutElsewhere;    // branch refs checked out in other worktrees
     Todo initial;                                 // the todo Git would start with
+    // The remaining part of a stopped `git rebase -i` (readRemaining): onto is the current HEAD,
+    // and squash/fixup rows before any commit row fold into it.
+    bool continuesHead = false;
 };
 
 // Reads the range and builds the starting todo (see the file comment). Throws on unknown
@@ -127,6 +130,13 @@ Context read(git_repository* repo, const ReadOptions& options);
 // Resolves abbreviated ids in `todo` to full ids and adds the commits to `context`. Returns
 // the problems (unknown or ambiguous ids), with 1-based item numbers as lines.
 std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& context);
+
+// The remaining todo of a stopped `git rebase -i` ("Edit remaining todo"): `todoText` is
+// rebase-merge/git-rebase-todo, `headName` rebase-merge/head-name (the branch that moves at the
+// end, or "detached HEAD"). The Context describes only that part: upstream = onto = the current
+// HEAD, the branch as tipRef, HEAD following it; `initial` is the parsed list with full ids.
+// Throws when the list has lines or ids it cannot read.
+Context readRemaining(git_repository* repo, std::string_view todoText, const std::string& headName);
 
 // ---- Autosquash -----------------------------------------------------------------------------
 
@@ -166,6 +176,12 @@ std::string groupMessage(const Todo& todo, const Group& group, const Context& co
 // Text for the inline message editor of the group's first row: the typed message, or the
 // template, or the kept message.
 std::string editorText(const Todo& todo, const Group& group, const Context& context, std::string_view comment = "#");
+
+// What git's editor gets during a native run (`git gg sequence-editor`): for every group with a
+// typed message, the commit git is working on when it opens its editor for that message (the
+// reword row, or the group's last squash/fixup row when Git asks for the combined message) →
+// the typed text. Other editor invocations keep Git's text, which is Git's default message.
+std::map<std::string, std::string> editorMessages(const Todo& todo);
 
 // ---- Validation -----------------------------------------------------------------------------
 

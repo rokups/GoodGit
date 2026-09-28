@@ -5,6 +5,7 @@
 #pragma once
 
 #include <core/Engine.hpp>
+#include <libgg/NativeRebase.hpp>
 #include <libgg/Rewrite.hpp>
 
 #include <functional>
@@ -142,6 +143,30 @@ public:
     void commitWithConflicts();
     void saveMergeMessage(const std::string& message);
 
+    // ---- native interactive rebase (§4.13 execution 2) ------------------------------------------
+    struct NativeRebase {
+        std::vector<std::string> args;   // after `git rebase -i --empty=<empty>`: options, upstream, branch
+        std::string empty = "stop";      // --empty: keep, drop or stop (Ask)
+        gg::native::Prepared prepared;   // the todo and typed messages for `git gg sequence-editor`
+        bool updateRefs = false;         // the todo has update-ref rows (git >= 2.38)
+        std::string tipRef;              // the branch (or HEAD) must still be at `tip`
+        std::string tip;
+        bool checkTip = false;
+    };
+    // `git rebase -i` with GIT_SEQUENCE_EDITOR / GIT_EDITOR = `git gg sequence-editor`. A stop
+    // (edit, break, failing exec, conflicts, a commit that became empty) is not an error: the
+    // result is "stopped" and the message says why.
+    void nativeRebase(NativeRebase request, Callback done = {});
+    // Stopped interactive rebase: `git commit --amend --no-edit` when something is staged, then
+    // `git rebase --continue`.
+    void amendAndContinue();
+    // "Edit remaining todo": `git rebase --edit-todo` with the sequence editor writing `todo`, so
+    // git-rebase-todo is written exactly as --edit-todo writes it. Refused when git's list is no
+    // longer `expected` (the rebase moved on meanwhile). The typed messages are kept for later
+    // Continue steps.
+    void editRemainingTodo(std::string expected, std::string todo, std::map<std::string, std::string> messages,
+        Callback done = {});
+
     // ---- undo (§5 U1) ---------------------------------------------------------------------
     void undo(bool redo);
     void restore(const std::string& operationId);
@@ -158,6 +183,8 @@ public:
 
 private:
     void handleDefault(const core::MutationFinishedEvent& event);
+    // A step of a stopped rebase finished: stopping again shows git's message, errors a popup.
+    void onRebaseStep(const core::MutationFinishedEvent& event);
 
     struct RewriteState;
     void rewritePrepare(const std::shared_ptr<RewriteState>& state);
@@ -167,6 +194,10 @@ private:
     Session& m_session;
     std::map<core::RequestId, Callback> m_callbacks;
 };
+
+// `git rebase <args>` moving a stopped rebase on (ActionsRebase.cpp): git's editor gets the
+// messages typed for this rebase; stopping again further on is not an error (ctx.info says why).
+void rebaseStep(core::MutationContext& ctx, std::vector<std::string> args);
 
 // Joins paths after "--" for a git command line.
 std::vector<std::string> withPaths(std::vector<std::string> args, const std::vector<std::string>& paths);

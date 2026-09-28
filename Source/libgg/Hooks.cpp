@@ -4,9 +4,11 @@
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
+#include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Process.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <istream>
@@ -304,9 +306,17 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
     const std::string wt = worktreeKey(repo.get());
     journal::Journal journal{commonDir};
 
+    const char* ggOperation = std::getenv("GG_OPERATION");
+    const bool joined = ggOperation && *ggOperation;
     auto operationId = [&](bool create) -> std::string {
-        if (const char* op = std::getenv("GG_OPERATION"); op && *op)
-            return op; // loop guard: join the ggui / git-gg operation
+        if (joined)
+            return ggOperation; // loop guard: join the ggui / git-gg operation
+        // A native rebase is one operation from start to finish, over several git commands
+        // (git rebase -i, git rebase --continue, ...): join the one that saw it start.
+        if (create)
+            native::closeFinishedGroup(repo.get(), journal);
+        if (std::string group = native::groupOperation(repo.get()); !group.empty())
+            return group;
         const ProcessInfo parent = parentProcess();
         const std::string id = "git-" + std::to_string(parent.pid) + "-" + std::to_string(parent.start);
         if (create && !journal.hasOpenOperation(id)) {
@@ -318,6 +328,8 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
             op.wt = wt;
             journal.begin(op);
         }
+        if (create && !native::rebaseIdentity(repo.get()).empty())
+            native::rememberGroup(repo.get(), journal, id);
         return id;
     };
 
@@ -348,12 +360,22 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
         if (state == "prepared") {
             std::string text;
             for (size_t i = 0; i < changes.size(); ++i) {
-                if (changes[i].newValue.rfind("ref:", 0) != 0 || !isNull(changes[i].oldValue))
+                // A symbolic ref being re-pointed (git reports its old value as null), or HEAD
+                // being detached from a branch (git reports the branch's commit; the branch
+                // itself is not part of the transaction): its old value is the symbolic target.
+                const bool repoint = changes[i].newValue.rfind("ref:", 0) == 0 && isNull(changes[i].oldValue);
+                const bool detach = names[i] == "HEAD" && changes[i].newValue.rfind("ref:", 0) != 0;
+                if (!repoint && !detach)
                     continue;
                 git_reference* ref = nullptr;
                 if (git_reference_lookup(&ref, repo.get(), names[i].c_str()) == 0) {
-                    if (git_reference_type(ref) == GIT_REFERENCE_SYMBOLIC)
-                        text += changes[i].ref + " ref:" + git_reference_symbolic_target(ref) + "\n";
+                    const char* target = git_reference_type(ref) == GIT_REFERENCE_SYMBOLIC
+                        ? git_reference_symbolic_target(ref)
+                        : nullptr;
+                    const bool referentMoves = target
+                        && std::find(names.begin(), names.end(), std::string(target)) != names.end();
+                    if (target && !(detach && referentMoves))
+                        text += changes[i].ref + " ref:" + target + "\n";
                     git_reference_free(ref);
                 } else {
                     git_error_clear();
@@ -376,7 +398,7 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
             std::string ref, value;
             while (f >> ref >> value)
                 for (auto& c : changes)
-                    if (c.ref == ref && isNull(c.oldValue) && c.newValue.rfind("ref:", 0) == 0)
+                    if (c.ref == ref && (isNull(c.oldValue) || c.newValue.rfind("ref:", 0) != 0))
                         c.oldValue = value;
             f.close();
             std::error_code ec;
@@ -394,8 +416,17 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
             if (fields >> a >> b)
                 map.emplace_back(a, b);
         }
+        const std::string id = operationId(true);
         if (!map.empty())
-            journal.appendRewrites(operationId(true), map);
+            journal.appendRewrites(id, map);
+        // `git rebase` runs post-rewrite when it finishes: its operation ends here (ggui ends its
+        // own when the git command it runs returns).
+        if (!joined && !args.empty() && args[0] == "rebase" && native::groupOperation(repo.get()) == id) {
+            // An operation ggui started has the index from before the rebase: add the final one.
+            if (id.rfind("git-", 0) != 0 && git_repository_workdir(repo.get()))
+                journal.appendIndex(id, journal::IndexChange{wt, "", indexTree(git_repository_workdir(repo.get())), true});
+            native::finishGroup(repo.get(), journal);
+        }
         return 0;
     }
     if (name == "post-checkout" || name == "post-merge" || name == "post-commit") {

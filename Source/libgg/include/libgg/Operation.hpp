@@ -31,7 +31,9 @@ public:
     // For undo/redo operations.
     void setUndoes(std::string id, bool redo);
     // Writes the begin record and exports GG_OPERATION. Recording problems never fail the
-    // operation itself (the journal is history only).
+    // operation itself (the journal is history only). While a native rebase is in progress the
+    // recorder joins that rebase's operation instead (NativeRebase.hpp); an operation that starts
+    // a rebase stays open until the rebase is finished.
     void begin();
     // Records the resulting ref and index changes and the end record.
     void finish(bool ok, bool worktreeFollowsIndex = false);
@@ -45,6 +47,8 @@ private:
     journal::Operation m_op;
     bool m_captureIndex;
     bool m_begun = false;
+    bool m_resumed = false;       // joined the operation of the native rebase in progress
+    bool m_rebaseAtBegin = false; // a native rebase was in progress when it began
     bool m_finished = false;
     std::map<std::string, std::string> m_before;
     std::string m_indexBefore;

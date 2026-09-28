@@ -1,5 +1,7 @@
 #include "Readers.hpp"
 
+#include <libgg/Todo.hpp>
+
 #include <libgg/Markers.hpp>
 
 #include <libgg/Conflicts.hpp>
@@ -67,6 +69,49 @@ std::string headFileBranch(const fs::path& headFile, Oid* oidOut)
     if (oidOut)
         *oidOut = Oid::fromHex(s);
     return {};
+}
+
+std::vector<RebaseStep> rebaseSteps(const std::string& text)
+{
+    std::vector<RebaseStep> out;
+    for (const auto& item : gg::todo::parse(text).items) {
+        RebaseStep step;
+        step.action = gg::todo::actionName(item.action);
+        if (item.isCommit()) {
+            if (item.fixup != gg::todo::FixupMessage::None)
+                step.action += item.fixup == gg::todo::FixupMessage::Use ? " -C" : " -c";
+            step.commit = item.commit;
+            step.text = item.subject;
+        } else {
+            step.text = item.arg;
+        }
+        out.push_back(std::move(step));
+    }
+    return out;
+}
+
+RebaseProgress readRebaseProgress(git_repository* repo, const fs::path& dir)
+{
+    RebaseProgress p;
+    p.done = rebaseSteps(readFileText(dir / "done"));
+    p.todoText = readFileText(dir / "git-rebase-todo");
+    p.remaining = rebaseSteps(p.todoText);
+    p.headName = gg::trim(readFileText(dir / "head-name"));
+    // Lines written without the subject (older git, or a todo typed that way): the commit's.
+    for (auto* steps : {&p.done, &p.remaining})
+        for (auto& step : *steps) {
+            if (step.commit.empty() || !step.text.empty())
+                continue;
+            git_object* raw = nullptr;
+            if (git_revparse_single(&raw, repo, (step.commit + "^{commit}").c_str()) == 0) {
+                Object obj(raw);
+                const char* summary = git_commit_summary(reinterpret_cast<git_commit*>(obj.get()));
+                step.text = summary ? summary : "";
+                step.commit = toHex(*git_object_id(obj.get()));
+            }
+            git_error_clear();
+        }
+    return p;
 }
 
 } // namespace
@@ -168,6 +213,8 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
             snap->stateOnto = gg::trim(readFileText(dir / "head-name"));
             snap->stateOnto = stripPrefix(snap->stateOnto, "refs/heads/");
         }
+        if (snap->state == RepoState::RebasingInteractive)
+            snap->rebase = readRebaseProgress(repo, snap->gitDir / "rebase-merge");
     }
 
     // Worktrees (needed for branch → worktree mapping)

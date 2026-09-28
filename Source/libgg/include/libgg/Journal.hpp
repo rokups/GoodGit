@@ -41,6 +41,7 @@ struct Operation {
     std::int64_t time = 0;
     bool ended = false;
     bool ok = true;
+    bool spansRebase = false;           // a native rebase: open until its end record (NativeRebase.hpp)
     std::vector<RefChange> refs;        // merged per ref: first old value, last new value
     std::vector<IndexChange> index;     // merged per worktree
     std::vector<std::pair<std::string, std::string>> rewrites; // old → new commit
@@ -65,6 +66,9 @@ public:
     bool appendRewrites(const std::string& id, const std::vector<std::pair<std::string, std::string>>& map,
         std::string* error = nullptr);
     bool end(const std::string& id, bool ok, std::string* error = nullptr);
+    // Marks `id` as the operation of a native rebase: it stays open (not undoable) until its end
+    // record, even when the git process that began it is gone.
+    bool markRebase(const std::string& id, std::string* error = nullptr);
 
     // All operations in journal order. Corrupt or torn lines are skipped; `skipped` counts them.
     // A journal written by a newer major version yields an error and no operations.

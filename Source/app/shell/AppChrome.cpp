@@ -3,12 +3,14 @@
 #include "panels/InfoPanel.hpp"
 #include "platform/Platform.hpp"
 #include "panels/CommitMenu.hpp"
+#include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
 #include "util/Ui.hpp"
 
 #include <imgui.h>
+#include <algorithm>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
@@ -58,6 +60,13 @@ bool textConflictsOnly(Session& s)
             return false;
     }
     return any;
+}
+
+// Native (index) conflicts left in the working tree.
+bool nativeConflicts(Session& s)
+{
+    const auto st = s.status();
+    return st && std::any_of(st->conflicted.begin(), st->conflicted.end(), [](const auto& e) { return !e.firstClass; });
 }
 
 } // namespace
@@ -355,7 +364,78 @@ void App::drawStateBadge()
             ImGui::SetTooltip("Record the text conflicts as first-class conflicts in the commit and finish the %s",
                 core::repoStateBadge(snap.state));
     }
+    if (snap.rebase) {
+        // A stopped interactive rebase (§4.10 native, §4.13): amend, edit the rest, see where it is.
+        if (!nativeConflicts(s)) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Amend and continue##tb_amend_continue"))
+                s.actions().amendAndContinue();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Amend HEAD with the staged changes (git commit --amend), then continue the rebase");
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Edit remaining todo##tb_edit_todo")) {
+            RebasePanel::Request r;
+            r.remaining = true;
+            s.rebase().open(std::move(r));
+        }
+    }
     ImGui::EndDisabled();
+    if (snap.rebase) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Progress##tb_rebase_progress"))
+            ImGui::OpenPopup("##rebase_progress");
+        if (ImGui::BeginPopup("##rebase_progress")) {
+            drawRebaseProgress(s, *snap.rebase);
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void App::drawRebaseProgress(Session& s, const core::RebaseProgress& rebase)
+{
+    const Palette& p = theme().palette();
+    auto line = [&](const core::RebaseStep& step) {
+        std::string text = step.action;
+        if (!step.commit.empty())
+            text += " " + step.commit.substr(0, s.shortIdLength());
+        if (!step.text.empty())
+            text += " " + step.text;
+        return text;
+    };
+    const std::string branch = rebase.headName.rfind("refs/heads/", 0) == 0 ? rebase.headName.substr(11) : "detached HEAD";
+    const size_t done = rebase.done.empty() ? 0 : rebase.done.size() - 1;
+    plainText(("Rebasing " + branch + ": " + std::to_string(done) + " done, " + std::to_string(rebase.remaining.size())
+                  + " remaining###rp_title").c_str());
+    ImGui::SeparatorText("Done");
+    for (size_t i = 0; i < done; ++i)
+        ImGui::TextDisabled("%s", line(rebase.done[i]).c_str());
+    if (done == 0)
+        ImGui::TextDisabled("(nothing yet)");
+    ImGui::SeparatorText("Stopped at");
+    if (!rebase.done.empty()) {
+        const core::RebaseStep& current = rebase.done.back();
+        ImGui::PushStyleColor(ImGuiCol_Text, p.conflict);
+        plainText((line(current) + "###rp_current").c_str());
+        ImGui::PopStyleColor();
+        std::string reason;
+        if (nativeConflicts(s))
+            reason = "Conflicts: resolve them (or Commit with conflicts), then Continue.";
+        else if (current.action == "edit")
+            reason = "Edit: change the commit (Amend and continue), or Continue as it is.";
+        else if (current.action == "break")
+            reason = "Break: Continue when you are ready.";
+        else if (current.action == "exec")
+            reason = "The command failed: fix the problem, then Continue.";
+        else
+            reason = "Continue to go on (or Skip this commit).";
+        plainText((reason + "###rp_reason").c_str());
+    }
+    ImGui::SeparatorText("Remaining");
+    for (size_t i = 0; i < rebase.remaining.size(); ++i)
+        plainText((line(rebase.remaining[i]) + "###rp_next_" + std::to_string(i)).c_str());
+    if (rebase.remaining.empty())
+        ImGui::TextDisabled("(nothing: Continue finishes the rebase)");
 }
 
 void App::drawToolbar()

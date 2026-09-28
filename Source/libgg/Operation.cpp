@@ -1,6 +1,7 @@
 #include "libgg/Operation.hpp"
 
 #include "libgg/GitRunner.hpp"
+#include "libgg/NativeRebase.hpp"
 #include "libgg/Thread.hpp"
 
 namespace gg {
@@ -83,10 +84,24 @@ void OperationRecorder::setUndoes(std::string id, bool redo)
 
 void OperationRecorder::begin()
 {
+    // A native rebase is one operation from start to finish: while one is in progress, operations
+    // join the one that started it (undo operations never do).
+    native::closeFinishedGroup(m_repo, m_journal);
+    m_rebaseAtBegin = !native::rebaseIdentity(m_repo).empty();
+    if (m_op.undoes.empty())
+        if (std::string group = native::groupOperation(m_repo); !group.empty()) {
+            m_op.id = std::move(group);
+            m_resumed = true;
+            // A plain git rebase's operation (opened by the hooks) has no index: one taken in the
+            // middle says nothing about its start. ggui's has the start's; this adds the latest.
+            if (m_op.id.rfind("git-", 0) == 0)
+                m_captureIndex = false;
+        }
     m_before = readRefValues(m_repo);
     if (m_captureIndex && !git_repository_is_bare(m_repo))
         m_indexBefore = indexTree(m_workdir);
-    m_journal.begin(m_op, &m_error);
+    if (!m_resumed)
+        m_journal.begin(m_op, &m_error);
     m_previousOperation = currentOperation();
     setCurrentOperation(m_op.id);
     m_begun = true;
@@ -118,7 +133,16 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
             m_journal.appendIndex(m_op.id, journal::IndexChange{m_op.wt, m_indexBefore, indexAfter, worktreeFollowsIndex},
                 &error);
     }
-    m_journal.end(m_op.id, ok, &error);
+    // The rebase this operation started or joined: open while it is stopped, ended with it.
+    const bool rebasing = !native::rebaseIdentity(m_repo).empty();
+    if (m_resumed) {
+        if (!rebasing)
+            native::finishGroup(m_repo, m_journal, ok);
+    } else if (rebasing && !m_rebaseAtBegin && m_op.undoes.empty()) {
+        native::rememberGroup(m_repo, m_journal, m_op.id);
+    } else {
+        m_journal.end(m_op.id, ok, &error);
+    }
     if (m_error.empty())
         m_error = error;
 }

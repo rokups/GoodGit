@@ -1,6 +1,7 @@
 #include "panels/RebasePanel.hpp"
 
 #include "panels/Graph.hpp"
+#include "shell/Actions.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
@@ -15,7 +16,10 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 
 namespace ggui {
@@ -115,6 +119,8 @@ void RebasePanel::open(Request request)
     m_previewGraph.clear();
     m_previewNote.clear();
     m_previewsRequested = m_previewsShown = 0;
+    m_remaining = request.remaining;
+    m_remainingText.clear();
     read(request, false);
 }
 
@@ -137,9 +143,42 @@ void RebasePanel::read(const Request& request, bool keepTodo)
     struct Result {
         std::shared_ptr<const todo::Context> context;
         todo::ReadOptions used;
+        std::string remainingText;
     };
     auto result = std::make_shared<Result>();
     const std::uint64_t generation = ++m_generation;
+    if (request.remaining) {
+        // The rest of the stopped git rebase -i, from git's own files (read only).
+        m_session.actions().run(
+            "read the remaining rebase todo",
+            [result](core::MutationContext& ctx) {
+                const std::filesystem::path dir = std::filesystem::path(git_repository_path(ctx.repo())) / "rebase-merge";
+                auto readText = [](const std::filesystem::path& path) {
+                    std::ifstream in(path, std::ios::binary);
+                    std::ostringstream out;
+                    out << in.rdbuf();
+                    return out.str();
+                };
+                if (!std::filesystem::exists(dir / "interactive"))
+                    throw std::runtime_error("no interactive rebase is in progress");
+                result->remainingText = readText(dir / "git-rebase-todo");
+                result->context = std::make_shared<const todo::Context>(
+                    todo::readRemaining(ctx.repo(), result->remainingText, readText(dir / "head-name")));
+            },
+            [this, result, generation, request](const core::MutationFinishedEvent& e) {
+                if (generation != m_generation)
+                    return;
+                if (e.outcome != core::Outcome::Ok) {
+                    close();
+                    m_session.app().showError("Open interactive rebase", e.message);
+                    return;
+                }
+                m_remainingText = result->remainingText;
+                onRead(result->context, {}, request, false);
+            },
+            false, false, false);
+        return;
+    }
     todo::ReadOptions options;
     options.upstream = request.upstream;
     options.tip = request.tip;
@@ -240,7 +279,8 @@ void RebasePanel::onTodoChanged()
     m_options.updateRefs = m_state.updateRefs;
     m_options.autosquash = m_state.autosquash;
     m_issues = m_state.context ? todo::validate(m_state.todo, *m_state.context) : std::vector<todo::Issue>{};
-    m_engine = todo::chooseEngine(m_state.todo, m_options);
+    m_engine = m_remaining ? todo::EngineChoice{todo::Engine::Native, "the rest of the rebase in progress"}
+                           : todo::chooseEngine(m_state.todo, m_options);
     startPreview();
 }
 
@@ -490,13 +530,15 @@ bool RebasePanel::canStart(std::string* reason) const
         return fail(m_session.actions().busyTooltip());
     if (todo::hasErrors(m_issues))
         return fail("Fix the errors in the list first");
-    if (m_engine.engine == todo::Engine::Native)
-        return fail("Running the list with git rebase is not available yet");
     return true;
 }
 
 void RebasePanel::start()
 {
+    if (m_remaining)
+        return saveRemaining();
+    if (m_engine.engine == todo::Engine::Native)
+        return startNative();
     const todo::Todo list = m_state.todo;
     const auto context = m_state.context;
     const bool keepDate = m_options.keepCommitterDate;
@@ -529,6 +571,68 @@ void RebasePanel::start()
             }
         },
         m_options.autostash);
+}
+
+void RebasePanel::startNative()
+{
+    const todo::Context& c = *m_state.context;
+    todo::Todo list = m_state.todo;
+    if (const std::string each = gg::trim(m_options.execEach); !each.empty())
+        todo::addExecEach(list, each);
+    Actions::NativeRebase r;
+    r.prepared.todo = todo::format(list);
+    r.prepared.messages = todo::editorMessages(list);
+    r.empty = m_options.emptied == gg::rewrite::Emptied::Keep ? "keep"
+        : m_options.emptied == gg::rewrite::Emptied::Drop     ? "drop"
+                                                               : "stop";
+    r.updateRefs = std::any_of(list.items.begin(), list.items.end(), [](const todo::Item& i) { return i.action == Action::UpdateRef; });
+    if (m_options.autostash)
+        r.args.push_back("--autostash");
+    if (c.upstream.empty()) {
+        r.args.push_back("--root");
+        if (!c.onto.empty()) {
+            r.args.push_back("--onto");
+            r.args.push_back(c.onto);
+        }
+    } else {
+        if (c.onto != c.upstream) {
+            r.args.push_back("--onto");
+            r.args.push_back(c.onto);
+        }
+        r.args.push_back(c.upstream);
+    }
+    // The branch to rebase when it is not HEAD's (git switches to it first).
+    if (!c.tipIsHead)
+        r.args.push_back(c.tipRef.empty() ? c.tip : branchName(c.tipRef));
+    r.checkTip = !c.tipRef.empty() || c.tipIsHead;
+    r.tipRef = c.tipRef;
+    r.tip = c.tip;
+    const std::uint64_t generation = m_generation;
+    m_session.actions().nativeRebase(std::move(r), [this, generation](const core::MutationFinishedEvent& e) {
+        if (generation != m_generation)
+            return;
+        if (e.outcome == core::Outcome::Ok) {
+            close();
+            if (!e.message.empty())
+                m_session.app().notify(App::Notice::Info, "Interactive rebase stopped", e.message);
+        } else if (e.outcome != core::Outcome::Cancelled) {
+            m_session.app().showError("Start interactive rebase", e.detail.empty() ? e.message : e.detail);
+        }
+    });
+}
+
+void RebasePanel::saveRemaining()
+{
+    const std::uint64_t generation = m_generation;
+    m_session.actions().editRemainingTodo(m_remainingText, todo::format(m_state.todo), todo::editorMessages(m_state.todo),
+        [this, generation](const core::MutationFinishedEvent& e) {
+            if (generation != m_generation)
+                return;
+            if (e.outcome == core::Outcome::Ok)
+                close();
+            else if (e.outcome != core::Outcome::Cancelled)
+                m_session.app().showError("Save the remaining todo", e.detail.empty() ? e.message : e.detail);
+        });
 }
 
 // ---- drawing ------------------------------------------------------------------------------------
@@ -590,6 +694,9 @@ void RebasePanel::drawHeader()
     const std::string tip = !c.tipRef.empty() ? branchName(c.tipRef) : c.tipIsHead ? "HEAD" : shortHex(c.tip, n);
     std::string title = "Rebase " + std::to_string(commits) + " commit(s) of " + tip + " onto "
         + (c.onto.empty() ? std::string("the root") : shortHex(c.onto, n));
+    if (m_remaining)
+        title = "Remaining todo of the rebase of " + (c.tipRef.empty() ? std::string("detached HEAD") : tip) + ": "
+            + std::to_string(commits) + " commit(s) onto HEAD " + shortHex(c.onto, n);
     plainText((title + "###ir_title").c_str());
 
     // Start / Cancel, as in a modal dialog's button row.
@@ -597,8 +704,10 @@ void RebasePanel::drawHeader()
     const bool startable = canStart(&reason);
     ImGui::SameLine();
     ImGui::BeginDisabled(!startable);
-    if (ImGui::Button(ICON_MS_PLAY_ARROW " Start###ir_start"))
+    if (ImGui::Button(m_remaining ? ICON_MS_SAVE " Save###ir_start" : ICON_MS_PLAY_ARROW " Start###ir_start"))
         start();
+    if (m_remaining && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Write git-rebase-todo (through git rebase --edit-todo); Continue goes on from there");
     ImGui::EndDisabled();
     if (!startable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("%s", reason.c_str());
@@ -625,6 +734,14 @@ void RebasePanel::drawHeader()
 
 void RebasePanel::drawOptions()
 {
+    if (!m_remaining)
+        drawRunOptions();
+    drawTools();
+}
+
+void RebasePanel::drawRunOptions()
+{
+    const bool native = m_engine.engine == todo::Engine::Native;
     const float field = ImGui::GetFontSize() * 12;
     ImGui::SetNextItemWidth(field);
     if (ImGui::InputTextWithHint("Onto###ir_onto", m_state.context->upstream.empty() ? "the root" : "the upstream", &m_onto,
@@ -656,10 +773,16 @@ void RebasePanel::drawOptions()
         onTodoChanged();
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9);
-    int date = m_options.keepCommitterDate ? 1 : 0;
+    // git rebase always sets the committer date to now (--committer-date-is-author-date is another
+    // thing): Keep original is for the in-memory engine only.
+    int date = m_options.keepCommitterDate && !native ? 1 : 0;
     const char* dates[] = {"Use now", "Keep original"};
+    ImGui::BeginDisabled(native);
     if (ImGui::Combo("Committer date###ir_committer_date", &date, dates, 2))
         m_options.keepCommitterDate = date == 1;
+    ImGui::EndDisabled();
+    if (native && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("git rebase sets the committer date to now; Keep original needs the in-memory engine.");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
     int emptied = static_cast<int>(m_options.emptied);
@@ -671,7 +794,10 @@ void RebasePanel::drawOptions()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Commits whose changes are already in the new base (git rebase --empty): keep them as "
                           "empty commits, drop them, or ask at Start (Git's default).");
+}
 
+void RebasePanel::drawTools()
+{
     // List tools.
     ImGui::BeginDisabled(m_undo.empty());
     if (ImGui::Button(ICON_MS_UNDO "###ir_undo"))

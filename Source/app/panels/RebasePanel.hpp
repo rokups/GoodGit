@@ -5,8 +5,9 @@
 // messages, engine choice) is pure functions of the todo and the read Context, so the UI thread
 // never touches the repository. Start runs the in-memory engine through gg::todo::toPlan and
 // Actions::rewrite (one operation, one Undo). Todos that need `git rebase -i` (edit, break,
-// exec, "Run as git rebase") are edited and validated here but cannot start until the native
-// engine exists (P3-19).
+// exec, "Run as git rebase") start the native engine (Actions::nativeRebase): the todo and the
+// typed messages go to git through `git gg sequence-editor`. "Edit remaining todo" opens the
+// rest of a stopped `git rebase -i` here; Start then saves it through `git rebase --edit-todo`.
 //
 // Live preview (P3-17): every change of the list (onTodoChanged) sends the todo, its Context and
 // the options to the engine's preview worker, which runs the same plan through the in-memory
@@ -47,6 +48,8 @@ public:
         std::vector<std::string> selected; // commits selected when the editor opens
         // Adjusts the starting todo ("Open as interactive rebase…" from single actions).
         std::function<void(gg::todo::Todo&, const gg::todo::Context&)> adjust;
+        // "Edit remaining todo" of the stopped `git rebase -i` (the other fields are ignored).
+        bool remaining = false;
     };
 
     explicit RebasePanel(Session& session);
@@ -69,6 +72,8 @@ public:
     // Rows in display order (indexes into todo().items).
     std::vector<size_t> displayOrder() const;
     bool canStart(std::string* reason = nullptr) const;
+    // Editing the remaining todo of a stopped `git rebase -i` (Start saves it).
+    bool editingRemaining() const { return m_remaining; }
     // The text of a group's inline message editor (the group whose first row is `row`).
     std::string messageText(size_t row) const;
 
@@ -115,9 +120,13 @@ private:
     void setUpdateRefs(bool on);
     void setAutosquash(bool on);
     void start();
+    void startNative();
+    void saveRemaining();
 
     void drawHeader();
     void drawOptions();
+    void drawRunOptions();
+    void drawTools();
     void drawList();
     void drawPreview();
     void drawRow(size_t row, float messageHeight);
@@ -128,6 +137,8 @@ private:
     Session& m_session;
     bool m_open = false;
     bool m_focus = false;
+    bool m_remaining = false;         // editing the rest of a stopped git rebase -i
+    std::string m_remainingText;      // git-rebase-todo as read
     std::uint64_t m_generation = 0;   // results of older reads are ignored
     gg::todo::ReadOptions m_read;     // what the current context was read with (revisions resolved)
     State m_state;

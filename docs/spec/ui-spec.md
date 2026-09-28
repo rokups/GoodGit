@@ -68,8 +68,18 @@ recent repositories) · folder `##tb_open` (opens the working directory in the f
 current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
 (plain text, short ID; tooltip with the full ID; right-click: Copy ID) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,
-BISECTING) with Continue / Skip / Abort · activity spinner `##tb_activity` (tooltip lists the
-background tasks) + `Cancel##tb_cancel`.
+BISECTING) with Continue / Skip / Abort (and *Commit with conflicts* for text-only conflicts) ·
+while a `git rebase -i` is stopped (from ggui or plain git, detected from `.git/rebase-merge/`):
+*Amend and continue* `##tb_amend_continue` (no native conflicts left: `git commit --amend
+--no-edit` when something is staged, then `git rebase --continue`), *Edit remaining todo*
+`##tb_edit_todo` (the todo editor on the rest of git's list, §4.x) and *Progress*
+`##tb_rebase_progress`, a popup `##rebase_progress`: "Rebasing <branch>: N done, M remaining"
+`###rp_title`, the done rows (dimmed), "Stopped at" the current row `###rp_current` with why and
+what to do `###rp_reason` (conflicts, edit, break, a failed exec), and the remaining rows
+`###rp_next_<n>` · activity spinner `##tb_activity` (tooltip lists the background tasks) +
+`Cancel##tb_cancel`. Continue / Skip / Amend and continue that stop again further on (the next
+edit, break, failing exec or conflict) are not errors: a notification "Interactive rebase
+stopped" shows git's message.
 
 Mutation buttons are disabled (with a tooltip "Not available yet" until their phase, and
 "Busy: <operation>" while a conflicting mutation runs).
@@ -207,7 +217,8 @@ the panel without touching the repository.
   (default on; off removes the `update-ref` rows, on puts them back after their commit's
   squash/fixup rows), *Autostash* `###ir_autostash`, *Run as git rebase* `###ir_native`, *Exec
   after every commit* `###ir_exec_each`, *Committer date* `###ir_committer_date` (Use now / Keep
-  original), *Becoming empty* `###ir_empty` (Keep / Drop / Ask, default Ask: what happens to
+  original; disabled at "Use now" when the engine is git rebase, which always sets the committer
+  date to now), *Becoming empty* `###ir_empty` (Keep / Drop / Ask, default Ask: what happens to
   commits whose changes are already in the new base, like `git rebase --empty=keep|drop|stop`).
 - **Tools:** Undo `###ir_undo` (Ctrl+Z), Redo `###ir_redo` (Ctrl+Y, Ctrl+Shift+Z), *Insert exec*
   `###ir_insert_exec`, *Insert break* `###ir_insert_break` (after the last selected row, else at the
@@ -236,8 +247,22 @@ the panel without touching the repository.
   popup, the editor stays) when the branch moved since the list was read. With *Autostash* tracked
   local changes are stashed before and popped after, in the same operation; when they no longer
   apply they stay in the stash (warning notification). Todos needing `git rebase -i` (edit, break,
-  exec, exec after every commit, Run as git rebase) are validated but cannot start until the native
-  engine exists (Phase 3, P3-19).
+  exec, exec after every commit, Run as git rebase) start the native engine: `git rebase -i` with
+  the list (exec after every commit added after each commit row) and the typed messages handed over
+  by `git gg sequence-editor`, *Autostash* as `--autostash`, *Becoming empty* as `--empty`. The
+  editor closes; a stop shows the notification "Interactive rebase stopped" (git's message) and the
+  toolbar's stop handling (§1.4). Refused (error popup, the editor stays) when the branch moved, when
+  git refuses (local changes without Autostash), or when the list has update-ref rows and git is
+  older than 2.38.
+- **Edit remaining todo** (toolbar, while a `git rebase -i` is stopped): the same editor on the
+  rest of git's list (`git-rebase-todo`, ids resolved), with the title "Remaining todo of the rebase
+  of <branch>: N commit(s) onto HEAD <short ID>", the engine line "git rebase (the rest of the
+  rebase in progress)", no options row, and *Save* (`###ir_start`) instead of Start. Rows, keys,
+  messages, validation (a squash/fixup may come first: it folds into HEAD) and the preview (onto
+  HEAD) work as above. Save writes the list through `git rebase --edit-todo` (so git writes
+  `git-rebase-todo` exactly as it would for its own editor) and keeps the typed messages for the
+  later Continue steps; refused ("The rebase moved on…") when git's list changed since it was read.
+  Errors are titled `Save the remaining todo`.
 - **Live preview** `##ir_preview` (right of the list, a bordered child; plan §4.13): "Result", and
   while a newer result is computed a spinner with "Updating..." (the previous result stays). A
   summary line `###irp_summary` ("N commit(s), K with conflicts, M need a decision, E empty"),
