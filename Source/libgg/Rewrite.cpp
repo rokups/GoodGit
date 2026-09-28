@@ -889,15 +889,14 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
     check(git_revwalk_new(&raw, repo), "git_revwalk_new");
     Revwalk walk(raw);
     git_revwalk_sorting(walk.get(), GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE);
-    bool pushed = false;
     forEachReference(repo, [&](git_reference* ref) {
         if (std::string(git_reference_name(ref)).rfind("refs/heads/", 0) == 0 && git_reference_type(ref) == GIT_REFERENCE_DIRECT)
-            pushed = git_revwalk_push(walk.get(), git_reference_target(ref)) == 0 || pushed;
+            git_revwalk_push(walk.get(), git_reference_target(ref));
         return true;
     });
     git_oid head;
-    if (git_reference_name_to_id(&head, repo, "HEAD") == 0)
-        pushed = git_revwalk_push(walk.get(), &head) == 0 || pushed;
+    if (git_reference_name_to_id(&head, repo, "HEAD") == 0) // (not when unborn)
+        git_revwalk_push(walk.get(), &head);
     for (const auto& c : changed) {
         Commit commit = lookupCommit(repo, *fromHex(c));
         for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)
