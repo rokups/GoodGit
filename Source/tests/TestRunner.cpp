@@ -32,6 +32,8 @@ fs::path g_artifacts;  // failure output
 fs::path g_fixtureCache;
 std::string g_basePath; // PATH with git-gg first; restored before every test
 std::map<const ImGuiTest*, const TestInfo*> g_infoByTest;
+const TestInfo* g_current = nullptr;               // the test whose body is running
+std::map<const TestInfo*, std::string> g_skipped; // GG_REQUIRE_GIT: test → reason
 
 std::string sanitize(const std::string& s)
 {
@@ -154,7 +156,10 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     ctx->Yield(2);
 
     Scenario scenario(ctx, *g_app, dir, seed);
+    g_skipped.erase(&info);
+    g_current = &info;
     info.body(ctx, scenario);
+    g_current = nullptr;
 
     // Post-test hook: every repository the test touched must pass git fsck, be in a state
     // plain git understands (§8.3) and hold no private gg metadata (rule 2, §9).
@@ -221,6 +226,12 @@ Registrar::Registrar(const char* category, const char* name, std::initializer_li
 }
 
 fs::path artifactsDir() { return g_artifacts; }
+
+void markCurrentTestSkipped(const std::string& reason)
+{
+    if (g_current)
+        g_skipped[g_current] = reason;
+}
 
 fs::path fixtureCacheDir() { return g_fixtureCache; }
 
@@ -369,13 +380,24 @@ void TestRunner::stop()
     ImVector<ImGuiTest*> tests;
     ImGuiTestEngine_GetTestList(m_engine, &tests);
     int failed = 0;
+    int skipped = 0;
     for (ImGuiTest* t : tests) {
         if (t->Output.Status == ImGuiTestStatus_Error) {
             ++failed;
             std::fprintf(stderr, "FAILED: %s/%s\n", t->Category, t->Name);
         }
+        const auto info = g_infoByTest.find(t);
+        const auto skip = info == g_infoByTest.end() ? g_skipped.end() : g_skipped.find(info->second);
+        if (skip != g_skipped.end() && t->Output.Status == ImGuiTestStatus_Success) {
+            ++skipped;
+            std::fprintf(stderr, "SKIPPED: %s/%s: %s\n", t->Category, t->Name, skip->second.c_str());
+        }
     }
-    std::fprintf(stderr, "ggui: %d/%d tests passed\n", summary.CountSuccess, summary.CountTested);
+    // A skipped test ends early without errors: the engine counts it as a success.
+    std::fprintf(stderr, "ggui: %d/%d tests passed", summary.CountSuccess - skipped, summary.CountTested - skipped);
+    if (skipped > 0)
+        std::fprintf(stderr, ", %d skipped (git too old)", skipped);
+    std::fprintf(stderr, "\n");
     if (m_queued > 0)
         m_exitCode = (summary.CountSuccess == summary.CountTested && failed == 0) ? 0 : 1;
     writeTrace();
@@ -403,7 +425,7 @@ void TestRunner::writeTrace()
             continue;
         const char* status = "not-run";
         switch (t->Output.Status) {
-        case ImGuiTestStatus_Success: status = "success"; break;
+        case ImGuiTestStatus_Success: status = g_skipped.count(it->second) ? "skipped" : "success"; break;
         case ImGuiTestStatus_Error: status = "error"; break;
         case ImGuiTestStatus_Queued:
         case ImGuiTestStatus_Running: status = "incomplete"; break;

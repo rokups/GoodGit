@@ -75,6 +75,19 @@ struct Registrar {
     static void GG_TEST_CONCAT(ggTestBody_, __LINE__)([[maybe_unused]] ImGuiTestContext * ctx,          \
         [[maybe_unused]] ::ggtest::Scenario & s)
 
+// Ends the test as skipped when the git on PATH is older than major.minor, for a scenario whose
+// subject needs a newer git than the pinned minimum (2.36), e.g. update-ref rows in git rebase -i
+// (2.38). The trace records "skipped", not "success": its spec IDs must be covered by a run on a
+// newer git (CI runs the suite on both). Put it first in the test body.
+#define GG_REQUIRE_GIT(major, minor, why)          \
+    do {                                           \
+        if (!s.gitAtLeast(major, minor, why))      \
+            return;                                \
+    } while (0)
+
+// Called by GG_REQUIRE_GIT: the running test is skipped (TestRunner.cpp).
+void markCurrentTestSkipped(const std::string& reason);
+
 // Check helpers that record a failure in the test engine and continue.
 #define GG_CHECK(expr) IM_CHECK_NO_RET(expr)
 #define GG_CHECK_EQ(a, b) IM_CHECK_EQ_NO_RET(a, b)
@@ -133,6 +146,10 @@ public:
     gg::RunResult gitgg(const fs::path& cwd, std::vector<std::string> args, std::string input = {});
     // Any program.
     gg::RunResult run(const fs::path& cwd, std::vector<std::string> args, std::string input = {});
+
+    // Whether the git on PATH is at least major.minor. When it is not and `skipWhy` is given,
+    // the test is marked skipped (use GG_REQUIRE_GIT).
+    bool gitAtLeast(int major, int minor, const char* skipWhy = nullptr);
 
     // ---- files ----------------------------------------------------------------------------
     void write(const fs::path& repo, const std::string& rel, const std::string& content);

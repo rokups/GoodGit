@@ -894,16 +894,30 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
     for (const auto& [orig, now] : result.rewritten)
         rewrites.emplace_back(orig, now);
     if (!rewrites.empty() && !m->bare) {
-        const fs::path mapFile = fs::path(git_repository_commondir(m->repo.get())) / "gg" / ("rewrite-" + journal::Journal::newOperationId());
-        std::error_code ec;
-        fs::create_directories(mapFile.parent_path(), ec);
-        {
-            std::ofstream f(mapFile, std::ios::binary);
-            for (const auto& [a, b] : rewrites)
-                f << a << " " << b << "\n";
+        std::string map;
+        for (const auto& [a, b] : rewrites)
+            map += a + " " + b + "\n";
+        if (gitVersion(m->cwd) >= 240) {
+            const fs::path mapFile = fs::path(git_repository_commondir(m->repo.get())) / "gg" / ("rewrite-" + journal::Journal::newOperationId());
+            std::error_code ec;
+            fs::create_directories(mapFile.parent_path(), ec);
+            {
+                std::ofstream f(mapFile, std::ios::binary);
+                f << map;
+            }
+            git(m->cwd, {"hook", "run", "--ignore-missing", "--to-stdin=" + mapFile.string(), "post-rewrite", "--", plan.rewriteKind});
+            fs::remove(mapFile, ec);
+        } else {
+            // git before 2.40 has no `git hook run --to-stdin`. Run the hook the way its
+            // sequencer does (core.hooksPath or $GIT_DIR/hooks, only when executable, the list on
+            // stdin), through a `!` alias so git's own shell runs it on every platform.
+            git(m->cwd,
+                {"-c",
+                    "alias.gg-post-rewrite=!f() { h=$(git rev-parse --git-path hooks/post-rewrite) && "
+                    "if test -x \"$h\"; then \"$h\" \"$@\"; fi; }; f",
+                    "gg-post-rewrite", plan.rewriteKind},
+                map);
         }
-        git(m->cwd, {"hook", "run", "--ignore-missing", "--to-stdin=" + mapFile.string(), "post-rewrite", "--", plan.rewriteKind});
-        fs::remove(mapFile, ec);
     }
     if (moveWorktree)
         git(m->cwd, {"hook", "run", "--ignore-missing", "post-checkout", "--", result.headBefore, result.headAfter, "1"});

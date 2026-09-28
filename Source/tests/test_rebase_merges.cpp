@@ -20,7 +20,9 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <map>
 #include <random>
+#include <sstream>
 
 namespace ggtest {
 
@@ -255,6 +257,39 @@ bool sameList(Scenario& s, const todo::Todo& ours, const todo::Todo& git)
     return same;
 }
 
+// git 2.36 names the labels of a merge's parents after the merge's subject ("Octopus-x-y-z", "-2",
+// ...), current git (and ggui) after the branches there. Renames git's labels to ours, row by row,
+// so that only the label names are forgiven.
+todo::Todo labelsAsOurs(const todo::Todo& ours, todo::Todo git)
+{
+    std::map<std::string, std::string> rename;
+    for (size_t i = 0; i < std::min(ours.items.size(), git.items.size()); ++i)
+        if (ours.items[i].action == A::Label && git.items[i].action == A::Label)
+            rename[git.items[i].arg] = ours.items[i].arg;
+    for (auto& item : git.items) {
+        if (item.action != A::Label && item.action != A::Reset && item.action != A::Merge)
+            continue;
+        std::istringstream words(item.arg);
+        std::string word, arg;
+        while (words >> word)
+            arg += (arg.empty() ? "" : " ") + (rename.count(word) ? rename[word] : word);
+        item.arg = arg;
+    }
+    return git;
+}
+
+// git before 2.38 has no update-ref rows and no --update-refs / --no-update-refs: a scenario there
+// runs with Update refs off (the rebased branch alone moves) and asks git for its list without the
+// option. Returns whether it turned Update refs off.
+bool updateRefsOff(Scenario& s)
+{
+    if (s.gitAtLeast(2, 38))
+        return false;
+    s.ctx->ItemUncheck(irWidget("ir_update_refs").c_str());
+    s.ctx->Yield(2);
+    return true;
+}
+
 // Git's reword editor (as in test_rebase_i.cpp): " reworded" after the first line that is neither a
 // comment nor blank. The same text is typed into ggui's message editors.
 std::string reworded(const std::string& text)
@@ -446,9 +481,18 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     GG_CHECK(!s.itemExists(irWidget("ir_insert_label").c_str()));
 
     // ---- the option: git's list, with and without update-ref rows and autosquash ---------------
+    // (git before 2.38 has neither update-ref rows nor --update-refs: Update refs stays off there,
+    // git's list is asked for without the option, and git 2.36's label names are forgiven.)
     ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
     GG_REQUIRE(editor(s).options().rebaseMerges);
-    GG_CHECK(sameList(s, editor(s).todo(), gitStartingTodo(s, pristine, "start-1", {"--rebase-merges", "--update-refs", r.c0})));
+    const bool old = updateRefsOff(s);
+    auto sameAsGit = [&](const char* name, std::vector<std::string> args) {
+        if (!old)
+            return sameList(s, editor(s).todo(), gitStartingTodo(s, pristine, name, args));
+        std::erase_if(args, [](const std::string& a) { return a == "--update-refs" || a == "--no-update-refs"; });
+        return sameList(s, editor(s).todo(), labelsAsOurs(editor(s).todo(), gitStartingTodo(s, pristine, name, args)));
+    };
+    GG_CHECK(sameAsGit("start-1", {"--rebase-merges", "--update-refs", r.c0}));
     {
         std::string list;
         for (const auto& row : rows(s))
@@ -459,13 +503,13 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     GG_CHECK(s.textShown("//Interactive rebase", "row 1 is label: --rebase-merges lists are replayed by git rebase"));
     GG_CHECK(s.textShown("//Interactive rebase", "and 2 merge(s)"));
     ctx->ItemUncheck(irWidget("ir_update_refs").c_str());
-    GG_CHECK(sameList(s, editor(s).todo(), gitStartingTodo(s, pristine, "start-2", {"--rebase-merges", "--no-update-refs", r.c0})));
+    GG_CHECK(sameAsGit("start-2", {"--rebase-merges", "--no-update-refs", r.c0}));
     ctx->ItemCheck(irWidget("ir_autosquash").c_str());
-    GG_CHECK(sameList(s, editor(s).todo(),
-        gitStartingTodo(s, pristine, "start-3", {"--rebase-merges", "--no-update-refs", "--autosquash", r.c0})));
+    GG_CHECK(sameAsGit("start-3", {"--rebase-merges", "--no-update-refs", "--autosquash", r.c0}));
     ctx->ItemUncheck(irWidget("ir_autosquash").c_str());
-    ctx->ItemCheck(irWidget("ir_update_refs").c_str());
-    GG_CHECK(sameList(s, editor(s).todo(), gitStartingTodo(s, pristine, "start-4", {"--rebase-merges", "--update-refs", r.c0})));
+    if (!old)
+        ctx->ItemCheck(irWidget("ir_update_refs").c_str());
+    GG_CHECK(sameAsGit("start-4", {"--rebase-merges", "--update-refs", r.c0}));
     // Off: the straight list again; Ctrl+Z brings the merges back.
     ctx->ItemUncheck(irWidget("ir_rebase_merges").c_str());
     GG_CHECK(!todo::hasMergeRows(editor(s).todo()) && editor(s).engine().engine == todo::Engine::InMemory);
@@ -547,11 +591,17 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     GG_CHECK(s.textShown("//Interactive rebase", "unknown label 'nowhere'"));
     GG_CHECK(!editor(s).canStart());
     s.setText(irField("reset", b2Row + 2), "branch-point");
-    // Row 2 ("reset onto") going to "topic", which row 9 defines further down.
+    // Row 2 ("reset onto") going to "topic", which a row further down defines (row 9; one less
+    // without update-ref rows).
+    size_t topicRow = 0;
+    for (size_t i = 0; i < editor(s).todo().items.size(); ++i)
+        if (editor(s).todo().items[i].action == A::Label && editor(s).todo().items[i].arg == "topic")
+            topicRow = i + 1;
+    GG_CHECK_EQ(topicRow, old ? 8u : 9u);
     s.setText(irField("reset", 1), "topic");
     ctx->Yield(2);
     GG_CHECK(hasIssue(s, todo::Issue::Code::LabelDefinedLater));
-    GG_CHECK(s.textShown("//Interactive rebase", "label 'topic' is used before row 9 defines it"));
+    GG_CHECK(s.textShown("//Interactive rebase", "label 'topic' is used before row " + std::to_string(topicRow) + " defines it"));
     s.setText(irField("reset", 1), "onto");
     s.setText(irField("merge", b2Row + 3), "mine");
     ctx->Yield(2);
@@ -563,7 +613,7 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     // Off and on again: git's list.
     ctx->ItemUncheck(irWidget("ir_rebase_merges").c_str());
     ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
-    GG_CHECK(sameList(s, editor(s).todo(), gitStartingTodo(s, pristine, "start-5", {"--rebase-merges", "--update-refs", r.c0})));
+    GG_CHECK(sameAsGit("start-5", {"--rebase-merges", "--update-refs", r.c0}));
 
     // ---- merge rows' action combo: -C, -c (edit the message), merge (Git's message) ------------
     s.comboSelect(irAction("merge_" + r.m1).c_str(), "merge -c");
@@ -622,13 +672,14 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     const fs::path retell = script(s, "retell.sh",
         "#!/bin/sh\nif head -n 1 \"$1\" | grep -q \"^Merge branch 'topic'$\"; then printf 'Merge topic, retold\\n' > \"$1\"; fi\n");
     const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i", "--rebase-merges",
-                                        "--empty=stop", r.c0},
+                                        s.gitAtLeast(2, 45) ? "--empty=stop" : "--empty=ask", r.c0},
         retell.string());
     GG_CHECK(copyRun.ok());
     GG_CHECK_STR_EQ(branches(s, r.path), branches(s, copy));
     GG_CHECK_STR_EQ(s.read(r.path, ".git/post-rewrite.log"), s.read(copy, ".git/post-rewrite.log"));
     // M1 again (Mona's, retold), M2 a new merge by the current user with Git's message.
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%an|%s", "stack"}), "Mona Merger|Merge topic, retold");
+    if (!old) // (the update-ref row moved "stack" to the new M1)
+        GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%an|%s", "stack"}), "Mona Merger|Merge topic, retold");
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s", "main~2"}), "Merge branch 'side'");
     GG_CHECK(s.gitOut(r.path, {"log", "-1", "--format=%an", "main~2"}) != "Mona Merger");
     GG_CHECK(s.gitOut(r.path, {"log", "--format=%s", "main"}).find("b2 change b") == std::string::npos);
@@ -677,6 +728,7 @@ GG_TEST("rebase-merges", "a merge that conflicts stops git rebase --rebase-merge
                 "reset branch-point", "pick b1", "merge -C topic"}));
     };
     open();
+    updateRefsOff(s);
     // The preview makes the merge with a first-class conflict in f.txt.
     {
         const Preview* p = previewReady(s);
@@ -709,6 +761,7 @@ GG_TEST("rebase-merges", "a merge that conflicts stops git rebase --rebase-merge
 
     // Again, and Commit with conflicts: git makes the merge with the regions, and the rebase ends.
     open();
+    updateRefsOff(s);
     GG_REQUIRE(start(s));
     GG_REQUIRE(stoppedAt(s, "merge -C"));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kCommitConflicts); }));
@@ -753,7 +806,7 @@ GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git 
 
     for (int round = 0; round < rounds; ++round) {
         const bool ontoUp = chance(0.5);
-        const bool updateRefs = chance(0.7);
+        const bool updateRefs = chance(0.7) && s.gitAtLeast(2, 38); // (update-ref rows: git 2.38)
         GG_REQUIRE(openFrom(s, r.a1));
         if (ontoUp) {
             ctx->ItemClick(irWidget("ir_onto").c_str());
@@ -765,7 +818,9 @@ GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git 
             ctx->ItemUncheck(irWidget("ir_update_refs").c_str());
         ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
         s.comboSelect(irWidget("ir_empty").c_str(), "Keep");
-        std::vector<std::string> startArgs{"--rebase-merges", updateRefs ? "--update-refs" : "--no-update-refs"};
+        std::vector<std::string> startArgs{"--rebase-merges"};
+        if (s.gitAtLeast(2, 38))
+            startArgs.push_back(updateRefs ? "--update-refs" : "--no-update-refs");
         if (ontoUp) {
             startArgs.push_back("--onto");
             startArgs.push_back("up");
@@ -952,12 +1007,20 @@ GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, p
     ctx->KeyPress(ImGuiKey_Enter);
     GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == s.revParse(path, "up"); }));
     ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
-    GG_CHECK(sameList(s, editor(s).todo(),
-        gitStartingTodo(s, pristine, "start-octopus", {"--rebase-merges", "--update-refs", "--onto", "up", c0})));
-    GG_CHECK(rows(s)
-        == (Rows{"label onto", "reset onto", "pick a1", "label branch-point", "pick x1", "update-ref refs/heads/x", "label x",
-            "reset branch-point", "pick y1", "update-ref refs/heads/y", "label y", "reset branch-point", "pick z1",
-            "update-ref refs/heads/z", "label z", "reset branch-point", "merge -C x y z", "pick e1"}));
+    const bool off = updateRefsOff(s);
+    std::vector<std::string> startArgs{"--rebase-merges", "--update-refs", "--onto", "up", c0};
+    if (off)
+        startArgs.erase(startArgs.begin() + 1);
+    todo::Todo gitList = gitStartingTodo(s, pristine, "start-octopus", startArgs);
+    if (off)
+        gitList = labelsAsOurs(editor(s).todo(), gitList);
+    GG_CHECK(sameList(s, editor(s).todo(), gitList));
+    Rows expectedRows{"label onto", "reset onto", "pick a1", "label branch-point", "pick x1", "update-ref refs/heads/x", "label x",
+        "reset branch-point", "pick y1", "update-ref refs/heads/y", "label y", "reset branch-point", "pick z1",
+        "update-ref refs/heads/z", "label z", "reset branch-point", "merge -C x y z", "pick e1"};
+    if (off)
+        std::erase_if(expectedRows, [](const std::string& row) { return row.rfind("update-ref ", 0) == 0; });
+    GG_CHECK(rows(s) == expectedRows);
     const Preview* p = previewReady(s);
     GG_REQUIRE(p && p->ok);
     const Preview expected = *p;
@@ -976,8 +1039,10 @@ GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, p
     const fs::path copy = copyRepo(s, pristine, "git-copy");
     const fs::path todoFile = s.root() / "octopus.todo";
     std::ofstream(todoFile, std::ios::binary) << todoText;
+    // (--empty=stop is --empty=ask before git 2.45.)
+    const std::string empty = s.gitAtLeast(2, 45) ? "--empty=stop" : "--empty=ask";
     const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i", "--rebase-merges",
-                                            "--empty=stop", "--onto", "up", c0},
+                                            empty, "--onto", "up", c0},
         "true");
     GG_CHECK(copyRun.ok());
     GG_CHECK_STR_EQ(branches(s, path), branches(s, copy));

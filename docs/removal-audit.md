@@ -315,7 +315,10 @@ $ git grep -n -E '"[^"]*[ (]@([ ).,:!?][^"]*)?"|"@ [^"]*"' -- Source/app Source/
 Source/app/panels/CommitMenu.cpp:53:    // HEAD and this commit (plan §4.3 "Merge into @", "Rebase @ onto"): also in Branches.
 ```
 
-The last hit is a comment quoting the plan. The menu items themselves read "Merge into HEAD..." and
+The last hit is a comment quoting the plan. Since P4-06 the alias pattern has two allowed hits in
+`Source/libgg/Rewrite.cpp`: on git before 2.40 (no `git hook run --to-stdin`) ggui runs the
+post-rewrite hook with a one-shot `git -c alias.gg-post-rewrite=!… gg-post-rewrite`, so that git's
+own shell runs it on every platform. That is a git command alias, not the old gg's commit aliases. The menu items themselves read "Merge into HEAD..." and
 "Rebase HEAD onto this/branch" (`CommitMenu.cpp:57-59`, `SidePanels.cpp:96-98`). The §4 labels that
 named jj concepts are written in Git terms, as `docs/spec/ui-spec.md` ("Wording rule") requires:
 "Workspaces" → "Worktrees" (panel), the Settings scope tab "Workspace" → "Worktree"

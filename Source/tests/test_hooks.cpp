@@ -76,9 +76,11 @@ void writeHook(Scenario& s, const fs::path& repo, const std::string& name, const
 
 } // namespace
 
-GG_TEST("hooks", "git gg hooks install/status/uninstall with config-defined hooks", "HOOK-CLI-INSTALL",
-    "HOOK-CLI-UNINSTALL", "HOOK-CLI-STATUS", "HOOK-CONFIG-DEFINED")
+GG_TEST("hooks", "git gg hooks install/status/uninstall: config-defined hooks from git 2.54, wrapper scripts before",
+    "HOOK-CLI-INSTALL", "HOOK-CLI-UNINSTALL", "HOOK-CLI-STATUS")
 {
+    // Hooks defined in the configuration need git 2.54; older git gets wrapper scripts.
+    const bool config = s.gitAtLeast(2, 54);
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string configBefore = s.read(repo / ".git", "config");
     auto r = s.gitgg(repo, {"hooks", "status"});
@@ -86,25 +88,33 @@ GG_TEST("hooks", "git gg hooks install/status/uninstall with config-defined hook
     GG_CHECK(r.out.rfind("not installed", 0) == 0);
     r = s.gitgg(repo, {"hooks", "install"});
     GG_REQUIRE(r.ok());
-    GG_CHECK(r.out.find("config-defined") != std::string::npos);
+    GG_CHECK(r.out.find(config ? "config-defined" : "wrapper scripts") != std::string::npos);
     r = s.gitgg(repo, {"hooks", "status"});
     GG_CHECK(r.ok());
-    GG_CHECK(r.out.rfind("installed (config-defined)", 0) == 0);
-    GG_CHECK(!s.gitOut(repo, {"config", "--get", "hook.ggui-reference-transaction.command"}).empty());
+    GG_CHECK(r.out.rfind(config ? "installed (config-defined)" : "installed (wrapper scripts in ", 0) == 0);
+    if (config)
+        GG_CHECK(!s.gitOut(repo, {"config", "--get", "hook.ggui-reference-transaction.command"}).empty());
     GG_CHECK(fs::exists(repo / ".git" / "gg" / "hooks" / "run"));
     r = s.gitgg(repo, {"hooks", "uninstall"});
     GG_CHECK(r.ok());
     GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
     GG_CHECK_EQ(s.gitgg(repo, {"hooks", "status"}).exitCode, 1);
+}
 
+GG_TEST("hooks", "config-defined hooks: a repository path with a quote, a partial installation completed",
+    "HOOK-CONFIG-DEFINED")
+{
     // Forced config mode, in a repository whose path has a quote in it (the hook commands quote it);
     // one hook removed by hand leaves the installation partial.
+    GG_REQUIRE_GIT(2, 54, "hooks defined in the configuration");
     const fs::path quoted = s.path("it's here");
     s.git(s.root(), {"init", "-q", "-b", "main", quoted.string()});
     s.track(quoted);
     s.commitFile(quoted, "a.txt", "a\n", "first");
     ggui::setEnv("GG_HOOKS_MODE", "config");
-    GG_REQUIRE(s.gitgg(quoted, {"hooks", "install"}).ok());
+    auto r = s.gitgg(quoted, {"hooks", "install"});
+    GG_REQUIRE(r.ok());
+    GG_CHECK(r.out.find("config-defined") != std::string::npos);
     ggui::unsetEnv("GG_HOOKS_MODE");
     s.git(quoted, {"commit", "-q", "--allow-empty", "-m", "Journaled through a quoted path"});
     GG_CHECK_EQ(journalOps(quoted, "git").size(), static_cast<size_t>(1));
@@ -134,7 +144,20 @@ GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and un
     // Both the ggui runner (journal) and the user's hook run.
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Through the wrapper"});
     GG_CHECK(fs::exists(marker));
-    GG_CHECK_EQ(journalOps(repo, "git").size(), static_cast<size_t>(1));
+    auto ops = journalOps(repo, "git");
+    GG_CHECK_EQ(ops.size(), static_cast<size_t>(1));
+    // The operation is the git command's, not the wrapper script's (the hook's shell and the
+    // runner sit between git and git-gg); a command with several ref transactions is one.
+    auto gitLabel = [](const std::string& label) {
+        return label.rfind("git", 0) == 0 && label.find("hooks/") == std::string::npos;
+    };
+    if (!ops.empty())
+        GG_CHECK(gitLabel(ops.back().label));
+    s.git(repo, {"checkout", "-q", "-b", "wrapped"});
+    ops = journalOps(repo, "git");
+    GG_CHECK_EQ(ops.size(), static_cast<size_t>(2));
+    if (!ops.empty())
+        GG_CHECK(gitLabel(ops.back().label));
     // The user's pre-push exit status still decides.
     r = s.gitMayFail(repo, {"push", "-q", "origin", "main"});
     GG_CHECK(!r.ok());
@@ -271,19 +294,25 @@ GG_TEST("hooks", "a fetch of thousands of refs stays fast with the hooks", "HOOK
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path origin = s.root() / (repo.filename().string() + "-origin.git");
     const std::string tip = s.gitOut(origin, {"rev-parse", "main"});
+    // git before 2.51 updates fetched refs one transaction (two hook calls) at a time: slow with
+    // any hook, so only the one operation is checked there, with fewer refs (still more records
+    // than the journal tail search reads).
+    const bool batched = s.gitAtLeast(2, 51);
+    const int count = batched ? 3000 : 600;
     std::string input;
-    for (int i = 0; i < 3000; ++i)
+    for (int i = 0; i < count; ++i)
         input += "create refs/heads/many/b" + std::to_string(i) + " " + tip + "\n";
     GG_REQUIRE(s.git(origin, {"update-ref", "--stdin"}, input).ok());
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
     const auto start = std::chrono::steady_clock::now();
     s.git(repo, {"fetch", "-q", "origin"});
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
-    ctx->LogInfo("fetch of 3000 refs with hooks: %lld ms", static_cast<long long>(ms));
-    GG_CHECK(ms < 5000);
+    ctx->LogInfo("fetch of %d refs with hooks: %lld ms", count, static_cast<long long>(ms));
+    if (batched)
+        GG_CHECK(ms < 5000);
     const auto ops = journalOps(repo, "git");
     GG_REQUIRE(ops.size() == 1);
-    GG_CHECK(ops.back().refs.size() >= 3000);
+    GG_CHECK(ops.back().refs.size() >= static_cast<size_t>(count));
 }
 
 GG_TEST("hooks", "first-open prompt (Install / Not now / Never) and the Settings Hooks tab", "APP-PROMPT-HOOKS",

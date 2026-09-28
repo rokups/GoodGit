@@ -6,7 +6,9 @@ written by `ggui --test --trace=FILE` (one per shard), then:
   * validates the catalogue (format, unique IDs, known phases);
   * rejects spec IDs declared by tests that are not in the catalogue;
   * writes a traceability matrix (Markdown) mapping every ID to its passing tests;
-  * fails when an ID of a delivered phase (phase <= --phase) has no passing test.
+  * fails when a test failed, or an ID of a delivered phase (phase <= --phase) has no passing
+    test. A test skipped for an old git (GG_REQUIRE_GIT, status "skipped") covers nothing: pass
+    the traces of a run on a newer git too.
 
 Usage:
   traceability.py --check                               # validate the catalogue only
@@ -89,7 +91,7 @@ def main():
                 unknown.append(f"{sid} (declared by {name}, {t.get('file')}:{t.get('line')})")
             elif t.get("status") == "success":
                 covered.setdefault(sid, []).append(name)
-    failed_tests = [f"{t['category']}/{t['name']}" for t in tests if t.get("status") not in ("success", "not-run")]
+    failed_tests = [f"{t['category']}/{t['name']}" for t in tests if t.get("status") not in ("success", "not-run", "skipped")]
 
     phase = args.phase if args.phase is not None else max(e["phase"] for e in catalogue.values())
     required = {sid: e for sid, e in catalogue.items() if e["phase"] <= phase}

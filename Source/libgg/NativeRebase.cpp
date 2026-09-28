@@ -1,5 +1,6 @@
 #include "libgg/NativeRebase.hpp"
 
+#include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
 #include "libgg/Operation.hpp"
@@ -60,6 +61,32 @@ void removeState(const fs::path& dir)
     fs::remove(dir.parent_path(), ec); // only when empty
 }
 
+// Older git (2.36 at least) puts HEAD back on the rebased branch (finish, abort) without a ref
+// transaction, so the hooks never see it. When the rebase's operation recorded HEAD and HEAD is
+// not where the journal last saw it, the move is recorded before the operation ends. Only when the
+// finish was seen (post-rewrite, or ggui's own step): a rebase found finished later may have moved
+// refs outside the journal, and Undo must refuse it.
+void recordHeadNow(git_repository* repo, journal::Journal& journal, const std::string& op)
+{
+    std::string now;
+    git_reference* head = nullptr;
+    if (git_reference_lookup(&head, repo, "HEAD") != 0) {
+        git_error_clear();
+        return;
+    }
+    if (git_reference_type(head) == GIT_REFERENCE_SYMBOLIC)
+        now = std::string("ref:") + git_reference_symbolic_target(head);
+    else if (const git_oid* id = git_reference_target(head))
+        now = git2::toHex(*id);
+    git_reference_free(head);
+    const std::string key = journal::headKey(worktreeKey(repo));
+    for (const auto& o : journal.read())
+        if (o.id == op)
+            for (const auto& r : o.refs)
+                if (r.ref == key && !now.empty() && r.newValue != now)
+                    journal.appendRefs(op, {journal::RefChange{key, r.newValue, now}});
+}
+
 } // namespace
 
 std::string rebaseIdentity(const fs::path& gitDir)
@@ -118,8 +145,10 @@ void closeFinishedGroup(git_repository* repo, journal::Journal& journal)
 void finishGroup(git_repository* repo, journal::Journal& journal, bool ok)
 {
     const fs::path dir = stateDir(repo);
-    if (const auto group = readGroup(dir))
+    if (const auto group = readGroup(dir)) {
+        recordHeadNow(repo, journal, group->op);
         journal.end(group->op, ok);
+    }
     removeState(dir);
 }
 

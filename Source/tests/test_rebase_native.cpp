@@ -111,6 +111,18 @@ void key(Scenario& s, const std::string& hex, ImGuiKeyChord chord)
     s.ctx->Yield(2);
 }
 
+// git before 2.38 cannot run update-ref rows, and ggui refuses a list with them there ("turn off
+// Update refs"). A scenario whose list has one only because of a stacked branch does what that
+// message asks on such a git; the branch then stays where it was. Returns whether branches move.
+bool withoutUpdateRefsOnOldGit(Scenario& s)
+{
+    if (s.gitAtLeast(2, 38))
+        return true;
+    s.ctx->ItemUncheck(irWidget("ir_update_refs").c_str());
+    s.ctx->Yield(2);
+    return false;
+}
+
 // Clicks Start and waits for the editor to close and ggui to settle.
 bool start(Scenario& s)
 {
@@ -231,6 +243,8 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     // git rebase sets the committer date to now: Keep original is for the in-memory engine.
     GG_CHECK(ctx->ItemInfo(irWidget("ir_committer_date").c_str()).ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(editor(s).canStart());
+    const bool refs = withoutUpdateRefsOnOldGit(s);
+    const size_t later = refs ? 1 : 0; // the update-ref row still to come
     GG_REQUIRE(start(s));
 
     // Stop 1: edit c2. The progress view: nothing done yet, stopped at edit c2, the rest to come.
@@ -240,16 +254,16 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     {
         const auto snap = s.session()->snapshot();
         GG_CHECK_STR_EQ(snap->rebase->done.back().commit, r.c[2]);
-        GG_CHECK_EQ(snap->rebase->remaining.size(), 6u);
+        GG_CHECK_EQ(snap->rebase->remaining.size(), 5u + later);
         GG_CHECK_STR_EQ(snap->rebase->headName, "refs/heads/main");
     }
     auto lines = progress(s);
-    GG_CHECK(contains(lines, "Rebasing main: 0 done, 6 remaining"));
+    GG_CHECK(contains(lines, "Rebasing main: 0 done, " + std::to_string(5 + later) + " remaining"));
     GG_CHECK(contains(lines, "(nothing yet)"));
     GG_CHECK(contains(lines, "edit " + shortId(s, r.c[2]) + " c2 add b"));
     GG_CHECK(contains(lines, "Edit: change the commit (Amend and continue), or Continue as it is."));
     GG_CHECK(contains(lines, "exec test -f ok.txt"));
-    GG_CHECK(contains(lines, "update-ref refs/heads/part1"));
+    GG_CHECK(contains(lines, "update-ref refs/heads/part1") == refs);
     // Amend c2 with a staged change, then go on to the break.
     s.write(r.path, "b.txt", "b amended\n");
     s.git(r.path, {"add", "b.txt"});
@@ -258,7 +272,7 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD~1:b.txt"}), "b amended");
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s", "HEAD~1"}), "c2 add b");
     lines = progress(s);
-    GG_CHECK(contains(lines, "Rebasing main: 2 done, 4 remaining"));
+    GG_CHECK(contains(lines, "Rebasing main: 2 done, " + std::to_string(3 + later) + " remaining"));
     GG_CHECK(contains(lines, "Break: Continue when you are ready."));
 
     // Stop 3: the exec fails (git exits 1 but went on: not an error). Amend and continue with
@@ -277,7 +291,7 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_REQUIRE(finished(s, r.path));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c4", "c3", "c2", "c1"}));
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main~1"}), "c4 reworded natively");
-    GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), s.revParse(r.path, "main~2"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), refs ? s.revParse(r.path, "main~2") : r.c[3]);
     GG_CHECK_STR_EQ(s.revParse(r.path, "main~4"), r.c[1]);
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"symbolic-ref", "HEAD"}), "refs/heads/main");
     GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
@@ -331,6 +345,7 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     GG_CHECK(s.textShown("//Interactive rebase", "you chose to run it as git rebase"));
     // Exec after every commit: a line in .git/exec.log per commit.
     s.setText(irWidget("ir_exec_each"), "echo x >> .git/exec.log");
+    const bool refs = withoutUpdateRefsOnOldGit(s);
     GG_REQUIRE(start(s));
     GG_REQUIRE(stoppedAt(s, "pick"));
     GG_CHECK(s.waitUntil([&] {
@@ -350,9 +365,11 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     ctx->ItemClick(kEditTodo);
     GG_REQUIRE(editorReady(s));
     GG_CHECK(editor(s).editingRemaining());
-    GG_CHECK(rows(s)
-        == (Rows{"exec echo x >> .git/exec.log", "pick c2", "exec echo x >> .git/exec.log", "update-ref refs/heads/part1",
-            "pick c4", "exec echo x >> .git/exec.log"}));
+    Rows remaining{"exec echo x >> .git/exec.log", "pick c2", "exec echo x >> .git/exec.log", "update-ref refs/heads/part1",
+        "pick c4", "exec echo x >> .git/exec.log"};
+    if (!refs)
+        remaining.erase(remaining.begin() + 3);
+    GG_CHECK(rows(s) == remaining);
     GG_CHECK_STR_EQ(editor(s).context()->onto, s.head(repo));
     GG_CHECK(s.textShown("//Interactive rebase", "Remaining todo of the rebase of main: 2 commit(s) onto HEAD " + shortId(s, s.head(repo))));
     GG_CHECK(s.textShown("//Interactive rebase", "Engine: git rebase (the rest of the rebase in progress)"));
@@ -380,7 +397,8 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     GG_CHECK(s.read(repo, ".git/rebase-merge/git-rebase-todo").find("drop " + c4) != std::string::npos);
     GG_REQUIRE(s.waitUntil([&] {
         const auto snap = s.session()->snapshot();
-        return snap->rebase && snap->rebase->remaining.size() == 6 && snap->rebase->remaining[4].action == "drop";
+        const size_t n = refs ? 6 : 5;
+        return snap->rebase && snap->rebase->remaining.size() == n && snap->rebase->remaining[n - 2].action == "drop";
     }));
 
     // Commit with conflicts: c3 keeps the conflict first-class; c2 conflicts with it (git stops
@@ -402,7 +420,7 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     GG_CHECK(!s.app.dialogs().current());
     GG_CHECK(subjects(s, repo, "main") == (std::vector<std::string>{"c2", "c3", "c1"}));
     GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%B", "main"}), "c2 reworded in the remaining todo");
-    GG_CHECK_STR_EQ(s.revParse(repo, "part1"), s.revParse(repo, "main"));
+    GG_CHECK_STR_EQ(s.revParse(repo, "part1"), refs ? s.revParse(repo, "main") : c3);
     GG_CHECK_STR_EQ(s.revParse(repo, "main~2"), c1);
     GG_CHECK(s.gitMayFail(repo, {"grep", "-q", "-e", "^<<<<<<< ", "main~1", "--", "a.txt"}).ok());
     // Exec after every commit ran after c3, c2 and where c4 was (its exec row stayed).
@@ -545,6 +563,7 @@ GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git 
     GG_CHECK(editor(s).isOpen());
     GG_CHECK_STR_EQ(s.head(r.path), c6);
     ctx->ItemCheck(irWidget("ir_autostash").c_str());
+    withoutUpdateRefsOnOldGit(s);
     GG_REQUIRE(start(s));
     GG_REQUIRE(stoppedAt(s, "break"));
     ctx->ItemClick(kContinue);
@@ -570,6 +589,7 @@ GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git 
     ctx->KeyPress(ImGuiKey_Enter);
     GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
     key(s, s.revParse(r.path, "main"), ImGuiKey_B);
+    withoutUpdateRefsOnOldGit(s);
     GG_REQUIRE(start(s));
     GG_REQUIRE(stoppedAt(s, "pick"));
     GG_CHECK_STR_EQ(s.session()->snapshot()->rebase->done.back().commit, c2);
@@ -661,6 +681,7 @@ GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a cor
     key(s, r.c[3], ImGuiKey_E);
     key(s, r.c[4], ImGuiKey_D);
     GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
+    withoutUpdateRefsOnOldGit(s);
 
     // git runs pre-rebase itself: refused, nothing starts, nothing moves.
     s.write(r.path, ".git/hooks/pre-rebase", "#!/bin/sh\necho \"no rebasing today\" >&2\nexit 1\n");
@@ -782,17 +803,22 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
 
     // A list typed by hand: comments, blank and noop lines, CRLF, tabs, one-letter commands,
     // an upper-case abbreviated id, a branch name, a subject without "#" (older git).
+    // (git before 2.38 has no update-ref: the list ends at the break there.)
+    const bool updateRef = s.gitAtLeast(2, 38);
     std::string c4Upper = r.c[4].substr(0, 9);
     std::transform(c4Upper.begin(), c4Upper.end(), c4Upper.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     s.write(r.path, todoRel,
         "# typed in an editor\r\n\r\nnoop\r\n\tf\t-C " + c4Upper + " # c4 add d\r\nx echo hi >> .git/typed.log\r\n"
-        "p main c5 add e\r\nfixup -c " + c6.substr(0, 12) + " c6 add f\r\nb\r\nu refs/heads/part1\r\n");
+        "p main c5 add e\r\nfixup -c " + c6.substr(0, 12) + " c6 add f\r\nb\r\n"
+            + (updateRef ? "u refs/heads/part1\r\n" : ""));
     ctx->ItemClick(kEditTodo);
     GG_REQUIRE(editorReady(s));
-    GG_CHECK(rows(s)
-        == (Rows{"fixup c4", "exec echo hi >> .git/typed.log", "pick c5", "fixup c6", "break", "update-ref refs/heads/part1"}));
+    Rows typed{"fixup c4", "exec echo hi >> .git/typed.log", "pick c5", "fixup c6", "break", "update-ref refs/heads/part1"};
+    if (!updateRef)
+        typed.pop_back();
+    GG_CHECK(rows(s) == typed);
     const auto& items = editor(s).todo().items;
-    GG_REQUIRE(items.size() == 6u);
+    GG_REQUIRE(items.size() == typed.size());
     GG_CHECK(items[0].fixup == todo::FixupMessage::Use);
     GG_CHECK_STR_EQ(items[0].commit, r.c[4]);
     GG_CHECK_STR_EQ(items[2].commit, r.c[5]);
@@ -807,7 +833,7 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
     GG_REQUIRE(start(s));
     const std::string saved = s.read(r.path, todoRel);
     GG_CHECK(saved.rfind("fixup -C " + r.c[4] + " # c4 add d\nexec echo hi >> .git/typed.log\npick " + r.c[5] + " # c5 add e\nfixup -c "
-                 + c6 + " # c6 add f\nbreak\nupdate-ref refs/heads/part1\n",
+                 + c6 + " # c6 add f\nbreak\n" + (updateRef ? "update-ref refs/heads/part1\n" : ""),
                  0)
         == 0);
     ctx->ItemClick(kAbort);
@@ -818,6 +844,7 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
 GG_TEST("rebase-native", "typed squash messages reach git's editor, also for a squash that amends after an update-ref row; exec after every commit around followers and drops",
     "IR-MSG-SQUASH", "IR-OPT-EXEC-EACH", "IR-ENGINE-USER-CHOICE", "IR-ACT-SQUASH", "IR-ACT-DROP")
 {
+    GG_REQUIRE_GIT(2, 38, "a squash after an update-ref row");
     const Repo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(openFrom(s, r.c[2]));

@@ -106,13 +106,20 @@ operation older than 10 minutes, or whose process no longer exists, as closed.
     guard that prevents duplicates;
   - otherwise the hook computes a command key from the git process that runs it (its parent
     PID and that process's start time; on Linux from `/proc`, on Windows best effort). If the
-    journal's tail (last 64 KiB) has an open operation with op `git-<pid>-<start>`, the updates
-    join it; otherwise it appends `begin` (src `git`, label from the command line, e.g.
-    `git rebase -i`) followed by the `refs` record.
+    journal's tail (last 64 KiB) has a record of operation `git-<pid>-<start>` (its `begin`, or
+    a later record of it when the `begin` is further back: git before 2.51 fetches with one ref
+    transaction per ref), the updates join it; otherwise it appends `begin` (src `git`, label
+    from the command line, e.g. `git rebase -i`) followed by the `refs` record. The git process is
+    the nearest `git` ancestor of the hook (the hook's shell and the runner sit in between).
 - `post-checkout`, `post-merge`, `post-commit` and `post-rewrite` hooks add context to the same
   operation: `map` records (post-rewrite stdin), index trees, and `end` when the command is known
   to be finished (post-merge, post-commit and post-checkout of a top-level command; post-rewrite
   of `rebase`).
+- Older git (2.36 at least) points HEAD at another branch (`git checkout <branch>`, `checkout -b`,
+  `switch`) without a ref transaction, so the `reference-transaction` hook never sees it. The
+  `post-checkout` hook of a branch checkout (flag 1) that leaves HEAD on a branch then records
+  HEAD's change itself, when the operation has no HEAD change yet: from the branch git resolves
+  as `@{-1}` (or the commit it left, when HEAD was detached) to `ref:<branch now>`.
 - One plain git command therefore yields exactly one operation.
 - `git worktree add` creates the new worktree's HEAD from the worktree it runs in, and git names
   it `HEAD` in the transaction all the same. The hook keeps a `HEAD` update only when this

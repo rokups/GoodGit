@@ -29,6 +29,20 @@ Scenario::Scenario(ImGuiTestContext* c, ggui::App& a, fs::path root, std::uint64
 {
 }
 
+bool Scenario::gitAtLeast(int major, int minor, const char* skipWhy)
+{
+    const int version = gg::gitVersion(m_root);
+    if (version >= major * 100 + minor)
+        return true;
+    if (skipWhy) {
+        const std::string reason = "needs git " + std::to_string(major) + "." + std::to_string(minor) + " or newer ("
+            + skipWhy + "); git on PATH is " + std::to_string(version / 100) + "." + std::to_string(version % 100);
+        ctx->LogWarning("skipped: %s", reason.c_str());
+        markCurrentTestSkipped(reason);
+    }
+    return false;
+}
+
 gg::RunResult Scenario::gitMayFail(const fs::path& cwd, std::vector<std::string> args, std::string input)
 {
     // Old gg refs a test creates on purpose (C3 fixtures) are not ggui's writes.

@@ -148,7 +148,10 @@ check "fetch into local branches (auto fast-forward)" "" \
 UI=(Source/app Source/gitgg Source/core Source/libgg ':!Source/tests')
 check "\"@ is a change you edit\"" "-i" 'change you edit' '' '' "${UI[@]}"
 check "change IDs, aliases, workspaces, jj" "-i" \
-    'change[ _-]?ids?([^A-Za-z]|$)|(^|[^A-Za-z])alias(es)?([^A-Za-z]|$)|workspaces?|jujutsu|(^|[^A-Za-z])jj([^A-Za-z]|$)' '' '' "${UI[@]}"
+    'change[ _-]?ids?([^A-Za-z]|$)|(^|[^A-Za-z])alias(es)?([^A-Za-z]|$)|workspaces?|jujutsu|(^|[^A-Za-z])jj([^A-Za-z]|$)' \
+    '^Source/libgg/Rewrite\.cpp:[0-9]+:.*(alias\.gg-post-rewrite=|`!` alias so git)' \
+    'a one-shot git `!` alias (git -c alias.gg-post-rewrite=...) runs the post-rewrite hook through git'"'"'s own shell on git before 2.40; not a gg alias' \
+    "${UI[@]}"
 check "\"@\" as a word in UI strings" "" '"[^"]*[ (]@([ ).,:!?][^"]*)?"|"@ [^"]*"' \
     '^[^:]+:[0-9]+:\s*//' 'comments quoting the plan' Source/app Source/gitgg
 check "\"Change\" as a label" "" '"Change"' '' '' Source/app

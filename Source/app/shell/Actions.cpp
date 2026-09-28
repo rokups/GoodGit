@@ -271,7 +271,9 @@ void Actions::mergeToolFirstClass(const std::string& path)
             const std::string text = ss.str();
             if (gg::markers::parse(text).maxSides() != 2)
                 throw MutationError{Outcome::Refused, "merge tools handle two-sided conflicts only; take a side first", {}};
-            std::string mode = gg::trim(ctx.git({"ls-files", "--format=%(objectmode)", "--", path}).out);
+            // "<mode> <id> <stage>\t<path>" (ls-files --format needs git 2.38).
+            const std::string staged = ctx.git({"ls-files", "-s", "-z", "--", path}).out;
+            std::string mode = staged.substr(0, staged.find(' '));
             if (mode.empty())
                 mode = "100644"; // not in the index yet
             auto blob = [&](const std::string& content) { return gg::trim(ctx.git({"hash-object", "-w", "--stdin"}, content).out); };

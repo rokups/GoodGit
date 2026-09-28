@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -507,6 +508,16 @@ RunResult git(const std::filesystem::path& cwd, std::vector<std::string> args, s
     request.cwd = cwd;
     request.input = std::move(input);
     return run(request);
+}
+
+int gitVersion(const std::filesystem::path& cwd)
+{
+    const RunResult r = git(cwd, {"version"});
+    int major = 0, minor = 0;
+    const auto pos = r.out.find_first_of("0123456789");
+    if (!r.ok() || pos == std::string::npos || std::sscanf(r.out.c_str() + pos, "%d.%d", &major, &minor) != 2)
+        return 0;
+    return major * 100 + minor;
 }
 
 void setAskpassProgram(std::string program, std::string endpoint)

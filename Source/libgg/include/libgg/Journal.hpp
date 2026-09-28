@@ -97,7 +97,7 @@ public:
     // A journal written by a newer major version yields an error and no operations.
     std::vector<Operation> read(std::string* error = nullptr, size_t* skipped = nullptr) const;
 
-    // Tail search: was operation `id` begun within the last `bytes` of the file?
+    // Tail search: does the last `bytes` of the file hold a record of operation `id` (so it was begun)?
     bool hasOpenOperation(const std::string& id, size_t bytes = 64 * 1024) const;
 
 private:

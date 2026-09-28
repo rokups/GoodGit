@@ -23,6 +23,20 @@ namespace ggtest {
 
 namespace {
 
+// git before 2.38 has no update-ref rows (nor --update-refs): there git gets the list without them
+// and moves only the rebased branch, so a test compares the other branches only when this is true.
+bool gitMovesBranches(Scenario& s) { return s.gitAtLeast(2, 38); }
+
+std::string withoutUpdateRefRows(const std::string& todoText)
+{
+    std::string out;
+    for (const auto& line : gg::splitLines(todoText))
+        if (line.rfind("update-ref ", 0) != 0 && !line.empty())
+            out += line + "\n";
+    return out;
+}
+
+
 namespace todo = gg::todo;
 
 // c1 … c5 on main, each adding its own file; "part1" at c3 (a stacked branch).
@@ -179,8 +193,8 @@ std::vector<std::string> conflictedFiles(Scenario& s, const fs::path& repo, cons
 }
 
 // The preview is what `tip` now is: per commit the tree, the subject, the first-class conflicts,
-// emptiness and the branches at it.
-void checkMatches(Scenario& s, const fs::path& repo, const std::string& tip, const Preview& p)
+// emptiness and (unless `branches` is false: git before 2.38 on a copy) the branches at it.
+void checkMatches(Scenario& s, const fs::path& repo, const std::string& tip, const Preview& p, bool branches = true)
 {
     const size_t n = p.rows.size();
     for (size_t k = 0; k < n; ++k) {
@@ -195,7 +209,8 @@ void checkMatches(Scenario& s, const fs::path& repo, const std::string& tip, con
         if (row.unchanged)
             GG_CHECK_STR_EQ(id, row.id);
         for (const auto& b : row.branches)
-            GG_CHECK_STR_EQ(s.revParse(repo, b), id);
+            if (branches || b == tip)
+                GG_CHECK_STR_EQ(s.revParse(repo, b), id);
     }
     GG_CHECK_STR_EQ(s.revParse(repo, tip + "~" + std::to_string(n)), p.onto);
 }
@@ -886,11 +901,19 @@ GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, th
     for (const auto& row : p->rows)
         GG_CHECK(row.conflicts.empty() && row.decisions.empty() && !row.empty);
     // git rebase -i with the same todo on a copy: the same trees, subjects and branch positions.
-    s.write(s.root(), "todo.txt", todo::format(editor(s).todo()));
-    s.git(copy, {"-c", "sequence.editor=cp '" + (s.root() / "todo.txt").string() + "'", "-c", "core.editor=true",
-                    "rebase", "-q", "-i", "--update-refs", r.c1});
-    checkMatches(s, copy, "main", *p);
-    GG_CHECK_STR_EQ(s.revParse(copy, "part1"), s.revParse(copy, "main"));
+    // (git before 2.38 cannot move part1: it gets the list without the update-ref row.)
+    const bool moves = gitMovesBranches(s);
+    const std::string listed = todo::format(editor(s).todo());
+    s.write(s.root(), "todo.txt", moves ? listed : withoutUpdateRefRows(listed));
+    std::vector<std::string> args{"-c", "sequence.editor=cp '" + (s.root() / "todo.txt").string() + "'", "-c",
+        "core.editor=true", "rebase", "-q", "-i"};
+    if (moves)
+        args.push_back("--update-refs");
+    args.push_back(r.c1);
+    s.git(copy, args);
+    checkMatches(s, copy, "main", *p, moves);
+    if (moves)
+        GG_CHECK_STR_EQ(s.revParse(copy, "part1"), s.revParse(copy, "main"));
     // An edit row and an exec row need git rebase, but the preview shows the history all the same.
     key(s, r.c3, ImGuiKey_E);
     ctx->KeyPress(ImGuiKey_X);
@@ -1299,9 +1322,11 @@ void checkAside(Scenario& s, const fs::path& repo, const std::string& tip, const
 }
 
 // Runs `git rebase -i` on `copy` with ggui's todo text and the rewording editor.
-void gitRebase(Scenario& s, const fs::path& copy, const std::string& todoText, const std::string& upstream,
+void gitRebase(Scenario& s, const fs::path& copy, std::string todoText, const std::string& upstream,
     const std::string& onto, const char* empty)
 {
+    if (!gitMovesBranches(s))
+        todoText = withoutUpdateRefRows(todoText);
     const fs::path todoFile = copy.parent_path() / (copy.filename().string() + "-todo.txt");
     const fs::path editorFile = copy.parent_path() / "reword-editor.sh";
     {
@@ -1372,6 +1397,7 @@ void checkClean(Scenario& s, const fs::path& repo)
 GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i",
     "IR-ACT-UPDATE-REF", "IR-ACT-SQUASH", "IR-ACT-FIXUP", "IR-PREVIEW-BRANCHES", "IR-ENGINE-MEMORY", "HOOK-REWRITE-RUN")
 {
+    GG_REQUIRE_GIT(2, 38, "git rebase -i with update-ref rows as the reference");
     const Repo r = makeRepo(s);
     installRecordingHooks(s, r.path);
     const fs::path copy = copyRepo(s, r.path, "git-copy");
@@ -1492,7 +1518,7 @@ GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i 
         // ---- the options ----------------------------------------------------------------------
         const bool ontoUp = chance(0.5);
         const bool autosquash = chance(0.5);
-        const bool updateRefs = !chance(0.2);
+        const bool updateRefs = !chance(0.2) && gitMovesBranches(s);
         const int emptyMode = static_cast<int>(below(3)); // Keep, Drop, Ask (answered Keep)
         const char* emptyNames[] = {"Keep", "Drop", "Ask"};
         GG_REQUIRE(rowReady(s, a1));
@@ -1786,9 +1812,10 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
     GG_CHECK(!noticeSays(s, seen, "first-class conflicts", 1.0f));
     // git rebase -i with the same todo on a copy sees the regions as text: the same result.
     gitRebase(s, copy, todoText, c1, "", "keep");
-    checkMatches(s, copy, "main", carried);
+    checkMatches(s, copy, "main", carried, gitMovesBranches(s));
     for (const char* ref : {"main", "part1"})
-        GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
+        if (gitMovesBranches(s) || std::string(ref) == "main")
+            GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
     GG_CHECK(postRewrite(s, path) == postRewrite(s, copy));
 
     // 2. Resolved: onto c2 (the dropped cause, kept as branch "x") the terms cancel out. Every commit

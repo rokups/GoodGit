@@ -448,6 +448,44 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
         std::string ignored;
         while (std::getline(in, ignored)) {
         }
+        // Older git (2.36 at least) points HEAD at another branch (checkout <branch>, checkout
+        // -b, switch) without a ref transaction, so the reference-transaction hook never sees
+        // HEAD move. A branch checkout (flag 1) that left HEAD on a branch records it here when
+        // the command's operation has no HEAD change yet: from the branch git reports as @{-1}
+        // (or the commit it left, when HEAD was detached) to HEAD's branch now.
+        if (name == "post-checkout" && !joined && args.size() >= 3 && args[2] == "1"
+            && args[0].find_first_not_of('0') != std::string::npos) {
+            git_reference* head = nullptr;
+            std::string headNow;
+            if (git_reference_lookup(&head, repo.get(), "HEAD") == 0) {
+                if (git_reference_type(head) == GIT_REFERENCE_SYMBOLIC)
+                    headNow = std::string("ref:") + git_reference_symbolic_target(head);
+                git_reference_free(head);
+            }
+            git_object* previous = nullptr;
+            git_reference* previousRef = nullptr;
+            std::string before;
+            if (!headNow.empty() && git_revparse_ext(&previous, &previousRef, repo.get(), "@{-1}") == 0) {
+                before = previousRef && git_reference_is_branch(previousRef)
+                    ? std::string("ref:") + git_reference_name(previousRef)
+                    : args[0];
+                git_reference_free(previousRef);
+                git_object_free(previous);
+            }
+            git_error_clear();
+            const std::string key = journal::headKey(wt);
+            if (!before.empty() && before != headNow) {
+                const std::string id = operationId(false);
+                bool recorded = false;
+                if (journal.hasOpenOperation(id))
+                    for (const auto& op : journal.read())
+                        if (op.id == id)
+                            for (const auto& r : op.refs)
+                                recorded = recorded || r.ref == key;
+                if (!recorded)
+                    journal.appendRefs(operationId(true), {journal::RefChange{key, before, headNow}});
+            }
+        }
         return 0;
     }
     if (name == "pre-push") {

@@ -55,6 +55,10 @@ RunResult run(const RunRequest& request);
 // Convenience: `git <args...>` in `cwd`.
 RunResult git(const std::filesystem::path& cwd, std::vector<std::string> args, std::string input = {});
 
+// The version of the `git` on PATH as major * 100 + minor (2.40 → 240); 0 when unknown.
+// Runs `git version` each time (a test may put another git on PATH).
+int gitVersion(const std::filesystem::path& cwd = {});
+
 // ---- Process-wide git environment ---------------------------------------------------------
 
 // Program used for GIT_ASKPASS / SSH_ASKPASS (empty = leave unset) and the endpoint it talks
