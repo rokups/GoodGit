@@ -210,7 +210,12 @@ void Session::revealCommit(const core::Oid& id)
     m_history->reveal(id);
 }
 
-void Session::refresh() { m_engine->refresh(true); }
+void Session::refresh()
+{
+    // Everything, the undo journal too: a refresh must not depend on the file watcher noticing.
+    m_engine->refresh(true);
+    m_engine->readOperations();
+}
 
 void Session::nextChangedFile(int direction) { m_changes->moveCurrent(direction); }
 

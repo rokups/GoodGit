@@ -104,6 +104,7 @@ void Watcher::changed(const fs::path& path)
     };
     const std::string inGit = relativeUnder(path, m_gitDir);
     const std::string inCommon = relativeUnder(path, m_commonDir);
+    spdlog::debug("watch: {} (git dir: '{}', common dir: '{}')", path.string(), inGit, inCommon);
     if (!classifyGit(inGit) && !classifyGit(inCommon)) {
         const std::string inWork = relativeUnder(path, m_workdir);
         if (inWork.empty() || inWork == ".git" || startsWith(inWork, ".git/"))

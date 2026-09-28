@@ -445,6 +445,7 @@ void TestRunner::start(const std::string& filter, const std::string& traceFile, 
     _set_error_mode(_OUT_TO_STDERR);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     for (int type : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {
+        (void)type; // the _Crt* calls are empty macros in release builds
         _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
         _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
     }
