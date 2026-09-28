@@ -103,6 +103,22 @@ bool Item::isCommit() const
     }
 }
 
+bool Item::makesCommit() const
+{
+    return (isCommit() && action != Action::Drop) || action == Action::Merge;
+}
+
+std::vector<std::string> Item::mergeHeads() const
+{
+    std::vector<std::string> out;
+    if (action != Action::Merge)
+        return out;
+    std::string_view rest = arg;
+    while (!trimLeft(rest).empty())
+        out.emplace_back(nextWord(rest));
+    return out;
+}
+
 // ---- Names ------------------------------------------------------------------------------------
 
 namespace {
@@ -175,6 +191,31 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors)
             item.subject = std::string(rest);
         } else if (item.action == Action::Break) {
             // Takes no argument.
+        } else if (item.action == Action::Reset || item.action == Action::Merge) {
+            // reset <label> [# subject]; merge [-C|-c <commit>] <label>... [# subject]
+            if (item.action == Action::Merge && (startsWith(rest, "-C ") || startsWith(rest, "-c "))) {
+                item.fixup = rest[1] == 'C' ? FixupMessage::Use : FixupMessage::Edit;
+                rest.remove_prefix(3);
+                item.commit = std::string(nextWord(rest));
+            }
+            std::vector<std::string> names;
+            if (item.action == Action::Reset && startsWith(rest, kNewRoot)) {
+                names.emplace_back(kNewRoot);
+                rest = trimLeft(rest.substr(std::string_view(kNewRoot).size()));
+            }
+            while (!rest.empty() && !startsWith(rest, kComment) && (item.action == Action::Merge || names.empty()))
+                names.emplace_back(nextWord(rest));
+            if (item.action == Action::Reset)
+                while (!rest.empty() && !startsWith(rest, kComment))
+                    nextWord(rest); // Git reads the first word only
+            if (startsWith(rest, kComment))
+                item.subject = std::string(trimLeft(rest.substr(kComment.size())));
+            if (names.empty()) {
+                fail(std::string("missing arguments for ") + actionName(item.action));
+                continue;
+            }
+            for (size_t k = 0; k < names.size(); ++k)
+                item.arg += (k ? " " : "") + names[k];
         } else {
             if (rest.empty()) {
                 fail(std::string("missing arguments for ") + actionName(item.action));
@@ -201,9 +242,18 @@ std::string format(const Todo& todo)
             out += item.commit;
             if (!item.subject.empty())
                 out += " # " + item.subject;
+        } else if (item.action == Action::Merge) {
+            if (item.fixup != FixupMessage::None && !item.commit.empty())
+                out += (item.fixup == FixupMessage::Use ? " -C " : " -c ") + item.commit;
+            out += ' ';
+            out += item.arg;
+            if (!item.subject.empty())
+                out += " # " + item.subject;
         } else if (item.action != Action::Break) {
             out += ' ';
             out += item.arg;
+            if (item.action == Action::Reset && !item.subject.empty())
+                out += " # " + item.subject;
         }
         out += '\n';
         if (item.action == Action::UpdateRef)
@@ -322,6 +372,277 @@ git_oid resolveOrThrow(git_repository* repo, const std::string& spec)
     return *oid;
 }
 
+// Every commit reachable from `tip` and not from `upstream`, merges included, oldest first in
+// Git's order (`rev-list --topo-order --reverse`, REV_SORT_IN_GRAPH_ORDER): from the tip, a
+// commit's parents are taken last-ready-first once all their children are out, then reversed.
+std::vector<std::string> graphOrderRange(git_repository* repo, const git_oid& tip, const std::optional<git_oid>& upstream)
+{
+    git_revwalk* raw = nullptr;
+    check(git_revwalk_new(&raw, repo), "git_revwalk_new");
+    Revwalk rw(raw);
+    check(git_revwalk_push(rw.get(), &tip), "git_revwalk_push");
+    if (upstream)
+        check(git_revwalk_hide(rw.get(), &*upstream), "git_revwalk_hide");
+    std::map<std::string, std::vector<std::string>> parentsOf;
+    git_oid oid;
+    while (git_revwalk_next(&oid, rw.get()) == 0) {
+        Commit c = lookupCommit(repo, oid);
+        auto& parents = parentsOf[toHex(oid)];
+        for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
+            parents.push_back(toHex(*git_commit_parent_id(c.get(), i)));
+    }
+    git_error_clear();
+    std::map<std::string, int> children;
+    for (const auto& [id, parents] : parentsOf)
+        for (const auto& p : parents)
+            if (parentsOf.count(p))
+                ++children[p];
+    std::vector<std::string> out;
+    std::vector<std::string> stack;
+    const std::string tipId = toHex(tip);
+    if (parentsOf.count(tipId))
+        stack.push_back(tipId);
+    while (!stack.empty()) {
+        const std::string id = stack.back();
+        stack.pop_back();
+        for (const auto& p : parentsOf.at(id))
+            if (parentsOf.count(p) && --children[p] == 0)
+                stack.push_back(p);
+        out.push_back(id);
+    }
+    std::reverse(out.begin(), out.end());
+    return out;
+}
+
+// Git's labels for a --rebase-merges todo (sequencer.c label_oid): a commit keeps its first label;
+// names are sanitized (alphanumerics and UTF-8 kept, other runs become one "-"), made unique with
+// "-2", "-3", …; commits outside the range get their unique abbreviated id.
+struct Labels {
+    git_repository* repo = nullptr;
+    std::map<std::string, std::string> byCommit;
+    std::set<std::string> used;
+    size_t hexSize = 40;
+
+    std::string abbreviation(const std::string& id) const
+    {
+        git_object* raw = nullptr;
+        std::string out = id.substr(0, 7);
+        const git_oid oid = *fromHex(id);
+        if (git_object_lookup(&raw, repo, &oid, GIT_OBJECT_ANY) == 0) {
+            Object obj(raw);
+            git_buf buf = GIT_BUF_INIT;
+            if (git_object_short_id(&buf, obj.get()) == 0)
+                out.assign(buf.ptr, buf.size);
+            git_buf_dispose(&buf);
+        }
+        git_error_clear();
+        return out;
+    }
+
+    static std::string sanitize(std::string_view text)
+    {
+        constexpr size_t kMax = 255 - 5 - 16; // GIT_MAX_LABEL_LENGTH: NAME_MAX - ".lock" - 16
+        std::string out;
+        bool utf8 = true;
+        for (size_t i = 0; i < text.size() && out.size() + 1 < kMax; ++i) {
+            const unsigned char c = static_cast<unsigned char>(text[i]);
+            if (std::isalnum(c) && c < 0x80) {
+                out += static_cast<char>(c);
+            } else if (c & 0x80) {
+                if (!utf8) {
+                    out += static_cast<char>(c);
+                    continue;
+                }
+                const size_t len = (c & 0xe0) == 0xc0 ? 2 : (c & 0xf0) == 0xe0 ? 3 : (c & 0xf8) == 0xf0 ? 4 : 0;
+                bool valid = len > 0 && i + len <= text.size();
+                for (size_t k = 1; valid && k < len; ++k)
+                    valid = (static_cast<unsigned char>(text[i + k]) & 0xc0) == 0x80;
+                if (!valid) {
+                    utf8 = false;
+                    out += static_cast<char>(c);
+                    continue;
+                }
+                if (out.size() + len > kMax)
+                    break;
+                out.append(text.substr(i, len));
+                i += len - 1;
+            } else if (!out.empty() && out.back() != '-') {
+                out += '-';
+            }
+        }
+        return out;
+    }
+
+    const std::string& label(const std::string& id, const std::string* text)
+    {
+        if (auto it = byCommit.find(id); it != byCommit.end())
+            return it->second;
+        std::string name;
+        if (!text) {
+            name = abbreviation(id);
+            for (size_t n = name.size() + 1; used.count(name) && n <= id.size(); ++n)
+                name = id.substr(0, n);
+        } else {
+            name = sanitize(*text);
+            if (name.empty())
+                name = "rev-" + abbreviation(id);
+            if ((name.size() == hexSize && isHex(name)) || name == "#" || used.count(name)) {
+                const std::string base = name;
+                for (int k = 2;; ++k) {
+                    name = base + "-" + std::to_string(k);
+                    if (!used.count(name))
+                        break;
+                }
+            }
+        }
+        used.insert(name);
+        return byCommit[id] = name;
+    }
+};
+
+// Git's one-line title of a commit (the first paragraph).
+std::string oneline(git_repository* repo, const std::string& id)
+{
+    Commit c = lookupCommit(repo, *fromHex(id));
+    const char* s = git_commit_summary(c.get());
+    return s ? s : "";
+}
+
+// The todo `git rebase -i --rebase-merges` starts with (sequencer.c make_script_with_merges, the
+// default no-rebase-cousins mode), without its comments and update-ref rows.
+Todo mergesTodo(git_repository* repo, Context& context, const std::vector<std::string>& order,
+    const std::set<std::string>& samePatch, const std::optional<git_oid>& upstream)
+{
+    Labels labels;
+    labels.repo = repo;
+    labels.hexSize = hexSize(oidType(repo));
+    if (upstream) {
+        labels.byCommit[toHex(*upstream)] = "onto";
+        labels.used.insert("onto");
+    }
+    const std::set<std::string> interesting(order.begin(), order.end());
+    std::map<std::string, std::vector<std::string>> parentsOf;
+    for (const auto& id : order) {
+        Commit c = lookupCommit(repo, *fromHex(id));
+        for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
+            parentsOf[id].push_back(toHex(*git_commit_parent_id(c.get(), i)));
+    }
+    // The branch a merged tip is labelled after: the last local branch there by name.
+    std::map<std::string, std::string> decoration;
+    forEachReference(repo, [&](git_reference* ref) {
+        const std::string name = git_reference_name(ref);
+        if (startsWith(name, "refs/heads/") && git_reference_type(ref) == GIT_REFERENCE_DIRECT) {
+            std::string& d = decoration[toHex(*git_reference_target(ref))];
+            if (name.substr(11) > d)
+                d = name.substr(11);
+        }
+        return true;
+    });
+
+    // First phase: a row per commit; merges label the tips they merge.
+    std::map<std::string, Item> rowOf;
+    std::vector<std::string> tips;
+    for (const auto& id : order) {
+        const auto& parents = parentsOf[id];
+        const std::string title = oneline(repo, id);
+        if (parents.size() <= 1) {
+            if (samePatch.count(id))
+                continue;
+            Item pick;
+            pick.commit = id;
+            pick.subject = context.commits.count(id) ? context.commits.at(id).subject : title;
+            rowOf[id] = pick;
+            continue;
+        }
+        std::string fromMessage = title;
+        const size_t q1 = startsWith(title, "Merge ") ? title.find('\'', 6) : std::string::npos;
+        const size_t q2 = q1 == std::string::npos ? q1 : title.find('\'', q1 + 1);
+        if (q2 != std::string::npos) {
+            fromMessage = title.substr(q1 + 1, q2 - q1 - 1);
+        } else if (startsWith(title, "Merge pull request ")) {
+            if (const size_t from = title.find(" from ", 19); from != std::string::npos)
+                fromMessage = title.substr(from + 6);
+        }
+        Item merge;
+        merge.action = Action::Merge;
+        merge.fixup = FixupMessage::Use;
+        merge.commit = id;
+        merge.subject = title;
+        for (size_t k = 1; k < parents.size(); ++k) {
+            const std::string& p = parents[k];
+            if (!interesting.count(p)) {
+                const std::string& name = labels.label(p, nullptr);
+                context.revisions[name] = p;
+                merge.arg += (k > 1 ? " " : "") + name;
+                continue;
+            }
+            tips.push_back(p);
+            std::string text = fromMessage;
+            if (auto d = decoration.find(p); d != decoration.end())
+                text = d->second;
+            merge.arg += (k > 1 ? " " : "") + labels.label(p, &text);
+        }
+        rowOf[id] = merge;
+    }
+    // Second phase: commits with more than one child in the range are branch points; HEAD is a tip.
+    {
+        std::set<std::string> childSeen;
+        const std::string branchPoint = "branch-point";
+        for (const auto& id : order)
+            for (const auto& p : parentsOf[id])
+                if (interesting.count(p) && !childSeen.insert(p).second)
+                    labels.label(p, &branchPoint);
+        if (!order.empty())
+            tips.push_back(order.back());
+    }
+    // Third phase: from each tip down its first parents to what is already shown, oldest first.
+    Todo out;
+    Item labelOnto;
+    labelOnto.action = Action::Label;
+    labelOnto.arg = "onto";
+    out.items.push_back(labelOnto);
+    const bool rootWithOnto = !upstream && !context.onto.empty();
+    std::set<std::string> shown;
+    for (const auto& t : tips) {
+        if (shown.count(t))
+            continue;
+        std::vector<std::string> list;
+        std::optional<std::string> at = t;
+        while (at && interesting.count(*at) && !shown.count(*at)) {
+            list.insert(list.begin(), *at);
+            const auto& parents = parentsOf[*at];
+            if (parents.empty())
+                at.reset();
+            else
+                at = parents.front();
+        }
+        Item reset;
+        reset.action = Action::Reset;
+        if (!at) {
+            reset.arg = rootWithOnto ? "onto" : kNewRoot;
+        } else {
+            reset.arg = labels.label(*at, nullptr); // (labelled already unless outside the range)
+            if (reset.arg != "onto")
+                reset.subject = oneline(repo, *at);
+            if (!interesting.count(*at) && reset.arg != "onto")
+                context.revisions[reset.arg] = *at;
+        }
+        out.items.push_back(reset);
+        for (const auto& id : list) {
+            if (auto r = rowOf.find(id); r != rowOf.end())
+                out.items.push_back(r->second);
+            if (auto l = labels.byCommit.find(id); l != labels.byCommit.end()) {
+                Item label;
+                label.action = Action::Label;
+                label.arg = l->second;
+                out.items.push_back(label);
+            }
+            shown.insert(id);
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 Context read(git_repository* repo, const ReadOptions& options)
@@ -366,6 +687,7 @@ Context read(git_repository* repo, const ReadOptions& options)
     // The listed commits: merges dropped, commits whose change is already upstream left out
     // (Git's default --no-reapply-cherry-picks).
     std::vector<git_oid> listed = walk(repo, tip, upstream);
+    std::set<std::string> samePatch; // listed commits whose change is already upstream
     if (upstream && !listed.empty()) {
         std::set<std::string> upstreamIds;
         for (const auto& oid : walk(repo, *upstream, tip))
@@ -374,13 +696,27 @@ Context read(git_repository* repo, const ReadOptions& options)
         if (!upstreamIds.empty())
             std::erase_if(listed, [&](const git_oid& oid) {
                 auto id = patchId(repo, oid);
-                return id && upstreamIds.count(*id);
+                const bool same = id && upstreamIds.count(*id);
+                if (same)
+                    samePatch.insert(toHex(oid));
+                return same;
             });
     }
     const std::vector<git_oid> tips = remoteTips(repo);
     for (const auto& oid : listed) {
         context.range.push_back(toHex(oid));
         addCommit(repo, context, oid, tips);
+    }
+    // --rebase-merges: every commit of the range, merges included, in Git's order.
+    const std::vector<std::string> graphOrder = graphOrderRange(repo, tip, upstream);
+    for (const auto& id : graphOrder) {
+        if (context.commits.count(id) || samePatch.count(id))
+            continue;
+        Commit c = lookupCommit(repo, *fromHex(id));
+        if (git_commit_parentcount(c.get()) > 1) {
+            context.merges.push_back(id);
+            addCommit(repo, context, *fromHex(id), tips);
+        }
     }
 
     // Branches in the range, and those checked out in other worktrees.
@@ -398,14 +734,10 @@ Context read(git_repository* repo, const ReadOptions& options)
 
     // The starting todo: a pick per commit, then update-ref lines for the other branches at it
     // (Git lists them in reverse name order and skips branches checked out elsewhere).
-    for (const auto& id : context.range) {
-        Item pick;
-        pick.commit = id;
-        pick.subject = context.commits.at(id).subject;
-        context.initial.items.push_back(pick);
+    auto addUpdateRefs = [&](Todo& todo, const std::string& id) {
         auto it = context.branchesAt.find(id);
         if (it == context.branchesAt.end())
-            continue;
+            return;
         std::vector<std::string> refs = it->second;
         std::sort(refs.rbegin(), refs.rend());
         for (const auto& ref : refs) {
@@ -414,8 +746,22 @@ Context read(git_repository* repo, const ReadOptions& options)
             Item update;
             update.action = Action::UpdateRef;
             update.arg = ref;
-            context.initial.items.push_back(update);
+            todo.items.push_back(update);
         }
+    };
+    for (const auto& id : context.range) {
+        Item pick;
+        pick.commit = id;
+        pick.subject = context.commits.at(id).subject;
+        context.initial.items.push_back(pick);
+        addUpdateRefs(context.initial, id);
+    }
+    for (Item& item : mergesTodo(repo, context, graphOrder, samePatch, upstream).items) {
+        const bool commitRow = item.makesCommit();
+        const std::string id = item.commit;
+        context.initialMerges.items.push_back(std::move(item));
+        if (commitRow)
+            addUpdateRefs(context.initialMerges, id);
     }
     return context;
 }
@@ -426,9 +772,33 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
     std::vector<ParseError> problems;
     const std::vector<git_oid> tips = remoteTips(repo);
     const size_t fullSize = hexSize(oidType(repo));
+    // Names on reset/merge rows: refs/rewritten/<name> (a label a stopped rebase defined), else a
+    // revision, as Git resolves them when no earlier label row defines them.
+    auto resolveName = [&](const std::string& name) {
+        if (name.empty() || name == kNewRoot || context.revisions.count(name))
+            return;
+        git_oid oid;
+        if (git_reference_name_to_id(&oid, repo, ("refs/rewritten/" + name).c_str()) == 0) {
+            context.definedLabels.insert(name);
+            context.revisions[name] = toHex(oid);
+            return;
+        }
+        git_error_clear();
+        git_object* raw = nullptr;
+        if (git_revparse_single(&raw, repo, (name + "^{commit}").c_str()) == 0) {
+            Object obj(raw);
+            context.revisions[name] = toHex(*git_object_id(obj.get()));
+            addCommit(repo, context, *git_object_id(obj.get()), tips);
+        }
+        git_error_clear();
+    };
     for (size_t i = 0; i < todo.items.size(); ++i) {
         Item& item = todo.items[i];
-        if (!item.isCommit())
+        if (item.action == Action::Reset)
+            resolveName(item.arg);
+        for (const auto& head : item.mergeHeads())
+            resolveName(head);
+        if (!item.isCommit() && !(item.action == Action::Merge && !item.commit.empty()))
             continue;
         std::optional<git_oid> oid;
         if (item.commit.size() == fullSize && isHex(item.commit)) {
@@ -483,9 +853,12 @@ Context readRemaining(git_repository* repo, std::string_view todoText, const std
         problems.push_back(std::move(p));
     if (!problems.empty())
         throw std::runtime_error("cannot read the remaining todo: " + problems.front().message);
-    for (const Item& item : list.items)
-        if (item.isCommit() && std::find(context.range.begin(), context.range.end(), item.commit) == context.range.end())
-            context.range.push_back(item.commit);
+    for (const Item& item : list.items) {
+        std::vector<std::string>& into = item.isCommit() ? context.range : context.merges;
+        if ((item.isCommit() || (item.action == Action::Merge && !item.commit.empty()))
+            && std::find(into.begin(), into.end(), item.commit) == into.end())
+            into.push_back(item.commit);
+    }
     forEachReference(repo, [&](git_reference* ref) {
         const std::string refName = git_reference_name(ref);
         if (startsWith(refName, "refs/heads/") && git_reference_type(ref) == GIT_REFERENCE_DIRECT) {
@@ -624,9 +997,9 @@ std::vector<Group> groups(const Todo& todo)
         case Action::Exec:
         case Action::Break:
         case Action::UpdateRef:
+        case Action::Label:
             finished = open; // Git finishes the commit before running these (is_final_fixup)
             break;
-        case Action::Label:
         case Action::Reset:
         case Action::Merge:
             open = false; // HEAD moves elsewhere
@@ -790,6 +1163,9 @@ std::string editorText(const Todo& todo, const Group& group, const Context& cont
 std::map<std::string, std::string> editorMessages(const Todo& todo)
 {
     std::map<std::string, std::string> out;
+    for (const Item& item : todo.items)
+        if (item.action == Action::Merge && item.fixup == FixupMessage::Edit && !item.commit.empty() && item.message)
+            out[item.commit] = *item.message;
     for (const Group& g : groups(todo)) {
         const Item& first = todo.items[g.first];
         if (!first.message)
@@ -832,6 +1208,85 @@ size_t unchangedPrefix(const Todo& todo, const Context& context)
     return todo.items.size();
 }
 
+std::vector<bool> unchangedRows(const Todo& todo, const Context& context)
+{
+    std::vector<bool> out(todo.items.size(), false);
+    // HEAD while replaying: the original commit it still is ("" once it is a new commit, or unknown).
+    std::string current = context.onto.empty() ? std::string("-") : context.onto; // "-" = the root
+    std::map<std::string, std::string> labels;
+    auto original = [&](const std::string& name) -> std::string {
+        if (name == kNewRoot)
+            return "-";
+        if (auto it = labels.find(name); it != labels.end())
+            return it->second;
+        if (auto it = context.revisions.find(name); it != context.revisions.end())
+            return it->second;
+        return {};
+    };
+    auto parentsOf = [&](const std::string& id) {
+        auto it = context.commits.find(id);
+        return it == context.commits.end() ? std::vector<std::string>{std::string()} : it->second.parents;
+    };
+    for (size_t i = 0; i < todo.items.size(); ++i) {
+        const Item& item = todo.items[i];
+        switch (item.action) {
+        case Action::Label:
+            labels[item.arg] = current;
+            break;
+        case Action::Reset:
+            current = original(item.arg);
+            break;
+        case Action::Pick: {
+            bool same = !current.empty() && !item.message
+                && parentsOf(item.commit) == (current == "-" ? std::vector<std::string>{} : std::vector<std::string>{current});
+            // A squash/fixup coming next changes this commit too.
+            for (size_t j = i + 1; same && j < todo.items.size(); ++j) {
+                const Action a = todo.items[j].action;
+                if (a == Action::Squash || a == Action::Fixup)
+                    same = false;
+                if (a != Action::Drop)
+                    break;
+            }
+            out[i] = same;
+            current = same ? item.commit : std::string();
+            break;
+        }
+        case Action::Merge: {
+            std::vector<std::string> parents{current};
+            for (const auto& head : item.mergeHeads())
+                parents.push_back(original(head));
+            const bool same = item.fixup == FixupMessage::Use && !item.commit.empty() && !current.empty()
+                && current != "-" && parents == parentsOf(item.commit);
+            out[i] = same;
+            current = same ? item.commit : std::string();
+            break;
+        }
+        case Action::Reword:
+        case Action::Edit:
+        case Action::Squash:
+        case Action::Fixup:
+            current.clear();
+            break;
+        default:
+            break; // drop, exec, break, update-ref: HEAD stays
+        }
+    }
+    return out;
+}
+
+namespace {
+
+// A label name Git accepts (refs/rewritten/<name> is a valid ref name).
+bool validLabel(const std::string& name)
+{
+    int valid = 0;
+    const bool ok = git_reference_name_is_valid(&valid, ("refs/rewritten/" + name).c_str()) == 0 && valid;
+    git_error_clear();
+    return ok;
+}
+
+} // namespace
+
 std::vector<Issue> validate(const Todo& todo, const Context& context)
 {
     using Severity = Issue::Severity;
@@ -869,6 +1324,58 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
                 add(Severity::Error, Code::BadRef, row, "'" + item.arg + "' is the branch being rebased");
         } else if (item.action == Action::Label || item.action == Action::Reset || item.action == Action::Merge) {
             seenCommit = true;
+            if (item.action == Action::Merge && !item.commit.empty() && item.fixup != FixupMessage::None)
+                kept.insert(item.commit);
+        }
+    }
+
+    // Labels (--rebase-merges): names Git can use, defined before a reset/merge row uses them.
+    {
+        std::map<std::string, size_t> definedAt; // label → first row defining it
+        for (size_t i = 0; i < todo.items.size(); ++i)
+            if (todo.items[i].action == Action::Label)
+                definedAt.emplace(todo.items[i].arg, i);
+        std::set<std::string> defined(context.definedLabels.begin(), context.definedLabels.end());
+        auto use = [&](const std::string& name, int row) {
+            if (name == kNewRoot || defined.count(name))
+                return;
+            const auto later = definedAt.find(name);
+            const bool revision = context.revisions.count(name) > 0;
+            if (later != definedAt.end()) {
+                if (revision)
+                    add(Severity::Warning, Code::LabelDefinedLater, row,
+                        "label '" + name + "' is defined on row " + std::to_string(later->second + 1) + ", further down: here it is "
+                            + shortId(context.revisions.at(name)));
+                else
+                    add(Severity::Error, Code::LabelDefinedLater, row,
+                        "label '" + name + "' is used before row " + std::to_string(later->second + 1) + " defines it");
+            } else if (!revision) {
+                add(Severity::Error, Code::UnknownLabel, row, "unknown label '" + name + "'");
+            }
+        };
+        for (size_t i = 0; i < todo.items.size(); ++i) {
+            const Item& item = todo.items[i];
+            const int row = static_cast<int>(i);
+            if (item.action == Action::Label) {
+                const std::string name = std::string(trimRight(trimLeft(item.arg)));
+                if (name.empty())
+                    add(Severity::Error, Code::BadLabel, row, "label needs a name");
+                else if (name != item.arg || !validLabel(name))
+                    add(Severity::Error, Code::BadLabel, row, "'" + item.arg + "' is not a valid label");
+                else
+                    defined.insert(name);
+            } else if (item.action == Action::Reset) {
+                if (trimLeft(item.arg).empty())
+                    add(Severity::Error, Code::BadLabel, row, "reset needs a label");
+                else
+                    use(item.arg, row);
+            } else if (item.action == Action::Merge) {
+                const auto heads = item.mergeHeads();
+                if (heads.empty())
+                    add(Severity::Error, Code::BadLabel, row, "merge needs a label to merge");
+                for (const auto& head : heads)
+                    use(head, row);
+            }
         }
     }
 
@@ -881,6 +1388,8 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
             for (const auto& ref : refs)
                 tipOf[ref] = commit;
         std::set<std::string> inRange(context.range.begin(), context.range.end());
+        if (hasMergeRows(todo))
+            inRange.insert(context.merges.begin(), context.merges.end());
         auto reach = [&](const std::string& from) {
             std::set<std::string> seen;
             std::vector<std::string> stack{from};
@@ -922,11 +1431,12 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
 
     // Published commits that are rewritten or dropped.
     {
-        const size_t prefix = unchangedPrefix(todo, context);
+        const std::vector<bool> unchanged = unchangedRows(todo, context);
         // (Rows are never removed from the list, only dropped: every listed commit has a row.)
-        for (size_t i = prefix; i < todo.items.size(); ++i) {
+        for (size_t i = 0; i < todo.items.size(); ++i) {
             const Item& item = todo.items[i];
-            if (item.isCommit() && context.commits.at(item.commit).published)
+            const bool named = item.isCommit() || (item.action == Action::Merge && !item.commit.empty());
+            if (named && !unchanged[i] && context.commits.count(item.commit) && context.commits.at(item.commit).published)
                 add(Severity::Warning, Code::Published, static_cast<int>(i),
                     "commit " + shortId(item.commit) + " is already on a remote");
         }
@@ -959,12 +1469,19 @@ EngineChoice chooseEngine(const Todo& todo, const Options& options)
         case Action::Label:
         case Action::Reset:
         case Action::Merge:
-            return {Engine::Native, row + " is " + actionName(a) + " (--rebase-merges)"};
+            return {Engine::Native, row + " is " + actionName(a) + ": --rebase-merges lists are replayed by git rebase"};
         default:
             break;
         }
     }
     return {Engine::InMemory, "only pick, reword, squash, fixup, drop and update-ref: rewritten in memory, one Undo"};
+}
+
+bool hasMergeRows(const Todo& todo)
+{
+    return std::any_of(todo.items.begin(), todo.items.end(), [](const Item& i) {
+        return i.action == Action::Label || i.action == Action::Reset || i.action == Action::Merge;
+    });
 }
 
 void addExecEach(Todo& todo, const std::string& command)
@@ -974,7 +1491,7 @@ void addExecEach(Todo& todo, const std::string& command)
     for (size_t i = 0; i < todo.items.size(); ++i) {
         const Item& item = todo.items[i];
         out.push_back(item);
-        if (!item.isCommit() || item.action == Action::Drop)
+        if (!item.makesCommit())
             continue;
         if (i + 1 < todo.items.size() && isFollower(todo.items[i + 1]))
             continue; // after the last squash/fixup of the group
@@ -993,12 +1510,8 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
     for (const auto& issue : issues)
         if (issue.error())
             throw std::runtime_error(issue.message);
-    Todo engineCheck = todo;
-    if (replayStops)
-        for (Item& item : engineCheck.items)
-            if (item.action == Action::Edit || item.action == Action::Break || item.action == Action::Exec)
-                item.action = Action::Pick; // what the engine choice looks at: in memory
-    if (const auto engine = chooseEngine(engineCheck, {}); engine.engine != Engine::InMemory)
+    // (The preview replays every row the native engine runs: edit, exec, break, label, reset, merge.)
+    if (const auto engine = chooseEngine(todo, {}); !replayStops && engine.engine != Engine::InMemory)
         throw std::runtime_error("this todo needs git rebase: " + engine.reason);
 
     rw::Plan plan;
@@ -1047,6 +1560,16 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
     // The step the next commit goes onto: a step key, or "=<onto>" before the first one.
     std::string current = context.onto.empty() ? std::string() : "=" + context.onto;
     bool started = false; // a commit row came
+    std::map<std::string, std::string> labels; // label → what it names (as `current`)
+    auto target = [&](const std::string& name, size_t row) -> std::string {
+        if (name == kNewRoot)
+            return {};
+        if (auto it = labels.find(name); it != labels.end())
+            return it->second;
+        if (auto it = context.revisions.find(name); it != context.revisions.end())
+            return "=" + it->second;
+        throw std::runtime_error("row " + std::to_string(row + 1) + ": unknown label '" + name + "'");
+    };
     for (size_t i = 0; i < todo.items.size(); ++i) {
         const Item& item = todo.items[i];
         const std::string key = "row:" + std::to_string(i);
@@ -1086,6 +1609,9 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
                 s.amend = true;
                 current = key;
             }
+            if (auto it = byFirst.find(i); it != byFirst.end() && started && !it->second->amends)
+                throw NoPreview("row " + std::to_string(i + 1) + " is " + actionName(item.action)
+                    + " right after a reset or merge row: the result shows once Start has run it");
             started = true;
             if (auto it = byFirst.find(i); it != byFirst.end() && it->second->amends) {
                 // After an exec/break/update-ref row: amends the finished commit, which the
@@ -1102,6 +1628,48 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
             if (!current.empty())
                 plan.refsToSteps[item.arg] = current;
             break;
+        case Action::Label:
+            labels[item.arg] = current;
+            break;
+        case Action::Reset:
+            current = target(item.arg, i);
+            started = true;
+            break;
+        case Action::Merge: {
+            if (current.empty())
+                throw NoPreview("row " + std::to_string(i + 1) + " merges onto a new root commit");
+            rw::Step s;
+            s.kind = rw::Step::Kind::Merge;
+            s.key = key;
+            s.sourceParents = false;
+            s.gitMerge = true;
+            s.parents = {current};
+            const auto heads = item.mergeHeads();
+            for (const auto& head : heads) {
+                const std::string t = target(head, i);
+                if (t.empty())
+                    throw NoPreview("row " + std::to_string(i + 1) + " merges a new root commit");
+                s.parents.push_back(t);
+            }
+            if (!item.commit.empty() && item.fixup != FixupMessage::None) {
+                s.source = item.commit; // its message and author
+                if (item.fixup == FixupMessage::Edit) {
+                    s.forceNew = true; // Git never fast-forwards a merge whose message it edits
+                    if (item.message)
+                        s.message = cleanup(*item.message);
+                }
+            } else {
+                // Git's message: the text after "#" on the row, else "Merge branch '<labels>'".
+                s.message = !item.subject.empty() ? item.subject + "\n"
+                                                  : std::string("Merge ") + (heads.size() > 1 ? "branches" : "branch") + " '" + item.arg + "'\n";
+                s.forceNew = true;
+                s.mapSource = false;
+            }
+            plan.steps.push_back(std::move(s));
+            current = key;
+            started = true;
+            break;
+        }
         default:
             break; // drop: not replayed
         }

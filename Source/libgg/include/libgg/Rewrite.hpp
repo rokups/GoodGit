@@ -43,7 +43,9 @@ struct Step {
         Merge,   // a new merge commit of its parents (tree merged in memory, conflicts first-class)
     };
     Kind kind = Kind::Pick;
-    std::string source;      // original commit id (Pick, Squash)
+    // Original commit id (Pick, Squash; Merge: the merge it recreates, whose message and author it
+    // keeps and which it replaces, as `git rebase -i --rebase-merges`' `merge -C`).
+    std::string source;
     std::string key;         // how later steps refer to this one (default: source)
     // New parents, each a step key, an original commit id (→ its rewritten version, or itself
     // when it is not rewritten) or "=<id>" (exactly that commit). Used when !sourceParents.
@@ -63,6 +65,11 @@ struct Step {
     // step amends it, as `git rebase -i` does for a squash/fixup after an update-ref, exec or break
     // row. The amended commit keeps that commit's parents and author; this step's key names it.
     bool amend = false;
+    // Merge only, as `git rebase -i --rebase-merges` merges: parents after the first that are
+    // already in the history of the first or of another parent are left out, and with none left
+    // the step makes no commit (its key names the first parent). With `source` and the parents it
+    // had (and no forceNew/message/author), the original merge is reused (Git fast-forwards).
+    bool gitMerge = false;
 };
 
 enum class Choice { Ours, Theirs, Base, File, Delete };

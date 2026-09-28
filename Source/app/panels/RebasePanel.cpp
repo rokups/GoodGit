@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 
@@ -42,15 +43,31 @@ constexpr ActionEntry kActions[] = {
     {"fixup", Action::Fixup, FixupMessage::None},   {"fixup -C", Action::Fixup, FixupMessage::Use},
     {"fixup -c", Action::Fixup, FixupMessage::Edit}, {"drop", Action::Drop, FixupMessage::None},
 };
+// A merge row made from a merge: recreate it with its message (-C), edit that message (-c), or
+// Git's "Merge branch '…'" (merge).
+constexpr ActionEntry kMergeActions[] = {
+    {"merge -C", Action::Merge, FixupMessage::Use},
+    {"merge -c", Action::Merge, FixupMessage::Edit},
+    {"merge", Action::Merge, FixupMessage::None},
+};
 
 std::string actionLabel(const todo::Item& item)
 {
-    // (Only fixup rows carry a message choice.)
+    // (Only fixup and merge rows carry a message choice.)
+    std::string name = todo::actionName(item.action);
+    if (item.action == Action::Merge && item.commit.empty())
+        return name;
     if (item.fixup == FixupMessage::Use)
-        return "fixup -C";
+        return name + " -C";
     if (item.fixup == FixupMessage::Edit)
-        return "fixup -c";
-    return todo::actionName(item.action);
+        return name + " -c";
+    return name;
+}
+
+// A merge row's inline message editor: `merge -c` of a merge.
+bool editsMergeMessage(const todo::Item& item)
+{
+    return item.action == Action::Merge && item.fixup == FixupMessage::Edit && !item.commit.empty();
 }
 
 std::string shortHex(const std::string& id, size_t n) { return id.substr(0, n); }
@@ -255,7 +272,7 @@ void RebasePanel::edit(const std::function<void(State&)>& fn)
     fn(m_state);
     resetStaleMessages(before.todo, m_state.todo);
     if (m_state.todo == before.todo && m_state.context == before.context && m_state.updateRefs == before.updateRefs
-        && m_state.autosquash == before.autosquash)
+        && m_state.autosquash == before.autosquash && m_state.rebaseMerges == before.rebaseMerges)
         return;
     pushUndo(std::move(before));
     onTodoChanged();
@@ -278,6 +295,7 @@ void RebasePanel::onTodoChanged()
 {
     m_options.updateRefs = m_state.updateRefs;
     m_options.autosquash = m_state.autosquash;
+    m_options.rebaseMerges = m_state.rebaseMerges;
     m_issues = todo::validate(m_state.todo, *m_state.context);
     m_engine = m_remaining ? todo::EngineChoice{todo::Engine::Native, "the rest of the rebase in progress"}
                            : todo::chooseEngine(m_state.todo, m_options);
@@ -317,23 +335,77 @@ void RebasePanel::onPreview(const core::RebasePreviewEvent& event)
     m_preview = event.preview;
     m_previewTodo = m_pendingTodo;
     ++m_previewsShown;
-    // One lane: the resulting commits newest first, then the base.
+    layoutPreviewGraph();
+}
+
+void RebasePanel::layoutPreviewGraph()
+{
+    // The resulting commits newest first, then the base: one lane for a straight history, more
+    // for the branches and merges of a --rebase-merges list. Parents outside the result (commits
+    // a merge keeps from outside the range) get no edge.
     m_previewGraph.clear();
-    const size_t n = m_preview->rows.size();
-    const bool root = m_preview->onto.empty();
-    for (size_t k = n; k-- > 0;) {
+    m_previewLanes = 1;
+    const auto& rows = m_preview->rows;
+    const std::string base = m_preview->onto.empty() ? std::string("(root)") : m_preview->onto;
+    std::set<std::string> shown{base};
+    for (const auto& r : rows)
+        shown.insert(r.id);
+    std::vector<std::optional<std::string>> lanes;
+    auto freeLane = [&] {
+        for (size_t l = 0; l < lanes.size(); ++l)
+            if (!lanes[l])
+                return static_cast<int>(l);
+        lanes.emplace_back();
+        return static_cast<int>(lanes.size() - 1);
+    };
+    auto expecting = [&](const std::string& id) {
+        for (size_t l = 0; l < lanes.size(); ++l)
+            if (lanes[l] == id)
+                return static_cast<int>(l);
+        return -1;
+    };
+    auto place = [&](const std::string& id, const std::vector<std::string>& parents, bool conflicted) {
         core::HistoryRow g;
-        g.conflicted = !m_preview->rows[k].conflicts.empty();
-        if (k + 1 < n)
-            g.lines.push_back(core::GraphLine{0, 0, 0, 1, 0});
-        if (k > 0 || !root)
-            g.lines.push_back(core::GraphLine{0, 0, 1, 2, 0});
+        g.conflicted = conflicted;
+        int lane = expecting(id);
+        const bool fromAbove = lane >= 0;
+        if (!fromAbove)
+            lane = freeLane();
+        for (size_t l = 0; l < lanes.size(); ++l) {
+            if (!lanes[l])
+                continue;
+            const auto li = static_cast<std::int16_t>(l);
+            if (*lanes[l] == id) {
+                if (static_cast<int>(l) != lane || fromAbove)
+                    g.lines.push_back(core::GraphLine{li, static_cast<std::int16_t>(lane), 0, 1, static_cast<std::uint8_t>(l)});
+                lanes[l].reset();
+            } else {
+                g.lines.push_back(core::GraphLine{li, li, 0, 2, static_cast<std::uint8_t>(l)});
+            }
+        }
+        const auto me = static_cast<std::int16_t>(lane);
+        bool first = true;
+        for (const auto& p : parents) {
+            const std::string& parent = p;
+            g.parents.push_back(core::Oid{});
+            if (!shown.count(parent))
+                continue;
+            int to = expecting(parent);
+            if (to < 0) {
+                to = first && !lanes[static_cast<size_t>(lane)] ? lane : freeLane();
+                lanes[static_cast<size_t>(to)] = parent;
+            }
+            g.lines.push_back(core::GraphLine{me, static_cast<std::int16_t>(to), 1, 2, static_cast<std::uint8_t>(to)});
+            first = false;
+        }
+        g.lane = lane;
+        g.color = static_cast<std::uint8_t>(lane);
+        m_previewLanes = std::max(m_previewLanes, static_cast<int>(lanes.size()));
         m_previewGraph.push_back(std::move(g));
-    }
-    core::HistoryRow base;
-    if (n > 0)
-        base.lines.push_back(core::GraphLine{0, 0, 0, 1, 0});
-    m_previewGraph.push_back(std::move(base));
+    };
+    for (size_t k = rows.size(); k-- > 0;)
+        place(rows[k].id, rows[k].parents, !rows[k].conflicts.empty());
+    place(base, {}, false);
 }
 
 void RebasePanel::onTaskFinished(const core::TaskFinishedEvent& event)
@@ -356,6 +428,11 @@ void RebasePanel::resetStaleMessages(const todo::Todo& before, todo::Todo& after
         auto& item = after.items[i];
         if (!item.message)
             continue;
+        if (item.action == Action::Merge) { // its own message while it stays `merge -c`
+            if (!editsMergeMessage(item))
+                item.message.reset();
+            continue;
+        }
         const auto was = oldSigs.find(item.commit);
         const auto now = newSigs.find(item.commit);
         if (!firsts.count(i) || was == oldSigs.end() || now == newSigs.end() || was->second != now->second)
@@ -384,6 +461,24 @@ void RebasePanel::insertRow(Action action)
     edit([&](State& s) {
         todo::Item item;
         item.action = action;
+        // Label: a name no row uses yet; reset: the new base; merge: the nearest label above.
+        if (action == Action::Label) {
+            std::set<std::string> used;
+            for (const auto& i : s.todo.items)
+                if (i.action == Action::Label)
+                    used.insert(i.arg);
+            item.arg = "label";
+            for (int k = 2; used.count(item.arg); ++k)
+                item.arg = "label-" + std::to_string(k);
+        } else if (action == Action::Reset) {
+            item.arg = "onto";
+        } else if (action == Action::Merge) {
+            for (size_t k = at; k-- > 0;)
+                if (s.todo.items[k].action == Action::Label && s.todo.items[k].arg != "onto") {
+                    item.arg = s.todo.items[k].arg;
+                    break;
+                }
+        }
         s.todo.items.insert(s.todo.items.begin() + static_cast<std::ptrdiff_t>(at), item);
     });
     m_selection = {at};
@@ -462,18 +557,18 @@ void RebasePanel::setUpdateRefs(bool on)
             std::erase_if(items, [](const todo::Item& i) { return i.action == Action::UpdateRef; });
             return;
         }
-        // Git's update-ref lines for the branches at each commit, after its squash/fixup rows.
+        // Git's update-ref lines for the branches at each commit (or merge), after its squash/fixup rows.
         std::map<std::string, std::vector<todo::Item>> refsAt;
         std::string last;
-        for (const auto& item : s.context->initial.items) {
-            if (item.isCommit())
+        for (const auto& item : (s.rebaseMerges ? s.context->initialMerges : s.context->initial).items) {
+            if (item.isCommit() || item.action == Action::Merge)
                 last = item.commit;
             else if (item.action == Action::UpdateRef)
                 refsAt[last].push_back(item);
         }
         for (size_t i = items.size(); i-- > 0;) {
             auto it = refsAt.find(items[i].commit);
-            if (!items[i].isCommit() || it == refsAt.end())
+            if (!(items[i].isCommit() || items[i].action == Action::Merge) || items[i].commit.empty() || it == refsAt.end())
                 continue;
             size_t at = i + 1;
             while (at < items.size() && (items[at].action == Action::Squash || items[at].action == Action::Fixup))
@@ -494,11 +589,30 @@ void RebasePanel::setAutosquash(bool on)
             return;
         }
         // Off: back to Git's starting list.
-        s.todo = s.context->initial;
-        if (!s.updateRefs)
-            std::erase_if(s.todo.items, [](const todo::Item& i) { return i.action == Action::UpdateRef; });
+        s.todo = baseList(s);
     });
     m_selection.clear();
+}
+
+todo::Todo RebasePanel::baseList(const State& s)
+{
+    todo::Todo list = s.rebaseMerges ? s.context->initialMerges : s.context->initial;
+    if (!s.updateRefs)
+        std::erase_if(list.items, [](const todo::Item& i) { return i.action == Action::UpdateRef; });
+    if (s.autosquash)
+        todo::autosquash(list, *s.context);
+    return list;
+}
+
+void RebasePanel::setRebaseMerges(bool on)
+{
+    // Git's list with (or without) the merges: label, reset and merge rows keep the branches' shape.
+    edit([&](State& s) {
+        s.rebaseMerges = on;
+        s.todo = baseList(s);
+    });
+    m_selection.clear();
+    m_anchor.reset();
 }
 
 std::vector<size_t> RebasePanel::displayOrder() const
@@ -511,6 +625,10 @@ std::vector<size_t> RebasePanel::displayOrder() const
 
 std::string RebasePanel::messageText(size_t row) const
 {
+    if (const auto& item = m_state.todo.items[row]; editsMergeMessage(item)) {
+        const auto info = m_state.context->commits.find(item.commit);
+        return item.message ? *item.message : info != m_state.context->commits.end() ? info->second.message : std::string();
+    }
     const auto group = todo::groupAt(m_state.todo, row);
     if (!group)
         return {};
@@ -586,6 +704,8 @@ void RebasePanel::startNative()
     r.updateRefs = std::any_of(list.items.begin(), list.items.end(), [](const todo::Item& i) { return i.action == Action::UpdateRef; });
     if (m_options.autostash)
         r.args.push_back("--autostash");
+    if (todo::hasMergeRows(list))
+        r.args.push_back("--rebase-merges");
     if (c.upstream.empty()) {
         r.args.push_back("--root");
         if (!c.onto.empty()) {
@@ -686,11 +806,14 @@ void RebasePanel::drawHeader()
     const todo::Context& c = *m_state.context;
     const Palette& p = theme().palette();
     const size_t n = m_session.shortIdLength();
-    size_t commits = 0;
-    for (const auto& item : m_state.todo.items)
+    size_t commits = 0, merges = 0;
+    for (const auto& item : m_state.todo.items) {
         commits += item.isCommit() ? 1 : 0;
+        merges += item.action == Action::Merge ? 1 : 0;
+    }
     const std::string tip = !c.tipRef.empty() ? branchName(c.tipRef) : c.tipIsHead ? "HEAD" : shortHex(c.tip, n);
-    std::string title = "Rebase " + std::to_string(commits) + " commit(s) of " + tip + " onto "
+    std::string title = "Rebase " + std::to_string(commits) + " commit(s) "
+        + (merges ? "and " + std::to_string(merges) + " merge(s) " : std::string()) + "of " + tip + " onto "
         + (c.onto.empty() ? std::string("the root") : shortHex(c.onto, n));
     if (m_remaining)
         title = "Remaining todo of the rebase of " + (c.tipRef.empty() ? std::string("detached HEAD") : tip) + ": "
@@ -761,6 +884,13 @@ void RebasePanel::drawRunOptions()
     if (ImGui::Checkbox("Update refs###ir_update_refs", &updateRefs))
         setUpdateRefs(updateRefs);
     ImGui::SameLine();
+    bool rebaseMerges = m_state.rebaseMerges;
+    if (ImGui::Checkbox("Rebase merges###ir_rebase_merges", &rebaseMerges))
+        setRebaseMerges(rebaseMerges);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("git rebase --rebase-merges: keep the merges. The list gets label, reset and merge rows "
+                          "(Git's list, so the edits so far are replaced) and runs through git rebase.");
+    ImGui::SameLine();
     ImGui::Checkbox("Autostash###ir_autostash", &m_options.autostash);
     ImGui::SameLine();
     if (ImGui::Checkbox("Run as git rebase###ir_native", &m_options.runAsGitRebase))
@@ -820,6 +950,25 @@ void RebasePanel::drawTools()
         insertRow(Action::Break);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("After the selected rows (b)");
+    if (m_state.rebaseMerges || todo::hasMergeRows(m_state.todo)) {
+        struct Insert {
+            const char* label;
+            Action action;
+            const char* tip;
+        };
+        constexpr Insert inserts[] = {
+            {"Insert label###ir_insert_label", Action::Label, "Name the commit made so far, after the selected rows (l)"},
+            {"Insert reset###ir_insert_reset", Action::Reset, "Go back to a label (onto = the new base), after the selected rows (t)"},
+            {"Insert merge###ir_insert_merge", Action::Merge, "Merge a label into the commit made so far, after the selected rows (m)"},
+        };
+        for (const auto& in : inserts) {
+            ImGui::SameLine();
+            if (ImGui::Button(in.label))
+                insertRow(in.action);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", in.tip);
+        }
+    }
     ImGui::SameLine();
     ImGui::Checkbox("Newest first###ir_newest_first", &m_newestFirst);
 }
@@ -873,6 +1022,12 @@ void RebasePanel::drawPreview()
         return;
     }
     const core::RebasePreview& pv = *m_preview;
+    if (!pv.ok && pv.unsupported) {
+        // A list the in-memory replay cannot model: not an error, Start (git rebase) still runs it.
+        plainText(("No preview: " + pv.error + "###irp_unsupported").c_str());
+        ImGui::EndChild();
+        return;
+    }
     if (!pv.ok) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.error);
         ImGui::TextWrapped("Cannot compute the result: %s", pv.error.c_str());
@@ -935,7 +1090,8 @@ void RebasePanel::drawPreview()
     }
     const float laneWidth = ImGui::GetFontSize() * 0.9f;
     const float rowHeight = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
-    ImGui::TableSetupColumn("##irp_graph", ImGuiTableColumnFlags_WidthFixed, graph::inset(laneWidth) + laneWidth * 1.5f);
+    ImGui::TableSetupColumn("##irp_graph", ImGuiTableColumnFlags_WidthFixed,
+        graph::inset(laneWidth) + laneWidth * (static_cast<float>(m_previewLanes) + 0.5f));
     ImGui::TableSetupColumn("##irp_commit", ImGuiTableColumnFlags_WidthStretch);
     const todo::Context& c = *m_state.context;
     const std::string tipName = c.tipRef.empty() ? std::string("HEAD") : branchName(c.tipRef);
@@ -957,9 +1113,11 @@ void RebasePanel::drawPreview()
                 ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
             m_selection.clear();
             for (size_t i = 0; i < m_state.todo.items.size(); ++i)
-                if (m_state.todo.items[i].isCommit() && std::find(row.sources.begin(), row.sources.end(),
-                        m_state.todo.items[i].commit) != row.sources.end())
+                if ((m_state.todo.items[i].isCommit() || m_state.todo.items[i].action == Action::Merge)
+                    && std::find(row.sources.begin(), row.sources.end(), m_state.todo.items[i].commit) != row.sources.end())
                     m_selection.insert(i);
+            if (row.merge)
+                m_selection.insert(row.todoRow);
             m_anchor = row.todoRow;
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
@@ -1062,14 +1220,18 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     todo::Item& item = m_state.todo.items[row];
     const size_t n = m_session.shortIdLength();
     const auto info = c.commits.find(item.commit);
-    const bool hasInfo = item.isCommit(); // every commit of the list is in the context
-    const std::string key = item.isCommit() ? item.commit : "row_" + std::to_string(row);
+    const bool merge = item.action == Action::Merge;
+    // Every commit of the list is in the context (a merge row's merge too).
+    const bool hasInfo = item.isCommit() || (merge && info != c.commits.end());
+    const std::string key = item.isCommit() ? item.commit
+        : merge && !item.commit.empty() ? "merge_" + item.commit
+                                        : "row_" + std::to_string(row);
     ImGui::PushID(static_cast<int>(row));
     ImGui::TableNextRow();
 
     // Selection, drag and drop: the whole row.
     ImGui::TableSetColumnIndex(1);
-    const std::string idText = item.isCommit() ? shortHex(item.commit, n) : std::string();
+    const std::string idText = hasInfo ? shortHex(item.commit, n) : std::string();
     const bool selected = m_selection.count(row) > 0;
     if (ImGui::Selectable((idText + "###ir_" + key).c_str(), selected,
             ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
@@ -1098,7 +1260,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     // Action.
     ImGui::TableSetColumnIndex(0);
     ImGui::SetNextItemWidth(-1);
-    if (item.isCommit()) {
+    if (item.isCommit() || (merge && !item.commit.empty())) {
         const std::string current = actionLabel(item);
         // Combos report no item info to the test engine: register the label (tests find it).
         {
@@ -1107,13 +1269,15 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetID(comboLabel.c_str()), comboLabel.c_str(), ImGuiItemStatusFlags_None);
         }
         if (ImGui::BeginCombo(("###ir_action_" + key).c_str(), current.c_str())) {
-            for (const auto& e : kActions)
+            for (const auto& e : merge ? std::span<const ActionEntry>(kMergeActions) : std::span<const ActionEntry>(kActions))
                 if (ImGui::Selectable(e.label, current == e.label)) {
                     const Action a = e.action;
                     const FixupMessage f = e.fixup;
                     edit([&](State& s) {
                         s.todo.items[row].action = a;
                         s.todo.items[row].fixup = f;
+                        if (a == Action::Merge && f == FixupMessage::None)
+                            s.todo.items[row].subject.clear(); // (Git would take it as the message)
                     });
                 }
             ImGui::EndCombo();
@@ -1134,16 +1298,35 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             ImGui::SameLine();
             break;
         }
-    if (item.isCommit()) {
+    if (hasInfo && (item.isCommit() || item.fixup != FixupMessage::None))
         if (auto b = c.branchesAt.find(item.commit); b != c.branchesAt.end())
             for (const auto& ref : b->second) {
                 const bool current = ref == c.tipRef;
                 drawBadge((branchName(ref) + "###ir_badge_" + branchName(ref)).c_str(), current ? p.branchCurrent : p.branch, current);
                 ImGui::SameLine();
             }
+    if (item.isCommit()) {
         ImGui::PushStyleColor(ImGuiCol_Text, item.action == Action::Drop ? p.dim : ImGui::GetColorU32(ImGuiCol_Text));
         ImGui::TextUnformatted(info->second.subject.c_str());
         ImGui::PopStyleColor();
+    } else if (item.action == Action::Label) {
+        drawArgField(row, "ir_label_", "label name", ImGui::GetFontSize() * 10);
+    } else if (item.action == Action::Reset) {
+        drawArgField(row, "ir_reset_", "label", ImGui::GetFontSize() * 10);
+        ImGui::SameLine();
+        const std::string& to = m_state.todo.items[row].arg;
+        ImGui::TextDisabled("%s", to == "onto" ? "(the new base)"
+                : to == todo::kNewRoot            ? "(a new root commit)"
+                                                  : item.subject.c_str());
+    } else if (merge) {
+        drawArgField(row, "ir_merge_", "labels to merge", ImGui::GetFontSize() * 10);
+        ImGui::SameLine();
+        const std::string& heads = m_state.todo.items[row].arg;
+        const std::string plain = std::string("Merge ") + (heads.find(' ') != std::string::npos ? "branches" : "branch") + " '" + heads + "'";
+        if (item.fixup == FixupMessage::None || item.commit.empty()) // Git's message for a new merge
+            ImGui::TextDisabled("%s", item.subject.empty() ? plain.c_str() : item.subject.c_str());
+        else
+            ImGui::TextUnformatted(hasInfo ? info->second.subject.c_str() : item.subject.c_str());
     } else if (item.action == Action::Exec) {
         ImGui::SetNextItemWidth(-1);
         std::string command = item.arg;
@@ -1166,7 +1349,18 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     }
 
     // Inline message editor: reword rows and squash groups (the group's message, prefilled the
-    // way Git's editor would be).
+    // way Git's editor would be), and `merge -c` rows (the merge's message).
+    if (editsMergeMessage(item)) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(2);
+        std::string text = messageText(row);
+        const bool changed = ImGui::InputTextMultiline(("###ir_msg_" + item.commit).c_str(), &text, ImVec2(-1, messageHeight));
+        textEdited(changed);
+        if (changed) {
+            m_state.todo.items[row].message = text;
+            onTodoChanged();
+        }
+    }
     if (item.isCommit() && item.action != Action::Drop) {
         const auto group = todo::groupAt(m_state.todo, row);
         if (group && group->first == row && (item.action == Action::Reword || group->needsEditor)) {
@@ -1182,6 +1376,19 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         }
     }
     ImGui::PopID();
+}
+
+void RebasePanel::drawArgField(size_t row, const char* id, const char* hint, float width)
+{
+    // A label/reset/merge row's names, edited in place (one undo step per editing session).
+    ImGui::SetNextItemWidth(width);
+    std::string value = m_state.todo.items[row].arg;
+    const bool changed = ImGui::InputTextWithHint(("###" + std::string(id) + std::to_string(row)).c_str(), hint, &value);
+    textEdited(changed);
+    if (changed) {
+        m_state.todo.items[row].arg = value;
+        onTodoChanged();
+    }
 }
 
 void RebasePanel::textEdited(bool changed)
@@ -1234,6 +1441,13 @@ void RebasePanel::handleKeys()
         insertRow(Action::Exec);
     if (ImGui::IsKeyPressed(ImGuiKey_B, false))
         insertRow(Action::Break);
+    // Git's letters for label (l), reset (t) and merge (m).
+    if (ImGui::IsKeyPressed(ImGuiKey_L, false))
+        insertRow(Action::Label);
+    if (ImGui::IsKeyPressed(ImGuiKey_T, false))
+        insertRow(Action::Reset);
+    if (ImGui::IsKeyPressed(ImGuiKey_M, false))
+        insertRow(Action::Merge);
     if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
         removeRows();
 }

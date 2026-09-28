@@ -408,6 +408,9 @@ struct RebasePreview {
         std::vector<std::string> resolved; // files whose first-class conflicts in the original commits are gone
         std::vector<NonText> decisions;   // non-text conflicts that need a decision (pre-flight)
         std::vector<std::string> branches; // short names of branches ending here ("HEAD" = detached HEAD)
+        // Its parents (result commits, the base or commits outside the range), first parent first.
+        std::vector<std::string> parents;
+        bool merge = false;               // made by a merge row (--rebase-merges)
     };
     struct Move {
         std::string ref;                  // short branch name, or "HEAD"
@@ -416,6 +419,7 @@ struct RebasePreview {
     };
     bool ok = false;
     std::string error;                    // why there is no preview
+    bool unsupported = false;             // `error` is a list the preview cannot model (gg::todo::NoPreview), not a failure
     std::string onto;                     // the base ("" = the root)
     std::string ontoSubject;
     std::vector<Row> rows;

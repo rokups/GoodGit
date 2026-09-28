@@ -1443,7 +1443,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   without a test. Dialog options read with `form.checked(...)`/`form.choice(...)` share a line
   with other paths, so grep the tests for the field id as well.
 
-### P4-01 Interactive rebase with `--rebase-merges`
+### [x] P4-01 Interactive rebase with `--rebase-merges`
+- **Status:** test_rebase_merges.cpp (4 scenarios): the Rebase merges option gives git's --rebase-merges starting list (checked against git: update-refs on/off, autosquash, onto, branch labels, branch points, an octopus); label/reset/merge rows with name fields, merge combo (merge -C / -c / merge), keys l/t/m, Insert buttons, merge -c message editor, label validation (invalid, unknown, defined later); native engine with --rebase-merges (reason shown); the preview replays label/reset/merge in memory with a lane graph ("No preview" for a squash/fixup right after a reset or merge); a conflicting merge stops with the native UI (Abort, Commit with conflicts); randomized differential vs git rebase -i --rebase-merges on a copy (same ids with fixed dates). Fixed: Undo of a native rebase that stopped at conflicts left the index staged. Full suite 242/242; traceability 633/633 phase 0-3 IDs, 637/648 overall (all P4-01 IDs covered).
 - **Depends on:** P3-19
 - **Refs:** §4.13
 - **Do:** `label`, `reset`, `merge` in the todo model and editor; route to the native engine
@@ -1458,6 +1459,89 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     only knows edit/break/exec/conflicts.
 - **Notes from P3-20:** new todo actions (label, reset, merge) get rows in the "Interactive rebase
   panel" section of `docs/ui-actions.md` (action combo entries, any new key or button).
+- **Design notes:**
+  - **Git's behavior, checked by hand against git 2.55** (throwaway scripts and a libgg driver, not
+    committed), then held by the tests:
+    - The starting list (`make_script_with_merges`, default no-rebase-cousins): commits in
+      `rev-list --topo-order --reverse` graph order (LIFO from the tip, parents pushed first to
+      last, then reversed). The *upstream* commit is labelled `onto`. A merge's interesting parents
+      are tips labelled after the last local branch there (by name), else the quoted name in
+      "Merge ... '<x>'", else "Merge pull request ... from <x>", else the whole title; a parent
+      outside the range gets its unique abbreviated id. Then parents with a second child become
+      `branch-point` labels. Blocks go from each tip down the first parents to what is shown
+      (`reset <label> # <title>`, `reset onto`, `reset [new root]` for a root without --onto).
+      Labels: alphanumerics and UTF-8 kept, other runs become one "-", case-sensitive, "-2", "-3"
+      for duplicates, a full hex id or "#" also gets a suffix, at most 233 bytes. update-ref rows
+      follow pick *and* merge rows. PATCHSAME commits keep their place (labels) without a pick.
+    - Running: `merge -C` keeps the merge's message and author and fast-forwards when HEAD and the
+      heads are its parents; `merge -c` never fast-forwards (author kept); a plain `merge` uses the
+      text after `#` as its message, else "Merge branch '<labels>'" / "Merge branches '<labels>'",
+      author = the user, opens the editor. Heads already in HEAD's history are left out and with
+      none left no commit is made. Octopus merges run `git merge -s octopus`. A conflicting merge
+      stops with MERGE_HEAD; `--continue` makes the merge commit.
+    - `label` finishes a squash chain (not a noop for `is_final_fixup`): a fixup after it amends,
+      and the label keeps the commit before the amend (like update-ref).
+  - **Model (libgg `Todo`):**
+    - `Item` for merge rows: `commit` + `fixup` (Use = -C, Edit = -c), `arg` = the heads,
+      `subject` = the text after `#`. `mergeHeads()`, `makesCommit()`, `hasMergeRows()`,
+      `kNewRoot`. A plain merge row may remember the merge it came from (the editor's combo);
+      `format` leaves it out.
+    - `read()` always also builds `Context::initialMerges` (+ `merges`, and `revisions` for the
+      abbreviated labels). `expand()` resolves reset/merge names like git (`refs/rewritten/<name>`
+      → `definedLabels`, else a revision → `revisions`) and merge -C ids.
+    - `validate`: BadLabel (empty, not a valid `refs/rewritten/<name>`, merge without heads),
+      UnknownLabel, LabelDefinedLater (error; warning when the name is also a known revision, which
+      git then takes). Published warnings now use `unchangedRows` (fast-forward simulation through
+      labels and resets) instead of the leading prefix.
+    - `groups`: label ends a group like update-ref; reset/merge close it (a squash after them is its
+      own group). `editorMessages` adds `merge -c` rows (the sequence editor accepts merge rows).
+  - **Engine (decision): native.** Any label/reset/merge row picks `git rebase -i --rebase-merges`
+    ("row N is label: --rebase-merges lists are replayed by git rebase"). The in-memory Rewriter
+    would have to match ort (recursive bases, renames), octopus, rerere and stop at conflicting
+    merges; git does all of that, and a native rebase is still one journal operation and one Undo.
+  - **Preview (in memory, `toPlan(replayStops)`):** labels name the current step, reset moves
+    `current` (label, else `=<revision>`), merge = `Step::Kind::Merge` with `gitMerge`: heads already
+    merged are left out (none left: no commit, the key names the first parent), `source` keeps
+    message/author/mapping, unchanged parents reuse the merge (its own resolution included). Plain
+    merge: Git's message, forceNew. Not modelled → `todo::NoPreview` → "No preview: …"
+    (`RebasePreview::unsupported`, not an error): a squash/fixup right after a reset or merge
+    row, a merge onto a new root. Octopus merges are merged pairwise onto the first parent (equal
+    to git on the tested case). Preview rows carry `parents` and `merge`; the panel lays out lanes
+    (`layoutPreviewGraph`), parents outside the result get no edge.
+  - **Editor:** option *Rebase merges* `###ir_rebase_merges` (State::rebaseMerges; on/off replaces
+    the list via `baseList`, with update-refs and autosquash applied; one undo step). Merge rows
+    `###ir_merge_<id>` with a combo (merge -C / -c / merge; plain clears the subject so the
+    displayed "Merge branch '…'" is what git uses), name fields `###ir_label_/reset_/merge_<row>`,
+    keys l/t/m and Insert label/reset/merge buttons (shown in merges mode), `merge -c` message
+    editor. `setUpdateRefs` re-inserts rows after merges too.
+  - **Stops:** unchanged native UI. The progress view shows merge rows ("merge -C <id> <labels> #
+    <subject>"); the reason for a conflicting merge is the conflicts one.
+  - **Undo fix (found here):** a native rebase that stopped at conflicts recorded no index (`git
+    write-tree` fails on unmerged entries, before and after), so Undo moved the refs and left the
+    conflicted merge's files staged. `OperationRecorder::finish` now records a group step's index
+    when either side has a tree, and `planUndo` carries the index only when both ends are known.
+  - **Tests** (`Source/tests/test_rebase_merges.cpp`, 4 scenarios):
+    - The option and rows: list == git's (update-refs on/off, autosquash), off/on and Ctrl+Z,
+      preview (13 unchanged rows, 2 merges, clicking a merge selects its row), keys l/t/m, Delete,
+      Insert buttons, fields and every label error, merge combos and the `merge -c` editor, "No
+      preview" for a fixup after a reset, then Start: GIT_AUTHOR_DATE/GIT_COMMITTER_DATE fixed for
+      ggui's git and for git on a copy, so the branches have the same ids; post-rewrite equal; one
+      Undo.
+    - A conflicting merge onto `up`: preview shows its first-class conflict; stop at `merge -C`,
+      progress popup, Abort; again with Commit with conflicts; one Undo (the fix above).
+    - An octopus merge (3 heads) onto `up`: git's list, preview graph, same ids as git.
+    - Randomized differential (seed `0x4b01ee55`, 5 rounds; `GGUI_IR_SEED`/`GGUI_IR_ROUNDS`):
+      fixture with two merged branches (one stacked branch at a merge), chains per file; each
+      round: onto c0/up, update-refs on/off, list == git's, then runs shuffled within each block
+      (chain order kept), chain tails dropped (a whole branch too: its merge is skipped), random
+      pick/reword/squash/fixup/-C/-c after the first row of a block, merges -C → -c with typed
+      messages; compared: same branch ids and HEAD as git on a copy, post-rewrite, preview graph
+      (`checkGraph`: trees, subjects, parents in order), clean, no `refs/rewritten`; one Undo.
+      Seeds 1–56 × 10–15 rounds passed.
+  - **Not done:** `--rebase-merges=rebase-cousins` and `rebase.rebaseMerges` (the option always
+    uses the default mode); a typed message for a plain `merge` row (git's editor keeps its text:
+    use `merge -c`); names typed into reset/merge fields must be labels of the list or revisions
+    the list was read with (other revisions need a re-read, e.g. Onto).
 
 ### P4-02 `git gg sequence-editor` as Git's `sequence.editor`
 - **Depends on:** P3-19
@@ -1474,6 +1558,15 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - `RebasePanel::Request::remaining` is the pattern for opening the editor on git's own list.
 - **Notes from P3-20:** the opt-in setting and the editor window's Save/Cancel (and closing the
   window) are new rows in `docs/ui-actions.md` (Settings and Interactive rebase sections).
+- **Notes from P4-01:**
+  - A `git rebase -i --rebase-merges` list comes with label/reset/merge rows; `todo::readRemaining`
+    already reads them (names resolved through `refs/rewritten/` or as revisions). For the fresh
+    list, `Context::revisions` needs the abbreviated ids git wrote (outside commits): expand() adds
+    them when they resolve.
+  - The panel decides "merges mode" from `State::rebaseMerges`; a list opened from git's file should
+    set it when `todo::hasMergeRows` (the Insert label/reset/merge buttons already show then).
+  - Messages for `merge -c` rows are keyed by the merge's id like rewords (`editorMessages`); a plain
+    `merge` row has no id to key a message by.
 
 ### P4-03 Full worktree management
 - **Depends on:** P2-03, P1-20

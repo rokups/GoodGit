@@ -13,7 +13,10 @@
 // the options to the engine's preview worker, which runs the same plan through the in-memory
 // rewrite engine without applying it. A newer request cancels the older one and only the answer
 // to the newest request is shown (the previous preview stays, marked as updating, meanwhile).
-// The result is drawn as a graph to the right of the list.
+// The result is drawn as a graph to the right of the list (lanes for --rebase-merges lists).
+//
+// Rebase merges (P4-01): the option switches to Git's --rebase-merges list (label, reset and merge
+// rows), which always runs on the native engine; the preview replays it in memory.
 #pragma once
 
 #include <core/Engine.hpp>
@@ -97,6 +100,7 @@ private:
         std::shared_ptr<const gg::todo::Context> context;
         bool updateRefs = true;
         bool autosquash = false;
+        bool rebaseMerges = false;
     };
 
     void read(const Request& request, bool keepTodo);
@@ -119,6 +123,12 @@ private:
     void moveRows(std::vector<size_t> rows, size_t target);
     void setUpdateRefs(bool on);
     void setAutosquash(bool on);
+    void setRebaseMerges(bool on);
+    // The list the options start from: Git's starting todo (with or without merges), update-ref
+    // rows and autosquash as the state has them.
+    static gg::todo::Todo baseList(const State& s);
+    void drawArgField(size_t row, const char* id, const char* hint, float width);
+    void layoutPreviewGraph();
     void start();
     void startNative();
     void saveRemaining();
@@ -159,6 +169,7 @@ private:
     core::RebasePreviewPtr m_preview;
     gg::todo::Todo m_previewTodo;
     std::vector<core::HistoryRow> m_previewGraph; // graph rows (newest first, then the base)
+    int m_previewLanes = 1;
     std::string m_previewNote;             // why there is no preview
     int m_previewsRequested = 0;
     int m_previewsShown = 0;

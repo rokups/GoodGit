@@ -143,9 +143,11 @@ removed as dead UI.
 | Abort / Reset (bisect) | click | `conflicts/toolbar for other operations: abort a revert and an apply-backend rebase, skip and reset a bisect; merge tool on a first-class conflict`<br>`conflicts/native: abort a merge, skip a rebase step` | tested |
 | Commit with conflicts (merge) | click | `conflicts/commit with conflicts records diff3 regions; not offered for binary conflicts` | tested |
 | Commit with conflicts (cherry-pick) | click | `ui/a stopped cherry-pick: Skip, and Commit with conflicts` | tested |
+| Commit with conflicts (a `merge` row of git rebase --rebase-merges) | click | `rebase-merges/a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts` | tested |
+| Abort (git rebase --rebase-merges stopped at a merge) | click | `rebase-merges/a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts` | tested |
 | Amend and continue | click | `rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo`<br>`rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along` | tested |
 | Edit remaining todo | click | `rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase`<br>`rebase-native/Edit remaining todo reads a hand-edited list (short commands, CRLF, abbreviated ids, fixup -C/-c); refuses unreadable ones` | tested |
-| Progress | click | `shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress` | tested |
+| Progress | click | `shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress`<br>`rebase-merges/a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts` | tested |
 
 ## Welcome screen
 
@@ -561,21 +563,27 @@ Phase 4 (P4-03) items are drawn disabled with a "later" tooltip and are not acti
 | Autostash | checkbox | `rebase-i/options: onto, update-refs, autostash, committer date`<br>`rebase-native/git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort` | tested |
 | Run as git rebase | checkbox | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine`<br>`rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase` | tested |
 | Exec after every commit | text field | `rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase`<br>`rebase-native/typed squash messages reach git's editor, also for a squash that amends after an update-ref row; exec after every commit around followers and drops` | tested |
+| Rebase merges | checkbox | `rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git`<br>`rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy` | tested |
 | Committer date | combo | `rebase-i/options: onto, update-refs, autostash, committer date` | tested |
 | Becoming empty (Keep, Drop, Ask) | combo | `rebase-i/live preview: non-text conflicts that need a decision, commits that are or become empty`<br>`rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy` | tested |
 | Undo / Redo buttons | click | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine`<br>`rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo` | tested |
 | Undo / Redo | Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | Insert exec / Insert break buttons | click | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
+| Insert label / Insert reset / Insert merge buttons | click | `rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git` | tested |
 | Newest first | checkbox | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | Row selection (Ctrl+click, Shift+click) | click | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | Row action (pick, reword, edit, squash, fixup, fixup -C, fixup -c, drop) | combo | `rebase-i/messages: reword and squash editors, fixup -C, first row validation, one Undo`<br>`rebase-i/live preview on a worker: the newest edit wins, frames never wait, nothing is written` | tested |
+| Merge row action (merge -C, merge -c, merge) | combo | `rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git`<br>`rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy` | tested |
 | Action keys P, R, E, S, F, D | key | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | X / B insert exec / break; Delete removes rows | key | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
+| L / T / M insert label / reset / merge; Delete removes them | key | `rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git` | tested |
 | Alt+Up / Alt+Down move rows | key | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | Drag rows to reorder | drag | `rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | Exec row command | text field | `rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo`<br>`rebase-i/edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine` | tested |
 | Message editor (reword, squash groups) | text field | `rebase-native/typed squash messages reach git's editor, also for a squash that amends after an update-ref row; exec after every commit around followers and drops`<br>`rebase-i/options: onto, update-refs, autostash, committer date` | tested |
-| Preview row → selects its rows | click | `rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i` | tested |
+| Label, reset and merge row names | text field | `rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git` | tested |
+| Message editor (merge -c) | text field | `rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git`<br>`rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy` | tested |
+| Preview row → selects its rows | click | `rebase-i/live preview: first-class conflicts and moving branches, the same as Start and git rebase -i`<br>`rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git` | tested |
 
 ## Notifications
 

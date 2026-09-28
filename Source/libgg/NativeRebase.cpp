@@ -198,7 +198,9 @@ int sequenceEditor(const fs::path& file, std::string& error)
     if (!done)
         return 0;
     const todo::Todo list = todo::parse(*done);
-    if (list.items.empty() || !list.items.back().isCommit())
+    // (A merge row's commit: its message for `merge -c`.)
+    if (list.items.empty() || list.items.back().commit.empty()
+        || !(list.items.back().isCommit() || list.items.back().action == todo::Action::Merge))
         return 0;
     const std::string& current = list.items.back().commit;
     for (const auto& [commit, message] : prepared->messages) {

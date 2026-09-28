@@ -764,13 +764,19 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
     GG_REQUIRE(start(s));
     GG_CHECK_STR_EQ(s.read(r.path, todoRel), "noop\n");
 
-    // --rebase-merges commands are read and kept (Phase 4 edits them); the preview needs git.
+    // --rebase-merges commands (P4-01) are read, and previewed: "side" (a branch, no label row
+    // defines it) is merged into HEAD with c6's message.
     s.write(r.path, todoRel, "label here\nreset here\nmerge -C " + c6 + " side # c6 add f\n");
     ctx->ItemClick(kEditTodo);
     GG_REQUIRE(editorReady(s));
-    GG_CHECK(rows(s) == (Rows{"label here", "reset here", "merge -C " + c6 + " side # c6 add f"}));
+    GG_CHECK(rows(s) == (Rows{"label here", "reset here", "merge side"}));
+    GG_CHECK(editor(s).todo().items.size() == 3u && editor(s).todo().items[2].fixup == todo::FixupMessage::Use
+        && editor(s).todo().items[2].commit == c6 && editor(s).todo().items[2].subject == "c6 add f");
     GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
-    GG_CHECK(s.waitUntil([&] { return s.textShown("//Interactive rebase", "git rebase: row 1 is label"); }));
+    GG_CHECK(s.waitUntil([&] { return !editor(s).previewPending() && editor(s).preview() != nullptr; }, 30.0f));
+    GG_CHECK(editor(s).preview() && editor(s).preview()->ok && editor(s).preview()->rows.size() == 1u
+        && editor(s).preview()->rows[0].merge && editor(s).preview()->rows[0].subject == "c6 add f"
+        && editor(s).preview()->rows[0].parents == (Rows{s.revParse(r.path, "HEAD"), c6}));
     ctx->ItemClick(irWidget("ir_cancel").c_str());
     GG_CHECK(s.waitUntil([&] { return !editor(s).isOpen(); }));
 

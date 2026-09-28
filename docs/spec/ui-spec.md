@@ -74,7 +74,8 @@ while a `git rebase -i` is stopped (from ggui or plain git, detected from `.git/
 --no-edit` when something is staged, then `git rebase --continue`), *Edit remaining todo*
 `##tb_edit_todo` (the todo editor on the rest of git's list, §4.x) and *Progress*
 `##tb_rebase_progress`, a popup `##rebase_progress`: "Rebasing <branch>: N done, M remaining"
-`###rp_title`, the done rows (dimmed), "Stopped at" the current row `###rp_current` with why and
+`###rp_title`, the done rows (dimmed; merge rows as "merge -C <short ID> <labels> # <subject>"),
+"Stopped at" the current row `###rp_current` with why and
 what to do `###rp_reason` (conflicts, edit, break, a failed exec), and the remaining rows
 `###rp_next_<n>` · activity spinner `##tb_activity` (tooltip lists the background tasks) +
 `Cancel##tb_cancel`. Continue / Skip / Amend and continue that stop again further on (the next
@@ -209,23 +210,29 @@ moved after the target as squash or fixup; the new base as *Onto*).
 Dockable; opens as a tab next to History while a todo is open and closes on Start (after success)
 or Cancel; its close button cancels. The range is read on a worker; everything else is edited in
 the panel without touching the repository.
-- **Header** (acts like a modal dialog's head): title `###ir_title` ("Rebase N commit(s) of
-  <branch> onto <short ID | the root>"), *Start* `###ir_start` (disabled with the reason as
+- **Header** (acts like a modal dialog's head): title `###ir_title` ("Rebase N commit(s) [and M
+  merge(s)] of <branch> onto <short ID | the root>"), *Start* `###ir_start` (disabled with the reason as
   tooltip: errors in the list, busy, or an engine not available yet), *Cancel* `###ir_cancel`;
   engine line `###ir_engine` ("Engine: in memory" or "git rebase", with the reason); one line per
   validation issue `###ir_issue_<n>` (error or warning icon, "Row N: …").
 - **Options:** *Onto* `###ir_onto` (Enter applies; empty = the upstream; an unknown revision is an
   error and the list stays), *Autosquash* `###ir_autosquash` (on: `fixup!`/`squash!`/`amend!`
   rows are placed and marked; off: back to Git's starting list), *Update refs* `###ir_update_refs`
-  (default on; off removes the `update-ref` rows, on puts them back after their commit's
-  squash/fixup rows), *Autostash* `###ir_autostash`, *Run as git rebase* `###ir_native`, *Exec
+  (default on; off removes the `update-ref` rows, on puts them back after their commit's (or
+  merge's) squash/fixup rows), *Rebase merges* `###ir_rebase_merges` (Phase 4, P4-01; off by
+  default: on replaces the list with Git's `--rebase-merges` starting list, with the Update refs
+  and Autosquash options applied, and off with the straight list; the edits so far go, Undo brings
+  them back), *Autostash* `###ir_autostash`, *Run as git rebase* `###ir_native`, *Exec
   after every commit* `###ir_exec_each`, *Committer date* `###ir_committer_date` (Use now / Keep
   original; disabled at "Use now" when the engine is git rebase, which always sets the committer
   date to now), *Becoming empty* `###ir_empty` (Keep / Drop / Ask, default Ask: what happens to
   commits whose changes are already in the new base, like `git rebase --empty=keep|drop|stop`).
 - **Tools:** Undo `###ir_undo` (Ctrl+Z), Redo `###ir_redo` (Ctrl+Y, Ctrl+Shift+Z), *Insert exec*
   `###ir_insert_exec`, *Insert break* `###ir_insert_break` (after the last selected row, else at the
-  end), *Newest first* `###ir_newest_first`. Undo/Redo apply to the list and its options only; the
+  end); with Rebase merges on (or label/reset/merge rows in the list) also *Insert label*
+  `###ir_insert_label` (a name no row uses yet: "label", "label-2", …), *Insert reset*
+  `###ir_insert_reset` ("onto") and *Insert merge* `###ir_insert_merge` (the nearest label above);
+  *Newest first* `###ir_newest_first`. Undo/Redo apply to the list and its options only; the
   repository's Undo is untouched while the editor has focus.
 - **List** `##ir_table` (oldest first, Git's order; columns Action, ID, Subject, Author, Date).
   Commit rows `###ir_<full id>` with the action combo `###ir_action_<full id>` (pick, reword,
@@ -233,16 +240,32 @@ the panel without touching the repository.
   rows `###ir_row_<index>`: `exec` with its command field `###ir_exec_<index>`, `break`,
   `update-ref` with a badge `###ir_ref_<branch>`. Dropped rows are dimmed; rows with an issue show
   its icon (tooltip: the message).
+- **--rebase-merges rows** (Phase 4, P4-01): `label` with its name field `###ir_label_<index>`;
+  `reset` with its target field `###ir_reset_<index>` and, dimmed, where it goes ("(the new base)"
+  for `onto`, "(a new root commit)" for `[new root]`, else the target's subject); `merge` rows made
+  from a merge `###ir_merge_<full id>` with the ID, the merge's author and date, branch badges, an
+  action combo `###ir_action_merge_<full id>` (*merge -C*: recreate it with its message and author,
+  reused as it is when its parents stay; *merge -c*: the same with the message edited; *merge*: a
+  new merge with Git's message "Merge branch '<labels>'"), a field `###ir_merge_<index>` for the
+  labels (or revisions) it merges, separated by spaces, and its subject (for *merge*, dimmed, the
+  message Git will use). Merge rows typed as `merge <labels>` are `###ir_row_<index>` without a
+  combo. Validation: a label needs a name Git accepts as `refs/rewritten/<name>`; a reset or merge
+  needs a name that an earlier `label` row defines, a label of the stopped rebase, or a revision the
+  list was read with (Git's abbreviated ids for commits outside the range); a name defined only
+  further down is an error (a warning when it is also such a revision: Git then takes the revision);
+  a merge needs at least one label.
 - **Selection:** click, Ctrl-click (toggle), Shift-click (range from the last clicked row).
 - **Keys** (list focused, not typing): `p r e s f d` set the action of the selected commit rows;
-  `x` / `b` insert exec / break; `Delete` removes selected exec, break and update-ref rows;
+  `x` / `b` insert exec / break; `l` / `t` / `m` insert label / reset / merge (Git's letters, as the
+  Insert buttons); `Delete` removes selected exec, break, update-ref, label, reset and merge rows;
   `Alt+↑`/`Alt+↓` move the selected rows one place as displayed. Rows can also be dragged: dropped
   below the dragged rows they go after the target, above it before it; a selection moves together.
 - **Messages:** a reword row, and the first row of a group with a squash or `fixup -c`, get an
   inline editor `###ir_msg_<full id>` below the row, prefilled with Git's text (the commit message,
   or the commented "This is a combination of N commits." template). A typed message is cleaned
   like Git's editor output (comments and extra blank lines removed) and goes back to Git's text
-  when the group's rows or actions change.
+  when the group's rows or actions change. A `merge -c` row gets the same editor for the merge's
+  message (kept while the row stays `merge -c`).
 - **Start:** the in-memory engine (plan §4.13 R3) through the rewrite pipeline: pre-flight for
   non-text conflicts, then (with *Becoming empty* = Ask and commits that become empty) the dialog
   "Commits become empty" listing them (`empty_<n>`: short ID and subject) with *Keep them* / *Drop
@@ -250,7 +273,9 @@ the panel without touching the repository.
   popup, the editor stays) when the branch moved since the list was read. With *Autostash* tracked
   local changes are stashed before and popped after, in the same operation; when they no longer
   apply they stay in the stash (warning notification). Todos needing `git rebase -i` (edit, break,
-  exec, exec after every commit, Run as git rebase) start the native engine: `git rebase -i` with
+  exec, label/reset/merge, exec after every commit, Run as git rebase) start the native engine
+  (a list with label, reset or merge rows adds `--rebase-merges`; the engine line says "row N is
+  label: --rebase-merges lists are replayed by git rebase"): `git rebase -i` with
   the list (exec after every commit added after each commit row) and the typed messages handed over
   by `git gg sequence-editor`, *Autostash* as `--autostash`, *Becoming empty* as `--empty`. The
   editor closes; a stop shows the notification "Interactive rebase stopped" (git's message) and the
@@ -276,8 +301,9 @@ the panel without touching the repository.
   squash/fixup rows leaves the branch on the commit as it was then, beside the result that amends
   it, as `git rebase -i` does) and `###irp_dropped_empty` ("Dropped, became empty: <subjects>",
   with *Becoming empty* = Drop).
-  The graph `##irp_table` is one lane, newest first, the base last (dimmed: short ID and subject,
-  or "(the root)"); rows `###irp_row_<k>` (k = result commit, oldest = 0) show the conflict icon
+  The graph `##irp_table` is one lane for a straight list, newest first, the base last (dimmed:
+  short ID and subject, or "(the root)"); a --rebase-merges list gets a lane per branch, merges drawn
+  as bubbles with an edge to each parent in the result (parents outside it have no edge); rows `###irp_row_<k>` (k = result commit, oldest = 0) show the conflict icon
   and conflict colour for first-class conflicts, a help icon (warning colour) for non-text
   conflicts Start will ask about (pre-flight), "(empty)" for commits that are or become empty,
   badges `###irp_badge_<branch>` for branches (and `HEAD`) ending there, and the subject (dimmed
@@ -286,7 +312,14 @@ the panel without touching the repository.
   clicking a row selects its rows in the list. With errors in the list there is no result ("Fix
   the errors in the list to see the result."); an engine failure shows "Cannot compute the
   result: …"; a preview cancelled from the toolbar says so. Todos for `git rebase -i` are
-  previewed as if every stop continued at once (edit = pick, exec/break change nothing).
+  previewed as if every stop continued at once (edit = pick, exec/break change nothing), and
+  label/reset/merge rows as `git rebase -i --rebase-merges` runs them: a merge whose heads are
+  already in HEAD's history makes no commit, `merge -C` keeps the merge's message and author (and
+  the merge itself when its parents stay), `merge -c` takes the typed message, a plain `merge`
+  Git's "Merge branch '…'" (or the text after `#` on its row); a merge that conflicts shows
+  first-class conflicts (git stops there). A list the in-memory replay cannot model (a
+  squash/fixup right after a reset or merge row, a merge onto a new root) shows "No preview: …"
+  `###irp_unsupported`, not an error; Start still runs it.
   Computed on the preview worker by the same plan and in-memory engine as Start, never applied:
   nothing is written to the repository, the newest edit cancels older computations.
 - Errors are titled `Open interactive rebase` / `Start interactive rebase` (never the panel's

@@ -81,6 +81,12 @@ std::vector<RebaseStep> rebaseSteps(const std::string& text)
                 step.action += item.fixup == gg::todo::FixupMessage::Use ? " -C" : " -c";
             step.commit = item.commit;
             step.text = item.subject;
+        } else if (item.action == gg::todo::Action::Merge) {
+            if (!item.commit.empty() && item.fixup != gg::todo::FixupMessage::None) {
+                step.action += item.fixup == gg::todo::FixupMessage::Use ? " -C" : " -c";
+                step.commit = item.commit;
+            }
+            step.text = item.arg + (item.subject.empty() ? "" : " # " + item.subject);
         } else {
             step.text = item.arg;
         }

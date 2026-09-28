@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace ggui::core {
@@ -67,10 +68,14 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
             }
 
         // One row per commit row that starts a commit; squash/fixup rows join the current one. A
-        // squash/fixup that amends a finished commit (after an update-ref row) replaces its row's
-        // commit; the finished one stays only for the branches pointing at it.
+        // squash/fixup that amends a finished commit (after an update-ref or label row) replaces
+        // its row's commit; the finished one stays only for the branches pointing at it. Merge rows
+        // (--rebase-merges) make a row unless Git leaves them out (nothing left to merge); label
+        // and reset rows move what "current" is.
         std::map<size_t, size_t> rowOf; // todo row → preview row
         std::map<std::string, size_t> amended; // finished commit → the row that amends it
+        std::optional<size_t> current;  // preview row HEAD is at (nullopt = the base or outside)
+        std::map<std::string, std::optional<size_t>> labelRow;
         bool skipping = false; // followers of a commit that was left out
         for (size_t i = 0; i < list.items.size(); ++i) {
             const todo::Item& item = list.items[i];
@@ -86,7 +91,7 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                 row.todoRow = i;
                 row.sources = {item.commit};
                 row.id = result.steps.at(key);
-                rowOf[i] = out->rows.size();
+                current = rowOf[i] = out->rows.size();
                 out->rows.push_back(std::move(row));
                 break;
             }
@@ -94,26 +99,56 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
             case todo::Action::Fixup:
                 if (auto st = result.steps.find(key); st != result.steps.end()) { // amends
                     skipping = false;
-                    if (out->rows.empty()) { // amends the base: a commit of its own
+                    if (!current) { // amends the base: a commit of its own
                         RebasePreview::Row row;
                         row.todoRow = i;
+                        current = out->rows.size();
                         out->rows.push_back(std::move(row));
                     } else {
-                        amended[out->rows.back().id] = out->rows.size() - 1;
+                        amended[out->rows[*current].id] = *current;
                     }
                     if (dropped.count(key)) {
-                        out->rows.pop_back();
+                        out->rows.erase(out->rows.begin() + static_cast<std::ptrdiff_t>(*current));
+                        current.reset();
                         skipping = true;
                         break;
                     }
-                    out->rows.back().id = st->second;
-                    out->rows.back().sources.push_back(item.commit);
-                    rowOf[i] = out->rows.size() - 1;
-                } else if (!skipping && !out->rows.empty()) { // validation keeps a squash from coming first
-                    out->rows.back().sources.push_back(item.commit);
-                    rowOf[i] = out->rows.size() - 1;
+                    out->rows[*current].id = st->second;
+                    out->rows[*current].sources.push_back(item.commit);
+                    rowOf[i] = *current;
+                } else if (!skipping && current) { // validation keeps a squash from coming first
+                    out->rows[*current].sources.push_back(item.commit);
+                    rowOf[i] = *current;
                 }
                 break;
+            case todo::Action::Label:
+                labelRow[item.arg] = current;
+                break;
+            case todo::Action::Reset:
+                if (auto it = labelRow.find(item.arg); it != labelRow.end())
+                    current = it->second;
+                else
+                    current.reset();
+                skipping = false;
+                break;
+            case todo::Action::Merge: {
+                skipping = false;
+                const std::string& id = result.steps.at(key);
+                // Nothing to merge (every head already merged): no commit, HEAD stays.
+                const bool skipped = current ? out->rows[*current].id == id
+                                             : id == context.onto || git_commit_parentcount(lookupCommit(repo, *fromHex(id)).get()) < 2;
+                if (skipped)
+                    break;
+                RebasePreview::Row row;
+                row.todoRow = i;
+                row.merge = true;
+                if (!item.commit.empty() && item.fixup != todo::FixupMessage::None)
+                    row.sources = {item.commit};
+                row.id = id;
+                current = rowOf[i] = out->rows.size();
+                out->rows.push_back(std::move(row));
+                break;
+            }
             default:
                 break;
             }
@@ -122,7 +157,6 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
         gg::conflicts::Cache cache; // memory only
         std::set<std::string> conflicted(result.conflicted.begin(), result.conflicted.end());
         std::map<std::string, size_t> byId;
-        std::string parent = context.onto;
         for (size_t k = 0; k < out->rows.size(); ++k) {
             gg::throwIfCancelled(cancel);
             RebasePreview::Row& row = out->rows[k];
@@ -131,11 +165,16 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
             row.unchanged = row.sources.size() == 1 && row.id == row.sources.front();
             const std::string tree = treeOf(repo, row.id);
             row.tree = tree;
-            if (parent.empty()) {
+            {
+                Commit c = lookupCommit(repo, *fromHex(row.id));
+                for (unsigned p = 0; p < git_commit_parentcount(c.get()); ++p)
+                    row.parents.push_back(toHex(*git_commit_parent_id(c.get(), p)));
+            }
+            if (row.parents.empty()) {
                 Tree t = lookupTree(repo, *fromHex(tree));
                 row.empty = git_tree_entrycount(t.get()) == 0;
             } else {
-                row.empty = tree == treeOf(repo, parent);
+                row.empty = row.parents.size() == 1 && tree == treeOf(repo, row.parents.front());
             }
             row.wasEmpty = std::all_of(row.sources.begin(), row.sources.end(), [&](const std::string& id) {
                 const auto it = context.commits.find(id);
@@ -153,7 +192,6 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                     before.erase(path);
                 row.resolved.assign(before.begin(), before.end());
             }
-            parent = row.id;
         }
         for (const auto& c : result.unresolved) {
             const size_t todoRow = std::stoul(c.step.substr(c.step.find(':') + 1));
@@ -185,13 +223,20 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
         // Branches in the range that do not move stay on the old commits (Git without
         // --update-refs), unless their commit is kept as it is.
         std::set<std::string> staying;
-        for (const auto& id : context.range)
+        std::vector<std::string> inRange = context.range;
+        if (todo::hasMergeRows(list))
+            inRange.insert(inRange.end(), context.merges.begin(), context.merges.end());
+        for (const auto& id : inRange)
             if (auto it = context.branchesAt.find(id); it != context.branchesAt.end() && !byId.count(id))
                 for (const auto& ref : it->second)
                     if (!plan.refsToSteps.count(ref))
                         staying.insert(shortRef(ref));
         out->staying.assign(staying.begin(), staying.end());
         out->ok = true;
+    } catch (const todo::NoPreview& e) {
+        out->rows.clear();
+        out->error = e.what();
+        out->unsupported = true;
     } catch (const std::exception& e) {
         out->rows.clear();
         out->error = e.what();

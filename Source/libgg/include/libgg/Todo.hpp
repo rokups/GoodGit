@@ -6,7 +6,8 @@
 // back. read() builds the starting todo for a range the way `git rebase -i` does (merges
 // dropped, commits already upstream left out, update-ref lines; autosquash() and the editor's
 // options apply to it later), together with everything validation and message assembly need, so
-// none of those touch the repository.
+// none of those touch the repository. It also builds the list `git rebase -i --rebase-merges`
+// starts with (label, reset and merge rows keeping the branches' shape; P4-01).
 //
 // Messages follow Git: a squash group offers Git's commented template ("This is a combination
 // of N commits…", fixup messages commented out, `squash!`/`fixup!`/`amend!` subjects commented
@@ -21,6 +22,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,23 +34,40 @@ namespace gg::todo {
 enum class Action {
     Pick, Reword, Edit, Squash, Fixup, Drop, // commit actions
     Exec, Break, UpdateRef,
-    Label, Reset, Merge,                      // --rebase-merges (Phase 4): parsed and written back only
+    Label, Reset, Merge,                      // --rebase-merges (P4-01)
 };
 
-// `fixup -C` uses this commit's message instead of the group's, `fixup -c` also edits it.
+// `fixup -C` uses this commit's message instead of the group's, `fixup -c` also edits it. A merge
+// row uses the same choice: `merge -C <commit>` recreates that merge with its message and author,
+// `merge -c <commit>` also edits the message, a plain `merge` gets Git's "Merge branch '…'".
 enum class FixupMessage { None, Use, Edit };
+
+// The reset target of a root commit's branch (`git rebase --root` without --onto).
+inline constexpr const char* kNewRoot = "[new root]";
 
 struct Item {
     Action action = Action::Pick;
-    std::string commit;       // commit actions (full id after read()/expand(); may be abbreviated after parse())
-    std::string arg;          // exec: command; update-ref: full ref; label/reset: label; merge: the rest of the line
+    // Commit actions, and the original merge of a `merge -C/-c` row (full id after read()/expand();
+    // may be abbreviated after parse()). A plain `merge` row may keep the merge it was made from (the
+    // editor switched it from -C): format() leaves it out, Git gets `merge <labels>`.
+    std::string commit;
+    // exec: command; update-ref: full ref; label: its name; reset: the label or revision it goes
+    // to (or kNewRoot); merge: the labels (or revisions) merged, separated by spaces.
+    std::string arg;
     FixupMessage fixup = FixupMessage::None;
-    std::string subject;      // text after the id (display only; Git ignores it)
+    // Text after the id, or after "#" on reset/merge rows (display only; Git ignores it, except on
+    // a plain `merge` row, where it is the merge's message).
+    std::string subject;
     // The message typed in ggui for a reword row or a squash group (kept on the group's first
-    // row). Cleaned with cleanup=strip like a message from Git's editor. nullopt = Git's default.
+    // row), or a `merge -c` row. Cleaned with cleanup=strip like a message from Git's editor.
+    // nullopt = Git's default.
     std::optional<std::string> message;
 
     bool isCommit() const;    // Pick … Drop
+    // A row that makes a commit of the rebased history: a commit action but drop, or a merge.
+    bool makesCommit() const;
+    // A merge row: the labels (or revisions) it merges.
+    std::vector<std::string> mergeHeads() const;
     bool operator==(const Item&) const = default;
 };
 
@@ -75,7 +94,8 @@ struct ParseError {
 Todo parse(std::string_view text, std::vector<ParseError>* errors = nullptr);
 
 // Writes the todo as Git does: "pick <full id> # <subject>", "fixup -C <id> # …", "exec <cmd>", a
-// blank line after each update-ref, "noop" when empty.
+// blank line after each update-ref, "label <name>", "reset <name> # <subject>", "merge -C <id>
+// <labels> # <subject>", "noop" when empty.
 std::string format(const Todo& todo);
 
 // ---- The range and what the todo refers to --------------------------------------------------
@@ -110,6 +130,17 @@ struct Context {
     std::map<std::string, std::vector<std::string>> branchesAt; // commit → local branch refs
     std::set<std::string> checkedOutElsewhere;    // branch refs checked out in other worktrees
     Todo initial;                                 // the todo Git would start with
+    // --rebase-merges (P4-01): the merge commits of the range (oldest first; not in `range`, but in
+    // `commits`), and the todo `git rebase -i --rebase-merges` starts with (label/reset/merge rows,
+    // update-ref rows as in `initial`).
+    std::vector<std::string> merges;
+    Todo initialMerges;
+    // Names on reset/merge rows that are not (only) labels of the todo: what they resolve to, as
+    // Git resolves them when no earlier label row defines them (refs/rewritten/<name>, then any
+    // revision). Filled by read() (abbreviated ids of commits outside the range) and expand().
+    std::map<std::string, std::string> revisions;
+    // Labels a stopped rebase already defined (refs/rewritten/<name>; readRemaining()).
+    std::set<std::string> definedLabels;
     // The remaining part of a stopped `git rebase -i` (readRemaining): onto is the current HEAD,
     // and squash/fixup rows before any commit row fold into it.
     bool continuesHead = false;
@@ -119,8 +150,9 @@ struct Context {
 // revisions or when `upstream` is not an ancestor of the tip's history.
 Context read(git_repository* repo, const ReadOptions& options);
 
-// Resolves abbreviated ids in `todo` to full ids and adds the commits to `context`. Returns
-// the problems (unknown or ambiguous ids), with 1-based item numbers as lines.
+// Resolves abbreviated ids in `todo` to full ids and adds the commits to `context`, and resolves
+// the names on reset/merge rows into `context.revisions`. Returns the problems (unknown or
+// ambiguous ids), with 1-based item numbers as lines.
 std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& context);
 
 // The remaining todo of a stopped `git rebase -i` ("Edit remaining todo"): `todoText` is
@@ -145,7 +177,7 @@ void autosquash(Todo& todo, const Context& context);
 std::string cleanup(std::string_view message);
 
 // A squash group: a pick/reword/edit row and the squash/fixup rows after it (drop rows in between
-// do not matter). As in Git, an exec, break or update-ref row finishes the group's commit: squash/
+// do not matter). As in Git, an exec, break, update-ref or label row finishes the group's commit: squash/
 // fixup rows after it form a new group that amends that commit (`amends`; its `first` is then the
 // first squash/fixup row and the previous commit's message is the template's first message).
 struct Group {
@@ -155,7 +187,8 @@ struct Group {
     std::optional<size_t> amends; // first row of the group whose finished commit this one amends
 };
 // Every commit row that is not dropped, with its followers. A squash/fixup without a commit
-// before it gets a group of its own with it as `first` (validate() reports it).
+// before it (or right after a reset or merge row, which moves HEAD) gets a group of its own with
+// it as `first` (validate() reports the first case).
 std::vector<Group> groups(const Todo& todo);
 // The group whose first row or follower is `row`, if any.
 std::optional<Group> groupAt(const Todo& todo, size_t row);
@@ -171,8 +204,8 @@ std::string editorText(const Todo& todo, const Group& group, const Context& cont
 
 // What git's editor gets during a native run (`git gg sequence-editor`): for every group with a
 // typed message, the commit git is working on when it opens its editor for that message (the
-// reword row, or the group's last squash/fixup row when Git asks for the combined message) →
-// the typed text. Other editor invocations keep Git's text, which is Git's default message.
+// reword row, or the group's last squash/fixup row when Git asks for the combined message, or
+// the merge of a `merge -c` row) → the typed text. Other editor invocations keep Git's text, which is Git's default message.
 std::map<std::string, std::string> editorMessages(const Todo& todo);
 
 // ---- Validation -----------------------------------------------------------------------------
@@ -186,6 +219,9 @@ struct Issue {
         DuplicateCommit,       // the same commit on two rows
         BranchLosesCommits,    // every commit of a moving branch is dropped
         Published,             // rewrites or drops commits already on a remote
+        BadLabel,              // label/reset/merge without a name, or a name Git cannot use
+        UnknownLabel,          // reset/merge names a label no earlier row defines (and no revision)
+        LabelDefinedLater,     // reset/merge names a label defined only further down (Git takes the revision)
     };
     Severity severity = Severity::Error;
     Code code = Code::SquashWithoutCommit;
@@ -200,6 +236,9 @@ bool hasErrors(const std::vector<Issue>& issues);
 // Leading rows Git leaves untouched (picks of the original commits in their original order on
 // the original parent): their commits keep their ids.
 size_t unchangedPrefix(const Todo& todo, const Context& context);
+// Per row: the row replays its commit as it is (Git fast-forwards it: a pick of a commit onto its
+// own parent, a `merge -C` of a merge onto its own parents), following label/reset rows.
+std::vector<bool> unchangedRows(const Todo& todo, const Context& context);
 
 // ---- Engine (R3) ----------------------------------------------------------------------------
 
@@ -210,6 +249,7 @@ struct Options {
     std::string execEach;          // "exec after every commit" ("" = none)
     bool keepCommitterDate = false;
     bool runAsGitRebase = false;   // the user's choice
+    bool rebaseMerges = false;     // --rebase-merges: the list keeps the merges (label/reset/merge rows)
     // Commits that become empty (git rebase --empty): Ask = Start asks (Git's interactive
     // default, --empty=stop), Keep or Drop.
     gg::rewrite::Emptied emptied = gg::rewrite::Emptied::Ask;
@@ -222,6 +262,9 @@ struct EngineChoice {
 };
 EngineChoice chooseEngine(const Todo& todo, const Options& options);
 
+// The todo has label, reset or merge rows (it needs `git rebase -i --rebase-merges`).
+bool hasMergeRows(const Todo& todo);
+
 // Inserts "exec <command>" after every commit row (and its squash/fixup followers), as
 // `git rebase --exec` does.
 void addExecEach(Todo& todo, const std::string& command);
@@ -233,7 +276,15 @@ void addExecEach(Todo& todo, const std::string& command);
 // commit. Step keys are "row:<index>". Throws when the
 // todo has errors or needs the native engine. With `replayStops` (the live preview) edit rows are
 // replayed as picks and exec/break rows are skipped: the history a native run produces when
-// every stop just continues.
+// every stop just continues, and label/reset/merge rows are replayed as `git rebase -i
+// --rebase-merges` runs them (labels name the commit made so far, reset moves to one, merge makes a
+// merge commit: `-C` keeps the merge's message and author and reuses it when its parents stay,
+// heads already merged are left out). A todo the preview cannot model throws NoPreview.
 gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replayStops = false);
+
+// toPlan() for a todo whose result it cannot compute in memory (the reason is the message).
+struct NoPreview : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 
 } // namespace gg::todo

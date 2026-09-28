@@ -573,7 +573,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             currentKey = key;
             Pending p;
             p.key = key;
-            p.source = step.kind == Step::Kind::Pick ? step.source : std::string();
+            p.source = step.kind == Step::Kind::Pick || step.kind == Step::Kind::Merge ? step.source : std::string();
             p.mapSource = step.mapSource;
             if (!p.source.empty())
                 p.contributors = {p.source};
@@ -591,11 +591,42 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 if (!id.empty() && std::find(p.parents.begin(), p.parents.end(), id) == p.parents.end())
                     p.parents.push_back(id);
             }
+            if (step.gitMerge && !p.parents.empty()) { // (a head equal to the first parent is gone already)
+                // Heads already merged (in the first parent's or another head's history) are left out.
+                auto contains = [&](const std::string& tip, const std::string& id) {
+                    if (tip == id)
+                        return true;
+                    const git_oid a = *fromHex(tip), b = *fromHex(id);
+                    const bool yes = git_graph_descendant_of(m->repo.get(), &a, &b) == 1;
+                    git_error_clear();
+                    return yes;
+                };
+                std::vector<std::string> kept{p.parents.front()};
+                for (size_t k = 1; k < p.parents.size(); ++k) {
+                    bool merged = contains(p.parents.front(), p.parents[k]);
+                    for (size_t j = 1; j < p.parents.size() && !merged; ++j)
+                        merged = j != k && contains(p.parents[j], p.parents[k]);
+                    if (!merged)
+                        kept.push_back(p.parents[k]);
+                }
+                p.parents = std::move(kept);
+                if (p.parents.size() == 1) {
+                    // Nothing to merge: no commit, HEAD stays.
+                    byKey[key] = p.parents.front();
+                    result.steps[key] = p.parents.front();
+                    continue;
+                }
+            }
             if (step.message)
                 p.message = *step.message;
             p.author = step.author;
             const std::string newBaseTree = p.parents.empty() ? m->emptyTree() : m->treeOf(p.parents.front());
-            if (step.tree) {
+            // A merge onto the parents it had: the merge as it was (its own resolution included).
+            const bool reuseMerge = step.kind == Step::Kind::Merge && step.gitMerge && !step.source.empty()
+                && !step.forceNew && !step.message && !step.author && p.parents == originalParents;
+            if (reuseMerge) {
+                p.tree = m->treeOf(step.source);
+            } else if (step.tree) {
                 p.tree = *step.tree;
             } else if (step.kind == Step::Kind::Empty) {
                 p.tree = newBaseTree;
@@ -647,6 +678,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             }
             p.unchanged = step.kind == Step::Kind::Pick && !step.forceNew && p.parents == originalParents && !step.message
                 && !step.author && p.tree == m->treeOf(step.source);
+            if (reuseMerge)
+                p.unchanged = true;
             if (step.kind != Step::Kind::Pick && !p.message.size() && step.message)
                 p.message = *step.message;
             pending = std::move(p);
