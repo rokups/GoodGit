@@ -645,7 +645,14 @@ void SummaryService::request(const std::vector<std::filesystem::path>& paths)
         for (const auto& p : paths) {
             if (token.cancelled())
                 break;
-            results.push_back(readSummary(p));
+            // A repository can vanish while it is read (deleted, moved): then it is not one any more.
+            try {
+                results.push_back(readSummary(p));
+            } catch (const std::exception&) {
+                RepoSummary gone;
+                gone.path = p;
+                results.push_back(std::move(gone));
+            }
         }
         {
             std::lock_guard lock(m_mutex);

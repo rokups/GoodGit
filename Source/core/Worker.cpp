@@ -118,7 +118,13 @@ void Worker::loop()
             m_runningSlot = task.slot;
             m_runningToken = task.token;
         }
-        task.fn(*this, task.token);
+        // Tasks handle their own errors (the engine's report them); one that escapes must not end
+        // the process from a worker thread.
+        try {
+            task.fn(*this, task.token);
+        } catch (const std::exception& e) {
+            spdlog::error("{} worker: task {} failed: {}", m_name, task.id, e.what());
+        }
         {
             std::lock_guard lock(m_mutex);
             m_runningId = 0;
