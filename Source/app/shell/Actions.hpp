@@ -80,6 +80,35 @@ public:
     void setRemoteUrl(const std::string& name, const std::string& url);
     void setPruneOnFetch(const std::string& name, bool prune);
 
+    // ---- worktrees (§4.7; ActionsWorktrees.cpp) -------------------------------------------
+    // Add, remove, lock and unlock are journaled with the worktree they changed, so Undo does
+    // the opposite (only from the worktree whose window ran them). Prune and repair are
+    // journaled without anything Undo could restore.
+    struct AddWorktree {
+        enum class Mode { NewBranch, ExistingBranch, Detached };
+        std::string path;        // absolute
+        Mode mode = Mode::NewBranch;
+        std::string branch;      // the new or existing branch
+        std::string start;       // new branch: its start point; detached: the commit ("" = HEAD)
+        bool force = false;      // --force
+        bool checkout = true;    // false: --no-checkout
+        bool lock = false;       // --lock [--reason]
+        std::string reason;
+    };
+    void addWorktree(AddWorktree request, Callback done = {});
+    // `git worktree remove`; a locked worktree is unlocked first (and locked again when that
+    // fails). Changes in it are refused (Outcome::LocalChanges, which offers to delete them) unless
+    // `force`.
+    void removeWorktree(const std::string& path, bool force);
+    void lockWorktree(const std::string& path, const std::string& reason);
+    void unlockWorktree(const std::string& path);
+    // `git worktree prune --dry-run --verbose` (not journaled): `done` gets git's lines in `result`.
+    void previewPruneWorktrees(Callback done);
+    void pruneWorktrees();
+    void repairWorktree(const std::string& path);
+    // A new ggui process on `path` (GG_GGUI names the program, else this ggui), detached.
+    void openInNewWindow(const std::string& path);
+
     // ---- history editing (§4.3; in-memory rewrites) --------------------------------------
     // Builds the plan on the worker from the repository as it is then.
     using PlanBuilder = std::function<gg::rewrite::Plan(git_repository* repo)>;

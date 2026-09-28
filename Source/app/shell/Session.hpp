@@ -150,6 +150,13 @@ public:
     void showClearStashesDialog();
     void showDeleteFilesDialog(std::vector<std::string> paths);
     void showBranchFromCommitDialog(const std::string& commit);
+    // Worktrees (WorktreeDialogs.cpp). Add…: `mode` 0 new branch, 1 existing branch `preset`,
+    // 2 detached at `preset`.
+    void showAddWorktreeDialog(int mode = 0, const std::string& preset = {});
+    void showRemoveWorktreeDialog(const core::WorktreeInfo& w);
+    void showLockWorktreeDialog(const core::WorktreeInfo& w);
+    void showPruneWorktreesDialog();
+    void showRepairWorktreeDialog(const core::WorktreeInfo& w);
     void newCommitOn(const std::vector<core::Oid>& parents, bool detach);
     void checkoutCommit(const core::Oid& id);
     void pushCurrent();

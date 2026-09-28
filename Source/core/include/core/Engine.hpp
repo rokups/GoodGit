@@ -179,6 +179,9 @@ public:
     std::string info;
     // Set when the step changed the working tree along with the index (checkout, stash, …).
     bool worktreeFollowsIndex = false;
+    // Linked worktrees the mutation added, removed, locked or unlocked (journaled so Undo can
+    // do the opposite).
+    std::vector<gg::journal::WorktreeChange> worktrees;
 
 private:
     friend class Engine;

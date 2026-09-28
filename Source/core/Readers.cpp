@@ -250,7 +250,10 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
             Buf reason;
             info.locked = git_worktree_is_locked(&reason.buf, wt.get()) > 0;
             info.lockReason = gg::trim(reason.str());
-            info.prunable = git_worktree_validate(wt.get()) != 0;
+            info.prunable = !info.locked && git_worktree_validate(wt.get()) != 0;
+            git_error_clear();
+            std::error_code ec;
+            info.missing = !fs::exists(info.path, ec);
             info.branch = headFileBranch(common / "worktrees" / info.name / "HEAD", info.head);
             if (!info.branch.empty()) {
                 git_oid oid;

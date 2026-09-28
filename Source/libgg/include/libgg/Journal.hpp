@@ -30,6 +30,20 @@ struct IndexChange {
     bool worktree = false; // the operation updated the working tree to follow the index
 };
 
+// A linked worktree added, removed, locked or unlocked by the operation (`git worktree …`). Undo
+// does the opposite: add ↔ remove, lock ↔ unlock (docs/spec/undo-journal.md §2.1, §5.4).
+struct WorktreeChange {
+    std::string action;    // "add", "remove", "lock", "unlock"
+    std::string path;      // the worktree's directory, as `git worktree list` shows it
+    std::string head;      // add/remove: the commit it had checked out
+    std::string branch;    // add/remove: "refs/heads/<name>" when on a branch, "" when detached
+    bool locked = false;   // add/remove: whether it was locked
+    std::string reason;    // the lock's reason (add/remove when locked, lock, unlock)
+};
+
+// The change that undoes `c` (same worktree, opposite action).
+WorktreeChange inverse(const WorktreeChange& c);
+
 struct Operation {
     std::string id;
     std::string src;       // "ggui", "git-gg", "git"
@@ -45,9 +59,18 @@ struct Operation {
     std::vector<RefChange> refs;        // merged per ref: first old value, last new value
     std::vector<IndexChange> index;     // merged per worktree
     std::vector<std::pair<std::string, std::string>> rewrites; // old → new commit
+    std::vector<WorktreeChange> worktrees; // in the order they happened
     size_t order = 0;                   // position of the begin record
 
     bool isUndo() const { return !undoes.empty() && !redo; }
+    // Something Undo can restore (refs, an index tree or worktrees).
+    bool restorable() const
+    {
+        for (const auto& r : refs)
+            if (r.oldValue != r.newValue)
+                return true;
+        return !index.empty() || !worktrees.empty();
+    }
     bool isRedo() const { return !undoes.empty() && redo; }
 };
 
@@ -62,6 +85,7 @@ public:
     bool begin(const Operation& op, std::string* error = nullptr);
     bool appendRefs(const std::string& id, const std::vector<RefChange>& changes, std::string* error = nullptr);
     bool appendIndex(const std::string& id, const IndexChange& change, std::string* error = nullptr);
+    bool appendWorktree(const std::string& id, const WorktreeChange& change, std::string* error = nullptr);
     bool appendRewrites(const std::string& id, const std::vector<std::pair<std::string, std::string>>& map,
         std::string* error = nullptr);
     bool end(const std::string& id, bool ok, std::string* error = nullptr);
@@ -98,6 +122,7 @@ struct UndoPlan {
     std::vector<RefChange> restore;     // ref: oldValue = current (expected), newValue = restored value
     std::optional<IndexChange> index;   // before = current index tree, after = tree to restore
     std::vector<std::string> movedRefs; // refs that moved outside the journal
+    std::vector<WorktreeChange> worktrees; // to apply, in this order (the target's, inverted, last first)
 };
 
 // Chooses the operation to undo (or redo) for worktree `wt` and checks that every ref it
@@ -106,6 +131,8 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
     const std::function<std::string(const std::string& ref)>& current);
 
 // True when the operation is visible from worktree `wt` (touched a shared ref or wt's HEAD/index).
+// An operation that added, removed, locked or unlocked worktrees belongs to the worktree that ran
+// it only.
 bool visibleFrom(const Operation& op, const std::string& wt);
 
 } // namespace gg::journal

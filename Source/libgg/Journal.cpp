@@ -183,6 +183,30 @@ bool Journal::appendIndex(const std::string& id, const IndexChange& c, std::stri
     return appendLine(j.dump(), error);
 }
 
+bool Journal::appendWorktree(const std::string& id, const WorktreeChange& c, std::string* error)
+{
+    json j{{"v", 1}, {"t", "worktree"}, {"op", id}, {"do", c.action}, {"path", c.path}};
+    if (!c.head.empty())
+        j["head"] = c.head;
+    if (!c.branch.empty())
+        j["branch"] = c.branch;
+    if (c.locked)
+        j["locked"] = true;
+    if (!c.reason.empty())
+        j["reason"] = c.reason;
+    return appendLine(j.dump(), error);
+}
+
+WorktreeChange inverse(const WorktreeChange& c)
+{
+    static const std::map<std::string, std::string> opposite{
+        {"add", "remove"}, {"remove", "add"}, {"lock", "unlock"}, {"unlock", "lock"}};
+    WorktreeChange r = c;
+    const auto it = opposite.find(c.action);
+    r.action = it == opposite.end() ? std::string() : it->second;
+    return r;
+}
+
 bool Journal::appendRewrites(const std::string& id, const std::vector<std::pair<std::string, std::string>>& map,
     std::string* error)
 {
@@ -288,6 +312,16 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
                 for (const auto& p : j["m"])
                     if (p.is_array() && p.size() == 2 && p[0].is_string() && p[1].is_string())
                         op.rewrites.emplace_back(p[0].get<std::string>(), p[1].get<std::string>());
+        } else if (type == "worktree") {
+            WorktreeChange c;
+            c.action = j.value("do", std::string());
+            c.path = j.value("path", std::string());
+            c.head = j.value("head", std::string());
+            c.branch = j.value("branch", std::string());
+            c.locked = j.value("locked", false);
+            c.reason = j.value("reason", std::string());
+            if (!inverse(c).action.empty() && !c.path.empty())
+                op.worktrees.push_back(std::move(c));
         } else if (type == "rebase") {
             op.spansRebase = true;
         } else if (type == "end") {
@@ -355,6 +389,8 @@ std::string headKey(const std::string& worktree)
 
 bool visibleFrom(const Operation& op, const std::string& wt)
 {
+    if (!op.worktrees.empty())
+        return (op.wt.empty() ? std::string("main") : op.wt) == wt;
     const std::string head = headKey(wt);
     for (const auto& r : op.refs)
         if (!isHeadKey(r.ref) || r.ref == head)
@@ -389,7 +425,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
             if (!it->ended || !it->ok || it->isUndo() || undone[it->id] || !visibleFrom(*it, wt))
                 continue;
-            if (it->refs.empty() && it->index.empty())
+            if (!it->restorable())
                 continue; // nothing to undo (e.g. a failed or no-op command)
             target = &*it;
             break;
@@ -402,7 +438,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
             if (!it->ended || !it->ok || !visibleFrom(*it, wt))
                 continue;
-            if (it->undoes.empty() && !(it->refs.empty() && it->index.empty()))
+            if (it->undoes.empty() && it->restorable())
                 break; // a newer normal operation: nothing to redo
             if (it->isUndo() && !undone[it->id]) {
                 target = &*it;
@@ -436,6 +472,8 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
     for (const auto& i : target->index)
         if (i.wt == wt && !i.before.empty() && !i.after.empty()) // (a step stopped at conflicts has no tree)
             plan.index = IndexChange{wt, i.after, i.before, i.worktree};
+    for (auto it = target->worktrees.rbegin(); it != target->worktrees.rend(); ++it)
+        plan.worktrees.push_back(inverse(*it));
     plan.ok = true;
     return plan;
 }

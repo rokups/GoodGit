@@ -87,6 +87,8 @@ void Dialogs::draw()
     bool enterPressed = false;
     for (size_t i = 0; i < form.fields.size(); ++i) {
         Field& f = form.fields[i];
+        if (f.visible && !f.visible(form))
+            continue;
         const std::string id = "##" + f.id;
         if (m_focusFirst && (f.kind == Field::Text || f.kind == Field::Password || f.kind == Field::Multiline)) {
             ImGui::SetKeyboardFocusHere();

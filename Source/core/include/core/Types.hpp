@@ -96,7 +96,8 @@ struct WorktreeInfo {
     bool bare = false;
     bool locked = false;
     std::string lockReason;
-    bool prunable = false;       // stale: its directory is gone
+    bool missing = false;        // its directory is gone (moved or deleted by hand)
+    bool prunable = false;       // git worktree prune would remove it (invalid and not locked)
 };
 
 struct StashInfo {

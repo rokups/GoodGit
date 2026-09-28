@@ -17,8 +17,6 @@ namespace ggui {
 
 namespace {
 
-const char* kLater = "Available in a later phase";
-
 // A row whose click toggles visibility in History (Ctrl-click: only this ref).
 // Row IDs replace '/' with ':' so test references can address them (ref names contain '/').
 std::string rowId(std::string id)
@@ -101,6 +99,12 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         actions.rebaseHeadOnto(b.name);
     if (ImGui::MenuItem("Interactive rebase onto...", nullptr, false, free))
         showInteractiveRebaseDialog(m_session, b.name);
+    if (b.isHead)
+        disabledMenuItem("Check out in new worktree...", "Checked out in this worktree");
+    else if (!b.worktree.empty())
+        disabledMenuItem("Check out in new worktree...", ("Checked out in " + b.worktree).c_str());
+    else if (ImGui::MenuItem("Check out in new worktree...", nullptr, false, free))
+        m_session.showAddWorktreeDialog(1, b.name);
     if (ImGui::MenuItem("Push", nullptr, false, free && hasRemotes)) {
         if (!b.upstream.empty()) {
             const auto slash = b.upstream.find('/');
@@ -302,6 +306,14 @@ void WorktreesPanel::draw(bool* open)
         return;
     }
     const auto snap = m_session.snapshot();
+    const bool free = m_session.actions().busy().empty();
+    const bool canAdd = free && !snap->headUnborn;
+    ImGui::BeginDisabled(!canAdd);
+    if (ImGui::Button(ICON_MS_ADD "###add_worktree"))
+        m_session.showAddWorktreeDialog();
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip(snap->headUnborn ? "Add worktree... (HEAD has no commit yet)" : "Add worktree...");
     for (const auto& w : snap->worktrees) {
         std::string label = w.name;
         if (w.isMain)
@@ -310,14 +322,28 @@ void WorktreesPanel::draw(bool* open)
             label += " (bare)";
         if (w.locked)
             label += " " ICON_MS_LOCK;
+        if (w.missing)
+            label += " (missing)";
         if (w.prunable)
-            label += " (stale)";
+            label += " (prunable)";
         label += "  " + (w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(8)) : w.branch);
         ImGui::PushID(("worktree_" + w.name).c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         ImGui::Selectable((label + "###row").c_str(), w.isCurrent);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            ImGui::SetTooltip("%s%s%s", w.path.string().c_str(), w.locked ? "\nLocked: " : "",
-                w.locked ? w.lockReason.c_str() : "");
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            std::string tip = w.path.string();
+            if (w.isCurrent)
+                tip += "\nShown in this window";
+            if (w.locked)
+                tip += "\nLocked" + (w.lockReason.empty() ? std::string() : ": " + w.lockReason)
+                    + " (git does not prune, move or remove it)";
+            if (w.missing)
+                tip += w.locked ? "\nMissing: its directory is gone (kept while locked; Repair if it was moved)"
+                                : "\nMissing: its directory is gone. Prune removes its records; Repair reconnects it if it "
+                                  "was moved";
+            ImGui::SetTooltip("%s", tip.c_str());
+        }
         if (ImGui::BeginPopupContextItem("##worktree_menu")) {
             if (ImGui::MenuItem("Copy name"))
                 ImGui::SetClipboardText(w.name.c_str());
@@ -325,16 +351,41 @@ void WorktreesPanel::draw(bool* open)
                 ImGui::SetClipboardText(w.path.string().c_str());
             if (ImGui::MenuItem("Reveal HEAD", nullptr, false, !w.head.isNull()))
                 m_session.revealCommit(w.head);
-            if (ImGui::MenuItem("Open directory", nullptr, false, !w.prunable))
+            if (ImGui::MenuItem("Open directory", nullptr, false, !w.missing))
                 openInFileManager(w.path);
             ImGui::Separator();
-            disabledMenuItem("Open here", kLater);
-            disabledMenuItem("Open in new window", kLater);
-            disabledMenuItem("Add...", kLater);
-            disabledMenuItem("Remove...", kLater);
-            disabledMenuItem(w.locked ? "Unlock" : "Lock", kLater);
-            disabledMenuItem("Prune", kLater);
-            disabledMenuItem("Repair", kLater);
+            const std::string path = w.path.string();
+            if (w.isCurrent)
+                disabledMenuItem("Open here", "This window shows this worktree");
+            else if (w.missing)
+                disabledMenuItem("Open here", "Its directory is gone");
+            else if (ImGui::MenuItem("Open here"))
+                m_session.app().openRepository(w.path);
+            if (w.missing)
+                disabledMenuItem("Open in new window", "Its directory is gone");
+            else if (ImGui::MenuItem("Open in new window"))
+                m_session.actions().openInNewWindow(path);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Add...", nullptr, false, canAdd))
+                m_session.showAddWorktreeDialog();
+            if (w.isMain)
+                disabledMenuItem("Remove...", "The main worktree cannot be removed");
+            else if (w.isCurrent)
+                disabledMenuItem("Remove...", "This window shows this worktree: open another one first");
+            else if (ImGui::MenuItem("Remove...", nullptr, false, free))
+                m_session.showRemoveWorktreeDialog(w);
+            if (w.isMain)
+                disabledMenuItem("Lock...", "The main worktree cannot be locked");
+            else if (w.locked ? ImGui::MenuItem("Unlock", nullptr, false, free) : ImGui::MenuItem("Lock...", nullptr, false, free)) {
+                if (w.locked)
+                    m_session.actions().unlockWorktree(path);
+                else
+                    m_session.showLockWorktreeDialog(w);
+            }
+            if (ImGui::MenuItem("Prune...", nullptr, false, free))
+                m_session.showPruneWorktreesDialog();
+            if (ImGui::MenuItem("Repair...", nullptr, false, free))
+                m_session.showRepairWorktreeDialog(w);
             ImGui::EndPopup();
         }
         ImGui::PopID();
@@ -572,7 +623,7 @@ void OperationsPanel::draw(bool* open)
                 ImGui::EndTooltip();
             }
             if (ImGui::BeginPopupContextItem("##op_menu")) {
-                if (ImGui::MenuItem("Restore (undo this operation)", nullptr, false, free && !op.refs.empty()))
+                if (ImGui::MenuItem("Restore (undo this operation)", nullptr, false, free && op.restorable()))
                     actions.restore(op.id);
                 if (ImGui::MenuItem("Copy operation ID"))
                     ImGui::SetClipboardText(op.id.c_str());

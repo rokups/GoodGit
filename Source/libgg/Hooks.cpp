@@ -399,7 +399,27 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
             std::error_code ec;
             fs::remove(pending, ec);
         }
-        journal.appendRefs(operationId(true), changes);
+        // `git worktree add` creates the new worktree's HEAD from the worktree it runs in, and git
+        // names it "HEAD" all the same: a HEAD change that did not happen to this worktree's HEAD
+        // belongs to another worktree and is left out.
+        std::string headNow;
+        git_reference* head = nullptr;
+        if (git_reference_lookup(&head, repo.get(), "HEAD") == 0) {
+            if (git_reference_type(head) == GIT_REFERENCE_SYMBOLIC)
+                headNow = std::string("ref:") + git_reference_symbolic_target(head);
+            else
+                headNow = git2::toHex(*git_reference_target(head));
+            git_reference_free(head);
+        } else {
+            git_error_clear();
+        }
+        std::vector<journal::RefChange> ours;
+        for (size_t i = 0; i < changes.size(); ++i)
+            if (names[i] != "HEAD" || changes[i].newValue == headNow)
+                ours.push_back(changes[i]);
+        if (ours.empty())
+            return 0;
+        journal.appendRefs(operationId(true), ours);
         return 0;
     }
     if (name == "post-rewrite") {

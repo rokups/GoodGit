@@ -126,6 +126,8 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
         if (!after.count(ref))
             changes.push_back(journal::RefChange{ref, value, zero});
     std::string error;
+    for (const auto& w : m_worktrees)
+        m_journal.appendWorktree(m_op.id, w, &error);
     m_journal.appendRefs(m_op.id, changes, &error);
     // The rebase this operation started or joined: open while it is stopped, ended with it.
     const bool rebasing = !native::rebaseIdentity(m_repo).empty();

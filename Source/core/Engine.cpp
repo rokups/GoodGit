@@ -444,6 +444,8 @@ RequestId Engine::mutate(MutationSpec spec)
             ev.message = e.what();
         }
         if (recorder) {
+            for (auto& w : ctx.worktrees)
+                recorder->addWorktree(std::move(w));
             recorder->finish(ev.outcome == Outcome::Ok, ctx.worktreeFollowsIndex);
             ev.operation = recorder->id();
             ev.journalError = recorder->journalError();

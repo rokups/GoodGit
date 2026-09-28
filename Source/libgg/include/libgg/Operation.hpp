@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace gg {
 
@@ -35,6 +36,8 @@ public:
     // recorder joins that rebase's operation instead (NativeRebase.hpp); an operation that starts
     // a rebase stays open until the rebase is finished.
     void begin();
+    // A worktree the operation added, removed, locked or unlocked (written by finish()).
+    void addWorktree(journal::WorktreeChange change) { m_worktrees.push_back(std::move(change)); }
     // Records the resulting ref and index changes and the end record.
     void finish(bool ok, bool worktreeFollowsIndex = false);
     const std::string& id() const { return m_op.id; }
@@ -52,6 +55,7 @@ private:
     bool m_finished = false;
     std::map<std::string, std::string> m_before;
     std::string m_indexBefore;
+    std::vector<journal::WorktreeChange> m_worktrees;
     std::string m_previousOperation;
     std::string m_error;
 };

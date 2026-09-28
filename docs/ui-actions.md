@@ -37,6 +37,10 @@ drives the action through the UI and checks its effect) or `missing`.
 option, the *Replace sequence.editor* dialog, and Save / Cancel / closing the todo editor for a
 list a plain `git rebase -i` waits for.
 
+P4-03 (worktree management): the Worktrees panel's Add button and its Open here, Open in new
+window, Add..., Remove..., Lock.../Unlock, Prune... and Repair... items with their dialogs (27
+rows in the Worktrees panel section), and Branch ▸ Check out in new worktree....
+
 **Audit result (P3-20).** 408 rows, all `tested`. The audit added tests for 19 rows that had
 none and made 14 existing tests check the effect instead of only opening a dialog or counting
 journal entries (see `Source/tests/test_ui_actions.cpp` and the P3-20 commits). One bug was
@@ -471,6 +475,7 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 | Branch ▸ Merge into HEAD... | context menu | `edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile` | tested |
 | Branch ▸ Rebase HEAD onto branch | context menu | `edit/merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile` | tested |
 | Branch ▸ Interactive rebase onto... | context menu | `rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches` | tested |
+| Branch ▸ Check out in new worktree... | context menu | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo` | tested |
 | Branch ▸ Push (with upstream) | context menu | `network/push: toolbar, menu, History and Branches; no upstream prefills Push to` | tested |
 | Branch ▸ Push (no upstream: opens Push to) | context menu | `ui/Push without an upstream opens Push to (History, Branches); remote, upstream and force with lease` | tested |
 | Branch ▸ Push to... | context menu | `network/push: toolbar, menu, History and Branches; no upstream prefills Push to` | tested |
@@ -501,7 +506,9 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 
 ## Worktrees panel
 
-Phase 4 (P4-03) items are drawn disabled with a "later" tooltip and are not actions yet: Open here, Open in new window, Add..., Remove..., Lock/Unlock, Prune, Repair.
+Every change runs `git worktree …`. Add, Remove, Lock and Unlock are undone (Ctrl+Z) from the
+worktree whose window made them (`docs/spec/undo-journal.md` §5.4); Prune and Repair cannot be
+undone and their dialogs say so. The dialog rows below include each dialog's Cancel.
 
 | Action | Trigger | Test(s) | Status |
 |---|---|---|---|
@@ -509,6 +516,33 @@ Phase 4 (P4-03) items are drawn disabled with a "later" tooltip and are not acti
 | Worktree ▸ Copy path | context menu | `panels/worktrees: main, locked, stale; copy, reveal, open` | tested |
 | Worktree ▸ Reveal HEAD | context menu | `panels/worktrees: main, locked, stale; copy, reveal, open` | tested |
 | Worktree ▸ Open directory | context menu | `panels/worktrees: main, locked, stale; copy, reveal, open` | tested |
+| Add worktree (+) | click | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo`<br>`worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter` | tested |
+| Worktree ▸ Open here | context menu | `worktrees/open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error`<br>`worktrees/per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree` | tested |
+| Worktree ▸ Open in new window | context menu | `worktrees/open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error` | tested |
+| Worktree ▸ Add... | context menu | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo` | tested |
+| Worktree ▸ Remove... | context menu | `worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates` | tested |
+| Worktree ▸ Lock... | context menu | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Worktree ▸ Unlock | context menu | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Worktree ▸ Prune... | context menu | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Worktree ▸ Repair... | context menu | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Add worktree ▸ Path, New branch, Add | dialog | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo`<br>`worktrees/with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone` | tested |
+| Add worktree ▸ Check out: A new branch, An existing branch, A commit (detached HEAD) | combo | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo`<br>`worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter` | tested |
+| Add worktree ▸ Branch (existing; filter, Enter picks the first match) | combo | `worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter` | tested |
+| Add worktree ▸ Start at | text field | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo`<br>`worktrees/per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree` | tested |
+| Add worktree ▸ Force (--force) | checkbox | `worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter` | tested |
+| Add worktree ▸ Do not check out the files (--no-checkout) | checkbox | `worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter` | tested |
+| Add worktree ▸ Lock the new worktree (--lock), Lock reason | checkbox, text field | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo` | tested |
+| Add worktree ▸ Cancel | click | `worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo` | tested |
+| Remove worktree ▸ Remove | dialog | `worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates` | tested |
+| Remove worktree ▸ Cancel | click | `worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates` | tested |
+| Remove worktree with changes ▸ Delete changes and remove | dialog | `worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates` | tested |
+| Remove worktree with changes ▸ Cancel | click | `worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates` | tested |
+| Lock worktree ▸ Reason, Lock | dialog | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Lock worktree ▸ Cancel | click | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Prune worktrees ▸ Prune | dialog | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Prune worktrees ▸ Cancel | click | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Repair worktree ▸ Location, Repair | dialog | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
+| Repair worktree ▸ Cancel | click | `worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree` | tested |
 
 ## Remotes panel
 

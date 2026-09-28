@@ -389,16 +389,47 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
   remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
   Interactive rebase onto… (Phase 3: the `Interactive rebase onto` dialog asks for the base; the
-  branch is the tip and only it and its update-ref branches move, HEAD stays). Remote-tracking branches are listed under their remote;
+  branch is the tip and only it and its update-ref branches move, HEAD stays) · Check out in new
+  worktree… (Phase 4: the `Add worktree` dialog with *An existing branch* and this branch; disabled
+  for a branch checked out in any worktree). Remote-tracking branches are listed under their remote;
   the remote has the Remotes panel's context menu, and each remote-tracking branch has Reveal ·
   Copy name · Remote <name> ▸ (the same menu). Set upstream… has a filter field (Enter picks
   the first match).
 - **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)
   (visibility toggle). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
-- **Worktrees** `"Worktrees"` (M): rows `worktree_<name>` (main, stale, locked marks). Context:
-  Copy name · Copy path · Reveal HEAD · Open directory · Open here · Open in new window ·
-  Add… · Remove… · N: Lock/Unlock · Prune · Repair. D: gg rename/forget.
+- **Worktrees** `"Worktrees"` (M): header Add worktree… `###add_worktree` (disabled while HEAD
+  is unborn); rows `worktree_<name>` (git's id, the directory name) with "(main)", "(bare)", a lock
+  icon, "(missing)" (directory gone; dimmed), "(prunable)" (git worktree prune would remove it:
+  missing and not locked), then the branch or the detached commit. The current worktree is
+  selected. Tooltip: path, "Shown in this window", lock reason, what Prune/Repair do for a missing
+  one. Context: Copy name · Copy path · Reveal HEAD · Open directory (not for missing) · Open here
+  (switches this window; not for the current or a missing one) · Open in new window (starts
+  another ggui process on the worktree, detached; `GG_GGUI` names the program, default this ggui;
+  not for a missing one) · Add… · Remove… (not for the main worktree or the one this window shows)
+  · N: Lock… / Unlock (not for the main worktree) · Prune… · Repair…. D: gg rename/forget.
+  Every change runs `git worktree add|remove|lock|unlock|prune|repair`. Add, Remove, Lock and
+  Unlock are undoable from the worktree whose window made them (undo-journal.md §5.4); Prune and
+  Repair are listed in Operations but cannot be undone.
+  - `Add worktree`: *Path* `##path` (prefilled `<main worktree>-worktree` next to the main
+    worktree; relative paths start at this worktree) · *Check out* `##checkout`: A new branch /
+    An existing branch / A commit (detached HEAD) · *New branch* `##branch` (new branch) · *Branch*
+    `##existing` (existing branch; filterable, Enter picks the first match) · *Start at* `##start`
+    (new branch and detached, default HEAD) · *Force …* `##force` (`--force`: a branch checked out
+    elsewhere) · *Do not check out the files* `##no_checkout` (`--no-checkout`) · *Lock the new
+    worktree* `##lock` (`--lock`) · *Lock reason* `##reason` (with Lock; `--reason`) · note on Undo ·
+    *Add* / *Cancel*.
+  - `Remove worktree`: what is removed (a missing one: only git's records), the lock ("removing
+    unlocks it first"), what Undo brings back · *Remove* / *Cancel*. When git refuses because of
+    uncommitted changes or untracked files: `Remove worktree with changes` (git's message; the
+    changes are deleted for good, Undo re-creates the worktree without them) · *Delete changes and
+    remove* (`--force`) / *Cancel*.
+  - `Lock worktree`: *Reason* `##reason` (optional) · *Lock* / *Cancel*. Unlock has no dialog.
+  - `Prune worktrees`: git's `prune --dry-run --verbose` lines, "cannot be undone" · *Prune* /
+    *Cancel*. With nothing to prune a notification says so instead; after pruning a notification
+    shows git's lines.
+  - `Repair worktree`: *Location* `##path` (the worktree's path; the new one if it was moved by
+    hand) · *Repair* / *Cancel*; a notification shows git's repair lines.
 - **Remotes** `"Remotes"`: rows `remote_<name>` with URL. Context: Copy name · Fetch · Pull ·
   Delete · N: Edit URL… · Prune on fetch (checkbox) · Fetch all. Header: Add remote…
 - **Stashes** `"Stashes"` (N): rows `stash_<n>` (index, message, base, date). Context: Apply ·
@@ -419,7 +450,8 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 `Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
 3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
 itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
-*Replace* / *Cancel*, §1.6), `Settings`.
+*Replace* / *Cancel*, §1.6), `Add worktree`, `Remove worktree`, `Remove worktree with changes`,
+`Lock worktree`, `Prune worktrees`, `Repair worktree` (Phase 4, §8 Worktrees), `Settings`.
 
 ## 10. States
 - **Busy:** conflicting actions disabled with reason tooltip; browsing stays enabled.

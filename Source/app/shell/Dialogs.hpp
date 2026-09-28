@@ -11,6 +11,8 @@ namespace ggui {
 
 class Session;
 
+struct Form;
+
 struct Field {
     enum Kind { Text, Password, Multiline, Check, Combo, Info };
     Kind kind = Text;
@@ -23,9 +25,9 @@ struct Field {
     std::string hint;
     bool filterable = false;  // Combo: a filter field at the top of the list (Enter picks the first match)
     std::string filter;
+    // Shown only while this returns true (empty: always); a hidden field keeps its value.
+    std::function<bool(const Form&)> visible;
 };
-
-struct Form;
 
 struct FormButton {
     std::string label;

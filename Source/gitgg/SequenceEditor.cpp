@@ -1,6 +1,7 @@
 #include "SequenceEditor.hpp"
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/Launch.hpp>
 #include <libgg/LocalSocket.hpp>
 #include <libgg/NativeRebase.hpp>
 #include <libgg/SequenceEditorLink.hpp>
@@ -29,38 +30,7 @@ namespace {
 
 constexpr const char* kPrefix = "git gg sequence-editor: ";
 
-// ---- the ggui program and a detached process for it ----------------------------------------------
-
-fs::path selfPath()
-{
-#ifdef _WIN32
-    wchar_t buf[MAX_PATH * 4];
-    const DWORD n = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-    if (n > 0 && n < std::size(buf))
-        return fs::path(std::wstring(buf, n));
-#else
-    std::error_code ec;
-    if (auto p = fs::read_symlink("/proc/self/exe", ec); !ec)
-        return p;
-#endif
-    return gg::findInPath("git-gg");
-}
-
-// GG_GGUI, else the ggui next to this git-gg, else ggui on PATH ("" when there is none).
-fs::path gguiProgram()
-{
-    if (const char* env = std::getenv("GG_GGUI"); env && *env)
-        return gg::findInPath(env);
-#ifdef _WIN32
-    const char* name = "ggui.exe";
-#else
-    const char* name = "ggui";
-#endif
-    std::error_code ec;
-    if (const fs::path self = selfPath(); !self.empty() && fs::is_regular_file(self.parent_path() / name, ec))
-        return self.parent_path() / name;
-    return gg::findInPath("ggui");
-}
+// ---- the ggui program ---------------------------------------------------------------------------
 
 bool hasDisplay()
 {
@@ -70,96 +40,6 @@ bool hasDisplay()
     for (const char* name : {"DISPLAY", "WAYLAND_DISPLAY"})
         if (const char* v = std::getenv(name); v && *v)
             return true;
-    return false;
-#endif
-}
-
-struct Child {
-#ifdef _WIN32
-    HANDLE process = nullptr;
-#else
-    pid_t pid = -1;
-#endif
-};
-
-// Starts `args` detached from git's terminal: ggui keeps running after git-gg and git are done.
-bool spawnDetached(const std::vector<std::string>& args, Child& child, std::string& error)
-{
-#ifdef _WIN32
-    std::wstring cmd;
-    for (const auto& a : args) {
-        const int n = MultiByteToWideChar(CP_UTF8, 0, a.data(), static_cast<int>(a.size()), nullptr, 0);
-        std::wstring w(static_cast<size_t>(n), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, a.data(), static_cast<int>(a.size()), w.data(), n);
-        if (!cmd.empty())
-            cmd += L' ';
-        cmd += L'"';
-        size_t slashes = 0;
-        for (wchar_t c : w) {
-            if (c == L'\\') {
-                ++slashes;
-            } else {
-                if (c == L'"')
-                    cmd.append(slashes + 1, L'\\');
-                slashes = 0;
-            }
-            cmd += c;
-        }
-        cmd.append(slashes, L'\\');
-        cmd += L'"';
-    }
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, nullptr,
-            nullptr, &si, &pi)) {
-        error = "cannot start " + args.front();
-        return false;
-    }
-    CloseHandle(pi.hThread);
-    child.process = pi.hProcess;
-    return true;
-#else
-    std::vector<char*> argv;
-    for (const auto& a : args)
-        argv.push_back(const_cast<char*>(a.c_str()));
-    argv.push_back(nullptr);
-    const pid_t pid = fork();
-    if (pid < 0) {
-        error = "cannot start " + args.front();
-        return false;
-    }
-    if (pid == 0) {
-        setsid();
-        const int nul = open("/dev/null", O_RDWR);
-        if (nul >= 0) {
-            dup2(nul, 0);
-            dup2(nul, 1);
-            dup2(nul, 2);
-        }
-        // What git set up for its editor is not for a whole ggui session.
-        for (const char* name : {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY"})
-            unsetenv(name);
-        execv(argv[0], argv.data());
-        _exit(127);
-    }
-    child.pid = pid;
-    return true;
-#endif
-}
-
-bool running(Child& child)
-{
-#ifdef _WIN32
-    return child.process && WaitForSingleObject(child.process, 0) == WAIT_TIMEOUT;
-#else
-    if (child.pid <= 0)
-        return false;
-    int status = 0;
-    const pid_t r = waitpid(child.pid, &status, WNOHANG);
-    if (r == 0)
-        return true;
-    child.pid = -1;
     return false;
 #endif
 }
@@ -295,12 +175,12 @@ int editInGgui(const fs::path& given)
 
     if (!hasDisplay())
         return gitEditor(file, "no display to show ggui on");
-    const fs::path program = gguiProgram();
+    const fs::path program = gg::gguiProgram();
     if (program.empty())
         return gitEditor(file, "ggui was not found");
-    Child child;
+    gg::DetachedProcess child;
     std::string error;
-    if (!spawnDetached({program.string(), worktreeOf(gitDir).string()}, child, error))
+    if (!gg::spawnDetached({program.string(), worktreeOf(gitDir).string()}, child, error))
         return gitEditor(file, error);
     // Wait for the new ggui to open the repository, then hand the list over.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(2);
@@ -308,7 +188,7 @@ int editInGgui(const fs::path& given)
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         if (auto status = handOver(key, file, remaining))
             return *status;
-        if (!running(child)) {
+        if (!gg::stillRunning(child)) {
             std::cerr << kPrefix << "ggui exited before it showed the todo list\n";
             return 1;
         }

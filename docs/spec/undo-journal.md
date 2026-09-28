@@ -25,7 +25,8 @@ uses the same journal.
 name under `$GIT_COMMON_DIR/worktrees/`). Index trees are recorded per worktree the same way.
 Other refs (`refs/heads/*`, `refs/tags/*`, `refs/stash`, `refs/remotes/*`, any other
 reflog-backed ref) are shared. Undo run from worktree *W* considers only operations that touched
-a shared ref or *W*'s own HEAD/index (§5.1).
+a shared ref or *W*'s own HEAD/index (§5.1). An operation that added, removed, locked or unlocked
+a linked worktree (`worktree` records) belongs to the worktree that ran it only (§5.4).
 
 ## 2. Encoding
 
@@ -48,6 +49,7 @@ a shared ref or *W*'s own HEAD/index (§5.1).
 | `index` | `op`, `wt`, `before`, `after` | Index tree of worktree `wt` before/after (tree IDs) |
 | `map` | `op`, `m`: list of `[old commit, new commit]` | Rewrite mapping (post-rewrite) |
 | `rebase` | `op` | `op` spans a native rebase (§4.1): open until its `end` record |
+| `worktree` | `op`, `do`, `path`, optional `head`, `branch`, `locked`, `reason` | `op` added, removed, locked or unlocked the linked worktree at `path` (§5.4) |
 | `end` | `op`, optional `ok` (false = failed) | Closes operation `op` |
 
 - `op` — operation ID: `<unix-ms>-<8 hex>` for ggui/git-gg; `git-<pid>-<start>` for operations
@@ -59,6 +61,11 @@ a shared ref or *W*'s own HEAD/index (§5.1).
 - `wt` — worktree key of the process that opened the operation (`main` or the linked id).
 - `undoes` — on an undo operation: the `op` it reverts. Redo is an undo of an undo.
 - `cmd` — for `src:"git"`: the git command line when known.
+- `do` — `add`, `remove`, `lock` or `unlock`. `path` is the worktree's directory as
+  `git worktree list` shows it. For `add`/`remove`: `head` is the commit it had checked out,
+  `branch` its branch (`refs/heads/<name>`, absent when detached), `locked`/`reason` its lock at
+  the time. For `lock`/`unlock`: `reason` is the lock's reason. One record per worktree change,
+  in the order they happened.
 
 An operation is the set of all records with the same `op`. Records of different operations may
 interleave (concurrent processes). An operation without `end` is **open**; readers treat an open
@@ -107,6 +114,12 @@ operation older than 10 minutes, or whose process no longer exists, as closed.
   to be finished (post-merge, post-commit and post-checkout of a top-level command; post-rewrite
   of `rebase`).
 - One plain git command therefore yields exactly one operation.
+- `git worktree add` creates the new worktree's HEAD from the worktree it runs in, and git names
+  it `HEAD` in the transaction all the same. The hook keeps a `HEAD` update only when this
+  worktree's HEAD has that value after the transaction; otherwise it belongs to another worktree
+  and is left out (so a plain `git worktree add` never looks like the main worktree switching
+  branches). The hooks cannot see worktrees being added or removed: only ggui and git-gg write
+  `worktree` records.
 
 ### 4.1 Native rebases (several git commands, one operation)
 A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git commands
@@ -136,6 +149,8 @@ A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git c
 Let *W* be the current worktree. The *visible* operations are those that touched a shared ref,
 or *W*'s HEAD/index.
 
+- Only operations with something to restore count: a ref whose recorded old and new values
+  differ, an index tree, or a `worktree` record (a no-op `git reset --hard` is passed over).
 - **Undo** picks the newest visible operation that is not an undo operation and is not already
   undone (no later operation has `undoes` equal to it, unless that undo was itself undone).
 - **Redo** picks the newest visible undo operation that is newer than every non-undo operation
@@ -154,7 +169,38 @@ Undo of operation *X* is a **new operation** (`undoes: X`) that:
    updates the working tree only when that is lossless (`git read-tree -m -u` between the two
    HEAD trees).
 
-### 5.3 Garbage collection
+A branch the restore would delete must not be checked out in any worktree (git refuses to delete
+one too): Undo is refused ("the branch x is checked out in <path>"), unless that worktree is *W*
+itself and its HEAD is restored as well, or the same undo removes that worktree first (§5.4).
+
+### 5.4 Worktrees
+An operation's `worktree` records are undone by the opposite change, last record first:
+
+| Record | Undo | Refused (nothing changed) when |
+|---|---|---|
+| `add` | `git worktree remove <path>` (unlocked first when locked, locked again if that fails) | the worktree is no longer registered, it is the worktree Undo runs in, its HEAD moved on (another branch, or a detached HEAD at another commit), or it has uncommitted changes or untracked files (`git status --porcelain`; a `--no-checkout` worktree counts as changed until its files are checked out) |
+| `remove` | `git worktree add [--lock [--reason r]] <path> <branch>` (or `--detach <path> <head>`) | a worktree is registered at the path, the directory exists and is not empty, the branch no longer exists (and is not brought back by the same undo) or is checked out elsewhere, or the detached commit no longer exists |
+| `lock` | `git worktree unlock <path>` | the worktree is gone or not locked |
+| `unlock` | `git worktree lock [--reason r] <path>` | the worktree is gone or locked already |
+
+- Every opposite change is checked before anything is changed. Removals and unlocks run before
+  the index and ref restore (a branch the added worktree had checked out can then be deleted);
+  adds and locks run after it (a branch the worktree needs exists again). When an add or lock
+  fails at that point, the refs are put back and the undo operation is recorded as failed.
+- The undo operation records what it did as `worktree` records, so Redo (an undo of the undo)
+  works the same way.
+- What Undo cannot bring back: uncommitted changes and untracked files that a forced removal
+  deleted (ggui asks before forcing, and says so), and files git ignores (`git worktree remove`
+  deletes them). Undo of a removal re-creates the worktree at its branch as the branch is now, or
+  at the recorded detached commit.
+- `git worktree prune` and `git worktree repair` only rewrite git's administrative files. ggui
+  journals them without anything to restore: they appear in the Operations panel, and Undo passes
+  over them.
+- **Visibility:** an operation with `worktree` records is visible only from the worktree that ran
+  it (its `wt`), even when it also changed shared refs (a branch created with the worktree). Undo
+  in another worktree never removes or re-creates worktrees it did not manage.
+
+### 5.5 Garbage collection
 The journal holds no refs. Commits that are reachable only through the journal stay alive
 through the reflogs that `git update-ref` writes (Git keeps unreachable reflog entries for
 `gc.reflogExpireUnreachable`, 30 days by default). ggui passes `--create-reflog` so bare

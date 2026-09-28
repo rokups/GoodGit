@@ -1632,7 +1632,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     the user's window now); the Windows paths (CreateProcessW, GetModuleFileNameW) are built but not
     run here.
 
-### P4-03 Full worktree management
+### [x] P4-03 Full worktree management
+- **Status:** test_worktrees.cpp (7 scenarios): Worktrees panel Add (+ and menu; new branch/existing branch/detached, start point, --force, --no-checkout, --lock with reason, paths with spaces), Remove (clean, with changes → confirm → --force, locked → unlocked first, missing; main and the window's own worktree refused), Lock.../Unlock, Prune (dry run shown first; locked missing ones kept), Repair (moved worktree), Open here, Open in new window (detached ggui process, GG_GGUI; missing program → error), Branches ▸ Check out in new worktree...; missing/prunable/locked marks. Add/Remove/Lock/Unlock journaled with new worktree records and undone/redone (Ctrl+Z/Y, git gg undo/redo) only from the worktree that made them; refusals when the worktree moved on or has changes. Hooks no longer record another worktree's HEAD as this one's; Undo refuses to delete a branch checked out in a worktree. Full suite 254/254; traceability 633/633 phase 0-3 IDs, 658/658 overall; ui-actions 450 rows, all tested.
 - **Depends on:** P2-03, P1-20
 - **Refs:** §4.7 Worktrees, §4.1
 - **Do:** Add…, Remove…, Lock/Unlock, Prune, Repair, Open here, Open in new window (linked
@@ -1641,6 +1642,54 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Notes from P3-20:** these items are drawn disabled today (`disabledMenuItem(..., kLater)` in
   `SidePanels.cpp`) and are listed only in the Worktrees section note of `docs/ui-actions.md`.
   Replace that note with one row per item and its dialog controls, each with a test.
+- **Design notes:**
+  - **Git access:** every change is `git worktree add|remove|lock|unlock|prune|repair` through the
+    runner (`Source/app/shell/ActionsWorktrees.cpp`); state is read from
+    `git worktree list --porcelain -z` (`libgg/Worktrees.hpp`: parse, samePath, check/apply for
+    Undo). The snapshot adds `WorktreeInfo::missing` (directory gone) and `prunable` now means
+    what git prunes (invalid and not locked).
+  - **Journal (decision):** a new record `{"t":"worktree","do":add|remove|lock|unlock,"path",
+    "head","branch","locked","reason"}` (undo-journal.md §2.1, §5.4); readers of older builds
+    ignore it. Actions put changes in `MutationContext::worktrees`; `OperationRecorder` writes them.
+    Undo applies the opposite change: removes/unlocks before the index and ref restore, adds/locks
+    after it (refs put back if that fails); every change is checked first (registered, HEAD not
+    moved on, clean via `git status --porcelain`, path free, branch exists or is restored by the
+    same undo). Redo works through the records the undo writes. An operation with worktree
+    records is visible only from the worktree that ran it. `Operation::restorable()` (a ref that
+    changed, an index or a worktree record) now also passes over no-op ref updates.
+  - **Not undoable (said in the dialogs and the spec):** files a forced removal deleted, ignored
+    files (`git worktree remove` deletes them), prune and repair (journaled with nothing to
+    restore, listed in Operations). A `--no-checkout` worktree counts as changed, so Undo refuses
+    until its files are checked out. Worktrees added or removed by plain git from a terminal are
+    not undone as worktrees (the hooks cannot see them).
+  - **Hooks fix:** `git worktree add` creates the new worktree's HEAD from the current worktree and
+    the reference-transaction hook recorded it as this worktree's HEAD (the main worktree seemed
+    to switch branches, and ggui's own Add could not be undone with the hooks installed). The hook
+    keeps a HEAD update only when this worktree's HEAD has that value after the commit. Undo also
+    refuses to delete a branch checked out in a worktree (unless it is W's own HEAD being restored
+    or that worktree is removed by the same undo).
+  - **New window (decision):** "Open in new window" starts a new ggui process with the worktree
+    path as argv[1] (auto-open), detached: `posix_spawn` with `POSIX_SPAWN_SETSID`, stdio on
+    /dev/null, GIT_DIR-style variables removed, a thread reaps it; Windows `CreateProcessW`
+    DETACHED_PROCESS. The program is `GG_GGUI` if set, else this ggui (`/proc/self/exe`,
+    `GetModuleFileNameW`). `gg::spawnDetached`/`gguiProgram` moved to `libgg/Launch.hpp` and are
+    shared with `git gg sequence-editor` (which used fork+setsid). Runs on the AsyncIo thread;
+    a failure is an error popup. "Open here" is `App::openRepository(path)`.
+  - **UI:** Worktrees header `+` (Add), row menu Open here / Open in new window / Add... /
+    Remove... / Lock.../Unlock / Prune... / Repair... with reason tooltips on disabled items;
+    Branches ▸ Check out in new worktree... (the Add dialog with the branch). Dialog fields can be
+    shown conditionally (`Field::visible`). Relative paths in Add/Repair start at this worktree.
+  - **Tests** (`Source/tests/test_worktrees.cpp`, 7 scenarios; 28 new rows in
+    `docs/ui-actions.md`): add (both entry points, all modes and options, filter, force, Undo/Redo,
+    refusal while not clean), remove (with changes, locked, missing, disabled for main/current),
+    lock/unlock/prune/repair, open here and in new window (stub `GG_GGUI` checks the path and
+    that it runs in its own session), per-worktree visibility (Undo from wt1 does nothing; moved on
+    / untracked refusals; `git gg undo`/`redo` agree), and the managed hooks (ggui's Add is one
+    operation; a terminal `git worktree add` leaves the main HEAD alone, Undo keeps its branch).
+  - **Not done / limits:** Windows paths (other drives) are displayed via `path.string()` but not
+    exercised here; the `GetModuleFileNameW`/`CreateProcessW` path is built but not run; no
+    `--orphan`, `--track`/`--guess-remote` or `-B` options in Add; no `git worktree move` (not in
+    the spec).
 
 ### P4-04 Packaging
 - **Depends on:** P0-06

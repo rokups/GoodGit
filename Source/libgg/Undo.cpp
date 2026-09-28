@@ -5,6 +5,7 @@
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Thread.hpp"
+#include "libgg/Worktrees.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -150,9 +151,61 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         }
     }
 
+    // Worktrees the operation added, removed, locked or unlocked: every opposite change must be
+    // possible before anything is changed (a worktree that has changes or moved on is not removed).
+    auto removesFirst = [](const journal::WorktreeChange& c) { return c.action == "remove" || c.action == "unlock"; };
+    std::vector<std::string> restoredBranches;
+    for (const auto& c : plan.restore)
+        if (!isZero(c.newValue) && !isSymbolic(c.newValue))
+            restoredBranches.push_back(c.ref);
+    for (const auto& c : plan.worktrees)
+        if (std::string why = worktrees::check(cwd, c, restoredBranches); !why.empty()) {
+            result.error = "Cannot " + std::string(redo ? "redo" : "undo") + " \"" + what + "\": " + why;
+            return result;
+        }
+
+    // A branch the restore deletes must not be checked out in a worktree (git refuses to delete
+    // one too), unless that worktree is removed first by this very undo.
+    const bool headRestored = std::any_of(plan.restore.begin(), plan.restore.end(),
+        [&](const journal::RefChange& c) { return c.ref == journal::headKey(wt); });
+    for (const auto& c : plan.restore) {
+        if (!isZero(c.newValue) || c.ref.rfind("refs/heads/", 0) != 0)
+            continue;
+        for (const auto& e : worktrees::list(cwd)) {
+            if (e.branch != c.ref || (headRestored && worktrees::samePath(e.path, cwd)))
+                continue;
+            const bool removed = std::any_of(plan.worktrees.begin(), plan.worktrees.end(), [&](const journal::WorktreeChange& w) {
+                return w.action == "remove" && worktrees::samePath(w.path, e.path);
+            });
+            if (!removed) {
+                result.error = "Cannot " + std::string(redo ? "redo" : "undo") + " \"" + what + "\": the branch "
+                    + c.ref.substr(11) + " is checked out in " + e.path.string();
+                return result;
+            }
+        }
+    }
+
     OperationRecorder recorder(repo, src, result.label, !bare);
     recorder.setUndoes(plan.target->id, redo);
     recorder.begin();
+    auto applyWorktrees = [&](bool removals) {
+        for (const auto& c : plan.worktrees) {
+            if (removesFirst(c) != removals)
+                continue;
+            worktrees::Applied a = worktrees::apply(cwd, c);
+            if (!a.ok) {
+                result.error = a.error;
+                return false;
+            }
+            recorder.addWorktree(a.done);
+        }
+        return true;
+    };
+    // 0. Worktrees removed or unlocked first (a branch it had checked out may then be deleted).
+    if (!applyWorktrees(true)) {
+        recorder.finish(false);
+        return result;
+    }
 
     // 1. Index / working tree first: nothing is changed when the working tree would lose data.
     bool followWorktree = false;
@@ -213,6 +266,24 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
                 git(cwd, {"read-tree", plan.index->before});
         }
         result.error = r.message();
+        recorder.finish(false);
+        return result;
+    }
+    // 3. Worktrees added or locked last (a branch they check out exists again by now). When that
+    //    fails, the refs go back to where they were, so the operation changed nothing it cannot show.
+    if (!applyWorktrees(false)) {
+        std::string back = "option no-deref\n";
+        for (const auto& c : plan.restore) {
+            if (c.ref == journal::headKey(wt) || isSymbolic(c.newValue) || isSymbolic(c.oldValue))
+                continue;
+            if (isZero(c.oldValue))
+                back += "delete " + c.ref + " " + c.newValue + "\n";
+            else if (isZero(c.newValue))
+                back += "create " + c.ref + " " + c.oldValue + "\n";
+            else
+                back += "update " + c.ref + " " + c.oldValue + " " + c.newValue + "\n";
+        }
+        git(cwd, {"update-ref", "-m", result.label + " (failed)", "--stdin"}, back);
         recorder.finish(false);
         return result;
     }

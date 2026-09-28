@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-3)
 
-Covered: 633/633 required IDs; 648/658 of the whole catalogue.
+Covered: 633/633 required IDs; 658/658 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -167,7 +167,7 @@ Covered: 633/633 required IDs; 648/658 of the whole catalogue.
 | TAG-REVEAL | 1 | §4.7 | Tags: Reveal | panels/tags: filter, visibility, reveal, copy |
 | TAG-COPY | 1 | §4.7 | Tags: Copy | panels/tags: filter, visibility, reveal, copy |
 | TAG-LABEL-PLAIN | 1 | §4.7 | Tags: labels are the tag names, without "(annotated)" (UF-22) | panels/tags: filter, visibility, reveal, copy |
-| WT-LIST | 1 | §4.7 | Worktrees: list with main/stale/locked | panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation<br>panels/worktrees: main, locked, stale; copy, reveal, open<br>rewrite/in a linked worktree: its own branch follows quietly, the main worktree's branch asks first<br>shell/unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees |
+| WT-LIST | 1 | §4.7 | Worktrees: list with main/stale/locked | panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation<br>panels/worktrees: main, locked, stale; copy, reveal, open<br>rewrite/in a linked worktree: its own branch follows quietly, the main worktree's branch asks first<br>shell/unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees<br>worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree<br>worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates |
 | WT-COPY-NAME | 1 | §4.7 | Worktrees: Copy name | panels/worktrees: main, locked, stale; copy, reveal, open |
 | WT-COPY-PATH | 1 | §4.7 | Worktrees: Copy path | panels/worktrees: main, locked, stale; copy, reveal, open |
 | WT-REVEAL-HEAD | 1 | §4.7 | Worktrees: Reveal HEAD | panels/worktrees: main, locked, stale; copy, reveal, open |
@@ -204,9 +204,9 @@ Covered: 633/633 required IDs; 648/658 of the whole catalogue.
 | MENU-COMMIT-PREV | 2 | §4.1 | Commit ▸ Move HEAD to parent | checkout/move HEAD to parent and child |
 | MENU-COMMIT-NEXT | 2 | §4.1 | Commit ▸ Move HEAD to child | checkout/move HEAD to parent and child |
 | MENU-EDIT-UNDO | 2 | §4.1 | Edit ▸ Undo (menu) | undo/undo and redo from the menu, keys and toolbar; Operations lists sources and restores |
-| MENU-EDIT-UNDO-KEY | 2 | §4.1 | Ctrl+Z undo | undo/failed operations are passed over by Undo and Redo<br>undo/in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it<br>undo/undo and redo from the menu, keys and toolbar; Operations lists sources and restores |
+| MENU-EDIT-UNDO-KEY | 2 | §4.1 | Ctrl+Z undo | undo/failed operations are passed over by Undo and Redo<br>undo/in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it<br>undo/undo and redo from the menu, keys and toolbar; Operations lists sources and restores<br>worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo<br>worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree<br>worktrees/per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree<br>worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates<br>worktrees/with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone |
 | MENU-EDIT-REDO | 2 | §4.1 | Edit ▸ Redo (menu) | undo/undo and redo from the menu, keys and toolbar; Operations lists sources and restores |
-| MENU-EDIT-REDO-KEY | 2 | §4.1 | Ctrl+Y redo | undo/failed operations are passed over by Undo and Redo<br>undo/undo and redo from the menu, keys and toolbar; Operations lists sources and restores |
+| MENU-EDIT-REDO-KEY | 2 | §4.1 | Ctrl+Y redo | undo/failed operations are passed over by Undo and Redo<br>undo/undo and redo from the menu, keys and toolbar; Operations lists sources and restores<br>worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo<br>worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree |
 | MENU-EDIT-APPLY-PATCH | 2 | §4.1 | Edit ▸ Apply patch… | patches/apply from the clipboard or a file, to the working tree or the index |
 | TB-NEW | 2 | §4.1 | Toolbar New | new/new commit on HEAD advances the branch (toolbar, menu, keys) |
 | TB-COMMIT | 2 | §4.1 | Toolbar Commit/Amend | commit/commit the index from the toolbar; hooks run natively<br>ui/toolbar Amend with HEAD selected; Skip hooks on Amend |
@@ -442,7 +442,7 @@ Covered: 633/633 required IDs; 648/658 of the whole catalogue.
 | HOOK-CHAIN-EXIT | 2 | §4.12 | Chained hook exit status respected | hooks/wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact |
 | HOOK-CONFIG-DEFINED | 2 | §4.12 | Config-defined hooks when git supports them | hooks/git gg hooks install/status/uninstall with config-defined hooks |
 | HOOK-WRAPPER | 2 | §4.12 | Wrapper scripts in the active hooks dir otherwise | hooks/wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact |
-| HOOK-WORKTREE | 2 | §4.12 | Works in linked worktrees | hooks/hooks work in linked worktrees |
+| HOOK-WORKTREE | 2 | §4.12 | Works in linked worktrees | hooks/hooks work in linked worktrees<br>worktrees/with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone |
 | HOOK-UNINSTALL-EXACT | 2 | §4.12 | Uninstall restores previous hooks byte-exact | hooks/wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact |
 | HOOK-LOOP-GUARD | 2 | §4.12 | GG_OPERATION joins the open operation | hooks/plain git commands are journaled one operation each and Undo restores them |
 | HOOK-MISSING-SILENT | 2 | §4.12 | git-gg missing: wrapper does nothing | hooks/without git-gg on PATH the hooks do nothing, pre-push warns |
@@ -637,16 +637,16 @@ Covered: 633/633 required IDs; 648/658 of the whole catalogue.
 | CLI-NEW-BEFORE | 3 | §6 | git gg new --before | cli/git gg new --before/--after inserts and rebases the descendants |
 | CLI-NEW-AFTER | 3 | §6 | git gg new --after | cli/git gg new --before/--after inserts and rebases the descendants |
 | CLI-SEQ-EDITOR | 3 | §6 | git gg sequence-editor (internal) | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal |
-| APP-OPEN-WORKTREE-WINDOW | 4 | §4.1 | Open a linked worktree in a new window | — |
-| WT-ADD | 4 | §4.7 | Worktrees: Add… | — |
-| WT-REMOVE | 4 | §4.7 | Worktrees: Remove… | — |
-| WT-OPEN-HERE | 4 | §4.7 | Worktrees: Open here | — |
-| WT-OPEN-WINDOW | 4 | §4.7 | Worktrees: Open in new window | — |
-| WT-LOCK | 4 | §4.7 | Worktrees: Lock | — |
-| WT-UNLOCK | 4 | §4.7 | Worktrees: Unlock | — |
-| WT-PRUNE | 4 | §4.7 | Worktrees: Prune | — |
-| WT-REPAIR | 4 | §4.7 | Worktrees: Repair | — |
-| WT-JOURNAL | 4 | §4.7 | Per-worktree journal (HEAD) semantics | — |
+| APP-OPEN-WORKTREE-WINDOW | 4 | §4.1 | Open a linked worktree in a new window | worktrees/open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error |
+| WT-ADD | 4 | §4.7 | Worktrees: Add… | worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo<br>worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter<br>worktrees/per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree<br>worktrees/with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone |
+| WT-REMOVE | 4 | §4.7 | Worktrees: Remove… | worktrees/open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error<br>worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates |
+| WT-OPEN-HERE | 4 | §4.7 | Worktrees: Open here | worktrees/open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error |
+| WT-OPEN-WINDOW | 4 | §4.7 | Worktrees: Open in new window | worktrees/open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error |
+| WT-LOCK | 4 | §4.7 | Worktrees: Lock | worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree |
+| WT-UNLOCK | 4 | §4.7 | Worktrees: Unlock | worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree |
+| WT-PRUNE | 4 | §4.7 | Worktrees: Prune | worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree |
+| WT-REPAIR | 4 | §4.7 | Worktrees: Repair | worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree |
+| WT-JOURNAL | 4 | §4.7 | Per-worktree journal (HEAD) semantics | worktrees/add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo<br>worktrees/add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter<br>worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree<br>worktrees/per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree<br>worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates<br>worktrees/with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone |
 | IR-ACT-LABEL | 4 | §4.13 | label (--rebase-merges) | rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git<br>rebase-merges/an octopus merge: git's merge row with three labels, previewed and run like git onto a new base<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy |
 | IR-ACT-RESET | 4 | §4.13 | reset (--rebase-merges) | rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git<br>rebase-merges/an octopus merge: git's merge row with three labels, previewed and run like git onto a new base<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy |
 | IR-ACT-MERGE | 4 | §4.13 | merge (--rebase-merges) | rebase-merges/Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git<br>rebase-merges/a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts<br>rebase-merges/an octopus merge: git's merge row with three labels, previewed and run like git onto a new base<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy |
