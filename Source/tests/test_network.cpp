@@ -105,6 +105,21 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     GG_CHECK(s.waitUntil([&] { return s.app.clone().state() == ggui::core::CloneService::State::Idle; }, 10.0f));
     GG_CHECK(!fs::exists(dest));
     GG_CHECK(s.app.errorMessage().empty());
+    // A remote helper that ignores SIGTERM is killed all the same.
+    const fs::path stubborn = s.root() / "stubborn-ssh";
+    s.write(s.root(), "stubborn-ssh", "#!/bin/sh\ntrap '' TERM\nsleep 60 &\nwait\n");
+    fs::permissions(stubborn, fs::perms::owner_all);
+    ggui::setEnv("GIT_SSH_COMMAND", stubborn.string());
+    const fs::path dest2 = s.path("cancelled-stubborn");
+    ctx->ItemClick("//Welcome/###welcome_clone");
+    GG_REQUIRE(s.dialogOpen("Clone repository"));
+    s.dialogText("Clone repository", "url", "ssh://test@localhost" + origin(s, repo).generic_string());
+    s.dialogText("Clone repository", "destination", dest2.string());
+    s.dialogButton("Clone repository", "Clone");
+    GG_REQUIRE(s.waitUntil([&] { return fs::exists(dest2); }));
+    ctx->ItemClick("//Welcome/Cancel##clone");
+    GG_CHECK(s.waitUntil([&] { return s.app.clone().state() == ggui::core::CloneService::State::Idle; }, 10.0f));
+    GG_CHECK(!fs::exists(dest2));
 }
 
 GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move", "TB-FETCH",

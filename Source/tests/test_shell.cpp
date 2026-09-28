@@ -11,6 +11,8 @@
 
 #include <imgui_internal.h>
 
+#include <fstream>
+
 namespace ggtest {
 
 namespace {
@@ -679,6 +681,60 @@ GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a 
     GG_CHECK(r.ok());
     GG_CHECK(r.err.find("ggui: unknown option --bogus") != std::string::npos);
     GG_CHECK(r.err.find("ggui: unknown option second-path") != std::string::npos);
+}
+
+GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress",
+    "TB-PUSH", "TB-HEAD-PLAIN", "ACT-NEW-MERGE", "CONF-NATIVE-PROGRESS")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    // Force with lease against the upstream asks first; Push tags goes to the upstream's remote.
+    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//$FOCUSED/Force with lease...");
+    GG_REQUIRE(s.dialogOpen("Force push"));
+    GG_CHECK(s.app.dialogs().current()->message.find("(--force-with-lease)") != std::string::npos);
+    s.dialogButton("Force push", "Cancel");
+    s.git(repo, {"tag", "pushed-tag"});
+    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//$FOCUSED/Push tags");
+    const fs::path remote = fs::path(s.gitOut(repo, {"remote", "get-url", "origin"}).substr(7));
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(remote, {"rev-parse", "-q", "--verify", "refs/tags/pushed-tag"}).ok(); }));
+    s.settle();
+    // Without an upstream, Force with lease is a Push to.
+    s.git(repo, {"switch", "-q", "-c", "local-only"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "local-only"; }));
+    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//$FOCUSED/Force with lease...");
+    GG_REQUIRE(s.dialogOpen("Push to"));
+    s.dialogButton("Push to", "Cancel");
+    // HEAD's full ID on hover.
+    ctx->MouseMove("//##Toolbar/###tb_head");
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    // Two commits selected (Ctrl+click): New makes a merge of both.
+    const std::string a = s.head(repo), b = s.revParse(repo, "origin/main");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + b).c_str()); }));
+    ctx->ItemClick(("//History/**/###row_" + a).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(("//History/**/###row_" + b).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "HEAD^2"}).ok(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^1"), a);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^2"), b);
+    // A rebase of a detached HEAD, stopped: the progress view names it.
+    s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
+    const fs::path list = s.root() / "todo.txt";
+    std::ofstream(list) << "edit " << s.head(repo) << "\n";
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.string() + "'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~1"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//##Toolbar/Progress##tb_rebase_progress"); }));
+    ctx->ItemClick("//##Toolbar/Progress##tb_rebase_progress");
+    ctx->Yield(2);
+    GG_CHECK(s.textShown("//$FOCUSED", "Rebasing detached"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    s.git(repo, {"rebase", "--abort"});
 }
 
 } // namespace ggtest

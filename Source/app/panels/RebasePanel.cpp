@@ -45,9 +45,11 @@ constexpr ActionEntry kActions[] = {
 
 std::string actionLabel(const todo::Item& item)
 {
-    for (const auto& e : kActions)
-        if (e.action == item.action && e.fixup == item.fixup)
-            return e.label;
+    // (Only fixup rows carry a message choice.)
+    if (item.fixup == FixupMessage::Use)
+        return "fixup -C";
+    if (item.fixup == FixupMessage::Edit)
+        return "fixup -c";
     return todo::actionName(item.action);
 }
 
@@ -1140,7 +1142,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
                 ImGui::SameLine();
             }
         ImGui::PushStyleColor(ImGuiCol_Text, item.action == Action::Drop ? p.dim : ImGui::GetColorU32(ImGuiCol_Text));
-        ImGui::TextUnformatted(hasInfo ? info->second.subject.c_str() : item.subject.c_str());
+        ImGui::TextUnformatted(info->second.subject.c_str());
         ImGui::PopStyleColor();
     } else if (item.action == Action::Exec) {
         ImGui::SetNextItemWidth(-1);
