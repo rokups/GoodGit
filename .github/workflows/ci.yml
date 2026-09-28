@@ -2,8 +2,9 @@
 #
 # Linux: Xvfb + software Vulkan (lavapipe), clang source-based coverage, the suite split into
 # shards, git 2.36 (pinned minimum) and the distribution's latest git. Windows: MinGW-static
-# and MSVC. Both gates (functional traceability, > 90 % line/branch coverage) run on every
-# build. Every shard runs with the UI-thread assertion on (the default in test builds).
+# and MSVC. Release packages (P4-04): Linux tar.gz/zip/deb, MinGW and MSVC ZIPs, each checked
+# by the package smoke scripts. Both gates (functional traceability, > 90 % line/branch
+# coverage) run on every build. Every shard runs with the UI-thread assertion on (the default in test builds).
 name: ci
 
 on:
@@ -191,3 +192,88 @@ jobs:
           path: |
             trace-msvc.json
             test-artifacts/
+
+  # Release packages (task P4-04): release presets (no test engine), CPack, then the package
+  # smoke checks. Packages are uploaded as artifacts.
+  package-linux:
+    needs: catalogue
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config dpkg-dev desktop-file-utils unzip \
+            mesa-vulkan-drivers libvulkan1 libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+            libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Build, package and check (tar.gz, zip, deb; deb installed with apt in a clean container)
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        run: scripts/package_smoke.sh --container ubuntu:24.04
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-linux
+          path: |
+            build/packages/*.tar.gz
+            build/packages/*.zip
+            build/packages/*.deb
+
+  package-mingw:
+    needs: catalogue
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            git unzip mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-mingw-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Build and package (mingw-x64-static-release)
+        env:
+          CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
+        run: |
+          cmake --preset mingw-x64-static-release -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE"
+          cmake --build --preset mingw-x64-static-release
+          cpack --preset package-mingw
+      - name: Check the package
+        run: scripts/package_smoke_windows.sh build/packages/ggui-*-windows-x64-mingw.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-mingw
+          path: build/packages/*.zip
+
+  package-msvc:
+    needs: catalogue
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-msvc-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Build and package (msvc-x64-release)
+        run: |
+          cmake --preset msvc-x64-release -DCPM_SOURCE_CACHE="${{ github.workspace }}/.cache/CPM"
+          cmake --build --preset msvc-x64-release
+          cpack --preset package-msvc
+      - name: Check the package (Git Bash)
+        shell: bash
+        run: scripts/package_smoke_windows.sh build/packages/ggui-*-windows-x64-msvc.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-msvc
+          path: build/packages/*.zip

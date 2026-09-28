@@ -1,8 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name=ggui
-Comment=Git GUI
+GenericName=Git GUI
+Comment=Git GUI with first-class conflicts and undo
 Exec=ggui %f
 Icon=ggui
 Categories=Development;RevisionControl;
+Keywords=git;version control;
+StartupWMClass=ggui
 Terminal=false

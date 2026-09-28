@@ -10,6 +10,7 @@
 //   git gg sequence-editor FILE      sequence.editor for plain git rebase -i (ggui's todo editor), and
 //                                    internal GIT_SEQUENCE_EDITOR / GIT_EDITOR of ggui's git rebase -i
 //   git gg help [COMMAND]
+//   git gg --version
 //
 // Exit codes follow git: 0 success, 1 "found something" / refused, 128 fatal, 129 usage.
 
@@ -90,7 +91,8 @@ const char* kOverview =
     "    hooks       install, uninstall or show the managed hooks\n"
     "    ui          start ggui on the repository\n"
     "    sequence-editor  ggui's todo editor as sequence.editor for git rebase -i\n"
-    "    help        show help for a command: git gg help <command>\n";
+    "    help        show help for a command: git gg help <command>\n\n"
+    "    --version   print the version\n";
 
 int fatal(const std::string& message)
 {
@@ -268,6 +270,7 @@ int main(int argc, char** argv)
     app.name("git gg");
     app.require_subcommand(1);
     app.set_help_flag("-h,--help", "Show help");
+    app.set_version_flag("--version", std::string("git gg ") + GGUI_VERSION, "Show the version");
 
     auto* newCmd = app.add_subcommand("new", "Create an empty commit");
     std::string message;
@@ -319,6 +322,9 @@ int main(int argc, char** argv)
         app.parse(argc, argv);
     } catch (const CLI::CallForHelp&) {
         std::cout << kOverview;
+        return 0;
+    } catch (const CLI::CallForVersion&) {
+        std::cout << "git gg " << GGUI_VERSION << "\n";
         return 0;
     } catch (const CLI::ParseError& e) {
         std::cerr << "error: " << e.what() << "\n\n" << kOverview;

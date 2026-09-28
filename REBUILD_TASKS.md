@@ -66,6 +66,12 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     I = 0 … N-1 to get all matches (e.g. `--test=ui/ --shard=0/4` … `--shard=3/4`).
   - Failure logs and screenshots go to `build/ninja/test-artifacts/`.
   - `GGUI_KEEP_TEST_DIRS=1` keeps the scenario repositories.
+- **Packages:** `cmake --workflow --preset package-linux` (release build, no test engine, then
+  .tar.gz/.zip/.deb in `build/packages/`); `scripts/package_smoke.sh` builds and checks them
+  (`--no-build` reuses them, `--container ubuntu:24.04` installs the .deb in docker/podman).
+  Windows: `package-mingw` / `package-msvc` on a Windows host, `package-mingw-cross` from Linux, then
+  `scripts/package_smoke_windows.sh build/packages/ggui-*-windows-*.zip`. Install by hand with
+  `cmake --install build/release --component ggui --prefix PREFIX`.
 - **Scripts:**
   - Mark tasks: `scripts/mark_task.py ID done|partial "status text"`.
   - Regenerate the traceability matrix:
@@ -1691,13 +1697,50 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     `--orphan`, `--track`/`--guess-remote` or `-B` options in Add; no `git worktree move` (not in
     the spec).
 
-### P4-04 Packaging
+### [~] P4-04 Packaging
+- **Status:** Linux verified here; Windows packages built by cross-compile (MinGW) and by inspection (MSVC), not run on a Windows VM. Release presets (release, mingw-x64-static-release, msvc-x64-release, mingw-x64-cross-release) build without the test engine (GGUI_ENABLE_IMGUI_TEST_ENGINE=OFF: imgui_test_engine/stb not fetched, Source/tests not compiled, --test/--list-tests/--shard/--trace rejected with exit 2); package/workflow presets package-linux/-mingw/-msvc/-mingw-cross; install rules only for the ggui component (bin/ggui, bin/git-gg, .desktop, 256px icon, LICENSE; fonts are embedded); CPack TGZ+ZIP+DEB on Linux (13-14 MB each, ggui 25 MB and git-gg 4.9 MB stripped, static libstdc++/libgcc), ZIP on Windows with ggui.exe, git-gg.exe, LICENSE.txt at the top; res/version.rc.in gives both exes icon + version info; ggui --version/--help and git gg --version. scripts/package_smoke.sh passes (81 checks on the .tar.gz, .zip and .deb: files, desktop-file-validate, no test-engine symbols/strings/test names, ldd/RUNPATH clean, and in a user+mount namespace with /home and /tmp hidden and PATH = package + git only: ggui --version/--help, --test rejected, git gg --version/help/new/undo, git fsck, ggui --smoke --headless). MinGW cross ZIP (13 MB): only Windows system DLLs and UCRT API sets imported, version resources present, runs under wine (ggui --version, git gg --version, --test rejected); scripts/package_smoke_windows.sh passes its file/import/string checks. CI jobs package-linux (apt installs the .deb in ubuntu:24.04), package-mingw, package-msvc written, not run. Full suite 254/254. Missing: a container run here (docker socket not accessible), the CI jobs, the MSVC build, and installing on clean Windows and Linux VMs.
 - **Depends on:** P0-06
 - **Refs:** §2.2, §7 Phase 4
 - **Do:** install rules and CPack ZIP bundling `ggui` and `git-gg` (so `git gg` resolves on
   `PATH`); Windows MinGW/MSVC packages with resource/icon; Linux package; release builds
   exclude the test engine.
 - **Done when:** installed packages on clean Linux and Windows VMs run `ggui` and `git gg`.
+- **Design notes:**
+  - **Test engine option (decision):** the existing `GGUI_ENABLE_IMGUI_TEST_ENGINE` is the switch
+    (ON in `base`, so in ninja/debug/coverage; OFF in the release presets); no second option. OFF
+    skips fetching imgui_test_engine and stb, leaves out `Source/tests`, and main.cpp does not
+    parse the test options at all: `--test`, `--list-tests`, `--shard`, `--trace` exit 2 with
+    "this build has no test engine". The thread-check define stays Debug-only there.
+  - **Executables:** `ggui_executable()` (CMakeLists.txt) applies to ggui and git-gg: `-static` on
+    MinGW, `-static-libstdc++ -static-libgcc` on Linux with `GGUI_STATIC_CXX_RUNTIME` (ON in
+    `release`: the packages need only glibc, libdbus and what SDL3 dlopens), and a resource from
+    `res/version.rc.in` (icon + VERSIONINFO from `project(VERSION)`) on Windows. `res/ggui.rc` is gone.
+    MSVC presets use the static CRT, so there are no runtime DLLs; a DLL-CRT build would pull them in
+    with `InstallRequiredSystemLibraries` (Packaging.cmake).
+  - **Install/CPack** (`cmake/Packaging.cmake`): dependencies' own install rules (libgit2 headers,
+    .a, CMake configs) go to a `thirdparty` component that is never packaged
+    (`CMAKE_INSTALL_DEFAULT_COMPONENT_NAME`, `CPACK_INSTALL_CMAKE_PROJECTS` = ggui component). Linux:
+    `bin/`, `share/applications/ggui.desktop` (StartupWMClass matches SDL's app id), hicolor 256px icon,
+    `share/doc/ggui/LICENSE`; TGZ and ZIP are relocatable with one top directory; DEB under /usr with
+    dpkg-shlibdeps when present (CI) plus hand-listed git (>= 1:2.36), libvulkan1, a Vulkan ICD and
+    X11 in Depends, Wayland/libdecor/portal in Recommends. Windows: flat ZIP (`ggui.exe`, `git-gg.exe`,
+    `LICENSE.txt`), `windows-x64-mingw`/`-msvc` in the name. Fonts are embedded, nothing else is needed
+    at run time.
+  - **`--version`:** `ggui --version` / `--help` exit before the platform starts (no display
+    needed; on Windows they attach to the parent console when stdout is not redirected);
+    `git gg --version`. Checked in cli/"git gg conflicts, help and exit codes" (CLI-HELP).
+  - **Smoke scripts:** `scripts/package_smoke.sh` (Linux; see its header) and
+    `scripts/package_smoke_windows.sh ZIP` (file/import/string checks anywhere, runtime checks on
+    Windows under MSYS2 or Git Bash). The Linux runtime checks run in `unshare -rm` with /home and
+    /tmp replaced by tmpfs (bwrap refuses to run on this host). `--container IMAGE` installs the .deb
+    with apt in docker/podman and reruns the checks against /usr (the CI job uses ubuntu:24.04).
+  - **Portability limit:** the Linux packages need the glibc of the build host (here 2.43 for ggui);
+    release packages should come from the CI job (Ubuntu 24.04, glibc 2.39). Without dpkg-shlibdeps
+    the DEB's libc6 minimum is the build host's glibc.
+  - **Left for Windows:** run `package-mingw`/`package-msvc` in CI or on a VM: MSVC build
+    (`/ENTRY:mainCRTStartup` + WIN32 subsystem, static CRT through libgit2's STATIC_CRT and CMP0091
+    in the other deps), `ggui.exe` starting from Explorer, `git gg` from cmd/PowerShell with the
+    unzipped directory on PATH, the `--version` console attach.
 
 ### P4-05 Removal checklist audit
 - **Depends on:** all earlier tasks

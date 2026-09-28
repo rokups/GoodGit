@@ -11,7 +11,8 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CPM_SOURCE_CACHE": "$penv{HOME}/.cache/CPM"
+        "CPM_SOURCE_CACHE": "$penv{HOME}/.cache/CPM",
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "ON"
       }
     },
     {
@@ -54,12 +55,13 @@
     },
     {
       "name": "release",
-      "displayName": "Release (no test engine)",
+      "displayName": "Release (Linux, no test engine, static libstdc++; packages)",
       "inherits": "base",
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "OFF"
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "OFF",
+        "GGUI_STATIC_CXX_RUNTIME": "ON"
       }
     },
     {
@@ -115,6 +117,48 @@
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       }
+    },
+    {
+      "name": "mingw-x64-static-release",
+      "displayName": "MinGW x64, fully static, release (no test engine; packages)",
+      "inherits": "mingw-x64-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "msvc-x64-release",
+      "displayName": "MSVC x64, static CRT, release (no test engine; packages)",
+      "inherits": "msvc-x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "mingw-x64-cross-release",
+      "displayName": "MinGW x64 static release, cross-compiled from Linux (package check)",
+      "inherits": "mingw-x64-cross",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "OFF"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
     }
   ],
   "buildPresets": [
@@ -149,6 +193,124 @@
     {
       "name": "mingw-x64-cross",
       "configurePreset": "mingw-x64-cross"
+    },
+    {
+      "name": "mingw-x64-static-release",
+      "configurePreset": "mingw-x64-static-release"
+    },
+    {
+      "name": "msvc-x64-release",
+      "configurePreset": "msvc-x64-release"
+    },
+    {
+      "name": "mingw-x64-cross-release",
+      "configurePreset": "mingw-x64-cross-release"
+    }
+  ],
+  "packagePresets": [
+    {
+      "name": "package-linux",
+      "configurePreset": "release",
+      "generators": [
+        "TGZ",
+        "ZIP",
+        "DEB"
+      ],
+      "packageDirectory": "${sourceDir}/build/packages"
+    },
+    {
+      "name": "package-mingw",
+      "configurePreset": "mingw-x64-static-release",
+      "generators": [
+        "ZIP"
+      ],
+      "packageDirectory": "${sourceDir}/build/packages"
+    },
+    {
+      "name": "package-msvc",
+      "configurePreset": "msvc-x64-release",
+      "generators": [
+        "ZIP"
+      ],
+      "packageDirectory": "${sourceDir}/build/packages"
+    },
+    {
+      "name": "package-mingw-cross",
+      "configurePreset": "mingw-x64-cross-release",
+      "generators": [
+        "ZIP"
+      ],
+      "packageDirectory": "${sourceDir}/build/packages"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "package-linux",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "release"
+        },
+        {
+          "type": "build",
+          "name": "release"
+        },
+        {
+          "type": "package",
+          "name": "package-linux"
+        }
+      ]
+    },
+    {
+      "name": "package-mingw",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "mingw-x64-static-release"
+        },
+        {
+          "type": "build",
+          "name": "mingw-x64-static-release"
+        },
+        {
+          "type": "package",
+          "name": "package-mingw"
+        }
+      ]
+    },
+    {
+      "name": "package-msvc",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "msvc-x64-release"
+        },
+        {
+          "type": "build",
+          "name": "msvc-x64-release"
+        },
+        {
+          "type": "package",
+          "name": "package-msvc"
+        }
+      ]
+    },
+    {
+      "name": "package-mingw-cross",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "mingw-x64-cross-release"
+        },
+        {
+          "type": "build",
+          "name": "mingw-x64-cross-release"
+        },
+        {
+          "type": "package",
+          "name": "package-mingw-cross"
+        }
+      ]
     }
   ]
 }

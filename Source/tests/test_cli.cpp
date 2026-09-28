@@ -113,6 +113,16 @@ GG_TEST("cli", "git gg conflicts, help and exit codes", "CLI-CONFLICTS", "CLI-HE
     GG_CHECK(r.ok() && r.out.rfind("usage: git gg", 0) == 0);
     r = s.gitgg(repo, {"help", "bogus"});
     GG_CHECK_EQ(r.exitCode, 1);
+    // Versions (packaging checks these on the installed binaries): git gg and ggui, no window.
+    r = s.gitgg(repo, {"--version"});
+    GG_CHECK(r.ok());
+    GG_CHECK_STR_EQ(gg::trim(r.out), std::string("git gg ") + GGUI_VERSION);
+    r = s.runGgui({"--version"});
+    GG_CHECK(r.ok());
+    GG_CHECK_STR_EQ(gg::trim(r.out), std::string("ggui ") + GGUI_VERSION);
+    r = s.runGgui({"--help"});
+    GG_CHECK(r.ok() && r.out.rfind("usage: ggui", 0) == 0);
+    GG_CHECK(r.out.find("--test") != std::string::npos); // this (test) build lists its test options
 }
 
 GG_TEST("cli", "git gg ui starts ggui on the repository", "CLI-UI")

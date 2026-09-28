@@ -72,10 +72,13 @@ CPMAddPackage(NAME nfd GITHUB_REPOSITORY btzy/nativefiledialog-extended GIT_TAG 
 # ---------------------------------------------------------------------------------------------
 CPMAddPackage(NAME imgui GITHUB_REPOSITORY ocornut/imgui
     GIT_TAG 84a9d532b6f635a6017b90e65b627c36fd1afd20 DOWNLOAD_ONLY YES)
-CPMAddPackage(NAME imgui_test_engine GITHUB_REPOSITORY ocornut/imgui_test_engine
-    GIT_TAG 3fff43588c40ad225bcfff0219c62dae13ca9c47 DOWNLOAD_ONLY YES)
-CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb
-    GIT_TAG f1c79c02822848a9bed4315b12c8c8f3761e1296 DOWNLOAD_ONLY YES)
+if(GGUI_ENABLE_IMGUI_TEST_ENGINE)
+    # Test builds only: release builds neither fetch nor compile the test engine.
+    CPMAddPackage(NAME imgui_test_engine GITHUB_REPOSITORY ocornut/imgui_test_engine
+        GIT_TAG 3fff43588c40ad225bcfff0219c62dae13ca9c47 DOWNLOAD_ONLY YES)
+    CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb
+        GIT_TAG f1c79c02822848a9bed4315b12c8c8f3761e1296 DOWNLOAD_ONLY YES)
+endif()
 CPMAddPackage(NAME IconFontCppHeaders GITHUB_REPOSITORY juliettef/IconFontCppHeaders
     GIT_TAG 4577f2f72c36856ae3f2808fe013f669b7cb64e9 DOWNLOAD_ONLY YES)
 
