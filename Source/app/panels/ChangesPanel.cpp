@@ -119,7 +119,7 @@ void ChangesPanel::requestFiles()
     if (m_selection.kind == SelKind::Commit) {
         core::DiffQuery q;
         q.withHunks = false;
-        if (m_compareHead && snap && !snap->head.isNull()) {
+        if (m_compareHead && !snap->head.isNull()) {
             q.kind = core::DiffKind::Commits;
             q.a = snap->head;
             q.b = m_selection.id;
@@ -138,10 +138,9 @@ void ChangesPanel::requestFiles()
         q.kind = core::DiffKind::StashIndex;
         engine.diff(q, kSlotStashIndex);
         bool untracked = false;
-        if (snap)
-            for (const auto& s : snap->stashes)
-                if (s.commit == m_selection.id)
-                    untracked = s.hasUntracked;
+        for (const auto& s : snap->stashes)
+            if (s.commit == m_selection.id)
+                untracked = s.hasUntracked;
         if (untracked) {
             q.kind = core::DiffKind::StashUntracked;
             engine.diff(q, kSlotStashUntracked);
@@ -349,20 +348,20 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         default: break;
         }
         std::error_code ec;
-        if (snap && !snap->bare && fs::exists(snap->workdir / r->path, ec))
+        if (!snap->bare && fs::exists(snap->workdir / r->path, ec))
             existing.push_back(r->path);
     }
     const bool rowExists = std::find(existing.begin(), existing.end(), row.path) != existing.end();
     if (ImGui::MenuItem("Open working-copy file", nullptr, false, free && rowExists))
         actions.openInEditor(row.path);
-    if (ImGui::MenuItem("Open containing folder", nullptr, false, snap && !snap->bare))
+    if (ImGui::MenuItem("Open containing folder", nullptr, false, !snap->bare))
         openInFileManager((snap->workdir / row.path).parent_path());
     if (ImGui::BeginMenu("Copy")) {
         if (ImGui::MenuItem("Name"))
             ImGui::SetClipboardText(fs::path(row.path).filename().string().c_str());
         if (ImGui::MenuItem("Relative path"))
             ImGui::SetClipboardText(row.path.c_str());
-        if (ImGui::MenuItem("Absolute path", nullptr, false, snap && !snap->bare))
+        if (ImGui::MenuItem("Absolute path", nullptr, false, !snap->bare))
             ImGui::SetClipboardText((snap->workdir / row.path).lexically_normal().string().c_str());
         ImGui::EndMenu();
     }
@@ -443,7 +442,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             at = m_selection.id;
         m_session.blameFile(row.path, at);
     }
-    if (ImGui::BeginMenu("External diff", free && snap && !snap->bare)) {
+    if (ImGui::BeginMenu("External diff", free && !snap->bare)) {
         const std::string commit = m_selection.kind == SelKind::Commit ? m_selection.id.hex() : std::string();
         if (ImGui::MenuItem("vs HEAD"))
             actions.externalDiff(row.path, "HEAD", commit);
@@ -480,7 +479,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
 void ChangesPanel::openFile(const FileRow& row)
 {
     const auto snap = m_session.snapshot();
-    if (!snap || snap->bare || !m_session.actions().busy().empty())
+    if (snap->bare || !m_session.actions().busy().empty())
         return;
     auto& actions = m_session.actions();
     std::error_code ec;

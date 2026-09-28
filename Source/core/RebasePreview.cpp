@@ -47,7 +47,7 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
     auto out = std::make_shared<RebasePreview>();
     out->onto = context.onto;
     try {
-        rw::Plan plan = todo::toPlan(list, context, "#", true);
+        rw::Plan plan = todo::toPlan(list, context, true);
         plan.keepCommitterDate = options.keepCommitterDate;
         plan.emptied = options.emptied == rw::Emptied::Drop ? rw::Emptied::Drop : rw::Emptied::Keep;
         rw::Rewriter rewriter(repoPath);

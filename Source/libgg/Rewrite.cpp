@@ -562,7 +562,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     p.tree = toHex(*git_commit_tree_id(t.get()));
                     p.message = commitMessage(t.get());
                     const git_signature* a = git_commit_author(t.get());
-                    p.author = Person{a->name ? a->name : "", a->email ? a->email : "", a->when.time, a->when.offset};
+                    p.author = Person{a->name, a->email, a->when.time, a->when.offset};
                     p.mapSource = false;
                     p.contributors = std::move(contributors);
                     p.dateFrom = dateFrom;
@@ -1098,13 +1098,7 @@ std::string reversePatch(const std::string& patch)
             rewritten = "new mode " + line.substr(9);
         else if (line.rfind("new mode ", 0) == 0)
             rewritten = "old mode " + line.substr(9);
-        else if (line.rfind("index ", 0) == 0) {
-            const auto dots = line.find("..");
-            const auto space = line.find(' ', dots == std::string::npos ? 6 : dots);
-            if (dots != std::string::npos)
-                rewritten = "index " + line.substr(dots + 2, (space == std::string::npos ? line.size() : space) - dots - 2) + ".."
-                    + line.substr(6, dots - 6) + (space == std::string::npos ? "" : line.substr(space));
-        } else if (line.rfind("@@ ", 0) == 0) {
+        else if (line.rfind("@@ ", 0) == 0) {
             // @@ -a,b +c,d @@ tail
             const auto minusPos = line.find(" -", 2);
             const auto plusPos = line.find(" +", minusPos + 2);

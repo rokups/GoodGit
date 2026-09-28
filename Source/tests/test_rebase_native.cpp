@@ -695,3 +695,146 @@ GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a cor
 }
 
 } // namespace ggtest
+
+namespace ggtest {
+
+GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short commands, CRLF, abbreviated ids, fixup -C/-c); refuses unreadable ones",
+    "IR-ENTRY-STOPPED", "IR-PLAIN-EDIT-TODO", "IR-ACT-FIXUP-C", "IR-ACT-UPDATE-REF")
+{
+    const Repo r = makeRepo(s);
+    // c6 on a side branch: the remaining list may name any commit.
+    s.git(r.path, {"switch", "-q", "-c", "side", r.c[1]});
+    s.commitFile(r.path, "f.txt", "f\n", "c6 add f");
+    const std::string c6 = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    const fs::path list = writeTodo(s, "todo.txt", "pick " + r.c[2] + "\nedit " + r.c[3] + "\npick " + r.c[4] + "\npick " + r.c[5] + "\n");
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.string() + "'");
+    s.git(r.path, {"rebase", "-i", r.c[1]});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(stoppedAt(s, "edit"));
+    const std::string todoRel = ".git/rebase-merge/git-rebase-todo";
+    const std::string tree = s.revParse(r.path, r.c[4] + "^{tree}");
+
+    // Lists ggui cannot read are refused with git's wording; the editor stays closed.
+    const std::pair<std::string, std::string> bad[] = {
+        {"bogus " + r.c[4] + "\n", "invalid line 1"},
+        {"pick " + r.c[4] + "\npick\n", "missing arguments for pick"},
+        {"exec\n", "missing arguments for exec"},
+        {"pick 0123abcd\n", "could not parse '0123abcd'"},
+        {"pick no-such-branch\n", "could not parse 'no-such-branch'"},
+        {"pick abc\n", "could not parse 'abc'"},
+        {"pick " + tree + "\n", "could not parse '" + tree + "'"},
+    };
+    for (const auto& [text, message] : bad) {
+        s.write(r.path, todoRel, text);
+        ctx->ItemClick(kEditTodo);
+        GG_REQUIRE(s.dialogOpen("Open interactive rebase"));
+        const ggui::Form* f = s.app.dialogs().current();
+        GG_CHECK(f && f->message.find(message) != std::string::npos);
+        GG_CHECK(s.dismissError());
+        GG_CHECK(!editor(s).isOpen());
+    }
+
+    // Readable but invalid: update-ref lines git would refuse, and a commit listed twice.
+    s.write(r.path, todoRel,
+        "pick " + r.c[4] + "\nupdate-ref part1\nupdate-ref refs/heads/x\nupdate-ref refs/heads/x\nupdate-ref refs/heads/main\npick "
+            + r.c[4] + "\n");
+    ctx->ItemClick(kEditTodo);
+    GG_REQUIRE(editorReady(s));
+    size_t badRefs = 0, duplicates = 0;
+    for (const auto& i : editor(s).issues()) {
+        badRefs += i.code == todo::Issue::Code::BadRef;
+        duplicates += i.code == todo::Issue::Code::DuplicateCommit;
+    }
+    GG_CHECK_EQ(badRefs, 3u);
+    GG_CHECK_EQ(duplicates, 1u);
+    GG_CHECK(s.textShown("//Interactive rebase", "requires a fully qualified refname"));
+    GG_CHECK(s.textShown("//Interactive rebase", "is already updated by an earlier row"));
+    GG_CHECK(s.textShown("//Interactive rebase", "is the branch being rebased"));
+    GG_CHECK(!editor(s).canStart());
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    GG_CHECK(s.waitUntil([&] { return !editor(s).isOpen(); }));
+
+    // Nothing left: an empty list is saved as git's "noop".
+    s.write(r.path, todoRel, "");
+    ctx->ItemClick(kEditTodo);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s).empty());
+    GG_REQUIRE(start(s));
+    GG_CHECK_STR_EQ(s.read(r.path, todoRel), "noop\n");
+
+    // --rebase-merges commands are read and kept (Phase 4 edits them); the preview needs git.
+    s.write(r.path, todoRel, "label here\nreset here\nmerge -C " + c6 + " side # c6 add f\n");
+    ctx->ItemClick(kEditTodo);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s) == (Rows{"label here", "reset here", "merge -C " + c6 + " side # c6 add f"}));
+    GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Interactive rebase", "git rebase: row 1 is label"); }));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    GG_CHECK(s.waitUntil([&] { return !editor(s).isOpen(); }));
+
+    // A list typed by hand: comments, blank and noop lines, CRLF, tabs, one-letter commands,
+    // an upper-case abbreviated id, a branch name, a subject without "#" (older git).
+    std::string c4Upper = r.c[4].substr(0, 9);
+    std::transform(c4Upper.begin(), c4Upper.end(), c4Upper.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    s.write(r.path, todoRel,
+        "# typed in an editor\r\n\r\nnoop\r\n\tf\t-C " + c4Upper + " # c4 add d\r\nx echo hi >> .git/typed.log\r\n"
+        "p main c5 add e\r\nfixup -c " + c6.substr(0, 12) + " c6 add f\r\nb\r\nu refs/heads/part1\r\n");
+    ctx->ItemClick(kEditTodo);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s)
+        == (Rows{"fixup c4", "exec echo hi >> .git/typed.log", "pick c5", "fixup c6", "break", "update-ref refs/heads/part1"}));
+    const auto& items = editor(s).todo().items;
+    GG_REQUIRE(items.size() == 6u);
+    GG_CHECK(items[0].fixup == todo::FixupMessage::Use);
+    GG_CHECK_STR_EQ(items[0].commit, r.c[4]);
+    GG_CHECK_STR_EQ(items[2].commit, r.c[5]);
+    GG_CHECK_STR_EQ(items[2].subject, "c5 add e");
+    GG_CHECK(items[3].fixup == todo::FixupMessage::Edit);
+    GG_CHECK_STR_EQ(items[3].commit, c6);
+    // The preview folds the leading fixup into HEAD (the edited c3).
+    GG_CHECK(s.waitUntil([&] { return !editor(s).previewPending() && editor(s).preview() != nullptr; }, 30.0f));
+    GG_REQUIRE(editor(s).preview() != nullptr);
+    GG_CHECK_EQ(editor(s).preview()->rows.size(), 2u);
+    // Save writes full ids and long command names back, as git rebase --edit-todo would.
+    GG_REQUIRE(start(s));
+    const std::string saved = s.read(r.path, todoRel);
+    GG_CHECK(saved.rfind("fixup -C " + r.c[4] + " # c4 add d\nexec echo hi >> .git/typed.log\npick " + r.c[5] + " # c5 add e\nfixup -c "
+                 + c6 + " # c6 add f\nbreak\nupdate-ref refs/heads/part1\n",
+                 0)
+        == 0);
+    ctx->ItemClick(kAbort);
+    GG_REQUIRE(finished(s, r.path));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[5]);
+}
+
+GG_TEST("rebase-native", "typed squash messages reach git's editor, also for a squash that amends after an update-ref row; exec after every commit around followers and drops",
+    "IR-MSG-SQUASH", "IR-OPT-EXEC-EACH", "IR-ENGINE-USER-CHOICE", "IR-ACT-SQUASH", "IR-ACT-DROP")
+{
+    const Repo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(openFrom(s, r.c[2]));
+    // [c2, c3, update-ref part1, c4, c5]: c3 squashed into c2; c4 squashed after the update-ref row
+    // (it amends the finished c2+c3, which part1 keeps); c5 dropped.
+    key(s, r.c[3], ImGuiKey_S);
+    key(s, r.c[4], ImGuiKey_S);
+    key(s, r.c[5], ImGuiKey_D);
+    GG_CHECK(rows(s) == (Rows{"pick c2", "squash c3", "update-ref refs/heads/part1", "squash c4", "drop c5"}));
+    s.setText("//Interactive rebase/**/###ir_msg_" + r.c[2], "c2 and c3\n");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//Interactive rebase/**/###ir_msg_" + r.c[4]).c_str()); }));
+    s.setText("//Interactive rebase/**/###ir_msg_" + r.c[4], "c2, c3 and c4\n");
+    ctx->ItemCheck(irWidget("ir_native").c_str());
+    s.setText(irWidget("ir_exec_each"), "echo x >> .git/exec.log");
+    GG_REQUIRE(start(s));
+    GG_REQUIRE(finished(s, r.path));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main"}), "c2, c3 and c4");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "part1"}), "c2 and c3");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~1"), r.c[1]);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "part1~1"), r.c[1]);
+    GG_CHECK(!s.gitMayFail(r.path, {"cat-file", "-e", "main:e.txt"}).ok());
+    // One exec after the c2+c3 group and one after c4; none after the dropped c5.
+    GG_CHECK_STR_EQ(s.read(r.path, ".git/exec.log"), "x\nx\n");
+}
+
+} // namespace ggtest

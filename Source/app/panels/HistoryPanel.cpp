@@ -24,7 +24,7 @@ core::HistoryScope HistoryPanel::buildScope() const
 {
     core::HistoryScope scope;
     scope.toggledMerges = m_toggledMerges;
-    if (m_hidden.empty() || !m_snapshot)
+    if (m_hidden.empty())
         return scope;
     scope.allRefs = false;
     const auto& s = *m_snapshot;
@@ -45,8 +45,6 @@ core::HistoryScope HistoryPanel::buildScope() const
 
 void HistoryPanel::reload()
 {
-    if (!m_snapshot)
-        return;
     if (m_query)
         m_session.engine().cancel(m_query);
     m_limit = std::max(m_limit, kPageSize);
@@ -64,9 +62,9 @@ void HistoryPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChange
 
 void HistoryPanel::onStatus(const core::StatusPtr& status)
 {
-    m_hasStaged = status && !status->staged.empty();
-    m_hasWorktreeChanges = status && !status->empty();
-    m_nativeConflicts = status && !status->conflicted.empty();
+    m_hasStaged = !status->staged.empty();
+    m_hasWorktreeChanges = !status->empty();
+    m_nativeConflicts = !status->conflicted.empty();
     if (!m_hasStaged && m_session.selection().kind == SelKind::Index)
         m_session.select(Selection{SelKind::WorkingTree, {}, -1});
 }
@@ -202,8 +200,6 @@ void HistoryPanel::showMore()
 
 void HistoryPanel::toggleRef(const std::string& fullName, bool only)
 {
-    if (!m_snapshot)
-        return;
     if (only) {
         m_hidden.clear();
         const auto& s = *m_snapshot;
@@ -299,7 +295,7 @@ void HistoryPanel::moveSelection(int delta)
     m_extra.clear();
     // Order: Working tree, Index (if staged), commits.
     std::vector<Selection> order;
-    if (m_snapshot && !m_snapshot->bare) {
+    if (!m_snapshot->bare) {
         order.push_back(Selection{SelKind::WorkingTree, {}, -1});
         if (m_hasStaged)
             order.push_back(Selection{SelKind::Index, {}, -1});
@@ -379,7 +375,7 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
                 const auto* src = this->row(source);
                 const bool toParent = src && !src->parents.empty() && src->parents.front() == row.id;
                 const bool toChild = !row.parents.empty() && row.parents.front() == source;
-                const bool toHead = m_snapshot && row.id == m_snapshot->head;
+                const bool toHead = row.id == m_snapshot->head;
                 if (toParent)
                     actions.moveChanges(source, Actions::MoveTo::Parent, lines, {});
                 else if (toChild)
@@ -445,7 +441,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
         auto& actions = m_session.actions();
         const bool free = actions.busy().empty();
         const bool dirty = m_hasWorktreeChanges;
-        const bool unborn = m_snapshot && m_snapshot->headUnborn;
+        const bool unborn = m_snapshot->headUnborn;
         if (ImGui::MenuItem("Commit...", nullptr, false, free))
             m_session.showCommitDialog(false);
         if (ImGui::MenuItem("Amend into HEAD...", nullptr, false, free && !unborn))
@@ -500,10 +496,9 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     const bool free = actions.busy().empty();
     const std::string hex = row.id.hex();
     std::vector<std::string> branchesHere;
-    if (m_snapshot)
-        for (const auto& b : m_snapshot->branches)
-            if (b.target == row.id)
-                branchesHere.push_back(b.name);
+    for (const auto& b : m_snapshot->branches)
+        if (b.target == row.id)
+            branchesHere.push_back(b.name);
     std::vector<core::Oid> parents{row.id};
     for (const auto& e : m_extra)
         if (e != row.id)
@@ -526,7 +521,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         m_session.showCreateBranchDialog(hex);
     if (ImGui::MenuItem("Create tag...", nullptr, false, free))
         m_session.showCreateTagDialog(hex);
-    if (ImGui::BeginMenu("Move branch", free && m_snapshot && !m_snapshot->branches.empty())) {
+    if (ImGui::BeginMenu("Move branch", free && !m_snapshot->branches.empty())) {
         for (const auto& b : m_snapshot->branches)
             if (b.target != row.id && ImGui::MenuItem(b.name.c_str()))
                 m_session.showMoveBranchDialog(b.name, hex);
@@ -538,7 +533,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
                 m_session.showDeleteBranchDialog(b, 0);
         ImGui::EndMenu();
     }
-    const bool pushable = free && !branchesHere.empty() && m_snapshot && !m_snapshot->remotes.empty();
+    const bool pushable = free && !branchesHere.empty() && !m_snapshot->remotes.empty();
     if (ImGui::MenuItem("Push", nullptr, false, pushable)) {
         const auto* b = m_snapshot->findBranch(branchesHere.front());
         if (b && !b->upstream.empty()) {
@@ -612,7 +607,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     dragAndDrop(row);
     drawRowMenu(row);
     if (m_graphShown)
-        graph::drawCell(row, laneWidth, rowHeight, cellStart, m_session.snapshot() && row.id == m_session.snapshot()->head);
+        graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head);
     if (m_graphShown && row.parents.size() > 1) {
         const float r = rowHeight * 0.32f;
         const ImVec2 c(laneX(cellStart.x, row.lane, laneWidth),
@@ -814,7 +809,7 @@ void HistoryPanel::draw(bool* open)
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
     m_graphShown = m_appliedFilter.empty() && !m_conflictedOnly;
     const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
-    const int virtualRows = (m_snapshot && !m_snapshot->bare) ? (m_hasStaged ? 2 : 1) : 0;
+    const int virtualRows = !m_snapshot->bare ? (m_hasStaged ? 2 : 1) : 0;
     restoreScrollAnchor(virtualRows, pitch);
     if (ImGui::BeginTable(m_graphShown ? "##hist_table" : "##hist_table_filtered", m_graphShown ? 4 : 3, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
@@ -836,7 +831,7 @@ void HistoryPanel::draw(bool* open)
             m_scrolledAt = ImGui::GetTime();
         m_lastScrollY = scrollY;
         m_scrolling = m_scrolledAt >= 0.0 && ImGui::GetTime() - m_scrolledAt < 0.3;
-        if (m_snapshot && !m_snapshot->bare) {
+        if (!m_snapshot->bare) {
             std::string wtLabel = "Working tree";
             if (m_nativeConflicts)
                 wtLabel = std::string(ICON_MS_WARNING) + " Working tree (conflicts)";

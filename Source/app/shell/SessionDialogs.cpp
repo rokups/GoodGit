@@ -17,9 +17,8 @@ bool nonEmpty(const Form& f, const char* id) { return !gg::trim(f.text(id)).empt
 std::vector<std::string> remoteNames(const core::SnapshotPtr& snap)
 {
     std::vector<std::string> names;
-    if (snap)
-        for (const auto& r : snap->remotes)
-            names.push_back(r.name);
+    for (const auto& r : snap->remotes)
+        names.push_back(r.name);
     return names;
 }
 
@@ -36,7 +35,7 @@ void Session::showCommitDialog(bool amend)
     msg.kind = Field::Multiline;
     msg.id = "message";
     msg.label = amend ? "Message (leave empty to keep the current message)" : "Message";
-    if (amend && m_info->details() && m_snapshot && m_info->details()->id == m_snapshot->head)
+    if (amend && m_info->details() && m_info->details()->id == m_snapshot->head)
         msg.text = m_info->details()->message;
     f.add(msg);
     f.add(Field{Field::Check, "skip_hooks", "Skip hooks (--no-verify)"});
@@ -97,8 +96,6 @@ void Session::showStashDialog(std::vector<std::string> paths)
 
 void Session::showPushToDialog(const std::string& branch)
 {
-    if (!m_snapshot)
-        return;
     const std::string local = branch.empty() ? m_snapshot->headBranch : branch;
     const auto remotes = remoteNames(m_snapshot);
     if (remotes.empty()) {
@@ -185,10 +182,9 @@ void Session::showAddRemoteDialog()
 void Session::showEditRemoteDialog(const std::string& remote)
 {
     std::string url;
-    if (m_snapshot)
-        for (const auto& r : m_snapshot->remotes)
-            if (r.name == remote)
-                url = r.url;
+    for (const auto& r : m_snapshot->remotes)
+        if (r.name == remote)
+            url = r.url;
     Form f;
     f.title = "Edit remote URL";
     f.add(Field{Field::Text, "url", "URL of " + remote, url});
@@ -289,7 +285,7 @@ void Session::showRenameBranchDialog(const std::string& branch)
 void Session::showDeleteBranchDialog(const std::string& branch, int mode)
 {
     std::vector<std::string> remotes;
-    if (m_snapshot && mode > 0) {
+    if (mode > 0) {
         const auto* b = m_snapshot->findBranch(branch);
         for (const auto& r : m_snapshot->remoteBranches) {
             const std::string name = r.name.substr(r.remote.size() + 1);
@@ -315,9 +311,8 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
 void Session::showMoveBranchDialog(const std::string& branch, const std::string& to)
 {
     std::string elsewhere;
-    if (m_snapshot)
-        if (const auto* b = m_snapshot->findBranch(branch))
-            elsewhere = b->worktree;
+    if (const auto* b = m_snapshot->findBranch(branch))
+        elsewhere = b->worktree;
     Form f;
     f.title = "Move branch";
     f.message = "Move '" + branch + "' to " + shortName(to) + "?";
@@ -335,12 +330,11 @@ void Session::showSetUpstreamDialog(const std::string& branch)
     f.title = "Set upstream";
     Field up{Field::Combo, "upstream", "Upstream of " + branch};
     up.filterable = true;
-    if (m_snapshot)
-        for (const auto& r : m_snapshot->remoteBranches) {
-            up.options.push_back(r.name);
-            if (r.name.substr(r.remote.size() + 1) == branch)
-                up.choice = static_cast<int>(up.options.size() - 1);
-        }
+    for (const auto& r : m_snapshot->remoteBranches) {
+        up.options.push_back(r.name);
+        if (r.name.substr(r.remote.size() + 1) == branch)
+            up.choice = static_cast<int>(up.options.size() - 1);
+    }
     if (up.options.empty()) {
         m_app.notify(App::Notice::Warning, "Set upstream", "There are no remote-tracking branches: fetch first.");
         return;
@@ -379,7 +373,7 @@ void Session::showClearStashesDialog()
 {
     Form f;
     f.title = "Clear stashes";
-    f.message = "Drop all " + std::to_string(m_snapshot ? m_snapshot->stashes.size() : 0) + " stashes?";
+    f.message = "Drop all " + std::to_string(m_snapshot->stashes.size()) + " stashes?";
     f.buttons.push_back({"Clear all", [this](Form&) { m_actions->stashClear(); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
@@ -408,8 +402,6 @@ void Session::newCommitOn(const std::vector<core::Oid>& parents, bool detach)
 
 void Session::checkoutCommit(const core::Oid& id)
 {
-    if (!m_snapshot)
-        return;
     for (const auto& b : m_snapshot->branches)
         if (b.target == id) {
             m_actions->checkout(b.name, false);
@@ -420,7 +412,7 @@ void Session::checkoutCommit(const core::Oid& id)
 
 void Session::pushCurrent()
 {
-    if (!m_snapshot || m_snapshot->headDetached)
+    if (m_snapshot->headDetached)
         return;
     const auto* b = m_snapshot->currentBranch();
     if (!b || b->upstream.empty()) {
@@ -433,13 +425,13 @@ void Session::pushCurrent()
 
 void Session::popStash()
 {
-    if (m_snapshot && !m_snapshot->stashes.empty())
+    if (!m_snapshot->stashes.empty())
         m_actions->stashApply(0, true, false);
 }
 
 void Session::maybePromptHooks()
 {
-    if (m_hooksPromptChecked || !m_hooksStatus || m_hooksStatus->installed || m_snapshot == nullptr)
+    if (m_hooksPromptChecked || !m_hooksStatus || m_hooksStatus->installed)
         return;
     m_hooksPromptChecked = true;
     auto& settings = m_app.settings();
@@ -475,7 +467,7 @@ void Session::maybePromptHooks()
 
 void Session::maybePromptOldGgRefs()
 {
-    if (m_ggRefsPromptChecked || !m_snapshot || m_snapshot->oldGgRefs.empty())
+    if (m_ggRefsPromptChecked || m_snapshot->oldGgRefs.empty())
         return;
     m_ggRefsPromptChecked = true;
     const std::string key = m_path.string();

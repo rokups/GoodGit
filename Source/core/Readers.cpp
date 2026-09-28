@@ -57,7 +57,7 @@ std::string stripPrefix(const std::string& s, const std::string& prefix)
 int readInt(const fs::path& p)
 {
     const std::string s = gg::trim(readFileText(p));
-    return s.empty() ? 0 : std::atoi(s.c_str());
+    return std::atoi(s.c_str());
 }
 
 // "ref: refs/heads/x" → x ; "<oid>" → "" (detached)
@@ -426,31 +426,22 @@ ChangeKind kindFromDelta(git_delta_t s)
     }
 }
 
+// Stages present: base (1), ours (2), theirs (3).
 std::string conflictDescription(bool s1, bool s2, bool s3)
 {
-    if (s1 && s2 && s3)
-        return "both modified";
-    if (!s1 && s2 && s3)
-        return "both added";
-    if (s1 && !s2 && s3)
-        return "deleted by us";
-    if (s1 && s2 && !s3)
-        return "deleted by them";
-    if (!s1 && s2 && !s3)
-        return "added by us";
-    if (!s1 && !s2 && s3)
-        return "added by them";
-    return "both deleted";
+    static const char* const kByStages[8] = {"both deleted", "added by them", "added by us", "both added",
+        "both deleted", "deleted by us", "deleted by them", "both modified"};
+    return kByStages[(int(s1) << 2) | (int(s2) << 1) | int(s3)];
 }
 
 StatusEntry entryFromDelta(const git_diff_delta* d)
 {
     StatusEntry e;
     e.kind = kindFromDelta(d->status);
-    e.path = d->new_file.path ? d->new_file.path : "";
-    if (d->status == GIT_DELTA_DELETED && d->old_file.path)
+    e.path = d->new_file.path;
+    if (d->status == GIT_DELTA_DELETED)
         e.path = d->old_file.path;
-    if ((d->status == GIT_DELTA_RENAMED || d->status == GIT_DELTA_COPIED) && d->old_file.path)
+    if (d->status == GIT_DELTA_RENAMED || d->status == GIT_DELTA_COPIED)
         e.oldPath = d->old_file.path;
     e.binary = (d->flags & GIT_DIFF_FLAG_BINARY) != 0;
     return e;
@@ -675,8 +666,8 @@ bool isImagePath(const std::string& p)
 {
     std::string ext = fs::path(p).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".bmp" || ext == ".webp"
-        || ext == ".ico";
+    static const std::set<std::string> kImages{".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"};
+    return kImages.count(ext) > 0;
 }
 
 // "WxH" from PNG, GIF, BMP or JPEG header bytes ("" when unknown).
@@ -951,8 +942,8 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
     for (size_t i = 0; i < count; ++i) {
         gg::throwIfCancelled(cancel);
         const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
-        const std::string newPath = d->new_file.path ? d->new_file.path : "";
-        const std::string oldPath = d->old_file.path ? d->old_file.path : "";
+        const std::string newPath = d->new_file.path;
+        const std::string oldPath = d->old_file.path;
         if (!q.path.empty() && q.path != newPath && q.path != oldPath)
             continue;
         if (!q.paths.empty() && std::find(q.paths.begin(), q.paths.end(), newPath) == q.paths.end()
@@ -1158,7 +1149,7 @@ BlamePtr readBlame(git_repository* repo, const BlameQuery& q, const gg::CancelTo
             line.origPath = h->orig_path ? h->orig_path : q.path;
             line.origLine = static_cast<int>(h->orig_start_line_number + (i + 1 - h->final_start_line_number));
             if (h->final_signature) {
-                line.author = h->final_signature->name ? h->final_signature->name : "";
+                line.author = h->final_signature->name;
                 line.time = h->final_signature->when.time;
             }
             const std::string key = line.commit.hex();
@@ -1207,7 +1198,7 @@ ReflogPtr readReflog(git_repository* repo, const std::string& ref)
         entry.message = msg ? msg : "";
         const git_signature* sig = git_reflog_entry_committer(e);
         if (sig) {
-            entry.committer = sig->name ? sig->name : "";
+            entry.committer = sig->name;
             entry.time = sig->when.time;
         }
         result->entries.push_back(std::move(entry));
@@ -1225,12 +1216,12 @@ CommitDetailsPtr readCommitDetails(git_repository* repo, const Oid& id)
     d->message = commitMessage(c.get());
     const git_signature* a = git_commit_author(c.get());
     const git_signature* m = git_commit_committer(c.get());
-    d->authorName = a->name ? a->name : "";
-    d->authorEmail = a->email ? a->email : "";
+    d->authorName = a->name;
+    d->authorEmail = a->email;
     d->authorTime = a->when.time;
     d->authorOffset = a->when.offset;
-    d->committerName = m->name ? m->name : "";
-    d->committerEmail = m->email ? m->email : "";
+    d->committerName = m->name;
+    d->committerEmail = m->email;
     d->committerTime = m->when.time;
     for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
         d->parents.push_back(toOid(*git_commit_parent_id(c.get(), i)));

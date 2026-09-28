@@ -537,11 +537,15 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
     const std::string c1 = s.head(p);
     s.commitFile(p, "b.txt", "b\n", "c2 add b");
     s.commitFile(p, "c.txt", "c\n", "c3 add c");
+    const std::string c3 = s.head(p);
     s.commitFile(p, "b.txt", "b fixed\n", "fixup! c2 add b");
     s.commitFile(p, "c.txt", "c amended\n", "amend! c3 add c\n\nc3 add c, amended\n\nnew body");
     s.commitFile(p, "d.txt", "d\n", "c4 add d");
     s.commitFile(p, "b.txt", "b squashed\n", "squash! fixup! c2 add b\n\nsquash body");
     s.commitFile(p, "e.txt", "e\n", "fixup! c4");
+    // By an abbreviated id, and one without a target (stays a pick).
+    s.commitFile(p, "c.txt", "c by id\n", "fixup! " + c3.substr(0, 8));
+    s.commitFile(p, "g.txt", "g\n", "fixup! nothing has this subject");
 
     // Git's todo for the same range (the sequence editor copies it out and empties it: nothing runs).
     const fs::path out = s.root() / "git-todo.txt";
@@ -561,13 +565,13 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
         const std::string subject = s.gitOut(p, {"log", "-1", "--format=%s", rest.substr(0, rest.find(' '))});
         expected.push_back(action + " " + subject.substr(0, subject.find(' ')));
     }
-    GG_CHECK(expected.size() == 7);
+    GG_CHECK(expected.size() == 9);
     const fs::path copy = s.root() / "copy";
     s.git(s.root(), {"clone", "-q", p.string(), copy.string()});
     s.track(copy);
 
     GG_REQUIRE(s.openRepository(p));
-    const std::string c2 = s.revParse(p, "HEAD~6");
+    const std::string c2 = s.revParse(p, "HEAD~8");
     GG_REQUIRE(rowReady(s, c2));
     ctx->ItemClick(historyRow(c2).c_str());
     ctx->KeyPress(ImGuiKey_I);
@@ -578,7 +582,14 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
     GG_CHECK(rows(s) == expected);
     ctx->ItemUncheck(irWidget("ir_autosquash").c_str());
     GG_CHECK(rows(s) == initial);
+    // A row set to reword keeps its place as a target.
+    key(s, c3, ImGuiKey_R);
     ctx->ItemCheck(irWidget("ir_autosquash").c_str());
+    GG_CHECK(rows(s)[3] == "reword c3");
+    GG_CHECK(rows(s)[4] == "fixup -C amend!");
+    ctx->ItemUncheck(irWidget("ir_autosquash").c_str());
+    ctx->ItemCheck(irWidget("ir_autosquash").c_str());
+    GG_CHECK(rows(s) == expected);
     GG_REQUIRE(start(s));
 
     // The same rebase with git on a copy: trees, messages and authors match.
@@ -1890,6 +1901,65 @@ GG_TEST("rebase-i", "failure paths: pre-rebase veto, a hook refusing the ref tra
     s.settle();
     GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");
     GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+GG_TEST("rebase-i", "reading the range: commits already upstream, branches in other worktrees, from a linked worktree, published ancestors, from the root",
+    "IR-ROWS", "IR-ACT-UPDATE-REF", "IR-VALIDATE-PUBLISHED", "IR-ENTRY-COMMIT-MENU")
+{
+    const Repo r = makeRepo(s);
+    // "up" has c3's change cherry-picked (same patch id) and an empty commit.
+    s.git(r.path, {"switch", "-q", "-c", "up", r.c[1]});
+    s.git(r.path, {"cherry-pick", r.c[3]});
+    s.git(r.path, {"commit", "-q", "--allow-empty", "-m", "u2 empty"});
+    s.git(r.path, {"switch", "-q", "main"});
+    // part1 (at c3) is checked out in a linked worktree; "wtb" (at c4) in another.
+    const fs::path wt = s.root() / "wt-part1";
+    s.git(r.path, {"worktree", "add", "-q", wt.string(), "part1"});
+    const fs::path wt2 = s.root() / "wt-b";
+    s.git(r.path, {"worktree", "add", "-q", "-b", "wtb", wt2.string(), r.c[4]});
+    // c1 and c2 are on a remote (c1 only as an ancestor of the remote branch).
+    s.git(r.path, {"update-ref", "refs/remotes/origin/main", r.c[2]});
+    GG_REQUIRE(s.openRepository(r.path));
+
+    // Onto "up": c3 is left out like git rebase -i does (its change is already there).
+    ctx->MenuClick("//##MainMenuBar/Commit/Interactive rebase...");
+    GG_REQUIRE(s.dialogOpen("Interactive rebase onto"));
+    s.dialogText("Interactive rebase onto", "base", "up");
+    s.dialogButton("Interactive rebase onto", "Open");
+    GG_REQUIRE(editorReady(s));
+    // wtb is checked out elsewhere: no update-ref line for it.
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c4", "pick c5"}));
+    GG_CHECK(editor(s).context()->checkedOutElsewhere.count("refs/heads/part1") == 1);
+    GG_CHECK(editor(s).context()->checkedOutElsewhere.count("refs/heads/wtb") == 1);
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+
+    // From the root: every commit, published ones warned about once they change.
+    GG_REQUIRE(rowReady(s, r.c[1]));
+    ctx->ItemClick(historyRow(r.c[1]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK_STR_EQ(editor(s).context()->upstream, "");
+    GG_CHECK(rows(s) == (Rows{"pick c1", "pick c2", "pick c3", "pick c4", "pick c5"}));
+    GG_CHECK(editor(s).context()->commits.at(r.c[1]).published);
+    GG_CHECK(editor(s).context()->commits.at(r.c[2]).published);
+    GG_CHECK(!editor(s).context()->commits.at(r.c[3]).published);
+    GG_CHECK(editor(s).issues().empty());
+    key(s, r.c[1], ImGuiKey_R);
+    GG_CHECK(hasIssue(s, todo::Issue::Code::Published));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+
+    // From the linked worktree of wtb: main (checked out in the main worktree) gets no update-ref.
+    GG_REQUIRE(s.openRepository(wt2));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK_STR_EQ(editor(s).context()->tipRef, "refs/heads/wtb");
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "pick c4"}));
+    GG_CHECK(editor(s).context()->checkedOutElsewhere.count("refs/heads/main") == 1);
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    s.git(r.path, {"worktree", "remove", "--force", wt.string()});
+    s.git(r.path, {"worktree", "remove", "--force", wt2.string()});
 }
 
 } // namespace ggtest

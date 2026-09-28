@@ -19,29 +19,18 @@ namespace {
 
 const TextEditor::Language* languageFor(const std::string& path)
 {
+    using L = TextEditor::Language;
+    static const std::pair<const char*, const L* (*)()> kByExtension[] = {
+        {".c", L::C},        {".cc", L::Cpp},     {".cpp", L::Cpp},     {".cxx", L::Cpp},        {".h", L::Cpp},
+        {".hh", L::Cpp},     {".hpp", L::Cpp},    {".hxx", L::Cpp},     {".inl", L::Cpp},        {".cs", L::Cs},
+        {".lua", L::Lua},    {".py", L::Python},  {".glsl", L::Glsl},   {".vert", L::Glsl},      {".frag", L::Glsl},
+        {".hlsl", L::Hlsl},  {".json", L::Json},  {".md", L::Markdown}, {".markdown", L::Markdown}, {".sql", L::Sql},
+    };
     std::string ext = fs::path(path).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (ext == ".c")
-        return TextEditor::Language::C();
-    if (ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".h" || ext == ".hh" || ext == ".hpp" || ext == ".hxx"
-        || ext == ".inl")
-        return TextEditor::Language::Cpp();
-    if (ext == ".cs")
-        return TextEditor::Language::Cs();
-    if (ext == ".lua")
-        return TextEditor::Language::Lua();
-    if (ext == ".py")
-        return TextEditor::Language::Python();
-    if (ext == ".glsl" || ext == ".vert" || ext == ".frag")
-        return TextEditor::Language::Glsl();
-    if (ext == ".hlsl")
-        return TextEditor::Language::Hlsl();
-    if (ext == ".json")
-        return TextEditor::Language::Json();
-    if (ext == ".md" || ext == ".markdown")
-        return TextEditor::Language::Markdown();
-    if (ext == ".sql")
-        return TextEditor::Language::Sql();
+    for (const auto& [e, language] : kByExtension)
+        if (ext == e)
+            return language();
     return nullptr;
 }
 

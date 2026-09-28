@@ -52,8 +52,8 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         openInteractiveRebase(session, row.id);
     // HEAD and this commit (plan §4.3 "Merge into @", "Rebase @ onto"): also in Branches.
     const auto snap = session.snapshot();
-    const bool isHead = snap && !snap->headUnborn && snap->head == row.id;
-    const bool headCommit = snap && !snap->headUnborn;
+    const bool isHead = snap->head == row.id; // null when unborn
+    const bool headCommit = !snap->headUnborn;
     if (ImGui::MenuItem("Merge into HEAD...", nullptr, false, ok && headCommit && !isHead))
         showMergeDialog(session, session.shortId(row.id), true);
     if (ImGui::MenuItem("Rebase HEAD onto this", nullptr, false, ok && headCommit && !snap->headDetached && !isHead))

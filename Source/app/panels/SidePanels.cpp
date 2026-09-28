@@ -51,7 +51,7 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
     auto& actions = session.actions();
     const bool free = actions.busy().empty();
     const auto snap = session.snapshot();
-    const auto* current = snap ? snap->currentBranch() : nullptr;
+    const auto* current = snap->currentBranch();
     if (ImGui::MenuItem("Copy name"))
         ImGui::SetClipboardText(r.name.c_str());
     ImGui::Separator();
@@ -86,7 +86,7 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         return;
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
-    const bool hasRemotes = m_snapshot && !m_snapshot->remotes.empty();
+    const bool hasRemotes = !m_snapshot->remotes.empty();
     if (ImGui::MenuItem("Reveal"))
         m_session.revealCommit(b.target);
     if (ImGui::MenuItem("Copy name"))
@@ -94,8 +94,8 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
     ImGui::Separator();
     if (ImGui::MenuItem("Check out", nullptr, false, free && !b.isHead))
         actions.checkout(b.name, false);
-    const bool headAttached = m_snapshot && !m_snapshot->headDetached && !m_snapshot->headUnborn;
-    if (ImGui::MenuItem("Merge into HEAD...", nullptr, false, free && !b.isHead && m_snapshot && !m_snapshot->headUnborn))
+    const bool headAttached = !m_snapshot->headDetached && !m_snapshot->headUnborn;
+    if (ImGui::MenuItem("Merge into HEAD...", nullptr, false, free && !b.isHead && !m_snapshot->headUnborn))
         showMergeDialog(m_session, b.name);
     if (ImGui::MenuItem("Rebase HEAD onto branch", nullptr, false, free && !b.isHead && headAttached))
         actions.rebaseHeadOnto(b.name);
@@ -164,7 +164,7 @@ void BranchesPanel::draw(bool* open)
         return;
     }
     const bool free = m_session.actions().busy().empty();
-    ImGui::BeginDisabled(!free || !m_snapshot || m_snapshot->head.isNull());
+    ImGui::BeginDisabled(!free || m_snapshot->head.isNull());
     if (ImGui::Button(ICON_MS_ADD "###create_branch"))
         m_session.showCreateBranchDialog(m_snapshot->head.hex());
     ImGui::EndDisabled();
@@ -173,10 +173,6 @@ void BranchesPanel::draw(bool* open)
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter);
-    if (!m_snapshot) {
-        ImGui::End();
-        return;
-    }
     const Palette& p = theme().palette();
     auto& history = m_session.history();
     for (const auto& b : m_snapshot->branches) {
@@ -251,7 +247,7 @@ void TagsPanel::draw(bool* open)
         return;
     }
     const bool freeTags = m_session.actions().busy().empty();
-    ImGui::BeginDisabled(!freeTags || !m_snapshot || m_snapshot->head.isNull());
+    ImGui::BeginDisabled(!freeTags || m_snapshot->head.isNull());
     if (ImGui::Button(ICON_MS_ADD "###create_tag"))
         m_session.showCreateTagDialog(m_snapshot->head.hex());
     ImGui::EndDisabled();
@@ -260,10 +256,6 @@ void TagsPanel::draw(bool* open)
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
-    if (!m_snapshot) {
-        ImGui::End();
-        return;
-    }
     auto& history = m_session.history();
     for (const auto& t : m_snapshot->tags) {
         if (!containsNoCase(t.name, m_filter))
@@ -310,44 +302,42 @@ void WorktreesPanel::draw(bool* open)
         return;
     }
     const auto snap = m_session.snapshot();
-    if (snap) {
-        for (const auto& w : snap->worktrees) {
-            std::string label = w.name;
-            if (w.isMain)
-                label += " (main)";
-            if (w.bare)
-                label += " (bare)";
-            if (w.locked)
-                label += " " ICON_MS_LOCK;
-            if (w.prunable)
-                label += " (stale)";
-            label += "  " + (w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(8)) : w.branch);
-            ImGui::PushID(("worktree_" + w.name).c_str());
-            ImGui::Selectable((label + "###row").c_str(), w.isCurrent);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                ImGui::SetTooltip("%s%s%s", w.path.string().c_str(), w.locked ? "\nLocked: " : "",
-                    w.locked ? w.lockReason.c_str() : "");
-            if (ImGui::BeginPopupContextItem("##worktree_menu")) {
-                if (ImGui::MenuItem("Copy name"))
-                    ImGui::SetClipboardText(w.name.c_str());
-                if (ImGui::MenuItem("Copy path"))
-                    ImGui::SetClipboardText(w.path.string().c_str());
-                if (ImGui::MenuItem("Reveal HEAD", nullptr, false, !w.head.isNull()))
-                    m_session.revealCommit(w.head);
-                if (ImGui::MenuItem("Open directory", nullptr, false, !w.prunable))
-                    openInFileManager(w.path);
-                ImGui::Separator();
-                disabledMenuItem("Open here", kLater);
-                disabledMenuItem("Open in new window", kLater);
-                disabledMenuItem("Add...", kLater);
-                disabledMenuItem("Remove...", kLater);
-                disabledMenuItem(w.locked ? "Unlock" : "Lock", kLater);
-                disabledMenuItem("Prune", kLater);
-                disabledMenuItem("Repair", kLater);
-                ImGui::EndPopup();
-            }
-            ImGui::PopID();
+    for (const auto& w : snap->worktrees) {
+        std::string label = w.name;
+        if (w.isMain)
+            label += " (main)";
+        if (w.bare)
+            label += " (bare)";
+        if (w.locked)
+            label += " " ICON_MS_LOCK;
+        if (w.prunable)
+            label += " (stale)";
+        label += "  " + (w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(8)) : w.branch);
+        ImGui::PushID(("worktree_" + w.name).c_str());
+        ImGui::Selectable((label + "###row").c_str(), w.isCurrent);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("%s%s%s", w.path.string().c_str(), w.locked ? "\nLocked: " : "",
+                w.locked ? w.lockReason.c_str() : "");
+        if (ImGui::BeginPopupContextItem("##worktree_menu")) {
+            if (ImGui::MenuItem("Copy name"))
+                ImGui::SetClipboardText(w.name.c_str());
+            if (ImGui::MenuItem("Copy path"))
+                ImGui::SetClipboardText(w.path.string().c_str());
+            if (ImGui::MenuItem("Reveal HEAD", nullptr, false, !w.head.isNull()))
+                m_session.revealCommit(w.head);
+            if (ImGui::MenuItem("Open directory", nullptr, false, !w.prunable))
+                openInFileManager(w.path);
+            ImGui::Separator();
+            disabledMenuItem("Open here", kLater);
+            disabledMenuItem("Open in new window", kLater);
+            disabledMenuItem("Add...", kLater);
+            disabledMenuItem("Remove...", kLater);
+            disabledMenuItem(w.locked ? "Unlock" : "Lock", kLater);
+            disabledMenuItem("Prune", kLater);
+            disabledMenuItem("Repair", kLater);
+            ImGui::EndPopup();
         }
+        ImGui::PopID();
     }
     ImGui::End();
 }
@@ -369,25 +359,23 @@ void RemotesPanel::draw(bool* open)
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Add remote...");
     ImGui::SameLine();
-    if (ImGui::Button("Fetch all##fetch_all") && snap && !snap->remotes.empty())
+    if (ImGui::Button("Fetch all##fetch_all") && !snap->remotes.empty())
         actions.fetch("", false, false);
     ImGui::EndDisabled();
-    if (snap) {
-        for (const auto& r : snap->remotes) {
-            ImGui::PushID(("remote_" + r.name).c_str());
-            ImGui::Selectable((r.name + "  " + r.url + (r.pruneOnFetch ? "  (prune)" : "") + "###row").c_str());
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                ImGui::SetTooltip("fetch: %s\npush: %s%s", r.url.c_str(), r.pushUrl.empty() ? r.url.c_str() : r.pushUrl.c_str(),
-                    r.pruneOnFetch ? "\nprune on fetch" : "");
-            if (ImGui::BeginPopupContextItem("##remote_menu")) {
-                remoteMenuItems(m_session, r);
-                ImGui::EndPopup();
-            }
-            ImGui::PopID();
+    for (const auto& r : snap->remotes) {
+        ImGui::PushID(("remote_" + r.name).c_str());
+        ImGui::Selectable((r.name + "  " + r.url + (r.pruneOnFetch ? "  (prune)" : "") + "###row").c_str());
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("fetch: %s\npush: %s%s", r.url.c_str(), r.pushUrl.empty() ? r.url.c_str() : r.pushUrl.c_str(),
+                r.pruneOnFetch ? "\nprune on fetch" : "");
+        if (ImGui::BeginPopupContextItem("##remote_menu")) {
+            remoteMenuItems(m_session, r);
+            ImGui::EndPopup();
         }
-        if (snap->remotes.empty())
-            ImGui::TextDisabled("No remotes");
+        ImGui::PopID();
     }
+    if (snap->remotes.empty())
+        ImGui::TextDisabled("No remotes");
     ImGui::End();
 }
 
@@ -407,45 +395,43 @@ void StashesPanel::draw(bool* open)
         m_session.showStashDialog();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::BeginDisabled(!free || !m_snapshot || m_snapshot->stashes.empty());
+    ImGui::BeginDisabled(!free || m_snapshot->stashes.empty());
     if (ImGui::Button("Clear all...##clear_stashes"))
         m_session.showClearStashesDialog();
     ImGui::EndDisabled();
-    if (m_snapshot) {
-        for (const auto& s : m_snapshot->stashes) {
-            ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
-            const std::string label = "stash@{" + std::to_string(s.index) + "} " + s.message;
-            const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
-            if (ImGui::Selectable((label + "###row").c_str(), selected))
-                m_session.select(Selection{SelKind::Stash, s.commit, s.index});
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                idTooltip(s.commit.hex(), m_session.shortId(s.commit).size(),
-                    "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
-                        + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
-            // The menu belongs to the row (the last item before it must be the Selectable).
-            if (ImGui::BeginPopupContextItem("##stash_menu")) {
-                if (ImGui::MenuItem("Apply", nullptr, false, free))
-                    actions.stashApply(s.index, false, false);
-                if (ImGui::MenuItem("Apply (restore index)", nullptr, false, free))
-                    actions.stashApply(s.index, false, true);
-                if (ImGui::MenuItem("Pop", nullptr, false, free))
-                    actions.stashApply(s.index, true, false);
-                if (ImGui::MenuItem("Pop (restore index)", nullptr, false, free))
-                    actions.stashApply(s.index, true, true);
-                ImGui::Separator();
-                if (ImGui::MenuItem("Branch from stash...", nullptr, false, free))
-                    m_session.showBranchFromStashDialog(s.index);
-                if (ImGui::MenuItem("Drop...", nullptr, false, free))
-                    m_session.showDropStashDialog(s.index);
-                ImGui::EndPopup();
-            }
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s  %s", s.base.shortHex(7).c_str(), core::formatTime(s.time).c_str());
-            ImGui::PopID();
+    for (const auto& s : m_snapshot->stashes) {
+        ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
+        const std::string label = "stash@{" + std::to_string(s.index) + "} " + s.message;
+        const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
+        if (ImGui::Selectable((label + "###row").c_str(), selected))
+            m_session.select(Selection{SelKind::Stash, s.commit, s.index});
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            idTooltip(s.commit.hex(), m_session.shortId(s.commit).size(),
+                "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
+                    + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
+        // The menu belongs to the row (the last item before it must be the Selectable).
+        if (ImGui::BeginPopupContextItem("##stash_menu")) {
+            if (ImGui::MenuItem("Apply", nullptr, false, free))
+                actions.stashApply(s.index, false, false);
+            if (ImGui::MenuItem("Apply (restore index)", nullptr, false, free))
+                actions.stashApply(s.index, false, true);
+            if (ImGui::MenuItem("Pop", nullptr, false, free))
+                actions.stashApply(s.index, true, false);
+            if (ImGui::MenuItem("Pop (restore index)", nullptr, false, free))
+                actions.stashApply(s.index, true, true);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Branch from stash...", nullptr, false, free))
+                m_session.showBranchFromStashDialog(s.index);
+            if (ImGui::MenuItem("Drop...", nullptr, false, free))
+                m_session.showDropStashDialog(s.index);
+            ImGui::EndPopup();
         }
-        if (m_snapshot->stashes.empty())
-            ImGui::TextDisabled("No stashes");
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s  %s", s.base.shortHex(7).c_str(), core::formatTime(s.time).c_str());
+        ImGui::PopID();
     }
+    if (m_snapshot->stashes.empty())
+        ImGui::TextDisabled("No stashes");
     ImGui::End();
 }
 
@@ -486,12 +472,10 @@ void ReflogPanel::draw(bool* open)
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
     if (ImGui::BeginCombo("##reflog_ref", m_ref.c_str())) {
         std::vector<std::string> refs{"HEAD"};
-        if (m_snapshot) {
-            for (const auto& b : m_snapshot->branches)
-                refs.push_back("refs/heads/" + b.name);
-            if (!m_snapshot->stashes.empty())
-                refs.push_back("refs/stash");
-        }
+        for (const auto& b : m_snapshot->branches)
+            refs.push_back("refs/heads/" + b.name);
+        if (!m_snapshot->stashes.empty())
+            refs.push_back("refs/stash");
         for (const auto& r : refs)
             if (ImGui::Selectable((r + "###ref_" + rowId(r)).c_str(), r == m_ref))
                 choose(r);

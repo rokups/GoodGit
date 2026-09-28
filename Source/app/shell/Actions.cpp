@@ -91,7 +91,7 @@ void Actions::stage(const std::vector<std::string>& paths)
 
 void Actions::unstage(const std::vector<std::string>& paths)
 {
-    const bool unborn = m_session.snapshot() && m_session.snapshot()->headUnborn;
+    const bool unborn = m_session.snapshot()->headUnborn;
     run("unstage " + std::to_string(paths.size()) + " file(s)", [paths, unborn](MutationContext& ctx) {
         if (unborn)
             ctx.git(withPaths({"rm", "--cached", "-q", "-r"}, paths));
@@ -117,7 +117,7 @@ void Actions::stageAll()
 
 void Actions::unstageAll()
 {
-    const bool unborn = m_session.snapshot() && m_session.snapshot()->headUnborn;
+    const bool unborn = m_session.snapshot()->headUnborn;
     run("unstage all", [unborn](MutationContext& ctx) {
         if (unborn)
             ctx.git({"rm", "--cached", "-r", "-q", "."});
@@ -382,7 +382,7 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst)
 void Actions::moveHead(bool toChild, const core::Oid& child)
 {
     const auto snap = m_session.snapshot();
-    if (!snap || snap->head.isNull())
+    if (snap->head.isNull())
         return;
     std::string target;
     if (toChild) {
@@ -443,7 +443,7 @@ void Actions::deleteBranch(const std::string& name, bool force, const std::vecto
 void Actions::moveBranch(const std::string& name, const std::string& to)
 {
     const auto snap = m_session.snapshot();
-    const bool current = snap && !snap->headDetached && snap->headBranch == name;
+    const bool current = snap->headBranch == name; // "" when detached
     run("move branch " + name, [name, to, current](MutationContext& ctx) {
         if (current) {
             // The checked-out branch: keep local changes, refuse when they conflict.
@@ -470,7 +470,7 @@ void Actions::unsetUpstream(const std::string& branch)
 void Actions::fastForward(const std::string& branch)
 {
     const auto snap = m_session.snapshot();
-    const bool current = snap && !snap->headDetached && snap->headBranch == branch;
+    const bool current = snap->headBranch == branch; // "" when detached
     run("fast-forward " + branch, [branch, current](MutationContext& ctx) {
         if (current) {
             ctx.git({"merge", "-q", "--ff-only", "@{upstream}"});
@@ -751,8 +751,6 @@ std::string operationCommand(core::RepoState s)
 void Actions::continueOperation()
 {
     const auto snap = m_session.snapshot();
-    if (!snap)
-        return;
     const std::string cmd = operationCommand(snap->state);
     run(cmd + " --continue", [cmd](MutationContext& ctx) {
         if (cmd == "rebase")
@@ -769,8 +767,6 @@ void Actions::continueOperation()
 void Actions::skipOperation()
 {
     const auto snap = m_session.snapshot();
-    if (!snap)
-        return;
     const std::string cmd = operationCommand(snap->state);
     run(cmd + " --skip", [cmd](MutationContext& ctx) {
         if (cmd == "rebase")
@@ -787,8 +783,6 @@ void Actions::skipOperation()
 void Actions::abortOperation()
 {
     const auto snap = m_session.snapshot();
-    if (!snap)
-        return;
     const std::string cmd = operationCommand(snap->state);
     run(cmd + " --abort", [cmd](MutationContext& ctx) {
         if (cmd == "rebase")
@@ -813,7 +807,7 @@ void Actions::commitWithConflicts()
 {
     const auto snap = m_session.snapshot();
     const auto status = m_session.status();
-    if (!snap || !status)
+    if (!status)
         return;
     const std::string cmd = operationCommand(snap->state);
     std::vector<std::string> paths;
@@ -858,8 +852,6 @@ void Actions::commitWithConflicts()
 void Actions::saveMergeMessage(const std::string& message)
 {
     const auto snap = m_session.snapshot();
-    if (!snap)
-        return;
     const fs::path file = snap->gitDir / "MERGE_MSG";
     run("edit merge message", [file, message](MutationContext&) {
         std::ofstream out(file, std::ios::binary | std::ios::trunc);
@@ -949,8 +941,6 @@ void Actions::uninstallHooks(Callback done)
 void Actions::cleanUpOldGgRefs(const std::vector<std::pair<std::string, std::string>>& keepBranches)
 {
     const auto snap = m_session.snapshot();
-    if (!snap)
-        return;
     const auto refs = snap->oldGgRefs;
     run("clean up old gg data", [refs, keepBranches](MutationContext& ctx) {
         for (const auto& [branch, commit] : keepBranches)

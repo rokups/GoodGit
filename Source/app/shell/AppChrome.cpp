@@ -25,7 +25,7 @@ core::Oid targetCommit(Session& s)
 {
     if (s.selection().kind == SelKind::Commit)
         return s.selection().id;
-    return s.snapshot() ? s.snapshot()->head : core::Oid{};
+    return s.snapshot()->head;
 }
 
 // Parents for New: the selection plus Ctrl-clicked commits (several = merge commit).
@@ -43,7 +43,7 @@ std::vector<core::Oid> newParents(Session& s)
 
 bool headSelected(Session& s)
 {
-    return s.selection().kind == SelKind::Commit && s.snapshot() && s.selection().id == s.snapshot()->head;
+    return s.selection().kind == SelKind::Commit && s.selection().id == s.snapshot()->head;
 }
 
 bool textConflictsOnly(Session& s)
@@ -92,7 +92,8 @@ void App::handleShortcuts()
     else if (Shortcut(ImGuiMod_Shift | ImGuiKey_F6, global))
         s.nextChangedFile(-1);
     else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, global) && free)
-        s.newCommitOn(newParents(s), false); else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, global) && free)
+        s.newCommitOn(newParents(s), false);
+    else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, global) && free)
         s.actions().undo(false);
     else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, global) && free)
         s.actions().undo(true);

@@ -4,6 +4,7 @@
 #include "libgg/Thread.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <functional>
 #include <stdexcept>
 
@@ -12,6 +13,8 @@ namespace gg::todo {
 using namespace gg::git2;
 
 namespace {
+
+constexpr std::string_view kComment = "#"; // Git's default core.commentChar
 
 bool isSpace(char c) { return c == ' ' || c == '\t'; }
 
@@ -60,9 +63,7 @@ bool startsWith(std::string_view s, std::string_view prefix) { return s.substr(0
 
 bool isHex(std::string_view s)
 {
-    return !s.empty() && std::all_of(s.begin(), s.end(), [](char c) {
-        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-    });
+    return std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isxdigit(c) != 0; });
 }
 
 std::string withNewline(std::string s)
@@ -107,53 +108,41 @@ bool Item::isCommit() const
 namespace {
 
 struct Name {
-    Action action;
     const char* name;
     char key;
 };
+// Indexed by Action.
 constexpr Name kNames[] = {
-    {Action::Pick, "pick", 'p'},     {Action::Reword, "reword", 'r'}, {Action::Edit, "edit", 'e'},
-    {Action::Squash, "squash", 's'}, {Action::Fixup, "fixup", 'f'},   {Action::Drop, "drop", 'd'},
-    {Action::Exec, "exec", 'x'},     {Action::Break, "break", 'b'},   {Action::UpdateRef, "update-ref", 'u'},
-    {Action::Label, "label", 'l'},   {Action::Reset, "reset", 't'},   {Action::Merge, "merge", 'm'},
+    {"pick", 'p'}, {"reword", 'r'}, {"edit", 'e'}, {"squash", 's'},     {"fixup", 'f'}, {"drop", 'd'},
+    {"exec", 'x'}, {"break", 'b'},  {"update-ref", 'u'}, {"label", 'l'}, {"reset", 't'}, {"merge", 'm'},
 };
+static_assert(std::size(kNames) == static_cast<size_t>(Action::Merge) + 1);
 
 } // namespace
 
 const char* actionName(Action action)
 {
-    for (const auto& n : kNames)
-        if (n.action == action)
-            return n.name;
-    return "pick";
-}
-
-char actionKey(Action action)
-{
-    for (const auto& n : kNames)
-        if (n.action == action)
-            return n.key;
-    return 'p';
+    return kNames[static_cast<size_t>(action)].name;
 }
 
 std::optional<Action> parseAction(std::string_view word)
 {
-    for (const auto& n : kNames)
-        if (word == n.name || (word.size() == 1 && word[0] == n.key))
-            return n.action;
+    for (size_t i = 0; i < std::size(kNames); ++i)
+        if (word == kNames[i].name || (word.size() == 1 && word[0] == kNames[i].key))
+            return static_cast<Action>(i);
     return std::nullopt;
 }
 
 // ---- Git's todo text --------------------------------------------------------------------------
 
-Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_view comment)
+Todo parse(std::string_view text, std::vector<ParseError>* errors)
 {
     Todo todo;
     int number = 0;
     for (std::string_view raw : lines(text)) {
         ++number;
         std::string_view line = trimRight(trimLeft(raw));
-        if (line.empty() || (!comment.empty() && startsWith(line, comment)))
+        if (line.empty() || startsWith(line, kComment))
             continue;
         auto fail = [&](const std::string& message) {
             if (errors)
@@ -181,8 +170,8 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_v
                 continue;
             }
             // Git ≥ 2.44 writes "# subject", older versions the bare subject.
-            if (!comment.empty() && startsWith(rest, comment))
-                rest = trimLeft(rest.substr(comment.size()));
+            if (startsWith(rest, kComment))
+                rest = trimLeft(rest.substr(kComment.size()));
             item.subject = std::string(rest);
         } else if (item.action == Action::Break) {
             // Takes no argument.
@@ -198,23 +187,20 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_v
     return todo;
 }
 
-std::string format(const Todo& todo, const FormatOptions& options)
+std::string format(const Todo& todo)
 {
     if (todo.items.empty())
         return "noop\n";
     std::string out;
     for (const Item& item : todo.items) {
-        if (options.shortCommands)
-            out += actionKey(item.action);
-        else
-            out += actionName(item.action);
+        out += actionName(item.action);
         if (item.isCommit()) {
             if (item.action == Action::Fixup && item.fixup != FixupMessage::None)
                 out += item.fixup == FixupMessage::Use ? " -C" : " -c";
             out += ' ';
-            out += options.abbrev > 0 ? item.commit.substr(0, static_cast<size_t>(options.abbrev)) : item.commit;
+            out += item.commit;
             if (!item.subject.empty())
-                out += " " + options.comment + " " + item.subject;
+                out += " # " + item.subject;
         } else if (item.action != Action::Break) {
             out += ' ';
             out += item.arg;
@@ -239,8 +225,8 @@ CommitInfo describe(git_repository* repo, const git_commit* c)
     info.message = commitMessage(c);
     info.subject = firstLine(info.message);
     const git_signature* author = git_commit_author(c);
-    info.authorName = author->name ? author->name : "";
-    info.authorEmail = author->email ? author->email : "";
+    info.authorName = author->name;
+    info.authorEmail = author->email;
     info.authorTime = author->when.time;
     info.authorOffset = author->when.offset;
     if (git_commit_parentcount(c) > 0) {
@@ -455,8 +441,6 @@ Context read(git_repository* repo, const ReadOptions& options)
         pick.commit = id;
         pick.subject = context.commits.at(id).subject;
         context.initial.items.push_back(pick);
-        if (!options.updateRefs)
-            continue;
         auto it = context.branchesAt.find(id);
         if (it == context.branchesAt.end())
             continue;
@@ -471,8 +455,6 @@ Context read(git_repository* repo, const ReadOptions& options)
             context.initial.items.push_back(update);
         }
     }
-    if (options.autosquash)
-        autosquash(context.initial, context);
     return context;
 }
 
@@ -622,26 +604,12 @@ void autosquash(Todo& todo, const Context& context)
 
 // ---- Messages ---------------------------------------------------------------------------------
 
-std::string cleanup(std::string_view message, Cleanup mode, std::string_view comment)
+std::string cleanup(std::string_view message)
 {
-    if (mode == Cleanup::Verbatim)
-        return std::string(message);
-    if (mode == Cleanup::Scissors) {
-        const std::string scissors = std::string(comment) + " ------------------------ >8 ------------------------";
-        size_t pos = 0;
-        for (std::string_view line : lines(message)) {
-            if (trimRight(line) == scissors) {
-                message = message.substr(0, pos);
-                break;
-            }
-            pos += line.size() + 1;
-        }
-    }
-    const bool stripComments = mode == Cleanup::Strip;
     std::string out;
     int pendingBlank = 0;
     for (std::string_view line : lines(message)) {
-        if (stripComments && !comment.empty() && startsWith(line, comment))
+        if (startsWith(line, kComment))
             continue;
         line = trimRight(line);
         if (line.empty()) {
@@ -729,11 +697,11 @@ const std::string& messageOf(const Context& context, const Item& item)
 std::string ordinal(size_t n) { return n == 1 ? "1st" : "#" + std::to_string(n); }
 
 // Every line commented out ("# line", "#" for an empty line).
-std::string commentOut(std::string_view message, std::string_view comment)
+std::string commentOut(std::string_view message)
 {
     std::string out;
     for (std::string_view line : lines(message)) {
-        out += comment;
+        out += kComment;
         if (!line.empty()) {
             out += ' ';
             out += line;
@@ -755,18 +723,18 @@ std::vector<size_t> foldedRows(const Group& group)
 }
 
 // The first message of the group: its first commit's, or the message of the commit it amends.
-std::string baseMessage(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
+std::string baseMessage(const Todo& todo, const Group& group, const Context& context)
 {
     if (group.amends)
         for (const Group& g : groups(todo))
             if (g.first == *group.amends)
-                return groupMessage(todo, g, context, comment);
+                return groupMessage(todo, g, context);
     return messageOf(context, todo.items[group.first]);
 }
 
 // The message a fixup-only group keeps (no editor): the last `fixup -C` commit's message without
 // its `amend!` subject, else the first commit's.
-std::string keptMessage(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
+std::string keptMessage(const Todo& todo, const Group& group, const Context& context)
 {
     const std::vector<size_t> rows = foldedRows(group);
     for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
@@ -783,12 +751,12 @@ std::string keptMessage(const Todo& todo, const Group& group, const Context& con
         }
         return message;
     }
-    return baseMessage(todo, group, context, comment);
+    return baseMessage(todo, group, context);
 }
 
 } // namespace
 
-std::string squashTemplate(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
+std::string squashTemplate(const Todo& todo, const Group& group, const Context& context)
 {
     struct Entry {
         std::string message;
@@ -796,7 +764,7 @@ std::string squashTemplate(const Todo& todo, const Group& group, const Context& 
         bool commentSubject = false;
     };
     std::vector<Entry> entries;
-    entries.push_back({baseMessage(todo, group, context, comment), true, false});
+    entries.push_back({baseMessage(todo, group, context), true, false});
     bool seenSquash = false;
     for (size_t row : foldedRows(group)) {
         const Item& item = todo.items[row];
@@ -815,7 +783,7 @@ std::string squashTemplate(const Todo& todo, const Group& group, const Context& 
             entries.push_back({message, false, false});
         }
     }
-    const std::string c(comment);
+    const std::string c(kComment);
     std::string out = c + " This is a combination of " + std::to_string(entries.size()) + " commits.\n";
     for (size_t k = 0; k < entries.size(); ++k) {
         const Entry& e = entries[k];
@@ -827,10 +795,10 @@ std::string squashTemplate(const Todo& todo, const Group& group, const Context& 
             out += c + " The " + (k == 0 ? std::string("1st commit message") : "commit message " + ordinal(k + 1)) + " will be skipped:\n\n";
         const std::string message = withNewline(e.message);
         if (!e.kept) {
-            out += commentOut(message, comment);
+            out += commentOut(message);
         } else if (e.commentSubject) {
             const size_t nl = message.find('\n');
-            out += commentOut(message.substr(0, nl + 1), comment);
+            out += commentOut(message.substr(0, nl + 1));
             out += message.substr(nl + 1);
         } else {
             out += message;
@@ -839,26 +807,26 @@ std::string squashTemplate(const Todo& todo, const Group& group, const Context& 
     return out;
 }
 
-std::string groupMessage(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
+std::string groupMessage(const Todo& todo, const Group& group, const Context& context)
 {
     const Item& first = todo.items[group.first];
     if (first.message)
-        return cleanup(*first.message, Cleanup::Strip, comment);
+        return cleanup(*first.message);
     if (group.needsEditor)
-        return cleanup(squashTemplate(todo, group, context, comment), Cleanup::Strip, comment);
+        return cleanup(squashTemplate(todo, group, context));
     if (first.action == Action::Reword && group.followers.empty())
-        return cleanup(messageOf(context, first), Cleanup::Strip, comment);
-    return keptMessage(todo, group, context, comment);
+        return cleanup(messageOf(context, first));
+    return keptMessage(todo, group, context);
 }
 
-std::string editorText(const Todo& todo, const Group& group, const Context& context, std::string_view comment)
+std::string editorText(const Todo& todo, const Group& group, const Context& context)
 {
     const Item& first = todo.items[group.first];
     if (first.message)
         return *first.message;
     if (group.needsEditor)
-        return squashTemplate(todo, group, context, comment);
-    return keptMessage(todo, group, context, comment);
+        return squashTemplate(todo, group, context);
+    return keptMessage(todo, group, context);
 }
 
 std::map<std::string, std::string> editorMessages(const Todo& todo)
@@ -1074,7 +1042,7 @@ void addExecEach(Todo& todo, const std::string& command)
     todo.items = std::move(out);
 }
 
-gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_view comment, bool replayStops)
+gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replayStops)
 {
     namespace rw = gg::rewrite;
     const auto issues = validate(todo, context);
@@ -1151,7 +1119,7 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
                 s.parents = {current};
             const Group* g = byFirst.at(i);
             if (g->followers.empty() && (item.action == Action::Reword || item.message))
-                s.message = groupMessage(todo, *g, context, comment);
+                s.message = groupMessage(todo, *g, context);
             plan.steps.push_back(std::move(s));
             current = key;
             started = true;
@@ -1182,7 +1150,7 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_v
                 current = key;
             }
             if (auto it = lastRow.find(i); it != lastRow.end())
-                s.message = groupMessage(todo, *it->second, context, comment);
+                s.message = groupMessage(todo, *it->second, context);
             plan.steps.push_back(std::move(s));
             break; // otherwise the group's commit stays the current step
         }

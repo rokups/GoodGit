@@ -89,7 +89,10 @@ public:
     App& app() { return m_app; }
     core::Engine& engine() { return *m_engine; }
     Actions& actions() { return *m_actions; }
+    // Set from the first OpenedEvent on (opened()). Panels, menus and actions run only for an
+    // opened session, so they use it without a null check.
     const core::SnapshotPtr& snapshot() const { return m_snapshot; }
+    // Null until the first status arrives (panels draw before that).
     const core::StatusPtr& status() const { return m_status; }
     const Selection& selection() const { return m_selection; }
     void select(const Selection& sel);

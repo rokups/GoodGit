@@ -4,8 +4,9 @@
 // The todo is Git's list, oldest first: parse() reads what `git rebase -i` writes (full or
 // abbreviated ids, short or long command names, comments) and format() writes lines Git reads
 // back. read() builds the starting todo for a range the way `git rebase -i` does (merges
-// dropped, commits already upstream left out, update-ref lines, optional autosquash), together
-// with everything validation and message assembly need, so none of those touch the repository.
+// dropped, commits already upstream left out, update-ref lines; autosquash() and the editor's
+// options apply to it later), together with everything validation and message assembly need, so
+// none of those touch the repository.
 //
 // Messages follow Git: a squash group offers Git's commented template ("This is a combination
 // of N commits…", fixup messages commented out, `squash!`/`fixup!`/`amend!` subjects commented
@@ -59,8 +60,7 @@ struct Todo {
 // ---- Names ----------------------------------------------------------------------------------
 
 const char* actionName(Action action);   // "pick", "fixup", "update-ref", …
-char actionKey(Action action);           // Git's short form: p r e s f d x b u l t m
-// Long or short command name → action.
+// Long or short command name (Git's p r e s f d x b u l t m) → action.
 std::optional<Action> parseAction(std::string_view word);
 
 // ---- Git's todo text ------------------------------------------------------------------------
@@ -70,19 +70,13 @@ struct ParseError {
     std::string message;      // Git wording where Git has one
 };
 
-// Parses a todo file. Blank lines, comment lines and `noop` are skipped. Unknown commands and
+// Parses a todo file. Blank lines, comment lines ("#") and `noop` are skipped. Unknown commands and
 // malformed lines are reported and left out.
-Todo parse(std::string_view text, std::vector<ParseError>* errors = nullptr, std::string_view comment = "#");
+Todo parse(std::string_view text, std::vector<ParseError>* errors = nullptr);
 
-struct FormatOptions {
-    int abbrev = 0;              // id length (0 = full)
-    bool shortCommands = false;  // rebase.abbreviateCommands
-    std::string comment = "#";
-};
-
-// Writes the todo as Git does: "pick <id> # <subject>", "fixup -C <id> # …", "exec <cmd>", a
+// Writes the todo as Git does: "pick <full id> # <subject>", "fixup -C <id> # …", "exec <cmd>", a
 // blank line after each update-ref, "noop" when empty.
-std::string format(const Todo& todo, const FormatOptions& options = {});
+std::string format(const Todo& todo);
 
 // ---- The range and what the todo refers to --------------------------------------------------
 
@@ -103,8 +97,6 @@ struct ReadOptions {
     std::string upstream;      // commits after it are listed ("" = from the root commit)
     std::string tip = "HEAD";  // local branch name, "HEAD" or a revision (then nothing moves but HEAD if detached there)
     std::string onto;          // new base ("" = upstream)
-    bool updateRefs = true;    // --update-refs
-    bool autosquash = false;   // --autosquash
 };
 
 struct Context {
@@ -148,9 +140,9 @@ void autosquash(Todo& todo, const Context& context);
 
 // ---- Messages -------------------------------------------------------------------------------
 
-enum class Cleanup { Strip, Whitespace, Verbatim, Scissors };
-// Git's commit message cleanup (`git commit --cleanup`).
-std::string cleanup(std::string_view message, Cleanup mode = Cleanup::Strip, std::string_view comment = "#");
+// Git's commit message cleanup=strip ("#" comment lines, trailing whitespace, blank lines at the
+// ends and repeated blank lines removed).
+std::string cleanup(std::string_view message);
 
 // A squash group: a pick/reword/edit row and the squash/fixup rows after it (drop rows in between
 // do not matter). As in Git, an exec, break or update-ref row finishes the group's commit: squash/
@@ -169,13 +161,13 @@ std::vector<Group> groups(const Todo& todo);
 std::optional<Group> groupAt(const Todo& todo, size_t row);
 
 // Git's commented template for a group with followers (what Git's editor would show).
-std::string squashTemplate(const Todo& todo, const Group& group, const Context& context, std::string_view comment = "#");
+std::string squashTemplate(const Todo& todo, const Group& group, const Context& context);
 // The message the group's commit gets: the typed message (cleaned), or Git's default (the
 // cleaned template when Git would open its editor, the kept message otherwise).
-std::string groupMessage(const Todo& todo, const Group& group, const Context& context, std::string_view comment = "#");
+std::string groupMessage(const Todo& todo, const Group& group, const Context& context);
 // Text for the inline message editor of the group's first row: the typed message, or the
 // template, or the kept message.
-std::string editorText(const Todo& todo, const Group& group, const Context& context, std::string_view comment = "#");
+std::string editorText(const Todo& todo, const Group& group, const Context& context);
 
 // What git's editor gets during a native run (`git gg sequence-editor`): for every group with a
 // typed message, the commit git is working on when it opens its editor for that message (the
@@ -243,7 +235,6 @@ void addExecEach(Todo& todo, const std::string& command);
 // todo has errors or needs the native engine. With `replayStops` (the live preview) edit rows are
 // replayed as picks and exec/break rows are skipped: the history a native run produces when
 // every stop just continues.
-gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, std::string_view comment = "#",
-    bool replayStops = false);
+gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replayStops = false);
 
 } // namespace gg::todo

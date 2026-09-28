@@ -332,20 +332,13 @@ bool Journal::hasOpenOperation(const std::string& id, size_t bytes) const
     in.seekg(static_cast<std::streamoff>(start));
     std::string tail((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     const std::string key = "\"op\":\"" + id + "\"";
-    bool begun = false;
-    bool ended = false;
+    // A process keeps its operation even after a post-* hook ended it: only the begin counts.
     std::istringstream lines(tail);
     std::string line;
-    while (std::getline(lines, line)) {
-        if (line.find(key) == std::string::npos)
-            continue;
-        if (line.find("\"t\":\"begin\"") != std::string::npos)
-            begun = true;
-        if (line.find("\"t\":\"end\"") != std::string::npos)
-            ended = true;
-    }
-    (void)ended; // a process keeps its operation even after a post-* hook ended it
-    return begun;
+    while (std::getline(lines, line))
+        if (line.find(key) != std::string::npos && line.find("\"t\":\"begin\"") != std::string::npos)
+            return true;
+    return false;
 }
 
 std::string worktreeKeyForGitDir(const fs::path& gitDir, const fs::path& commonDir)

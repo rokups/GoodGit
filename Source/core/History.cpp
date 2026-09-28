@@ -166,8 +166,8 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         const char* summary = git_commit_summary(commit.get());
         row.subject = summary ? summary : "";
         const git_signature* author = git_commit_author(commit.get());
-        row.author = author->name ? author->name : "";
-        row.authorEmail = author->email ? author->email : "";
+        row.author = author->name;
+        row.authorEmail = author->email;
         row.time = author->when.time;
         row.published = published;
         {

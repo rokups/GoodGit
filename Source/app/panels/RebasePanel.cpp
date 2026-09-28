@@ -202,8 +202,6 @@ void RebasePanel::read(const Request& request, bool keepTodo)
             if (!tipOf.empty())
                 options.tip = tipContaining(repo, tipOf);
             // Read with update-ref lines and without autosquash: the options apply them to the list.
-            options.updateRefs = true;
-            options.autosquash = false;
             result->context = std::make_shared<const todo::Context>(todo::read(repo, options));
             result->used = options;
         },

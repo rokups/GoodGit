@@ -210,7 +210,8 @@ Plan replayPlan(git_repository* repo, const std::vector<std::string>& changed);
 
 // A tree with a unified patch (old → new, as `git diff` writes it) applied to it.
 std::string applyPatchToTree(git_repository* repo, const std::string& tree, const std::string& patch);
-// The same patch in the other direction (new → old).
+// The same patch in the other direction (new → old). Handles what ggui's patch builder writes
+// (diff --git, mode, rename, ---/+++ and hunk lines; no index lines).
 std::string reversePatch(const std::string& patch);
 
 // A new empty commit inserted before or after `at` (its descendants rebased onto it). When
