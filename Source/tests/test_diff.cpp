@@ -65,8 +65,7 @@ DiffRepo makeRepo(Scenario& s)
     s.write(r.path, "ws.txt", "a  b\n");
     s.write(r.path, "blob.bin", std::string("\0\1\2\3\4", 5));
     s.write(r.path, "pic.png", pngHeader(2, 3));
-    fs::permissions(r.path / "script.sh", fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
-        fs::perm_options::add);
+    fs::permissions(r.path / "script.sh", fs::perms::owner_exec, fs::perm_options::add);
     s.git(r.path, {"mv", "old.txt", "new.txt"});
     s.write(r.path, "new.txt", "rename me\nline two\nline three\nline four changed\n");
     std::string big2;
@@ -74,6 +73,7 @@ DiffRepo makeRepo(Scenario& s)
         big2 += "BIG " + std::to_string(i) + "\n";
     s.write(r.path, "big.txt", big2);
     s.git(r.path, {"add", "-A"});
+    s.git(r.path, {"update-index", "--chmod=+x", "script.sh"}); // the mode change, also where files have none
     s.git(r.path, {"commit", "-q", "-m", "Change everything"});
     r.change = s.head(r.path);
     return r;

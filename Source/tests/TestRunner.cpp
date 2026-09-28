@@ -17,6 +17,15 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#undef Yield // winbase.h's, not ImGuiTestContext::Yield
+#endif
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#include <stdlib.h>
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -427,6 +436,19 @@ void TestRunner::start(const std::string& filter, const std::string& traceFile, 
 {
     m_traceFile = traceFile;
     startWatchdog();
+#ifdef _WIN32
+    // No dialogs in a test run (nobody clicks them on a CI runner): failed assertions and crashes
+    // are reported on stderr and end the run.
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#endif
+#ifdef _MSC_VER
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    for (int type : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {
+        _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
+    }
+#endif
     std::vector<ImGuiTest*> registered;
     for (const auto& info : registry()) {
         ImGuiTest* t = ImGuiTestEngine_RegisterTest(m_engine, info.category.c_str(), info.name.c_str(), info.file, info.line);

@@ -115,6 +115,7 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
                 sc.write(p, "m.sh", "theirs\n");
                 fs::permissions(p / "m.sh", fs::perms::owner_exec, fs::perm_options::add);
                 sc.git(p, {"add", "m.sh"});
+                sc.git(p, {"update-index", "--chmod=+x", "m.sh"}); // no executable bit on Windows
             },
             "Keep mode 100755",
             [](Scenario& sc, const TwoSides& t) {
@@ -161,6 +162,7 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
                 sc.write(p, "n.sh", "theirs\n");
                 fs::permissions(p / "n.sh", fs::perms::owner_exec, fs::perm_options::add);
                 sc.git(p, {"add", "n.sh"});
+                sc.git(p, {"update-index", "--chmod=+x", "n.sh"}); // no executable bit on Windows
             },
             "Keep mode 100644",
             [](Scenario& sc, const TwoSides& t) { GG_CHECK(sc.gitOut(t.path, {"ls-tree", "HEAD", "n.sh"}).rfind("100644", 0) == 0); }},
@@ -170,6 +172,7 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
                 sc.write(p, "e.sh", "changed\n");
                 fs::permissions(p / "e.sh", fs::perms::owner_exec, fs::perm_options::add);
                 sc.git(p, {"add", "e.sh"});
+                sc.git(p, {"update-index", "--chmod=+x", "e.sh"}); // no executable bit on Windows
             },
             [](Scenario& sc, const fs::path& p) { sc.git(p, {"rm", "-q", "e.sh"}); },
             "Use a file from disk",

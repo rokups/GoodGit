@@ -186,6 +186,8 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     fs::permissions(repo / "run.sh", fs::perms::owner_exec, fs::perm_options::add);
     fs::remove(repo / "doomed.txt");
     s.git(repo, {"add", "-A"});
+    // The mode through the index: Windows has no executable bit for git to see.
+    s.git(repo, {"update-index", "--chmod=+x", "run.sh"});
     s.git(repo, {"commit", "-q", "-m", "X"});
     const std::string x = s.head(repo);
     s.commitFile(repo, "later.txt", "later\n", "Y");

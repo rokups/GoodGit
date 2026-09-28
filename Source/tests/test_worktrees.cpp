@@ -458,9 +458,9 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
     GG_CHECK(s.app.errorMessage().find("not found") != std::string::npos);
     GG_CHECK_EQ(gg::splitLines(s.read(s.root(), "ggui-stub.log")).size(), stubLines);
 
-    // Open here: this window shows wt1 now.
+    // Open here: this window shows wt1 now (the checks below need its session).
     s.contextMenu(wtRow(n1).c_str(), "Open here");
-    GG_CHECK(s.waitUntil([&] {
+    GG_REQUIRE(s.waitUntil([&] {
         auto* session = s.session();
         return session && session->opened() && gg::worktrees::samePath(session->path(), wt1);
     }));
@@ -476,7 +476,7 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
     ctx->Yield(2);
     // And back to the main worktree.
     s.contextMenu(wtRow("main").c_str(), "Open here");
-    GG_CHECK(s.waitUntil([&] {
+    GG_REQUIRE(s.waitUntil([&] {
         auto* session = s.session();
         return session && session->opened() && gg::worktrees::samePath(session->path(), repo);
     }));
