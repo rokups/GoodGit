@@ -61,6 +61,9 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - Build: `cmake --preset ninja && cmake --build build/ninja`.
   - Tests run inside the real binary: `cd build/ninja && ./bin/ggui --test=FILTER --headless`
     (`--list-tests` lists them).
+  - Without `--shard` (or with N = 1) the filter is the test engine's and matches test names
+    only. With `--shard=I/N`, N > 1, it matches substrings of `category/name`: run every shard
+    I = 0 … N-1 to get all matches (e.g. `--test=ui/ --shard=0/4` … `--shard=3/4`).
   - Failure logs and screenshots go to `build/ninja/test-artifacts/`.
   - `GGUI_KEEP_TEST_DIRS=1` keeps the scenario repositories.
 - **Scripts:**
@@ -1367,8 +1370,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     - Refusals: a moved branch, git 2.37 (a fake `git version`) with update-ref and then
       `--empty=ask`, local changes without Autostash, Abort, `--root` with Keep.
 
-### [~] P3-20 Phase 3 gate
-- **Status:** Functional gate green: 223/223 scenarios, 633/633 phase 0–3 spec IDs covered. Parity and Phase 3 failure paths are done. Missing: the UI-action audit (rule 8) — docs/ui-actions.md mapping every phase 0–3 UI action to its test, plus tests for any action without one. The coverage gate was dropped on 2026-09-28; the last report was 96.9 % line / 88.0 % branch.
+### [x] P3-20 Phase 3 gate
+- **Status:** Functional gate green: 238/238 scenarios, 633/633 phase 0–3 spec IDs covered. UI-action audit (rule 8) done: docs/ui-actions.md lists 408 UI actions of phases 0–3 (menus, context menus, toolbar, buttons, shortcuts, drag and drop, dialog controls and options, one row per trigger), each with a passing test that drives it through the UI and checks its effect. The audit added tests for 19 actions (Source/tests/test_ui_actions.cpp) and made 14 existing tests check the effect instead of opening and cancelling a dialog or counting journal entries. Bug fixed: a refused git check left the open pending, so after Git required ▸ Quit the Welcome screen stayed disabled. Nothing removed. The traceability matrix now lists tests in sorted order (the same for any sharding).
 - **Depends on:** all P3 tasks
 - **Do:**
   - Every action of today's app is available under Git semantics, and the functional gate is
@@ -1428,6 +1431,18 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 
 ## Phase 4 — Worktrees, polish and parity
 
+**Notes for every Phase 4 task (from P3-20): keep `docs/ui-actions.md` current.**
+- A task that adds, changes or removes a UI action (menu or context-menu item, button, toolbar
+  item, shortcut, drag and drop, double-click, dialog field or option) adds or updates its rows
+  in `docs/ui-actions.md` in the same commit: one row per trigger, keyboard and mouse separately.
+- Each row needs a passing test that drives the action through the UI and checks its effect in
+  the UI and on disk. Opening a dialog and cancelling it tests only Cancel. A task is not done
+  while a row is `missing`.
+- Cross-check with the coverage report: uncovered lines inside action handlers
+  (`scripts/uncovered.py build/coverage/coverage/coverage.lcov Source/app`) point at actions
+  without a test. Dialog options read with `form.checked(...)`/`form.choice(...)` share a line
+  with other paths, so grep the tests for the field id as well.
+
 ### P4-01 Interactive rebase with `--rebase-merges`
 - **Depends on:** P3-19
 - **Refs:** §4.13
@@ -1441,6 +1456,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     for a `--rebase-merges` rebase: the list stays editable and savable.
   - `rebaseStep`/`onRebaseStep` and the progress popup are action-agnostic. The stop reason
     only knows edit/break/exec/conflicts.
+- **Notes from P3-20:** new todo actions (label, reset, merge) get rows in the "Interactive rebase
+  panel" section of `docs/ui-actions.md` (action combo entries, any new key or button).
 
 ### P4-02 `git gg sequence-editor` as Git's `sequence.editor`
 - **Depends on:** P3-19
@@ -1455,6 +1472,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   - `todo::readRemaining(repo, text, headName)` builds the Context from a todo text. For a fresh
     `git rebase -i` the head-name/onto files already exist when the sequence editor runs.
   - `RebasePanel::Request::remaining` is the pattern for opening the editor on git's own list.
+- **Notes from P3-20:** the opt-in setting and the editor window's Save/Cancel (and closing the
+  window) are new rows in `docs/ui-actions.md` (Settings and Interactive rebase sections).
 
 ### P4-03 Full worktree management
 - **Depends on:** P2-03, P1-20
@@ -1462,6 +1481,9 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Do:** Add…, Remove…, Lock/Unlock, Prune, Repair, Open here, Open in new window (linked
   worktree in a new ggui window), per-worktree journal. No gg rename/forget.
 - **Done when:** spec IDs covered.
+- **Notes from P3-20:** these items are drawn disabled today (`disabledMenuItem(..., kLater)` in
+  `SidePanels.cpp`) and are listed only in the Worktrees section note of `docs/ui-actions.md`.
+  Replace that note with one row per item and its dialog controls, each with a test.
 
 ### P4-04 Packaging
 - **Depends on:** P0-06
@@ -1488,6 +1510,10 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   responsiveness scenario passes on both; `COVERAGE_EXCL` count within allowlist; coverage
   report published (informational).
 - **Done when:** all gates green on release candidate.
+- **Notes from P3-20:** re-run the audit the way P3-20 did: list the widget calls in
+  `Source/app` (`MenuItem`, `Button`, `Selectable`, `Checkbox`, `Combo`, `InputText`,
+  `Shortcut`/`IsKeyPressed`, drag-and-drop, `Form` fields and buttons), compare with the rows of
+  `docs/ui-actions.md`, and check that every listed test still exists (`ggui --list-tests`).
 
 ## User feedback (2026-09-27)
 

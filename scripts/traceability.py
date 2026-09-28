@@ -102,7 +102,7 @@ def main():
                     f"{len(covered)}/{len(catalogue)} of the whole catalogue.\n\n")
             f.write("| Spec ID | Phase | Section | Description | Passing tests |\n|---|---|---|---|---|\n")
             for sid, e in sorted(catalogue.items(), key=lambda kv: (kv[1]["phase"], kv[1]["line"])):
-                tests_text = "<br>".join(covered.get(sid, [])) or ("**MISSING**" if sid in required else "—")
+                tests_text = "<br>".join(sorted(covered.get(sid, []))) or ("**MISSING**" if sid in required else "—")
                 desc = e["description"].replace("|", "\\|")
                 f.write(f"| {sid} | {e['phase']} | {e['section']} | {desc} | {tests_text} |\n")
 
