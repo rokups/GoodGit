@@ -7,6 +7,8 @@
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
+#include <set>
+
 namespace ggui {
 
 namespace {
@@ -26,9 +28,12 @@ constexpr const char* kPullMethods[] = {"(not set)", "Merge", "Rebase", "Rebase,
 
 int pullMethod(const std::string& rebase, const std::string& ff)
 {
-    if (rebase == "merges" || rebase == "m")
+    // git's spellings: merges/m, and the true values of a boolean (or interactive/i).
+    static const std::set<std::string> kMerges{"merges", "m"};
+    static const std::set<std::string> kRebase{"true", "yes", "on", "1", "i", "interactive"};
+    if (kMerges.count(rebase))
         return 3;
-    if (rebase == "true" || rebase == "yes" || rebase == "on" || rebase == "1" || rebase == "i" || rebase == "interactive")
+    if (kRebase.count(rebase))
         return 2;
     if (ff == "only")
         return 4;

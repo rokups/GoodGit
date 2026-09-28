@@ -169,4 +169,59 @@ GG_TEST("cli", "git gg new --before/--after inserts and rebases the descendants"
     GG_CHECK_EQ(s.gitgg(repo, {"new", "--after", "no-such"}).exitCode, 128);
 }
 
+GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the way, outside a repository, without git-gg or ggui on PATH",
+    "CLI-UNDO", "CLI-REDO", "CLI-EXIT-CODES", "HOOK-CLI-INSTALL", "CLI-UI")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    auto r = s.gitgg(repo, {"undo"});
+    GG_CHECK(!r.ok());
+    GG_CHECK(r.err.find("Nothing to undo") != std::string::npos);
+    r = s.gitgg(repo, {"redo"});
+    GG_CHECK(r.err.find("Nothing to redo") != std::string::npos);
+    // Undoing a checkout would overwrite a local change: refused with a hint.
+    GG_REQUIRE(s.gitgg(repo, {"new", "-m", "one more"}).ok());
+    s.write(repo, "f1.txt", "local change\n");
+    GG_REQUIRE(s.gitgg(repo, {"undo"}).ok()); // a new commit: its files stay, nothing is lost
+    s.git(repo, {"checkout", "-q", "-b", "other"});
+    s.commitFile(repo, "f1.txt", "on other\n", "Other f1");
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_other/###branch_other"); }));
+    s.contextMenu("//Branches/branch_other/###branch_other", "Check out");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "other"; }));
+    s.settle();
+    s.write(repo, "f1.txt", "edited after the checkout\n");
+    r = s.gitgg(repo, {"undo"});
+    GG_CHECK_EQ(r.exitCode, 128);
+    GG_CHECK(r.err.find("hint: stash your changes first") != std::string::npos);
+    s.git(repo, {"checkout", "-q", "--", "f1.txt"});
+    // Contradictory insert options.
+    GG_CHECK_EQ(s.gitgg(repo, {"new", "--before", "HEAD~1", "HEAD"}).exitCode, 129);
+    GG_CHECK_EQ(s.gitgg(repo, {"new", "--after", "HEAD~1", "--detach"}).exitCode, 129);
+    // Hooks outside a repository.
+    GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "install"}).exitCode, 128);
+    GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "uninstall"}).exitCode, 128);
+    // The git-gg binary started by its path, with neither git-gg nor ggui on PATH: the hooks
+    // status warns, and git gg ui cannot start ggui.
+    const fs::path gitgg = gg::findInPath("git-gg");
+    GG_REQUIRE(!gitgg.empty());
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    const fs::path gitDir = gg::findInPath("git").parent_path();
+    auto bare = [&](std::vector<std::string> args) {
+        gg::RunRequest req;
+        req.args = {gitgg.string()};
+        req.args.insert(req.args.end(), args.begin(), args.end());
+        req.cwd = repo;
+        req.env.emplace_back("PATH", gitDir.string());
+        return gg::run(req);
+    };
+    r = bare({"hooks", "status"});
+    GG_CHECK(r.out.find("git-gg is not on PATH") != std::string::npos);
+    r = bare({"ui"});
+    GG_CHECK_EQ(r.exitCode, 128);
+    GG_CHECK(r.err.find("cannot start ggui") != std::string::npos);
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "uninstall"}).ok());
+}
+
 } // namespace ggtest

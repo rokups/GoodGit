@@ -458,7 +458,7 @@ GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected c
 }
 
 GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant destinations, nothing redundant, already merged",
-    "ACT-SQUASH-DESCENDANTS", "ACT-SQUASH", "ACT-REBASE-COMMIT", "ACT-SIMPLIFY-PARENTS", "ACT-MOVE-CHANGES-PARENT",
+    "ACT-SQUASH-DESCENDANTS", "ACT-SQUASH-TARGET", "ACT-REBASE-COMMIT", "ACT-SIMPLIFY-PARENTS", "ACT-MOVE-CHANGES-PARENT",
     "ACT-MOVE-CHANGES-CHILD", "ACT-MERGE-INTO-HEAD", "ACT-REBASE-HEAD-ONTO")
 {
     const EditRepo r = makeRepo(s);
@@ -539,6 +539,56 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("not a single line") != std::string::npos);
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withMerge);
+}
+
+GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults",
+    "ACT-SPLIT", "ACT-RESTORE-COMMIT", "TAG-CREATE", "REM-ADD", "BR-SET-UPSTREAM")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string head = s.head(repo);
+    GG_REQUIRE(rowReady(s, head));
+    auto toast = [&](const char* title) {
+        return s.waitUntil([&] {
+            for (const auto& t : s.app.toasts())
+                if (t.title == title)
+                    return true;
+            return false;
+        });
+    };
+    // Split needs two files; HEAD has one.
+    ctx->ItemClick(rowRef(head).c_str());
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_S);
+    GG_CHECK(toast("Split"));
+    // Restore without files selected in Changes: the dialog says so and cannot run.
+    ctx->ItemClick(rowRef(head).c_str());
+    s.contextMenu(rowRef(head).c_str(), "Restore from...");
+    GG_REQUIRE(s.dialogOpen("Restore"));
+    GG_CHECK(s.app.dialogs().current()->message == "Select files in Changes first.");
+    s.dialogText("Restore", "from", "HEAD~1");
+    GG_CHECK((ctx->ItemInfo("//Restore/Restore").ItemFlags & ImGuiItemFlags_Disabled) != 0);
+    s.dialogButton("Restore", "Cancel");
+    // No remotes: Push explains where to add one; Set upstream has nothing to offer.
+    ctx->MenuClick("//##MainMenuBar/Repository/Push");
+    GG_CHECK(toast("Push"));
+    s.showPanel("Branches");
+    s.contextMenu("//Branches/branch_main/###branch_main", "Set upstream...");
+    GG_CHECK(toast("Set upstream"));
+    // An annotated tag without a message takes its name as the message.
+    s.showPanel("Tags");
+    ctx->ItemClick("//Tags/###create_tag");
+    GG_REQUIRE(s.dialogOpen("Create tag"));
+    s.dialogText("Create tag", "name", "v-annotated");
+    s.dialogCheck("Create tag", "annotated", "Annotated (with a message)");
+    s.dialogButton("Create tag", "Create");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"cat-file", "-t", "v-annotated"}).out == "tag\n"; }));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"tag", "-l", "--format=%(contents:subject)", "v-annotated"}), "v-annotated");
+    // The first remote is suggested as "origin".
+    s.showPanel("Remotes");
+    ctx->ItemClick("//Remotes/###add_remote");
+    GG_REQUIRE(s.dialogOpen("Add remote"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("name"), "origin");
+    s.dialogButton("Add remote", "Cancel");
 }
 
 } // namespace ggtest

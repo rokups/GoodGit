@@ -117,21 +117,4 @@ std::string formatTime(std::int64_t unixSeconds, bool withSeconds)
     return buf;
 }
 
-std::string formatRelative(std::int64_t unixSeconds, std::int64_t now)
-{
-    const std::int64_t d = now - unixSeconds;
-    char buf[64];
-    if (d < 60)
-        return "just now";
-    if (d < 3600)
-        std::snprintf(buf, sizeof(buf), "%lld min ago", static_cast<long long>(d / 60));
-    else if (d < 86400)
-        std::snprintf(buf, sizeof(buf), "%lld h ago", static_cast<long long>(d / 3600));
-    else if (d < 86400 * 30)
-        std::snprintf(buf, sizeof(buf), "%lld days ago", static_cast<long long>(d / 86400));
-    else
-        return formatTime(unixSeconds);
-    return buf;
-}
-
 } // namespace ggui::core

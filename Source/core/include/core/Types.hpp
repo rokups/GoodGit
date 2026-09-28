@@ -451,6 +451,5 @@ struct RepoSummary {
 // ---- Formatting helpers ------------------------------------------------------------------------
 
 std::string formatTime(std::int64_t unixSeconds, bool withSeconds = false);
-std::string formatRelative(std::int64_t unixSeconds, std::int64_t now);
 
 } // namespace ggui::core

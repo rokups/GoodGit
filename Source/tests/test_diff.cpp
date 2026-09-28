@@ -297,7 +297,7 @@ GG_TEST("diff", "select lines, Ctrl+C and the context menu", "DIFF-COPY-KEY", "D
 }
 
 GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit",
-    "DIFF-IMAGE", "DIFF-SIDE-BY-SIDE", "DIFF-CTX-COPY", "CONF-TERM-VIEW")
+    "DIFF-IMAGE", "DIFF-SIDE-BY-SIDE", "DIFF-CTX-COPY", "DIFF-TERM-VIEW")
 {
     const DiffRepo r = makeRepo(s);
     auto le = [](std::string& out, unsigned v, int bytes) {

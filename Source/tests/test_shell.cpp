@@ -643,4 +643,29 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
+GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not JSON; out-of-range values are clamped",
+    "SET-SCALE", "SET-THEME", "APP-LOG-FILE")
+{
+    // A fresh ggui (a restart) reads each settings.json; what it cannot use falls back to defaults.
+    auto start = [&](const std::string& name, const std::string& json) {
+        const fs::path dir = s.path("prefs-" + name);
+        s.write(dir, "settings.json", json);
+        const fs::path log = s.path(name + ".log");
+        auto r = s.runGgui({"--smoke"}, {{"GGUI_PREF_PATH", dir.string()}, {"GGUI_LOG_FILE", log.string()}});
+        GG_CHECK(r.ok());
+        return s.read(log.parent_path(), log.filename().string());
+    };
+    GG_CHECK(start("array", "[1, 2]").find("scale=1.00 theme=dark recent=0") != std::string::npos);
+    GG_CHECK(start("broken", "{\"uiScale\": ").find("ignoring unreadable settings.json") != std::string::npos);
+    const std::string mixed = start("mixed",
+        R"({"uiScale": 9, "theme": "light", "recent": [1, "/nowhere", null], "repos": {"/r": {"hooks": "not-now"},
+            "/s": {"hooks": "never"}, "/t": {"hooks": "installed", "ignoreOldGgRefs": true}},
+            "panels": {"History": true, "Diff": "yes"}, "diff": {"sideBySide": true, "context": 500, "whitespace": 9},
+            "nothingStaged": "stage-selected", "window": {"x": 10, "y": 20, "w": 800, "h": 600, "maximized": true}})");
+    GG_CHECK(mixed.find("scale=3.00 theme=light recent=1") != std::string::npos);
+    const std::string types = start("types", R"({"recent": 5, "repos": [], "panels": 1, "diff": "x", "window": 2,
+        "nothingStaged": "stage-all"})");
+    GG_CHECK(types.find("scale=1.00 theme=dark recent=0") != std::string::npos);
+}
+
 } // namespace ggtest
