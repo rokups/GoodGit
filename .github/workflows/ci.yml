@@ -3,8 +3,12 @@
 # Linux: Xvfb + software Vulkan (lavapipe), clang source-based coverage, the suite split into
 # shards, git 2.36 (pinned minimum) and the distribution's latest git. Windows: MinGW-static
 # and MSVC. Release packages (P4-04): Linux tar.gz/zip/deb, MinGW and MSVC ZIPs, each checked
-# by the package smoke scripts. Both gates (functional traceability, > 90 % line/branch
-# coverage) run on every build. Every shard runs with the UI-thread assertion on (the default in test builds).
+# by the package smoke scripts. Gates (standing rule 8, P4-06): every spec ID of the delivered
+# phases has a passing test and no test fails (traceability.py), and every row of
+# docs/ui-actions.md names a test that passed (ui_actions_check.py), on Linux (both git versions
+# merged: a test skipped on git 2.36 must pass on the latest git) and on each Windows job. The
+# coverage report is published but does not gate; COVERAGE_EXCL markers may not grow past the
+# allowlist. Every shard runs with the UI-thread assertion on (the default in test builds).
 name: ci
 
 on:
@@ -15,7 +19,7 @@ env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
   GGUI_FIXTURE_CACHE: ${{ github.workspace }}/.cache/ggui-fixtures
   # Highest phase whose spec IDs must all have passing tests.
-  GGUI_DELIVERED_PHASE: "0"
+  GGUI_DELIVERED_PHASE: "4"
   SHARDS: "4"
 
 jobs:
@@ -113,11 +117,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: shards
-      - name: Functional gate (traceability)
+      - name: Functional gate (traceability; no failing test)
         run: |
           python3 scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability.md \
             shards/linux-*/out/trace-*.json
-      - name: Code gate (coverage, ggui + git-gg profiles merged)
+      - name: UI-action gate (every docs/ui-actions.md row has a passing test)
+        if: always()
+        run: python3 scripts/ui_actions_check.py shards/linux-*/out/trace-*.json
+      - name: Coverage report (informational; ggui + git-gg profiles merged; COVERAGE_EXCL allowlist)
+        if: always()
         run: |
           bin=$(ls -d shards/linux-latest-0/build/coverage/bin)
           llvm-profdata merge -sparse shards/linux-latest-*/out/profiles/*.profraw -o coverage.profdata
@@ -161,12 +169,19 @@ jobs:
         env:
           GGUI_HEADLESS: "1"
         run: build/mingw-x64-static/bin/ggui.exe --test --trace=trace-mingw.json
+      - name: Gates (traceability, UI actions) on the Windows trace
+        if: always()
+        run: |
+          git --version
+          python3 scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability-mingw.md trace-mingw.json
+          python3 scripts/ui_actions_check.py trace-mingw.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-mingw
           path: |
             trace-mingw.json
+            traceability-mingw.md
             test-artifacts/
 
   windows-msvc:
@@ -187,12 +202,20 @@ jobs:
         env:
           GGUI_HEADLESS: "1"
         run: build/msvc-x64/bin/ggui.exe --test --trace=trace-msvc.json
+      - name: Gates (traceability, UI actions) on the Windows trace
+        if: always()
+        shell: bash
+        run: |
+          git --version
+          python scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability-msvc.md trace-msvc.json
+          python scripts/ui_actions_check.py trace-msvc.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-msvc
           path: |
             trace-msvc.json
+            traceability-msvc.md
             test-artifacts/
 
   # Release packages (task P4-04): release presets (no test engine), CPack, then the package

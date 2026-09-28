@@ -2,7 +2,7 @@
 
 Standing rule 8 (`REBUILD_TASKS.md`): every UI action the app implements is exercised by at
 least one test that checks the action's effect on the UI and on the repository. This file lists
-every action of phases 0–3 with the test that covers it. It was built in P3-20 from
+every action of phases 0–4 with the test that covers it. It was built in P3-20 from
 `Source/app` (every `MenuItem`, `Button`, `Selectable`, `Checkbox`, `Combo`, input field,
 `Shortcut`/`IsKeyPressed`, drag-and-drop source/target, double-click, mouse-button and
 mouse-wheel handler, and every `Form` dialog's fields and buttons) and checked against line
@@ -27,6 +27,9 @@ drives the action through the UI and checks its effect) or `missing`.
   Cancel tests the Cancel row, not the action behind the dialog.
 - The keyboard path of an action needs its own row and test even when the mouse path is tested.
 - A task is not done while any row is `missing`.
+- `scripts/ui_actions_check.py TRACE...` (traces from `ggui --test --trace=FILE`, every shard)
+  fails when a row is not `tested`, names no test, or names a test that is not in the traces or
+  did not pass. CI runs it on the Linux traces (both git versions) and on each Windows trace.
 - To find actions that lost their test, run the coverage report
   (`NO_GATE=1 scripts/run_software_coverage.sh`) and look for uncovered lines inside action
   handlers (`scripts/uncovered.py build/coverage/coverage/coverage.lcov Source/app`). Options
@@ -47,6 +50,14 @@ journal entries (see `Source/tests/test_ui_actions.cpp` and the P3-20 commits). 
 found and fixed: after Git required ▸ Quit (or any refused git check) the open stayed pending, so
 the Welcome screen stayed disabled and no repository could be opened without Retry. No action was
 removed as dead UI.
+
+**Audit result (P4-06, 2026-09-28).** 450 rows, all `tested`, and
+`scripts/ui_actions_check.py` finds a passing test for every one of them (suite of 257 tests, git
+2.55.0 and git 2.36.0). The widget calls added since P3-20 (P4-01 … P4-05: `MenuItem`, `Button`,
+`Checkbox`, `InputText`, `IsKeyPressed`, `Form` fields and buttons) were compared with the rows; each
+is listed. P4-04 adds command-line options only (`ggui --version`/`--help`, `git gg --version`,
+covered by `cli/` tests), P4-05 changes two labels. A test that needs a newer git than the minimum
+(2.36) is skipped there (`GG_REQUIRE_GIT`, "skipped" in the trace) and must pass on the latest git.
 
 ## Main menu ▸ Repository
 

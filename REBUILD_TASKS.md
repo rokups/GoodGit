@@ -78,6 +78,18 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     `scripts/traceability.py --phase N --out docs/traceability.md trace.json`.
   - Measure coverage: `NO_GATE=1 scripts/run_software_coverage.sh`.
   - §9 removal audit: `scripts/removal_audit.sh [--packages build/packages]` (exits 1 on a violation).
+  - UI-action gate: `scripts/ui_actions_check.py TRACE...` (every `docs/ui-actions.md` row has a
+    passing test; pass every shard's trace, both git versions).
+  - Release gate: `docs/release-checklist.md` (local results, remaining CI/VM steps, commands).
+- **Minimum git (2.36):** build it like CI's `git-min` job into `~/git-2.36` (GCC 15+ also needs
+  `CFLAGS="-O2 -std=gnu17"`), then run the suite with `PATH=$HOME/git-2.36/bin:$PATH`. Run it for any
+  change that calls git: newer git features the code or tests must not assume are `ls-files
+  --format` and update-ref rows / `--update-refs` (2.38), `git hook run --to-stdin` (2.40),
+  `--empty=stop` (2.45), batched ref updates in fetch (2.51), hooks defined in the configuration
+  (2.54); git 2.36 also moves HEAD between branches without a ref transaction. In tests,
+  `s.gitAtLeast(major, minor)` branches, and `GG_REQUIRE_GIT(major, minor, "why")` (first in the
+  body) skips a test whose subject needs a newer git: the trace says "skipped", and the latest-git
+  run must cover its IDs.
 - **Test-engine pitfalls:**
   - Combo labels must not contain `##`, and menu labels must not contain `/`.
   - Items inside tables or child windows need `s.child(...)` or `**/` paths.
@@ -90,7 +102,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 ## Phase 0 — Spec and harness
 
 ### [!] P0-01 Verify inputs against the latest upstream
-- **Status:** Blocked (2026-09-27): no SSH access to the upstream remotes, and neither `gg` nor a git checkout of `ggui` is available here (`~/src/projects/ggui` is not a git repository and must not be read, per the clean-room rule). The plan still names `ggui@e21feb2` / `gg@03dfdac`; someone with access must pull, diff and fold any behaviour changes into §4.
+- **Status:** Blocked (re-checked 2026-09-28 in P4-06): no SSH access to the upstream remotes, and neither gg nor a git checkout of ggui is available here (~/src/projects/ggui is not a git repository and must not be read, per the clean-room rule). The plan still names ggui@e21feb2 / gg@03dfdac. Needs someone with access to pull, diff and fold any behaviour changes into §4.
 - **Depends on:** —
 - **Refs:** header of plan
 - **Do:**
@@ -101,7 +113,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** the plan names the new analysed commits and any behavior delta is in §4.
 
 ### [~] P0-02 Freeze the per-panel UI spec
-- **Status:** Draft written: `docs/spec/ui-spec.md` (every panel, menu, toolbar item, context menu, dialog and state in Git wording, K/M/N/D legend, stable ImGui IDs). Missing: screenshots of the pre-rebuild app (not available in this clean-room environment; the suite's failure captures give screenshots of the rebuilt app instead) and the review/freeze by the project owner.
+- **Status:** Draft complete and kept current through Phase 4: docs/spec/ui-spec.md (every panel, menu, toolbar item, context menu, dialog and state in Git wording, K/M/N/D legend, stable ImGui IDs; P4-01 Rebase merges, P4-02 sequence.editor, P4-03 Worktrees sections). Checked again in P4-06 (2026-09-28): the 450 rows of docs/ui-actions.md, all tested, match it. Left (needs the owner): review and freeze. Screenshots of the pre-rebuild app cannot be taken in this clean-room environment; the owner decides whether screenshots of the rebuilt app (the suite writes them to test-artifacts/screens) replace them.
 - **Depends on:** P0-01
 - **Refs:** §7 Phase 0, §4, §10 (clean-room licensing)
 - **Do:**
@@ -125,7 +137,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** every §4 item maps to ≥ 1 ID and the file parses in CI.
 
 ### [~] P0-04 Formal spec: first-class conflict marker grammar (M1)
-- **Status:** Written: `docs/spec/conflict-markers.md` covers diff3, the N-sided extended form, marker length, in-band no-EOL/CRLF/empty sides, well-formed-only rule, `gg-conflicts=false`, the term algebra, no nesting and Git regions around ggui regions, with worked examples E1–E11. Awaiting review before it counts as frozen.
+- **Status:** Written: docs/spec/conflict-markers.md covers diff3, the N-sided extended form, marker length, in-band no-EOL/CRLF/empty sides, well-formed-only rule, gg-conflicts=false, the term algebra, no nesting and Git regions around ggui regions, with worked examples E1-E11. Checked against the implementation in P4-06 (2026-09-28): unchanged since Phase 3; conflicts/"marker grammar edge cases (docs/spec/conflict-markers.md)" and the conflict suites pass on git 2.36.0 and 2.55.0. Left (needs the owner): review; then it counts as frozen.
 - **Depends on:** P0-02
 - **Refs:** §4.10 marker format, §5 M1/K1, §10
 - **Do:** write the formal grammar and semantics, covering:
@@ -147,7 +159,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** the spec has worked examples for every case above, reviewed.
 
 ### [~] P0-05 Formal spec: undo journal format (U1)
-- **Status:** Written: `docs/spec/undo-journal.md` (JSON Lines records, header version, per-worktree HEAD keys in one shared journal, locking, torn-line handling, grouping and `GG_OPERATION`, undo/redo selection and refusal rules, gc via reflogs). Awaiting review.
+- **Status:** Written: docs/spec/undo-journal.md (JSON Lines records, header version, per-worktree HEAD keys in one shared journal, locking, torn-line handling, grouping and GG_OPERATION, undo/redo selection and refusal rules, worktree records, gc via reflogs). Brought in line with the implementation in P4-06 (2026-09-28): the hooks key an operation on the nearest git ancestor, any record of it in the 64 KiB tail joins it, and on older git (2.36) post-checkout records HEAD switches and a rebase's end records HEAD's final value. Left (needs the owner): review.
 - **Depends on:** P0-02
 - **Refs:** §5 U1, §4.12 B
 - **Do:** specify `.git/gg/journal`:
@@ -163,7 +175,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** reviewed; includes versioning so later format changes are detectable.
 
 ### [~] P0-06 New repository skeleton and build
-- **Status:** Tree created: CMake + CPM with every pin from §2.2, libgit2 options (SHA-256, OpenSSL-Dynamic/Schannel, ssh exec, `cmake/libgit2-win32-no-console.patch` adding CREATE_NO_WINDOW), targets `libgg`/`ggui_core`/`ggui`/`git-gg`, fonts via `cmake/EmbedFont.cmake` (.incbin on GCC/Clang incl. MinGW, generated array on MSVC), `.rc` + icon, `$ORIGIN` rpath, presets ninja/ninja-debug/coverage/coverage-gcov/release/mingw-x64-static/msvc-x64 plus mingw-x64-cross (Linux-hosted), `-Werror`. Verified: Linux gcc 16 and clang 22; MinGW-w64 cross build links `ggui.exe` and `git-gg.exe` (both run under wine: `--help`, `--list-tests`). Not done: retiring the `gg` repository (not available here, outward-facing); native MSVC build not run (no Windows host).
+- **Status:** Tree created: CMake + CPM with every pin from §2.2, libgit2 options (SHA-256, OpenSSL-Dynamic/Schannel, ssh exec, cmake/libgit2-win32-no-console.patch adding CREATE_NO_WINDOW), targets libgg/ggui_core/ggui/git-gg, fonts via cmake/EmbedFont.cmake (.incbin on GCC/Clang incl. MinGW, generated array on MSVC), version resource + icon, $ORIGIN rpath, presets ninja/ninja-debug/coverage/coverage-gcov/release/mingw-x64-static/msvc-x64 plus mingw-x64-cross (Linux-hosted) and the release/package presets (P4-04), -Werror. Verified: Linux gcc 16 and clang 22; MinGW-w64 cross build links ggui.exe and git-gg.exe (again on 2026-09-28; ggui.exe --list-tests under wine lists 257 tests). Left: the native MSVC build (CI job windows-msvc / package-msvc, or a Windows host) and retiring the gg repository (not available here, outward-facing).
 - **Depends on:** P0-01
 - **Refs:** §2.2, §3, §7 Phase 0, §9
 - **Do:**
@@ -258,7 +270,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** CI fails on a deliberately uncovered ID and passes once covered.
 
 ### [~] P0-13 Coverage pipeline and code gate
-- **Status:** Pipeline done and runs locally (scripts/run_software_coverage.sh, PARALLEL=1, Xvfb unless GGUI_HEADLESS; coverage_report.py with COVERAGE_EXCL allowlist). The coverage gate was dropped on 2026-09-28 (rule 8), so this is now an informational report. Last run: 96.9 % line / 88.0 % branch. Missing: running it in CI (P0-14).
+- **Status:** Pipeline done and runs locally (scripts/run_software_coverage.sh, SHARDS/PARALLEL, Xvfb unless GGUI_HEADLESS; coverage_report.py with the COVERAGE_EXCL allowlist). Since P4-06 it is a report by default (no 90 % gate in coverage_report.py, run_software_coverage.sh or CI; MIN_LINE/MIN_BRANCH still gate if set), fails only on COVERAGE_EXCL beyond the allowlist, and takes the test result from the traces (xvfb-run can exit 1 after a passing run). Last run 2026-09-28: 95.95 % line / 86.51 % branch, 2 COVERAGE_EXCL markers (allowlist 2). Left: the report on a CI build (gates job, P0-14).
 - **Depends on:** P0-07
 - **Refs:** §8.2
 - **Do:**
@@ -276,7 +288,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** the report runs on every CI build and merges `ggui` + `git-gg` profiles.
 
 ### [~] P0-14 CI matrix
-- **Status:** Written: `.github/workflows/ci.yml` (catalogue check, git 2.36 built and cached, Linux Xvfb + lavapipe with 4 shards × {git 2.36, latest}, gates job merging traces and profiles, MinGW-static and MSVC jobs). Not run: no remote or CI runner is reachable from this environment.
+- **Status:** Written: .github/workflows/ci.yml (catalogue check and removal audit, git 2.36 built and cached, Linux Xvfb + lavapipe with 4 shards x {git 2.36, latest}, gates job with the functional gate at phase 4, the UI-action gate and the coverage report (informational), MinGW-static and MSVC jobs that gate their own traces, package jobs). Updated in P4-06: GGUI_DELIVERED_PHASE 0 -> 4, the UI-action gate, coverage no longer gating, Windows gates. The git 2.36 leg was reproduced locally on 2026-09-28 (git 2.36.0 built as git-min does): 254 passed, 3 skipped (need newer git), 0 failed; merged with the latest leg 660/660. Left: a run on GitHub Actions with every job green (no remote or runner is reachable from here).
 - **Depends on:** P0-12, P0-13
 - **Refs:** §7 Phase 0, §8.3
 - **Do:**
@@ -507,7 +519,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
 - **Done when:** spec IDs covered.
 
 ### [~] P1-21 Responsiveness acceptance
-- **Status:** Scenario `engine/responsiveness on the large repository` (100k commits, 5.2k refs, 50k+ files, slow-git 50 ms): 1,773 frames, worst 2.3 ms, none over 33 ms, with the UI-thread assertion on. Cancel covered for history load, reveal, and slow diffs/blame via the toolbar. Not yet run on Windows CI (no runner available here).
+- **Status:** Scenario engine/responsiveness on the large repository (100k commits, 5.2k refs, 50k+ files, slow-git 50 ms): on 2026-09-28 1,763 frames, worst 2.0 ms, none over 33 ms, with the UI-thread assertion on; it also passes in the git 2.36.0 run. Cancel covered for history load, reveal, and slow diffs/blame via the toolbar. Left: the Windows CI runs (windows-mingw, windows-msvc; no Windows runner here).
 - **Depends on:** P1-15 … P1-20, P0-11
 - **Refs:** §3.1 acceptance, §8.4 responsiveness
 - **Do:** frame-time scenario on the large fixture with slow-git mode: open, scroll history,
@@ -1699,7 +1711,7 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
     the spec).
 
 ### [~] P4-04 Packaging
-- **Status:** Linux verified here; Windows packages built by cross-compile (MinGW) and by inspection (MSVC), not run on a Windows VM. Release presets (release, mingw-x64-static-release, msvc-x64-release, mingw-x64-cross-release) build without the test engine (GGUI_ENABLE_IMGUI_TEST_ENGINE=OFF: imgui_test_engine/stb not fetched, Source/tests not compiled, --test/--list-tests/--shard/--trace rejected with exit 2); package/workflow presets package-linux/-mingw/-msvc/-mingw-cross; install rules only for the ggui component (bin/ggui, bin/git-gg, .desktop, 256px icon, LICENSE; fonts are embedded); CPack TGZ+ZIP+DEB on Linux (13-14 MB each, ggui 25 MB and git-gg 4.9 MB stripped, static libstdc++/libgcc), ZIP on Windows with ggui.exe, git-gg.exe, LICENSE.txt at the top; res/version.rc.in gives both exes icon + version info; ggui --version/--help and git gg --version. scripts/package_smoke.sh passes (81 checks on the .tar.gz, .zip and .deb: files, desktop-file-validate, no test-engine symbols/strings/test names, ldd/RUNPATH clean, and in a user+mount namespace with /home and /tmp hidden and PATH = package + git only: ggui --version/--help, --test rejected, git gg --version/help/new/undo, git fsck, ggui --smoke --headless). MinGW cross ZIP (13 MB): only Windows system DLLs and UCRT API sets imported, version resources present, runs under wine (ggui --version, git gg --version, --test rejected); scripts/package_smoke_windows.sh passes its file/import/string checks. CI jobs package-linux (apt installs the .deb in ubuntu:24.04), package-mingw, package-msvc written, not run. Full suite 254/254. Missing: a container run here (docker socket not accessible), the CI jobs, the MSVC build, and installing on clean Windows and Linux VMs.
+- **Status:** Linux verified here; Windows packages built by cross-compile (MinGW) and by inspection (MSVC), not run on a Windows VM. Re-checked in P4-06 (2026-09-28) from a fresh release build: scripts/package_smoke.sh 81 checks passed on the .tar.gz, .zip and .deb (files, desktop-file-validate, no test engine, ldd/RUNPATH, runtime checks in a clean user+mount namespace incl. git gg new/undo and ggui --smoke --headless); package-mingw-cross ZIP rebuilt, package_smoke_windows.sh file/import/string checks passed; removal_audit.sh --packages clean. Release presets build without the test engine (--test and friends exit 2); install rules only for the ggui component; CPack TGZ+ZIP+DEB on Linux, flat ZIP on Windows; version resources; ggui --version/--help, git gg --version. Left: the --container ubuntu:24.04 run (the docker socket is not accessible here; CI job package-linux does it), the CI jobs package-linux/package-mingw/package-msvc, the MSVC build, and installing on clean Linux and Windows VMs (docs/release-checklist.md §4.2).
 - **Depends on:** P0-06
 - **Refs:** §2.2, §7 Phase 4
 - **Do:** install rules and CPack ZIP bundling `ggui` and `git-gg` (so `git gg` resolves on
@@ -1760,7 +1772,8 @@ These come from the plan's confirmed decisions. Every task's "done" implicitly i
   itself. Old CLI names must be tested outside ggui's git environment: with
   `GG_ASKPASS_ENDPOINT` set, `git-gg <one unknown word>` is askpass and waits for ggui.
 
-### P4-06 Final release gate
+### [~] P4-06 Final release gate
+- **Status:** Local (Linux) gate GREEN on 2026-09-28; CI, Windows and clean-VM checks not run (no runner or VM reachable here). Local: clean build; suite 257/257 on git 2.55.0 and 254 passed / 3 skipped (need git 2.38 or 2.54) / 0 failed on git 2.36.0 (built as CI's git-min does); traceability 660/660 (both legs merged, and the latest leg alone); docs/ui-actions.md 450 rows, each with a passing test (new scripts/ui_actions_check.py), reverse check of P4-01..P4-05 widgets finds nothing undocumented; responsiveness 1,763 frames, worst 2.0 ms; removal audit clean incl. packages; COVERAGE_EXCL 2/2; coverage 95.95 % line / 86.51 % branch (report); Linux package smoke 81 checks, MinGW ZIP file checks. Found and fixed: 21 tests failed on git 2.36 (never run before): ls-files --format and git hook run --to-stdin were too new for the minimum git; wrapper-mode hooks (git before 2.54) journaled each hook call as its own operation labelled with the hook's shell; git 2.36's HEAD switches and rebase ends outside ref transactions broke Undo; big fetches on git before 2.51 split into several operations; tests assumed git 2.38+ (GG_REQUIRE_GIT skips, Update refs off where incidental); CI still had GGUI_DELIVERED_PHASE 0 and a 90 % coverage gate. Results and the remaining steps: docs/release-checklist.md. Left: every CI job green on the release candidate (incl. both Windows suites with the responsiveness scenario and their gates, the package jobs), manual installs on clean Linux and Windows VMs (§4.2), and the owner-side tasks P0-01, P0-02, P0-04, P0-05, P0-06 (retire gg).
 - **Depends on:** all tasks
 - **Refs:** §7 Phase 4, §8.2
 - **Do:** 100 % of §4 spec IDs covered; every implemented feature and every UI action in

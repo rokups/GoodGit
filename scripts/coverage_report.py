@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""First-party coverage report and code gate (REBUILD_PLAN §8.2, task P0-13).
+"""First-party coverage report (REBUILD_PLAN §8.2, task P0-13; standing rule 8).
 
 Reads an LCOV tracefile (from `llvm-cov export -format=lcov` or `gcovr --lcov`), keeps only
 first-party sources (Source/libgg, Source/core, Source/app, Source/gitgg; tests, third-party
-code and generated fonts are excluded), applies COVERAGE_EXCL markers and gates on line and
-branch coverage.
+code and generated fonts are excluded), applies COVERAGE_EXCL markers and reports line and
+branch coverage. Coverage is informational since 2026-09-28 (rule 8: every feature and UI action
+tested is the gate): it fails only when a file has more COVERAGE_EXCL markers than the allowlist
+permits, or a marker has no reason. --min-line / --min-branch (default 0) still gate if given.
 
 Exclusion markers (the rebuild starts with none; every marker needs a one-line reason):
     // COVERAGE_EXCL_START: <reason>
@@ -94,8 +96,8 @@ def main():
     ap.add_argument("--lcov", required=True)
     ap.add_argument("--root", required=True)
     ap.add_argument("--allowlist", default=None)
-    ap.add_argument("--min-line", type=float, default=90.0)
-    ap.add_argument("--min-branch", type=float, default=90.0)
+    ap.add_argument("--min-line", type=float, default=0.0, help="optional gate (default: report only)")
+    ap.add_argument("--min-branch", type=float, default=0.0, help="optional gate (default: report only)")
     ap.add_argument("--out", default=None, help="Markdown summary")
     args = ap.parse_args()
 
@@ -159,12 +161,13 @@ def main():
     if problems:
         print("\n".join(problems), file=sys.stderr)
         status = 1
-    if line_pct <= args.min_line or branch_pct <= args.min_branch:
-        if args.min_line > 0 or args.min_branch > 0:
-            print(f"code gate FAILED: need > {args.min_line} % line and > {args.min_branch} % branch", file=sys.stderr)
-            status = 1
+    gated = args.min_line > 0 or args.min_branch > 0
+    if gated and (line_pct <= args.min_line or branch_pct <= args.min_branch):
+        print(f"coverage gate FAILED: need > {args.min_line} % line and > {args.min_branch} % branch", file=sys.stderr)
+        status = 1
     if status == 0:
-        print("code gate OK")
+        print(f"COVERAGE_EXCL markers within the allowlist ({total_markers})"
+              + ("; coverage gate OK" if gated else "; coverage is a report only"))
     return status
 
 
