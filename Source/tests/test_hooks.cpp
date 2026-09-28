@@ -355,6 +355,27 @@ GG_TEST("hooks", "managed pre-push refuses plain git pushes of conflicted commit
     r = s.gitMayFail(repo, {"push", "-q", "--no-verify", "origin", "main"});
     GG_CHECK(r.ok());
     GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main"));
+    // Deleting a remote branch pushes no commits: allowed.
+    s.git(repo, {"push", "-q", "--no-verify", "origin", "main:refs/heads/doomed"});
+    r = s.gitMayFail(repo, {"push", "-q", "origin", "--delete", "doomed"});
+    GG_CHECK(r.ok());
+    GG_CHECK(!s.gitMayFail(bare, {"rev-parse", "-q", "--verify", "refs/heads/doomed"}).ok());
+    // Clean commits the remote does not have yet (and it has one we do not): allowed.
+    s.git(bare, {"update-ref", "refs/heads/other", s.gitOut(bare, {"commit-tree", "main~2^{tree}", "-m", "only on the remote"})});
+    const std::string clean = s.gitOut(repo, {"commit-tree", "main~2^{tree}", "-p", "main~2", "-m", "clean"});
+    r = s.gitMayFail(repo, {"push", "-q", "origin", "+" + clean + ":refs/heads/other"});
+    GG_CHECK(r.ok());
+    // Installing twice is fine; a user's hook that replaced a wrapper is left alone by uninstall.
+    GG_CHECK(s.gitgg(repo, {"hooks", "install"}).ok());
+    GG_CHECK(s.gitgg(repo, {"hooks", "uninstall"}).ok());
+    ggui::setEnv("GG_HOOKS_MODE", "wrapper");
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    ggui::unsetEnv("GG_HOOKS_MODE");
+    s.write(repo / ".git" / "hooks", "post-commit", "#!/bin/sh\necho mine\n");
+    GG_CHECK(s.gitgg(repo, {"hooks", "uninstall"}).ok());
+    GG_CHECK_STR_EQ(s.read(repo / ".git" / "hooks", "post-commit"), "#!/bin/sh\necho mine\n");
+    // Outside a repository.
+    GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "status"}).exitCode, 1);
 }
 
 } // namespace ggtest

@@ -408,6 +408,17 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
         const auto& d = s.session()->diff().diff();
         return d && d->query.kind == ggui::core::DiffKind::Term && d->query.a.hex() == commit;
     }));
+    // HEAD keeps the conflict, so the working tree file has it too: its term views read the file.
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string wt = s.child("//Changes", "##files") + "/Conflicted/conflict.txt/###file_conflict.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wt.c_str()); }));
+    ctx->ItemClick(wt.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Diff/##term_view"); }));
+    s.comboSelect("//Diff/##term_view", "Base \xe2\x86\x92 side 2");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::Term && d->query.a.isNull() && d->query.stageB == 1;
+    }));
 }
 
 GG_TEST("diff", "more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file",
@@ -476,6 +487,26 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
     const std::string png = s.child("//Changes", "##files") + "/Untracked/new.png/###file_new.png";
     ctx->ItemClick(png.c_str());
     GG_CHECK(s.waitUntil([&] { return file(s) && file(s)->path() == "new.png" && file(s)->newImage == "4x5"; }));
+    // Blame of a very long file stops after its first 50,000 lines.
+    std::string many;
+    for (int i = 0; i < 50010; ++i)
+        many += std::to_string(i) + "\n";
+    s.write(repo, "many.txt", many);
+    s.git(repo, {"add", "many.txt"});
+    s.git(repo, {"commit", "-q", "-m", "many lines"});
+    const std::string manyCommit = s.head(repo);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + manyCommit).c_str()); }));
+    ctx->ItemClick(("//History/**/###row_" + manyCommit).c_str());
+    const std::string manyRow = s.child("//Changes", "##files") + "/many.txt/###file_many.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(manyRow.c_str()); }));
+    s.contextMenu(manyRow.c_str(), "Blame file");
+    s.showPanel("Blame");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "many.txt" && b->truncated && b->lines.size() == 50000;
+    }, 60.0f));
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Changes", "##files") + "/Untracked/scratch.txt/###file_scratch.txt").c_str()); }));
     // Blame of a file git does not know yet: every line is uncommitted.
     s.contextMenu((s.child("//Changes", "##files") + "/Untracked/scratch.txt/###file_scratch.txt").c_str(), "Blame file");
     s.showPanel("Blame");

@@ -930,7 +930,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         const git_index_entry* stages[4] = {};
         check(git_index_conflict_get(&stages[1], &stages[2], &stages[3], idx.get(), q.path.c_str()), "git_index_conflict_get");
         auto blobOf = [&](int n) -> Blob {
-            if (n < 1 || n > 3 || !stages[n])
+            if (!stages[n]) // n is 1, 2 or 3; a side may be missing (added by one side)
                 return Blob();
             return lookupBlob(repo, stages[n]->id);
         };
@@ -975,7 +975,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         f.image = isImagePath(f.path());
         if (f.image && q.withHunks) {
             f.oldImage = imageDims(rawBlob(repo, d->old_file.id));
-            if (worktree && !git_repository_is_bare(repo))
+            if (worktree) // (a bare repository has no working tree to diff)
                 f.newImage = imageDims(readFileText(fs::path(git_repository_workdir(repo)) / newPath));
             else
                 f.newImage = imageDims(rawBlob(repo, d->new_file.id));
@@ -1006,7 +1006,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
                 std::uint64_t size = 0;
                 const std::string oldText = blobText(repo, d->old_file.id, &size);
                 f.oldText = splitText(oldText);
-                if (worktree && !git_repository_is_bare(repo)) {
+                if (worktree) { // (a bare repository has no working tree to diff)
                     const fs::path p = fs::path(git_repository_workdir(repo)) / newPath;
                     std::error_code ec;
                     if (fs::is_regular_file(p, ec) && fs::file_size(p, ec) <= kMaxTextBytes)
