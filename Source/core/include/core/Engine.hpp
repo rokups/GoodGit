@@ -118,6 +118,7 @@ struct MutationFinishedEvent {
     std::string message;             // error text (first lines of git's stderr) or info
     std::string detail;              // full output
     std::string operation;           // journal operation id
+    std::string journalError;        // the undo journal could not record it (busy or unwritable)
     std::string result;              // action-specific result (e.g. the new commit id)
 };
 

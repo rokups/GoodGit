@@ -678,31 +678,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             result.rewritten[orig] = now;
 
         // Ref moves: local branches (never remote-tracking ones) and a detached HEAD.
-        std::map<std::string, std::string> otherWorktreeBranches;
-        {
-            git_strarray names{};
-            if (git_worktree_list(&names, m->repo.get()) == 0) {
-                for (size_t i = 0; i < names.count; ++i) {
-                    git_worktree* raw = nullptr;
-                    if (git_worktree_lookup(&raw, m->repo.get(), names.strings[i]) != 0)
-                        continue;
-                    Worktree wt(raw);
-                    git_repository* rawRepo = nullptr;
-                    if (git_repository_open_from_worktree(&rawRepo, wt.get()) == 0) {
-                        Repository wtRepo(rawRepo);
-                        git_reference* head = nullptr;
-                        if (git_reference_lookup(&head, wtRepo.get(), "HEAD") == 0) {
-                            Reference h(head);
-                            if (git_reference_type(h.get()) == GIT_REFERENCE_SYMBOLIC)
-                                otherWorktreeBranches[git_reference_symbolic_target(h.get())] = names.strings[i];
-                        }
-                    }
-                    git_error_clear();
-                }
-                git_strarray_dispose(&names);
-            }
-            git_error_clear();
-        }
+        const std::map<std::string, std::string> otherWorktreeBranches = branchesInOtherWorktrees(m->repo.get());
         std::string headRef; // this worktree's branch, "" when detached
         {
             git_reference* raw = nullptr;

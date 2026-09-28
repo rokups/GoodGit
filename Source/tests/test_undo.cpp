@@ -5,6 +5,7 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <chrono>
 #include <fstream>
 
 namespace ggtest {
@@ -125,6 +126,39 @@ GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, loca
     GG_CHECK(s.app.errorMessage().find("lock") != std::string::npos);
     fs::remove(lock);
     GG_CHECK_STR_EQ(repoState(s, repo), locked);
+
+    // Undo of a checkout while HEAD is locked: the ref update fails and the working tree and
+    // index it had already carried back are put back too.
+    s.contextMenu("//Branches/branch_other/###branch_other", "Check out");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "other"; }));
+    s.settle();
+    const std::string onOther = repoState(s, repo);
+    const fs::path headLock = repo / ".git" / "HEAD.lock";
+    std::ofstream(headLock) << "";
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.dismissError());
+    fs::remove(headLock);
+    GG_CHECK_STR_EQ(repoState(s, repo), onOther);
+    GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "other content\n");
+    GG_CHECK(s.statusPorcelain(repo).empty());
+
+    // An operation whose HEAD had no known earlier value (another writer's record): refused.
+    s.git(repo, {"switch", "-q", "--detach"});
+    s.settle();
+    std::ofstream(repo / ".git" / "gg" / "journal", std::ios::app | std::ios::binary)
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"z-1\",\"src\":\"ggui\",\"label\":\"HEAD from nowhere\",\"wt\":\"main\"}\n"
+        << "{\"v\":1,\"t\":\"refs\",\"op\":\"z-1\",\"u\":[[\"HEAD\",\"" << std::string(40, '0') << "\",\"" << s.head(repo) << "\"]]}\n"
+        << "{\"v\":1,\"t\":\"end\",\"op\":\"z-1\"}\n";
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& ops = s.session()->operations();
+        return !ops.empty() && ops.back().id == "z-1";
+    }));
+    const std::string detached = repoState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("the previous value of HEAD was not recorded") != std::string::npos);
+    GG_CHECK_STR_EQ(repoState(s, repo), detached);
 }
 
 GG_TEST("undo", "a corrupt journal line is skipped, not fatal", "HOOK-JOURNAL-CORRUPT")
@@ -222,6 +256,91 @@ GG_TEST("undo", "every everyday mutation can be undone", "UNDO-ALL-MUTATIONS")
     s.git(other, {"push", "-q", "origin", "main"});
     check("fetch", [&] { ctx->ItemClick("//##Toolbar/###tb_fetch"); });
     check("move HEAD to parent", [&] { ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent"); });
+}
+
+GG_TEST("undo", "journal variants: foreign, torn and future records are skipped; busy and stale locks; a newer format is refused",
+    "HOOK-JOURNAL-CORRUPT", "OPS-LIST")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string before = repoState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return opsFrom(s, "ggui") == 1; }));
+    s.settle();
+    const fs::path journal = repo / ".git" / "gg" / "journal";
+    const std::string now = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    // Written by something else: lines that are not records, records with missing or mistyped
+    // fields, a newer record version, records whose begin was lost, refs/map payloads of the
+    // wrong shape, an unknown record type, operations opened by git processes that are gone
+    // (one never closed, one too old), and a torn last line.
+    std::ofstream(journal, std::ios::app | std::ios::binary)
+        << "\n[1, 2]\n"
+        << "{\"op\":\"x\"}\n{\"t\":\"begin\"}\n{\"t\":1,\"op\":\"x\"}\n{\"t\":\"begin\",\"op\":2}\n"
+        << "{\"v\":2,\"t\":\"begin\",\"op\":\"from-the-future\"}\n"
+        << "{\"v\":1,\"t\":\"end\",\"op\":\"lost\"}\n"
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"t-1\",\"src\":\"git\",\"label\":\"typed by hand\",\"wt\":\"elsewhere\",\"time\":" << now << "}\n"
+        << "{\"v\":1,\"t\":\"refs\",\"op\":\"t-1\",\"u\":5}\n"
+        << "{\"v\":1,\"t\":\"refs\",\"op\":\"t-1\",\"u\":[7,[\"HEAD\"],[1,\"a\",\"b\"],[\"a\",1,\"b\"],[\"a\",\"b\",1]]}\n"
+        << "{\"v\":1,\"t\":\"map\",\"op\":\"t-1\",\"m\":3}\n"
+        << "{\"v\":1,\"t\":\"map\",\"op\":\"t-1\",\"m\":[7,[\"a\"],[1,\"b\"],[\"a\",2]]}\n"
+        << "{\"v\":1,\"t\":\"index\",\"op\":\"t-1\",\"wt\":\"elsewhere\",\"before\":\"\",\"after\":\"\"}\n"
+        << "{\"v\":1,\"t\":\"index\",\"op\":\"t-1\",\"wt\":\"elsewhere\",\"before\":\"\",\"after\":\"\",\"worktree\":true}\n"
+        << "{\"v\":1,\"t\":\"future-kind\",\"op\":\"t-1\"}\n"
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"git-999999-1\",\"src\":\"git\",\"label\":\"git gone\",\"time\":" << now << "}\n"
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"git-999998-1\",\"src\":\"git\",\"label\":\"git old\",\"time\":1}\n"
+        << "{\"v\":1,\"t\":\"beg";
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return opsFrom(s, "ggui") == 2; }));
+    s.settle();
+    GG_CHECK(s.waitUntil([&] { return opsFrom(s, "git") == 3; }));
+    for (const auto& op : s.session()->operations()) {
+        if (op.id == "t-1") {
+            GG_CHECK(op.refs.empty());
+            GG_CHECK(op.rewrites.empty());
+            GG_CHECK(op.index.size() == 1u && op.index[0].worktree);
+        }
+        if (op.src == "git")
+            GG_CHECK(op.ended); // their git processes are gone
+    }
+    // The torn line stays on its own line: the new record after it is intact.
+    GG_CHECK(s.read(repo, ".git/gg/journal").find("{\"v\":1,\"t\":\"beg\n{") != std::string::npos);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return opsFrom(s, "ggui") == 3; }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(undone(s, repo, before));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+
+    // Another writer holds the journal lock: the mutation still runs, with a warning that Undo
+    // will not know it. A lock left behind long ago is stale and removed.
+    const fs::path lock = repo / ".git" / "gg" / "journal.lock";
+    std::ofstream(lock) << "";
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_CHECK(s.waitUntil([&] {
+        for (const auto& t : s.app.toasts())
+            if (t.title == "Undo journal" && t.message.find("journal busy") != std::string::npos)
+                return true;
+        return false;
+    }, 30.0f));
+    s.settle();
+    fs::last_write_time(lock, fs::file_time_type::clock::now() - std::chrono::hours(1));
+    const size_t ggOps = opsFrom(s, "ggui");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_CHECK(s.waitUntil([&] { return opsFrom(s, "ggui") == ggOps + 1; }));
+    s.settle();
+    GG_CHECK(!fs::exists(lock));
+
+    // A journal from a newer ggui is not read (nor guessed at): an error, and nothing to undo.
+    s.write(repo, ".git/gg/journal", "{\"gg-journal\":99}\n");
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("journal written by a newer ggui (format 99)") != std::string::npos);
+    // A header whose version is not a number counts as the oldest format.
+    s.write(repo, ".git/gg/journal", "{\"gg-journal\":\"one\"}\n");
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_CHECK(s.waitUntil([&] { return s.session()->operations().empty(); }));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
 } // namespace ggtest

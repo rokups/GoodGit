@@ -60,6 +60,9 @@ core::RequestId Actions::run(std::string label, std::function<void(MutationConte
 
 void Actions::onFinished(const core::MutationFinishedEvent& event)
 {
+    if (!event.journalError.empty())
+        m_session.app().notify(App::Notice::Warning, "Undo journal",
+            "\"" + event.label + "\" was not recorded, so Undo cannot restore it: " + event.journalError);
     auto it = m_callbacks.find(event.request);
     if (it != m_callbacks.end()) {
         Callback cb = std::move(it->second);

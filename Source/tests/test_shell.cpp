@@ -438,4 +438,101 @@ GG_TEST("shell", "activity spinner, task tooltip and Cancel", "TB-SPINNER", "TB-
     GG_CHECK(s.waitUntil([&] { return !s.itemExists("//##Toolbar/##tb_activity"); }, 5.0f));
 }
 
+GG_TEST("shell", "unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees",
+    "APP-STATE-DETECT", "TB-STATE-BADGE", "APP-OPEN-STATES", "REM-LIST", "TAG-FILTER", "WT-LIST")
+{
+    // a.txt: c1 "1", c2 "2", c3 "3"; "side" changes it to "s" (s1) and adds s.txt (s2).
+    const fs::path repo = s.fixture(Recipe::Empty);
+    s.commitFile(repo, "a.txt", "1\n", "c1");
+    const std::string c1 = s.head(repo);
+    s.commitFile(repo, "a.txt", "2\n", "c2");
+    const std::string c2 = s.head(repo);
+    s.commitFile(repo, "a.txt", "3\n", "c3");
+    s.git(repo, {"switch", "-q", "-c", "side", c1});
+    s.commitFile(repo, "a.txt", "s\n", "s1");
+    const std::string s1 = s.head(repo);
+    s.commitFile(repo, "s.txt", "s\n", "s2");
+    const std::string s2 = s.head(repo);
+    s.git(repo, {"switch", "-q", "main"});
+    auto snap = [&] { return s.session()->snapshot(); };
+
+    // A cherry-pick of two commits, the conflicted first one committed by hand: git is between
+    // commits (no CHERRY_PICK_HEAD, the sequence remains).
+    GG_CHECK(!s.gitMayFail(repo, {"cherry-pick", s1, s2}).ok());
+    s.write(repo, "a.txt", "3s\n");
+    s.git(repo, {"add", "a.txt"});
+    s.git(repo, {"commit", "-q", "--no-edit"});
+    GG_REQUIRE(!fs::exists(repo / ".git" / "CHERRY_PICK_HEAD"));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return snap()->state == ggui::core::RepoState::CherryPicking; }));
+    s.git(repo, {"cherry-pick", "--continue"});
+    GG_CHECK(s.waitUntil([&] { return snap()->state == ggui::core::RepoState::None; }));
+
+    // The same for a revert of two commits.
+    GG_CHECK(!s.gitMayFail(repo, {"revert", "--no-edit", c2, s2}).ok());
+    s.write(repo, "a.txt", "reverted\n");
+    s.git(repo, {"add", "a.txt"});
+    s.git(repo, {"commit", "-q", "--no-edit"});
+    GG_CHECK(s.waitUntil([&] { return snap()->state == ggui::core::RepoState::Reverting; }));
+    s.git(repo, {"revert", "--quit"});
+
+    // git rebase (not -i) of a detached HEAD stopped by a conflict.
+    s.git(repo, {"switch", "-q", "--detach", c1});
+    s.commitFile(repo, "a.txt", "detached\n", "d1");
+    GG_CHECK(!s.gitMayFail(repo, {"rebase", "main"}).ok());
+    GG_CHECK(s.waitUntil([&] { return snap()->state == ggui::core::RepoState::RebasingInteractive; }));
+    GG_CHECK_STR_EQ(snap()->stateOnto, "detached HEAD");
+    GG_CHECK(s.itemText("//##Toolbar/###tb_state").rfind("REBASING", 0) == 0);
+    s.git(repo, {"rebase", "--abort"});
+    s.git(repo, {"switch", "-q", "main"});
+
+    // Remotes: one with only a push URL, one with no URL at all (not listed).
+    s.git(repo, {"config", "remote.pushonly.pushurl", (s.root() / "nowhere.git").string()});
+    s.git(repo, {"config", "remote.nourl.fetch", "+refs/heads/*:refs/remotes/nourl/*"});
+    // Tags: an annotated tag of a tree, one without a message.
+    s.git(repo, {"tag", "-a", "-m", "a tree", "treetag", "HEAD^{tree}"});
+    const std::string tagId = s.git(repo, {"mktag"},
+        "object " + c1 + "\ntype commit\ntag nomsg\ntagger T <t@example.com> 0 +0000\n").out;
+    s.git(repo, {"update-ref", "refs/tags/nomsg", gg::trim(tagId)});
+    // A refs/stash written by hand: a plain commit, not git stash's merge.
+    s.git(repo, {"update-ref", "--create-reflog", "-m", "hand-made stash", "refs/stash", c2});
+    // A linked worktree on an orphan branch (its HEAD names a branch with no commits yet).
+    const fs::path orphan = s.root() / "orphan-wt";
+    s.git(repo, {"worktree", "add", "-q", "--detach", orphan.string()});
+    s.git(orphan, {"checkout", "-q", "--orphan", "fresh"});
+    // A file replaced by a symlink (a type change).
+    fs::remove(repo / "a.txt");
+    fs::create_symlink("s.txt", repo / "a.txt");
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_REQUIRE(s.waitUntil([&] { return snap()->tags.size() == 2 && snap()->worktrees.size() == 2; }));
+    std::vector<std::string> remotes;
+    for (const auto& r : snap()->remotes)
+        remotes.push_back(r.name + " [" + r.url + "] [" + r.pushUrl + "]");
+    GG_CHECK(remotes == (std::vector<std::string>{"pushonly [] [" + (s.root() / "nowhere.git").string() + "]"}));
+    for (const auto& t : snap()->tags) {
+        GG_CHECK(t.annotated);
+        if (t.name == "treetag")
+            GG_CHECK_STR_EQ(t.target.hex(), s.revParse(repo, "HEAD^{tree}"));
+        else
+            GG_CHECK(t.message.empty());
+    }
+    GG_REQUIRE(snap()->stashes.size() == 1u);
+    GG_CHECK_STR_EQ(snap()->stashes[0].base.hex(), c1);
+    GG_CHECK(!snap()->stashes[0].hasIndexChanges);
+    GG_CHECK_STR_EQ(snap()->worktrees[1].branch, "fresh");
+    GG_CHECK(snap()->worktrees[1].head.isNull());
+    s.showPanel("Remotes");
+    GG_CHECK(s.textShown("//Remotes", "pushonly"));
+    s.showPanel("Worktrees");
+    GG_CHECK(s.textShown("//Worktrees", "fresh"));
+    GG_CHECK(s.waitUntil([&] {
+        const auto st = s.session()->status();
+        return st && !st->unstaged.empty() && st->unstaged[0].kind == ggui::core::ChangeKind::TypeChanged;
+    }));
+    fs::remove(repo / "a.txt");
+    s.git(repo, {"checkout", "a.txt"});
+    s.git(repo, {"update-ref", "-d", "refs/stash"});
+    s.git(repo, {"worktree", "remove", "--force", orphan.string()});
+}
+
 } // namespace ggtest

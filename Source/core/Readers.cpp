@@ -60,14 +60,13 @@ int readInt(const fs::path& p)
     return std::atoi(s.c_str());
 }
 
-// "ref: refs/heads/x" → x ; "<oid>" → "" (detached)
-std::string headFileBranch(const fs::path& headFile, Oid* oidOut)
+// "ref: refs/heads/x" → x ; "<oid>" → "" (detached, the id in `oid`)
+std::string headFileBranch(const fs::path& headFile, Oid& oid)
 {
     const std::string s = gg::trim(readFileText(headFile));
     if (s.rfind("ref: ", 0) == 0)
         return stripPrefix(s.substr(5), "refs/heads/");
-    if (oidOut)
-        *oidOut = Oid::fromHex(s);
+    oid = Oid::fromHex(s);
     return {};
 }
 
@@ -126,8 +125,9 @@ RepoState detectState(git_repository* repo, std::string& detail)
         const int end = readInt(gitDir / "rebase-merge" / "end");
         if (end > 0)
             detail = std::to_string(done) + "/" + std::to_string(end);
-        return fs::exists(gitDir / "rebase-merge" / "interactive", ec) ? RepoState::RebasingInteractive
-                                                                       : RepoState::Rebasing;
+        // git >= 2.26 runs every merge-backend rebase (plain git rebase too) as an interactive
+        // one: rebase-merge/interactive always exists, and so does the todo.
+        return RepoState::RebasingInteractive;
     }
     if (fs::exists(gitDir / "rebase-apply", ec)) {
         const int next = readInt(gitDir / "rebase-apply" / "next");
@@ -147,8 +147,8 @@ RepoState detectState(git_repository* repo, std::string& detail)
         const std::string todo = readFileText(gitDir / "sequencer" / "todo");
         return todo.rfind("revert", 0) == 0 ? RepoState::Reverting : RepoState::CherryPicking;
     }
-    // BISECT_LOG lives in the common dir for the main worktree, per-worktree otherwise.
-    if (fs::exists(gitDir / "BISECT_LOG", ec) || fs::exists(gitDir / "BISECT_START", ec))
+    // Per worktree, like the bisect's other files.
+    if (fs::exists(gitDir / "BISECT_START", ec))
         return RepoState::Bisecting;
     return RepoState::None;
 }
@@ -180,11 +180,8 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         snap->workdir = fs::path(wd).lexically_normal();
     snap->gitDir = fs::path(git_repository_path(repo)).lexically_normal();
     snap->commonDir = fs::path(git_repository_commondir(repo)).lexically_normal();
-    auto leaf = [](fs::path p) {
-        if (!p.has_filename())
-            p = p.parent_path();
-        return p.filename().string();
-    };
+    // libgit2's directories end with a separator: the name is the parent path's last part.
+    auto leaf = [](const fs::path& p) { return p.parent_path().filename().string(); };
     snap->name = snap->bare ? leaf(snap->gitDir) : leaf(snap->workdir);
     snap->objectFormat = git_repository_oid_type(repo) == GIT_OID_SHA256 ? "sha256" : "sha1";
     if (git_repository_is_worktree(repo) == 1)
@@ -201,7 +198,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
                 snap->headBranch = stripPrefix(git_reference_symbolic_target(head.get()), "refs/heads/");
         }
         git_oid oid;
-        if (!snap->headUnborn && git_reference_name_to_id(&oid, repo, "HEAD") == 0)
+        if (git_reference_name_to_id(&oid, repo, "HEAD") == 0) // fails when unborn
             snap->head = toOid(oid);
     }
     snap->state = detectState(repo, snap->stateDetail);
@@ -229,8 +226,8 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
             return b.value_or(false);
         }();
         main.bare = commonIsBare;
-        main.path = commonIsBare ? common : (common.has_filename() ? common : common.parent_path()).parent_path();
-        main.branch = headFileBranch(common / "HEAD", &main.head);
+        main.path = commonIsBare ? common : common.parent_path().parent_path(); // common ends with a separator
+        main.branch = headFileBranch(common / "HEAD", main.head);
         if (!main.branch.empty()) {
             git_oid oid;
             if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + main.branch).c_str()) == 0)
@@ -240,28 +237,27 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         snap->worktrees.push_back(main);
 
         StrArray names;
-        if (git_worktree_list(&names.arr, repo) == 0) {
-            for (size_t i = 0; i < names.arr.count; ++i) {
-                git_worktree* raw = nullptr;
-                if (git_worktree_lookup(&raw, repo, names.arr.strings[i]) != 0)
-                    continue;
-                Worktree wt(raw);
-                WorktreeInfo info;
-                info.name = names.arr.strings[i];
-                info.path = fs::path(git_worktree_path(wt.get())).lexically_normal();
-                Buf reason;
-                info.locked = git_worktree_is_locked(&reason.buf, wt.get()) > 0;
-                info.lockReason = gg::trim(reason.str());
-                info.prunable = git_worktree_validate(wt.get()) != 0;
-                info.branch = headFileBranch(common / "worktrees" / info.name / "HEAD", &info.head);
-                if (!info.branch.empty()) {
-                    git_oid oid;
-                    if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + info.branch).c_str()) == 0)
-                        info.head = toOid(oid);
-                }
-                info.isCurrent = snap->worktreeId == info.name;
-                snap->worktrees.push_back(std::move(info));
+        git_worktree_list(&names.arr, repo); // on failure the list stays empty
+        for (size_t i = 0; i < names.arr.count; ++i) {
+            git_worktree* raw = nullptr;
+            if (git_worktree_lookup(&raw, repo, names.arr.strings[i]) != 0)
+                continue;
+            Worktree wt(raw);
+            WorktreeInfo info;
+            info.name = names.arr.strings[i];
+            info.path = fs::path(git_worktree_path(wt.get())).lexically_normal();
+            Buf reason;
+            info.locked = git_worktree_is_locked(&reason.buf, wt.get()) > 0;
+            info.lockReason = gg::trim(reason.str());
+            info.prunable = git_worktree_validate(wt.get()) != 0;
+            info.branch = headFileBranch(common / "worktrees" / info.name / "HEAD", info.head);
+            if (!info.branch.empty()) {
+                git_oid oid;
+                if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + info.branch).c_str()) == 0)
+                    info.head = toOid(oid);
             }
+            info.isCurrent = snap->worktreeId == info.name;
+            snap->worktrees.push_back(std::move(info));
         }
     }
 
@@ -351,20 +347,19 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     // Remotes
     {
         StrArray names;
-        if (git_remote_list(&names.arr, repo) == 0) {
-            Config cfg = repositoryConfig(repo);
-            for (size_t i = 0; i < names.arr.count; ++i) {
-                git_remote* raw = nullptr;
-                if (git_remote_lookup(&raw, repo, names.arr.strings[i]) != 0)
-                    continue;
-                Remote r(raw);
-                RemoteInfo info;
-                info.name = names.arr.strings[i];
-                info.url = git_remote_url(r.get()) ? git_remote_url(r.get()) : "";
-                info.pushUrl = git_remote_pushurl(r.get()) ? git_remote_pushurl(r.get()) : "";
-                info.pruneOnFetch = configBool(cfg.get(), ("remote." + info.name + ".prune").c_str()).value_or(false);
-                snap->remotes.push_back(std::move(info));
-            }
+        git_remote_list(&names.arr, repo); // on failure the list stays empty
+        Config cfg = repositoryConfig(repo);
+        for (size_t i = 0; i < names.arr.count; ++i) {
+            git_remote* raw = nullptr;
+            if (git_remote_lookup(&raw, repo, names.arr.strings[i]) != 0)
+                continue;
+            Remote r(raw);
+            RemoteInfo info;
+            info.name = names.arr.strings[i];
+            info.url = git_remote_url(r.get()) ? git_remote_url(r.get()) : "";
+            info.pushUrl = git_remote_pushurl(r.get()) ? git_remote_pushurl(r.get()) : "";
+            info.pruneOnFetch = configBool(cfg.get(), ("remote." + info.name + ".prune").c_str()).value_or(false);
+            snap->remotes.push_back(std::move(info));
         }
     }
 
@@ -499,7 +494,7 @@ StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::C
     const size_t n = git_index_entrycount(index.get());
     for (size_t i = 0; i < n; ++i) {
         const git_index_entry* e = git_index_get_byindex(index.get(), i);
-        if (e && (e->flags_extended & GIT_INDEX_ENTRY_INTENT_TO_ADD))
+        if (e->flags_extended & GIT_INDEX_ENTRY_INTENT_TO_ADD)
             ita.insert(e->path);
     }
 
@@ -977,6 +972,9 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
                 Patch patch(rawPatch);
                 const git_diff_delta* pd = git_patch_get_delta(patch.get());
                 f.binary = (pd->flags & GIT_DIFF_FLAG_BINARY) != 0;
+                // The patch loaded both sides: their sizes are known now (the tree diff's may be 0).
+                f.oldSize = static_cast<std::uint64_t>(pd->old_file.size);
+                f.newSize = static_cast<std::uint64_t>(pd->new_file.size);
                 size_t ctxLines = 0, adds = 0, dels = 0;
                 git_patch_line_stats(&ctxLines, &adds, &dels, patch.get());
                 f.additions = static_cast<int>(adds);

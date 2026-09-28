@@ -446,6 +446,7 @@ RequestId Engine::mutate(MutationSpec spec)
         if (recorder) {
             recorder->finish(ev.outcome == Outcome::Ok, ctx.worktreeFollowsIndex);
             ev.operation = recorder->id();
+            ev.journalError = recorder->journalError();
         }
         {
             std::lock_guard lock(m_mutex);

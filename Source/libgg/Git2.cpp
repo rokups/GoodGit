@@ -172,6 +172,47 @@ Config repositoryConfig(git_repository* repo)
     return Config(raw);
 }
 
+std::map<std::string, std::string> branchesInOtherWorktrees(git_repository* repo)
+{
+    assertNotUiThread("git2::branchesInOtherWorktrees");
+    std::map<std::string, std::string> out;
+    auto add = [&](git_repository* r, const std::string& name) {
+        git_reference* raw = nullptr;
+        if (git_reference_lookup(&raw, r, "HEAD") != 0)
+            return;
+        Reference head(raw);
+        if (git_reference_type(head.get()) == GIT_REFERENCE_SYMBOLIC)
+            out[git_reference_symbolic_target(head.get())] = name;
+    };
+    // A linked worktree's git dir is <common>/worktrees/<name>/.
+    std::string self;
+    if (git_repository_is_worktree(repo) == 1) {
+        self = std::filesystem::path(git_repository_path(repo)).parent_path().filename().string();
+        git_repository* rawMain = nullptr;
+        if (git_repository_open(&rawMain, git_repository_commondir(repo)) == 0) {
+            Repository mainRepo(rawMain);
+            if (git_repository_is_bare(mainRepo.get()) == 0)
+                add(mainRepo.get(), "main");
+        }
+    }
+    StrArray names;
+    git_worktree_list(&names.arr, repo); // on failure the list stays empty
+    for (size_t i = 0; i < names.arr.count; ++i) {
+        const std::string name = names.arr.strings[i];
+        git_worktree* rawWt = nullptr;
+        git_repository* rawRepo = nullptr;
+        if (name == self || git_worktree_lookup(&rawWt, repo, name.c_str()) != 0)
+            continue;
+        Worktree wt(rawWt);
+        if (git_repository_open_from_worktree(&rawRepo, wt.get()) != 0)
+            continue; // its directory is gone (prunable)
+        Repository wtRepo(rawRepo);
+        add(wtRepo.get(), name);
+    }
+    git_error_clear();
+    return out;
+}
+
 std::optional<std::string> configString(git_config* cfg, const char* name)
 {
     const char* value = nullptr;

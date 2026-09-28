@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -131,6 +132,10 @@ std::string blobContent(const git_blob* blob);
 Config repositoryConfig(git_repository* repo);
 std::optional<std::string> configString(git_config* cfg, const char* name);
 std::optional<bool> configBool(git_config* cfg, const char* name);
+
+// Branches checked out in the other worktrees of `repo`'s repository ("refs/heads/x" → worktree
+// name, "main" for the main worktree): the linked ones, and the main one when `repo` is linked.
+std::map<std::string, std::string> branchesInOtherWorktrees(git_repository* repo);
 
 // Iterates references; `fn(git_reference*)` returns false to stop.
 template <typename Fn>

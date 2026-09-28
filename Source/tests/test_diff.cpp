@@ -6,6 +6,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <algorithm>
+
 namespace ggtest {
 
 namespace {
@@ -291,6 +293,120 @@ GG_TEST("diff", "select lines, Ctrl+C and the context menu", "DIFF-COPY-KEY", "D
     GG_CHECK(s.waitUntil([&] {
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "code.cpp" && b->query.commit.hex() == r.change;
+    }));
+}
+
+GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit",
+    "DIFF-IMAGE", "DIFF-SIDE-BY-SIDE", "DIFF-CTX-COPY", "CONF-TERM-VIEW")
+{
+    const DiffRepo r = makeRepo(s);
+    auto le = [](std::string& out, unsigned v, int bytes) {
+        for (int i = 0; i < bytes; ++i)
+            out.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
+    };
+    std::string gif = "GIF89a";
+    le(gif, 3, 2);
+    le(gif, 4, 2);
+    gif += std::string(8, '\0');
+    std::string bmp = "BM" + std::string(16, '\0');
+    le(bmp, 5, 4);
+    le(bmp, static_cast<unsigned>(-6), 4); // top-down: negative height
+    bmp += std::string(8, '\0');
+    // JPEG: an APP0 segment, a stray byte, then SOF0 with height 5 and width 7.
+    std::string jpg("\xFF\xD8\xFF\xE0\x00\x04\x00\x00\x00\xFF\xC0\x00\x11\x08\x00\x05\x00\x07", 18);
+    jpg += std::string(16, '\0');
+    s.write(r.path, "a.gif", gif);
+    s.write(r.path, "a.bmp", bmp);
+    s.write(r.path, "a.jpg", jpg);
+    s.write(r.path, "a.webp", std::string("RIFF\0\0\0\0WEBP", 12));
+    s.write(r.path, "crlf.txt", "keep\r\nlast\r");
+    std::string few;
+    for (int i = 0; i < 300; ++i)
+        few += "line " + std::to_string(i) + "\n";
+    s.write(r.path, "many.txt", few);
+    s.git(r.path, {"add", "-A"});
+    s.git(r.path, {"commit", "-q", "-m", "Images and CRLF"});
+    const std::string images = s.head(r.path);
+    s.write(r.path, "crlf.txt", "keep\r\nchanged\r");
+    std::string many;
+    for (int i = 0; i < 300; ++i)
+        many += "changed " + std::to_string(i) + "\n";
+    s.write(r.path, "many.txt", many);
+    s.git(r.path, {"add", "-A"});
+    s.git(r.path, {"commit", "-q", "-m", "CRLF change"});
+    const std::string crlf = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+
+    const std::pair<const char*, const char*> dims[] = {{"a.gif", "3x4"}, {"a.bmp", "5x6"}, {"a.jpg", "7x5"}, {"a.webp", ""}};
+    for (const auto& [path, expected] : dims) {
+        showFile(s, images, path);
+        GG_REQUIRE(file(s) != nullptr);
+        GG_CHECK_STR_EQ(file(s)->newImage, expected);
+        GG_CHECK(s.textShown("//Diff", std::string("(none) \xe2\x86\x92 ") + (*expected ? expected : "?")));
+    }
+
+    // The last line ends with a lone CR and no newline: shown without the CR, marked "\".
+    showFile(s, crlf, "crlf.txt");
+    GG_REQUIRE(file(s) != nullptr && !file(s)->hunks.empty());
+    const auto& lines = file(s)->hunks[0].lines;
+    GG_CHECK(std::any_of(lines.begin(), lines.end(), [](const auto& l) { return l.noNewline && l.origin == '+'; }));
+    ctx->MouseMove((body(s) + "/###line_3").c_str());
+    ctx->Yield(2);
+    GG_CHECK(!s.textShown(body(s).c_str(), "changed\r"));
+
+    // Light theme: the editors take the light palette.
+    s.app.openSettings();
+    ctx->Yield(2);
+    s.comboSelect("//Settings/##settings_tabs/General/Theme##theme", "Light");
+    ctx->Yield(3);
+    showFile(s, r.change, "code.cpp");
+    GG_CHECK(s.textShown(body(s).c_str(), "int line5 = 1; // changed"));
+    s.comboSelect("//Settings/##settings_tabs/General/Theme##theme", "Dark");
+    ctx->KeyPress(ImGuiKey_Escape);
+
+    // A right-click in the text (not the gutter) selects that line and opens the same menu.
+    {
+        ImGuiWindow* w = ctx->GetWindowByRef(body(s).c_str());
+        GG_REQUIRE(w != nullptr);
+        const float line = ImGui::GetFontSize() + ImGui::GetStyle().ItemSpacing.y;
+        ctx->MouseMoveToPos(ImVec2(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.5f, w->InnerRect.Min.y + line * 3.5f));
+        ctx->MouseClick(ImGuiMouseButton_Right);
+        ctx->Yield(3);
+        GG_CHECK(!s.session()->diff().selectedText().empty());
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+    }
+
+    // Side by side: scrolling either editor scrolls the other.
+    showFile(s, crlf, "many.txt");
+    s.comboSelect("//Diff/##diff_view", "Side by side");
+    ctx->Yield(3);
+    ImGuiWindow* left = ctx->GetWindowByRef(s.child(body(s).c_str(), "##sbs_left").c_str());
+    ImGuiWindow* right = ctx->GetWindowByRef(s.child(body(s).c_str(), "##sbs_right").c_str());
+    GG_REQUIRE(left && right);
+    ctx->MouseMoveToPos(left->InnerRect.GetCenter());
+    ctx->MouseWheelY(-10.0f);
+    ctx->Yield(4);
+    GG_CHECK(left->Scroll.y > 0.0f);
+    GG_CHECK_EQ(right->Scroll.y, left->Scroll.y);
+    ctx->MouseMoveToPos(right->InnerRect.GetCenter());
+    ctx->MouseWheelY(-10.0f);
+    ctx->Yield(4);
+    GG_CHECK(right->Scroll.y > 0.0f);
+    GG_CHECK_EQ(left->Scroll.y, right->Scroll.y);
+    s.comboSelect("//Diff/##diff_view", "Unified");
+
+    // A committed first-class conflict: its file in the commit offers the term views too.
+    const fs::path conflicted = s.fixture(Recipe::Conflicted2);
+    GG_REQUIRE(s.openRepository(conflicted));
+    const std::string commit = s.revParse(conflicted, "HEAD~1");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->conflictsOf(ggui::core::Oid::fromHex(commit)) != nullptr; }));
+    showFile(s, commit, "conflict.txt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Diff/##term_view"); }));
+    s.comboSelect("//Diff/##term_view", "Base \xe2\x86\x92 side 1");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::Term && d->query.a.hex() == commit;
     }));
 }
 

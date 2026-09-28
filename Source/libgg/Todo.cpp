@@ -398,41 +398,8 @@ Context read(git_repository* repo, const ReadOptions& options)
         }
         return true;
     });
-    {
-        StrArray names;
-        if (git_worktree_list(&names.arr, repo) == 0)
-            for (size_t i = 0; i < names.arr.count; ++i) {
-                git_worktree* raw = nullptr;
-                if (git_worktree_lookup(&raw, repo, names.arr.strings[i]) != 0)
-                    continue;
-                Worktree wt(raw);
-                git_repository* rawRepo = nullptr;
-                if (git_repository_open_from_worktree(&rawRepo, wt.get()) != 0)
-                    continue;
-                Repository wtRepo(rawRepo);
-                git_reference* rawHead = nullptr;
-                if (git_reference_lookup(&rawHead, wtRepo.get(), "HEAD") == 0) {
-                    Reference h(rawHead);
-                    if (git_reference_type(h.get()) == GIT_REFERENCE_SYMBOLIC && git_reference_symbolic_target(h.get()) != headRef)
-                        context.checkedOutElsewhere.insert(git_reference_symbolic_target(h.get()));
-                }
-            }
-        git_error_clear();
-        // From a linked worktree, the main worktree's branch is checked out elsewhere too.
-        if (git_repository_is_worktree(repo) == 1) {
-            git_repository* rawMain = nullptr;
-            if (git_repository_open(&rawMain, git_repository_commondir(repo)) == 0) {
-                Repository mainRepo(rawMain);
-                git_reference* rawHead = nullptr;
-                if (git_reference_lookup(&rawHead, mainRepo.get(), "HEAD") == 0) {
-                    Reference h(rawHead);
-                    if (git_reference_type(h.get()) == GIT_REFERENCE_SYMBOLIC)
-                        context.checkedOutElsewhere.insert(git_reference_symbolic_target(h.get()));
-                }
-            }
-            git_error_clear();
-        }
-    }
+    for (const auto& [ref, worktree] : branchesInOtherWorktrees(repo))
+        context.checkedOutElsewhere.insert(ref);
 
     // The starting todo: a pick per commit, then update-ref lines for the other branches at it
     // (Git lists them in reverse name order and skips branches checked out elsewhere).

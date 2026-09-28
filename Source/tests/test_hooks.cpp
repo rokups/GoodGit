@@ -160,6 +160,10 @@ GG_TEST("hooks", "plain git commands are journaled one operation each and Undo r
     step({"branch", "plain-branch"});
     step({"checkout", "-q", "-b", "plain-switch"});
     step({"reset", "-q", "--hard", "HEAD~2"});
+    // Global options before the command; reset modes that do and do not touch the working tree.
+    step({"-c", "core.abbrev=12", "--no-pager", "reset", "-q", "--keep", "HEAD~1"});
+    step({"-C", repo.string(), "reset", "-q", "--merge", "HEAD~1"});
+    step({"reset", "-q", "--soft", "HEAD~1"});
     step({"tag", "-a", "-m", "annotated", "plain-tag"});
     // post-rewrite adds the rewritten commits to the amend's operation.
     s.git(repo, {"commit", "-q", "--amend", "-m", "Amended plainly"});

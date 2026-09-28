@@ -123,6 +123,7 @@ void DiffPanel::clear()
     m_full = false;
     m_fileVsHead = false;
     m_loading = false;
+    m_request = 0; // a diff still on its way is for the old selection
     m_viewsDirty = true;
 }
 
@@ -151,7 +152,8 @@ void DiffPanel::refreshIfShowing()
 
 DiffPanel::StagingMode DiffPanel::stagingMode() const
 {
-    if (!m_file || m_fileVsHead || !m_diff || m_diff->files.empty())
+    // Only asked while a diff is shown (so there is a file).
+    if (m_fileVsHead)
         return StagingMode::None;
     if (m_diff->query.kind == core::DiffKind::Unstaged
         && (m_file->group == FileGroup::Unstaged || m_file->group == FileGroup::Untracked))
@@ -164,8 +166,6 @@ DiffPanel::StagingMode DiffPanel::stagingMode() const
 LineSet DiffPanel::selectedLines() const
 {
     LineSet set;
-    if (!m_diff || m_diff->files.empty())
-        return set;
     for (int i : selectedRows()) {
         const Row& r = m_rows[static_cast<size_t>(i)];
         if (r.kind == Row::Line)
@@ -180,9 +180,7 @@ LineSet DiffPanel::selectedLines() const
 std::vector<int> DiffPanel::selectedRows() const
 {
     std::vector<int> rows;
-    const View* v = m_active;
-    if (!v || !v->editor)
-        return rows;
+    const View* v = m_active; // set once the views are built
     const auto sel = v->editor->GetMainCursorSelection();
     if (sel.start.line == sel.end.line && sel.start.column == sel.end.column)
         return rows;
@@ -199,8 +197,6 @@ std::vector<int> DiffPanel::selectedRows() const
 
 void DiffPanel::applyLines(const LineSet& lines, StagingAction action)
 {
-    if (!m_diff || m_diff->files.empty() || lines.empty())
-        return;
     const core::DiffFile& f = m_diff->files.front();
     auto& actions = m_session.actions();
     switch (action) {
@@ -263,7 +259,7 @@ void DiffPanel::onDiff(const core::DiffEvent& event)
 void DiffPanel::buildRows()
 {
     m_rows.clear();
-    if (!m_diff || m_diff->files.empty())
+    if (m_diff->files.empty())
         return;
     const core::DiffFile& f = m_diff->files.front();
     const int total = f.newText ? static_cast<int>(f.newText->size()) : -1;
@@ -299,7 +295,7 @@ void DiffPanel::buildRows()
 std::string DiffPanel::selectedText() const
 {
     const View* v = m_active;
-    if (!v || !v->editor)
+    if (!v)
         return {};
     std::string out;
     for (size_t c = 0; c < v->editor->GetNumberOfCursors(); ++c)
@@ -309,7 +305,7 @@ std::string DiffPanel::selectedText() const
 
 DiffPanel::View& DiffPanel::primaryView()
 {
-    return m_session.app().settings().data().diffSideBySide && m_left.editor ? m_left : m_unified;
+    return m_session.app().settings().data().diffSideBySide ? m_left : m_unified;
 }
 
 void DiffPanel::revealRow(int row)
@@ -318,11 +314,11 @@ void DiffPanel::revealRow(int row)
     if (!v.editor || row < 0 || row >= static_cast<int>(v.firstLine.size()))
         return;
     int line = v.firstLine[static_cast<size_t>(row)];
-    if (line < 0 && m_right.editor && &v == &m_left)
+    if (line < 0 && &v == &m_left)
         line = m_right.firstLine[static_cast<size_t>(row)];
     if (line >= 0) {
         v.editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
-        if (&v == &m_left && m_right.editor)
+        if (&v == &m_left)
             m_right.editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
     }
 }
@@ -365,7 +361,7 @@ void DiffPanel::finishView(View& v, const std::string& text)
 {
     // A final newline keeps whole-line selections (and copies) of the last line complete.
     v.editor->SetText(text + "\n");
-    v.editor->SetLanguage(m_file ? languageFor(m_file->path) : nullptr);
+    v.editor->SetLanguage(languageFor(m_file->path));
     v.editor->ClearMarkers();
     const Palette& p = theme().palette();
     for (size_t i = 0; i < v.lines.size(); ++i) {
@@ -396,8 +392,6 @@ void DiffPanel::finishView(View& v, const std::string& text)
 void DiffPanel::buildViews()
 {
     m_viewsDirty = false;
-    if (!m_diff || m_diff->files.empty())
-        return;
     const core::DiffFile& f = m_diff->files.front();
     const auto palette = theme().theme() == Theme::Light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
     auto gapLines = [&](const Row& r, auto&& emit) {
@@ -537,7 +531,7 @@ void DiffPanel::selectRows(View& v, int row, bool extend)
 
 void DiffPanel::drawGutter(View& v, int index, float width, float height)
 {
-    if (index < 0 || index >= static_cast<int>(v.lines.size()) || !m_diff || m_diff->files.empty())
+    if (index >= static_cast<int>(v.lines.size())) // the editor's last line, after the final newline
         return;
     const EditorLine& l = v.lines[static_cast<size_t>(index)];
     const core::DiffFile& f = m_diff->files.front();
@@ -574,7 +568,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             handle("###line_" + std::to_string(l.row), width);
         const ImU32 color = l.origin == '+' ? p.added : l.origin == '-' ? p.removed : p.lineNumber;
         dl->AddText(pos, color, nums);
-        const auto& hl = f.hunks.empty() || l.hunk < 0 ? nullptr
+        const auto& hl = l.hunk < 0 ? nullptr
             : &f.hunks[static_cast<size_t>(l.hunk)].lines[static_cast<size_t>(l.line)];
         if (hl && hl->noNewline) {
             dl->AddText(ImVec2(pos.x + width - ImGui::CalcTextSize("\\").x, pos.y), p.dim, "\\");
@@ -584,7 +578,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         break;
     }
     case EditorLine::Hunk: {
-        const StagingMode mode = primary ? stagingMode() : StagingMode::None;
+        const StagingMode mode = stagingMode(); // hunk rows are in the unified view only
         const float button = ImGui::GetFontSize() * 1.3f;
         const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged ? 1 : 0;
         handle("###hunk_" + std::to_string(l.hunk), width - button * static_cast<float>(count));
@@ -741,12 +735,11 @@ void DiffPanel::drawMenuItems()
     const LineSet lines = selectedLines();
     bool changes = false;
     LineSet hunks; // every line of the hunks the selection touches
-    if (m_diff && !m_diff->files.empty())
-        for (const auto& [h, l] : lines) {
-            changes = changes || m_diff->files.front().hunks[static_cast<size_t>(h)].lines[static_cast<size_t>(l)].origin != ' ';
-            for (const auto& hl : hunkLines(m_diff->files.front(), h))
-                hunks.insert(hl);
-        }
+    for (const auto& [h, l] : lines) {
+        changes = changes || m_diff->files.front().hunks[static_cast<size_t>(h)].lines[static_cast<size_t>(l)].origin != ' ';
+        for (const auto& hl : hunkLines(m_diff->files.front(), h))
+            hunks.insert(hl);
+    }
     if (mode == StagingMode::Unstaged) {
         ImGui::Separator();
         if (ImGui::MenuItem("Stage line(s)", nullptr, false, free && changes))
@@ -765,7 +758,7 @@ void DiffPanel::drawMenuItems()
             applyLines(hunks, StagingAction::Unstage);
     }
     // History editing on the selected lines of a commit's change.
-    if (m_selection.kind == SelKind::Commit && m_diff && !m_diff->files.empty() && m_diff->query.kind == core::DiffKind::Commit) {
+    if (m_selection.kind == SelKind::Commit && m_diff->query.kind == core::DiffKind::Commit) {
         ImGui::Separator();
         const std::string patch = changes ? buildPatch(m_diff->files.front(), lines, false) : std::string();
         const bool can = free && !patch.empty();
@@ -807,23 +800,21 @@ void DiffPanel::drawSideBySide()
     const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
     ImGuiWindow* parent = ImGui::GetCurrentWindow();
     m_left.editor->Render("##sbs_left", ImVec2(half, 0));
-    ImGuiWindow* leftWindow = parent->DC.ChildWindows.empty() ? nullptr : parent->DC.ChildWindows.back();
+    ImGuiWindow* leftWindow = parent->DC.ChildWindows.back();
     ImGui::SameLine();
     m_right.editor->Render("##sbs_right", ImVec2(0, 0));
-    ImGuiWindow* rightWindow = parent->DC.ChildWindows.empty() ? nullptr : parent->DC.ChildWindows.back();
+    ImGuiWindow* rightWindow = parent->DC.ChildWindows.back();
     ImGui::PopFont();
     // Keep both sides on the same lines: whichever side scrolled drives the other.
-    if (leftWindow && rightWindow && leftWindow != rightWindow) {
-        float target = -1.0f;
-        if (leftWindow->Scroll.y != m_syncedScroll)
-            target = leftWindow->Scroll.y;
-        else if (rightWindow->Scroll.y != m_syncedScroll)
-            target = rightWindow->Scroll.y;
-        if (target >= 0.0f) {
-            ImGui::SetScrollY(leftWindow, target);
-            ImGui::SetScrollY(rightWindow, target);
-            m_syncedScroll = target;
-        }
+    float target = -1.0f;
+    if (leftWindow->Scroll.y != m_syncedScroll)
+        target = leftWindow->Scroll.y;
+    else if (rightWindow->Scroll.y != m_syncedScroll)
+        target = rightWindow->Scroll.y;
+    if (target >= 0.0f) {
+        ImGui::SetScrollY(leftWindow, target);
+        ImGui::SetScrollY(rightWindow, target);
+        m_syncedScroll = target;
     }
     ImGui::EndChild();
 }
@@ -881,7 +872,7 @@ void DiffPanel::draw(bool* open)
     if (m_viewsDirty)
         buildViews();
     const bool canSideBySide = !f.binary && !f.submodule && f.oldText && f.newText;
-    if (!f.binary && !f.submodule && m_unified.editor) {
+    if (!f.binary && !f.submodule) {
         if (m_session.app().settings().data().diffSideBySide && canSideBySide)
             drawSideBySide();
         else

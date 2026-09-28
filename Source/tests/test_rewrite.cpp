@@ -173,4 +173,31 @@ GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD m
     GG_CHECK_STR_EQ(s.read(checkoutLog.parent_path(), checkoutLog.filename().string()), tip + " " + s.head(repo) + " 1\n");
 }
 
+GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the main worktree's branch asks first",
+    "REWRITE-INVARIANTS", "WT-LIST")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "wtb", "HEAD~1"});
+    const fs::path wt = s.root() / "linked";
+    s.git(repo, {"worktree", "add", "-q", wt.string(), "wtb"});
+    s.track(wt);
+    const std::string target = s.revParse(repo, "HEAD~3"); // reachable from main and wtb
+    GG_REQUIRE(s.openRepository(wt));
+    selectCommit(s, target);
+    s.setText("//Change information/##message", "Reworded from the linked worktree");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_REQUIRE(f != nullptr);
+    GG_CHECK(f->message.find("main is checked out in another worktree") != std::string::npos);
+    GG_CHECK(f->message.find("wtb is checked out") == std::string::npos);
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return info(s, wt, "HEAD~2", "%s") == "Reworded from the linked worktree"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(info(s, repo, "main~3", "%s"), "Reworded from the linked worktree");
+    GG_CHECK_STR_EQ(s.gitOut(wt, {"branch", "--show-current"}), "wtb");
+    GG_CHECK(s.statusPorcelain(wt).empty());
+    s.git(repo, {"worktree", "remove", "--force", wt.string()});
+}
+
 } // namespace ggtest
