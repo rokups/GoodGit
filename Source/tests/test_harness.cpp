@@ -1,4 +1,4 @@
-// Phase 0 harness self-checks (P0-07 … P0-10) and the UI-thread assertion (P1-01).
+// Harness self-checks and the UI-thread assertion.
 #include "shell/App.hpp"
 #include "shell/Settings.hpp"
 #include "tests/Harness.hpp"

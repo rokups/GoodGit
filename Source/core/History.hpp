@@ -1,4 +1,4 @@
-// History walk and lane layout, run on the history worker (REBUILD_PLAN §3.1, §4.2).
+// History walk and lane layout, run on the history worker (product spec §3.1, §4.2).
 //
 // The walk is topological (children before parents), published in bounded batches, and keeps
 // its state between requests so "Show more", reveal and search continue where it stopped.

@@ -1,4 +1,4 @@
-// Scripted repository recipes built with plain git (P0-09, REBUILD_PLAN §8.3).
+// Scripted repository recipes built with plain git (product spec §8.3).
 #include "tests/Harness.hpp"
 
 namespace ggtest {

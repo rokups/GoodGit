@@ -1,4 +1,4 @@
-// Worktree management (§4.7 Worktrees, §4.1 open in a new window; P4-03): Add…, Remove…,
+// Worktree management (§4.7 Worktrees, §4.1 open in a new window): Add…, Remove…,
 // Lock/Unlock, Prune, Repair, Open here, Open in new window, and the per-worktree journal.
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"

@@ -11,8 +11,8 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | HARNESS-FAILURE-OUTPUT | 0 | §8.3 | failing test writes screenshot, app log and git command log | harness/failure output: screenshot, app log, git command log |
 | APP-WELCOME-OPEN | 1 | §4.1 | Welcome: Open repository… button opens the picker | shell/open with the picker: Welcome, menu, Ctrl+O, toolbar |
 | APP-WELCOME-OPEN-PATH | 1 | §4.1 | Welcome: open a typed path with the keyboard | setup/git versions ggui reads: newer major, vendor suffix, no number; a typed path with a trailing slash; copying a notice<br>shell/open by typed path, default layout, close from the menu |
-| APP-DROP-FOLDER | 1 | §4.1 | A folder dropped on the window opens as a repository (UF-48) | shell/folders dropped on the window: the first opens, the repositories among them join the recent list |
-| APP-DROP-FOLDERS | 1 | §4.1 | Several folders dropped: the repositories among them join the recent list, the first opens (UF-49) | shell/folders dropped on the window: the first opens, the repositories among them join the recent list |
+| APP-DROP-FOLDER | 1 | §4.1 | A folder dropped on the window opens as a repository | shell/folders dropped on the window: the first opens, the repositories among them join the recent list |
+| APP-DROP-FOLDERS | 1 | §4.1 | Several folders dropped: the repositories among them join the recent list, the first opens | shell/folders dropped on the window: the first opens, the repositories among them join the recent list |
 | APP-WELCOME-RECENT-OPEN | 1 | §4.1 | Welcome: click a recent entry opens it | shell/recent repositories: Welcome list, Recent menu, switcher |
 | APP-WELCOME-RECENT-DELETE | 1 | §4.1 | Welcome: Delete key forgets a recent entry | shell/recent repositories: Welcome list, Recent menu, switcher |
 | APP-WELCOME-RECENT-INFO | 1 | §4.1 | Welcome: recent entries show branch, upstream, ahead/behind | shell/recent repositories whose state changed: upstream gone, unborn branch with an upstream, no longer a repository<br>shell/recent repositories: Welcome list, Recent menu, switcher |
@@ -45,13 +45,13 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | MENU-VIEW-RESET-LAYOUT | 1 | §4.1 | View ▸ Reset layout restores the default | shell/View menu: panels, next/previous changed file, reset layout |
 | TB-REFRESH | 1 | §4.1 | Toolbar Refresh | shell/Repository menu: copy path, refresh, working directory, settings, quit |
 | TB-REPO-SWITCH | 1 | §4.1 | Toolbar repository switcher | shell/recent repositories: Welcome list, Recent menu, switcher |
-| TB-OPEN-FOLDER | 1 | §4.1 | Toolbar folder button opens the working directory (UF-28) | shell/Repository menu: copy path, refresh, working directory, settings, quit |
+| TB-OPEN-FOLDER | 1 | §4.1 | Toolbar folder button opens the working directory | shell/Repository menu: copy path, refresh, working directory, settings, quit |
 | TB-BRANCH | 1 | §4.1 | Toolbar shows the current branch | shell/open by typed path, default layout, close from the menu |
 | TB-DETACHED | 1 | §4.1 | Toolbar shows "detached" | shell/repository kinds: bare, unborn, linked worktree, SHA-256, detached |
-| TB-HEAD-PLAIN | 1 | §4.1 | Toolbar branch label and HEAD ID are plain text; clicking does nothing (UF-31) | shell/toolbar HEAD: plain text, copy short or full ID<br>shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress |
+| TB-HEAD-PLAIN | 1 | §4.1 | Toolbar branch label and HEAD ID are plain text; clicking does nothing | shell/toolbar HEAD: plain text, copy short or full ID<br>shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress |
 | TB-HEAD-COPY | 1 | §4.1 | HEAD ID context menu copies it | shell/toolbar HEAD: plain text, copy short or full ID |
-| APP-ID-DIMMED | 1 | §4.1 | Full IDs show the short prefix normally and the rest dimmed (UF-14) | history/copy ID and full description; tooltip ID<br>info/change information: message, author, committer, date, ID, parents |
-| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID (UF-13) | history/copy ID and full description; tooltip ID<br>shell/toolbar HEAD: plain text, copy short or full ID |
+| APP-ID-DIMMED | 1 | §4.1 | Full IDs show the short prefix normally and the rest dimmed | history/copy ID and full description; tooltip ID<br>info/change information: message, author, committer, date, ID, parents |
+| APP-COPY-ID-SHIFT | 1 | §4.1 | Copy ID copies the short ID; with Shift the full ID | history/copy ID and full description; tooltip ID<br>shell/toolbar HEAD: plain text, copy short or full ID |
 | TB-SPINNER | 1 | §4.1 | Activity spinner while working | shell/activity spinner, task tooltip and Cancel |
 | TB-CANCEL | 1 | §4.1 | Activity Cancel button | shell/activity spinner, task tooltip and Cancel |
 | TB-TASK-TOOLTIP | 1 | §4.1 | Background-task tooltip | shell/activity spinner, task tooltip and Cancel |
@@ -70,16 +70,16 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | APP-CANCEL-LONG-OPS | 1 | §3.1 | History load, reveal, large diff and blame can be cancelled | engine/overlapping diff requests: only the newest result is shown<br>history/cancel a long history load and a reveal<br>history/large history: first page, Show more, reveal, cancel<br>shell/activity spinner, task tooltip and Cancel |
 | HIST-GRAPH | 1 | §4.2 | Lane graph with curved edges | history/graph, rows, badges and short IDs<br>visual/graph lines are continuous from row to row<br>visual/screenshots of the main views |
 | HIST-GRAPH-CONTINUOUS | 1 | §4.2 | Graph lines connect row to row at a constant row pitch | visual/graph lines are continuous from row to row |
-| HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge (UF-18) | visual/graph is not clipped at the left edge |
+| HIST-GRAPH-NOT-CLIPPED | 1 | §4.2 | The current commit outline is not clipped at the graph's left edge | visual/graph is not clipped at the left edge |
 | HIST-MERGE-COLLAPSED-DEFAULT | 1 | §4.2 | Merge commits start collapsed | history/merges start collapsed; expand and collapse merged history |
-| HIST-MERGE-NOTHING-HIDDEN | 1 | §4.2 | A merge whose collapse would hide no commits offers no Collapse/Expand (UF-38) | history/a merge offers collapse only when collapsing hides commits |
-| HIST-MERGE-TOGGLE-STABLE | 1 | §4.2 | Expanding or collapsing a merge keeps the previous rows until the reloaded list replaces them (UF-47) | history/expanding or collapsing a merge keeps the whole list in view while History reloads |
+| HIST-MERGE-NOTHING-HIDDEN | 1 | §4.2 | A merge whose collapse would hide no commits offers no Collapse/Expand | history/a merge offers collapse only when collapsing hides commits |
+| HIST-MERGE-TOGGLE-STABLE | 1 | §4.2 | Expanding or collapsing a merge keeps the previous rows until the reloaded list replaces them | history/expanding or collapsing a merge keeps the whole list in view while History reloads |
 | HIST-LOAD-FAST | 1 | §4.2 | First history rows of a large repository appear quickly | history/first rows of a large history appear quickly |
 | UI-TEXT-BASELINE | 1 | §6 | Text in one row shares a baseline (labels, buttons, badges, icons) | visual/text shares a baseline across widgets on one line |
 | UI-ICON-ALIGN | 1 | §6 | Icon glyphs are vertically centred on the text they accompany | visual/icon glyphs are vertically centred on the text |
-| UI-CONTRAST | 1 | §6 | Text colours keep a readable contrast against their backgrounds in both themes; badge fills against their text (UF-50) | visual/readable colours: text keeps its contrast in the dark and the light theme |
+| UI-CONTRAST | 1 | §6 | Text colours keep a readable contrast against their backgrounds in both themes; badge fills against their text | visual/readable colours: text keeps its contrast in the dark and the light theme |
 | LAYOUT-HIDDEN-PANELS | 1 | §4.1 | Reflog, Operations and Blame are hidden in the default layout | shell/open by typed path, default layout, close from the menu |
-| LAYOUT-TAB-ORDER | 1 | §4.1 | Default layout: Remotes, Stashes, Worktrees tabs in that order (UF-42) | shell/open by typed path, default layout, close from the menu |
+| LAYOUT-TAB-ORDER | 1 | §4.1 | Default layout: Remotes, Stashes, Worktrees tabs in that order | shell/open by typed path, default layout, close from the menu |
 | DIFF-SELECT-TEXT | 1 | §4.5 | Diff text is selectable (mouse) in unified and side-by-side views | diff/text is selectable with the mouse in both views |
 | DIFF-EDITOR-VIEWS | 1 | §4.5 | Unified and side-by-side diffs both use the text editor widget | diff/text is selectable with the mouse in both views |
 | HIST-ROW-FIELDS | 1 | §4.2 | Rows show ID prefix, subject, author, date | history/graph, rows, badges and short IDs |
@@ -91,9 +91,9 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | HIST-STASH-BADGES | 1 | §4.2 | Stash badges on base commits (toggle) | history/stash badges on base commits |
 | HIST-SCOPE | 1 | §4.2 | Scope follows side-panel selection | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all |
 | HIST-SEARCH | 1 | §4.2 | Search/filter by message, ID, branch, tag | history/search by message, ID, branch and tag; no graph while filtering |
-| HIST-SCROLL-ANCHOR | 1 | §4.2 | Changes to History (refresh, merges, load more, Index row) keep the rows in view in place (UF-25) | history/scroll position stays anchored on the rows in view |
-| HIST-TOOLTIP-SCROLL | 1 | §4.2 | Row, graph and badge tooltips wait until the list stops scrolling (UF-10) | history/tooltips wait until scrolling stops |
-| HIST-FILTER-NO-GRAPH | 1 | §4.2 | The graph column is hidden while a History filter is active (UF-24) | history/search by message, ID, branch and tag; no graph while filtering |
+| HIST-SCROLL-ANCHOR | 1 | §4.2 | Changes to History (refresh, merges, load more, Index row) keep the rows in view in place | history/scroll position stays anchored on the rows in view |
+| HIST-TOOLTIP-SCROLL | 1 | §4.2 | Row, graph and badge tooltips wait until the list stops scrolling | history/tooltips wait until scrolling stops |
+| HIST-FILTER-NO-GRAPH | 1 | §4.2 | The graph column is hidden while a History filter is active | history/search by message, ID, branch and tag; no graph while filtering |
 | HIST-REVEAL | 1 | §4.2 | Reveal a commit (loads until found) | history/large history: first page, Show more, reveal, cancel |
 | HIST-REVEAL-CANCEL | 1 | §4.2 | Reveal is cancellable | history/cancel a long history load and a reveal<br>history/large history: first page, Show more, reveal, cancel |
 | HIST-SHOW-MORE | 1 | §4.2 | Show more for collapsed regions | history/large history: first page, Show more, reveal, cancel |
@@ -110,15 +110,15 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | CHG-STATUS-ICONS | 1 | §4.4 | Status icons | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-RENAMES | 1 | §4.4 | Renames and copies | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-COMPARE-HEAD | 1 | §4.4 | Compare a commit with HEAD | changes/commit files, filter, compare with HEAD, header |
-| CHG-COMPARE-WITH | 1 | §4.4 | "Compare with" field: HEAD, a revision or Work Tree (any case, trimmed); its menu fills in HEAD or Work Tree; an unknown revision is reported (UF-41) | changes/commit files, filter, compare with HEAD, header |
-| CHG-HEADER-WT | 1 | §4.4 | Working tree header shows the zero ID; Compare with HEAD disabled (UF-29) | changes/commit files, filter, compare with HEAD, header |
+| CHG-COMPARE-WITH | 1 | §4.4 | "Compare with" field: HEAD, a revision or Work Tree (any case, trimmed); its menu fills in HEAD or Work Tree; an unknown revision is reported | changes/commit files, filter, compare with HEAD, header |
+| CHG-HEADER-WT | 1 | §4.4 | Working tree header shows the zero ID; Compare with HEAD disabled | changes/commit files, filter, compare with HEAD, header |
 | CHG-GROUPS | 1 | §4.4 | Staged/Unstaged/Untracked/Conflicted groups | changes/working tree groups: staged, unstaged, untracked, conflicted |
 | CHG-SCANNING | 1 | §3.1 | Partial status marked scanning… | engine/partial status on a huge worktree is marked scanning |
 | CHG-CTX-COPY-NAME | 1 | §4.4 | Context: Copy ▸ Name | changes/file context menu: copy, patch, save patch, blame |
 | CHG-CTX-COPY-REL | 1 | §4.4 | Context: Copy ▸ Relative path | changes/file context menu: copy, patch, save patch, blame |
 | CHG-CTX-COPY-ABS | 1 | §4.4 | Context: Copy ▸ Absolute path | changes/file context menu: copy, patch, save patch, blame |
-| CHG-CTX-COPY-PATCH | 1 | §4.4 | Context: Patch ▸ Copy (UF-17) | changes/file context menu: copy, patch, save patch, blame |
-| CHG-CTX-SAVE-PATCH | 1 | §4.4 | Context: Patch ▸ Save… (UF-17) | changes/file context menu: copy, patch, save patch, blame |
+| CHG-CTX-COPY-PATCH | 1 | §4.4 | Context: Patch ▸ Copy | changes/file context menu: copy, patch, save patch, blame |
+| CHG-CTX-SAVE-PATCH | 1 | §4.4 | Context: Patch ▸ Save… | changes/file context menu: copy, patch, save patch, blame |
 | CHG-CTX-BLAME | 1 | §4.4 | Context: Blame file | changes/file context menu: copy, patch, save patch, blame |
 | INFO-MESSAGE | 1 | §4.4 | Message shown | info/change information: message, author, committer, date, ID, parents |
 | INFO-AUTHOR | 1 | §4.4 | Author shown | info/change information: message, author, committer, date, ID, parents |
@@ -127,24 +127,24 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | INFO-DATE | 1 | §4.4 | Date shown | info/change information: message, author, committer, date, ID, parents |
 | INFO-PUBLISHED | 1 | §4.4 | Published/lock state shown | history/published vs unpublished commits |
 | INFO-COMMIT-ID-COPY | 1 | §4.4 | Commit ID copy | info/change information: message, author, committer, date, ID, parents |
-| INFO-AUTHOR-PLAIN | 1 | §4.4 | Author line has no hover or click effect; its context menu stays (UF-30) | info/change information: message, author, committer, date, ID, parents |
+| INFO-AUTHOR-PLAIN | 1 | §4.4 | Author line has no hover or click effect; its context menu stays | info/change information: message, author, committer, date, ID, parents |
 | INFO-PARENTS-REVEAL | 1 | §4.4 | Parents list reveals on click | info/change information: message, author, committer, date, ID, parents |
 | INFO-COMMITTER | 1 | §4.4 | Committer shown when it differs | info/change information: message, author, committer, date, ID, parents |
 | DIFF-UNIFIED | 1 | §4.5 | Unified view | diff/unified view, context lines, expandable context |
 | DIFF-SIDE-BY-SIDE | 1 | §4.5 | Side-by-side view | diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule<br>diff/side-by-side view with syntax highlighting |
-| DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines (UF-11) | diff/side-by-side view with syntax highlighting |
-| DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all, each labelled "Whitespace: ..." (UF-40) | diff/whitespace modes |
+| DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines | diff/side-by-side view with syntax highlighting |
+| DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all, each labelled "Whitespace: ..." | diff/whitespace modes |
 | DIFF-CONTEXT | 1 | §4.5 | Context-line count | diff/unified view, context lines, expandable context |
 | DIFF-EXPAND | 1 | §4.5 | Expand context | diff/unified view, context lines, expandable context |
-| DIFF-EXPAND-SIDES | 1 | §4.5 | A gap's expander has two halves: more lines below the hunk above, or above the hunk below; the first and last gap only the one that applies (UF-39) | diff/unified view, context lines, expandable context |
+| DIFF-EXPAND-SIDES | 1 | §4.5 | A gap's expander has two halves: more lines below the hunk above, or above the hunk below; the first and last gap only the one that applies | diff/unified view, context lines, expandable context |
 | DIFF-EXPAND-SHIFT | 1 | §4.5 | Shift reveals the whole section | diff/unified view, context lines, expandable context |
 | DIFF-SYNTAX | 1 | §4.5 | Syntax highlighting | diff/side-by-side view with syntax highlighting |
 | DIFF-BINARY | 1 | §4.5 | Binary placeholder | diff/binary, image, submodule and mode-change placeholders<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule |
 | DIFF-IMAGE | 1 | §4.5 | Image placeholder | diff/binary, image, submodule and mode-change placeholders<br>diff/edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit<br>diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file |
 | DIFF-SUBMODULE | 1 | §4.5 | Submodule placeholder | diff/binary, image, submodule and mode-change placeholders<br>diff/side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule |
 | DIFF-MODE-CHANGE | 1 | §4.5 | Mode-change line | diff/binary, image, submodule and mode-change placeholders |
-| DIFF-VS-HEAD | 1 | §4.5 | Compare this file with HEAD, on the diff button row (UF-15) | diff/renames, compare this file with HEAD or the working tree, large diffs |
-| DIFF-COMPARE-WITH | 1 | §4.5 | "Compare with" for this file: a revision or Work Tree, from the field or its menu; Clear (UF-41) | diff/renames, compare this file with HEAD or the working tree, large diffs |
+| DIFF-VS-HEAD | 1 | §4.5 | Compare this file with HEAD, on the diff button row | diff/renames, compare this file with HEAD or the working tree, large diffs |
+| DIFF-COMPARE-WITH | 1 | §4.5 | "Compare with" for this file: a revision or Work Tree, from the field or its menu; Clear | diff/renames, compare this file with HEAD or the working tree, large diffs |
 | DIFF-COPY-KEY | 1 | §4.5 | Ctrl+C copies the selection | diff/select lines, Ctrl+C and the context menu |
 | DIFF-LOAD-FULL | 1 | §4.5 | Load full diff for capped files | diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file<br>diff/renames, compare this file with HEAD or the working tree, large diffs |
 | DIFF-RENAME | 1 | §4.5 | Renames and copies in diffs | diff/more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file<br>diff/renames, compare this file with HEAD or the working tree, large diffs |
@@ -165,10 +165,10 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | BLAME-SELECT-BLOCK | 1 | §4.6 | Select a change block | blame/line menu: before, originating source, reveal, copy, blocks<br>edit/by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch |
 | BLAME-COPY-BLOCK | 1 | §4.6 | Copy a change block | blame/line menu: before, originating source, reveal, copy, blocks |
 | BR-FILTER | 1 | §4.7 | Branches: filter | panels/branches: filter, current, upstream, reveal, copy |
-| BR-TOGGLE | 1 | §4.7 | Branches: the eye icon toggles visibility in History; a click on the row does not (UF-36) | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all<br>panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation |
-| BR-SHOW-HIDE-ALL | 1 | §4.7 | Branches: Show all / Hide all branches in History (UF-33) | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all |
-| BR-BADGE-HIDDEN | 1 | §4.7 | A hidden branch has no badge in History, even on a commit other refs keep in view (UF-32) | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all |
-| BR-TREE | 1 | §4.7 | Branches: names as a tree split on '/', a group named by its members' longest common prefix (UF-34) | refs/Branches: a tree split on '/', groups named by their common prefix; double-click checks out |
+| BR-TOGGLE | 1 | §4.7 | Branches: the eye icon toggles visibility in History; a click on the row does not | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all<br>panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation |
+| BR-SHOW-HIDE-ALL | 1 | §4.7 | Branches: Show all / Hide all branches in History | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all |
+| BR-BADGE-HIDDEN | 1 | §4.7 | A hidden branch has no badge in History, even on a commit other refs keep in view | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all |
+| BR-TREE | 1 | §4.7 | Branches: names as a tree split on '/', a group named by its members' longest common prefix | refs/Branches: a tree split on '/', groups named by their common prefix; double-click checks out |
 | BR-CTRL-ONLY | 1 | §4.7 | Branches: Ctrl-click shows only this branch | history/scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all |
 | BR-CURRENT-OUTLINE | 1 | §4.7 | Branches: current branch outlined | panels/branches: filter, current, upstream, reveal, copy |
 | BR-REVEAL | 1 | §4.7 | Branches: Reveal | panels/branches: filter, current, upstream, reveal, copy |
@@ -178,7 +178,7 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | TAG-TOGGLE | 1 | §4.7 | Tags: visibility toggle | panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation<br>panels/tags: filter, visibility, reveal, copy |
 | TAG-REVEAL | 1 | §4.7 | Tags: Reveal | panels/tags: filter, visibility, reveal, copy |
 | TAG-COPY | 1 | §4.7 | Tags: Copy | panels/tags: filter, visibility, reveal, copy |
-| TAG-LABEL-PLAIN | 1 | §4.7 | Tags: labels are the tag names, without "(annotated)" (UF-22) | panels/tags: filter, visibility, reveal, copy |
+| TAG-LABEL-PLAIN | 1 | §4.7 | Tags: labels are the tag names, without "(annotated)" | panels/tags: filter, visibility, reveal, copy |
 | WT-LIST | 1 | §4.7 | Worktrees: list with main/stale/locked | panels/details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation<br>panels/worktrees: main, locked, stale; copy, reveal, open<br>rewrite/in a linked worktree: its own branch follows quietly, the main worktree's branch asks first<br>shell/unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees<br>worktrees/lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree<br>worktrees/remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates |
 | WT-COPY-NAME | 1 | §4.7 | Worktrees: Copy name | panels/worktrees: main, locked, stale; copy, reveal, open |
 | WT-COPY-PATH | 1 | §4.7 | Worktrees: Copy path | panels/worktrees: main, locked, stale; copy, reveal, open |
@@ -223,7 +223,7 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | TB-NEW | 2 | §4.1 | Toolbar New | new/new commit on HEAD advances the branch (toolbar, menu, keys) |
 | TB-COMMIT | 2 | §4.1 | Toolbar Commit/Amend | commit/commit the index from the toolbar; hooks run natively<br>ui/toolbar Amend with HEAD selected; Skip hooks on Amend |
 | TB-COMMIT-LABEL | 2 | §4.1 | Commit/Amend label follows the selection | commit/commit the index from the toolbar; hooks run natively<br>ui/toolbar Amend with HEAD selected; Skip hooks on Amend |
-| TB-NO-PREV-NEXT | 2 | §4.1 | The toolbar has no Previous / Next buttons (UF-27) | checkout/move HEAD to parent and child |
+| TB-NO-PREV-NEXT | 2 | §4.1 | The toolbar has no Previous / Next buttons | checkout/move HEAD to parent and child |
 | TB-UNDO | 2 | §4.1 | Toolbar Undo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear<br>undo/refusals: nothing to undo, refs moved outside the journal, local changes in the way |
 | TB-REDO | 2 | §4.1 | Toolbar Redo | stash/apply, pop with the index, apply one file, branch, drop, undo, clear<br>ui/Redo that would overwrite local changes offers Stash and redo |
 | TB-FETCH | 2 | §4.1 | Toolbar Fetch fetches all remotes | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
@@ -259,15 +259,15 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | SET-EDITOR-WORKTREE | 2 | §4.1 | Settings: core.editor (Worktree) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-MERGETOOL | 2 | §4.1 | Settings: merge.tool | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-DIFFTOOL | 2 | §4.1 | Settings: diff.tool | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-PULL-METHOD | 2 | §4.1 | Settings: default pull method: merge, rebase, rebase keeping merges, fast-forward only (UF-19) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-PULL-METHOD | 2 | §4.1 | Settings: default pull method: merge, rebase, rebase keeping merges, fast-forward only | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-SAME-CHANGE | 2 | §4.1 | Settings ▸ Git: gg.sameChange (Accept / Keep) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email (UF-20) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-SCOPE-INHERIT | 2 | §4.1 | Settings: Inherit clears an override so the lower-scope value applies again (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-SCOPE-XDG-SYSTEM | 2 | §4.1 | Settings ▸ Git: the User tab reads $XDG_CONFIG_HOME/git/config with ~/.gitconfig; system values show as hints (UF-45) | setup/Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the system config show their values |
-| SET-WORKTREE-TOGGLE | 2 | §4.1 | Settings ▸ Git: "Worktree settings" checkbox sets extensions.worktreeConfig; the Worktree tab exists only while on (UF-46) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
-| SET-NOTHING-STAGED-LABEL | 2 | §4.1 | Settings ▸ Git: "Commit with nothing staged" with an explanation of its choices (UF-44) | commit/default for nothing staged comes from Settings |
+| SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-INHERIT | 2 | §4.1 | Settings: Inherit clears an override so the lower-scope value applies again | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SCOPE-XDG-SYSTEM | 2 | §4.1 | Settings ▸ Git: the User tab reads $XDG_CONFIG_HOME/git/config with ~/.gitconfig; system values show as hints | setup/Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the system config show their values |
+| SET-WORKTREE-TOGGLE | 2 | §4.1 | Settings ▸ Git: "Worktree settings" checkbox sets extensions.worktreeConfig; the Worktree tab exists only while on | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-NOTHING-STAGED-LABEL | 2 | §4.1 | Settings ▸ Git: "Commit with nothing staged" with an explanation of its choices | commit/default for nothing staged comes from Settings |
 | SET-COMMIT-ALL-DEFAULT | 2 | §4.1 | Settings: default when nothing is staged | commit/default for nothing staged comes from Settings |
 | SET-HOOKS-TAB | 2 | §4.1 | Settings: Hooks tab install/remove/status | hooks/first-open prompt (Install / Not now / Never) and the Settings Hooks tab<br>ui/Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off |
 | APP-EXT-EDITOR | 2 | §4.1 | Open file in core.editor | staging/external editor, folder and diff tools |
@@ -319,7 +319,7 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | CHG-DISCARD | 2 | §4.4 | Discard file/selection (with confirmation for untracked) | staging/stage, unstage and discard files |
 | CHG-KEY-TOGGLE-SPACE | 2 | §4.4 | Space toggles staging | staging/Space and Enter toggle staging |
 | CHG-KEY-TOGGLE-ENTER | 2 | §4.4 | Enter toggles staging | staging/Space and Enter toggle staging |
-| CHG-DBLCLICK-OPEN | 2 | §4.4 | Double-click opens new files in the editor, others in the diff tool against the parent (UF-16) | staging/double-click opens new files in the editor, others in the diff tool |
+| CHG-DBLCLICK-OPEN | 2 | §4.4 | Double-click opens new files in the editor, others in the diff tool against the parent | staging/double-click opens new files in the editor, others in the diff tool |
 | CHG-STAGE-ALL | 2 | §4.4 | Stage all | staging/stage all, unstage all, stage modified |
 | CHG-UNSTAGE-ALL | 2 | §4.4 | Unstage all | staging/stage all, unstage all, stage modified |
 | CHG-STAGE-MODIFIED | 2 | §4.4 | Stage all modified (not untracked) | staging/stage all, unstage all, stage modified |
@@ -335,7 +335,7 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | CHG-CTX-EXTDIFF-HEAD | 2 | §4.4 | Context: External diff ▸ vs HEAD | staging/external editor, folder and diff tools |
 | CHG-CTX-EXTDIFF-PARENT | 2 | §4.4 | Context: External diff ▸ vs parent | staging/external editor, folder and diff tools |
 | CHG-CTX-DELETE | 2 | §4.4 | Context: Delete file | staging/intent to add, delete; no Track / Untrack |
-| CHG-NO-TRACK-UNTRACK | 2 | §4.4 | No Track / Untrack items in the Changes menu (UF-26) | staging/intent to add, delete; no Track / Untrack |
+| CHG-NO-TRACK-UNTRACK | 2 | §4.4 | No Track / Untrack items in the Changes menu | staging/intent to add, delete; no Track / Untrack |
 | INFO-SAVE-MESSAGE | 2 | §4.4 | Save message (HEAD) | commit/reword HEAD from Change information (amend mode)<br>rewrite/reword a commit in the middle: descendants rebased, the rest untouched, one Undo |
 | INFO-AMEND-MODE | 2 | §4.4 | Amend mode for HEAD with a clean index | commit/reword HEAD from Change information (amend mode) |
 | INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed | conflicts/first-class conflicts: History marks, filter, F7, Change information, Changes<br>edit/by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch |
@@ -348,10 +348,10 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | DIFF-HUNK-MENU | 2 | §4.5 | Context menu: Stage / Discard / Unstage hunk(s) (both views) | linestaging/hunks from the context menu in the side-by-side view |
 | DIFF-HUNK-BUTTONS | 2 | §4.5 | Buttons in hunk headers | linestaging/stage, discard and unstage hunks |
 | DIFF-STAGING-RANDOM | 2 | §8.4 | Randomized line/hunk staging matches git apply --cached | linestaging/randomized line staging matches the content model |
-| BR-DOUBLE-CLICK-CHECKOUT | 2 | §4.7 | Branches: double-click checks the branch out (UF-37) | refs/Branches: a tree split on '/', groups named by their common prefix; double-click checks out |
-| BR-REMOTE-MENU | 2 | §4.7 | Branches: a remote and its remote-tracking branches have the Remotes panel's menu (UF-12) | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
+| BR-DOUBLE-CLICK-CHECKOUT | 2 | §4.7 | Branches: double-click checks the branch out | refs/Branches: a tree split on '/', groups named by their common prefix; double-click checks out |
+| BR-REMOTE-MENU | 2 | §4.7 | Branches: a remote and its remote-tracking branches have the Remotes panel's menu | network/fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move |
 | BR-CREATE | 2 | §4.7 | Branches: Create branch | refs/create, check out, rename and delete branches |
-| BR-CREATE-CHECKOUT-DEFAULT | 2 | §4.7 | Create branch: "Check out after creating" is on by default (UF-35) | refs/create, check out, rename and delete branches |
+| BR-CREATE-CHECKOUT-DEFAULT | 2 | §4.7 | Create branch: "Check out after creating" is on by default | refs/create, check out, rename and delete branches |
 | BR-CHECKOUT | 2 | §4.7 | Branches: Check out | refs/create, check out, rename and delete branches |
 | BR-PUSH | 2 | §4.7 | Branches: Push | network/push: toolbar, menu, History and Branches; no upstream prefills Push to<br>ui/Push without an upstream opens Push to (History, Branches); remote, upstream and force with lease |
 | BR-PUSH-TO | 2 | §4.7 | Branches: Push to… | network/push: toolbar, menu, History and Branches; no upstream prefills Push to |
@@ -360,7 +360,7 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | BR-DELETE-REMOTE | 2 | §4.7 | Branches: Delete ▸ on a remote | refs/delete a branch on its remote, and everywhere |
 | BR-DELETE-ALL | 2 | §4.7 | Branches: Delete ▸ Local and all remotes | refs/delete a branch on its remote, and everywhere |
 | BR-SET-UPSTREAM | 2 | §4.7 | Branches: Set upstream | edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults<br>refs/upstream: set, unset, fast-forward |
-| BR-SET-UPSTREAM-FILTER | 2 | §4.7 | Set upstream: filter field for the branch list; Enter picks the first match (UF-23) | refs/upstream: set, unset, fast-forward |
+| BR-SET-UPSTREAM-FILTER | 2 | §4.7 | Set upstream: filter field for the branch list; Enter picks the first match | refs/upstream: set, unset, fast-forward |
 | BR-UNSET-UPSTREAM | 2 | §4.7 | Branches: Unset upstream | refs/upstream: set, unset, fast-forward |
 | BR-FF-UPSTREAM | 2 | §4.7 | Branches: Fast-forward to upstream | refs/upstream: set, unset, fast-forward |
 | BR-PULL | 2 | §4.7 | Branches: Pull (current branch) | network/pull follows pull.rebase; dropdown overrides; menu and panels |
@@ -371,8 +371,8 @@ Covered: 690/690 required IDs; 690/690 of the whole catalogue.
 | TAG-DELETE | 2 | §4.7 | Tags: Delete | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
 | TAG-PUSH | 2 | §4.7 | Tags: Push tag | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
 | TAG-DELETE-REMOTE | 2 | §4.7 | Tags: Delete a remote tag | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
-| TAG-DELETE-MENU | 2 | §4.7 | Tags: Delete is one item for a tag only here; a submenu (Local, then each remote that has it) otherwise (UF-43) | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
-| TAG-REMOTE-ONLY | 2 | §4.7 | Tags: tags only on a remote are listed (git ls-remote); their Delete ▸ Local is disabled (UF-43) | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-DELETE-MENU | 2 | §4.7 | Tags: Delete is one item for a tag only here; a submenu (Local, then each remote that has it) otherwise | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
+| TAG-REMOTE-ONLY | 2 | §4.7 | Tags: tags only on a remote are listed (git ls-remote); their Delete ▸ Local is disabled | refs/tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote |
 | REM-ADD | 2 | §4.7 | Remotes: Add remote | edit/dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults<br>refs/remotes: add, edit URL, prune on fetch, delete |
 | REM-DELETE | 2 | §4.7 | Remotes: Delete | refs/remotes: add, edit URL, prune on fetch, delete |
 | REM-EDIT-URL | 2 | §4.7 | Remotes: Edit URL | refs/remotes: add, edit URL, prune on fetch, delete |

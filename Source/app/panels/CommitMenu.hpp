@@ -1,4 +1,4 @@
-// History editing actions on one commit (REBUILD_PLAN §4.3), shared by the History row menu, the
+// History editing actions on one commit (product spec §4.3), shared by the History row menu, the
 // Commit menu and the History keys (D, Shift+D, S, Shift+S, Alt+S, A, Shift+A).
 #pragma once
 

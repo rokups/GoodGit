@@ -1,4 +1,4 @@
-// Undo/Redo and the Operations panel (§4.1 Edit, §4.7 Operations, §5 U1; P2-25).
+// Undo/Redo and the Operations panel (§4.1 Edit, §4.7 Operations, §5 U1).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"

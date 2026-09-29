@@ -186,7 +186,7 @@ void ThemeManager::apply(Theme t, float scale)
     p.tagText = p.tag;
     p.errorText = p.conflict;
 
-    // Readable text (UF-50): every colour drawn as text keeps its contrast against the backgrounds
+    // Readable text: every colour drawn as text keeps its contrast against the backgrounds
     // text sits on (windows, and fields and table rows over them).
     const ImU32 window = ImGui::GetColorU32(ImGuiCol_WindowBg, 1.0f);
     const ImU32 backgrounds[] = {window, over(ImGui::GetColorU32(ImGuiCol_FrameBg), window),

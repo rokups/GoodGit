@@ -1,4 +1,4 @@
-// In-memory rewrites (§4.3, §5 R1/R2, §8.4 rewrite invariants; P3-02, P3-07).
+// In-memory rewrites (§4.3, §5 R1/R2, §8.4 rewrite invariants).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"

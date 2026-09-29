@@ -1,4 +1,4 @@
-// Recording one operation in the undo journal (REBUILD_PLAN §5 U1), shared by ggui's mutation
+// Recording one operation in the undo journal (product spec §5 U1), shared by ggui's mutation
 // pipeline and git-gg: reads refs (and optionally the index tree) before and after, writes the
 // journal records and exports GG_OPERATION to child git processes so managed hooks join the
 // operation instead of creating duplicates (loop guard).

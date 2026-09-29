@@ -1,5 +1,5 @@
 // First-class conflict markers: parser, writer and N-way term algebra
-// (REBUILD_PLAN §4.10, M1; grammar in docs/spec/conflict-markers.md).
+// (product spec §4.10, M1; grammar in docs/spec/conflict-markers.md).
 //
 // Everything here is a pure function of file bytes. Attributes (gg-conflicts=false, filters)
 // are applied by callers.

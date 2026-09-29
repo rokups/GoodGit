@@ -1,4 +1,4 @@
-// History panel (REBUILD_PLAN §4.2): commit graph with lanes, badges, virtual Working tree and
+// History panel (product spec §4.2): commit graph with lanes, badges, virtual Working tree and
 // Index rows, scope, search, reveal, "Show more" and merge collapsing.
 #pragma once
 
@@ -45,7 +45,7 @@ public:
     void setRefsVisible(const std::vector<std::string>& fullNames, bool visible);
 
     void toggleMerge(const core::Oid& id);
-    // A merge row offers Collapse/Expand only when collapsing hides commits (UF-38).
+    // A merge row offers Collapse/Expand only when collapsing hides commits.
     bool mergeToggle(const core::HistoryRow& row) const
     {
         return row.parents.size() > 1 && row.collapsible && !(row.collapsed && m_complete && row.collapsedCount == 0);
@@ -84,7 +84,7 @@ private:
     std::vector<core::HistoryRow> m_rows;
     std::unordered_map<core::Oid, int, core::OidHash> m_index;
     // A reload's rows gather here while the previous rows stay on screen, until there are as
-    // many or the walk ends (UF-47: no short list and scrollbar jump in between).
+    // many or the walk ends (no short list and scrollbar jump in between).
     bool m_staging = false;
     size_t m_stageTarget = 0;
     std::vector<core::HistoryRow> m_stagedRows;

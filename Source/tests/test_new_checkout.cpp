@@ -1,4 +1,4 @@
-// New commit, check out / switch, Move HEAD (§4.3; P2-11, P2-12).
+// New commit, check out / switch, Move HEAD (§4.3).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"

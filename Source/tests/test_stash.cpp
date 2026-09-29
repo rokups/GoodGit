@@ -1,4 +1,4 @@
-// Stash (§4.9, §4.1 toolbar Stash/Pop; P2-22).
+// Stash (§4.9, §4.1 toolbar Stash/Pop).
 #include "panels/ChangesPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"

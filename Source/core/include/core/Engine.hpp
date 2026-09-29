@@ -1,4 +1,4 @@
-// The repository engine: commands in, immutable snapshots and events out (REBUILD_PLAN §3, §3.1).
+// The repository engine: commands in, immutable snapshots and events out (product spec §3, §3.1).
 //
 // The UI thread only calls the methods of this class; they enqueue work and return at once.
 // Work runs on worker threads, each with its own git_repository*:

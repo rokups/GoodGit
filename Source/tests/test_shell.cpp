@@ -1,4 +1,4 @@
-// Application shell, Welcome screen, menus, toolbar, layout and settings (§4.1; P1-12 … P1-14).
+// Application shell, Welcome screen, menus, toolbar, layout and settings (§4.1).
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"

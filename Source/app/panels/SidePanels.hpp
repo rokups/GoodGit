@@ -1,4 +1,4 @@
-// Side panels (REBUILD_PLAN §4.7): Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations.
+// Side panels (product spec §4.7): Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations.
 // Each panel keeps its own small view model.
 #pragma once
 

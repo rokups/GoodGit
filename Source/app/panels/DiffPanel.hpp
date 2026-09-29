@@ -1,4 +1,4 @@
-// Diff panel (REBUILD_PLAN §4.5): unified and side-by-side views of one file, both read-only text
+// Diff panel (product spec §4.5): unified and side-by-side views of one file, both read-only text
 // editors (selectable text, syntax highlighting) with a gutter for line numbers, hunk staging
 // buttons, selectable line handles and expandable context.
 #pragma once

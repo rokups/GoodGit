@@ -1,4 +1,4 @@
-// REBUILD_PLAN §9 removal checklist (P4-05; docs/removal-audit.md): the jj-style parts of the old
+// product spec §9 removal checklist: the jj-style parts of the old
 // gg must not come back. The post-test hook checks refs/gg and .git/gg after every test; this
 // scenario does so on purpose after a representative mix of ggui, git gg and plain git (with the
 // managed hooks) operations, then deletes .git/gg and shows that nothing changes meaning.

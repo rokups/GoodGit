@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds with coverage instrumentation, runs the integration suite inside ggui and reports line
-# and branch coverage of first-party code (REBUILD_PLAN §8.2, task P0-13). Since 2026-09-28 the
+# and branch coverage of first-party code (product spec §8.2). Since 2026-09-28 the
 # report is informational (standing rule 8); it fails only on COVERAGE_EXCL markers beyond
 # scripts/coverage_excl_allowlist.txt or a failing test.
 #

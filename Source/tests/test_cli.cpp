@@ -1,4 +1,4 @@
-// The git-gg executable (§6; P2-26): each command runs as a test step, results checked in the UI.
+// The git-gg executable (§6): each command runs as a test step, results checked in the UI.
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"

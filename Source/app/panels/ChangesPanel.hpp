@@ -1,4 +1,4 @@
-// Changes panel (REBUILD_PLAN §4.4): files of the selected commit, stash or comparison; for
+// Changes panel (product spec §4.4): files of the selected commit, stash or comparison; for
 // the working tree / index, Staged / Unstaged / Untracked / Conflicted groups.
 #pragma once
 
@@ -14,7 +14,7 @@ namespace ggui {
 
 enum class FileGroup { Commit, Staged, Unstaged, Untracked, Conflicted, StashWorktree, StashIndex, StashUntracked };
 
-// What a commit is compared with ("Compare with" in Changes and Diff, UF-41): nothing (its parent),
+// What a commit is compared with ("Compare with" in Changes and Diff): nothing (its parent),
 // a revision (HEAD, an ID, a ref), or the working tree.
 struct CompareTarget {
     enum Kind { None, Rev, WorkTree };

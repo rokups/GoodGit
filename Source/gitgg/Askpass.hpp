@@ -1,4 +1,4 @@
-// git-gg as GIT_ASKPASS / SSH_ASKPASS: forwards the prompt to the running ggui (P2-04).
+// git-gg as GIT_ASKPASS / SSH_ASKPASS: forwards the prompt to the running ggui.
 #pragma once
 
 #include <string>

@@ -1,4 +1,4 @@
-// UI-thread registration and the "not on the UI thread" assertion (REBUILD_PLAN §3.1).
+// UI-thread registration and the "not on the UI thread" assertion (product spec §3.1).
 //
 // ggui registers its UI thread at startup. Every libgit2 helper and the git runner call
 // assertNotUiThread(), so a UI-thread call to libgit2 or git is caught in debug and test builds.

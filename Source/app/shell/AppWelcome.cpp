@@ -1,4 +1,4 @@
-// Welcome screen, Initialize and Clone (REBUILD_PLAN §4.1; P1-13, P2-07, P2-16).
+// Welcome screen, Initialize and Clone (product spec §4.1).
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"

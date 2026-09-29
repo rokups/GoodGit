@@ -1,4 +1,4 @@
-// History panel (§4.2; P1-07, P1-15).
+// History panel (§4.2).
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"

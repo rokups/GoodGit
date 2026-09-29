@@ -1,4 +1,4 @@
-// Blame panel (REBUILD_PLAN §4.6).
+// Blame panel (product spec §4.6).
 #pragma once
 
 #include "shell/Session.hpp"

@@ -353,7 +353,7 @@ void Session::draw()
     };
     drawPanel(panel::Branches, *m_branches);
     drawPanel(panel::Tags, *m_tags);
-    // Tabs of a shared dock node follow this order (UF-42).
+    // Tabs of a shared dock node follow this order.
     drawPanel(panel::Remotes, *m_remotes);
     drawPanel(panel::Stashes, *m_stashes);
     drawPanel(panel::Worktrees, *m_worktrees);

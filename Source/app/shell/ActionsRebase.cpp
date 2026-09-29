@@ -1,4 +1,4 @@
-// Native interactive rebase (REBUILD_PLAN §4.13 execution 2, §4.10 native): `git rebase -i` fed
+// Native interactive rebase (product spec §4.13 execution 2, §4.10 native): `git rebase -i` fed
 // through `git gg sequence-editor`, and the steps that move a stopped rebase on.
 #include "shell/Actions.hpp"
 #include "shell/App.hpp"

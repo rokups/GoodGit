@@ -1,6 +1,6 @@
 # First-class conflict markers — formal specification (M1, K1)
 
-Status: **draft for review** (P0-04). Implements REBUILD_PLAN §4.10 and §5 M1/K1.
+Status: **draft for review**. Implements product spec §4.10 and §5 M1/K1.
 Implementation: `Source/libgg/Markers.cpp` (parser, writer, term algebra).
 
 A first-class conflict is **only file content**. Whether a blob is conflicted, and what its
@@ -116,7 +116,7 @@ closing (`>`) marker line in place. By §4 this is not malformed text kept as-is
 simply has no well-formed region there any more, so it "resolves" silently, with stray marker
 lines sitting in it as if they were content. This is very likely a mistake rather than an
 intended resolution, so ggui warns about it (Status, the Changes panel and the pre-commit hook,
-§8 REBUILD_PLAN) without treating the file as still conflicted: `gg::markers::brokenMarkers`
+product spec §8) without treating the file as still conflicted: `gg::markers::brokenMarkers`
 (`Source/libgg/Markers.cpp`) compares a file's committed (HEAD) text with its edited text and
 reports the leftover opening/closing marker lines whose length matches a region HEAD had, that
 are not part of a well-formed region of the edit. It ignores marker-like lines that were

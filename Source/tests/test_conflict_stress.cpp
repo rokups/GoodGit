@@ -1,4 +1,4 @@
-// Stress tests for stacked first-class conflicts (REBUILD_PLAN §4.10, docs/spec/conflict-markers.md
+// Stress tests for stacked first-class conflicts (product spec §4.10, docs/spec/conflict-markers.md
 // §7): an ancestor edited under a stack whose commits already hold conflicts, so that several
 // descendants conflict again, on top of their own conflicts. Two levels: the marker algebra on
 // random file contents (thousands of cases), and the rewrite engine on a real repository.

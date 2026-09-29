@@ -1,4 +1,4 @@
-// The application shell (REBUILD_PLAN §3): docking, menus, toolbar, error banner, Welcome
+// The application shell (product spec §3): docking, menus, toolbar, error banner, Welcome
 // screen and dialogs. Repository state and the panels live in Session (one per open repo);
 // each panel has its own view model.
 #pragma once
@@ -61,7 +61,7 @@ public:
     // Text of recent row `i` as shown on the Welcome screen (path + summary).
     std::string recentRowText(size_t i) const;
 
-    // Test isolation (P0-08): closes the repository and reloads settings from the (new)
+    // Test isolation: closes the repository and reloads settings from the (new)
     // preferences directory, as on a fresh start.
     void resetForTest();
 
@@ -69,7 +69,7 @@ public:
     // Checks git first (G2), then opens.
     void openRepository(const std::filesystem::path& path);
     // Folders dropped on the window: every repository among them joins the recent list, the
-    // first folder opens (UF-48, UF-49). Files are ignored.
+    // first folder opens. Files are ignored.
     void openDropped(const std::vector<std::string>& paths);
     void closeRepository();
     void pickAndOpenRepository();

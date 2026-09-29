@@ -1,4 +1,4 @@
-// git-gg as GIT_SEQUENCE_EDITOR / GIT_EDITOR for ggui's native interactive rebase (P3-19): writes
+// git-gg as GIT_SEQUENCE_EDITOR / GIT_EDITOR for ggui's native interactive rebase: writes
 // the todo and messages ggui prepared (GG_SEQUENCE_DIR; see libgg/NativeRebase.hpp).
 #pragma once
 

@@ -1,4 +1,4 @@
-// Worktree management (REBUILD_PLAN §4.7; P4-03): every change runs `git worktree …` and is
+// Worktree management (product spec §4.7): every change runs `git worktree …` and is
 // journaled with the worktree it changed (docs/spec/undo-journal.md §5.4).
 #include "shell/Actions.hpp"
 

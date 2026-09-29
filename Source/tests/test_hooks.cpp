@@ -1,4 +1,4 @@
-// Managed hooks (§4.12 B, §5 H1; P2-27, P2-28, P2-29).
+// Managed hooks (§4.12 B, §5 H1).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"

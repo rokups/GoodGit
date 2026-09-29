@@ -1,8 +1,8 @@
 # UI actions and their tests
 
-Standing rule 8 (`REBUILD_TASKS.md`): every UI action the app implements is exercised by at
+Standing rule: every UI action the app implements is exercised by at
 least one test that checks the action's effect on the UI and on the repository. This file lists
-every action of phases 0–4 with the test that covers it. It was built in P3-20 from
+every action of phases 0–4 with the test that covers it. It was built from
 `Source/app` (every `MenuItem`, `Button`, `Selectable`, `Checkbox`, `Combo`, input field,
 `Shortcut`/`IsKeyPressed`, drag-and-drop source/target, double-click, mouse-button and
 mouse-wheel handler, and every `Form` dialog's fields and buttons) and checked against line
@@ -36,27 +36,27 @@ drives the action through the UI and checks its effect) or `missing`.
   read in the same line as another path (dialog checkboxes, `form.checked(...)`) do not show up
   there: grep the tests for the field id instead.
 
-**Phase 4 additions.** P4-02 (ggui's todo editor as Git's `sequence.editor`): the Settings
+**Phase 4 additions.** ggui's todo editor as Git's `sequence.editor`: the Settings
 option, the *Replace sequence.editor* dialog, and Save / Cancel / closing the todo editor for a
 list a plain `git rebase -i` waits for.
 
-P4-03 (worktree management): the Worktrees panel's Add button and its Open here, Open in new
+Worktree management: the Worktrees panel's Add button and its Open here, Open in new
 window, Add..., Remove..., Lock.../Unlock, Prune... and Repair... items with their dialogs (27
 rows in the Worktrees panel section), and Branch ▸ Check out in new worktree....
 
-**Audit result (P3-20).** 408 rows, all `tested`. The audit added tests for 19 rows that had
+**Audit result.** 408 rows, all `tested`. The audit added tests for 19 rows that had
 none and made 14 existing tests check the effect instead of only opening a dialog or counting
-journal entries (see `Source/tests/test_ui_actions.cpp` and the P3-20 commits). One bug was
+journal entries (see `Source/tests/test_ui_actions.cpp`). One bug was
 found and fixed: after Git required ▸ Quit (or any refused git check) the open stayed pending, so
 the Welcome screen stayed disabled and no repository could be opened without Retry. No action was
 removed as dead UI.
 
-**Audit result (P4-06, 2026-09-28).** 450 rows, all `tested`, and
+**Audit result (2026-09-28).** 450 rows, all `tested`, and
 `scripts/ui_actions_check.py` finds a passing test for every one of them (suite of 257 tests, git
-2.55.0 and git 2.36.0). The widget calls added since P3-20 (P4-01 … P4-05: `MenuItem`, `Button`,
+2.55.0 and git 2.36.0). The widget calls added since the previous audit (`MenuItem`, `Button`,
 `Checkbox`, `InputText`, `IsKeyPressed`, `Form` fields and buttons) were compared with the rows; each
-is listed. P4-04 adds command-line options only (`ggui --version`/`--help`, `git gg --version`,
-covered by `cli/` tests), P4-05 changes two labels. A test that needs a newer git than the minimum
+is listed. One later change added command-line options only (`ggui --version`/`--help`, `git gg --version`,
+covered by `cli/` tests); another changed two labels. A test that needs a newer git than the minimum
 (2.36) is skipped there (`GG_REQUIRE_GIT`, "skipped" in the trace) and must pass on the latest git.
 
 ## Main menu ▸ Repository

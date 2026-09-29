@@ -1,4 +1,4 @@
-// Interactive rebase with --rebase-merges (§4.13, P4-01): the Rebase merges option gives Git's
+// Interactive rebase with --rebase-merges (§4.13): the Rebase merges option gives Git's
 // starting list (label, reset and merge rows, checked against the list `git rebase -i
 // --rebase-merges` makes), the rows are edited like the others (action combos for merge rows,
 // fields for labels, keys l/t/m and the Insert buttons), validation of labels, the preview

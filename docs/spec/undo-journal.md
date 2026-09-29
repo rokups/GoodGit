@@ -1,6 +1,6 @@
 # Undo journal — format and semantics (U1)
 
-Status: **draft for review** (P0-05). Implements REBUILD_PLAN §5 U1 and §4.12 B.
+Status: **draft for review**. Implements product spec §5 U1 and §4.12 B.
 Implementation: `Source/libgg/Journal.cpp`; used by ggui, `git gg undo|redo|op log` and
 `git gg hook …`.
 

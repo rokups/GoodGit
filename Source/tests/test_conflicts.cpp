@@ -1,4 +1,4 @@
-// Conflicts: native in-progress operations and first-class conflicts (§4.10; P2-18, P2-19, P2-24).
+// Conflicts: native in-progress operations and first-class conflicts (§4.10).
 #include <thread>
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"

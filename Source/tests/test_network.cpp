@@ -1,4 +1,4 @@
-// Clone, fetch, pull, push, askpass (§4.1 toolbar, §4.7, §4.8; P2-04, P2-16, P2-17, P2-20, P2-21).
+// Clone, fetch, pull, push, askpass (§4.1 toolbar, §4.7, §4.8).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"

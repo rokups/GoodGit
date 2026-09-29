@@ -1,4 +1,4 @@
-# Embed binary font files into a target (REBUILD_PLAN §2.2).
+# Embed binary font files into a target.
 #   ggui_embed_font(<target> <symbol> <file>)
 # Defines `extern "C" const unsigned char <symbol>[]` and `extern "C" const unsigned long long
 # <symbol>_size`. GCC/Clang (Linux, MinGW) use .incbin so a 10 MB font costs no compile time;

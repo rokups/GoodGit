@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spec-ID traceability report and functional gate (REBUILD_PLAN §8.2, task P0-12).
+"""Spec-ID traceability report and functional gate (product spec §8.2).
 
 Reads the spec-ID catalogue (Source/tests/spec_catalogue.txt) and one or more trace files
 written by `ggui --test --trace=FILE` (one per shard), then:

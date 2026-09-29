@@ -1,5 +1,5 @@
-// Minimal loopback TCP helpers for the askpass bridge (REBUILD_PLAN §4.8, T1) and the todo editor
-// link (P4-02): ggui listens on 127.0.0.1, git-gg (run by git as GIT_ASKPASS / SSH_ASKPASS, or as
+// Minimal loopback TCP helpers for the askpass bridge (product spec §4.8, T1) and the todo editor
+// link: ggui listens on 127.0.0.1, git-gg (run by git as GIT_ASKPASS / SSH_ASKPASS, or as
 // sequence.editor) connects with a per-session token.
 #pragma once
 

@@ -1,4 +1,4 @@
-// The undo journal (REBUILD_PLAN §5 U1; format in docs/spec/undo-journal.md).
+// The undo journal (product spec §5 U1; format in docs/spec/undo-journal.md).
 //
 // One JSON-Lines file in $GIT_COMMON_DIR/gg/journal shared by all worktrees; HEAD values and
 // index trees are keyed per worktree. Append-only, locked like git's ref locks, torn or corrupt

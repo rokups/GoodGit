@@ -1,4 +1,4 @@
-// Main menu, toolbar and global shortcuts (REBUILD_PLAN §4.1; docs/spec/ui-spec.md §1).
+// Main menu, toolbar and global shortcuts (product spec §4.1; docs/spec/ui-spec.md §1).
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
 #include "platform/Platform.hpp"

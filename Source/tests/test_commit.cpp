@@ -1,4 +1,4 @@
-// Commit, amend, reword HEAD, hooks during commit (§4.3, §4.4, §4.12 A; P2-10, P2-05 C1 default).
+// Commit, amend, reword HEAD, hooks during commit (§4.3, §4.4, §4.12 A; C1 default).
 #include "panels/ChangesPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"

@@ -14,7 +14,7 @@ class Platform;
 namespace ggtest {
 
 // Called at startup when --test is given, before anything reads HOME, git config or
-// preferences: creates the test root and isolates the process environment (P0-08).
+// preferences: creates the test root and isolates the process environment.
 void prepareProcessForTests(const char* argv0);
 
 // Prints registered tests and their spec IDs. Returns the process exit code.

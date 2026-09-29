@@ -1,4 +1,4 @@
-// Change information panel (REBUILD_PLAN §4.4): message, author/committer, date, published
+// Change information panel (product spec §4.4): message, author/committer, date, published
 // state, commit ID, parents.
 #pragma once
 

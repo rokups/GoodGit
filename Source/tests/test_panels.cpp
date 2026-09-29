@@ -1,4 +1,4 @@
-// Side panels: Branches, Tags, Worktrees, Remotes, Reflog (§4.7; P1-20).
+// Side panels: Branches, Tags, Worktrees, Remotes, Reflog (§4.7).
 #include "panels/HistoryPanel.hpp"
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"

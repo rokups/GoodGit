@@ -1,4 +1,4 @@
-// Interactive rebase live preview (REBUILD_PLAN §4.13 "Live preview", §3.1).
+// Interactive rebase live preview (product spec §4.13 "Live preview", §3.1).
 //
 // The todo goes through the same plan (gg::todo::toPlan) and the same in-memory rewrite engine
 // (gg::rewrite::Rewriter::compute) as Start, so the preview is the result Start would produce.

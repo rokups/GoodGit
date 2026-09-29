@@ -10,7 +10,7 @@
 namespace ggui {
 
 // Colours used as text are adjusted when a theme is applied so they keep a readable contrast
-// against the window background (UF-50); badge fills keep one against badgeText.
+// against the window background; badge fills keep one against badgeText.
 struct Palette {
     ImU32 lanes[8];
     ImU32 branch, branchCurrent, remote, tag, head, worktree, stash; // badge fills

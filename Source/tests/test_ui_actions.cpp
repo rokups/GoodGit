@@ -1,4 +1,4 @@
-// UI actions that had no test of their own (P3-20 UI-action audit, docs/ui-actions.md): dialog
+// UI actions that had no test of their own (UI-action audit, docs/ui-actions.md): dialog
 // keys, menu variants, options inside dialogs and actions in less common repository states.
 #include "panels/HistoryPanel.hpp"
 #include "panels/RebasePanel.hpp"

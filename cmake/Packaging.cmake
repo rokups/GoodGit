@@ -1,4 +1,4 @@
-# Install rules and CPack (task P4-04).
+# Install rules and CPack.
 #
 # ggui and git-gg are installed into the same directory, so putting that directory on PATH makes
 # `git gg` resolve. Fonts are embedded in ggui (EmbedFont.cmake); there are no other runtime files.

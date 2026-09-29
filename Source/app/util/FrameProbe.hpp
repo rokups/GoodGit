@@ -1,4 +1,4 @@
-// Frame-time probe (test hook, REBUILD_PLAN §8.1): measures the app's own work per frame
+// Frame-time probe (test hook, product spec §8.1): measures the app's own work per frame
 // (App::frame plus rendering), excluding time the test coroutine spends in test steps.
 #pragma once
 

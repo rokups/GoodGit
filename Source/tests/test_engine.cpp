@@ -1,4 +1,4 @@
-// Engine contract, watcher and responsiveness (§3.1; P1-03, P1-11, P1-21).
+// Engine contract, watcher and responsiveness (§3.1).
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"

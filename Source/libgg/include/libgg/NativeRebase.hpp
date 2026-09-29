@@ -1,4 +1,4 @@
-// Native interactive rebase support (REBUILD_PLAN §4.13 execution 2, §6), shared by ggui and git-gg.
+// Native interactive rebase support (product spec §4.13 execution 2, §6), shared by ggui and git-gg.
 //
 // ggui runs `git rebase -i` with GIT_SEQUENCE_EDITOR / GIT_EDITOR set to `git gg sequence-editor`
 // and GG_SEQUENCE_DIR pointing at a prepared state directory: the todo to hand to git, and the

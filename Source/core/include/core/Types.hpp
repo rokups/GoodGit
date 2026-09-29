@@ -1,4 +1,4 @@
-// Immutable values that cross from engine workers to the UI thread (REBUILD_PLAN §3.1).
+// Immutable values that cross from engine workers to the UI thread (product spec §3.1).
 // Nothing here refers to libgit2; the UI includes only these headers.
 #pragma once
 
@@ -234,7 +234,7 @@ struct HistoryRow {
     std::vector<GraphLine> lines;
     int collapsedCount = 0;           // merge rows: commits hidden when collapsed
     bool collapsed = false;
-    bool collapsible = false;         // merge rows: collapsing would hide commits (UF-38)
+    bool collapsible = false;         // merge rows: collapsing would hide commits
 };
 
 struct HistoryScope {

@@ -1,4 +1,4 @@
-# Third-party dependencies, all fetched through CPM.cmake with pinned versions (REBUILD_PLAN §2.2).
+# Third-party dependencies, all fetched through CPM.cmake with pinned versions.
 # Set CPM_SOURCE_CACHE (e.g. ~/.cache/CPM) to share downloads between build trees.
 
 include(${CMAKE_CURRENT_LIST_DIR}/CPM.cmake)

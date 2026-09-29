@@ -1,4 +1,4 @@
-// Interactive rebase todo model (REBUILD_PLAN §4.13, R3). Shared by ggui (todo editor, preview,
+// Interactive rebase todo model (product spec §4.13, R3). Shared by ggui (todo editor, preview,
 // in-memory engine) and git-gg (sequence editor for the native engine).
 //
 // The todo is Git's list, oldest first: parse() reads what `git rebase -i` writes (full or
@@ -7,7 +7,7 @@
 // dropped, commits already upstream left out, update-ref lines; autosquash() and the editor's
 // options apply to it later), together with everything validation and message assembly need, so
 // none of those touch the repository. It also builds the list `git rebase -i --rebase-merges`
-// starts with (label, reset and merge rows keeping the branches' shape; P4-01).
+// starts with (label, reset and merge rows keeping the branches' shape).
 //
 // Messages follow Git: a squash group offers Git's commented template ("This is a combination
 // of N commits…", fixup messages commented out, `squash!`/`fixup!`/`amend!` subjects commented
@@ -34,7 +34,7 @@ namespace gg::todo {
 enum class Action {
     Pick, Reword, Edit, Squash, Fixup, Drop, // commit actions
     Exec, Break, UpdateRef,
-    Label, Reset, Merge,                      // --rebase-merges (P4-01)
+    Label, Reset, Merge,                      // --rebase-merges
 };
 
 // `fixup -C` uses this commit's message instead of the group's, `fixup -c` also edits it. A merge
@@ -130,7 +130,7 @@ struct Context {
     std::map<std::string, std::vector<std::string>> branchesAt; // commit → local branch refs
     std::set<std::string> checkedOutElsewhere;    // branch refs checked out in other worktrees
     Todo initial;                                 // the todo Git would start with
-    // --rebase-merges (P4-01): the merge commits of the range (oldest first; not in `range`, but in
+    // --rebase-merges: the merge commits of the range (oldest first; not in `range`, but in
     // `commits`), and the todo `git rebase -i --rebase-merges` starts with (label/reset/merge rows,
     // update-ref rows as in `initial`).
     std::vector<std::string> merges;
@@ -163,7 +163,7 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
 Context readRemaining(git_repository* repo, std::string_view todoText, const std::string& headName);
 
 // The list a starting `git rebase -i` hands to its sequence editor (plain `git rebase -i` with
-// `git gg sequence-editor` as sequence.editor, P4-02): `todoText` is rebase-merge/git-rebase-todo,
+// `git gg sequence-editor` as sequence.editor): `todoText` is rebase-merge/git-rebase-todo,
 // `onto`, `origHead` and `headName` the files of that name. HEAD is still on the branch then. The
 // Context: onto = upstream = onto, tip = orig-head, the branch as tipRef, HEAD following it;
 // `initial` (and `initialMerges` for a --rebase-merges list) is the parsed list with full ids.

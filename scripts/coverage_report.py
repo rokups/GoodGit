@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-party coverage report (REBUILD_PLAN §8.2, task P0-13; standing rule 8).
+"""First-party coverage report (product spec §8.2; standing rule 8).
 
 Reads an LCOV tracefile (from `llvm-cov export -format=lcov` or `gcovr --lcov`), keeps only
 first-party sources (Source/libgg, Source/core, Source/app, Source/gitgg; tests, third-party

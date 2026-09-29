@@ -1,4 +1,4 @@
-// ggui's todo editor as Git's sequence.editor (REBUILD_PLAN §4.13, §6; P4-02): the link between
+// ggui's todo editor as Git's sequence.editor (product spec §4.13, §6): the link between
 // `git gg sequence-editor FILE`, run by a plain `git rebase -i`, and a ggui that shows the list.
 //
 // Every running ggui listens on a loopback port (token-protected, like the askpass bridge) and

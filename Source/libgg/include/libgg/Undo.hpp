@@ -1,4 +1,4 @@
-// Undo / redo through the journal (REBUILD_PLAN §5 U1, §4.12). Shared by ggui and git-gg.
+// Undo / redo through the journal (product spec §5 U1, §4.12). Shared by ggui and git-gg.
 #pragma once
 
 #include "libgg/Git2.hpp"

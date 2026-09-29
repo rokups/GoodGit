@@ -1,4 +1,4 @@
-// Blame panel (§4.6; P1-09, P1-19).
+// Blame panel (§4.6).
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "shell/App.hpp"

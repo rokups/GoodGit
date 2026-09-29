@@ -1,4 +1,4 @@
-// Branch, tag and remote management (§4.7; P2-13, P2-14, P2-15).
+// Branch, tag and remote management (§4.7).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"

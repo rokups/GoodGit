@@ -1,4 +1,4 @@
-// `new`: an empty commit on the given parents (REBUILD_PLAN §4.3 "New commit", §6 git gg new).
+// `new`: an empty commit on the given parents (product spec §4.3 "New commit", §6 git gg new).
 // Shared by ggui and git-gg. The commit object is built with libgit2; the ref move goes through
 // git (update-ref / switch) so hooks and reflogs behave as for any git command.
 #pragma once

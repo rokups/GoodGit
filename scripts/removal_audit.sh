@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# REBUILD_PLAN §9 removal checklist audit (task P4-05; the evidence and verdicts are in
-# docs/removal-audit.md). Re-runs the grep checks over first-party code and exits non-zero when
-# one of the removed jj-style parts of the old gg is back.
+# product spec §9 removal checklist audit. Re-runs the grep checks over first-party code (with
+# -v printing every allowed hit and its reason) and exits non-zero when one of the removed
+# jj-style parts of the old gg is back.
 #
 # Usage: scripts/removal_audit.sh [--packages DIR] [-v]
 #   --packages DIR  also list every ggui-*.tar.gz / *.zip / *.deb in DIR and reject old gg files
@@ -28,8 +28,8 @@ done
 
 PATHS=(Source cmake CMakeLists.txt CMakePresets.json scripts docs res .github)
 EXCLUDE=(':!cmake/CPM.cmake')
-# This audit's own files name every pattern they look for.
-SELF='^(scripts/removal_audit\.sh|docs/removal-audit\.md):'
+# This audit's own file names every pattern it looks for.
+SELF='^(scripts/removal_audit\.sh):'
 failures=0
 
 # search FLAGS PATTERN [PATHSPEC...]: file:line:text hits in tracked first-party files.
@@ -79,13 +79,14 @@ fail() {
     failures=$((failures + 1))
 }
 
-echo "== REBUILD_PLAN §9 removal checklist"
+echo "== product spec §9 removal checklist"
 
 # 1. The old libgg and its packaging.
-check "old libgg header <gg/gg.h>" "" 'gg/gg\.h' '' ''
+check "old libgg header <gg/gg.h>" "" 'gg/gg\.h' '^docs/spec/product\.md:' \
+    'the product spec names it as dropped (§1, §9)'
 check "old gg::gg target, ggConfig.cmake, find_package(gg)" "" \
     'gg::gg([^A-Za-z0-9_]|$)|ggConfig|gg-config\.cmake|find_package\(gg[ )]|install\(EXPORT|export\(TARGETS|configure_package_config_file|write_basic_package_version_file' \
-    '' ''
+    '^docs/spec/product\.md:' 'the product spec names it as dropped (§1, §9)'
 
 # 2. No gg CLI binary: the only executables are ggui and git-gg, and only they are installed.
 exes=$(search "" 'add_executable\(' | sed -E 's/.*add_executable\(\s*([^ )]+).*/\1/' | sort -u)
@@ -119,17 +120,18 @@ bad=$(grep -v -x -E 'journal|cache|hooks|rebase|symref-|rewrite-' <<<"$ggfiles" 
 # 5. Working-tree auto-snapshot and the max-new-file-size setting.
 check "working-tree auto-snapshot" "-i" \
     'auto-?snapshot|autosnapshot|auto_snapshot|snapshot(_|-| )?(the )?working(_|-| )?(tree|copy)|working(_|-| )?copy(_|-| )?snapshot|snapshotWorking' \
-    '' ''
+    '^docs/spec/product\.md:' 'the product spec names it as dropped (§1, §9)'
 check "max-new-file-size setting" "-i" 'max.?new.?file|maxNewFile|snapshot\.max' \
-    '^docs/spec/ui-spec\.md:[0-9]+:.*\*\*D\*\* max-new-file-size' 'the UI spec records it as dropped (D)'
+    '^docs/spec/ui-spec\.md:[0-9]+:.*\*\*D\*\* max-new-file-size|^docs/spec/product\.md:' \
+    'the UI spec records it as dropped (D), and the product spec names it as dropped (§1, §4.1, §9)'
 
 # 6. Revsets, filesets and the old gg CLI families.
 check "revset and fileset languages" "-i" 'revsets?|filesets?' \
-    '^(Source/tests/(test_removal\.cpp|spec_catalogue\.txt)|docs/traceability\.md):' \
-    'the scenario and catalogue entry that assert their absence (and the matrix generated from the catalogue)'
+    '^(Source/tests/(test_removal\.cpp|spec_catalogue\.txt)|docs/traceability\.md|docs/spec/product\.md):' \
+    'the scenario and catalogue entry that assert their absence (and the matrix generated from the catalogue), and the product spec (§6, §9)'
 subs=$(search "" 'add_subcommand\("' Source/gitgg | sed -E 's/.*add_subcommand\("([^"]+)".*/\1/' | sort -u)
 bad=$(grep -v -x -E 'new|undo|redo|op|log|conflicts|hooks|hook|ui|sequence-editor|help' <<<"$subs" | sed '/^$/d')
-[[ -n $bad ]] && fail "git gg subcommands outside REBUILD_PLAN §6" "$bad" \
+[[ -n $bad ]] && fail "git gg subcommands outside product spec §6" "$bad" \
     || echo "ok    git gg subcommands (§6 only): $(tr '\n' ' ' <<<"$subs")"
 check "old gg CLI families" "" \
     'add_subcommand\("(branch|file|util|workspace|config|operation|restore|next|prev)"|"--what"' '' '' Source/gitgg

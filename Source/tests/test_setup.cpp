@@ -1,4 +1,4 @@
-// Initialize, git presence/version prompt, old gg refs cleanup (§4.1, §5 C3; P2-02, P2-07, P2-30).
+// Initialize, git presence/version prompt, old gg refs cleanup (§4.1, §5 C3).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"

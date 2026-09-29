@@ -1,4 +1,4 @@
-// Commit graph cells shared by History and the interactive rebase preview (REBUILD_PLAN §4.2,
+// Commit graph cells shared by History and the interactive rebase preview (product spec §4.2,
 // §4.13): lanes, edges and commit dots of one row, drawn from the worker's lane layout.
 #pragma once
 

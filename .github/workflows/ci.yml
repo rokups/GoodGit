@@ -1,9 +1,9 @@
-# ggui CI (REBUILD_PLAN §7 Phase 0, §8.2, §8.3; task P0-14).
+# ggui CI (product spec §8.2, §8.3).
 #
 # Linux: Xvfb + software Vulkan (lavapipe), clang source-based coverage built once, the suite split
 # into shards that download those binaries, git 2.36 (pinned minimum) and the distribution's latest
-# git. Windows: MinGW-static and MSVC. Release packages (P4-04): Linux tar.gz/zip/deb, MinGW and
-# MSVC ZIPs, each checked by the package smoke scripts. Gates (standing rule 8, P4-06): every spec
+# git. Windows: MinGW-static and MSVC. Release packages: Linux tar.gz/zip/deb, MinGW and
+# MSVC ZIPs, each checked by the package smoke scripts. Gates (standing rule 8): every spec
 # ID of the delivered phases has a passing test and no test fails (traceability.py), and every row
 # of docs/ui-actions.md names a test that passed (ui_actions_check.py), on Linux (both git versions
 # merged: a test skipped on git 2.36 must pass on the latest git) and on each Windows job. The
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/traceability.py --check
-      # REBUILD_PLAN §9: the removed jj-style parts of the old gg stay out (docs/removal-audit.md).
+      # product spec §9: the removed jj-style parts of the old gg stay out.
       - run: bash scripts/removal_audit.sh
 
   git-min:
@@ -280,7 +280,7 @@ jobs:
           name: reports-windows-${{ matrix.toolchain }}
           path: traceability-${{ matrix.toolchain }}.md
 
-  # Release packages (task P4-04): release presets (no test engine), CPack, then the package
+  # Release packages: release presets (no test engine), CPack, then the package
   # smoke checks. Packages are uploaded as artifacts.
   package-linux:
     needs: catalogue
@@ -302,7 +302,7 @@ jobs:
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build, package and check (tar.gz, zip, deb; deb installed with apt in a clean container)
         run: scripts/package_smoke.sh --container ubuntu:24.04
-      - name: No old gg files in the packages (REBUILD_PLAN §9)
+      - name: No old gg files in the packages (product spec §9)
         run: bash scripts/removal_audit.sh --packages build/packages
       - uses: actions/upload-artifact@v4
         with:

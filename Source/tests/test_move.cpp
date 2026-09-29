@@ -1,4 +1,4 @@
-// Moving changes between commits (§4.3 Move files/hunks/lines, §4.4, §4.5; P3-11).
+// Moving changes between commits (§4.3 Move files/hunks/lines, §4.4, §4.5).
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"

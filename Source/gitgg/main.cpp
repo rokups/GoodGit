@@ -1,4 +1,4 @@
-// git-gg: the `git gg` subcommand (REBUILD_PLAN §6). Deliberately minimal and fast to start:
+// git-gg: the `git gg` subcommand (product spec §6). Deliberately minimal and fast to start:
 // hooks run it on every ref update, so there is no repository scan beyond what a command needs.
 //
 //   git gg new [-m MSG] [--detach] [PARENT...]

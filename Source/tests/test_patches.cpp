@@ -1,4 +1,4 @@
-// Apply patch (§4.11; P2-23).
+// Apply patch (§4.11).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"

@@ -1,13 +1,12 @@
-# ggui clean-room rebuild — high-level plan
+# ggui — product specification
 
-Date: 2026-09-27
-Inputs analyzed: `ggui` @ `e21feb2`, `gg` @ `03dfdac`, `gitfourchette` @ `5a019e8e` (local checkouts).
-Note: `git pull` for `gg` and `ggui` failed (SSH access denied from this environment), so the
-analysis used the local checkouts. Re-run the pull and diff against these commits before starting.
+Note: §2 (analysis of the pre-rebuild app), §7 (phased delivery) and §10 (risks) have been
+removed as no longer relevant; the remaining section numbers are unchanged because
+`Source/tests/spec_catalogue.txt`, `docs/traceability.md`, scripts and code comments cite them.
 
 ---
 
-## 0. Confirmed decisions (2026-09-27)
+## 0. Confirmed decisions
 - The old libgg (public C API over libgit2) and the `gg` repository are dropped. ggui uses
   libgit2 **directly**, with no wrapper layer, plus the `git` CLI (below).
 - **New `libgg`** is just the name of the internal static library that holds code
@@ -55,60 +54,6 @@ desynchronize or confuse ggui's view of the repository. Everything ggui understa
 be derivable from objects, refs, the index and the working tree alone. Local files under
 `.git/gg/` may only hold **history or caches**: deleting them may lose undo history, but
 must never change what a commit, file or conflict means.
-
----
-
-## 2. What exists today (analysis summary)
-
-### 2.1 Repositories
-- **gg** (~15k LOC C++20 + ~13k LOC tests): `libgg` (C API `include/gg/gg.h`, ~60
-  `gg_repository_*` calls on top of libgit2) plus the `gg` CLI (CLI11). Stores jj-like state
-  in `refs/gg/workspaces/*`, `refs/gg/commit-aliases`, `refs/gg/visible-heads/*` and an
-  operation log for undo/redo. Also includes Git filter-driver support (LFS etc.).
-  **Conflicts today:** a conflicted commit is a normal commit whose tree holds files with
-  conflict markers. A local-only metadata commit, `refs/gg/conflicts/<tree-oid>`, records
-  each path's conflict as N-way terms (removed and added blob, mode). Rewrites merge those
-  terms instead of nesting markers. Checking out a conflicted commit writes its sides into
-  the working tree. Resolved files are amended in with squash. `gg push` refuses history that
-  contains conflicts, and an optional `pre-push` hook does the same for plain `git push`.
-- **ggui** (~17.7k LOC C++23): `ggui_core` (RepositoryEngine: async command queue →
-  events, snapshots, history graph, diffs, blame, file watching) plus the `ggui` executable
-  (ImGui UI). Talks to gg through the C API and to libgit2 directly (~130 `git_*` calls for
-  diff, blame, reflog, remotes, index, config).
-- **gitfourchette** (Python/Qt, GPL-3): not a dependency. Use it only as a **UX reference**
-  for staging and stash workflows. Don't copy any code. It is GPL-3, and ggui/gg are GPL-2.0-only.
-
-### 2.2 Dependencies and how they are consumed (keep, except gg)
-All are fetched through **CPM.cmake** with pinned tags. The only change is that the old libgg goes
-away: libgit2 (and CLI11 for `git-gg`) move from `gg/CMakeLists.txt` into the ggui build,
-with the same pins and options.
-
-| Dependency | Pin | Consumer | Notes |
-|---|---|---|---|
-| libgit2 | v1.9.6 | `ggui_core`, `libgg` (directly) | Now used for reads and in-memory object work only. Transport goes through the `git` CLI, so the HTTPS/SSH options can be trimmed later. For now, carry over the options unchanged: `BUILD_TESTS/CLI/EXAMPLES/FUZZERS OFF`, `EXPERIMENTAL_SHA256 ON` (+ `GIT_EXPERIMENTAL_SHA256` define), HTTPS = OpenSSL-Dynamic (Schannel on Windows), `USE_SSH exec`; Windows patch hides child console windows |
-| CLI11 | v2.6.2 | `git-gg` | Moves from the `gg` CLI to `git-gg` |
-| SDL3 | release-3.4.4 | ggui | static; SDL_GPU renderer |
-| Dear ImGui | 84a9d53 (docking) | ggui | built as a static lib with `IMGUI_USER_CONFIG=Source/imconfig.h`, SDL3 + SDLGPU3 backends, `imgui_stdlib` |
-| ImGuiColorTextEdit (goossens) | fa6fd43 | ggui | patched (`cmake/ImGuiColorTextEdit.patch`, hash-stamped re-apply); provides TextEditor + TextDiff |
-| IconFontCppHeaders | 4577f2f | ggui | Material Symbols icon defines |
-| nativefiledialog-extended | 1.3.0 | ggui | `NFD_PORTAL ON` |
-| spdlog | v1.17.0 | ggui | env-driven levels, `GGUI_LOG_FILE` |
-| efsw | 1.6.3 | ggui_core | file watching |
-| nlohmann/json | 3.12.0 | ggui | `settings.json` |
-| imgui_test_engine + stb | 3fff435 / f1c79c0 | ggui (`GGUI_ENABLE_IMGUI_TEST_ENGINE`, **on in every test and CI build**) | **The only test framework.** Tests run in the real binary via `ggui --test`. Release builds leave it out |
-| ~~GoogleTest~~ | — | — | **Removed:** no unit tests |
-
-Other build behavior to preserve:
-- **Removed:** `find_package(gg 0.1 CONFIG)`, the `add_subdirectory(../gg)` fallback,
-  `gg::gg`, and installing gg shared libraries. Link against the `libgit2package` target
-  from CPM. libgit2 is linked statically by default (MinGW preset: fully static, Schannel).
-- Embedded fonts generated at build time (`cmake/EmbedFont.cmake`): MaterialSymbolsOutlined,
-  NotoSansMono (UI), JetBrainsMono (diff).
-- Windows `.rc` resource and icon, `WIN32_EXECUTABLE`; `$ORIGIN` rpath on Linux.
-- Install/CPack ZIP bundles `ggui` and `git-gg`, both built from the same tree.
-- CMake presets: Ninja, `mingw-x64-static`, `msvc-x64`; coverage options; `-Werror` policy.
-- Settings in `SDL_GetPrefPath("gg","ggui")`: `settings.json` and `imgui.ini` (custom
-  window-settings handler).
 
 ---
 
@@ -173,9 +118,8 @@ layer that wraps libgit2.
 - **Hooks:** mostly handled by git itself (G2). `git-gg` provides the entry points for the
   managed hooks that feed the undo journal (§4.12).
 - **The UI talks to a small engine with an explicit contract**: commands in, immutable
-  snapshots and events out, with cancel and progress. This idea from today's
-  `Commands.hpp`/`Events.hpp` is sound. Rewrite its internals. See §3.1 for the threading
-  rules.
+  snapshots and events out, with cancel and progress, embodied in `Commands.hpp`/`Events.hpp`.
+  See §3.1 for the threading rules.
 - **The UI is split by panel**, with a thin shell that owns docking, menus and dialogs. Replace
   the single god-object `Application` with per-panel view models.
 - **Compatibility rule:** ggui must work on any repository that plain `git` created or changed,
@@ -219,13 +163,13 @@ size or network state. The rules:
 - **Mutations lock actions, not the UI:** while a mutation runs, conflicting actions are
   disabled, but browsing, scrolling, selecting, diffing and blame keep working on the last
   snapshot.
-- **Recent-repository summaries, opening, cloning and settings I/O** run off-thread too.
-  Today the recent-repository summaries use `std::async`; they become engine commands.
+- **Recent-repository summaries, opening, cloning and settings I/O** run off-thread too,
+  as engine commands (`std::async` internally).
 - **Acceptance criteria:**
   - A performance test opens a large fixture repository (≥ 100k commits, ≥ 5k refs,
     ≥ 50k files) and drives the UI, asserting that no frame takes longer than
-    about 33 ms because of repository work.
-  - Today's trace log (30 s+ history loads) is the baseline to beat.
+    about 33 ms because of repository work, well under the 30 s+ history loads of a naive
+    implementation.
 
 ---
 
@@ -552,8 +496,7 @@ commit is conflicted is a pure function of its tree.
   - **Amend** the commit: descendants are rebased, and their copies of the conflict
     resolve too, or
   - **New commit** on top.
-- Keep today's "Resolve with merge tool" and "Mark current file resolved" menu items.
-  Replace today's "Resolve conflict" dialog with this flow.
+- The menu items are "Resolve with merge tool" and "Mark current file resolved".
 
 **Plain Git transparency**
 - `git log`, `diff`, `show`, `rebase`, `cherry-pick`, `commit --amend`, `stash`, `push`,
@@ -567,7 +510,7 @@ commit is conflicted is a pure function of its tree.
   - If Git conflicts on it, the file ends up with Git's regions around or next to ggui's.
     ggui shows it as a native conflict (index stages). After the user resolves that, any
     ggui regions left are just a first-class conflict again. The parser must handle this
-    safely, and the spec has to define it precisely (see §10).
+    safely, and the spec has to define it precisely (see `docs/spec/conflict-markers.md`).
 
 **Safety**
 - **ggui always refuses to push** when the pushed range contains commits with
@@ -663,7 +606,7 @@ or with `git gg hooks install|uninstall`.
 - Commit menu: **Interactive rebase…** (asks for a base).
 - When a native rebase is stopped (from ggui or plain `git rebase -i`): **Edit
   remaining todo**.
-- Optional (Phase 4): `git gg sequence-editor` can be set as Git's `sequence.editor`. Plain
+- Optional: `git gg sequence-editor` can be set as Git's `sequence.editor`. Plain
   `git rebase -i` then opens ggui's todo editor window instead of a text editor, and the
   saved todo goes back to git.
 
@@ -676,7 +619,7 @@ or with `git gg hooks install|uninstall`.
     `drop`
   - `exec` (shell command lines), `break`
   - `update-ref` (branch moves in stacked branches)
-  - with `--rebase-merges` (Phase 4): `label`, `reset`, `merge`
+  - with `--rebase-merges`: `label`, `reset`, `merge`
 - **Editing:** drag rows to reorder, or use Alt+↑/↓. Git's single-letter keys set the
   action: p, r, e, s, f, d, x, b. Multi-select changes several rows at once. Insert
   `exec`/`break` lines. Undo and redo apply inside the editor.
@@ -690,7 +633,7 @@ or with `git gg hooks install|uninstall`.
   - `--autosquash`: `fixup!`/`squash!`/`amend!` commits are placed and marked
     automatically, and can be toggled
   - `--update-refs`: default on. Branches in the range move with their commits.
-  - `--rebase-merges`: Phase 4
+  - `--rebase-merges`
   - `--autostash`
   - "exec after every commit" (for example running tests)
   - committer date handling: keep the original or use now
@@ -767,7 +710,7 @@ user wants to adjust more.
 | G2 (confirmed) | Git access | Hybrid: libgit2 for reads and in-memory rewrites; `git` CLI for every mutation plain git has; ref moves after a rewrite go through one `git update-ref --stdin`. Minimum **git 2.36** (for `git hook run`), checked on startup with a clear error |
 | P1 (confirmed) | Push with conflicts | Always refused by ggui; refused by the managed `pre-push` hook for plain git |
 | C3 (confirmed) | Leftover `refs/gg/*` from the old gg | On open, detect them and offer a one-time cleanup. Commits kept alive only by those refs are listed first, with the option to create a branch for each or keep them via a `refs/stash`-style backup branch. After confirmation, the refs are deleted with `git update-ref --stdin`, which is undoable through the journal. "Ignore" is remembered per repository |
-| X1 (confirmed) | Platforms | First release: **Linux and Windows** (MinGW-static and MSVC presets, as today). macOS later: it needs the SDL_GPU MSL/Metal path, signing and a preset |
+| X1 (confirmed) | Platforms | First release: **Linux and Windows** (MinGW-static and MSVC presets). macOS later: it needs the SDL_GPU MSL/Metal path, signing and a preset |
 | I1 | CLI name | Ship the executable as `git-gg` so Git's subcommand lookup finds it as `git gg` |
 
 ---
@@ -797,7 +740,7 @@ git gg ui [PATH]           # optional: launch ggui on the repo
 git gg sequence-editor FILE
                            # internal: used as GIT_SEQUENCE_EDITOR/GIT_EDITOR by ggui's
                            # native interactive rebase (writes prepared todo/messages).
-                           # Optional (Phase 4): set as sequence.editor so plain
+                           # Optional: set as sequence.editor so plain
                            # `git rebase -i` opens ggui's todo editor
 ```
 
@@ -809,67 +752,6 @@ Rules:
 - Anything Git already does (commit, rebase, stash, worktree…) is **not** duplicated.
 - `git gg` has to be fast to start, because hooks run it on every ref update: no repository
   scan, and journal appends only.
-
----
-
-## 7. Phased delivery
-
-**Phase 0 — Spec and harness (clean-room setup)**
-- Freeze this document plus a per-panel UI spec with screenshots of today's app. That spec
-  is the only input the implementers get. They do not read the old sources.
-- Retire the `gg` repository. Start the new `ggui` tree on the same CMake/CPM skeleton, pins
-  and presets, with libgit2 and CLI11 added to it. Targets: `libgg` (shared), `ggui_core`, `ggui`,
-  `git-gg`, tests.
-- Pin the minimum git version (2.36) in CI, and also test against the latest git.
-- Test harness first: imgui_test_engine wired into the real binary, the fixture builder,
-  spec-ID tagging and the traceability report, the coverage pipeline (clang profiles from
-  both `ggui` and `git-gg` merged), and both CI gates switched on from the first
-  feature.
-- **Every later phase is only done when its features meet both gates (§8.2).**
-- Write test fixtures: a scripted repo builder that uses plain `git` (merge/rebase-in-progress,
-  worktrees, LFS, SHA-256, unborn HEAD, bare repos).
-
-**Phase 1 — Read-only viewer**
-- `ggui_core`: open repo, snapshot (HEAD, refs, remotes, worktrees, status with index,
-  repository state), history walk with lane layout input, diff (tree/index/workdir), blame,
-  reflog, stash list.
-- ggui: shell, dock layout, settings, recent repos, welcome, History, Changes, Change
-  information, Diff, Blame, Reflog, and the read-only side panels. File watcher.
-- The threading model from §3.1, including the debug assertion that the UI thread never
-  touches libgit2 or git.
-- Exit: browse any repository with the same layout as today, with no UI stalls on the
-  large-repository fixture.
-
-**Phase 2 — Everyday Git workflow**
-- Staging (file, hunk, line), discard, commit, amend, reword, check out/switch,
-  branch/tag CRUD, fetch/pull/push/clone through the git runner with askpass, init, stash (all of §4.9),
-  native conflict flow (§4.10), patches. The marker parser (M1) and read-only display of
-  first-class conflicts. Refusal to push conflicted history.
-- The git runner (G2) with progress, cancel and hooks run natively. Old gg refs cleanup (C3).
-- `git-gg new`. Undo journal (U1), Operations panel, Undo/Redo UI for ggui operations.
-- Managed hooks (§4.12 B), `git gg hooks`, and journal capture of plain Git operations.
-- Exit: someone can use it every day in place of the Git CLI for common work.
-
-**Phase 3 — History editing**
-- First-class conflict engine: parsing and writing markers, N-way term merge and
-  simplification, propagation through rewrites, the pre-flight dialog for non-text
-  conflicts, resolution via merge tool, take-side and amend, "Commit with conflicts", and
-  the managed `pre-push` check.
-- In-memory rewrite engine (R1/R2) and every §4.3 action: new/insert, squash, split,
-  drop, reorder, rebase, duplicate, edit author, simplify parents, move files/hunks/lines
-  between commits, drag and drop, and the published-commit warnings.
-- Interactive rebase (§4.13): the todo editor with live in-memory preview, the in-memory
-  engine, the native engine through `GIT_SEQUENCE_EDITOR`/`GIT_EDITOR`, stop handling
-  and Edit remaining todo, autosquash and update-refs, and following plain `git rebase -i`.
-- Exit: every action from today's app is available under Git semantics.
-
-**Phase 4 — Worktrees, polish and parity**
-- Interactive rebase with `--rebase-merges` (label/reset/merge) and `git gg
-  sequence-editor` as Git's `sequence.editor`.
-- Full worktree management and open-in-new-window. External diff/merge tools. Windows (MinGW/MSVC)
-  packaging and CPack; Linux packaging. macOS is out of scope for the first release.
-- Final gate: 100 % of §4 spec IDs are covered, and > 90 % line and branch coverage on
-  Linux and Windows CI.
 
 ---
 
@@ -919,9 +801,7 @@ Rules:
     rejection" or "native picker integration".
   - CI reports how many there are and fails if the number grows without the allowlist being
     updated.
-  - Today's code has many `GCOV_EXCL`/`GG_COV_EXCL` markers; the rebuild starts with none.
-- **Every phase meets both gates for its own features** before it is done (§7). Coverage is
-  never left for the end.
+- Coverage is never left for the end.
 
 ### 8.3 Harness and fixtures
 - **Fixture builder:** a scripted library of repository recipes run with plain `git`.
@@ -937,7 +817,7 @@ Rules:
     `cat-file`), and files on disk.
   - After every mutating test, check that `git fsck` passes and that the repository is in
     a state plain git understands.
-- **CI runs** on Linux under Xvfb with software Vulkan (as today), and on Windows. The suite
+- **CI runs** on Linux under Xvfb with software Vulkan, and on Windows. The suite
   is split into shards. Every shard runs with the UI-thread assertion on (§3.1).
 - **Randomized scenarios**, used where the spec calls for property or differential
   checking. The test generates inputs (repository histories, file contents, todo lists) from a
@@ -1003,56 +883,3 @@ Rules:
 - Fetch rule that automatically fast-forwards local branches.
 - The "@ is a change you edit" wording in the UI. The UI should say HEAD, branch, commit,
   staged and unstaged instead.
-
-## 10. Risks
-- **Line-level staging correctness** (partial hunks, CRLF, no newline at EOF, renames).
-  Mitigate with randomized UI scenarios that compare against `git apply --cached` (§8.4).
-- **In-memory rewrites vs filters and LFS:** rewrites only combine stored blobs, and
-  conflicts in filtered files must be resolved immediately (K1), so no filter runs in
-  memory. The worktree update afterwards goes through `git`.
-- **Parsing git CLI output:** always use porcelain or plumbing formats (`-z`,
-  `--porcelain=v2`, `for-each-ref --format`) and never parse human-readable text.
-  Progress parsing is best effort only.
-- **Process overhead on Windows:** spawning git is slow there. Batch the work (one
-  `update-ref --stdin`, one `apply --cached` per staging action) and keep reads in
-  libgit2.
-- **Legitimate marker-like content:** false positives in docs and test fixtures. Mitigate
-  with a strict grammar (well-formed regions only, a mandatory base section, consistent
-  marker length) and the `gg-conflicts=false` attribute.
-- **Plain Git merging a file that already has ggui regions:** the file can end up with
-  Git's regions inside or next to ggui's. The spec must define how the parser treats this,
-  and the transparency suite must cover it.
-- **Pushed conflicts:** ggui always refuses. Plain `git push` without the managed hook
-  installed, or with `--no-verify`, can still publish them. Other clones then see an
-  ordinary diff3 conflict, and ggui shows it as a first-class conflict. The same refusal,
-  and the same `--no-verify` escape hatch, applies to commits that left broken conflict
-  markers instead of resolving a conflict their parent held.
-- **N-way merge correctness:** term simplification is subtle. Specify it as algebra
-  (removes and adds that cancel). Exercise it with randomized rewrite scenarios through
-  the UI.
-- **Interactive rebase parity:** Git's todo semantics have many details: `fixup -C/-c`,
-  `amend!`, empty-commit handling (`--empty`), `update-ref` placement, merge handling and
-  squash message assembly. Mitigate with the differential test against `git rebase -i`,
-  and default to the native engine for anything the in-memory engine doesn't support yet.
-- **Hook overhead and fragility:** `reference-transaction` runs on every ref update,
-  including fetches of thousands of refs. Keep `git gg hook` a tiny append-only path, with
-  a fast exit when the journal is disabled. Label commands on a best-effort basis.
-- **Git version spread:** `reference-transaction` needs Git ≥ 2.28, and config-defined
-  hooks need a newer Git. Detect the version and fall back to wrapper scripts, or show
-  "Undo covers ggui only".
-- **Undo journal vs external Git activity:** without hooks, refs can move without being
-  recorded. Undo must detect this and refuse or warn (U1).
-- **Performance on large repos** (today's log shows 30 s+ history loads with 6k refs):
-  make bounded, incremental history loading a Phase 1 requirement, not a later
-  optimization.
-- **Integration-only testing:**
-  - The suite will be slow, and failures are harder to localize than with unit tests.
-    Mitigate with sharding, fixture caching, precise spec-ID naming, and verbose failure
-    output (screenshot through the test engine capture, the app log and the git command
-    log).
-  - Reaching the branch-coverage bar in low-level code (parsers, error handling) through
-    the UI needs deliberate crafted fixtures and failure injection from the scenario side.
-    Budget for this in each phase.
-  - Coverage from concurrent `git-gg` child processes must use per-process profile files.
-- **Clean-room licensing:** implementers must not read the old ggui/gg sources or
-  gitfourchette (GPL-3) code. They work only from this spec and the UI screenshots.

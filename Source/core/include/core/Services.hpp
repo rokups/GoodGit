@@ -20,7 +20,7 @@ struct Context;
 
 namespace ggui::core {
 
-// ggui as GIT_ASKPASS / SSH_ASKPASS (REBUILD_PLAN §4.8, T1). git runs git-gg with the prompt;
+// ggui as GIT_ASKPASS / SSH_ASKPASS (product spec §4.8, T1). git runs git-gg with the prompt;
 // git-gg connects to this loopback server (token-protected); the prompt is shown in a dialog on
 // the UI thread and the answer goes back. Answers are never stored.
 class AskpassServer {
@@ -62,7 +62,7 @@ private:
     std::uint64_t m_next = 1;
 };
 
-// ggui's todo editor as Git's sequence.editor (REBUILD_PLAN §4.13, P4-02; protocol in
+// ggui's todo editor as Git's sequence.editor (product spec §4.13; protocol in
 // libgg/SequenceEditorLink.hpp). The server registers this process with the git dir of the open
 // repository; `git gg sequence-editor FILE` run by a plain `git rebase -i` connects, and the list
 // git wrote is read here, on the connection's own thread with its own repository handle. The UI
@@ -126,7 +126,7 @@ private:
     std::uint64_t m_next = 1;
 };
 
-// `git clone --progress` on a background thread with progress and Cancel (P2-16).
+// `git clone --progress` on a background thread with progress and Cancel.
 class CloneService {
 public:
     enum class State { Idle, Running, Done, Failed, Cancelled };

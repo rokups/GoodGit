@@ -1,4 +1,4 @@
-// Every mutation the UI can start (REBUILD_PLAN §4.3, §4.4, §4.7–§4.12). Each action is a
+// Every mutation the UI can start (product spec §4.3, §4.4, §4.7–§4.12). Each action is a
 // MutationSpec run on the engine's mutation (or network) queue through plain git (G2) and
 // recorded in the undo journal. Outcomes come back as MutationFinishedEvents; per-request
 // callbacks let the caller react (e.g. offer "Stash and switch").

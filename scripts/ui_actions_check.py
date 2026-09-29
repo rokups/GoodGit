@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI-action gate (standing rule 8, tasks P3-20 and P4-06).
+"""UI-action gate (standing rule 8).
 
 Reads docs/ui-actions.md and one or more trace files written by `ggui --test --trace=FILE`
 (one per shard) and fails when

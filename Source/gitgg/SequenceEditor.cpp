@@ -209,7 +209,7 @@ int runSequenceEditor(const std::string& file)
             std::cerr << kPrefix << error << "\n";
         return status;
     }
-    // Plain git rebase -i with ggui's todo editor as sequence.editor (P4-02).
+    // Plain git rebase -i with ggui's todo editor as sequence.editor.
     return editInGgui(file);
 }
 

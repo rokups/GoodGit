@@ -1,4 +1,4 @@
-// Small libgit2 helpers (REBUILD_PLAN §3): RAII handles, error checking, OID conversion.
+// Small libgit2 helpers (product spec §3): RAII handles, error checking, OID conversion.
 //
 // These are conveniences, not a wrapper API: callers use libgit2 directly and pass
 // git_repository* around. Every helper that touches a repository asserts that it does not

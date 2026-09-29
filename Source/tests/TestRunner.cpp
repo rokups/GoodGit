@@ -347,7 +347,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
         std::string why;
         const bool transparent = scenario.gitTransparent(repo, &why);
         if (!transparent)
-            ctx->LogError("git transparency (REBUILD_PLAN §9) broken for %s:%s", repo.string().c_str(), why.c_str());
+            ctx->LogError("git transparency (product spec §9) broken for %s:%s", repo.string().c_str(), why.c_str());
         IM_CHECK_NO_RET(transparent);
     }
     const auto violations = gg::uiThreadViolations();

@@ -1,4 +1,4 @@
-// History editing through the in-memory rewrite engine (REBUILD_PLAN §4.3, §4.10 pre-flight).
+// History editing through the in-memory rewrite engine (product spec §4.3, §4.10 pre-flight).
 #include "shell/Actions.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"

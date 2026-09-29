@@ -1,4 +1,4 @@
-// Integration test harness (REBUILD_PLAN §8). Tests are Dear ImGui Test Engine tests that run
+// Integration test harness (product spec §8). Tests are Dear ImGui Test Engine tests that run
 // inside the real ggui binary, drive the UI like a user and check both the UI and the
 // repository on disk.
 //
@@ -8,9 +8,9 @@
 //       ...
 //   }
 //
-// Every test declares the spec IDs it covers (P0-03 catalogue). Each test runs in its own
+// Every test declares the spec IDs it covers (the spec-ID catalogue). Each test runs in its own
 // temporary directory with an isolated HOME, XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL, preferences
-// directory and a PATH that contains the git-gg under test (P0-08).
+// directory and a PATH that contains the git-gg under test.
 #pragma once
 
 #include <libgg/GitRunner.hpp>
@@ -110,7 +110,7 @@ void markCurrentTestSkipped(const std::string& reason);
 // Fatal: stop the test.
 #define GG_REQUIRE(expr) IM_CHECK(expr)
 
-// Repository fixture recipes (P0-09). All are built with plain git.
+// Repository fixture recipes. All are built with plain git.
 enum class Recipe {
     Empty,            // git init, nothing committed (unborn HEAD)
     Linear,           // main with 5 commits, one file per commit
@@ -177,7 +177,7 @@ public:
     fs::path fixture(Recipe recipe, const std::string& name = {});
     // The large read-only fixture (>= 100k commits, >= 5k refs, >= 50k files), generated once
     // with git fast-import into the fixture cache (GGUI_FIXTURE_CACHE, default
-    // ~/.cache/ggui-fixtures) and reused by later runs (P0-11). Tests must not modify it.
+    // ~/.cache/ggui-fixtures) and reused by later runs. Tests must not modify it.
     fs::path largeFixture();
     // ---- transport fixtures (no network) ---------------------------------------------------
     // Starts `git daemon` on 127.0.0.1 serving `baseDir` (export-all, receive-pack enabled)
@@ -198,7 +198,7 @@ public:
     std::vector<std::string> refs(const fs::path& repo);    // "<name> <id>" lines
     std::string statusPorcelain(const fs::path& repo);      // git status --porcelain=v2 -z
     bool fsck(const fs::path& repo, std::string* output = nullptr);
-    // Git transparency (rule 2, REBUILD_PLAN §9), checked after every test: no ref under refs/gg/
+    // Git transparency (rule 2, product spec §9), checked after every test: no ref under refs/gg/
     // except those the test itself planted (old gg leftovers for the C3 cleanup), and $GIT_COMMON_DIR/gg
     // holds only the journal, disposable caches, the managed-hook runner and journal bookkeeping.
     bool gitTransparent(const fs::path& repo, std::string* why = nullptr);
@@ -242,7 +242,7 @@ public:
     std::vector<std::string> drawnText(const char* windowRef);
     bool textShown(const char* windowRef, const std::string& text);
     // A full commit ID is drawn with its first `shortLen` characters in the text colour and the
-    // rest dimmed (UF-14).
+    // rest dimmed.
     // Whether a filled shape (hover/selection highlight, button frame) is drawn behind an item.
     bool itemDrawsBackground(const char* ref);
     bool idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen);

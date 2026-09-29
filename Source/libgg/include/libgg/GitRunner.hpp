@@ -1,4 +1,4 @@
-// The git process runner (REBUILD_PLAN §3 "git runner", G2).
+// The git process runner (product spec §3 "git runner", G2).
 //
 // Spawns `git` (or another program) with an argument vector, never through a shell, and
 // collects stdout/stderr. Parsed output always runs with LC_ALL=C; progress lines from

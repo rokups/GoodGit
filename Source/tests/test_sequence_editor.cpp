@@ -1,4 +1,4 @@
-// ggui's todo editor as Git's sequence.editor (§4.13 "Optional (Phase 4)", §6; P4-02): the Settings
+// ggui's todo editor as Git's sequence.editor (§4.13 "Optional", §6): the Settings
 // option (per scope, asking before it replaces a user's own sequence.editor), plain `git rebase -i`
 // run as a background test step that waits while the list is edited in ggui, Save / Cancel / closing
 // the editor, `git rebase --edit-todo` from a terminal, a --rebase-merges list, a git interrupted

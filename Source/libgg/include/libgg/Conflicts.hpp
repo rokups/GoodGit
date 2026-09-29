@@ -1,4 +1,4 @@
-// Which files of a tree hold first-class conflicts (REBUILD_PLAN §4.10, P2-18).
+// Which files of a tree hold first-class conflicts (product spec §4.10).
 //
 // A tree's conflicted files are a pure function of its objects: results are memoised per tree
 // id (so a commit that changes one file only rescans the trees on that file's path) and kept in

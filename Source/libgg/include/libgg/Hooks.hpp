@@ -1,4 +1,4 @@
-// Managed hooks (REBUILD_PLAN §4.12 B, H1): install/uninstall/status and the hook entry points
+// Managed hooks (product spec §4.12 B, H1): install/uninstall/status and the hook entry points
 // run by git through `git gg hook <name>`.
 //
 // Installation writes one runner script, $GIT_COMMON_DIR/gg/hooks/run, which does nothing when
@@ -52,7 +52,7 @@ std::vector<ConflictedCommit> conflictedOutgoing(const std::filesystem::path& re
     const std::string& remote, const std::string& remoteOid);
 
 // Commits reachable from `local` but not from `remote`'s tracking refs that left broken
-// conflict markers (REBUILD_PLAN §4.10, §8): for a file the commit changes, its first parent's
+// conflict markers (product spec §4.10, §8): for a file the commit changes, its first parent's
 // version held a first-class conflict and the commit's version has gg::markers::brokenMarkers
 // non-empty. Used by pre-push and by ggui's push, alongside conflictedOutgoing.
 struct BrokenFile {

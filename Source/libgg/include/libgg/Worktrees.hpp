@@ -1,4 +1,4 @@
-// Linked worktrees through `git worktree` (REBUILD_PLAN §4.7): the porcelain list, and the changes
+// Linked worktrees through `git worktree` (product spec §4.7): the porcelain list, and the changes
 // Undo makes to worktrees (add ↔ remove, lock ↔ unlock; docs/spec/undo-journal.md §5.4). Shared
 // by ggui and git-gg. Every change runs `git worktree …`; nothing is written by hand.
 #pragma once

@@ -1,4 +1,4 @@
-// Diff panel (§4.5; P1-08, P1-18).
+// Diff panel (§4.5).
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"

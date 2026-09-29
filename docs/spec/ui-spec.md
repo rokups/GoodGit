@@ -1,12 +1,12 @@
 # ggui per-panel UI specification
 
-Status: **draft for review** (P0-02). Inputs: `REBUILD_PLAN.md` §4 only. Legend from §4:
+Status: **draft for review**. Inputs: `docs/spec/product.md` §4 only. Legend from §4:
 **K** keep, **M** keep the entry point with Git semantics, **N** new, **D** dropped (listed only
 so implementers know it is intentionally absent).
 
 Screenshots of the pre-rebuild app are **not** attached: the analysed checkouts were not
-available to the implementer (clean room, see §10 of the plan). The layout below is taken
-from the plan's written description. Screenshots of the rebuilt app are produced by the test
+available to the implementer (clean room). The layout below is taken
+from the product spec's written description. Screenshots of the rebuilt app are produced by the test
 suite (`ggui --test=screens` writes `test-artifacts/screens/*.png`) and replace them.
 
 Wording rule: HEAD, branch, commit, staged, unstaged, working tree, index, stash, worktree.
@@ -87,7 +87,7 @@ for the list in the todo editor: Save or Cancel it first").
 Mutation buttons are disabled (with a tooltip "Not available yet" until their phase, and
 "Busy: <operation>" while a conflicting mutation runs).
 
-General rules (UF-13, UF-14, UF-30): items whose click does nothing are plain text (no hover or
+General rules: items whose click does nothing are plain text (no hover or
 click highlight; a context menu may still attach). Full commit IDs show the short prefix in the
 text colour and the rest dimmed. Every "Copy ID" copies the short ID, or the full ID while Shift
 is held (the menu item says "Shift: full ID").
@@ -112,7 +112,7 @@ configuration with scope tabs `##config_scope` User / Repository / Worktree, one
 overrides a lower scope has *Inherit* `Inherit##<key>` to clear the override. Fields apply on
 Enter or when they lose focus; an empty field unsets. The Worktree tab is off until
 `extensions.worktreeConfig` is set (*Enable worktree settings*). Each scope tab also has *Use
-ggui's todo editor for git rebase -i* `##sequence_editor` (Phase 4, P4-02; checked when that
+ggui's todo editor for git rebase -i* `##sequence_editor` (checked when that
 scope's `sequence.editor` is ggui's, `git gg sequence-editor`): on sets it; when the scope already
 has a `sequence.editor` of the user's own, the dialog `Replace sequence.editor` shows it with
 *Replace* (keeps it in `gg.previousSequenceEditor` at the same scope) / *Cancel*; off removes only
@@ -227,7 +227,7 @@ the panel without touching the repository.
   error and the list stays), *Autosquash* `###ir_autosquash` (on: `fixup!`/`squash!`/`amend!`
   rows are placed and marked; off: back to Git's starting list), *Update refs* `###ir_update_refs`
   (default on; off removes the `update-ref` rows, on puts them back after their commit's (or
-  merge's) squash/fixup rows), *Rebase merges* `###ir_rebase_merges` (Phase 4, P4-01; off by
+  merge's) squash/fixup rows), *Rebase merges* `###ir_rebase_merges` (off by
   default: on replaces the list with Git's `--rebase-merges` starting list, with the Update refs
   and Autosquash options applied, and off with the straight list; the edits so far go, Undo brings
   them back), *Autostash* `###ir_autostash`, *Run as git rebase* `###ir_native`, *Exec
@@ -248,7 +248,7 @@ the panel without touching the repository.
   rows `###ir_row_<index>`: `exec` with its command field `###ir_exec_<index>`, `break`,
   `update-ref` with a badge `###ir_ref_<branch>`. Dropped rows are dimmed; rows with an issue show
   its icon (tooltip: the message).
-- **--rebase-merges rows** (Phase 4, P4-01): `label` with its name field `###ir_label_<index>`;
+- **--rebase-merges rows**: `label` with its name field `###ir_label_<index>`;
   `reset` with its target field `###ir_reset_<index>` and, dimmed, where it goes ("(the new base)"
   for `onto`, "(a new root commit)" for `[new root]`, else the target's subject); `merge` rows made
   from a merge `###ir_merge_<full id>` with the ID, the merge's author and date, branch badges, an
@@ -290,7 +290,7 @@ the panel without touching the repository.
   toolbar's stop handling (§1.4). Refused (error popup, the editor stays) when the branch moved, when
   git refuses (local changes without Autostash), or when the list has update-ref rows and git is
   older than 2.38.
-- **For a plain `git rebase -i`** (Phase 4, P4-02; `sequence.editor = git gg sequence-editor`,
+- **For a plain `git rebase -i`** (`sequence.editor = git gg sequence-editor`,
   §1.6): git runs `git gg sequence-editor <git dir>/rebase-merge/git-rebase-todo` and waits. A ggui
   with that repository (worktree) open shows git's list here and comes to the front; with none,
   git gg starts `ggui <worktree>` (`GG_GGUI` names the program; default the `ggui` next to

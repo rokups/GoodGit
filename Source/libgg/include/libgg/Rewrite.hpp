@@ -1,4 +1,4 @@
-// In-memory history rewrites (REBUILD_PLAN §3, §4.3, §4.10, §5 R1/R2).
+// In-memory history rewrites (product spec §3, §4.3, §4.10, §5 R1/R2).
 //
 // A rewrite is a list of steps (pick a commit onto new parents, squash one into the previous
 // step, create an empty commit, …) computed entirely in memory: every object goes to an

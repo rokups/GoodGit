@@ -1,4 +1,4 @@
-// Builds the patch for staging, unstaging or discarding selected hunks / lines (P2-09).
+// Builds the patch for staging, unstaging or discarding selected hunks / lines.
 //
 // The patch is always written in the diff's own direction (old → new):
 //  * forward (stage: `git apply --cached`): unselected '-' lines become context, unselected

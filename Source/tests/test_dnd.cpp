@@ -1,4 +1,4 @@
-// Drag and drop in History (§4.2; P3-13).
+// Drag and drop in History (§4.2).
 #include "panels/ChangesPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"

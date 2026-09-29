@@ -1,4 +1,4 @@
-// Hunk and line staging, unstaging and discarding in the Diff panel (§4.5; P2-09).
+// Hunk and line staging, unstaging and discarding in the Diff panel (§4.5).
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "shell/App.hpp"

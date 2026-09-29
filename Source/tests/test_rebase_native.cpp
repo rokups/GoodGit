@@ -1,4 +1,4 @@
-// Interactive rebase on the native engine (§4.13 execution 2, plain rebase -i, §4.10 native; P3-19):
+// Interactive rebase on the native engine (§4.13 execution 2, plain rebase -i, §4.10 native):
 // `git rebase -i` fed by `git gg sequence-editor`, its stops (edit, break, failing exec, conflicts)
 // with Amend and continue, the progress view and Edit remaining todo, a plain `git rebase -i`
 // started as a test step, a rebase finished in a terminal, and one journal operation per rebase.
@@ -307,7 +307,7 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), r.c[3]);
     GG_CHECK_STR_EQ(s.read(r.path, "b.txt"), "b\n");
 
-    // Without ggui's prepared state the helper only edits git's rebase todo (sequence.editor, P4-02).
+    // Without ggui's prepared state the helper only edits git's rebase todo (sequence.editor).
     auto cli = s.gitgg(r.path, {"sequence-editor", ".git/COMMIT_EDITMSG"});
     GG_CHECK_EQ(cli.exitCode, 1);
     GG_CHECK(cli.err.find("is not git's rebase todo") != std::string::npos);
@@ -785,7 +785,7 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
     GG_REQUIRE(start(s));
     GG_CHECK_STR_EQ(s.read(r.path, todoRel), "noop\n");
 
-    // --rebase-merges commands (P4-01) are read, and previewed: "side" (a branch, no label row
+    // --rebase-merges commands are read, and previewed: "side" (a branch, no label row
     // defines it) is merged into HEAD with c6's message.
     s.write(r.path, todoRel, "label here\nreset here\nmerge -C " + c6 + " side # c6 add f\n");
     ctx->ItemClick(kEditTodo);

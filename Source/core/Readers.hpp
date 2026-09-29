@@ -1,4 +1,4 @@
-// Worker-side readers: libgit2 → immutable values (REBUILD_PLAN §3 "Reads use libgit2").
+// Worker-side readers: libgit2 → immutable values (product spec §3 "Reads use libgit2").
 #pragma once
 
 #include "core/Types.hpp"
@@ -21,7 +21,7 @@ StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::C
     const std::function<void(StatusPtr)>& partial);
 
 // Adds first-class conflicts of the checked-out commit (and of edited files) to `status`
-// under Conflicted with firstClass=true (REBUILD_PLAN §4.10 "Checking out a conflicted commit").
+// under Conflicted with firstClass=true (product spec §4.10 "Checking out a conflicted commit").
 void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* conflictCache);
 
 DiffPtr readDiff(git_repository* repo, const DiffQuery& query, const gg::CancelToken& cancel);

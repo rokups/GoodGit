@@ -1,4 +1,4 @@
-// Large-repository fixture for the responsiveness acceptance test (P0-11, REBUILD_PLAN §3.1).
+// Large-repository fixture for the responsiveness acceptance test (product spec §3.1).
 #include "tests/Harness.hpp"
 
 #include <spdlog/spdlog.h>

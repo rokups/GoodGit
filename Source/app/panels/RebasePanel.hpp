@@ -1,4 +1,4 @@
-// Interactive rebase todo editor (REBUILD_PLAN §4.13): a dockable panel with a header (range,
+// Interactive rebase todo editor (product spec §4.13): a dockable panel with a header (range,
 // options, engine and reason, validation, Start / Cancel) above Git's todo list.
 //
 // The range is read on a worker (gg::todo::read); everything after that (editing, validation,
@@ -9,16 +9,16 @@
 // typed messages go to git through `git gg sequence-editor`. "Edit remaining todo" opens the
 // rest of a stopped `git rebase -i` here; Start then saves it through `git rebase --edit-todo`.
 //
-// Live preview (P3-17): every change of the list (onTodoChanged) sends the todo, its Context and
+// Live preview: every change of the list (onTodoChanged) sends the todo, its Context and
 // the options to the engine's preview worker, which runs the same plan through the in-memory
 // rewrite engine without applying it. A newer request cancels the older one and only the answer
 // to the newest request is shown (the previous preview stays, marked as updating, meanwhile).
 // The result is drawn as a graph to the right of the list (lanes for --rebase-merges lists).
 //
-// Rebase merges (P4-01): the option switches to Git's --rebase-merges list (label, reset and merge
+// Rebase merges: the option switches to Git's --rebase-merges list (label, reset and merge
 // rows), which always runs on the native engine; the preview replays it in memory.
 //
-// Git's sequence.editor (P4-02): a plain `git rebase -i` (or `git rebase --edit-todo`) with
+// Git's sequence.editor: a plain `git rebase -i` (or `git rebase --edit-todo`) with
 // `git gg sequence-editor` as sequence.editor opens the list git wrote here (Request::sequence).
 // Save hands the list back to git, Cancel or closing the panel hands back nothing; git waits
 // meanwhile and then goes on with its own engine and editor (no typed messages).

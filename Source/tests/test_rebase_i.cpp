@@ -1,6 +1,5 @@
 // Interactive rebase: the todo editor, its entry points and options, run on the in-memory engine,
-// the live preview beside the list, and the in-memory engine against git rebase -i (§4.13, §8.4;
-// P3-15 … P3-18).
+// the live preview beside the list, and the in-memory engine against git rebase -i (§4.13, §8.4).
 #include "panels/HistoryPanel.hpp"
 #include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
@@ -420,7 +419,7 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
     GG_CHECK(rows(s)[2] == "edit c4");
     GG_CHECK(editor(s).engine().engine == todo::Engine::Native);
     GG_CHECK(editor(s).engine().reason.find("row 3 is edit") != std::string::npos);
-    GG_CHECK(editor(s).canStart()); // runs as git rebase -i (P3-19)
+    GG_CHECK(editor(s).canStart()); // runs as git rebase -i
     ctx->ItemCheck(irWidget("ir_native").c_str()); // the user's choice
     GG_CHECK(editor(s).engine().reason.find("you chose") != std::string::npos);
     ctx->ItemUncheck(irWidget("ir_native").c_str());
@@ -857,7 +856,7 @@ GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a bran
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-// ---- live preview (P3-17) ------------------------------------------------------------------------
+// ---- live preview ------------------------------------------------------------------------
 
 GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, the same as Start and git rebase -i",
     "IR-PREVIEW", "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-BRANCHES")
@@ -1233,7 +1232,7 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
 }
 
 
-// ---- in-memory engine against git rebase -i (P3-18) -----------------------------------------------
+// ---- in-memory engine against git rebase -i -----------------------------------------------
 
 namespace {
 
@@ -1704,7 +1703,7 @@ GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i 
     }
 }
 
-// ---- commits that already carry first-class conflicts (P3-20) -------------------------------------
+// ---- commits that already carry first-class conflicts -------------------------------------
 
 namespace {
 

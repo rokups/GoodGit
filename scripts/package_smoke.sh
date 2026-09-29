@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package smoke test for Linux (task P4-04).
+# Package smoke test for Linux.
 #
 #   scripts/package_smoke.sh [--no-build] [--no-sandbox] [--container IMAGE]...
 #

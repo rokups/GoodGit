@@ -1,4 +1,4 @@
-// Pre-flight dialog for non-text conflicts (§4.10 pre-flight; P3-03).
+// Pre-flight dialog for non-text conflicts (§4.10 pre-flight).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"

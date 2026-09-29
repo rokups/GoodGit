@@ -1,4 +1,4 @@
-// File-level staging and external tools (§4.4; P2-06, P2-08).
+// File-level staging and external tools (§4.4).
 #include "panels/ChangesPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"

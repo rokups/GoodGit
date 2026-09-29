@@ -1,4 +1,4 @@
-// Worktree dialogs (docs/spec/ui-spec.md §8 Worktrees, §9; REBUILD_PLAN §4.7; P4-03).
+// Worktree dialogs (docs/spec/ui-spec.md §8 Worktrees, §9; product spec §4.7).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"

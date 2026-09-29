@@ -1,4 +1,4 @@
-// Changes panel, Change information panel and patches (§4.4, §4.11; P1-16, P1-17).
+// Changes panel, Change information panel and patches (§4.4, §4.11).
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"

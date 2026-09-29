@@ -1,4 +1,4 @@
-// Settings window (REBUILD_PLAN §4.1 Settings; P1-12, P2-05, P2-29).
+// Settings window (product spec §4.1 Settings).
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "util/Ui.hpp"
@@ -60,7 +60,7 @@ int sameChangeIndex(const std::string& v)
     return 0;
 }
 
-// sequence.editor that makes plain `git rebase -i` open ggui's todo editor (P4-02). git-gg must be
+// sequence.editor that makes plain `git rebase -i` open ggui's todo editor. git-gg must be
 // on PATH for git (like the managed hooks).
 constexpr const char* kGguiSequenceEditor = "git gg sequence-editor";
 // Where turning the option on keeps a sequence.editor it replaced (same scope), for turning it off.

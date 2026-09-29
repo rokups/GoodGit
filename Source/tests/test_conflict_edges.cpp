@@ -1,4 +1,4 @@
-// First-class conflict round trips and plain-git transparency (§4.10, §8.4 conflicts; P3-14).
+// First-class conflict round trips and plain-git transparency (§4.10, §8.4 conflicts).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"

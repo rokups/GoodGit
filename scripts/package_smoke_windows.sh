@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package smoke test for a Windows ZIP (task P4-04). Runs in bash on Windows (MSYS2 or Git Bash;
+# Package smoke test for a Windows ZIP. Runs in bash on Windows (MSYS2 or Git Bash;
 # the CI package jobs) and, for the file and import checks, on Linux with a MinGW cross build.
 #
 #   scripts/package_smoke_windows.sh ZIP
