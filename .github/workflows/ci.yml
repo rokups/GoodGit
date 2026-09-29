@@ -216,6 +216,9 @@ jobs:
         timeout-minutes: 30
         env:
           GGUI_HEADLESS: "1"
+          # Shared Windows runners (WARP rendering, slow process start) miss the timing
+          # budgets now and then by 2-2.5x; the budgets still catch real regressions.
+          GGUI_TIMING_SLACK: "3"
         run: |
           mkdir -p out
           bin/ggui.exe --test --shard=${{ matrix.shard }}/$SHARDS
