@@ -577,6 +577,13 @@ commit is conflicted is a pure function of its tree.
   way. Only Git's own `--no-verify` can bypass it, and ggui cannot prevent that.
 - The check is limited to commits not yet reachable from the remote's tracking refs, so
   it stays cheap.
+- **ggui and the managed `pre-push` hook also refuse commits that left broken conflict
+  markers** (docs/spec/conflict-markers.md §4.10): a commit whose file's first-parent
+  version held a first-class conflict, and whose own version has leftover marker lines
+  instead of a resolution (`gg::markers::brokenMarkers`). Same message style, same
+  "Reveal", same `--no-verify`-only bypass. The managed `pre-commit` hook warns (never
+  blocks) about this earlier, at commit time, for staged files the commit touches — both
+  a broken region and a staged file that is itself still a first-class conflict.
 
 **Native in-progress operations: N**
 - Detect merge, rebase (interactive and apply), cherry-pick, revert and bisect states.
@@ -622,7 +629,11 @@ or with `git gg hooks install|uninstall`.
 - **`post-checkout`, `post-merge`, `post-rewrite`, `post-commit`:** add context to the
   current journal operation: the command name, rewritten commit mappings, and the index
   tree when useful.
-- **`pre-push`:** refuses conflicted commits (§4.10).
+- **`pre-push`:** refuses conflicted commits, and commits that left broken conflict markers
+  (§4.10).
+- **`pre-commit`:** warns (never blocks) about staged files the commit touches that are
+  themselves a first-class conflict, or whose HEAD version held one and whose staged edit
+  broke the region instead of resolving it (§4.10).
 - **Installing:**
   - Hooks are chained, never clobbered. An existing hook keeps running, before or after
     ours as appropriate, and its exit status is respected.
@@ -1013,7 +1024,9 @@ Rules:
   and the transparency suite must cover it.
 - **Pushed conflicts:** ggui always refuses. Plain `git push` without the managed hook
   installed, or with `--no-verify`, can still publish them. Other clones then see an
-  ordinary diff3 conflict, and ggui shows it as a first-class conflict.
+  ordinary diff3 conflict, and ggui shows it as a first-class conflict. The same refusal,
+  and the same `--no-verify` escape hatch, applies to commits that left broken conflict
+  markers instead of resolving a conflict their parent held.
 - **N-way merge correctness:** term simplification is subtle. Specify it as algebra
   (removes and adds that cancel). Exercise it with randomized rewrite scenarios through
   the UI.

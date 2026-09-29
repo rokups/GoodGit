@@ -571,6 +571,8 @@ CONF-TRANSPARENCY | 3 | §4.10 | Plain git rebase/cherry-pick/amend/merge/stash/
 CONF-GIT-MERGE-GGUI-REGIONS | 3 | §4.10 | Plain git merging a file with ggui regions
 CONF-PREPUSH-HOOK | 3 | §4.10 | Managed pre-push refuses conflicted commits for plain git push
 CONF-BROKEN-WARN | 3 | §4.10 | Broken conflict-region edit warns (Status, Changes, pre-commit hook) instead of silently resolving
+HOOK-PRECOMMIT-WARN-CONFLICT | 3 | §4.10 | Managed pre-commit warns (never blocks) about a staged first-class conflict this commit introduces or changes; silent for an unrelated commit that leaves an existing HEAD conflict untouched
+PUSH-REFUSE-BROKEN | 3 | §4.10 | Managed pre-push and ggui's Push refuse commits that left broken conflict markers where the parent held a conflict; --no-verify bypasses the hook
 CONF-NATIVE-IREBASE-EDIT-TODO | 3 | §4.10 | Stopped interactive rebase: Edit remaining todo
 CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue
 CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view

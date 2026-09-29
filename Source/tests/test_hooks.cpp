@@ -432,4 +432,55 @@ GG_TEST("hooks", "managed pre-commit warns about a broken conflict region withou
     GG_CHECK(s.head(repo) != before);
 }
 
+GG_TEST("hooks", "managed pre-commit warns about a staged first-class conflict without blocking the commit",
+    "HOOK-PRECOMMIT-WARN-CONFLICT")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    // A new staged file that is itself a first-class conflict: warns, commit still succeeds.
+    s.write(repo, "new_conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "new_conflict.txt"});
+    auto r = s.gitMayFail(repo, {"commit", "-q", "-m", "Add a conflicted file"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.err.find(
+        "ggui: new_conflict.txt: committing a first-class conflict (2-sided); resolve it before pushing")
+        != std::string::npos);
+    // An unrelated commit that does not touch conflict.txt: HEAD already holds that conflict
+    // unchanged, so it is not this commit's doing and nothing is printed about it.
+    s.write(repo, "unrelated.txt", "hello\n");
+    s.git(repo, {"add", "unrelated.txt"});
+    r = s.gitMayFail(repo, {"commit", "-q", "-m", "Unrelated change"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.err.find("conflict.txt") == std::string::npos);
+}
+
+GG_TEST("hooks", "managed pre-push refuses commits that left broken conflict markers", "PUSH-REFUSE-BROKEN")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    const fs::path bare = s.path("broken-push-remote.git");
+    s.git(s.root(), {"init", "-q", "--bare", "-b", "main", bare.string()});
+    s.track(bare);
+    s.git(repo, {"remote", "add", "origin", "file://" + bare.generic_string()});
+    // Push the conflicted history itself first (before hooks are installed), so the new commit
+    // below is the only outgoing one: it must be refused for broken markers, not for still
+    // carrying the (already pushed) first-class conflict.
+    s.git(repo, {"push", "-q", "origin", "main"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    // HEAD (main) still holds conflict.txt's conflict unchanged; break its markers instead of
+    // resolving it.
+    s.write(repo, "conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "conflict.txt"});
+    s.git(repo, {"commit", "-q", "-m", "Break the region"});
+    auto r = s.gitMayFail(repo, {"push", "origin", "main"});
+    GG_CHECK(!r.ok());
+    GG_CHECK(r.err.find("refusing to push commits that left broken conflict markers") != std::string::npos);
+    GG_CHECK(r.err.find("conflict.txt line 2, 7") != std::string::npos);
+    GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main~1"));
+    // Only --no-verify bypasses it.
+    r = s.gitMayFail(repo, {"push", "-q", "--no-verify", "origin", "main"});
+    GG_CHECK(r.ok());
+    GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main"));
+}
+
 } // namespace ggtest

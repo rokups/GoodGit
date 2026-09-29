@@ -14,6 +14,7 @@
 #include <fstream>
 #include <istream>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <sstream>
 
@@ -295,6 +296,81 @@ std::vector<ConflictedCommit> conflictedOutgoing(const fs::path& repoDir, const 
     return out;
 }
 
+// Blob text at `path` in `tree`, or nullopt when absent or not a regular blob.
+std::optional<std::string> textAtPath(git_repository* repo, const git_tree* tree, const std::string& path)
+{
+    if (!tree)
+        return std::nullopt;
+    git_tree_entry* raw = nullptr;
+    if (git_tree_entry_bypath(&raw, tree, path.c_str()) != 0) {
+        git_error_clear();
+        return std::nullopt;
+    }
+    TreeEntry entry(raw);
+    if (git_tree_entry_type(entry.get()) != GIT_OBJECT_BLOB)
+        return std::nullopt;
+    git_blob* rawBlob = nullptr;
+    if (git_blob_lookup(&rawBlob, repo, git_tree_entry_id(entry.get())) != 0) {
+        git_error_clear();
+        return std::nullopt;
+    }
+    Blob blob(rawBlob);
+    return blobContent(blob.get());
+}
+
+std::vector<BrokenCommit> brokenOutgoing(const fs::path& repoDir, const std::string& localOid,
+    const std::string& remote, const std::string& remoteOid)
+{
+    std::vector<BrokenCommit> out;
+    Repository repo = openRepository(repoDir);
+    auto local = fromHex(localOid);
+    if (!local)
+        return out;
+    git_revwalk* raw = nullptr;
+    check(git_revwalk_new(&raw, repo.get()), "git_revwalk_new");
+    Revwalk walk(raw);
+    check(git_revwalk_push(walk.get(), &*local), "git_revwalk_push");
+    if (auto r = fromHex(remoteOid); r && !isZero(*r))
+        if (git_revwalk_hide(walk.get(), &*r) != 0)
+            git_error_clear();
+    if (!remote.empty())
+        if (git_revwalk_hide_glob(walk.get(), ("refs/remotes/" + remote + "/*").c_str()) != 0)
+            git_error_clear();
+    conflicts::Cache cache{fs::path(git_repository_commondir(repo.get()))};
+    git_oid oid;
+    while (git_revwalk_next(&oid, walk.get()) == 0) {
+        Commit commit = lookupCommit(repo.get(), oid);
+        if (git_commit_parentcount(commit.get()) == 0)
+            continue; // no parent to have held a conflict this commit could have broken
+        const git_oid parentId = *git_commit_parent_id(commit.get(), 0);
+        const auto parentFiles = conflicts::commitConflicts(repo.get(), parentId, cache);
+        if (parentFiles.empty())
+            continue;
+        Commit parentCommit = lookupCommit(repo.get(), parentId);
+        Tree parentTree = commitTree(parentCommit.get());
+        Tree tree = commitTree(commit.get());
+        BrokenCommit bc;
+        for (const auto& f : parentFiles) {
+            const auto before = textAtPath(repo.get(), parentTree.get(), f.path);
+            const auto after = textAtPath(repo.get(), tree.get(), f.path);
+            if (!before || !after)
+                continue; // deleted or no longer a blob: not "left broken markers"
+            auto broken = markers::brokenMarkers(*before, *after);
+            if (broken.empty())
+                continue;
+            bc.files.push_back(BrokenFile{f.path, std::move(broken)});
+        }
+        if (bc.files.empty())
+            continue;
+        bc.id = toHex(oid);
+        const char* summary = git_commit_summary(commit.get());
+        bc.subject = summary ? summary : "";
+        out.push_back(std::move(bc));
+    }
+    git_error_clear();
+    return out;
+}
+
 int runHook(const std::string& name, const std::vector<std::string>& args, std::istream& in, std::ostream& out,
     std::ostream& err)
 {
@@ -505,6 +581,7 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
         const fs::path repoDir = git_repository_workdir(repo.get()) ? fs::path(git_repository_workdir(repo.get()))
                                                                     : fs::path(git_repository_path(repo.get()));
         std::vector<ConflictedCommit> found;
+        std::vector<BrokenCommit> broken;
         std::string line;
         while (std::getline(in, line)) {
             std::istringstream fields(line);
@@ -515,38 +592,97 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
                 continue; // deleting a remote ref pushes no commits
             for (auto& c : conflictedOutgoing(repoDir, localOid, remote, remoteOid))
                 found.push_back(std::move(c));
+            for (auto& b : brokenOutgoing(repoDir, localOid, remote, remoteOid))
+                broken.push_back(std::move(b));
         }
-        if (found.empty())
-            return 0;
-        err << "ggui: refusing to push commits with first-class conflicts:\n";
-        for (const auto& c : found) {
-            err << "  " << c.id.substr(0, 10) << " " << c.subject << "\n";
-            for (const auto& f : c.files)
-                err << "      " << f << "\n";
+        int rc = 0;
+        if (!found.empty()) {
+            err << "ggui: refusing to push commits with first-class conflicts:\n";
+            for (const auto& c : found) {
+                err << "  " << c.id.substr(0, 10) << " " << c.subject << "\n";
+                for (const auto& f : c.files)
+                    err << "      " << f << "\n";
+            }
+            err << "Resolve the conflicts first (or bypass with git push --no-verify).\n";
+            rc = 1;
         }
-        err << "Resolve the conflicts first (or bypass with git push --no-verify).\n";
-        return 1;
+        if (!broken.empty()) {
+            err << "ggui: refusing to push commits that left broken conflict markers:\n";
+            for (const auto& c : broken) {
+                for (const auto& f : c.files) {
+                    std::string lines;
+                    for (size_t i = 0; i < f.lines.size(); ++i)
+                        lines += (i ? ", " : "") + std::to_string(f.lines[i]);
+                    err << "  " << c.id.substr(0, 10) << " " << c.subject << ": " << f.path << " line " << lines << "\n";
+                }
+            }
+            err << "Resolve the conflicts first (or bypass with git push --no-verify).\n";
+            rc = 1;
+        }
+        return rc;
     }
     if (name == "pre-commit") {
-        // Warns (never blocks: stderr only, exit 0) about staged files whose HEAD version held
-        // a first-class conflict and whose staged edit broke the region instead of resolving it.
+        // Warns (never blocks: stderr only, exit 0) about two staged-file situations:
+        //  - a staged file this commit touches (its staged blob differs from HEAD's, i.e. it is
+        //    new or modified) that itself holds a first-class conflict: committing it is fine
+        //    locally, but push later refuses it, so warn now. Limited to touched paths so an
+        //    unrelated commit does not re-warn every time about a conflict already sitting
+        //    unchanged in HEAD.
+        //  - a staged file whose HEAD version held a first-class conflict and whose staged edit
+        //    broke the region instead of resolving it.
         conflicts::Cache cache{commonDir};
         git_oid head;
-        if (git_reference_name_to_id(&head, repo.get(), "HEAD") != 0) {
+        const bool hasHead = git_reference_name_to_id(&head, repo.get(), "HEAD") == 0;
+        if (!hasHead)
             git_error_clear();
-            return 0;
-        }
-        const auto headFiles = conflicts::commitConflicts(repo.get(), head, cache);
-        if (headFiles.empty())
-            return 0;
-        Commit headCommit = lookupCommit(repo.get(), head);
-        Tree headTree = commitTree(headCommit.get());
         git_index* rawIndex = nullptr;
         if (git_repository_index(&rawIndex, repo.get()) != 0) {
             git_error_clear();
             return 0;
         }
         Index index(rawIndex);
+
+        Commit headCommit;
+        Tree headTree;
+        if (hasHead) {
+            headCommit = lookupCommit(repo.get(), head);
+            headTree = commitTree(headCommit.get());
+        }
+
+        // New/modified staged files that are themselves first-class conflicts.
+        git_diff* rawDiff = nullptr;
+        git_diff_options diffOpts = GIT_DIFF_OPTIONS_INIT;
+        if (git_diff_tree_to_index(&rawDiff, repo.get(), headTree.get(), index.get(), &diffOpts) == 0) {
+            Diff diff(rawDiff);
+            const size_t n = git_diff_num_deltas(diff.get());
+            for (size_t i = 0; i < n; ++i) {
+                const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
+                if (d->status == GIT_DELTA_DELETED || d->status == GIT_DELTA_TYPECHANGE)
+                    continue;
+                const std::string path = d->new_file.path;
+                if (!conflicts::eligible(repo.get(), nullptr, path))
+                    continue;
+                git_blob* rawBlob = nullptr;
+                if (git_blob_lookup(&rawBlob, repo.get(), &d->new_file.id) != 0) {
+                    git_error_clear();
+                    continue;
+                }
+                Blob blob(rawBlob);
+                const std::string_view text(static_cast<const char*>(git_blob_rawcontent(blob.get())),
+                    static_cast<size_t>(git_blob_rawsize(blob.get())));
+                const int sides = conflicts::contentSides(text);
+                if (!sides)
+                    continue;
+                err << "ggui: " << path << ": committing a first-class conflict (" << sides
+                    << "-sided); resolve it before pushing - push refuses commits with conflicts\n";
+            }
+        } else {
+            git_error_clear();
+        }
+
+        if (!hasHead)
+            return 0;
+        const auto headFiles = conflicts::commitConflicts(repo.get(), head, cache);
         for (const auto& f : headFiles) {
             const git_index_entry* entry = git_index_get_bypath(index.get(), f.path.c_str(), 0);
             if (!entry)

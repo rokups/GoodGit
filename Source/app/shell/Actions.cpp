@@ -672,6 +672,21 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                     }
                     throw MutationError{Outcome::Refused, "The pushed commits contain first-class conflicts", list};
                 }
+                const auto broken = gg::hooks::brokenOutgoing(ctx.cwd(), local, remote,
+                    remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
+                if (!broken.empty()) {
+                    std::string list;
+                    for (const auto& c : broken) {
+                        list += c.id + " " + c.subject + "\n";
+                        for (const auto& f : c.files) {
+                            std::string lines;
+                            for (size_t i = 0; i < f.lines.size(); ++i)
+                                lines += (i ? ", " : "") + std::to_string(f.lines[i]);
+                            list += "    " + f.path + " line " + lines + "\n";
+                        }
+                    }
+                    throw MutationError{Outcome::Refused, "The pushed commits left broken conflict markers", list};
+                }
             }
             std::vector<std::string> args{"push", "--progress"};
             if (setUpstream)
@@ -687,7 +702,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
         },
         [this, remote, localBranch, remoteBranch](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Refused) {
-                m_session.app().dialogs().pushRefused(m_session, e.detail);
+                m_session.app().dialogs().pushRefused(m_session, e.message, e.detail);
                 return;
             }
             if (e.outcome == Outcome::PushRejected) {

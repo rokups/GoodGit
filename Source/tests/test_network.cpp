@@ -433,6 +433,36 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
     GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main~2"));
 }
 
+GG_TEST("network", "push is refused when outgoing commits left broken conflict markers", "PUSH-REFUSE-BROKEN")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    const fs::path bare = s.path("broken-origin.git");
+    s.git(s.root(), {"init", "-q", "--bare", "-b", "main", bare.string()});
+    s.track(bare);
+    s.git(repo, {"remote", "add", "origin", fileUrl(bare)});
+    // Push the conflicted history itself first, so the only outgoing commit below is the one
+    // that breaks the markers, not the (already-pushed) first-class conflict.
+    s.git(repo, {"push", "-q", "origin", "main"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/main", "main"});
+    // HEAD (main) still holds conflict.txt's conflict unchanged; break its markers instead of
+    // resolving it.
+    s.write(repo, "conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "conflict.txt"});
+    s.git(repo, {"commit", "-q", "-m", "Break the region"});
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick("//##Toolbar/###tb_push");
+    GG_REQUIRE(s.dialogOpen("Push refused"));
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_REQUIRE(f != nullptr);
+    GG_CHECK(f->message.find("broken conflict markers") != std::string::npos);
+    bool listsFile = false;
+    for (const auto& row : f->revealRows)
+        listsFile |= row.first.find("conflict.txt line 2, 7") != std::string::npos;
+    GG_CHECK(listsFile);
+    GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
+}
+
 GG_TEST("network", "askpass: answer and cancel a credentials prompt", "REMOTE-ASKPASS", "REMOTE-ASKPASS-CANCEL")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

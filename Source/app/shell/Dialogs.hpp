@@ -64,8 +64,9 @@ public:
     const Form* current() const { return m_queue.empty() ? nullptr : &m_queue.front(); }
     void closeAll() { m_queue.clear(); m_opened = false; }
 
-    // Specific dialogs with non-trivial content.
-    void pushRefused(Session& session, const std::string& detail);
+    // Specific dialogs with non-trivial content. `message` is the MutationError's message (why
+    // the push was refused: first-class conflicts or broken conflict markers).
+    void pushRefused(Session& session, const std::string& message, const std::string& detail);
 
 private:
     std::vector<Form> m_queue;

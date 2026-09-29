@@ -124,6 +124,17 @@ already plain text outside HEAD's regions (a simple stray-line-count comparison 
 length, not a diff of which line is "new"). This is purely a diagnostic: it does not change
 whether a file is parsed as conflicted (§4) or eligible (§6).
 
+The pre-commit hook only *warns* (stderr, never blocks the commit), and only for staged paths
+the commit actually touches (its staged blob differs from HEAD's) — an unrelated commit is
+silent about a conflict, broken or otherwise, that already sits unchanged in HEAD. The
+pre-commit hook additionally warns, in the same never-blocking way, when a staged path this
+commit touches holds a first-class conflict itself (the file is still conflicted, not broken):
+committing a conflict is fine locally, but push refuses it (§4.10 Safety below), so the warning
+flags it early. Push (the managed pre-push hook and ggui's own Push, `gg::hooks::brokenOutgoing`
+next to `conflictedOutgoing`) *refuses* a commit that left broken markers where its first
+parent's version of the file held a first-class conflict — the same refusal as a commit that
+still carries a first-class conflict, and bypassed the same way (`git push --no-verify`).
+
 ## 5. In-band edge cases
 
 | Case | Encoding |

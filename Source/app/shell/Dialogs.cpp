@@ -180,11 +180,11 @@ void Dialogs::draw()
     ImGui::EndPopup();
 }
 
-void Dialogs::pushRefused(Session& session, const std::string& detail)
+void Dialogs::pushRefused(Session& session, const std::string& message, const std::string& detail)
 {
     Form f;
     f.title = "Push refused";
-    f.message = "These commits contain first-class conflicts and are never pushed. Resolve them first.";
+    f.message = message + ". Resolve them first.";
     for (const auto& line : gg::splitLines(detail)) {
         if (line.empty())
             continue;
