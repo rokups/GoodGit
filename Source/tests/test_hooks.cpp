@@ -54,12 +54,16 @@ std::map<std::string, std::string> hooksDir(const fs::path& repo)
 // git with PATH lacking the directory of git-gg (hooks must then do nothing / warn).
 gg::RunResult gitWithoutGitGg(const fs::path& repo, std::vector<std::string> args)
 {
-    const std::string binDir = gg::findInPath("git-gg").parent_path().string();
+    const fs::path binDir = gg::findInPath("git-gg").parent_path();
     std::string path;
     std::stringstream parts(ggui::getEnv("PATH"));
-    for (std::string part; std::getline(parts, part, kPathSep[0]);)
-        if (part != binDir)
-            path += (path.empty() ? "" : kPathSep) + part;
+    for (std::string part; std::getline(parts, part, kPathSep[0]);) {
+        // Every spelling of the directory (Windows: case, slashes, a trailing separator).
+        std::error_code ec;
+        if (part.empty() || fs::equivalent(part, binDir, ec))
+            continue;
+        path += (path.empty() ? "" : kPathSep) + part;
+    }
     gg::RunRequest r;
     args.insert(args.begin(), "git");
     r.args = std::move(args);
