@@ -27,6 +27,7 @@
 #include <libgg/GitRunner.hpp>
 #include <libgg/Hooks.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/Launch.hpp>
 #include <libgg/NewCommit.hpp>
 #include <libgg/Operation.hpp>
 #include <libgg/Rewrite.hpp>
@@ -249,8 +250,10 @@ int cmdHooks(const std::string& action)
 int cmdUi(const std::string& path)
 {
     gg::RunRequest r;
-    const fs::path self = gg::findInPath("git-gg");
-    const fs::path ggui = self.empty() ? fs::path("ggui") : self.parent_path() / "ggui";
+    // GG_GGUI, the ggui next to git-gg (ggui.exe on Windows), else ggui on PATH.
+    fs::path ggui = gg::gguiProgram();
+    if (ggui.empty())
+        ggui = "ggui";
     r.args = {ggui.string(), fs::weakly_canonical(path.empty() ? fs::current_path() : fs::absolute(path)).string()};
     r.gitEnvironment = false;
     r.cLocale = false;

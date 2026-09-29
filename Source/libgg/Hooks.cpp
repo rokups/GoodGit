@@ -96,12 +96,22 @@ Paths paths(const fs::path& repoDir)
     return p;
 }
 
+// Windows: the first shell of a hook is the git process's own child, but every MSYS fork and exec
+// after it is a new process whose parent is gone, so git-gg cannot find git by walking up. That
+// shell names itself (its Windows pid) for git-gg; elsewhere the walk works and this is empty.
+#ifdef _WIN32
+constexpr const char* kHookShellPid = "GG_HOOK_SHELL=$(cat /proc/$$/winpid 2>/dev/null); export GG_HOOK_SHELL; ";
+#else
+constexpr const char* kHookShellPid = "";
+#endif
+
 std::string wrapperScript(const fs::path& runner, const std::string& name)
 {
     return std::string("#!/bin/sh\n") + kWrapperMarker
         + ": runs the ggui hooks runner, then the previous hook (if any).\n"
           "# \"git gg hooks uninstall\" restores the previous hook.\n"
-          "input=$(cat; printf x)\n"
+        + (*kHookShellPid ? std::string(kHookShellPid) + "\n" : std::string())
+        + "input=$(cat; printf x)\n"
           "input=${input%x}\n"
           "status=0\n"
           "printf '%s' \"$input\" | "
@@ -120,7 +130,8 @@ Mode activeMode() { return configHooksSupported() ? Mode::Config : Mode::Wrapper
 
 std::string configCommand(const fs::path& runner, const std::string& name)
 {
-    return shellQuote(runner.generic_string()) + " " + name;
+    // Two commands on Windows: sh then runs the runner as a child and stays (see kHookShellPid).
+    return kHookShellPid + shellQuote(runner.generic_string()) + " " + name;
 }
 
 } // namespace

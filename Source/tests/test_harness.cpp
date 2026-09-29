@@ -161,9 +161,9 @@ GG_TEST("harness", "transport fixtures: git daemon and ssh shim", "HARNESS-FIXTU
     s.git(work, {"push", "-q", url + "repo.git", "main"});
 #endif
     GG_CHECK(s.gitOut(served / "repo.git", {"rev-parse", "main"}) == s.head(work));
-    const std::string ssh = s.installSshShim();
+    s.installSshShim();
     const fs::path clone = s.path("ssh-clone");
-    s.git(s.root(), {"clone", "-q", ssh + (served / "repo.git").string(), clone.string()});
+    s.git(s.root(), {"clone", "-q", Scenario::sshUrl(served / "repo.git"), clone.string()});
     GG_CHECK(s.head(clone) == s.head(work));
     s.track(served / "repo.git");
     s.track(clone);

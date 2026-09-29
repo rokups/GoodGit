@@ -96,7 +96,7 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     const fs::path dest = s.path("cancelled");
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
-    s.dialogText("Clone repository", "url", "ssh://test@localhost" + origin(s, repo).generic_string());
+    s.dialogText("Clone repository", "url", Scenario::sshUrl(origin(s, repo)));
     s.dialogText("Clone repository", "destination", dest.string());
     s.dialogButton("Clone repository", "Clone");
     GG_REQUIRE(s.waitUntil([&] { return fs::exists(dest); }));
@@ -113,7 +113,7 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     const fs::path dest2 = s.path("cancelled-stubborn");
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
-    s.dialogText("Clone repository", "url", "ssh://test@localhost" + origin(s, repo).generic_string());
+    s.dialogText("Clone repository", "url", Scenario::sshUrl(origin(s, repo)));
     s.dialogText("Clone repository", "destination", dest2.string());
     s.dialogButton("Clone repository", "Clone");
     GG_REQUIRE(s.waitUntil([&] { return fs::exists(dest2); }));
@@ -427,11 +427,11 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
 GG_TEST("network", "askpass: answer and cancel a credentials prompt", "REMOTE-ASKPASS", "REMOTE-ASKPASS-CANCEL")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
-    const std::string ssh = s.installSshShim("s3cret");
+    s.installSshShim("s3cret");
     const fs::path cancelled = s.path("askpass-cancelled");
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
-    s.dialogText("Clone repository", "url", ssh + origin(s, repo).generic_string());
+    s.dialogText("Clone repository", "url", Scenario::sshUrl(origin(s, repo)));
     s.dialogText("Clone repository", "destination", cancelled.string());
     s.dialogButton("Clone repository", "Clone");
     GG_REQUIRE(s.dialogOpen("Credentials"));
@@ -445,7 +445,7 @@ GG_TEST("network", "askpass: answer and cancel a credentials prompt", "REMOTE-AS
     const fs::path dest = s.path("askpass-cloned");
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
-    s.dialogText("Clone repository", "url", ssh + origin(s, repo).generic_string());
+    s.dialogText("Clone repository", "url", Scenario::sshUrl(origin(s, repo)));
     s.dialogText("Clone repository", "destination", dest.string());
     s.dialogButton("Clone repository", "Clone");
     GG_REQUIRE(s.dialogOpen("Credentials"));

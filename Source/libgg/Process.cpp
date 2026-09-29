@@ -179,7 +179,11 @@ ProcessInfo parentProcess()
             }
             d << "\n";
         }
-        const auto me = procs.find(self);
+        // The hook's first shell, when it named itself (GG_HOOK_SHELL): its parent is git.
+        DWORD start = 0;
+        if (const char* shell = std::getenv("GG_HOOK_SHELL"); shell && *shell)
+            start = static_cast<DWORD>(std::strtoul(shell, nullptr, 10));
+        const auto me = procs.find(start && procs.count(start) ? start : self);
         if (me != procs.end()) {
             info.pid = me->second.parent;
             DWORD pid = me->second.parent;

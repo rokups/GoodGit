@@ -248,6 +248,7 @@ void isolateEnvironment(const fs::path& dir)
     ggui::unsetEnv("GG_HOOKS_MODE");
     ggui::unsetEnv("GG_GGUI");
     ggui::unsetEnv("GG_DEBUG_PROCESS");
+    ggui::unsetEnv("GG_HOOK_SHELL");
     ggui::setEnv("EDITOR", "true");
     gg::git2::resetConfigSearchPaths();
 }

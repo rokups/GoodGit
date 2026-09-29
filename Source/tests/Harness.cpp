@@ -364,11 +364,19 @@ std::string Scenario::installSshShim(const std::string& password)
     if (!password.empty())
         script += "answer=$(\"$SSH_ASKPASS\" \"test@localhost's password: \") || exit 255\n"
                   "[ \"$answer\" = \"" + password + "\" ] || { echo 'Permission denied' >&2; exit 255; }\n";
-    script += "exec sh -c \"$*\"\n";
+    // git sends ssh://host/D:/x as '/D:/x' (Windows): the local path is D:/x.
+    script += "cmd=$(printf '%s' \"$*\" | sed \"s#'/\\([A-Za-z]\\):/#'\\1:/#g\")\n"
+              "exec sh -c \"$cmd\"\n";
     write(m_root, "fake-ssh", script);
     fs::permissions(shim, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
     ggui::setEnv("GIT_SSH_COMMAND", shim.generic_string());
     return "ssh://test@localhost";
+}
+
+std::string Scenario::sshUrl(const fs::path& repo)
+{
+    const std::string path = repo.generic_string();
+    return "ssh://test@localhost" + std::string(path.empty() || path.front() != '/' ? "/" : "") + path;
 }
 
 bool Scenario::itemExists(const char* ref) { return ctx->ItemExists(ref); }
