@@ -214,7 +214,8 @@ GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the
     GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "install"}).exitCode, 128);
     GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "uninstall"}).exitCode, 128);
     // The git-gg binary started by its path, with neither git-gg nor ggui on PATH: the hooks
-    // status warns, and git gg ui cannot start ggui.
+    // status warns, and git gg ui cannot start a ggui that is not there (GG_GGUI names a missing
+    // one; the real ggui next to git-gg would be found and started).
     const fs::path gitgg = gg::findInPath("git-gg");
     GG_REQUIRE(!gitgg.empty());
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
@@ -225,6 +226,7 @@ GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the
         req.args.insert(req.args.end(), args.begin(), args.end());
         req.cwd = repo;
         req.env.emplace_back("PATH", gitDir.string());
+        req.env.emplace_back("GG_GGUI", (s.root() / "no-such-ggui").string());
         return gg::run(req);
     };
     r = bare({"hooks", "status"});
