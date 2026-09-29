@@ -79,7 +79,7 @@ at least that size (readers accept any `L ≥ 7`).
 
 **Writer rule.** Let `m` be the longest leading run of a single marker character
 (`< | = > + -`) found at the start of any content line of any section of the region. The writer
-chooses `L = max(7, conflict-marker-size, m + 4)` (the margin of 4, as Jujutsu does, leaves room
+chooses `L = max(7, conflict-marker-size, m + 4)` (the margin of 4 leaves room
 to paste marker-like text into a side while editing without it becoming ambiguous with the
 region's own markers). Therefore no content line of a written region is a marker line of
 length `L`, and parsing is unambiguous.

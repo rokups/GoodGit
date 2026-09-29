@@ -45,8 +45,8 @@ int pullMethod(const std::string& rebase, const std::string& ff)
     return 0;
 }
 
-// gg.sameChange: whether a hunk every side changed the same way resolves (Git's/jj's "accept",
-// the default) or stays a conflict ("keep", the exact term algebra; jj's merge.same-change).
+// gg.sameChange: whether a hunk every side changed the same way resolves (Git's "accept",
+// the default) or stays a conflict ("keep", the exact term algebra).
 constexpr const char* kSameChangeOptions[] = {"(not set)", "Accept", "Keep"};
 
 int sameChangeIndex(const std::string& v)

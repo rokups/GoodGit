@@ -180,7 +180,7 @@ bool eligible(git_repository* repo, const git_oid* commit, const std::string& pa
 gg::markers::WriteOptions writeOptions(git_repository* repo, const std::string& path)
 {
     gg::markers::WriteOptions options;
-    // gg.sameChange: "accept" (default, Git's/jj's behaviour: a hunk every side changed the same
+    // gg.sameChange: "accept" (default, Git's behaviour: a hunk every side changed the same
     // way is resolved) or "keep" (the exact term algebra). Unknown values fall back to accept.
     const Config cfg = git2::repositoryConfig(repo);
     if (auto v = git2::configString(cfg.get(), "gg.sameChange")) {

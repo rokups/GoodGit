@@ -508,7 +508,7 @@ commit is conflicted is a pure function of its tree.
 - **Automatic resolution:** reordering back, dropping the change that caused the conflict,
   or fixing a parent makes the conflict disappear in descendants.
 - **`gg.sameChange`** (repo config: `accept`, the default, or `keep`): whether a hunk every
-  side changed the same way resolves (Git's/jj's rule) or stays a first-class conflict (the
+  side changed the same way resolves (Git's rule) or stays a first-class conflict (the
   exact term algebra). Read per write, together with the `conflict-marker-size` attribute,
   by `gg::conflicts::writeOptions()`.
 - **Pre-flight dialog for non-text conflicts:**

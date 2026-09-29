@@ -10,7 +10,7 @@ namespace gg::markers {
 namespace {
 
 constexpr int kMinMarker = 7;
-// Room for the user to paste marker-like text while editing (as Jujutsu does).
+// Room for the user to paste marker-like text while editing.
 constexpr int kMarkerLengthMargin = 4;
 constexpr const char* kNoEolFlag = "[no newline]";
 
