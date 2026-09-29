@@ -88,7 +88,7 @@ const char* panelIcon(const char* name)
     if (name == panel::Tags)
         return ICON_MS_SELL;
     if (name == panel::Worktrees)
-        return ICON_MS_WORKSPACES;
+        return ICON_MS_FOLDER_COPY; // one checkout per folder
     if (name == panel::Remotes)
         return ICON_MS_CLOUD;
     if (name == panel::Stashes)

@@ -89,7 +89,8 @@ check "old gg::gg target, ggConfig.cmake, find_package(gg)" "" \
     '^docs/spec/product\.md:' 'the product spec names it as dropped (§1, §9)'
 
 # 2. No gg CLI binary: the only executables are ggui and git-gg, and only they are installed.
-exes=$(search "" 'add_executable\(' | sed -E 's/.*add_executable\(\s*([^ )]+).*/\1/' | sort -u)
+# Build files only: test fixtures write sample projects' CMakeLists.txt from strings.
+exes=$(search "" 'add_executable\(' CMakeLists.txt cmake Source/CMakeLists.txt 'Source/*/CMakeLists.txt' | sed -E 's/.*add_executable\(\s*([^ )]+).*/\1/' | sort -u)
 unexpected=$(grep -v -x -E 'ggui|git-gg' <<<"$exes" | sed '/^$/d')
 [[ -n $unexpected ]] && fail "executables other than ggui and git-gg" "$unexpected" \
     || echo "ok    executables: $(tr '\n' ' ' <<<"$exes")"
