@@ -1,4 +1,4 @@
-// History editing actions on the in-memory rewrite engine (§4.3; P3-08 … P3-12).
+// History editing actions on the in-memory rewrite engine (§4.3).
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/HistoryPanel.hpp"
@@ -639,6 +639,12 @@ GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a 
     s.commitFile(r.path, "a.txt", "side's a\n", "s2 change a");
     s.git(r.path, {"switch", "-q", "main"});
     s.write(r.path, "a.txt", "local edit\n");
+    // The menu item is disabled while the app still has side checked out.
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto snap = s.session()->snapshot();
+        return snap && snap->headBranch == "main" && snap->head.hex() == s.head(r.path);
+    }));
+    s.settle();
     s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
     GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
     s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");

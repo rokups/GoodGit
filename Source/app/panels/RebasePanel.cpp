@@ -188,6 +188,13 @@ void RebasePanel::read(const Request& request, bool keepTodo)
     };
     auto result = std::make_shared<Result>();
     const std::uint64_t generation = ++m_generation;
+    if (!keepTodo) {
+        // A new list: nothing of the previous one (its range, its base) may be used until this
+        // read arrives; the panel shows it is reading. (Otherwise Enter in Onto meanwhile
+        // re-read the old range, and this read's result was dropped as outdated.)
+        m_state.context.reset();
+        m_read = {};
+    }
     if (request.sequence) {
         // Read already, by the sequence editor link (off the UI thread).
         onRead(request.sequence->context, {}, request, false);
