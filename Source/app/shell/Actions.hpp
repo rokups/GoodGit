@@ -24,6 +24,13 @@ enum class PullMode { Config, Merge, Rebase, FastForwardOnly };
 enum class CommitMode { Index, StageAllTracked, StageSelected };
 enum class Side { Ours, Theirs };
 
+// The messages git writes for a revert and for `cherry-pick -x` (§4.3):
+//   Revert "<subject>"\n\nThis reverts commit <id>.
+//   <message>\n\n(cherry picked from commit <id>)
+// Neither ends with a newline. A message that already has that line does not get it twice.
+std::string revertMessage(const std::string& message, const std::string& id);
+std::string cherryPickMessage(const std::string& message, const std::string& id);
+
 class Actions {
 public:
     using Callback = std::function<void(const core::MutationFinishedEvent&)>;
@@ -142,6 +149,12 @@ public:
     void simplifyParents(const core::Oid& commit);
     void insertCommit(const core::Oid& at, bool before, const std::string& message);
     void mergeIntoHead(const std::string& branch, const std::string& message);
+    // Revert (`revert`) or cherry-pick the commit onto HEAD (a merge against its first parent,
+    // `-m 1`). With `andCommit`: a new commit on HEAD built in memory (text conflicts first-class,
+    // one ref update, the branch or detached HEAD advances; a pick keeps the author). Without:
+    // `git revert/cherry-pick --no-commit` into the index and working tree (native conflicts
+    // leave the Reverting/CherryPicking state), with the message waiting in MERGE_MSG.
+    void revertOrPick(const core::Oid& commit, bool revert, bool andCommit);
     enum class MoveTo { Parent, Child, Active, WorkingTree, Revert };
     // Moves the commit's changes to selected files (`paths`) or selected lines (`patch`, old →
     // new as the commit's diff has them) to its parent, its child, the checked-out commit or

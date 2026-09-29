@@ -519,6 +519,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             std::optional<Person> author;
             bool unchanged = false;
             bool mapSource = true;
+            bool ownAuthor = false;          // a revert: the current user, not the source's author
             std::vector<std::string> contributors; // original commits whose changes it holds
             std::string dateFrom;            // keepCommitterDate: the commit whose date it keeps
         };
@@ -574,7 +575,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                         "git_signature_new");
                     authorSig.reset(raw);
                     author = authorSig.get();
-                } else if (!pending->source.empty()) {
+                } else if (!pending->source.empty() && !pending->ownAuthor) {
                     Commit c = m->commit(pending->source);
                     git_signature* raw = nullptr;
                     check(git_signature_dup(&raw, git_commit_author(c.get())), "git_signature_dup");
@@ -658,6 +659,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             p.key = key;
             p.source = step.kind == Step::Kind::Pick || step.kind == Step::Kind::Merge ? step.source : std::string();
             p.mapSource = step.mapSource;
+            p.ownAuthor = step.kind == Step::Kind::Pick && step.revert;
             if (!p.source.empty())
                 p.contributors = {p.source};
             p.dateFrom = p.source;
@@ -734,15 +736,22 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 const std::string srcTree = toHex(*git_commit_tree_id(src.get()));
                 const std::string baseCommit = originalParents.empty() ? std::string() : originalParents.front();
                 const std::string oldBaseTree = baseCommit.empty() ? m->emptyTree() : m->treeOf(baseCommit);
-                std::string change = srcTree;
-                if (!step.onlyPaths.empty())
-                    change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths);
                 // `ours` is replayed onto the new parent `p.parents.front()` (the engine's step state).
                 std::string oursCommit = p.parents.empty() ? std::string() : p.parents.front();
                 if (auto o = originalOf.find(oursCommit); o != originalOf.end())
                     oursCommit = o->second;
-                p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result,
-                    oursCommit, baseCommit);
+                if (step.revert) {
+                    // The source's tree is the base and its parent's the change (git revert): side B
+                    // is the parent's content, labelled by the parent; the base by the source.
+                    p.tree = m->mergeTrees(srcTree, newBaseTree, oldBaseTree, key, baseCommit.empty() ? step.source : baseCommit,
+                        plan, result, oursCommit, step.source);
+                } else {
+                    std::string change = srcTree;
+                    if (!step.onlyPaths.empty())
+                        change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths);
+                    p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result,
+                        oursCommit, baseCommit);
+                }
             }
             if (!step.setFiles.empty()) {
                 Tree t = lookupTree(m->repo.get(), *fromHex(p.tree));

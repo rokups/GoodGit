@@ -7,6 +7,9 @@
 #include "shell/Session.hpp"
 
 #include <libgg/Git2.hpp>
+#include <libgg/GitRunner.hpp>
+
+#include <cctype>
 
 namespace ggui {
 
@@ -37,6 +40,15 @@ void Session::showCommitDialog(bool amend)
     msg.label = amend ? "Message (leave empty to keep the current message)" : "Message";
     if (amend && m_info->details() && m_info->details()->id == m_snapshot->head)
         msg.text = m_info->details()->message;
+    // The message waiting in MERGE_MSG (a merge, revert or cherry-pick), as git commit would
+    // take it: without git's comment lines and trailing blank lines.
+    if (!amend && !m_snapshot->mergeMessage.empty()) {
+        for (const auto& line : gg::splitLines(m_snapshot->mergeMessage))
+            if (line.rfind('#', 0) != 0)
+                msg.text += line + "\n";
+        while (!msg.text.empty() && std::isspace(static_cast<unsigned char>(msg.text.back())))
+            msg.text.pop_back();
+    }
     f.add(msg);
     f.add(Field{Field::Check, "skip_hooks", "Skip hooks (--no-verify)"});
     if (amend)

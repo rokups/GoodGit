@@ -302,6 +302,10 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Move files/hunks/lines between commits | **K** | Move selected changes to the parent or child commit, or to the working tree ("uncommit") |
 | Merge into @ | **M** | Create a merge commit in memory. Text conflicts become first-class conflicts in the new merge commit, which is then checked out. Non-text conflicts go through the pre-flight dialog (§4.10). Option: "use native `git merge`", which stops with index conflicts instead |
 | Rebase @ onto branch / Reconcile with remote | **M** | Native rebase or merge of a diverged local branch with its upstream |
+| Revert | **N** | `git revert --no-commit`: the inverse of the commit into the index and working tree. The message `Revert "<subject>"` + `This reverts commit <id>.` waits in MERGE_MSG, and the Commit dialog starts with it. Conflicts stop natively (Reverting: Continue/Abort). Refused with staged changes, which Abort would drop |
+| Revert and commit | **N** | A new commit on HEAD that undoes the commit, built in memory like Merge into @: text conflicts become first-class conflicts, one ref update advances the branch (or the detached HEAD), one Undo. Local changes in the way refuse it, as for the other HEAD-moving rewrites |
+| Cherry-pick | **N** | `git cherry-pick --no-commit`: the commit's change into the index and working tree, with the message plus `(cherry picked from commit <id>)` (added once) in MERGE_MSG. A conflict leaves the CherryPicking state (ggui writes CHERRY_PICK_HEAD, which `--no-commit` does not) so Continue/Abort work. Disabled for HEAD, refused for an ancestor of HEAD and with staged changes |
+| Cherry-pick and commit | **N** | A copy of the commit on HEAD built in memory, as Revert and commit, keeping the original author (as git does). A merge commit's change is always taken against its first parent (`-m 1`), for all four actions |
 
 ### 4.4 Changes panel and Change information panel
 - **K** File list for the selected commit (or comparison), with filter, multi-select

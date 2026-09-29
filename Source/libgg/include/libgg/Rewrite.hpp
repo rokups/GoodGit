@@ -70,6 +70,10 @@ struct Step {
     // the step makes no commit (its key names the first parent). With `source` and the parents it
     // had (and no forceNew/message/author), the original merge is reused (Git fast-forwards).
     bool gitMerge = false;
+    // Pick only, as `git revert`: the inverse of the source's change (source → its first parent)
+    // on the new parents (`onlyPaths` is not used). The commit gets the current user as author
+    // (not the source's).
+    bool revert = false;
 };
 
 enum class Choice { Ours, Theirs, Base, File, Delete };

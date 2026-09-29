@@ -273,6 +273,17 @@ ACT-MOVE-CHANGES-CHILD | 3 | §4.3 | Move files/hunks/lines to the child
 ACT-MOVE-CHANGES-WORKTREE | 3 | §4.3 | Move changes to the working tree (uncommit)
 ACT-MERGE-INTO-HEAD | 3 | §4.3 | Merge into HEAD in memory
 ACT-MERGE-NATIVE | 3 | §4.3 | Merge using native git merge
+ACT-REVERT | 4 | §4.3 | Revert: the inverse of a commit into the index and working tree (git revert --no-commit)
+ACT-REVERT-COMMIT | 4 | §4.3 | Revert and commit: a new commit on HEAD undoing the commit, in memory
+ACT-CHERRY-PICK | 4 | §4.3 | Cherry-pick: a commit's change into the index and working tree (git cherry-pick --no-commit)
+ACT-CHERRY-PICK-COMMIT | 4 | §4.3 | Cherry-pick and commit: a copy of the commit on HEAD, in memory
+ACT-CHERRY-PICK-AUTHOR | 4 | §4.3 | Cherry-pick and commit keeps the original author
+ACT-REVERT-PICK-MESSAGE | 4 | §4.3 | Revert/cherry-pick messages (MERGE_MSG, Commit dialog, commit); the appended line only once
+ACT-REVERT-PICK-CONFLICT | 4 | §4.3 | A conflicting revert/cherry-pick and commit lands first-class conflicts
+ACT-REVERT-PICK-NATIVE-CONFLICT | 4 | §4.3 | A conflicting no-commit revert/cherry-pick leaves the native in-progress state; Abort
+ACT-REVERT-PICK-UNDO | 4 | §4.3 | One Undo restores the state before revert/cherry-pick and commit
+ACT-REVERT-PICK-MERGE | 4 | §4.3 | Merge commits are reverted/picked against their first parent (-m 1)
+ACT-REVERT-PICK-REFUSE | 4 | §4.3 | Refused: pick of HEAD or an ancestor, no-commit with staged changes, nothing to change
 ACT-REBASE-HEAD-ONTO | 3 | §4.3 | Rebase HEAD onto branch
 ACT-RECONCILE | 3 | §4.3 | Reconcile a diverged branch with its upstream
 ACT-REWRITE-TEXT-CONFLICT | 3 | §4.3 | Rewrites continue with first-class text conflicts

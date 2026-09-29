@@ -60,6 +60,34 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         showMergeDialog(session, session.shortId(row.id), true);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto this", nullptr, false, ok && headCommit && !snap->headDetached && !isHead))
         session.actions().rebaseHeadOnto(session.shortId(row.id));
+    // Revert / cherry-pick onto HEAD (plan §4.3). A merge commit's change is taken against its
+    // first parent (-m 1). Picking an ancestor of HEAD other than HEAD is refused on the worker.
+    {
+        const std::string blocked = !headCommit ? "HEAD has no commit yet."
+            : isHead                            ? "This commit is HEAD: its change is already there."
+                                                : "";
+        auto item = [&](const char* icon, const char* label, bool enabled, const char* what, bool revert, bool commit) {
+            if (menuItem(icon, label, nullptr, false, ok && enabled))
+                session.actions().revertOrPick(row.id, revert, commit);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+                std::string tip = what;
+                if (merge)
+                    tip += "\nA merge commit: its change against its first parent (-m 1).";
+                if (!enabled)
+                    tip += "\n" + (revert ? std::string("HEAD has no commit yet.") : blocked);
+                ImGui::SetTooltip("%s", tip.c_str());
+            }
+        };
+        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", headCommit,
+            "Undo this commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
+        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", headCommit,
+            "A new commit on HEAD that undoes this commit. Text conflicts become first-class conflicts.", true, true);
+        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", blocked.empty(),
+            "Apply this commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false,
+            false);
+        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick and commit", blocked.empty(),
+            "A copy of this commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
+    }
     if (menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, ok && !merge && !root))
         showSquashDialog(session, row.id);
     if (menuItem(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S", false, ok))
