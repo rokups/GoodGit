@@ -21,8 +21,7 @@ std::string symbolicHead(Scenario& s, const fs::path& repo)
 
 } // namespace
 
-GG_TEST("new", "new commit on HEAD advances the branch (toolbar, menu, keys)", "ACT-NEW", "TB-NEW", "MENU-COMMIT-NEW",
-    "MENU-COMMIT-NEW-KEY", "HIST-KEY-N", "HIST-CTX-NEW")
+GG_TEST("new", "new commit on HEAD advances the branch (toolbar, menu, keys)")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -50,7 +49,7 @@ GG_TEST("new", "new commit on HEAD advances the branch (toolbar, menu, keys)", "
     GG_CHECK_EQ(std::stoi(s.gitOut(repo, {"rev-list", "--count", "HEAD"})), 10);
 }
 
-GG_TEST("new", "new detached and new on another commit", "ACT-NEW-DETACHED", "HIST-KEY-ALT-N", "HIST-CTX-NEW-DETACHED")
+GG_TEST("new", "new detached and new on another commit")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string main = s.head(repo);
@@ -70,7 +69,7 @@ GG_TEST("new", "new detached and new on another commit", "ACT-NEW-DETACHED", "HI
     GG_CHECK(s.statusPorcelain(repo).empty()); // the worktree followed the detached HEAD
 }
 
-GG_TEST("new", "several parents make a merge commit", "ACT-NEW-MERGE")
+GG_TEST("new", "several parents make a merge commit")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string main = s.head(repo);
@@ -88,8 +87,7 @@ GG_TEST("new", "several parents make a merge commit", "ACT-NEW-MERGE")
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
 }
 
-GG_TEST("checkout", "switch to a branch, detach, E key", "ACT-CHECKOUT-BRANCH", "ACT-CHECKOUT-DETACH", "HIST-KEY-E",
-    "HIST-CTX-CHECKOUT")
+GG_TEST("checkout", "switch to a branch, detach, E key")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string topic = s.revParse(repo, "topic");
@@ -110,8 +108,7 @@ GG_TEST("checkout", "switch to a branch, detach, E key", "ACT-CHECKOUT-BRANCH", 
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
-GG_TEST("checkout", "local changes block a switch: Stash and switch", "ACT-CHECKOUT-REFUSE", "ACT-CHECKOUT-STASH",
-    "STASH-SWITCH-HELPER")
+GG_TEST("checkout", "local changes block a switch: Stash and switch")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"branch", "older", "HEAD~1"});
@@ -128,8 +125,7 @@ GG_TEST("checkout", "local changes block a switch: Stash and switch", "ACT-CHECK
     GG_CHECK(s.gitOut(repo, {"stash", "list"}).find("before switching to older") != std::string::npos);
 }
 
-GG_TEST("checkout", "move HEAD to parent and child", "ACT-MOVE-HEAD-PARENT", "ACT-MOVE-HEAD-CHILD", "MENU-COMMIT-PREV",
-    "MENU-COMMIT-NEXT", "TB-NO-PREV-NEXT")
+GG_TEST("checkout", "move HEAD to parent and child")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string main = s.head(repo);

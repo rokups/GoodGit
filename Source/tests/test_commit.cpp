@@ -24,8 +24,7 @@ void writeHook(Scenario& s, const fs::path& repo, const std::string& name, const
 
 } // namespace
 
-GG_TEST("commit", "commit the index from the toolbar; hooks run natively", "ACT-COMMIT", "TB-COMMIT", "TB-COMMIT-LABEL",
-    "HOOK-USER-NATIVE")
+GG_TEST("commit", "commit the index from the toolbar; hooks run natively")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     writeHook(s, repo, "commit-msg", "printf '\\nHook-Trailer: yes\\n' >> \"$1\"\n");
@@ -47,8 +46,7 @@ GG_TEST("commit", "commit the index from the toolbar; hooks run natively", "ACT-
     GG_CHECK(s.itemText("//##Toolbar/###tb_commit").find("Amend") != std::string::npos);
 }
 
-GG_TEST("commit", "nothing staged: stage all tracked or the selected files", "ACT-COMMIT-NOTHING-STAGED-ALL",
-    "ACT-COMMIT-NOTHING-STAGED-SELECTED", "MENU-COMMIT-COMMIT", "HIST-WT-CTX-COMMIT")
+GG_TEST("commit", "nothing staged: stage all tracked or the selected files")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "one changed\n");
@@ -79,7 +77,7 @@ GG_TEST("commit", "nothing staged: stage all tracked or the selected files", "AC
     GG_CHECK(s.gitOut(repo, {"diff", "--name-only"}) == "f4.txt");
 }
 
-GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-ALL-DEFAULT", "SET-NOTHING-STAGED-LABEL")
+GG_TEST("commit", "default for nothing staged comes from Settings")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "one changed\n");
@@ -124,8 +122,7 @@ GG_TEST("commit", "default for nothing staged comes from Settings", "SET-COMMIT-
     s.dialogButton("Amend", "Cancel");
 }
 
-GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks", "ACT-COMMIT-HOOK-FAIL", "ACT-COMMIT-SKIP-HOOKS",
-    "HOOK-FAIL-POPUP", "HOOK-SKIP")
+GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     writeHook(s, repo, "pre-commit", "echo 'pre-commit hook says no' >&2\nexit 1\n");
@@ -148,8 +145,7 @@ GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks", "ACT
     s.settle();
 }
 
-GG_TEST("commit", "amend content and message, message only, Amend into HEAD", "ACT-AMEND", "ACT-AMEND-MESSAGE",
-    "MENU-COMMIT-AMEND", "HIST-WT-CTX-AMEND")
+GG_TEST("commit", "amend content and message, message only, Amend into HEAD")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f5.txt", "amended content\n");
@@ -188,7 +184,7 @@ GG_TEST("commit", "amend content and message, message only, Amend into HEAD", "A
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), parent);
 }
 
-GG_TEST("commit", "reword HEAD from Change information (amend mode)", "INFO-SAVE-MESSAGE", "ACT-DESCRIBE-HEAD", "INFO-AMEND-MODE")
+GG_TEST("commit", "reword HEAD from Change information (amend mode)")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));

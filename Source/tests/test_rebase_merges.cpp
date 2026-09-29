@@ -467,9 +467,7 @@ const char* kCommitConflicts = "//##Toolbar/Commit with conflicts##tb_commit_con
 
 } // namespace
 
-GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git",
-    "IR-OPT-REBASE-MERGES", "IR-ACT-LABEL", "IR-ACT-RESET", "IR-ACT-MERGE", "IR-ENGINE-NATIVE", "IR-ENGINE-SHOWN",
-    "IR-PREVIEW", "IR-PREVIEW-BRANCHES", "IR-OPT-AUTOSQUASH", "IR-OPT-UPDATE-REFS", "IR-UNDO-REDO", "IR-NATIVE-UNDO")
+GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label, reset and merge rows are edited, validated, previewed and run like git")
 {
     const MergeRepo r = makeMergeRepo(s);
     installRecordingHooks(s, r.path);
@@ -692,8 +690,7 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("rebase-merges", "a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts",
-    "IR-ACT-MERGE", "IR-NATIVE-STOP-CONFLICT", "IR-PREVIEW-CONFLICTS", "IR-OPT-ONTO", "IR-NATIVE-UNDO")
+GG_TEST("rebase-merges", "a merge that conflicts stops git rebase --rebase-merges: the preview shows it, Abort, then Commit with conflicts")
 {
     // topic and main both change f.txt; the merge M kept main's line. Onto `up`, which changes
     // f.txt's other line, the merge has to be made again and conflicts.
@@ -782,9 +779,7 @@ GG_TEST("rebase-merges", "a merge that conflicts stops git rebase --rebase-merge
     GG_CHECK_STR_EQ(s.statusPorcelain(path), "");
 }
 
-GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy",
-    "IR-DIFFERENTIAL", "IR-OPT-REBASE-MERGES", "IR-ACT-LABEL", "IR-ACT-RESET", "IR-ACT-MERGE", "IR-ACT-PICK", "IR-ACT-REWORD",
-    "IR-ACT-SQUASH", "IR-ACT-FIXUP", "IR-ACT-FIXUP-C", "IR-ACT-DROP", "IR-PREVIEW", "HOOK-REWRITE-RUN")
+GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy")
 {
     std::uint64_t seed = 0x4b01ee55ULL;
     if (const char* env = std::getenv("GGUI_IR_SEED"))
@@ -976,8 +971,7 @@ GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git 
 
 namespace ggtest {
 
-GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, previewed and run like git onto a new base",
-    "IR-ACT-MERGE", "IR-ACT-LABEL", "IR-ACT-RESET", "IR-OPT-REBASE-MERGES", "IR-PREVIEW")
+GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, previewed and run like git onto a new base")
 {
     // a1, then x1, y1, z1 on branches x, y, z from a1, merged at once (octopus), then e1; up
     // changes another file.

@@ -66,7 +66,7 @@ void blameFromChanges(Scenario& s, const char* group, const std::string& path)
 
 } // namespace
 
-GG_TEST("blame", "blame at a commit and on the working tree", "BLAME-AT-COMMIT", "BLAME-WORKTREE", "BLAME-UNCOMMITTED")
+GG_TEST("blame", "blame at a commit and on the working tree")
 {
     const BlameRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -98,7 +98,7 @@ GG_TEST("blame", "blame at a commit and on the working tree", "BLAME-AT-COMMIT",
     GG_CHECK(s.textShown("//Blame", "story.txt at " + r.c2.substr(0, 10)));
 }
 
-GG_TEST("blame", "filter, history, tooltips", "BLAME-FILTER", "BLAME-BACK-FWD", "BLAME-MOUSE-BUTTONS", "BLAME-TOOLTIP")
+GG_TEST("blame", "filter, history, tooltips")
 {
     const BlameRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -133,8 +133,7 @@ GG_TEST("blame", "filter, history, tooltips", "BLAME-FILTER", "BLAME-BACK-FWD", 
     GG_CHECK(s.waitUntil([&] { return blameShows(s, "story.txt", r.c1); }));
 }
 
-GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks", "BLAME-BEFORE", "BLAME-ORIGIN",
-    "BLAME-REVEAL", "BLAME-COPY", "BLAME-SELECT-BLOCK", "BLAME-COPY-BLOCK")
+GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
 {
     const BlameRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));

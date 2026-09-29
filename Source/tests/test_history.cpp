@@ -35,8 +35,7 @@ bool hasBadge(const ggui::core::HistoryRow* row, ggui::core::RefKind kind, const
 
 } // namespace
 
-GG_TEST("history", "graph, rows, badges and short IDs", "HIST-GRAPH", "HIST-ROW-FIELDS", "HIST-BADGES",
-    "HIST-SHORT-ID")
+GG_TEST("history", "graph, rows, badges and short IDs")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     GG_REQUIRE(s.openRepository(repo));
@@ -78,7 +77,7 @@ GG_TEST("history", "graph, rows, badges and short IDs", "HIST-GRAPH", "HIST-ROW-
     GG_CHECK(s.itemText(rowRef(mergeHex).c_str()).rfind(merge->shortId + " Merge feature", 0) == 0);
 }
 
-GG_TEST("history", "published vs unpublished commits", "HIST-PUBLISHED-COLOUR", "REMOTE-PUBLISHED", "INFO-PUBLISHED")
+GG_TEST("history", "published vs unpublished commits")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -99,7 +98,7 @@ GG_TEST("history", "published vs unpublished commits", "HIST-PUBLISHED-COLOUR", 
     GG_CHECK(s.session()->info().details()->published);
 }
 
-GG_TEST("history", "Working tree and Index rows", "HIST-WT-ROW", "HIST-INDEX-ROW")
+GG_TEST("history", "Working tree and Index rows")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -113,7 +112,7 @@ GG_TEST("history", "Working tree and Index rows", "HIST-WT-ROW", "HIST-INDEX-ROW
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
 }
 
-GG_TEST("history", "stash badges on base commits", "HIST-STASH-BADGES")
+GG_TEST("history", "stash badges on base commits")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     GG_REQUIRE(s.openRepository(repo));
@@ -128,8 +127,7 @@ GG_TEST("history", "stash badges on base commits", "HIST-STASH-BADGES")
     GG_CHECK(s.itemExists(("//History/**/" + base + "/###badge_stash@{0}").c_str()));
 }
 
-GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all",
-    "HIST-SCOPE", "BR-TOGGLE", "BR-CTRL-ONLY", "BR-BADGE-HIDDEN", "BR-SHOW-HIDE-ALL")
+GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     s.git(repo, {"branch", "alias", "main"});
@@ -176,8 +174,7 @@ GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-cl
         GG_CHECK(s.session()->history().refVisible(std::string("refs/heads/") + b));
 }
 
-GG_TEST("history", "search by message, ID, branch and tag; no graph while filtering", "HIST-SEARCH",
-    "HIST-FILTER-NO-GRAPH")
+GG_TEST("history", "search by message, ID, branch and tag; no graph while filtering")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     s.git(repo, {"tag", "v-special", "feature~1"});
@@ -224,8 +221,7 @@ GG_TEST("history", "search by message, ID, branch and tag; no graph while filter
     GG_CHECK(history.graphShown());
 }
 
-GG_TEST("history", "merges start collapsed; expand and collapse merged history", "HIST-MERGE-EXPAND",
-    "HIST-MERGE-COLLAPSED-DEFAULT")
+GG_TEST("history", "merges start collapsed; expand and collapse merged history")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string f1 = s.revParse(repo, "feature~1");
@@ -251,7 +247,7 @@ GG_TEST("history", "merges start collapsed; expand and collapse merged history",
     GG_CHECK(s.waitUntil([&] { return findRow(s, f1) == nullptr; }));
 }
 
-GG_TEST("history", "a merge offers collapse only when collapsing hides commits", "HIST-MERGE-NOTHING-HIDDEN")
+GG_TEST("history", "a merge offers collapse only when collapsing hides commits")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string merge = s.revParse(repo, "main");
@@ -289,8 +285,7 @@ GG_TEST("history", "a merge offers collapse only when collapsing hides commits",
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
-GG_TEST("history", "expanding or collapsing a merge keeps the whole list in view while History reloads",
-    "HIST-MERGE-TOGGLE-STABLE")
+GG_TEST("history", "expanding or collapsing a merge keeps the whole list in view while History reloads")
 {
     const fs::path repo = s.largeFixture();
     GG_REQUIRE(s.openRepository(repo));
@@ -323,7 +318,7 @@ GG_TEST("history", "expanding or collapsing a merge keeps the whole list in view
     }
 }
 
-GG_TEST("history", "keyboard navigation", "HIST-KEY-UPDOWN")
+GG_TEST("history", "keyboard navigation")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -341,8 +336,7 @@ GG_TEST("history", "keyboard navigation", "HIST-KEY-UPDOWN")
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
 }
 
-GG_TEST("history", "copy ID and full description; tooltip ID", "HIST-CTX-COPY-ID", "HIST-CTX-COPY-DESC",
-    "APP-COPY-ID-SHIFT", "APP-ID-DIMMED")
+GG_TEST("history", "copy ID and full description; tooltip ID")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -386,7 +380,7 @@ float rowTop(Scenario& s, const std::string& hex)
 
 } // namespace
 
-GG_TEST("history", "scroll position stays anchored on the rows in view", "HIST-SCROLL-ANCHOR")
+GG_TEST("history", "scroll position stays anchored on the rows in view")
 {
     const fs::path repo = tallRepo(s);
     GG_REQUIRE(s.openRepository(repo));
@@ -422,7 +416,7 @@ GG_TEST("history", "scroll position stays anchored on the rows in view", "HIST-S
     GG_CHECK(rowTop(s, below) > 0.0f);
 }
 
-GG_TEST("history", "tooltips wait until scrolling stops", "HIST-TOOLTIP-SCROLL")
+GG_TEST("history", "tooltips wait until scrolling stops")
 {
     const fs::path repo = tallRepo(s);
     GG_REQUIRE(s.openRepository(repo));
@@ -450,8 +444,7 @@ GG_TEST("history", "tooltips wait until scrolling stops", "HIST-TOOLTIP-SCROLL")
     GG_CHECK(tipShown());
 }
 
-GG_TEST("history", "large history: first page, Show more, reveal, cancel", "HIST-SHOW-MORE", "HIST-REVEAL",
-    "HIST-REVEAL-CANCEL", "APP-CANCEL-LONG-OPS")
+GG_TEST("history", "large history: first page, Show more, reveal, cancel")
 {
     const fs::path repo = s.largeFixture();
     GG_REQUIRE(s.openRepository(repo));
@@ -475,7 +468,7 @@ GG_TEST("history", "large history: first page, Show more, reveal, cancel", "HIST
     GG_CHECK(history.row(Oid::fromHex(deep)) != nullptr);
 }
 
-GG_TEST("history", "cancel a long history load and a reveal", "HIST-REVEAL-CANCEL", "APP-CANCEL-LONG-OPS")
+GG_TEST("history", "cancel a long history load and a reveal")
 {
     const fs::path repo = s.largeFixture();
     GG_REQUIRE(s.openRepository(repo));
@@ -496,7 +489,7 @@ GG_TEST("history", "cancel a long history load and a reveal", "HIST-REVEAL-CANCE
     GG_CHECK(history.rows().size() < 100000);
 }
 
-GG_TEST("history", "first rows of a large history appear quickly", "HIST-LOAD-FAST")
+GG_TEST("history", "first rows of a large history appear quickly")
 {
     // GGUI_PERF_REPO measures another repository as well (a real one, opened read-only).
     std::vector<fs::path> repos{s.largeFixture()};

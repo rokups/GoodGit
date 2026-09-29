@@ -32,8 +32,7 @@ fs::path origin(Scenario& s, const fs::path& repo) { return s.root() / (repo.fil
 
 } // namespace
 
-GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "BR-CREATE-CHECKOUT-DEFAULT", "BR-CHECKOUT", "BR-RENAME",
-    "BR-DELETE-LOCAL", "HIST-CTX-CREATE-BRANCH", "HIST-CTX-DELETE-BRANCH")
+GG_TEST("refs", "create, check out, rename and delete branches")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -77,8 +76,7 @@ GG_TEST("refs", "create, check out, rename and delete branches", "BR-CREATE", "B
     s.settle();
 }
 
-GG_TEST("refs", "Branches: a tree split on '/', groups named by their common prefix; double-click checks out",
-    "BR-TREE", "BR-DOUBLE-CLICK-CHECKOUT")
+GG_TEST("refs", "Branches: a tree split on '/', groups named by their common prefix; double-click checks out")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     for (const char* b : {"feature/one", "feature/two", "user/rk/a", "user/rk/b", "solo/x"})
@@ -112,8 +110,7 @@ GG_TEST("refs", "Branches: a tree split on '/', groups named by their common pre
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
-GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNSET-UPSTREAM", "BR-FF-UPSTREAM",
-    "BR-SET-UPSTREAM-FILTER")
+GG_TEST("refs", "upstream: set, unset, fast-forward")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "behind", "origin/main~1"});
@@ -162,8 +159,7 @@ GG_TEST("refs", "upstream: set, unset, fast-forward", "BR-SET-UPSTREAM", "BR-UNS
     s.settle();
 }
 
-GG_TEST("refs", "move a branch; warning for a branch checked out elsewhere", "BR-MOVE", "BR-MOVE-WORKTREE-WARN",
-    "HIST-CTX-MOVE-BRANCH")
+GG_TEST("refs", "move a branch; warning for a branch checked out elsewhere")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     s.git(repo, {"branch", "mover", "HEAD~2"});
@@ -192,8 +188,7 @@ GG_TEST("refs", "move a branch; warning for a branch checked out elsewhere", "BR
     fs::remove(repo / "untracked-note.txt");
 }
 
-GG_TEST("refs", "delete a branch on its remote, and everywhere", "BR-DELETE-REMOTE", "BR-DELETE-ALL",
-    "REMOTE-PUSH-DELETE-BRANCH")
+GG_TEST("refs", "delete a branch on its remote, and everywhere")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "remote-only", "HEAD~1"});
@@ -217,8 +212,7 @@ GG_TEST("refs", "delete a branch on its remote, and everywhere", "BR-DELETE-REMO
     GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "both"}).empty());
 }
 
-GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote", "TAG-CREATE",
-    "TAG-ANNOTATED", "TAG-DELETE", "TAG-PUSH", "TAG-DELETE-REMOTE", "TAG-DELETE-MENU", "TAG-REMOTE-ONLY")
+GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     // A tag only on origin.
@@ -285,8 +279,7 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; t
     s.settle();
 }
 
-GG_TEST("refs", "remotes: add, edit URL, prune on fetch, delete", "REM-ADD", "REM-EDIT-URL", "REM-PRUNE-ON-FETCH",
-    "REM-DELETE")
+GG_TEST("refs", "remotes: add, edit URL, prune on fetch, delete")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -317,7 +310,7 @@ GG_TEST("refs", "remotes: add, edit URL, prune on fetch, delete", "REM-ADD", "RE
     s.settle();
 }
 
-GG_TEST("refs", "create a branch from a reflog entry", "REFLOG-BRANCH")
+GG_TEST("refs", "create a branch from a reflog entry")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string old = s.head(repo);

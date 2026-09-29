@@ -105,8 +105,7 @@ std::string shown(std::string_view s)
 
 } // namespace
 
-GG_TEST("conflict-stress", "algebra: a stack with first-class conflicts rebased onto an edited ancestor stays well-formed and never nests",
-    "CONF-STACK-REBASE")
+GG_TEST("conflict-stress", "algebra: a stack with first-class conflicts rebased onto an edited ancestor stays well-formed and never nests")
 {
     Gen g(s.seed());
     mk::WriteOptions writeOptions;
@@ -189,8 +188,7 @@ GG_TEST("conflict-stress", "algebra: a stack with first-class conflicts rebased 
 
 namespace ggtest {
 
-GG_TEST("conflict-stress", "engine: ancestors edited under a stack with first-class conflicts; every rewrite applies and stays well-formed",
-    "CONF-STACK-REWRITE-ROBUST")
+GG_TEST("conflict-stress", "engine: ancestors edited under a stack with first-class conflicts; every rewrite applies and stays well-formed")
 {
     Gen g(s.seed() ^ 0x5eed);
     const fs::path repo = s.fixture(Recipe::Empty, "stack");

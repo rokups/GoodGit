@@ -50,8 +50,7 @@ void selectCommit(Scenario& s, const std::string& hex)
 
 } // namespace
 
-GG_TEST("changes", "working tree groups: staged, unstaged, untracked, conflicted", "CHG-GROUPS",
-    "CHG-STATUS-ICONS", "CHG-RENAMES", "CONF-NATIVE-STAGES")
+GG_TEST("changes", "working tree groups: staged, unstaged, untracked, conflicted")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -86,8 +85,7 @@ GG_TEST("changes", "working tree groups: staged, unstaged, untracked, conflicted
     GG_CHECK(s.itemText(fileRef(s, "Conflicted", "f.txt").c_str()).rfind("U  f.txt", 0) == 0);
 }
 
-GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES", "CHG-FILTER", "CHG-COMPARE-HEAD",
-    "CHG-COMPARE-WITH", "CHG-HEADER-WT")
+GG_TEST("changes", "commit files, filter, compare with HEAD, header")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "changed\n");
@@ -150,8 +148,7 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header", "CHG-FILES
     GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);
 }
 
-GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation", "CHG-MULTISELECT-CTRL",
-    "CHG-MULTISELECT-SHIFT", "CHG-SELECT-ALL", "CHG-KEY-NAV")
+GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -186,9 +183,7 @@ GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigatio
     GG_CHECK_STR_EQ(changes.current()->path, "a.txt");
 }
 
-GG_TEST("changes", "file context menu: copy, patch, save patch, blame", "CHG-CTX-COPY-NAME", "CHG-CTX-COPY-REL",
-    "CHG-CTX-COPY-ABS", "CHG-CTX-COPY-PATCH", "CHG-CTX-SAVE-PATCH", "CHG-CTX-BLAME", "PATCH-COPY", "PATCH-SAVE",
-    "PATCH-SAVE-SELECTION")
+GG_TEST("changes", "file context menu: copy, patch, save patch, blame")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "dir/file.txt", "one\n");
@@ -231,8 +226,7 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame", "CHG-CTX
     GG_CHECK(s.waitUntil([&] { return s.session()->blame().blame() && s.session()->blame().blame()->query.path == "dir/file.txt"; }));
 }
 
-GG_TEST("changes", "stash contents: working tree, index and untracked parts", "STASH-INSPECT", "DIFF-STASH-PARTS",
-    "STASH-PANEL", "STASH-LIST")
+GG_TEST("changes", "stash contents: working tree, index and untracked parts")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     GG_REQUIRE(s.openRepository(repo));
@@ -262,9 +256,7 @@ GG_TEST("changes", "stash contents: working tree, index and untracked parts", "S
     }));
 }
 
-GG_TEST("info", "change information: message, author, committer, date, ID, parents", "INFO-MESSAGE", "INFO-AUTHOR",
-    "INFO-COPY-NAME", "INFO-COPY-EMAIL", "INFO-DATE", "INFO-COMMIT-ID-COPY", "INFO-PARENTS-REVEAL", "INFO-COMMITTER",
-    "INFO-AUTHOR-PLAIN", "APP-ID-DIMMED")
+GG_TEST("info", "change information: message, author, committer, date, ID, parents")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     // A commit whose committer differs from its author.

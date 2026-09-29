@@ -54,7 +54,7 @@ bool rowsReady(Scenario& s, size_t n)
 
 } // namespace
 
-GG_TEST("staging", "stage, unstage and discard files", "CHG-STAGE", "CHG-UNSTAGE", "CHG-DISCARD")
+GG_TEST("staging", "stage, unstage and discard files")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -77,7 +77,7 @@ GG_TEST("staging", "stage, unstage and discard files", "CHG-STAGE", "CHG-UNSTAGE
     s.settle();
 }
 
-GG_TEST("staging", "Space and Enter toggle staging", "CHG-KEY-TOGGLE-SPACE", "CHG-KEY-TOGGLE-ENTER")
+GG_TEST("staging", "Space and Enter toggle staging")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -90,8 +90,7 @@ GG_TEST("staging", "Space and Enter toggle staging", "CHG-KEY-TOGGLE-SPACE", "CH
     GG_CHECK(waitXY(s, repo, "b.txt", ".M"));
 }
 
-GG_TEST("staging", "stage all, unstage all, stage modified", "CHG-STAGE-ALL", "CHG-UNSTAGE-ALL", "CHG-STAGE-MODIFIED",
-    "HIST-WT-CTX-STAGE-ALL", "HIST-WT-CTX-UNSTAGE-ALL")
+GG_TEST("staging", "stage all, unstage all, stage modified")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -113,8 +112,7 @@ GG_TEST("staging", "stage all, unstage all, stage modified", "CHG-STAGE-ALL", "C
     GG_CHECK(waitXY(s, repo, "u.txt", "A."));
 }
 
-GG_TEST("staging", "intent to add, delete; no Track / Untrack", "CHG-INTENT-TO-ADD", "CHG-NO-TRACK-UNTRACK",
-    "CHG-CTX-DELETE")
+GG_TEST("staging", "intent to add, delete; no Track / Untrack")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     s.write(repo, "v.txt", "another untracked\n");
@@ -138,7 +136,7 @@ GG_TEST("staging", "intent to add, delete; no Track / Untrack", "CHG-INTENT-TO-A
     s.settle();
 }
 
-GG_TEST("staging", "drag files between Staged and Unstaged", "CHG-DRAG-STAGE", "CHG-DRAG-UNSTAGE")
+GG_TEST("staging", "drag files between Staged and Unstaged")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -149,7 +147,7 @@ GG_TEST("staging", "drag files between Staged and Unstaged", "CHG-DRAG-STAGE", "
     GG_CHECK(waitXY(s, repo, "a.txt", ".M"));
 }
 
-GG_TEST("staging", "discard all changes from the Working tree menu", "HIST-WT-CTX-DISCARD")
+GG_TEST("staging", "discard all changes from the Working tree menu")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -162,8 +160,7 @@ GG_TEST("staging", "discard all changes from the Working tree menu", "HIST-WT-CT
     s.settle();
 }
 
-GG_TEST("staging", "external editor, folder and diff tools", "CHG-CTX-OPEN", "CHG-CTX-OPEN-FOLDER", "CHG-CTX-EXTDIFF-HEAD",
-    "CHG-CTX-EXTDIFF-PARENT", "APP-EXT-EDITOR", "APP-EXT-FOLDER", "APP-EXT-DIFF-HEAD", "APP-EXT-DIFF-PARENT")
+GG_TEST("staging", "external editor, folder and diff tools")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f1.txt", "edited\n");
@@ -198,7 +195,7 @@ GG_TEST("staging", "external editor, folder and diff tools", "CHG-CTX-OPEN", "CH
     s.settle();
 }
 
-GG_TEST("staging", "double-click opens new files in the editor, others in the diff tool", "CHG-DBLCLICK-OPEN")
+GG_TEST("staging", "double-click opens new files in the editor, others in the diff tool")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.commitFile(repo, "f2.txt", "changed\n", "Change f2");

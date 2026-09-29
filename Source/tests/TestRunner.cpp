@@ -384,15 +384,13 @@ std::vector<TestInfo>& registry()
     return tests;
 }
 
-Registrar::Registrar(const char* category, const char* name, std::initializer_list<const char*> specs, TestBody body,
-    const char* file, int line, bool manual)
+Registrar::Registrar(const char* category, const char* name, TestBody body, const char* file, int line,
+    bool manual)
 {
     TestInfo info;
     info.manual = manual;
     info.category = category;
     info.name = name;
-    for (const char* s : specs)
-        info.specs.emplace_back(s);
     info.body = body;
     info.file = file;
     info.line = line;
@@ -490,10 +488,7 @@ void prepareProcessForTests(const char* argv0)
 int listTests()
 {
     for (const auto& t : registry()) {
-        std::printf("%s/%s\t", t.category.c_str(), t.name.c_str());
-        for (size_t i = 0; i < t.specs.size(); ++i)
-            std::printf("%s%s", i ? "," : "", t.specs[i].c_str());
-        std::printf("\n");
+        std::printf("%s/%s\n", t.category.c_str(), t.name.c_str());
     }
     return 0;
 }
@@ -655,7 +650,7 @@ void TestRunner::writeTrace()
         default: break;
         }
         out["tests"].push_back({{"category", t->Category}, {"name", t->Name}, {"status", status},
-            {"specs", it->second->specs}, {"file", it->second->file}, {"line", it->second->line}});
+            {"file", it->second->file}, {"line", it->second->line}});
     }
     std::ofstream f(m_traceFile);
     f << out.dump(2) << '\n';

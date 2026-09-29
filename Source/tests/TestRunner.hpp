@@ -17,7 +17,7 @@ namespace ggtest {
 // preferences: creates the test root and isolates the process environment.
 void prepareProcessForTests(const char* argv0);
 
-// Prints registered tests and their spec IDs. Returns the process exit code.
+// Prints the registered tests (category/name). Returns the process exit code.
 int listTests();
 
 class TestRunner {

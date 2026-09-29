@@ -882,7 +882,7 @@ void setTheme(Scenario& s, const char* theme)
 
 } // namespace
 
-GG_MANUAL_TEST("readme", "screenshots of a realistic repository for the README", "HIST-GRAPH")
+GG_MANUAL_TEST("readme", "screenshots of a realistic repository for the README")
 {
     const Tinyedit t = buildTinyedit(s);
     GG_REQUIRE(s.openRepository(t.path));

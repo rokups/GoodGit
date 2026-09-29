@@ -59,8 +59,7 @@ void drag(Scenario& s, const std::string& from, const std::string& to, ImGuiKeyC
 
 } // namespace
 
-GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser", "HIST-DND-MOVE-BEFORE",
-    "HIST-DND-MOVE-AFTER", "HIST-DND-SQUASH", "HIST-DND-REBASE", "HIST-DND-CHOOSER")
+GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser")
 {
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -94,7 +93,7 @@ GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c3", "c1"}));
 }
 
-GG_TEST("dnd", "a branch badge onto a commit moves the branch", "HIST-DND-BRANCH")
+GG_TEST("dnd", "a branch badge onto a commit moves the branch")
 {
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -104,8 +103,7 @@ GG_TEST("dnd", "a branch badge onto a commit moves the branch", "HIST-DND-BRANCH
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
 }
 
-GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working tree files into any commit",
-    "HIST-DND-FILES")
+GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working tree files into any commit")
 {
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -130,8 +128,7 @@ GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working t
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("dnd", "the chooser's choices and Escape; a commit's files onto its child, HEAD or elsewhere; a commit onto itself",
-    "HIST-DND-CHOOSER", "HIST-DND-FILES", "HIST-DND-MOVE-BEFORE")
+GG_TEST("dnd", "the chooser's choices and Escape; a commit's files onto its child, HEAD or elsewhere; a commit onto itself")
 {
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));

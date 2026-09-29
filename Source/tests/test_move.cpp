@@ -70,8 +70,7 @@ bool moved(Scenario& s, const fs::path& repo, const std::string& from)
 
 } // namespace
 
-GG_TEST("move", "files: to the parent, to the child, to the working tree, revert", "ACT-MOVE-CHANGES-PARENT",
-    "ACT-MOVE-CHANGES-CHILD", "ACT-MOVE-CHANGES-WORKTREE", "CHG-CTX-MOVE-PARENT", "CHG-CTX-MOVE-CHILD", "CHG-CTX-REVERT")
+GG_TEST("move", "files: to the parent, to the child, to the working tree, revert")
 {
     const MoveRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "HEAD^{tree}");
@@ -111,8 +110,7 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, revert
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("move", "lines: a hunk to the parent and to the active commit", "DIFF-CTX-MOVE-PARENT", "DIFF-CTX-MOVE-CHILD",
-    "DIFF-CTX-MOVE-ACTIVE", "DIFF-CTX-MOVE-WORKTREE", "DIFF-CTX-REVERT")
+GG_TEST("move", "lines: a hunk to the parent and to the active commit")
 {
     const MoveRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "HEAD^{tree}");
@@ -167,8 +165,7 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit", "DIFF-CT
     // And to the child: HEAD~1 (X) has no line changes left; nothing selectable is fine.
 }
 
-GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode change: revert them in a commit",
-    "DIFF-CTX-REVERT", "DIFF-CTX-MOVE-PARENT")
+GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode change: revert them in a commit")
 {
     const fs::path repo = s.fixture(Recipe::Empty);
     s.write(repo, "crlf.txt", "one\r\ntwo\r\nthree\r\n");

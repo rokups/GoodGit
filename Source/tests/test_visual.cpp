@@ -88,7 +88,7 @@ void expectBaselines(ImGuiTestContext* ctx, const char* scene, bool& ok)
 
 } // namespace
 
-GG_TEST("visual", "graph lines are continuous from row to row", "HIST-GRAPH", "HIST-GRAPH-CONTINUOUS")
+GG_TEST("visual", "graph lines are continuous from row to row")
 {
     const fs::path repo = graphRepo(s);
     GG_REQUIRE(s.openRepository(repo));
@@ -112,7 +112,7 @@ GG_TEST("visual", "graph lines are continuous from row to row", "HIST-GRAPH", "H
     GG_CHECK(history.rowPitchConsistent());
 }
 
-GG_TEST("visual", "graph is not clipped at the left edge", "HIST-GRAPH-NOT-CLIPPED")
+GG_TEST("visual", "graph is not clipped at the left edge")
 {
     // HEAD on a merge commit: the largest outline, in lane 0.
     const fs::path repo = s.fixture(Recipe::Merges);
@@ -143,7 +143,7 @@ GG_TEST("visual", "graph is not clipped at the left edge", "HIST-GRAPH-NOT-CLIPP
     GG_CHECK(checked > 100);
 }
 
-GG_TEST("visual", "screenshots of the main views", "HIST-GRAPH")
+GG_TEST("visual", "screenshots of the main views")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -153,7 +153,7 @@ GG_TEST("visual", "screenshots of the main views", "HIST-GRAPH")
     s.screenshot("changes-diff-unified");
 }
 
-GG_TEST("visual", "text shares a baseline across widgets on one line", "UI-TEXT-BASELINE")
+GG_TEST("visual", "text shares a baseline across widgets on one line")
 {
     bool ok = true;
     expectBaselines(ctx, "welcome", ok);
@@ -194,7 +194,7 @@ GG_TEST("visual", "text shares a baseline across widgets on one line", "UI-TEXT-
     GG_CHECK(ok);
 }
 
-GG_TEST("visual", "readable colours: text keeps its contrast in the dark and the light theme", "UI-CONTRAST")
+GG_TEST("visual", "readable colours: text keeps its contrast in the dark and the light theme")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"tag", "v1"});
@@ -251,7 +251,7 @@ GG_TEST("visual", "readable colours: text keeps its contrast in the dark and the
     }
 }
 
-GG_TEST("visual", "icon glyphs are vertically centred on the text", "UI-ICON-ALIGN")
+GG_TEST("visual", "icon glyphs are vertically centred on the text")
 {
     // Compare glyph boxes as baked for the UI and mono fonts at a few sizes: an icon's centre sits
     // on the centre of a capital letter ("H") within a pixel.

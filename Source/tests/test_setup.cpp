@@ -28,7 +28,7 @@ std::vector<std::string> ggRefs(Scenario& s, const fs::path& repo)
 
 } // namespace
 
-GG_TEST("setup", "initialize a repository from Welcome and the menu", "APP-WELCOME-INIT", "MENU-REPO-INIT")
+GG_TEST("setup", "initialize a repository from Welcome and the menu")
 {
     const fs::path first = s.path("fresh-one");
     ggui::setEnv("GGUI_TEST_PICK_PATH", first.string());
@@ -45,7 +45,7 @@ GG_TEST("setup", "initialize a repository from Welcome and the menu", "APP-WELCO
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
 }
 
-GG_TEST("setup", "git missing or too old: a blocking prompt with Retry", "APP-PROMPT-GIT-MISSING", "APP-PROMPT-GIT-OLD")
+GG_TEST("setup", "git missing or too old: a blocking prompt with Retry")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string path = ggui::getEnv("PATH");
@@ -80,8 +80,7 @@ GG_TEST("setup", "git missing or too old: a blocking prompt with Retry", "APP-PR
     s.settle();
 }
 
-GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoable, ignorable", "APP-PROMPT-GGREFS",
-    "GGREFS-DETECT", "GGREFS-LIST", "GGREFS-BRANCH", "GGREFS-BACKUP", "GGREFS-DELETE", "GGREFS-UNDO", "GGREFS-IGNORE")
+GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoable, ignorable")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     // Two commits only refs/gg keeps alive (tips of two lines), plus a ref on a reachable commit.
@@ -139,9 +138,7 @@ GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoab
 
 namespace ggtest {
 
-GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides", "SET-EDITOR-USER",
-    "SET-EDITOR-REPO", "SET-EDITOR-WORKTREE", "SET-MERGETOOL", "SET-DIFFTOOL", "SET-PULL-METHOD", "SET-SAME-CHANGE",
-    "SET-IDENTITY", "SET-SCOPE-TABS", "SET-SCOPE-HINT", "SET-SCOPE-INHERIT", "SET-WORKTREE-TOGGLE")
+GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -246,8 +243,7 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     ctx->WindowClose("//Settings");
 }
 
-GG_TEST("setup", "Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the system config show their values",
-    "SET-SCOPE-XDG-SYSTEM")
+GG_TEST("setup", "Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the system config show their values")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     // git config --global reads $XDG_CONFIG_HOME/git/config too (below ~/.gitconfig).
@@ -276,7 +272,7 @@ GG_TEST("setup", "Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the 
     fs::remove(system / "gitconfig");
 }
 
-GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui", "TB-AHEAD-BEHIND-REFRESH")
+GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -289,8 +285,7 @@ GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui", "TB
     GG_CHECK(s.waitUntil([&] { return badge("tb_push").find("\xe2\x86\x91") == std::string::npos; }));
 }
 
-GG_TEST("setup", "git versions ggui reads: newer major, vendor suffix, no number; a typed path with a trailing slash; copying a notice",
-    "APP-PROMPT-GIT-OLD", "APP-WELCOME-OPEN-PATH", "APP-ERROR-POPUP")
+GG_TEST("setup", "git versions ggui reads: newer major, vendor suffix, no number; a typed path with a trailing slash; copying a notice")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string path = ggui::getEnv("PATH");

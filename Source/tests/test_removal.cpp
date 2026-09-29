@@ -39,8 +39,7 @@ gg::RunResult gitggAsUser(const fs::path& repo, const std::vector<std::string>& 
 
 } // namespace
 
-GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only journal and caches, deleting it changes nothing",
-    "REMOVAL-NO-GG-STATE")
+GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only journal and caches, deleting it changes nothing")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     // main and side both edit shared.txt: rebasing main onto side gives a text conflict.
@@ -144,7 +143,7 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     GG_CHECK(s.session()->operations().empty());
 }
 
-GG_TEST("removal", "git gg has none of the old gg command families", "REMOVAL-NO-OLD-CLI")
+GG_TEST("removal", "git gg has none of the old gg command families")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string head = s.head(repo);

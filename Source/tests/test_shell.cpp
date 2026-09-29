@@ -28,8 +28,7 @@ bool closed(Scenario& s) { return s.session() == nullptr; }
 
 } // namespace
 
-GG_TEST("shell", "open by typed path, default layout, close from the menu", "APP-WELCOME-OPEN-PATH",
-    "LAYOUT-DEFAULT", "LAYOUT-HIDDEN-PANELS", "LAYOUT-TAB-ORDER", "TB-BRANCH", "MENU-REPO-CLOSE", "APP-OPEN-STATES")
+GG_TEST("shell", "open by typed path, default layout, close from the menu")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -76,8 +75,7 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu", "APP
     GG_CHECK(s.itemExists("//Welcome/##welcome_path"));
 }
 
-GG_TEST("shell", "folders dropped on the window: the first opens, the repositories among them join the recent list",
-    "APP-DROP-FOLDER", "APP-DROP-FOLDERS")
+GG_TEST("shell", "folders dropped on the window: the first opens, the repositories among them join the recent list")
 {
     const fs::path first = s.fixture(Recipe::Linear, "first");
     const fs::path second = s.fixture(Recipe::Merges, "second");
@@ -122,8 +120,7 @@ GG_TEST("shell", "folders dropped on the window: the first opens, the repositori
     GG_CHECK(fs::equivalent(s.app.settings().data().recent.front(), second));
 }
 
-GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar", "APP-WELCOME-OPEN", "MENU-REPO-OPEN",
-    "MENU-REPO-OPEN-KEY", "MENU-REPO-CLOSE-KEY")
+GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.track(repo);
@@ -147,7 +144,7 @@ GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar", "APP-WE
     GG_CHECK(closed(s));
 }
 
-GG_TEST("shell", "opening shows progress and can be cancelled", "APP-WELCOME-PROGRESS", "APP-WELCOME-CANCEL")
+GG_TEST("shell", "opening shows progress and can be cancelled")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     gg::setSlowGitLatency(std::chrono::milliseconds(5000));
@@ -164,9 +161,7 @@ GG_TEST("shell", "opening shows progress and can be cancelled", "APP-WELCOME-PRO
     GG_CHECK(s.waitIdle());
 }
 
-GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher", "APP-WELCOME-RECENT-OPEN",
-    "APP-WELCOME-RECENT-DELETE", "APP-WELCOME-RECENT-INFO", "MENU-REPO-RECENT", "MENU-REPO-RECENT-FILTER",
-    "MENU-REPO-RECENT-INFO", "TB-REPO-SWITCH")
+GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
 {
     const fs::path remote = s.fixture(Recipe::WithRemote);
     const fs::path linear = s.fixture(Recipe::Linear);
@@ -215,8 +210,7 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher", "AP
     GG_CHECK(s.waitUntil([&] { return s.app.settings().data().recent.size() == before - 2; }, 5.0f));
 }
 
-GG_TEST("shell", "errors open a popup; warnings are corner notifications", "APP-OPEN-ERROR", "APP-ERROR-POPUP",
-    "APP-ERROR-DISMISS", "APP-NOTIFY-TOAST")
+GG_TEST("shell", "errors open a popup; warnings are corner notifications")
 {
     const fs::path notRepo = s.path("not-a-repo");
     fs::create_directories(notRepo);
@@ -253,8 +247,7 @@ GG_TEST("shell", "errors open a popup; warnings are corner notifications", "APP-
     GG_CHECK(s.waitUntil([&] { return s.app.toasts().empty(); }, 15.0f));
 }
 
-GG_TEST("shell", "repository kinds: bare, unborn, linked worktree, SHA-256, detached", "APP-OPEN-STATES",
-    "TB-DETACHED", "HIST-WT-ROW")
+GG_TEST("shell", "repository kinds: bare, unborn, linked worktree, SHA-256, detached")
 {
     const fs::path bare = s.fixture(Recipe::Bare);
     GG_REQUIRE(s.openRepository(bare));
@@ -287,7 +280,7 @@ GG_TEST("shell", "repository kinds: bare, unborn, linked worktree, SHA-256, deta
     GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_branch"), "detached");
 }
 
-GG_TEST("shell", "repository state badge", "APP-STATE-DETECT", "TB-STATE-BADGE", "CONF-NATIVE-DETECT")
+GG_TEST("shell", "repository state badge")
 {
     const std::pair<Recipe, const char*> cases[] = {{Recipe::MidMerge, "MERGING"}, {Recipe::MidRebase, "REBASING"},
         {Recipe::MidRebaseApply, "REBASING"}, {Recipe::MidCherryPick, "CHERRY-PICKING"},
@@ -314,9 +307,7 @@ GG_TEST("shell", "repository state badge", "APP-STATE-DETECT", "TB-STATE-BADGE",
     GG_CHECK(!s.itemExists("//##Toolbar/###tb_state"));
 }
 
-GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settings, quit", "MENU-REPO-COPY-PATH",
-    "MENU-REPO-REFRESH", "MENU-REPO-REFRESH-KEY", "TB-REFRESH", "MENU-REPO-OPEN-WORKDIR", "TB-OPEN-FOLDER", "MENU-REPO-SETTINGS",
-    "MENU-REPO-QUIT")
+GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settings, quit")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const fs::path opened = s.fakeTool(kFileManager);
@@ -359,9 +350,7 @@ GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settin
     GG_CHECK(s.waitIdle());
 }
 
-GG_TEST("shell", "View menu: panels, next/previous changed file, reset layout", "MENU-VIEW-TOGGLE-PANEL",
-    "MENU-VIEW-RESET-LAYOUT", "MENU-VIEW-NEXT-FILE", "MENU-VIEW-NEXT-FILE-KEY", "MENU-VIEW-PREV-FILE",
-    "MENU-VIEW-PREV-FILE-KEY")
+GG_TEST("shell", "View menu: panels, next/previous changed file, reset layout")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -409,7 +398,7 @@ GG_TEST("shell", "View menu: panels, next/previous changed file, reset layout", 
     GG_CHECK(dockOf(ctx, "//Diff") != nullptr && dockOf(ctx, "//Blame") == dockOf(ctx, "//Diff"));
 }
 
-GG_TEST("shell", "settings persist across restarts", "SET-SCALE", "SET-THEME", "APP-LOG-FILE")
+GG_TEST("shell", "settings persist across restarts")
 {
     s.app.openSettings();
     ctx->Yield(2);
@@ -426,8 +415,7 @@ GG_TEST("shell", "settings persist across restarts", "SET-SCALE", "SET-THEME", "
     GG_CHECK(text.find("scale=1.50 theme=light") != std::string::npos);
 }
 
-GG_TEST("shell", "auto-open argv[1], else the most recent existing repository", "APP-AUTOOPEN-ARG",
-    "APP-AUTOOPEN-RECENT", "APP-LOG-FILE", "HARNESS-SMOKE")
+GG_TEST("shell", "auto-open argv[1], else the most recent existing repository")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const fs::path log1 = s.path("first.log");
@@ -451,8 +439,7 @@ GG_TEST("shell", "auto-open argv[1], else the most recent existing repository", 
     GG_CHECK(text.find("opening " + (s.root() / "gone").string()) == std::string::npos);
 }
 
-GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID", "TB-HEAD-PLAIN", "TB-HEAD-COPY",
-    "APP-COPY-ID-SHIFT")
+GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -478,8 +465,7 @@ GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID", "TB-HEAD-PLA
     GG_CHECK_STR_EQ(s.clipboard(), s.head(repo));
 }
 
-GG_TEST("shell", "activity spinner, task tooltip and Cancel", "TB-SPINNER", "TB-CANCEL", "TB-TASK-TOOLTIP",
-    "APP-CANCEL-LONG-OPS")
+GG_TEST("shell", "activity spinner, task tooltip and Cancel")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -498,8 +484,7 @@ GG_TEST("shell", "activity spinner, task tooltip and Cancel", "TB-SPINNER", "TB-
     GG_CHECK(s.waitUntil([&] { return !s.itemExists("//##Toolbar/##tb_activity"); }, 5.0f));
 }
 
-GG_TEST("shell", "unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees",
-    "APP-STATE-DETECT", "TB-STATE-BADGE", "APP-OPEN-STATES", "REM-LIST", "TAG-FILTER", "WT-LIST")
+GG_TEST("shell", "unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees")
 {
     // a.txt: c1 "1", c2 "2", c3 "3"; "side" changes it to "s" (s1) and adds s.txt (s2).
     const fs::path repo = s.fixture(Recipe::Empty);
@@ -605,8 +590,7 @@ GG_TEST("shell", "unusual repository states: sequences between commits, detached
     s.git(repo, {"worktree", "remove", "--force", orphan.string()});
 }
 
-GG_TEST("shell", "while a mutation runs every menu disables what would conflict; browsing still works",
-    "TB-REMOTE-BUSY")
+GG_TEST("shell", "while a mutation runs every menu disables what would conflict; browsing still works")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "other", "HEAD~1"});
@@ -716,8 +700,7 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
-GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not JSON; out-of-range values are clamped",
-    "SET-SCALE", "SET-THEME", "APP-LOG-FILE")
+GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not JSON; out-of-range values are clamped")
 {
     // A fresh ggui (a restart) reads each settings.json; what it cannot use falls back to defaults.
     auto start = [&](const std::string& name, const std::string& json) {
@@ -741,8 +724,7 @@ GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not
     GG_CHECK(types.find("scale=1.00 theme=dark recent=0") != std::string::npos);
 }
 
-GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a second path are reported", "APP-AUTOOPEN-ARG",
-    "HARNESS-SMOKE")
+GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a second path are reported")
 {
     auto r = s.runGgui({"--list-tests"});
     GG_CHECK(r.ok());
@@ -761,8 +743,7 @@ GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a 
     GG_CHECK(r.err.find("SDL_CreateGPUDevice failed") != std::string::npos);
 }
 
-GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress",
-    "TB-PUSH", "TB-HEAD-PLAIN", "ACT-NEW-MERGE", "CONF-NATIVE-PROGRESS")
+GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -815,8 +796,7 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     s.git(repo, {"rebase", "--abort"});
 }
 
-GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn branch with an upstream, no longer a repository",
-    "APP-WELCOME-RECENT-INFO")
+GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn branch with an upstream, no longer a repository")
 {
     const fs::path gone = s.fixture(Recipe::WithRemote, "upstream-gone");
     const fs::path unborn = s.fixture(Recipe::Empty, "unborn-upstream");

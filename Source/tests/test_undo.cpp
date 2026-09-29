@@ -39,9 +39,7 @@ bool undone(Scenario& s, const fs::path& repo, const std::string& expected)
 
 } // namespace
 
-GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists sources and restores",
-    "MENU-EDIT-UNDO", "MENU-EDIT-UNDO-KEY", "MENU-EDIT-REDO", "MENU-EDIT-REDO-KEY", "OPS-LIST", "OPS-SOURCE-LABEL",
-    "OPS-RESTORE", "OPS-NO-HOOKS-NOTE")
+GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists sources and restores")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -78,8 +76,7 @@ GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists
     GG_CHECK(undone(s, repo, after));
 }
 
-GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, local changes in the way",
-    "TB-UNDO", "FAIL-LOCKED-REF")
+GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, local changes in the way")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -186,7 +183,7 @@ GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, loca
     GG_CHECK_STR_EQ(repoState(s, repo), detached);
 }
 
-GG_TEST("undo", "a corrupt journal line is skipped, not fatal", "HOOK-JOURNAL-CORRUPT")
+GG_TEST("undo", "a corrupt journal line is skipped, not fatal")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -207,7 +204,7 @@ GG_TEST("undo", "a corrupt journal line is skipped, not fatal", "HOOK-JOURNAL-CO
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
-GG_TEST("undo", "every everyday mutation can be undone", "UNDO-ALL-MUTATIONS")
+GG_TEST("undo", "every everyday mutation can be undone")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -284,8 +281,7 @@ GG_TEST("undo", "every everyday mutation can be undone", "UNDO-ALL-MUTATIONS")
     check("move HEAD to parent", [&] { ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent"); });
 }
 
-GG_TEST("undo", "journal variants: foreign, torn and future records are skipped; busy and stale locks; a newer format is refused",
-    "HOOK-JOURNAL-CORRUPT", "OPS-LIST")
+GG_TEST("undo", "journal variants: foreign, torn and future records are skipped; busy and stale locks; a newer format is refused")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -369,8 +365,7 @@ GG_TEST("undo", "journal variants: foreign, torn and future records are skipped;
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
-GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it",
-    "MENU-EDIT-UNDO-KEY", "OPS-LIST")
+GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
@@ -422,8 +417,7 @@ GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main 
     GG_CHECK_STR_EQ(s.gitOut(wt1, {"branch", "--show-current"}), "side");
 }
 
-GG_TEST("undo", "failed operations are passed over by Undo and Redo", "MENU-EDIT-UNDO-KEY", "MENU-EDIT-REDO-KEY",
-    "HOOK-FAIL-POPUP")
+GG_TEST("undo", "failed operations are passed over by Undo and Redo")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));

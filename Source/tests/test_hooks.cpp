@@ -80,8 +80,7 @@ void writeHook(Scenario& s, const fs::path& repo, const std::string& name, const
 
 } // namespace
 
-GG_TEST("hooks", "git gg hooks install/status/uninstall: config-defined hooks from git 2.54, wrapper scripts before",
-    "HOOK-CLI-INSTALL", "HOOK-CLI-UNINSTALL", "HOOK-CLI-STATUS")
+GG_TEST("hooks", "git gg hooks install/status/uninstall: config-defined hooks from git 2.54, wrapper scripts before")
 {
     // Hooks defined in the configuration need git 2.54; older git gets wrapper scripts.
     const bool config = s.gitAtLeast(2, 54);
@@ -105,8 +104,7 @@ GG_TEST("hooks", "git gg hooks install/status/uninstall: config-defined hooks fr
     GG_CHECK_EQ(s.gitgg(repo, {"hooks", "status"}).exitCode, 1);
 }
 
-GG_TEST("hooks", "config-defined hooks: a repository path with a quote, a partial installation completed",
-    "HOOK-CONFIG-DEFINED")
+GG_TEST("hooks", "config-defined hooks: a repository path with a quote, a partial installation completed")
 {
     // Forced config mode, in a repository whose path has a quote in it (the hook commands quote it);
     // one hook removed by hand leaves the installation partial.
@@ -131,8 +129,7 @@ GG_TEST("hooks", "config-defined hooks: a repository path with a quote, a partia
     GG_CHECK(s.gitgg(quoted, {"hooks", "uninstall"}).ok());
 }
 
-GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact", "HOOK-WRAPPER",
-    "HOOK-CHAIN", "HOOK-CHAIN-EXIT", "HOOK-UNINSTALL-EXACT")
+GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and uninstall byte-exact")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path marker = s.path("post-commit-ran");
@@ -177,8 +174,7 @@ GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and un
     ggui::unsetEnv("GG_HOOKS_MODE");
 }
 
-GG_TEST("hooks", "plain git commands are journaled one operation each and Undo restores them", "HOOK-REFTX",
-    "HOOK-GROUPING", "HOOK-POST-CONTEXT", "HOOK-LOOP-GUARD")
+GG_TEST("hooks", "plain git commands are journaled one operation each and Undo restores them")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
@@ -261,8 +257,7 @@ GG_TEST("hooks", "plain git commands are journaled one operation each and Undo r
     GG_CHECK(!s.textShown("//Operations", "Undo covers ggui and git gg only"));
 }
 
-GG_TEST("hooks", "without git-gg on PATH the hooks do nothing, pre-push warns", "HOOK-MISSING-SILENT",
-    "HOOK-MISSING-PREPUSH-WARN")
+GG_TEST("hooks", "without git-gg on PATH the hooks do nothing, pre-push warns")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
@@ -275,7 +270,7 @@ GG_TEST("hooks", "without git-gg on PATH the hooks do nothing, pre-push warns", 
     GG_CHECK(r.err.find("git-gg not found") != std::string::npos);
 }
 
-GG_TEST("hooks", "hooks work in linked worktrees", "HOOK-WORKTREE")
+GG_TEST("hooks", "hooks work in linked worktrees")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
@@ -298,7 +293,7 @@ GG_TEST("hooks", "hooks work in linked worktrees", "HOOK-WORKTREE")
     GG_CHECK(s.gitOut(linked, {"log", "-1", "--format=%s"}) != "In the linked worktree");
 }
 
-GG_TEST("hooks", "a fetch of thousands of refs stays fast with the hooks", "HOOK-FAST")
+GG_TEST("hooks", "a fetch of thousands of refs stays fast with the hooks")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path origin = s.root() / (repo.filename().string() + "-origin.git");
@@ -324,8 +319,7 @@ GG_TEST("hooks", "a fetch of thousands of refs stays fast with the hooks", "HOOK
     GG_CHECK(ops.back().refs.size() >= static_cast<size_t>(count));
 }
 
-GG_TEST("hooks", "first-open prompt (Install / Not now / Never) and the Settings Hooks tab", "APP-PROMPT-HOOKS",
-    "HOOK-PROMPT-INSTALL", "HOOK-PROMPT-NOT-NOW", "HOOK-PROMPT-NEVER", "HOOK-SETTINGS", "SET-HOOKS-TAB")
+GG_TEST("hooks", "first-open prompt (Install / Not now / Never) and the Settings Hooks tab")
 {
     s.app.settings().data().askHooksOnOpen = true;
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -374,7 +368,7 @@ GG_TEST("hooks", "first-open prompt (Install / Not now / Never) and the Settings
 
 namespace ggtest {
 
-GG_TEST("hooks", "managed pre-push refuses plain git pushes of conflicted commits", "CONF-PREPUSH-HOOK", "HOOK-PREPUSH")
+GG_TEST("hooks", "managed pre-push refuses plain git pushes of conflicted commits")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     const fs::path bare = s.path("prepush-remote.git");
@@ -416,7 +410,7 @@ GG_TEST("hooks", "managed pre-push refuses plain git pushes of conflicted commit
     GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "status"}).exitCode, 1);
 }
 
-GG_TEST("hooks", "managed pre-commit warns about a broken conflict region without blocking the commit", "CONF-BROKEN-WARN")
+GG_TEST("hooks", "managed pre-commit warns about a broken conflict region without blocking the commit")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
@@ -432,8 +426,7 @@ GG_TEST("hooks", "managed pre-commit warns about a broken conflict region withou
     GG_CHECK(s.head(repo) != before);
 }
 
-GG_TEST("hooks", "managed pre-commit warns about a staged first-class conflict without blocking the commit",
-    "HOOK-PRECOMMIT-WARN-CONFLICT")
+GG_TEST("hooks", "managed pre-commit warns about a staged first-class conflict without blocking the commit")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
@@ -454,7 +447,7 @@ GG_TEST("hooks", "managed pre-commit warns about a staged first-class conflict w
     GG_CHECK(r.err.find("conflict.txt") == std::string::npos);
 }
 
-GG_TEST("hooks", "managed pre-push refuses commits that left broken conflict markers", "PUSH-REFUSE-BROKEN")
+GG_TEST("hooks", "managed pre-push refuses commits that left broken conflict markers")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     const fs::path bare = s.path("broken-push-remote.git");

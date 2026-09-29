@@ -9,8 +9,7 @@
 
 namespace ggtest {
 
-GG_TEST("panels", "branches: filter, current, upstream, reveal, copy", "BR-FILTER", "BR-CURRENT-OUTLINE",
-    "BR-UPSTREAM-INFO", "BR-REVEAL", "BR-COPY")
+GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
@@ -41,8 +40,7 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy", "BR-FILTE
     GG_CHECK(s.itemExists((remoteGroup + "/origin").c_str()));
 }
 
-GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-TOGGLE", "TAG-REVEAL", "TAG-COPY",
-    "TAG-LABEL-PLAIN")
+GG_TEST("panels", "tags: filter, visibility, reveal, copy")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"tag", "v1.0", "HEAD~3"});
@@ -78,8 +76,7 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy", "TAG-FILTER", "TAG-T
     GG_CHECK(s.waitUntil([&] { return history.refVisible("refs/tags/v2.0") && history.rows().size() == 4; }));
 }
 
-GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open", "WT-LIST", "WT-COPY-NAME", "WT-COPY-PATH",
-    "WT-REVEAL-HEAD", "WT-OPEN-DIR")
+GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const fs::path opened = s.fakeTool(kFileManager);
@@ -119,7 +116,7 @@ GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open", "WT-LIST
     }));
 }
 
-GG_TEST("panels", "remotes: list and copy", "REM-LIST", "REM-COPY")
+GG_TEST("panels", "remotes: list and copy")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"remote", "add", "backup", "https://example.invalid/backup.git"});
@@ -136,8 +133,7 @@ GG_TEST("panels", "remotes: list and copy", "REM-LIST", "REM-COPY")
     GG_CHECK_STR_EQ(s.clipboard(), "origin");
 }
 
-GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal", "REFLOG-HEAD", "REFLOG-CHOOSER",
-    "REFLOG-FILTER", "REFLOG-COPY", "REFLOG-REVEAL")
+GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     s.git(repo, {"switch", "-q", "-c", "temp", "HEAD~1"});
@@ -176,8 +172,7 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal", "REFLOG-H
     GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/heads/temp" && reflog.reflog()->entries.size() == 1; }));
 }
 
-GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation",
-    "BR-TOGGLE", "TAG-TOGGLE", "WT-LIST", "REM-LIST", "REFLOG-FILTER", "OPS-LIST", "OPS-RESTORE", "STASH-PANEL")
+GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"tag", "-a", "-m", "An annotated tag", "ann"});

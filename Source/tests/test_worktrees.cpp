@@ -74,8 +74,7 @@ void addDialog(Scenario& s, const fs::path& path, const char* mode, const std::s
 
 } // namespace
 
-GG_TEST("worktrees", "add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo",
-    "WT-ADD", "WT-JOURNAL", "MENU-EDIT-UNDO-KEY", "MENU-EDIT-REDO-KEY")
+GG_TEST("worktrees", "add: a new branch at a start point, locked, in a path with spaces; a detached commit; from Branches; undo and redo")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"branch", "other", "HEAD~2"});
@@ -170,8 +169,7 @@ GG_TEST("worktrees", "add: a new branch at a start point, locked, in a path with
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
-GG_TEST("worktrees", "add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter",
-    "WT-ADD", "WT-JOURNAL")
+GG_TEST("worktrees", "add: an existing branch without checkout (Undo refuses until it is clean), a checked-out branch needs force, the filter")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"branch", "side", "HEAD~2"});
@@ -246,8 +244,7 @@ GG_TEST("worktrees", "add: an existing branch without checkout (Undo refuses unt
     GG_CHECK_STR_EQ(registered(s, repo, spareWt)->branch, "refs/heads/spare");
 }
 
-GG_TEST("worktrees", "remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates",
-    "WT-REMOVE", "WT-JOURNAL", "WT-LIST", "MENU-EDIT-UNDO-KEY")
+GG_TEST("worktrees", "remove: with changes (asks, force), locked, missing; the main worktree refused; undo re-creates")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const std::string n1 = repo.filename().string() + "-wt1";
@@ -323,8 +320,7 @@ GG_TEST("worktrees", "remove: with changes (asks, force), locked, missing; the m
     GG_CHECK(s.waitUntil([&] { return shown(s, n3) == nullptr; }));
 }
 
-GG_TEST("worktrees", "lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree",
-    "WT-LOCK", "WT-UNLOCK", "WT-PRUNE", "WT-REPAIR", "WT-LIST", "WT-JOURNAL", "MENU-EDIT-UNDO-KEY", "MENU-EDIT-REDO-KEY")
+GG_TEST("worktrees", "lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const std::string n1 = repo.filename().string() + "-wt1";
@@ -417,8 +413,7 @@ GG_TEST("worktrees", "lock with a reason and unlock, both undone; prune shows wh
     GG_CHECK(!s.session()->operations().back().restorable());
 }
 
-GG_TEST("worktrees", "open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error",
-    "WT-OPEN-HERE", "WT-OPEN-WINDOW", "APP-OPEN-WORKTREE-WINDOW", "WT-REMOVE")
+GG_TEST("worktrees", "open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const std::string n1 = repo.filename().string() + "-wt1";
@@ -484,8 +479,7 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
     GG_CHECK_STR_EQ(s.session()->snapshot()->worktreeId, "main");
 }
 
-GG_TEST("worktrees", "per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree",
-    "WT-JOURNAL", "WT-ADD", "MENU-EDIT-UNDO-KEY")
+GG_TEST("worktrees", "per-worktree journal: a worktree change is undone only from the worktree that made it; refused when it moved on or has changes; git gg undo and redo agree")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const std::string n1 = repo.filename().string() + "-wt1";
@@ -548,8 +542,7 @@ GG_TEST("worktrees", "per-worktree journal: a worktree change is undone only fro
     GG_CHECK(s.waitUntil([&] { return shown(s, "scratch") != nullptr; }));
 }
 
-GG_TEST("worktrees", "with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone",
-    "WT-JOURNAL", "WT-ADD", "HOOK-WORKTREE", "MENU-EDIT-UNDO-KEY")
+GG_TEST("worktrees", "with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());

@@ -210,8 +210,7 @@ bool disabled(Scenario& s, const char* ref) { return (s.ctx->ItemInfo(ref).ItemF
 
 } // namespace
 
-GG_TEST("sequence-editor", "Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced",
-    "IR-SEQ-EDITOR-SETTING", "IR-SEQ-EDITOR-REPLACE")
+GG_TEST("sequence-editor", "Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -272,8 +271,7 @@ GG_TEST("sequence-editor", "Settings: ggui's todo editor for git rebase -i per s
     GG_CHECK(s.fsck(repo));
 }
 
-GG_TEST("sequence-editor", "plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal",
-    "IR-SEQ-EDITOR", "IR-SEQ-EDITOR-SAVE", "IR-SEQ-EDITOR-EDIT-TODO", "IR-SEQ-EDITOR-WAITING", "CLI-SEQ-EDITOR")
+GG_TEST("sequence-editor", "plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal")
 {
     const Repo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -360,8 +358,7 @@ GG_TEST("sequence-editor", "plain git rebase -i opens ggui's todo editor; Save h
     GG_CHECK(s.fsck(r.path));
 }
 
-GG_TEST("sequence-editor", "Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's",
-    "IR-SEQ-EDITOR-CANCEL", "IR-SEQ-EDITOR-INTERRUPTED", "IR-SEQ-EDITOR-WAITING")
+GG_TEST("sequence-editor", "Cancel, closing the editor and an interrupted git leave the repository as it was; git waits while another todo is open, and no other todo replaces git's")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"config", "sequence.editor", "git gg sequence-editor"});
@@ -434,8 +431,7 @@ GG_TEST("sequence-editor", "Cancel, closing the editor and an interrupted git le
     GG_CHECK(s.fsck(r.path));
 }
 
-GG_TEST("sequence-editor", "git rebase -i --rebase-merges: git's list opens in merges mode with the preview; the edited list runs",
-    "IR-SEQ-EDITOR-MERGES", "IR-SEQ-EDITOR-SAVE")
+GG_TEST("sequence-editor", "git rebase -i --rebase-merges: git's list opens in merges mode with the preview; the edited list runs")
 {
     // c0 ─ up: u1;  main: a1 ─ M (merges topic: t1 ─ t2) ─ e1, each commit its own file.
     const fs::path p = s.fixture(Recipe::Empty);
@@ -494,8 +490,7 @@ GG_TEST("sequence-editor", "git rebase -i --rebase-merges: git's list opens in m
     GG_CHECK(s.fsck(p));
 }
 
-GG_TEST("sequence-editor", "no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly",
-    "IR-SEQ-EDITOR-START-GGUI", "IR-SEQ-EDITOR-NO-DISPLAY", "IR-SEQ-EDITOR-SAVE")
+GG_TEST("sequence-editor", "no ggui has the repository open: git gg starts ggui and waits for it; without a display git's editor; a ggui that exits early fails clearly")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"config", "sequence.editor", "git gg sequence-editor"});

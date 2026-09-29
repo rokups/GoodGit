@@ -6,9 +6,9 @@
 //   ggui --headless             no visible window (SDL offscreen driver); also GGUI_HEADLESS=1
 // Test builds only (GGUI_ENABLE_IMGUI_TEST_ENGINE; release builds reject these with exit code 2):
 //   ggui --test[=FILTER]        run the integration tests in this binary; exit code = result
-//   ggui --trace=FILE           with --test: write the spec-ID traceability data to FILE
+//   ggui --trace=FILE           with --test: write the per-test results (JSON) to FILE
 //   ggui --shard=I/N            with --test: run only shard I of N
-//   ggui --list-tests           print the registered tests and their spec IDs
+//   ggui --list-tests           print the registered tests
 //   (Credential prompts go through `git gg askpass`, which asks the running ggui.)
 
 #include "platform/Platform.hpp"
@@ -126,7 +126,7 @@ const char* kUsage =
 #ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
     "    --test[=FILTER] [--shard=I/N] [--trace=FILE]\n"
     "                 run the integration tests in this binary\n"
-    "    --list-tests print the registered tests and their spec IDs\n"
+    "    --list-tests print the registered tests\n"
 #endif
     ;
 

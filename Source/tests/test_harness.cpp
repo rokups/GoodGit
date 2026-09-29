@@ -9,7 +9,7 @@
 
 namespace ggtest {
 
-GG_TEST("harness", "smoke: welcome screen", "HARNESS-SMOKE", "APP-WELCOME-TAGLINE")
+GG_TEST("harness", "smoke: welcome screen")
 {
     GG_REQUIRE(s.waitIdle());
     ctx->SetRef("Welcome");
@@ -32,7 +32,7 @@ GG_TEST("harness", "smoke: welcome screen", "HARNESS-SMOKE", "APP-WELCOME-TAGLIN
     }
 }
 
-GG_TEST("harness", "isolation from user config and settings", "HARNESS-ISOLATION")
+GG_TEST("harness", "isolation from user config and settings")
 {
     // HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL point into this test's directory.
     GG_CHECK_STR_EQ(ggui::getEnv("HOME"), s.home().string());
@@ -53,7 +53,7 @@ GG_TEST("harness", "isolation from user config and settings", "HARNESS-ISOLATION
     GG_CHECK(saved.find("\"light\"") != std::string::npos);
 }
 
-GG_TEST("harness", "fixture recipes build and pass fsck", "HARNESS-FIXTURES")
+GG_TEST("harness", "fixture recipes build and pass fsck")
 {
     for (Recipe r : allRecipes()) {
         const fs::path repo = s.fixture(r);
@@ -65,7 +65,7 @@ GG_TEST("harness", "fixture recipes build and pass fsck", "HARNESS-FIXTURES")
     }
 }
 
-GG_TEST("harness", "assertion helpers", "HARNESS-ASSERT-HELPERS")
+GG_TEST("harness", "assertion helpers")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_CHECK_EQ(s.head(repo).size(), static_cast<size_t>(40));
@@ -81,7 +81,7 @@ GG_TEST("harness", "assertion helpers", "HARNESS-ASSERT-HELPERS")
     GG_CHECK(s.itemExists("//History/##hist_filter"));
 }
 
-GG_TEST("threading", "UI-thread call to git trips the assertion", "APP-UI-THREAD-ASSERT")
+GG_TEST("threading", "UI-thread call to git trips the assertion")
 {
     GG_REQUIRE(gg::threadChecksCompiled());
     const auto previous = gg::setUiThreadCheck(gg::UiThreadCheck::Record);
@@ -106,7 +106,7 @@ GG_TEST("threading", "UI-thread call to git trips the assertion", "APP-UI-THREAD
 
 namespace ggtest {
 
-GG_TEST("harness", "failure output: screenshot, app log, git command log", "HARNESS-FAILURE-OUTPUT")
+GG_TEST("harness", "failure output: screenshot, app log, git command log")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"status"});
@@ -129,7 +129,7 @@ GG_TEST("harness", "failure output: screenshot, app log, git command log", "HARN
 
 namespace ggtest {
 
-GG_TEST("harness", "large fixture", "HARNESS-FIXTURES")
+GG_TEST("harness", "large fixture")
 {
     const fs::path repo = s.largeFixture();
     const int commits = std::stoi(s.gitOut(repo, {"rev-list", "--count", "--all"}));
@@ -145,7 +145,7 @@ GG_TEST("harness", "large fixture", "HARNESS-FIXTURES")
 
 namespace ggtest {
 
-GG_TEST("harness", "transport fixtures: git daemon and ssh shim", "HARNESS-FIXTURES")
+GG_TEST("harness", "transport fixtures: git daemon and ssh shim")
 {
     const fs::path served = s.path("served");
     fs::create_directories(served);

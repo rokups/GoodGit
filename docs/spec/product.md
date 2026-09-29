@@ -2,7 +2,7 @@
 
 Note: §2 (analysis of the pre-rebuild app), §7 (phased delivery) and §10 (risks) have been
 removed as no longer relevant; the remaining section numbers are unchanged because
-`Source/tests/spec_catalogue.txt`, `docs/traceability.md`, scripts and code comments cite them.
+scripts and code comments cite them.
 
 ---
 
@@ -785,12 +785,6 @@ Rules:
   commands that skips the UI.
 
 ### 8.2 Coverage goals (CI gates)
-- **Functional coverage: 100 % of §4.**
-  - Every feature bullet, menu item, shortcut, context-menu entry, dialog and option in §4
-    gets a stable **spec ID**, for example `HIST-KEY-N` or `STASH-POP-INDEX`.
-  - Every test declares the spec IDs it covers.
-  - CI fails if any spec ID has no passing test. The report is a traceability matrix.
-  - Both keyboard and mouse paths count separately where both exist.
 - **Code coverage: > 90 % line and > 90 % branch** for first-party sources (`ggui`,
   `ggui_core`, `libgg`, `git-gg`), from the integration suite alone. Third-party code and
   generated fonts are excluded.

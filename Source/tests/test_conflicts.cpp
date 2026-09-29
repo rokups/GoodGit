@@ -47,8 +47,7 @@ bool scanned(Scenario& s, const std::string& hex)
 
 } // namespace
 
-GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message, continue", "HIST-WT-NATIVE-CONFLICT",
-    "CONF-NATIVE-3WAY-DIFF", "CONF-NATIVE-TAKE-SIDE", "CONF-MERGE-MSG", "CONF-NATIVE-CONTINUE", "TB-STATE-CONTINUE")
+GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message, continue")
 {
     const fs::path repo = s.fixture(Recipe::MidMerge);
     const std::string theirs = s.revParse(repo, "theirs");
@@ -82,8 +81,7 @@ GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message,
     GG_CHECK(s.gitOut(repo, {"log", "-1", "--format=%s"}) == "Merged by the test");
 }
 
-GG_TEST("conflicts", "native: abort a merge, skip a rebase step", "CONF-NATIVE-ABORT", "TB-STATE-ABORT", "CONF-NATIVE-SKIP",
-    "TB-STATE-SKIP")
+GG_TEST("conflicts", "native: abort a merge, skip a rebase step")
 {
     const fs::path merge = s.fixture(Recipe::MidMerge);
     const std::string head = s.head(merge);
@@ -103,8 +101,7 @@ GG_TEST("conflicts", "native: abort a merge, skip a rebase step", "CONF-NATIVE-A
     GG_CHECK_STR_EQ(s.head(rebase), s.revParse(rebase, "theirs")); // the only commit was skipped
 }
 
-GG_TEST("conflicts", "native: resolve by editing, mark resolved, continue", "CHG-MARK-RESOLVED", "CHG-CTX-MARK-RESOLVED",
-    "CONF-NATIVE-MARK-RESOLVED")
+GG_TEST("conflicts", "native: resolve by editing, mark resolved, continue")
 {
     const fs::path repo = s.fixture(Recipe::MidCherryPick);
     GG_REQUIRE(s.openRepository(repo));
@@ -119,8 +116,7 @@ GG_TEST("conflicts", "native: resolve by editing, mark resolved, continue", "CHG
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "a\nboth\nc");
 }
 
-GG_TEST("conflicts", "native: resolve with the configured merge tool", "APP-EXT-MERGETOOL", "CHG-CTX-MERGETOOL",
-    "CONF-NATIVE-MERGETOOL")
+GG_TEST("conflicts", "native: resolve with the configured merge tool")
 {
     const fs::path repo = s.fixture(Recipe::MidMerge);
     s.fakeTool("merge-tool", "printf 'resolved by tool\\n' > \"$4\"\n"); // on PATH; logs its arguments
@@ -136,8 +132,7 @@ GG_TEST("conflicts", "native: resolve with the configured merge tool", "APP-EXT-
     GG_CHECK_STR_EQ(s.read(repo, "f.txt"), "resolved by tool\n");
 }
 
-GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered for binary conflicts",
-    "CONF-COMMIT-WITH-CONFLICTS", "CONF-COMMIT-WITH-CONFLICTS-BINARY-REFUSE", "HIST-CONFLICT-MARK")
+GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered for binary conflicts")
 {
     const fs::path repo = s.fixture(Recipe::MidMerge);
     const std::string theirs = s.revParse(repo, "theirs");
@@ -178,9 +173,7 @@ GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered f
     GG_CHECK(s.session()->status()->conflicted.front().binary);
 }
 
-GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change information, Changes",
-    "CONF-PARSE-DIFF3", "CONF-DISPLAY-HISTORY", "HIST-FILTER-CONFLICTED", "HIST-KEY-NEXT-CONFLICT",
-    "HIST-KEY-PREV-CONFLICT", "INFO-CONFLICTED-FILES", "CONF-DISPLAY-INFO", "CHG-FIRSTCLASS-CONFLICTED")
+GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change information, Changes")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     const std::string head = s.head(repo);          // "Descendant keeps the conflict"
@@ -231,8 +224,7 @@ GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change i
     ctx->ItemClick("//History/Conflicted only##hist_conflicted");
 }
 
-GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out, disposable cache", "CONF-PARSE-NWAY",
-    "CONF-MARKER-LENGTH", "CONF-WELLFORMED-ONLY", "CONF-OPTOUT", "CONF-CACHE-DISPOSABLE")
+GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out, disposable cache")
 {
     const fs::path repo = s.fixture(Recipe::ConflictedN);
     const std::string nway = s.head(repo);
@@ -272,8 +264,7 @@ GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out
     GG_CHECK(s.waitUntil([&] { return files(optout) == before; }));
 }
 
-GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute are applied by writes",
-    "CONF-SAME-CHANGE-SETTING", "CONF-MARKER-SIZE-ATTR")
+GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute are applied by writes")
 {
     // gg::conflicts::writeOptions(repo, path) is what every write site (Rewrite.cpp, Actions.cpp)
     // calls before gg::markers::mergeFiles/materialize; check it end to end on a real repo, then
@@ -375,8 +366,7 @@ GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute a
 
 namespace ggtest {
 
-GG_TEST("conflicts", "engine: a rewrite that leaves a conflicted file's value unchanged reuses its exact blob",
-    "CONF-REUSE-UNCHANGED")
+GG_TEST("conflicts", "engine: a rewrite that leaves a conflicted file's value unchanged reuses its exact blob")
 {
     // docs/spec/conflict-markers.md §7.4a: a writer that produces a value equal to an input's
     // value keeps that input's bytes. Build a stack where the child already holds a first-class
@@ -450,8 +440,7 @@ GG_TEST("conflicts", "engine: a rewrite that leaves a conflicted file's value un
 
 namespace ggtest {
 
-GG_TEST("conflicts", "marker grammar edge cases (docs/spec/conflict-markers.md)", "CONF-PARSE-DIFF3", "CONF-PARSE-NWAY",
-    "CONF-WELLFORMED-ONLY", "CONF-MARKER-LENGTH", "CLI-CONFLICTS")
+GG_TEST("conflicts", "marker grammar edge cases (docs/spec/conflict-markers.md)")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     // file → content; the files expected to be reported conflicted are listed below.
@@ -501,8 +490,7 @@ GG_TEST("conflicts", "marker grammar edge cases (docs/spec/conflict-markers.md)"
 
 namespace ggtest {
 
-GG_TEST("conflicts", "checking out a conflicted commit: clean status by default, index stages when asked",
-    "CONF-CHECKOUT-CLEAN", "CONF-CHECKOUT-EXPAND-STAGES")
+GG_TEST("conflicts", "checking out a conflicted commit: clean status by default, index stages when asked")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     const std::string conflictedCommit = s.revParse(repo, "HEAD~1");
@@ -572,9 +560,7 @@ fs::path conflictedCheckout(Scenario& s, std::string& conflicted)
 
 } // namespace
 
-GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend resolves the descendants too",
-    "DIFF-TERM-VIEW", "CONF-RESOLVE-TAKE-SIDE", "CONF-MARK-RESOLVED-REFUSE", "CONF-RESOLVE-AMEND",
-    "CHG-FIRSTCLASS-RESOLVE-AMEND")
+GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend resolves the descendants too")
 {
     std::string conflicted;
     const fs::path repo = conflictedCheckout(s, conflicted);
@@ -621,8 +607,7 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "main:other.txt"}), "descendant");
 }
 
-GG_TEST("conflicts", "first-class: take a side in one region; resolve in the editor and commit on top",
-    "CONF-RESOLVE-EDITOR", "CONF-RESOLVE-NEW-COMMIT")
+GG_TEST("conflicts", "first-class: take a side in one region; resolve in the editor and commit on top")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string two = "a\n<<<<<<< side 1\nA1\n||||||| base\nA0\n=======\nA2\n>>>>>>> side 2\nmiddle\n"
@@ -659,7 +644,7 @@ GG_TEST("conflicts", "first-class: take a side in one region; resolve in the edi
     GG_CHECK_EQ(s.gitgg(repo, {"conflicts", "HEAD~1"}).exitCode, 1);
 }
 
-GG_TEST("conflicts", "first-class: resolve with the merge tool (stages from the regions)", "CONF-RESOLVE-MERGETOOL")
+GG_TEST("conflicts", "first-class: resolve with the merge tool (stages from the regions)")
 {
     std::string conflicted;
     const fs::path repo = conflictedCheckout(s, conflicted);
@@ -680,8 +665,7 @@ GG_TEST("conflicts", "first-class: resolve with the merge tool (stages from the 
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
 }
 
-GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided conflict with the merge tool",
-    "CONF-RESOLVE-MERGETOOL-NSIDED")
+GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided conflict with the merge tool")
 {
     const fs::path repo = s.fixture(Recipe::ConflictedN); // HEAD: 3-sided conflict.txt (x=3/x=1/x=2, bases x=0/x=0)
     const std::string original = s.read(repo, "conflict.txt");
@@ -726,8 +710,7 @@ GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided confl
     GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
 }
 
-GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-backend rebase, skip and reset a bisect; merge tool on a first-class conflict",
-    "CONF-NATIVE-DETECT", "CONF-NATIVE-CONTINUE", "CONF-NATIVE-MERGETOOL", "TB-STATE-BADGE")
+GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-backend rebase, skip and reset a bisect; merge tool on a first-class conflict")
 {
     auto clean = [&](const fs::path&) {
         return s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::None; });
@@ -784,7 +767,7 @@ GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-
 
 namespace ggtest {
 
-GG_TEST("conflicts", "brokenMarkers: unit cases for the broken-region diagnostic (§4.10, §8)", "CONF-BROKEN-WARN")
+GG_TEST("conflicts", "brokenMarkers: unit cases for the broken-region diagnostic (§4.10, §8)")
 {
     using gg::markers::brokenMarkers;
     const std::string region = "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n";
@@ -805,8 +788,7 @@ GG_TEST("conflicts", "brokenMarkers: unit cases for the broken-region diagnostic
     GG_CHECK(brokenMarkers(plain, strayMarkers).empty());
 }
 
-GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Changes) instead of silently resolving",
-    "CONF-BROKEN-WARN")
+GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Changes) instead of silently resolving")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     // Break the region: delete the "=======" separator. HEAD is still conflicted; the working
@@ -830,8 +812,7 @@ GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Chang
     GG_CHECK(s.textShown("//##Tooltip_00", "Conflict markers left at line 2, 7"));
 }
 
-GG_TEST("conflicts", "materialize labels sides/base from termLabels; labels round-trip, sanitize, and truncate",
-    "CONF-SIDE-LABELS")
+GG_TEST("conflicts", "materialize labels sides/base from termLabels; labels round-trip, sanitize, and truncate")
 {
     // Two hunks far enough apart to anchor separately (docs/spec/conflict-markers.md §7.4 rule
     // 4): a genuine 2-region conflict, so a whole-file term's label must show up the same way in
@@ -909,8 +890,7 @@ GG_TEST("conflicts", "materialize labels sides/base from termLabels; labels roun
     GG_CHECK(parsedNoeol.regions.front().sides[1].value() == "B2");
 }
 
-GG_TEST("conflicts", "engine: a rewrite that creates a conflict labels ours/theirs/base with the right commits",
-    "CONF-SIDE-LABELS")
+GG_TEST("conflicts", "engine: a rewrite that creates a conflict labels ours/theirs/base with the right commits")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "side-labels");
     s.track(repo);
@@ -949,8 +929,7 @@ GG_TEST("conflicts", "engine: a rewrite that creates a conflict labels ours/thei
     GG_CHECK(region.bases[0].label == baseCommit.substr(0, 7) + " Base commit");
 }
 
-GG_TEST("conflicts", "engine: rebasing an already-conflicted commit keeps old labels and labels the new term",
-    "CONF-SIDE-LABELS")
+GG_TEST("conflicts", "engine: rebasing an already-conflicted commit keeps old labels and labels the new term")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "side-labels-stack");
     s.track(repo);
@@ -999,8 +978,7 @@ GG_TEST("conflicts", "engine: rebasing an already-conflicted commit keeps old la
     GG_CHECK(region.bases[1].label == baseCommit.substr(0, 7) + " Base commit");
 }
 
-GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrite's trees do not depend on the time",
-    "CONF-SIDE-LABELS")
+GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrite's trees do not depend on the time")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "side-labels-stable");
     s.commitFile(repo, "f.txt", "x=0\n", "Base");

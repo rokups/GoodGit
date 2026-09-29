@@ -71,7 +71,7 @@ void setLook(Scenario& s, const char* theme, int scale)
 
 } // namespace
 
-GG_MANUAL_TEST("gallery", "welcome, settings tabs", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "welcome, settings tabs")
 {
     s.ctx->Yield(5);
     shot(s, "welcome");
@@ -83,7 +83,7 @@ GG_MANUAL_TEST("gallery", "welcome, settings tabs", "HIST-GRAPH")
     }
 }
 
-GG_MANUAL_TEST("gallery", "main menus and context menus", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "main menus and context menus")
 {
     fs::path repo;
     GG_REQUIRE(openWorking(s, &repo));
@@ -149,7 +149,7 @@ GG_MANUAL_TEST("gallery", "main menus and context menus", "HIST-GRAPH")
     closePopups(s);
 }
 
-GG_MANUAL_TEST("gallery", "toolbar dropdowns and tooltip", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "toolbar dropdowns and tooltip")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -169,7 +169,7 @@ GG_MANUAL_TEST("gallery", "toolbar dropdowns and tooltip", "HIST-GRAPH")
     shot(s, "tooltip-toolbar-push");
 }
 
-GG_MANUAL_TEST("gallery", "dialogs", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "dialogs")
 {
     fs::path repo;
     GG_REQUIRE(openWorking(s, &repo));
@@ -202,7 +202,7 @@ GG_MANUAL_TEST("gallery", "dialogs", "HIST-GRAPH")
     dialog("Clone repository", "dialog-clone", [&] { ctx->MenuClick("//##MainMenuBar/Repository/Clone..."); });
 }
 
-GG_MANUAL_TEST("gallery", "push dialog", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "push dialog")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -213,14 +213,14 @@ GG_MANUAL_TEST("gallery", "push dialog", "HIST-GRAPH")
     shot(s, "dialog-push");
 }
 
-GG_MANUAL_TEST("gallery", "clone dialog from Welcome", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "clone dialog from Welcome")
 {
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
     shot(s, "dialog-clone-welcome");
 }
 
-GG_MANUAL_TEST("gallery", "conflicts view", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "conflicts view")
 {
     const fs::path repo = s.fixture(Recipe::MidMerge);
     GG_REQUIRE(s.openRepository(repo));
@@ -240,7 +240,7 @@ GG_MANUAL_TEST("gallery", "conflicts view", "HIST-GRAPH")
     closePopups(s);
 }
 
-GG_MANUAL_TEST("gallery", "interactive rebase and blame", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "interactive rebase and blame")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "ir");
     std::vector<std::string> c(1);
@@ -293,7 +293,7 @@ GG_MANUAL_TEST("gallery", "interactive rebase and blame", "HIST-GRAPH")
     closePopups(s);
 }
 
-GG_MANUAL_TEST("gallery", "light theme and 150 percent", "HIST-GRAPH")
+GG_MANUAL_TEST("gallery", "light theme and 150 percent")
 {
     fs::path repo;
     GG_REQUIRE(openWorking(s, &repo));

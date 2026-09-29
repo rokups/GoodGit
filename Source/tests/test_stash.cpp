@@ -46,9 +46,7 @@ void cleanUp(Scenario& s, const fs::path& repo)
 
 } // namespace
 
-GG_TEST("stash", "create: message, untracked, keep index, staged only, selected files", "STASH-CREATE",
-    "STASH-CREATE-UNTRACKED", "STASH-CREATE-KEEP-INDEX", "STASH-CREATE-STAGED", "STASH-CREATE-PATHS", "TB-STASH",
-    "TB-POP", "HIST-WT-CTX-STASH")
+GG_TEST("stash", "create: message, untracked, keep index, staged only, selected files")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     dirty(s, repo);
@@ -111,9 +109,7 @@ GG_TEST("stash", "create: message, untracked, keep index, staged only, selected 
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "f1.txt");
 }
 
-GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo, clear", "STASH-APPLY", "STASH-POP",
-    "STASH-POP-INDEX", "STASH-APPLY-FILE", "STASH-BRANCH", "STASH-DROP", "STASH-UNDO-DROP", "STASH-CLEAR", "TB-UNDO",
-    "TB-REDO")
+GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo, clear")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     GG_REQUIRE(s.openRepository(repo));
@@ -187,8 +183,7 @@ GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo,
     s.settle();
 }
 
-GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflicts", "STASH-APPLY-CONFLICT",
-    "STASH-POP-KEEP-ON-CONFLICT")
+GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflicts")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     s.commitFile(repo, "a.txt", "a committed differently\n", "Diverge a.txt");

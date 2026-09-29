@@ -1,4 +1,4 @@
-// UI actions that had no test of their own (UI-action audit, docs/ui-actions.md): dialog
+// UI actions that had no test of their own elsewhere: dialog
 // keys, menu variants, options inside dialogs and actions in less common repository states.
 #include "panels/HistoryPanel.hpp"
 #include "panels/RebasePanel.hpp"
@@ -51,8 +51,7 @@ fs::path addBareRemote(Scenario& s, const fs::path& repo, const std::string& nam
 
 } // namespace
 
-GG_TEST("ui", "Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off", "SET-HOOKS-TAB",
-    "APP-PROMPT-HOOKS")
+GG_TEST("ui", "Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off")
 {
     const fs::path first = s.fixture(Recipe::Linear, "first");
     const fs::path second = s.fixture(Recipe::Linear, "second");
@@ -88,8 +87,7 @@ GG_TEST("ui", "Settings ▸ Hooks: the ask-on-open checkbox turns the first-open
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
-GG_TEST("ui", "History: Ctrl-click drops a commit from the selection; New merge commit from the row menu",
-    "ACT-NEW-MERGE", "HIST-CTX-NEW")
+GG_TEST("ui", "History: Ctrl-click drops a commit from the selection; New merge commit from the row menu")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string main = s.head(repo);
@@ -118,8 +116,7 @@ GG_TEST("ui", "History: Ctrl-click drops a commit from the selection; New merge 
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
 }
 
-GG_TEST("ui", "Push without an upstream opens Push to (History, Branches); remote, upstream and force with lease",
-    "HIST-CTX-PUSH", "BR-PUSH", "TB-PUSH-TO", "REMOTE-PUSH", "REMOTE-PUSH-SET-UPSTREAM", "TB-PUSH-FORCE-LEASE")
+GG_TEST("ui", "Push without an upstream opens Push to (History, Branches); remote, upstream and force with lease")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path backup = addBareRemote(s, repo, "backup");
@@ -164,7 +161,7 @@ GG_TEST("ui", "Push without an upstream opens Push to (History, Branches); remot
     GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "--abbrev-ref", "topic@{upstream}"}), "backup/topic");
 }
 
-GG_TEST("ui", "toolbar Push options ▸ Force with lease overwrites the upstream after confirming", "TB-PUSH-FORCE-LEASE")
+GG_TEST("ui", "toolbar Push options ▸ Force with lease overwrites the upstream after confirming")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote); // main is ahead 1, behind 1
     const fs::path origin = s.path("with-remote-origin.git");
@@ -183,7 +180,7 @@ GG_TEST("ui", "toolbar Push options ▸ Force with lease overwrites the upstream
     GG_CHECK_STR_EQ(s.revParse(repo, "origin/main"), local);
 }
 
-GG_TEST("ui", "Reconcile by rebasing onto the upstream", "ACT-RECONCILE", "BR-RECONCILE")
+GG_TEST("ui", "Reconcile by rebasing onto the upstream")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote); // main is ahead 1, behind 1
     const std::string upstream = s.revParse(repo, "origin/main");
@@ -203,7 +200,7 @@ GG_TEST("ui", "Reconcile by rebasing onto the upstream", "ACT-RECONCILE", "BR-RE
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
-GG_TEST("ui", "Redo that would overwrite local changes offers Stash and redo", "TB-REDO")
+GG_TEST("ui", "Redo that would overwrite local changes offers Stash and redo")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"switch", "-q", "-c", "other"});
@@ -230,7 +227,7 @@ GG_TEST("ui", "Redo that would overwrite local changes offers Stash and redo", "
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "stash@{0}:f1.txt"}), "edited before the redo");
 }
 
-GG_TEST("ui", "the drop chooser closes with Escape and changes nothing", "HIST-DND-CHOOSER")
+GG_TEST("ui", "the drop chooser closes with Escape and changes nothing")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string tip = s.head(repo);
@@ -253,8 +250,7 @@ GG_TEST("ui", "the drop chooser closes with Escape and changes nothing", "HIST-D
     GG_CHECK_STR_EQ(s.head(repo), tip);
 }
 
-GG_TEST("ui", "dialogs: Escape cancels; Enter in a text field confirms when the button is enabled",
-    "HIST-CTX-CREATE-BRANCH")
+GG_TEST("ui", "dialogs: Escape cancels; Enter in a text field confirms when the button is enabled")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string tip = s.head(repo);
@@ -285,8 +281,7 @@ GG_TEST("ui", "dialogs: Escape cancels; Enter in a text field confirms when the 
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "entered"; }));
 }
 
-GG_TEST("ui", "Git required: Quit asks the app to quit; the refused open does not block later opens",
-    "APP-PROMPT-GIT-OLD")
+GG_TEST("ui", "Git required: Quit asks the app to quit; the refused open does not block later opens")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string path = ggui::getEnv("PATH");
@@ -312,8 +307,7 @@ GG_TEST("ui", "Git required: Quit asks the app to quit; the refused open does no
     s.settle();
 }
 
-GG_TEST("ui", "Interactive rebase: Cancel while the commits are being read", "IR-ENTRY-COMMIT-MENU",
-    "IR-MEMORY-CANCEL")
+GG_TEST("ui", "Interactive rebase: Cancel while the commits are being read")
 {
     // A long range (built with git fast-import) takes a while to read.
     const fs::path repo = s.fixture(Recipe::Empty);
@@ -350,7 +344,7 @@ GG_TEST("ui", "Interactive rebase: Cancel while the commits are being read", "IR
     GG_CHECK(s.gitDirBytes(repo) == before);
 }
 
-GG_TEST("ui", "View menu: every panel hides and shows again; the choice is saved", "MENU-VIEW-TOGGLE-PANEL")
+GG_TEST("ui", "View menu: every panel hides and shows again; the choice is saved")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -373,8 +367,7 @@ GG_TEST("ui", "View menu: every panel hides and shows again; the choice is saved
     }
 }
 
-GG_TEST("ui", "old gg data: Not now asks again next time; an unchecked commit is not kept", "APP-PROMPT-GGREFS",
-    "GGREFS-DELETE", "GGREFS-LIST")
+GG_TEST("ui", "old gg data: Not now asks again next time; an unchecked commit is not kept")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string tree = s.gitOut(repo, {"rev-parse", "HEAD^{tree}"});
@@ -404,8 +397,7 @@ GG_TEST("ui", "old gg data: Not now asks again next time; an unchecked commit is
     GG_CHECK(s.gitOut(repo, {"for-each-ref", "--contains", dropped, "--format=%(refname)"}).empty());
 }
 
-GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend", "TB-COMMIT", "TB-COMMIT-LABEL", "ACT-AMEND",
-    "HOOK-SKIP", "ACT-COMMIT-SKIP-HOOKS")
+GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     writeHook(s, repo, "pre-commit", "echo 'pre-commit hook says no' >&2\nexit 1\n");
@@ -437,7 +429,7 @@ GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend", "TB-COMMI
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
 }
 
-GG_TEST("ui", "Stashes ▸ Pop applies an older stash and drops only that one", "STASH-POP")
+GG_TEST("ui", "Stashes ▸ Pop applies an older stash and drops only that one")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
     const std::string newest = s.revParse(repo, "stash@{0}");
@@ -457,7 +449,7 @@ GG_TEST("ui", "Stashes ▸ Pop applies an older stash and drops only that one", 
     GG_CHECK(!refExists(s, repo, "stash@{2}"));
 }
 
-GG_TEST("ui", "a stopped cherry-pick: Skip, and Commit with conflicts", "TB-STATE-SKIP", "CONF-COMMIT-WITH-CONFLICTS")
+GG_TEST("ui", "a stopped cherry-pick: Skip, and Commit with conflicts")
 {
     auto picking = [&](const fs::path& repo) { return fs::exists(repo / ".git" / "CHERRY_PICK_HEAD"); };
     // Skip: the commit is left out, HEAD stays, the working tree is clean again.

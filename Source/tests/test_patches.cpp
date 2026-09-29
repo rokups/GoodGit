@@ -31,8 +31,7 @@ void applyPatch(Scenario& s, const char* source, const char* target, const std::
 
 } // namespace
 
-GG_TEST("patches", "apply from the clipboard or a file, to the working tree or the index", "MENU-EDIT-APPLY-PATCH",
-    "PATCH-APPLY-CLIPBOARD", "PATCH-APPLY-FILE", "PATCH-APPLY-INDEX", "PATCH-APPLY-WORKTREE")
+GG_TEST("patches", "apply from the clipboard or a file, to the working tree or the index")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string patch = makePatch(s, repo);
@@ -63,7 +62,7 @@ GG_TEST("patches", "apply from the clipboard or a file, to the working tree or t
     s.git(repo, {"checkout", "-q", "--", "f1.txt"});
 }
 
-GG_TEST("patches", "a patch that does not apply is reported and changes nothing", "PATCH-APPLY-FAIL")
+GG_TEST("patches", "a patch that does not apply is reported and changes nothing")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string patch = makePatch(s, repo);

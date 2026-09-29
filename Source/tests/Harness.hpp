@@ -2,15 +2,14 @@
 // inside the real ggui binary, drive the UI like a user and check both the UI and the
 // repository on disk.
 //
-//   GG_TEST("history", "reveal commit", "HIST-REVEAL", "HIST-REVEAL-CANCEL") {
+//   GG_TEST("history", "reveal commit") {
 //       auto repo = s.fixture(Recipe::Linear);
 //       s.openRepository(repo);
 //       ...
 //   }
 //
-// Every test declares the spec IDs it covers (the spec-ID catalogue). Each test runs in its own
-// temporary directory with an isolated HOME, XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL, preferences
-// directory and a PATH that contains the git-gg under test.
+// Each test runs in its own temporary directory with an isolated HOME, XDG_CONFIG_HOME,
+// GIT_CONFIG_GLOBAL, preferences directory and a PATH that contains the git-gg under test.
 #pragma once
 
 #include <libgg/GitRunner.hpp>
@@ -53,7 +52,6 @@ using TestBody = void (*)(ImGuiTestContext* ctx, Scenario& s);
 struct TestInfo {
     std::string category;
     std::string name;
-    std::vector<std::string> specs;
     TestBody body = nullptr;
     const char* file = nullptr;
     int line = 0;
@@ -79,26 +77,26 @@ class Scenario;
 void writeFailureOutput(ImGuiTestContext* ctx, const TestInfo& info, const Scenario& s, const fs::path& dir);
 
 struct Registrar {
-    Registrar(const char* category, const char* name, std::initializer_list<const char*> specs, TestBody body,
-        const char* file, int line, bool manual = false);
+    Registrar(const char* category, const char* name, TestBody body, const char* file,
+        int line, bool manual = false);
 };
 
 #define GG_TEST_CONCAT2(a, b) a##b
 #define GG_TEST_CONCAT(a, b) GG_TEST_CONCAT2(a, b)
-#define GG_TEST_IMPL(manual, category, name, ...)                                                        \
+#define GG_TEST_IMPL(manual, category, name)                                                             \
     static void GG_TEST_CONCAT(ggTestBody_, __LINE__)(ImGuiTestContext * ctx, ::ggtest::Scenario & s);   \
     static const ::ggtest::Registrar GG_TEST_CONCAT(ggTestReg_, __LINE__)(                              \
-        category, name, {__VA_ARGS__}, &GG_TEST_CONCAT(ggTestBody_, __LINE__), __FILE__, __LINE__, manual); \
+        category, name, &GG_TEST_CONCAT(ggTestBody_, __LINE__), __FILE__, __LINE__, manual); \
     static void GG_TEST_CONCAT(ggTestBody_, __LINE__)([[maybe_unused]] ImGuiTestContext * ctx,          \
         [[maybe_unused]] ::ggtest::Scenario & s)
-#define GG_TEST(category, name, ...) GG_TEST_IMPL(false, category, name, __VA_ARGS__)
+#define GG_TEST(category, name) GG_TEST_IMPL(false, category, name)
 // A test left out of the suite (e.g. a screenshot gallery for reviewing the look): it runs only
 // with --test=<category>.
-#define GG_MANUAL_TEST(category, name, ...) GG_TEST_IMPL(true, category, name, __VA_ARGS__)
+#define GG_MANUAL_TEST(category, name) GG_TEST_IMPL(true, category, name)
 
 // Ends the test as skipped when the git on PATH is older than major.minor, for a scenario whose
 // subject needs a newer git than the pinned minimum (2.36), e.g. update-ref rows in git rebase -i
-// (2.38). The trace records "skipped", not "success": its spec IDs must be covered by a run on a
+// (2.38). The trace records "skipped", not "success": the scenario must be covered by a run on a
 // newer git (CI runs the suite on both). Put it first in the test body.
 #define GG_REQUIRE_GIT(major, minor, why)          \
     do {                                           \

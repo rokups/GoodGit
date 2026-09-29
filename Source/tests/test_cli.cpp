@@ -21,8 +21,7 @@ bool rowShown(Scenario& s, const std::string& hex)
 
 } // namespace
 
-GG_TEST("cli", "git gg new: on HEAD, with a message, detached, merge", "CLI-NEW", "CLI-NEW-MSG", "CLI-NEW-DETACH",
-    "CLI-NEW-MERGE")
+GG_TEST("cli", "git gg new: on HEAD, with a message, detached, merge")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string topic = s.revParse(repo, "topic");
@@ -55,7 +54,7 @@ GG_TEST("cli", "git gg new: on HEAD, with a message, detached, merge", "CLI-NEW"
     GG_CHECK_EQ(s.session()->history().row(Oid::fromHex(merge))->parents.size(), static_cast<size_t>(2));
 }
 
-GG_TEST("cli", "git gg undo, redo and op log", "CLI-UNDO", "CLI-REDO", "CLI-OP-LOG")
+GG_TEST("cli", "git gg undo, redo and op log")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string before = s.head(repo);
@@ -83,7 +82,7 @@ GG_TEST("cli", "git gg undo, redo and op log", "CLI-UNDO", "CLI-REDO", "CLI-OP-L
     GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() == 3; }));
 }
 
-GG_TEST("cli", "git gg conflicts, help and exit codes", "CLI-CONFLICTS", "CLI-HELP", "CLI-EXIT-CODES")
+GG_TEST("cli", "git gg conflicts, help and exit codes")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     auto r = s.gitgg(repo, {"conflicts"});
@@ -125,7 +124,7 @@ GG_TEST("cli", "git gg conflicts, help and exit codes", "CLI-CONFLICTS", "CLI-HE
     GG_CHECK(r.out.find("--test") != std::string::npos); // this (test) build lists its test options
 }
 
-GG_TEST("cli", "git gg ui starts ggui on the repository", "CLI-UI")
+GG_TEST("cli", "git gg ui starts ggui on the repository")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     // A git-gg next to a stand-in ggui that records how it was started.
@@ -152,7 +151,7 @@ GG_TEST("cli", "git gg ui starts ggui on the repository", "CLI-UI")
 
 namespace ggtest {
 
-GG_TEST("cli", "git gg new --before/--after inserts and rebases the descendants", "CLI-NEW-BEFORE", "CLI-NEW-AFTER")
+GG_TEST("cli", "git gg new --before/--after inserts and rebases the descendants")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string mid = s.revParse(repo, "HEAD~2");
@@ -180,8 +179,7 @@ GG_TEST("cli", "git gg new --before/--after inserts and rebases the descendants"
     GG_CHECK_EQ(s.gitgg(repo, {"new", "--after", "no-such"}).exitCode, 128);
 }
 
-GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the way, outside a repository, without git-gg or ggui on PATH",
-    "CLI-UNDO", "CLI-REDO", "CLI-EXIT-CODES", "HOOK-CLI-INSTALL", "CLI-UI")
+GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the way, outside a repository, without git-gg or ggui on PATH")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     auto r = s.gitgg(repo, {"undo"});

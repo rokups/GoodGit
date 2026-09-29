@@ -238,9 +238,7 @@ LineRepo makeLineRepo(Scenario& s)
 
 } // namespace
 
-GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (asks for a base), Branches",
-    "IR-ENTRY-HISTORY-KEY", "IR-ENTRY-HISTORY-MENU", "HIST-KEY-I", "ACT-IREBASE", "IR-ENTRY-SELECTION",
-    "IR-ENTRY-COMMIT-MENU", "IR-ENTRY-BRANCH", "BR-IREBASE-ONTO", "IR-ROWS")
+GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (asks for a base), Branches")
 {
     const Repo r = makeRepo(s);
     const auto refsBefore = s.refs(r.path);
@@ -324,10 +322,7 @@ GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine",
-    "IR-KEY-ALT-UPDOWN", "IR-DRAG", "IR-NEWEST-FIRST", "IR-MULTISELECT", "IR-KEY-LETTERS", "IR-UNDO-REDO",
-    "IR-INSERT-EXEC-BREAK", "IR-ENGINE-SHOWN", "IR-ACT-PICK", "IR-ACT-DROP", "IR-ACT-SQUASH", "IR-ACT-FIXUP",
-    "IR-OPT-UPDATE-REFS")
+GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine")
 {
     const Repo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "main^{tree}");
@@ -472,9 +467,7 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("rebase-i", "messages: reword and squash editors, fixup -C, first row validation, one Undo",
-    "IR-MSG-REWORD", "IR-MSG-SQUASH", "IR-ACT-REWORD", "IR-ACT-FIXUP-C", "IR-VALIDATE-FIRST", "IR-MEMORY-ONE-UNDO",
-    "IR-ACT-UPDATE-REF")
+GG_TEST("rebase-i", "messages: reword and squash editors, fixup -C, first row validation, one Undo")
 {
     const Repo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -541,8 +534,7 @@ GG_TEST("rebase-i", "messages: reword and squash editors, fixup -C, first row va
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), s.revParse(r.path, r.c[5] + "^{tree}"));
 }
 
-GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i --autosquash", "IR-OPT-AUTOSQUASH",
-    "IR-AUTOSQUASH-ORDER")
+GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i --autosquash")
 {
     Repo r;
     r.path = s.fixture(Recipe::Empty);
@@ -614,8 +606,7 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
     GG_CHECK_STR_EQ(history(p), history(copy));
 }
 
-GG_TEST("rebase-i", "options: onto, update-refs, autostash, committer date", "IR-OPT-ONTO", "IR-OPT-AUTOSTASH",
-    "IR-OPT-COMMITTER-DATE")
+GG_TEST("rebase-i", "options: onto, update-refs, autostash, committer date")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"switch", "-q", "-c", "other", r.c[1]});
@@ -712,8 +703,7 @@ GG_TEST("rebase-i", "options: onto, update-refs, autostash, committer date", "IR
     }));
 }
 
-GG_TEST("rebase-i", "validation warnings, Cancel changes nothing, a branch moved meanwhile is refused",
-    "IR-VALIDATE-DROP-BRANCH", "IR-VALIDATE-PUBLISHED", "IR-MEMORY-CANCEL", "IR-TIP-MOVED")
+GG_TEST("rebase-i", "validation warnings, Cancel changes nothing, a branch moved meanwhile is refused")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"update-ref", "refs/remotes/origin/main", r.c[2]});
@@ -779,7 +769,7 @@ GG_TEST("rebase-i", "validation warnings, Cancel changes nothing, a branch moved
     GG_CHECK(s.waitUntil([&] { return !editor(s).isOpen(); }));
 }
 
-GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto dialogs", "IR-OPEN-AS")
+GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto dialogs")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"branch", "other", r.c[1]});
@@ -824,8 +814,7 @@ GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto 
     ctx->ItemClick(irWidget("ir_cancel").c_str());
 }
 
-GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch", "IR-ACT-PICK", "IR-ACT-UPDATE-REF",
-    "IR-PREVIEW-BRANCHES")
+GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch")
 {
     const Repo r = makeRepo(s);
     s.git(r.path, {"switch", "-q", "--detach", r.c[4]});
@@ -858,8 +847,7 @@ GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a bran
 
 // ---- live preview ------------------------------------------------------------------------
 
-GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, the same as Start and git rebase -i",
-    "IR-PREVIEW", "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-BRANCHES")
+GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, the same as Start and git rebase -i")
 {
     const LineRepo r = makeLineRepo(s);
     const fs::path copy = s.root() / "copy";
@@ -977,8 +965,7 @@ GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, th
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, commits that are or become empty",
-    "IR-PREVIEW-CONFLICTS", "IR-PREVIEW-EMPTY", "IR-OPT-EMPTY", "IR-MEMORY-CANCEL")
+GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, commits that are or become empty")
 {
     const fs::path path = s.fixture(Recipe::Empty);
     s.write(path, "bin.dat", std::string("A\0", 2));
@@ -1151,8 +1138,7 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     GG_CHECK(s.statusPorcelain(path).empty());
 }
 
-GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames never wait, nothing is written",
-    "IR-PREVIEW-LATEST", "IR-PREVIEW-NO-WRITE", "IR-PREVIEW")
+GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames never wait, nothing is written")
 {
     // 30 commits from the root, each adding a file.
     const fs::path path = s.fixture(Recipe::Empty);
@@ -1393,8 +1379,7 @@ void checkClean(Scenario& s, const fs::path& repo)
 
 } // namespace
 
-GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i",
-    "IR-ACT-UPDATE-REF", "IR-ACT-SQUASH", "IR-ACT-FIXUP", "IR-PREVIEW-BRANCHES", "IR-ENGINE-MEMORY", "HOOK-REWRITE-RUN")
+GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i")
 {
     GG_REQUIRE_GIT(2, 38, "git rebase -i with update-ref rows as the reference");
     const Repo r = makeRepo(s);
@@ -1453,10 +1438,7 @@ GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the f
         ctx->LogInfo("post-rewrite: %s", line.substr(0, line.find('\n')).c_str());
 }
 
-GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i on a copy", "IR-DIFFERENTIAL",
-    "IR-ENGINE-MEMORY", "IR-MEMORY-ONE-UNDO", "IR-ACT-PICK", "IR-ACT-REWORD", "IR-ACT-SQUASH", "IR-ACT-FIXUP",
-    "IR-ACT-FIXUP-C", "IR-ACT-DROP", "IR-ACT-UPDATE-REF", "IR-OPT-AUTOSQUASH", "IR-OPT-ONTO", "IR-OPT-UPDATE-REFS",
-    "IR-PREVIEW", "IR-PREVIEW-EMPTY", "HOOK-REWRITE-RUN")
+GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i on a copy")
 {
     // Fixed seed (logged), overridable with GGUI_IR_SEED to replay or explore.
     std::uint64_t seed = 0x1818d1ffULL;
@@ -1729,9 +1711,7 @@ bool noticeSays(Scenario& s, std::uint64_t after, const std::string& text, float
 
 } // namespace
 
-GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause",
-    "IR-CONFLICTED-INPUT", "IR-PREVIEW-CONFLICTS", "CONF-AUTO-RESOLVE", "IR-ACT-FIXUP", "IR-ACT-REWORD", "IR-OPT-ONTO",
-    "IR-ACT-DROP", "IR-MEMORY-ONE-UNDO")
+GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause")
 {
     // c1 a.txt = 1 2 3 and b.txt; c2 sets line 2 to X; c3 changes b.txt; c4 sets line 2 to Y (part1);
     // c5 adds d.txt.
@@ -1863,8 +1843,7 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
     GG_CHECK(s.statusPorcelain(path).empty());
 }
 
-GG_TEST("rebase-i", "failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal",
-    "IR-ENGINE-MEMORY", "REWRITE-FAIL-UNTOUCHED", "HOOK-REWRITE-RUN", "HOOK-JOURNAL-CORRUPT", "IR-MEMORY-ONE-UNDO")
+GG_TEST("rebase-i", "failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal")
 {
     const Repo r = makeRepo(s);
     const auto refsBefore = s.refs(r.path);
@@ -1929,8 +1908,7 @@ GG_TEST("rebase-i", "failure paths: pre-rebase veto, a hook refusing the ref tra
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("rebase-i", "reading the range: commits already upstream, branches in other worktrees, from a linked worktree, published ancestors, from the root",
-    "IR-ROWS", "IR-ACT-UPDATE-REF", "IR-VALIDATE-PUBLISHED", "IR-ENTRY-COMMIT-MENU")
+GG_TEST("rebase-i", "reading the range: commits already upstream, branches in other worktrees, from a linked worktree, published ancestors, from the root")
 {
     const Repo r = makeRepo(s);
     // "up" has c3's change cherry-picked (same patch id) and an empty commit.

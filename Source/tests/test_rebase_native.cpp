@@ -222,10 +222,7 @@ fs::path writeTodo(Scenario& s, const std::string& name, const std::string& text
 
 } // namespace
 
-GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo",
-    "IR-ENGINE-NATIVE", "IR-ACT-EDIT", "IR-ACT-BREAK", "IR-ACT-EXEC", "IR-NATIVE-STOP-EDIT", "IR-NATIVE-STOP-BREAK",
-    "IR-NATIVE-STOP-EXEC", "CONF-NATIVE-AMEND-CONTINUE", "CONF-NATIVE-PROGRESS", "IR-NATIVE-UNDO", "CLI-SEQ-EDITOR",
-    "IR-OPT-COMMITTER-DATE")
+GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo")
 {
     const Repo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -319,9 +316,7 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_CHECK(s.gitgg(r.path, {"help", "sequence-editor"}).out.find("GIT_SEQUENCE_EDITOR") != std::string::npos);
 }
 
-GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase",
-    "IR-ENGINE-USER-CHOICE", "IR-OPT-EXEC-EACH", "IR-NATIVE-STOP-CONFLICT", "IR-ENTRY-STOPPED",
-    "CONF-NATIVE-IREBASE-EDIT-TODO", "IR-PLAIN-EDIT-TODO", "CONF-NATIVE-CONTINUE")
+GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase")
 {
     // a.txt line 2: c2 sets X, c3 sets Y (part1 at c3), c4 adds d.txt.
     const fs::path repo = s.fixture(Recipe::Empty);
@@ -429,8 +424,7 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     s.git(copy, {"rebase", "--abort"});
 }
 
-GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation",
-    "IR-PLAIN-DETECT", "IR-NATIVE-TERMINAL-FOLLOW", "IR-NATIVE-UNDO", "CONF-NATIVE-PROGRESS", "IR-ENTRY-STOPPED")
+GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation")
 {
     const Repo r = makeRepo(s);
     GG_REQUIRE(s.gitgg(r.path, {"hooks", "install"}).ok());
@@ -507,8 +501,7 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_CHECK(s.revParse(r.path, "main") != r.c[5]);
 }
 
-GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort",
-    "IR-OPT-AUTOSTASH", "IR-OPT-EMPTY", "CONF-NATIVE-ABORT")
+GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort")
 {
     const Repo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -613,8 +606,7 @@ GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git 
     GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
 }
 
-GG_TEST("rebase-native", "conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along",
-    "IR-CONFLICTED-INPUT", "IR-NATIVE-STOP-EDIT", "IR-ACT-EDIT", "CONF-NATIVE-AMEND-CONTINUE", "IR-NATIVE-UNDO")
+GG_TEST("rebase-native", "conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along")
 {
     // Base, "Conflicted commit" (conflict.txt with a region), "Descendant keeps the conflict".
     const fs::path path = s.fixture(Recipe::Conflicted2);
@@ -671,8 +663,7 @@ GG_TEST("rebase-native", "conflicted input: git rebase -i stops at edit on a com
     GG_CHECK(!fs::exists(path / "e.txt"));
 }
 
-GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo",
-    "IR-ENGINE-NATIVE", "IR-NATIVE-UNDO", "HOOK-JOURNAL-CORRUPT", "REWRITE-FAIL-UNTOUCHED")
+GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a corrupt journal during a stop keeps one Undo")
 {
     const Repo r = makeRepo(s);
     const auto refsBefore = s.refs(r.path);
@@ -719,8 +710,7 @@ GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a cor
 
 namespace ggtest {
 
-GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short commands, CRLF, abbreviated ids, fixup -C/-c); refuses unreadable ones",
-    "IR-ENTRY-STOPPED", "IR-PLAIN-EDIT-TODO", "IR-ACT-FIXUP-C", "IR-ACT-UPDATE-REF")
+GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short commands, CRLF, abbreviated ids, fixup -C/-c); refuses unreadable ones")
 {
     const Repo r = makeRepo(s);
     // c6 on a side branch: the remaining list may name any commit.
@@ -841,8 +831,7 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[5]);
 }
 
-GG_TEST("rebase-native", "typed squash messages reach git's editor, also for a squash that amends after an update-ref row; exec after every commit around followers and drops",
-    "IR-MSG-SQUASH", "IR-OPT-EXEC-EACH", "IR-ENGINE-USER-CHOICE", "IR-ACT-SQUASH", "IR-ACT-DROP")
+GG_TEST("rebase-native", "typed squash messages reach git's editor, also for a squash that amends after an update-ref row; exec after every commit around followers and drops")
 {
     GG_REQUIRE_GIT(2, 38, "a squash after an update-ref row");
     const Repo r = makeRepo(s);

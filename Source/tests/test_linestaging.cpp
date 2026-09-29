@@ -139,8 +139,7 @@ std::string randomWord(std::mt19937_64& rng)
 
 } // namespace
 
-GG_TEST("linestaging", "stage, discard and unstage hunks", "DIFF-STAGE-HUNK", "DIFF-DISCARD-HUNK", "DIFF-UNSTAGE-HUNK",
-    "DIFF-HUNK-BUTTONS")
+GG_TEST("linestaging", "stage, discard and unstage hunks")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "hunks");
     std::string text;
@@ -173,7 +172,7 @@ GG_TEST("linestaging", "stage, discard and unstage hunks", "DIFF-STAGE-HUNK", "D
     s.settle();
 }
 
-GG_TEST("linestaging", "hunks from the context menu in the side-by-side view", "DIFF-HUNK-MENU")
+GG_TEST("linestaging", "hunks from the context menu in the side-by-side view")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "hunks");
     std::string text;
@@ -206,7 +205,7 @@ GG_TEST("linestaging", "hunks from the context menu in the side-by-side view", "
     s.comboSelect("//Diff/##diff_view", "Unified");
 }
 
-GG_TEST("linestaging", "CRLF lines, missing final newline, new files", "DIFF-STAGE-LINES", "DIFF-DISCARD-LINES")
+GG_TEST("linestaging", "CRLF lines, missing final newline, new files")
 {
     const fs::path repo = s.fixture(Recipe::TextEdgeCases);
     s.write(repo, "new.txt", "keep one\ndrop me\nkeep two\n");
@@ -235,8 +234,7 @@ GG_TEST("linestaging", "CRLF lines, missing final newline, new files", "DIFF-STA
     s.settle();
 }
 
-GG_TEST("linestaging", "randomized line staging matches the content model", "DIFF-STAGING-RANDOM", "DIFF-STAGE-LINES",
-    "DIFF-UNSTAGE-LINES")
+GG_TEST("linestaging", "randomized line staging matches the content model")
 {
     auto& rng = s.rng();
     const fs::path repo = s.fixture(Recipe::Empty, "random");

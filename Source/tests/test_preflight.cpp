@@ -69,10 +69,7 @@ void rebaseTheirs(Scenario& s, const TwoSides& t)
 
 } // namespace
 
-GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the rewrite goes through",
-    "CONF-PREFLIGHT-BINARY", "CONF-PREFLIGHT-MODIFY-DELETE", "CONF-PREFLIGHT-TYPE", "CONF-PREFLIGHT-SUBMODULE",
-    "CONF-PREFLIGHT-MODE", "CONF-PREFLIGHT-RENAME", "CONF-PREFLIGHT-FILTER", "CONF-PREFLIGHT-OPTOUT",
-    "CONF-PREFLIGHT-DISK-FILE")
+GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the rewrite goes through")
 {
     const std::string rename = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n";
     struct Case {
@@ -237,8 +234,7 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
     }
 }
 
-GG_TEST("preflight", "conflicts are listed per commit in order; Cancel leaves .git byte-identical", "CONF-PREFLIGHT-STEP",
-    "CONF-PREFLIGHT-CANCEL", "IR-MEMORY-CANCEL")
+GG_TEST("preflight", "conflicts are listed per commit in order; Cancel leaves .git byte-identical")
 {
     // theirs has two commits, each with a binary conflict against ours.
     TwoSides t = twoSides(s, "two-steps",

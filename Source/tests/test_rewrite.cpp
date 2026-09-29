@@ -36,8 +36,7 @@ void selectCommit(Scenario& s, const std::string& hex)
 
 } // namespace
 
-GG_TEST("rewrite", "reword a commit in the middle: descendants rebased, the rest untouched, one Undo", "ACT-DESCRIBE-ANY",
-    "INFO-SAVE-MESSAGE", "REWRITE-INVARIANTS", "REWRITE-POST-REWRITE", "REWRITE-UNDO")
+GG_TEST("rewrite", "reword a commit in the middle: descendants rebased, the rest untouched, one Undo")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"branch", "old", "HEAD~3"});   // an ancestor: never moves
@@ -80,7 +79,7 @@ GG_TEST("rewrite", "reword a commit in the middle: descendants rebased, the rest
     GG_CHECK(s.waitUntil([&] { return everything(s, repo) == before; }));
 }
 
-GG_TEST("rewrite", "edit the author of any commit", "ACT-EDIT-AUTHOR", "INFO-EDIT-AUTHOR")
+GG_TEST("rewrite", "edit the author of any commit")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string target = s.revParse(repo, "HEAD~1");
@@ -98,8 +97,7 @@ GG_TEST("rewrite", "edit the author of any commit", "ACT-EDIT-AUTHOR", "INFO-EDI
     GG_CHECK_STR_EQ(info(s, repo, "HEAD", "%an"), "Test User");
 }
 
-GG_TEST("rewrite", "published history asks first; a locked ref leaves everything untouched", "REWRITE-PUBLISHED-WARN",
-    "REWRITE-FAIL-UNTOUCHED")
+GG_TEST("rewrite", "published history asks first; a locked ref leaves everything untouched")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const std::string published = s.revParse(repo, "origin/main~1");
@@ -140,7 +138,7 @@ GG_TEST("rewrite", "published history asks first; a locked ref leaves everything
 
 namespace ggtest {
 
-GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD moves", "HOOK-REWRITE-RUN")
+GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD moves")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"branch", "dest", "HEAD~3"});
@@ -173,8 +171,7 @@ GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD m
     GG_CHECK_STR_EQ(s.read(checkoutLog.parent_path(), checkoutLog.filename().string()), tip + " " + s.head(repo) + " 1\n");
 }
 
-GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the main worktree's branch asks first",
-    "REWRITE-INVARIANTS", "WT-LIST")
+GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the main worktree's branch asks first")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"branch", "wtb", "HEAD~1"});
@@ -200,8 +197,7 @@ GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the ma
     s.git(repo, {"worktree", "remove", "--force", wt.string()});
 }
 
-GG_TEST("rewrite", "in a bare repository, and at the root: reword, abandon the root commit",
-    "ACT-DESCRIBE-ANY", "ACT-ABANDON", "REWRITE-INVARIANTS", "APP-OPEN-STATES")
+GG_TEST("rewrite", "in a bare repository, and at the root: reword, abandon the root commit")
 {
     // Bare: the branch moves, nothing needs a working tree.
     const fs::path bare = s.fixture(Recipe::Bare);

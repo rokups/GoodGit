@@ -11,7 +11,7 @@
 
 namespace ggtest {
 
-GG_TEST("engine", "overlapping diff requests: only the newest result is shown", "APP-CANCEL-LONG-OPS")
+GG_TEST("engine", "overlapping diff requests: only the newest result is shown")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
@@ -33,7 +33,7 @@ GG_TEST("engine", "overlapping diff requests: only the newest result is shown", 
     GG_CHECK(!sawStale);
 }
 
-GG_TEST("engine", "watcher: plain git steps update the UI", "APP-WATCH-WORKTREE", "APP-WATCH-GITDIR")
+GG_TEST("engine", "watcher: plain git steps update the UI")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -53,7 +53,7 @@ GG_TEST("engine", "watcher: plain git steps update the UI", "APP-WATCH-WORKTREE"
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
 }
 
-GG_TEST("engine", "partial status on a huge worktree is marked scanning", "CHG-SCANNING")
+GG_TEST("engine", "partial status on a huge worktree is marked scanning")
 {
     const fs::path big = s.largeFixture();
     const fs::path repo = s.path("big-clone");
@@ -72,7 +72,7 @@ GG_TEST("engine", "partial status on a huge worktree is marked scanning", "CHG-S
     GG_CHECK(s.session()->changes().everScanned());
 }
 
-GG_TEST("engine", "responsiveness on the large repository", "APP-RESPONSIVE")
+GG_TEST("engine", "responsiveness on the large repository")
 {
     const fs::path repo = s.largeFixture();
     gg::setSlowGitLatency(std::chrono::milliseconds(50)); // slow-git mode

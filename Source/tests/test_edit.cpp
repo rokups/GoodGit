@@ -68,8 +68,7 @@ bool changed(Scenario& s, const fs::path& repo, const std::string& before, const
 
 } // namespace
 
-GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copies", "ACT-DUPLICATE-COMMIT",
-    "ACT-DUPLICATE-BRANCH", "HIST-KEY-D", "HIST-KEY-SHIFT-D")
+GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copies")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -92,8 +91,7 @@ GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copie
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
 }
 
-GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto another branch", "ACT-REBASE-COMMIT",
-    "ACT-REBASE-BRANCH", "HIST-PUBLISHED-WARN")
+GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto another branch")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -120,8 +118,7 @@ GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto anot
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c1 add a"}));
 }
 
-GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S)",
-    "ACT-SQUASH-PARENT", "ACT-SQUASH-TARGET", "ACT-SQUASH-DESCENDANTS", "HIST-KEY-S", "HIST-KEY-SHIFT-S")
+GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S)")
 {
     const EditRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "main^{tree}");
@@ -158,7 +155,7 @@ GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants i
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
 }
 
-GG_TEST("edit", "split a commit by files (Alt+S)", "ACT-SPLIT", "HIST-KEY-ALT-S")
+GG_TEST("edit", "split a commit by files (Alt+S)")
 {
     const EditRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "main^{tree}");
@@ -178,8 +175,7 @@ GG_TEST("edit", "split a commit by files (Alt+S)", "ACT-SPLIT", "HIST-KEY-ALT-S"
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
 }
 
-GG_TEST("edit", "abandon a commit (A) and a branch (Shift+A)", "ACT-ABANDON", "ACT-ABANDON-BRANCH", "ACT-ABANDON-REMOTE",
-    "HIST-KEY-A", "HIST-KEY-SHIFT-A")
+GG_TEST("edit", "abandon a commit (A) and a branch (Shift+A)")
 {
     const EditRepo r = makeRepo(s);
     // side has an upstream on a bare remote.
@@ -211,8 +207,7 @@ GG_TEST("edit", "abandon a commit (A) and a branch (Shift+A)", "ACT-ABANDON", "A
     s.settle();
 }
 
-GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents", "ACT-RESTORE-COMMIT",
-    "ACT-RESTORE-WORKTREE", "ACT-SIMPLIFY-PARENTS")
+GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -255,7 +250,7 @@ GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Redundant merge");
 }
 
-GG_TEST("edit", "insert a new commit before or after one", "ACT-NEW-INSERT-BEFORE", "ACT-NEW-INSERT-AFTER")
+GG_TEST("edit", "insert a new commit before or after one")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -283,9 +278,7 @@ GG_TEST("edit", "insert a new commit before or after one", "ACT-NEW-INSERT-BEFOR
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
 }
 
-GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile", "ACT-MERGE-INTO-HEAD",
-    "ACT-MERGE-NATIVE", "BR-MERGE-INTO-HEAD", "ACT-REBASE-HEAD-ONTO", "BR-REBASE-HEAD-ONTO", "ACT-RECONCILE",
-    "BR-RECONCILE")
+GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -330,8 +323,7 @@ GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a br
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), s.revParse(r.path, "side"));
 }
 
-GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit", "ACT-MERGE-INTO-HEAD",
-    "ACT-REBASE-HEAD-ONTO", "MENU-COMMIT-ACTIONS")
+GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit")
 {
     const EditRepo r = makeRepo(s);
     // s1 is not a branch tip any more: it can only be picked as a commit.
@@ -393,7 +385,7 @@ void dragCommit(Scenario& s, const std::string& from, const std::string& to, ImG
 
 } // namespace
 
-GG_TEST("edit", "reorder: move a commit before another, and copy one", "ACT-REORDER", "ACT-REORDER-COPY")
+GG_TEST("edit", "reorder: move a commit before another, and copy one")
 {
     const EditRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "main^{tree}");
@@ -410,9 +402,7 @@ GG_TEST("edit", "reorder: move a commit before another, and copy one", "ACT-REOR
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2 add b", "c3 change a", "c4 add c and d", "c2 add b", "c1 add a"}));
 }
 
-GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a later rewrite resolves them",
-    "ACT-REWRITE-TEXT-CONFLICT", "ACT-REWRITE-COMPLETION-MSG", "ACT-REWRITE-AUTO-RESOLVE", "CONF-AUTO-RESOLVE",
-    "ACT-REWRITE-INVARIANTS", "CONF-NO-NESTING")
+GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a later rewrite resolves them")
 {
     const EditRepo r = makeRepo(s);
     // c5 changes the line c3 changed: without c3, c5 conflicts.
@@ -447,7 +437,7 @@ GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a l
     GG_CHECK(!s.gitMayFail(r.path, {"grep", "-q", "<<<<<<<", "HEAD"}).ok()); // no markers anywhere
 }
 
-GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected commit's actions", "MENU-COMMIT-ACTIONS")
+GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected commit's actions")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -459,9 +449,7 @@ GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected c
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~3"), r.c2);
 }
 
-GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant destinations, nothing redundant, already merged",
-    "ACT-SQUASH-DESCENDANTS", "ACT-SQUASH-TARGET", "ACT-REBASE-COMMIT", "ACT-SIMPLIFY-PARENTS", "ACT-MOVE-CHANGES-PARENT",
-    "ACT-MOVE-CHANGES-CHILD", "ACT-MERGE-INTO-HEAD", "ACT-REBASE-HEAD-ONTO")
+GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant destinations, nothing redundant, already merged")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -543,8 +531,7 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withMerge);
 }
 
-GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults",
-    "ACT-SPLIT", "ACT-RESTORE-COMMIT", "TAG-CREATE", "REM-ADD", "BR-SET-UPSTREAM")
+GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -593,8 +580,7 @@ GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and se
     s.dialogButton("Add remote", "Cancel");
 }
 
-GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a detached HEAD, fold onto another branch or a deletion, a native merge git refuses",
-    "ACT-REORDER", "HIST-DND-FILES", "ACT-MERGE-NATIVE")
+GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a detached HEAD, fold onto another branch or a deletion, a native merge git refuses")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -665,10 +651,7 @@ GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a 
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), s.head(r.path)); // the branch at the old tip follows
 }
 
-GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch",
-    "ACT-DUPLICATE-COMMIT", "ACT-DUPLICATE-BRANCH", "ACT-SQUASH-DESCENDANTS", "ACT-SPLIT", "ACT-ABANDON", "ACT-ABANDON-BRANCH",
-    "TAG-CREATE", "ACT-NEW-DETACHED", "INFO-CONFLICTED-FILES", "BLAME-SELECT-BLOCK", "CONF-NATIVE-TAKE-SIDE",
-    "STASH-APPLY", "REFLOG-BRANCH")
+GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));

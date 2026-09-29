@@ -64,8 +64,7 @@ bool originHas(Scenario& s, const fs::path& repo, const std::string& ref, const 
 
 } // namespace
 
-GG_TEST("network", "clone from Welcome and the menu; unreachable remote fails cleanly", "APP-WELCOME-CLONE",
-    "MENU-REPO-CLONE", "REMOTE-CLONE", "REMOTE-CLONE-FAIL", "FAIL-NETWORK")
+GG_TEST("network", "clone from Welcome and the menu; unreachable remote fails cleanly")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path dest = s.path("cloned");
@@ -91,7 +90,7 @@ GG_TEST("network", "clone from Welcome and the menu; unreachable remote fails cl
     GG_CHECK(s.app.clone().state() == ggui::core::CloneService::State::Idle);
 }
 
-GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CANCEL", "FAIL-CANCEL")
+GG_TEST("network", "cancel a clone: no directory left behind")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.installSshShim();
@@ -129,10 +128,7 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     GG_CHECK(!fs::exists(dest2));
 }
 
-GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move", "TB-FETCH",
-    "TB-FETCH-REMOTE", "TB-FETCH-PRUNE", "TB-FETCH-TAGS", "MENU-REPO-FETCH", "REM-FETCH", "REM-FETCH-ALL",
-    "REMOTE-FETCH-ONE", "REMOTE-FETCH-ALL", "REMOTE-FETCH-NO-FF", "TB-PULL-BADGE", "TB-PUSH-BADGE",
-    "BR-REMOTE-MENU")
+GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; only remote-tracking refs move")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path second = s.path("second.git");
@@ -200,7 +196,7 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     GG_CHECK_STR_EQ(s.head(repo), localMain);
 }
 
-GG_TEST("network", "fetch from an unreachable remote reports the failure", "REMOTE-FETCH-FAIL")
+GG_TEST("network", "fetch from an unreachable remote reports the failure")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"remote", "add", "dead", "git://127.0.0.1:1/nothing.git"});
@@ -212,9 +208,7 @@ GG_TEST("network", "fetch from an unreachable remote reports the failure", "REMO
     GG_CHECK(s.session()->actions().busy().empty());
 }
 
-GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panels", "TB-PULL", "TB-PULL-MERGE",
-    "TB-PULL-REBASE", "TB-PULL-FFONLY", "MENU-REPO-PULL", "BR-PULL", "REM-PULL", "REMOTE-PULL-CONFIG",
-    "REMOTE-PULL-OVERRIDE")
+GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panels")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"config", "pull.rebase", "true"});
@@ -270,8 +264,7 @@ GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panel
     s.settle();
 }
 
-GG_TEST("network", "pull disabled when detached or without upstream; Stash and pull", "TB-PULL-DISABLED-DETACHED",
-    "TB-PULL-DISABLED-NOUPSTREAM", "TB-PULL-STASH", "STASH-PULL-HELPER")
+GG_TEST("network", "pull disabled when detached or without upstream; Stash and pull")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -303,9 +296,7 @@ GG_TEST("network", "pull disabled when detached or without upstream; Stash and p
     GG_CHECK(s.read(repo, "local-only.txt") == "local uncommitted\n");
 }
 
-GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefills Push to", "TB-PUSH",
-    "TB-PUSH-NOUPSTREAM", "TB-PUSH-TO", "MENU-REPO-PUSH", "HIST-CTX-PUSH", "HIST-CTX-PUSH-TO", "BR-PUSH", "BR-PUSH-TO",
-    "REMOTE-PUSH", "REMOTE-PUSH-SET-UPSTREAM")
+GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefills Push to")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"pull", "-q", "--rebase", "origin", "main"});
@@ -364,8 +355,7 @@ GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefi
     s.settle();
 }
 
-GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags", "TB-PUSH-REJECTED-PULL",
-    "TB-PUSH-REJECTED-FORCE", "TB-PUSH-FORCE-LEASE", "TB-PUSH-TAGS", "REMOTE-PUSH-TAGS")
+GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -405,8 +395,7 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags",
     s.settle();
 }
 
-GG_TEST("network", "push is refused when outgoing commits hold first-class conflicts", "TB-PUSH-REFUSE-CONFLICTS",
-    "CONF-PUSH-REFUSE")
+GG_TEST("network", "push is refused when outgoing commits hold first-class conflicts")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     const fs::path bare = s.path("conflicted-origin.git");
@@ -433,7 +422,7 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
     GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main~2"));
 }
 
-GG_TEST("network", "push is refused when outgoing commits left broken conflict markers", "PUSH-REFUSE-BROKEN")
+GG_TEST("network", "push is refused when outgoing commits left broken conflict markers")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     const fs::path bare = s.path("broken-origin.git");
@@ -463,7 +452,7 @@ GG_TEST("network", "push is refused when outgoing commits left broken conflict m
     GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
 }
 
-GG_TEST("network", "askpass: answer and cancel a credentials prompt", "REMOTE-ASKPASS", "REMOTE-ASKPASS-CANCEL")
+GG_TEST("network", "askpass: answer and cancel a credentials prompt")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.installSshShim("s3cret");
@@ -496,8 +485,7 @@ GG_TEST("network", "askpass: answer and cancel a credentials prompt", "REMOTE-AS
     GG_CHECK_STR_EQ(s.head(dest), s.revParse(repo, "origin/main"));
 }
 
-GG_TEST("network", "remote actions are disabled while a mutation runs; browsing still works", "TB-REMOTE-BUSY",
-    "REMOTE-PROGRESS")
+GG_TEST("network", "remote actions are disabled while a mutation runs; browsing still works")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -519,7 +507,7 @@ GG_TEST("network", "remote actions are disabled while a mutation runs; browsing 
     GG_CHECK(!disabled(s, "//##Toolbar/###tb_fetch"));
 }
 
-GG_TEST("network", "clone over git://: the server's progress shows its phase, not \"remote\"", "REMOTE-CLONE", "REMOTE-PROGRESS")
+GG_TEST("network", "clone over git://: the server's progress shows its phase, not \"remote\"")
 {
     // A repository with a few thousand objects, served by git daemon.
     const fs::path base = s.path("served");

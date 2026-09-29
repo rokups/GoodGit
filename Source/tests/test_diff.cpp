@@ -103,8 +103,7 @@ const ggui::core::DiffFile* file(Scenario& s)
 
 } // namespace
 
-GG_TEST("diff", "unified view, context lines, expandable context", "DIFF-UNIFIED", "DIFF-CONTEXT", "DIFF-EXPAND",
-    "DIFF-EXPAND-SIDES", "DIFF-EXPAND-SHIFT")
+GG_TEST("diff", "unified view, context lines, expandable context")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -158,7 +157,7 @@ GG_TEST("diff", "unified view, context lines, expandable context", "DIFF-UNIFIED
     GG_CHECK(!s.itemExists((body(s) + "/###expand_down_1").c_str()));
 }
 
-GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE", "DIFF-SYNTAX", "DIFF-SBS-CODE-ONLY")
+GG_TEST("diff", "side-by-side view with syntax highlighting")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -185,7 +184,7 @@ GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE
     GG_CHECK(!s.app.settings().data().diffSideBySide);
 }
 
-GG_TEST("diff", "text is selectable with the mouse in both views", "DIFF-SELECT-TEXT", "DIFF-EDITOR-VIEWS")
+GG_TEST("diff", "text is selectable with the mouse in both views")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -226,7 +225,7 @@ GG_TEST("diff", "text is selectable with the mouse in both views", "DIFF-SELECT-
     s.screenshot("diff-unified");
 }
 
-GG_TEST("diff", "whitespace modes", "DIFF-WS-MODES")
+GG_TEST("diff", "whitespace modes")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -241,8 +240,7 @@ GG_TEST("diff", "whitespace modes", "DIFF-WS-MODES")
     GG_CHECK(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 1; }));
 }
 
-GG_TEST("diff", "binary, image, submodule and mode-change placeholders", "DIFF-BINARY", "DIFF-IMAGE",
-    "DIFF-SUBMODULE", "DIFF-MODE-CHANGE")
+GG_TEST("diff", "binary, image, submodule and mode-change placeholders")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -264,8 +262,7 @@ GG_TEST("diff", "binary, image, submodule and mode-change placeholders", "DIFF-B
     GG_CHECK_STR_EQ(file(s)->newId.hex(), s.revParse(super, "HEAD:sub"));
 }
 
-GG_TEST("diff", "renames, compare this file with HEAD or the working tree, large diffs", "DIFF-RENAME", "DIFF-VS-HEAD",
-    "DIFF-COMPARE-WITH", "DIFF-LOAD-FULL")
+GG_TEST("diff", "renames, compare this file with HEAD or the working tree, large diffs")
 {
     const DiffRepo r = makeRepo(s);
     s.commitFile(r.path, "code.cpp", numbered(40, 20), "Later change");
@@ -326,7 +323,7 @@ GG_TEST("diff", "renames, compare this file with HEAD or the working tree, large
     GG_CHECK(s.waitUntil([&] { return file(s) && !file(s)->truncated && file(s)->additions == 25000; }, 60.0f));
 }
 
-GG_TEST("diff", "select lines, Ctrl+C and the context menu", "DIFF-COPY-KEY", "DIFF-CTX-COPY", "DIFF-CTX-BLAME")
+GG_TEST("diff", "select lines, Ctrl+C and the context menu")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -353,7 +350,7 @@ GG_TEST("diff", "select lines, Ctrl+C and the context menu", "DIFF-COPY-KEY", "D
     }));
 }
 
-GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code", "DIFF-NO-HUNK-RANGES", "DIFF-COPY-KEY")
+GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code")
 {
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -391,8 +388,7 @@ GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code", "DIFF
     GG_CHECK_STR_EQ(s.clipboard(), "keep");
 }
 
-GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit",
-    "DIFF-IMAGE", "DIFF-SIDE-BY-SIDE", "DIFF-CTX-COPY", "DIFF-TERM-VIEW")
+GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit")
 {
     const DiffRepo r = makeRepo(s);
     auto le = [](std::string& out, unsigned v, int bytes) {
@@ -517,8 +513,7 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
     }));
 }
 
-GG_TEST("diff", "more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file",
-    "DIFF-RENAME", "DIFF-IMAGE", "DIFF-LOAD-FULL", "BLAME-BEFORE", "BLAME-WORKTREE")
+GG_TEST("diff", "more edges: a copied file (and blame before it), files over the text limit, an untracked image, blame of an untracked file")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "more-edges");
     std::string original;
@@ -612,8 +607,7 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
     }));
 }
 
-GG_TEST("diff", "side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule",
-    "DIFF-SIDE-BY-SIDE", "DIFF-BINARY", "DIFF-SUBMODULE", "DIFF-CTX-BLAME")
+GG_TEST("diff", "side by side across files: switching, a binary file, Shift+click first, blame from the working tree; an added submodule")
 {
     const DiffRepo r = makeRepo(s);
     s.write(r.path, "code.cpp", numbered(40, 12));

@@ -108,8 +108,7 @@ void roundTrip(Scenario& s, const Line& l, const std::string& file)
 
 } // namespace
 
-GG_TEST("edges", "round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text",
-    "CONF-EDGE-NOEOL", "CONF-EDGE-CRLF", "CONF-EDGE-EMPTY", "CONF-EDGE-MARKERLIKE")
+GG_TEST("edges", "round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text")
 {
     roundTrip(s, makeLine(s, "noeol", "f.txt", {"a\nb\nc", "a\nb\nC1", "a\nb\nC2"}), "f.txt");
     roundTrip(s, makeLine(s, "crlf", "f.txt", {"a\r\nb\r\nc\r\n", "a\r\nB1\r\nc\r\n", "a\r\nB2\r\nc\r\n"}), "f.txt");
@@ -120,7 +119,7 @@ GG_TEST("edges", "round trips through first-class conflicts are byte-exact: no n
         "f.txt");
 }
 
-GG_TEST("edges", "N-way: merging two conflicted lines gives three sides; merging again simplifies", "CONF-NWAY-MERGE")
+GG_TEST("edges", "N-way: merging two conflicted lines gives three sides; merging again simplifies")
 {
     // A and B each hold a two-sided region on the same line (terms x2+x0-x1 and x5+x0-x4).
     const fs::path repo = s.fixture(Recipe::Empty);
@@ -150,7 +149,7 @@ GG_TEST("edges", "N-way: merging two conflicted lines gives three sides; merging
     GG_CHECK(s.gitgg(repo, {"conflicts", "HEAD"}).out.find("(2 sides)") != std::string::npos);
 }
 
-GG_TEST("edges", "randomized reorders of N changes to one place always come back exact", "CONF-NO-NESTING")
+GG_TEST("edges", "randomized reorders of N changes to one place always come back exact")
 {
     const Line l = makeLine(s, "random", "f.txt", {"v=0\n", "v=1\n", "v=2\n", "v=3\n", "v=4\n"});
     const auto original = blobsAlongMain(s, l.path, "f.txt");
@@ -188,8 +187,7 @@ GG_TEST("edges", "randomized reorders of N changes to one place always come back
     GG_CHECK(blobsAlongMain(s, l.path, "f.txt") == original);
 }
 
-GG_TEST("edges", "plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push",
-    "CONF-TRANSPARENCY", "CONF-GIT-MERGE-GGUI-REGIONS")
+GG_TEST("edges", "plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
     s.git(repo, {"branch", "other", "HEAD~2"});
@@ -271,8 +269,7 @@ GG_TEST("edges", "plain git keeps first-class conflicts: rebase, cherry-pick, am
     }));
 }
 
-GG_TEST("edges", "marker-like text: only complete regions are conflicts (CRLF, no final newline, long markers, flags); the rest is plain text",
-    "CONF-WELLFORMED-ONLY", "CONF-PARSE-DIFF3", "CONF-PARSE-NWAY", "CONF-MARKER-LENGTH")
+GG_TEST("edges", "marker-like text: only complete regions are conflicts (CRLF, no final newline, long markers, flags); the rest is plain text")
 {
     const std::string diff3 = "<<<<<<< side 1\nx\n||||||| base\ny\n=======\nz\n>>>>>>> side 2\n";
     const std::vector<std::pair<std::string, std::string>> regions{
