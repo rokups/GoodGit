@@ -93,10 +93,13 @@ The parser scans lines top to bottom:
 2. The candidate is followed line by line. It is **well-formed** when the structural markers of
    length `L` appear exactly in the grammar order and the closing marker is reached.
 3. If another opening marker of the **same** length `L` appears before the candidate
-   completes, the candidate is abandoned and scanning restarts at that new opening line.
-   (This is what lets a ggui region sitting inside a region plain Git added be recognised.)
+   completes, the candidate is abandoned. (This is what lets a ggui region sitting inside a
+   region plain Git added be recognised.)
 4. A malformed or abandoned candidate contributes its opening line as ordinary text; scanning
-   continues on the next line. Partial markers, wrong lengths, missing bases, wrong side counts
+   continues on the **next line** after that opening, not where the candidate stopped, so an
+   opening marker of another length in between still starts a candidate of its own. (Otherwise
+   a part of a file could hold a region the whole file does not, and a conflict written from
+   parts could nest.) Partial markers, wrong lengths, missing bases, wrong side counts
    and unterminated regions are all ordinary text.
 5. Text outside regions is kept verbatim.
 
@@ -142,6 +145,10 @@ A conflicted file with regions `R₁…R_k` becomes a file-level merge value:
 2. Side `i` of the file = every text outside regions, interleaved with side `i` of each region
    in order. Base `j` of the file likewise.
 3. `M = side₁ − base₁ + side₂ − … + side_N`.
+4. A term built this way can itself contain a well-formed region: marker-like lines outside
+   the regions and inside a section join up. Such a term `t` is replaced by its own terms,
+   `+t = +a₀ − r₁ + a₁ …` and `−t = −a₀ + r₁ − a₁ …`, until no term contains a region. Marker
+   lines are removed each time, so this ends.
 
 A file without regions is `M = content`.
 

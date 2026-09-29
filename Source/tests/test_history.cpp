@@ -489,7 +489,9 @@ GG_TEST("history", "cancel a long history load and a reveal", "HIST-REVEAL-CANCE
     s.contextMenu("//Tags/tag_t:0/###tag_t:0", "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.itemExists("//##Toolbar/Cancel##tb_cancel"); }, 10.0f));
     ctx->ItemClick("//##Toolbar/Cancel##tb_cancel");
-    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, 30.0f));
+    // Other reads (the working tree status of the large fixture) finish on their own; on a slow
+    // runner that alone can take 30 s.
+    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
     GG_CHECK(s.session()->selection().id.hex() != root);
     GG_CHECK(history.rows().size() < 100000);
 }

@@ -333,10 +333,10 @@ Parsed parse(std::string_view text)
             parsed.regions.push_back(std::move(region));
             i = next;
             break;
-        case Attempt::Restart:
-            i = next; // abandon this opening; the inner opening starts a new candidate
-            break;
+        case Attempt::Restart:  // abandoned at another opening of the same length
         case Attempt::Malformed:
+            // The opening is text; scan on from the next line, so an opening of another length
+            // between here and where the candidate stopped still starts its own region.
             ++i;
             break;
         }
@@ -351,7 +351,7 @@ bool looksBinary(std::string_view text)
     return text.substr(0, std::min<size_t>(text.size(), 8000)).find('\0') != std::string_view::npos;
 }
 
-Merge toMerge(std::string_view text)
+static Merge toMergeOnce(std::string_view text)
 {
     const Parsed p = parse(text);
     if (!p.conflicted())
@@ -387,6 +387,36 @@ Merge toMerge(std::string_view text)
         a.append(rest);
     for (auto& r : m.removes)
         r.append(rest);
+    return m;
+}
+
+Merge toMerge(std::string_view text)
+{
+    // A term is outside text joined with one section of each region, so marker-like lines
+    // outside and inside regions can join into a region of its own: flatten that term too
+    // (+t = +a0 − r1 + a1 …, −t = −a0 + r1 − a1 …) until no term has regions. Each round strips
+    // marker lines, so terms only get shorter and this ends.
+    Merge m = toMergeOnce(text);
+    for (bool again = true; again;) {
+        again = false;
+        for (size_t i = 0; i < m.adds.size() && !again; ++i)
+            if (isConflicted(m.adds[i])) {
+                Merge t = toMergeOnce(m.adds[i]);
+                m.adds.erase(m.adds.begin() + static_cast<std::ptrdiff_t>(i));
+                m.adds.insert(m.adds.begin() + static_cast<std::ptrdiff_t>(i), t.adds.begin(), t.adds.end());
+                m.removes.insert(m.removes.begin() + static_cast<std::ptrdiff_t>(std::min(i, m.removes.size())),
+                    t.removes.begin(), t.removes.end());
+                again = true;
+            }
+        for (size_t i = 0; i < m.removes.size() && !again; ++i)
+            if (isConflicted(m.removes[i])) {
+                Merge t = toMergeOnce(m.removes[i]);
+                m.removes.erase(m.removes.begin() + static_cast<std::ptrdiff_t>(i));
+                m.removes.insert(m.removes.begin() + static_cast<std::ptrdiff_t>(i), t.adds.begin(), t.adds.end());
+                m.adds.insert(m.adds.begin() + static_cast<std::ptrdiff_t>(i + 1), t.removes.begin(), t.removes.end());
+                again = true;
+            }
+    }
     return m;
 }
 
