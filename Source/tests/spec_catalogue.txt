@@ -345,6 +345,7 @@ INFO-CONFLICTED-FILES | 2 | §4.4 | Conflicted files and side counts listed
 DIFF-UNIFIED | 1 | §4.5 | Unified view
 DIFF-SIDE-BY-SIDE | 1 | §4.5 | Side-by-side view
 DIFF-SBS-CODE-ONLY | 1 | §4.5 | Side-by-side view shows only code: no hunk header lines
+DIFF-NO-HUNK-RANGES | 1 | §4.5 | No @@ range text in the unified view: hunk rows show only the function context; copies hold only code lines
 DIFF-WS-MODES | 1 | §4.5 | Whitespace: normal / ignore changes / ignore all, each labelled "Whitespace: ..."
 DIFF-CONTEXT | 1 | §4.5 | Context-line count
 DIFF-EXPAND | 1 | §4.5 | Expand context

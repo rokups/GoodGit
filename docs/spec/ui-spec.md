@@ -368,8 +368,13 @@ the panel without touching the repository.
   (this file of a commit or stash; on the same row), for stashes a part selector `##stash_part` (Working tree / Index /
   Untracked).
 - Body: hunks with headers; per hunk buttons (N) `Stage hunk`, `Discard hunk`, `Unstage hunk`.
-  Side by side shows only code: no hunk header lines (gap placeholders mark omitted lines).
-  Line selection with click/Shift-click; Ctrl+C copies.
+  A hunk row shows only the hunk's function context (the text after the closing `@@`, dimmed;
+  empty when there is none) and no `@@ -a,b +c,d @@` range: the editor text never contains range
+  text, so it cannot be selected or copied. Its gutter is blank apart from the buttons.
+  Side by side shows only code: no hunk rows at all (gap placeholders mark omitted lines).
+  Line selection with click/Shift-click; Ctrl+C and the menu's Copy copy only code lines: hunk
+  rows, the "... N unchanged lines" placeholders and side-by-side fillers are left out of the
+  copied text (both views).
 - Expandable context rows `expand_<n>` (click: 10 lines; Shift+click: whole gap).
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.

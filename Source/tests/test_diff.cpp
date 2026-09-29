@@ -170,7 +170,7 @@ GG_TEST("diff", "side-by-side view with syntax highlighting", "DIFF-SIDE-BY-SIDE
     // Two editors, removed lines left and added lines right, aligned line for line.
     GG_CHECK(s.itemExists(s.child(body(s).c_str(), "##sbs_left").c_str()));
     GG_CHECK(s.itemExists(s.child(body(s).c_str(), "##sbs_right").c_str()));
-    // Only code: no hunk header lines (the unified view keeps them).
+    // Only code: no hunk rows (the unified view keeps them, with only the function context).
     for (const char* side : {"##sbs_left", "##sbs_right"}) {
         const std::string editor = s.child(body(s).c_str(), side);
         GG_CHECK(!s.itemExists((editor + "/###hunk_0").c_str()));
@@ -351,6 +351,44 @@ GG_TEST("diff", "select lines, Ctrl+C and the context menu", "DIFF-COPY-KEY", "D
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "code.cpp" && b->query.commit.hex() == r.change;
     }));
+}
+
+GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code", "DIFF-NO-HUNK-RANGES", "DIFF-COPY-KEY")
+{
+    const DiffRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    showFile(s, r.change, "code.cpp");
+    const auto* f = file(s);
+    GG_REQUIRE(f && f->hunks.size() == 2);
+    GG_CHECK(f->hunks[1].header.rfind("@@ ", 0) == 0); // the model keeps the header
+    GG_REQUIRE(s.itemExists((body(s) + "/###hunk_1").c_str()));
+    // Nothing drawn in the editor is range text; the hunk rows keep their buttons and show only
+    // the function context.
+    const auto lines = s.drawnText(body(s).c_str());
+    GG_CHECK(lines.size() > 3);
+    for (const auto& line : lines)
+        GG_CHECK(line.find("@@") == std::string::npos);
+    GG_CHECK(s.textShown(body(s).c_str(), "int line31 = 0;"));
+    // Rows: 0 = gap, 1 = hunk 0, 2..9 = its lines, 10 = the gap between the hunks (collapsed),
+    // 11 = hunk 1, 12.. = its lines. Select from line 7 (hunk 0) to line 33 (hunk 1).
+    ctx->ItemClick((body(s) + "/###line_8").c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick((body(s) + "/###line_13").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    const std::string expected = "int line7 = 0;\nint line8 = 0;\nint line32 = 0;\nint line33 = 0;\n";
+    GG_CHECK_STR_EQ(s.session()->diff().selectedText(), expected);
+    ImGui::SetClipboardText("");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+    GG_CHECK_STR_EQ(s.clipboard(), expected);
+    ImGui::SetClipboardText("");
+    s.contextMenu((body(s) + "/###line_8").c_str(), "Copy");
+    GG_CHECK_STR_EQ(s.clipboard(), expected);
+    // A hunk row alone holds no code: nothing is copied over the clipboard.
+    ImGui::SetClipboardText("keep");
+    ctx->ItemClick((body(s) + "/###hunk_1").c_str());
+    GG_CHECK_STR_EQ(s.session()->diff().selectedText(), "");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+    GG_CHECK_STR_EQ(s.clipboard(), "keep");
 }
 
 GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit",

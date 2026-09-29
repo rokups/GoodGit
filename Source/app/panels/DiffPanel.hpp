@@ -101,6 +101,7 @@ private:
     void buildViews();
     void setupView(View& v, Side side);
     void finishView(View& v, const std::string& text);
+    void renderEditor(View& v, const char* id, float width);
     void drawToolbar();
     void drawUnified();
     void drawSideBySide();

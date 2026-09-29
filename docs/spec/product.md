@@ -332,12 +332,14 @@ the History panel list newly conflicted commits. See §5, decision R1.
 - **K** Unified and Side-by-side views. Whitespace mode (normal / ignore changes / ignore
   all). Context-line count. Expandable context (Shift reveals the whole section). Syntax
   highlighting. Binary, image and submodule placeholders. Mode-change line. "Compare only
-  this file with @". Ctrl+C copies the selection.
+  this file with @". Ctrl+C copies the selection: code lines only (no hunk rows or gap
+  placeholders).
 - **K** Line/hunk context menu: Copy, Blame file, Move line(s)/hunk to parent / child /
   active commit / working tree, Revert line/hunk.
 - **N** When viewing unstaged changes: **Stage line(s) / Stage hunk / Discard line(s) /
   Discard hunk**. When viewing staged changes: **Unstage line(s) / Unstage hunk**. Buttons
-  appear in each hunk header, as in gitfourchette.
+  appear in each hunk's row, as in gitfourchette. A hunk row shows only the function context,
+  never the `@@` line ranges.
 - **N** Diff of a stash entry: its working-tree part and its index part. Show untracked files
   as a third part when the stash has them.
 

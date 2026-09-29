@@ -5,6 +5,7 @@
 #include "util/PatchBuilder.hpp"
 #include "util/Ui.hpp"
 #include "shell/Widgets.hpp"
+#include <limits>
 #include <IconsMaterialSymbols.h>
 
 #include <TextEditor.h>
@@ -48,6 +49,19 @@ ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (s
 class DiffEditor : public TextEditor {
 public:
     DiffEditor() { focusOnEditor = false; }
+
+    // Sets the text with syntax colors, the given lines drawn dimmed instead. The colors are
+    // computed here (not on the next render, which would overwrite the dimming).
+    void setContent(const std::string& text, const Language* lang, const std::vector<int>& dimmed)
+    {
+        SetLanguage(lang);
+        SetText(text);
+        for (int l : dimmed)
+            if (l >= 0 && l < static_cast<int>(document.size()))
+                for (auto& glyph : document[static_cast<size_t>(l)])
+                    glyph.color = Color::whitespace; // recolored to the theme's dim color (whitespace is not drawn)
+        languageChanged = false; // already colorized by SetText
+    }
 };
 
 // Popup shared by the gutter handles (the editor's own text menu shows the same items).
@@ -308,13 +322,50 @@ void DiffPanel::buildRows()
 
 std::string DiffPanel::selectedText() const
 {
+    // Only code: hunk rows, the "N unchanged lines" placeholders and side-by-side fillers are
+    // left out, whatever the selection covers.
     const View* v = m_active;
     if (!v)
         return {};
+    const TextEditor& e = *v->editor;
     std::string out;
-    for (size_t c = 0; c < v->editor->GetNumberOfCursors(); ++c)
-        out += v->editor->GetCursorText(c);
+    for (size_t c = 0; c < e.GetNumberOfCursors(); ++c) {
+        const auto sel = e.GetCursorSelection(c);
+        if (sel.start.line == sel.end.line && sel.start.column == sel.end.column)
+            continue;
+        for (int i = sel.start.line; i <= sel.end.line && i < static_cast<int>(v->lines.size()); ++i) {
+            if (i == sel.end.line && i > sel.start.line && sel.end.column == 0)
+                break; // the selection stops at the start of this line
+            const EditorLine::Kind kind = v->lines[static_cast<size_t>(i)].kind;
+            if (kind != EditorLine::Line && kind != EditorLine::GapLine)
+                continue;
+            const int from = i == sel.start.line ? sel.start.column : 0;
+            const int to = i == sel.end.line ? sel.end.column : std::numeric_limits<int>::max();
+            out += e.GetSectionText(i, from, i, to);
+            if (i < sel.end.line)
+                out.push_back('\n');
+        }
+    }
     return out;
+}
+
+void DiffPanel::renderEditor(View& v, const char* id, float width)
+{
+    // The editor copies its own selection on Ctrl+C / Ctrl+Insert: replace that with the code only.
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool copyKey = io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_C) || ImGui::IsKeyPressed(ImGuiKey_Insert));
+    const std::string before = copyKey ? std::string(ImGui::GetClipboardText() ? ImGui::GetClipboardText() : "") : std::string();
+    v.editor->Render(id, ImVec2(width, 0));
+    if (copyKey) {
+        const char* now = ImGui::GetClipboardText();
+        if (now && before != now) {
+            View* saved = m_active;
+            m_active = &v;
+            const std::string text = selectedText();
+            m_active = saved;
+            ImGui::SetClipboardText((text.empty() ? before : text).c_str());
+        }
+    }
 }
 
 DiffPanel::View& DiffPanel::primaryView()
@@ -359,8 +410,12 @@ void DiffPanel::setupView(View& v, Side side)
 void DiffPanel::finishView(View& v, const std::string& text)
 {
     // A final newline keeps whole-line selections (and copies) of the last line complete.
-    v.editor->SetText(text + "\n");
-    v.editor->SetLanguage(languageFor(m_file->path));
+    // Hunk rows (function context) are drawn dimmed.
+    std::vector<int> hunkRows;
+    for (size_t i = 0; i < v.lines.size(); ++i)
+        if (v.lines[i].kind == EditorLine::Hunk)
+            hunkRows.push_back(static_cast<int>(i));
+    static_cast<DiffEditor&>(*v.editor).setContent(text + "\n", languageFor(m_file->path), hunkRows);
     v.editor->ClearMarkers();
     const Palette& p = theme().palette();
     for (size_t i = 0; i < v.lines.size(); ++i) {
@@ -392,7 +447,8 @@ void DiffPanel::buildViews()
 {
     m_viewsDirty = false;
     const core::DiffFile& f = m_diff->files.front();
-    const auto palette = theme().theme() == Theme::Light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
+    auto palette = theme().theme() == Theme::Light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
+    palette[static_cast<size_t>(TextEditor::Color::whitespace)] = theme().palette().dim; // hunk rows, dimmed
     // A gap: the lines revealed from its top, the placeholder for the rest, the lines revealed
     // from its bottom.
     auto gapLines = [&](const Row& r, auto&& emit) {
@@ -431,8 +487,15 @@ void DiffPanel::buildViews()
         if (r.kind == Row::Gap) {
             gapLines(r, [&](EditorLine l, const std::string& t) { l.row = static_cast<int>(i); emitU(l, t); });
         } else if (r.kind == Row::Hunk) {
+            // Only the function context (after the closing "@@"): no range text anywhere in the
+            // editor, so it can never be selected or copied. The gutter hosts the hunk's buttons.
             EditorLine l{EditorLine::Hunk, static_cast<int>(i), r.hunk};
-            emitU(l, f.hunks[static_cast<size_t>(r.hunk)].header);
+            const std::string& header = f.hunks[static_cast<size_t>(r.hunk)].header;
+            const size_t close = header.find("@@", 2);
+            std::string context = close == std::string::npos ? std::string() : header.substr(close + 2);
+            const size_t b = context.find_first_not_of(" \t");
+            context = b == std::string::npos ? std::string() : context.substr(b);
+            emitU(l, stripCr(context));
         } else {
             const auto& hl = f.hunks[static_cast<size_t>(r.hunk)].lines[static_cast<size_t>(r.line)];
             EditorLine l{EditorLine::Line, static_cast<int>(i), r.hunk, r.line};
@@ -588,7 +651,6 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         const float button = ImGui::GetFontSize() * 1.3f;
         const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged ? 1 : 0;
         handle("###hunk_" + std::to_string(l.hunk), width - button * static_cast<float>(count));
-        dl->AddText(pos, p.hunkHeader, "@@");
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
         ImGui::BeginDisabled(!free);
         auto iconButton = [&](const char* icon, const std::string& id, const char* tip) {
@@ -840,7 +902,7 @@ void DiffPanel::drawUnified()
         m_resetScroll = false;
     }
     ImGui::PushFont(theme().monoFont(), 0.0f);
-    m_unified.editor->Render("##diff_body");
+    renderEditor(m_unified, "##diff_body", 0.0f);
     ImGui::PopFont();
 }
 
@@ -855,10 +917,10 @@ void DiffPanel::drawSideBySide()
     ImGui::PushFont(theme().monoFont(), 0.0f);
     const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
     ImGuiWindow* parent = ImGui::GetCurrentWindow();
-    m_left.editor->Render("##sbs_left", ImVec2(half, 0));
+    renderEditor(m_left, "##sbs_left", half);
     ImGuiWindow* leftWindow = parent->DC.ChildWindows.back();
     ImGui::SameLine();
-    m_right.editor->Render("##sbs_right", ImVec2(0, 0));
+    renderEditor(m_right, "##sbs_right", 0.0f);
     ImGuiWindow* rightWindow = parent->DC.ChildWindows.back();
     ImGui::PopFont();
     // Keep both sides on the same lines: whichever side scrolled drives the other.
