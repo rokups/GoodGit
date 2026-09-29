@@ -57,9 +57,9 @@ gg::RunResult gitWithoutGitGg(const fs::path& repo, std::vector<std::string> arg
     const std::string binDir = gg::findInPath("git-gg").parent_path().string();
     std::string path;
     std::stringstream parts(ggui::getEnv("PATH"));
-    for (std::string part; std::getline(parts, part, ':');)
+    for (std::string part; std::getline(parts, part, kPathSep[0]);)
         if (part != binDir)
-            path += (path.empty() ? "" : ":") + part;
+            path += (path.empty() ? "" : kPathSep) + part;
     gg::RunRequest r;
     args.insert(args.begin(), "git");
     r.args = std::move(args);

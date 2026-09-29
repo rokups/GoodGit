@@ -673,7 +673,7 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
         "#!/bin/sh\nif head -n 1 \"$1\" | grep -q \"^Merge branch 'topic'$\"; then printf 'Merge topic, retold\\n' > \"$1\"; fi\n");
     const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--rebase-merges",
                                         s.gitAtLeast(2, 45) ? "--empty=stop" : "--empty=ask", r.c0},
-        retell.string());
+        retell.generic_string());
     GG_CHECK(copyRun.ok());
     GG_CHECK_STR_EQ(branches(s, r.path), branches(s, copy));
     GG_CHECK_STR_EQ(s.read(r.path, ".git/post-rewrite.log"), s.read(copy, ".git/post-rewrite.log"));
