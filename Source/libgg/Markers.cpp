@@ -402,7 +402,11 @@ Merge combine(const Merge& base, const Merge& ours, const Merge& theirs)
     return m;
 }
 
-void simplify(Merge& m)
+namespace {
+
+// §7.3 as byte equality: cancel equal add/remove pairs; resolved when all adds agree (Git's
+// rule for the same change on both sides; `strict` leaves it out: a − r + a is not a).
+void simplifyPairs(Merge& m, bool strict = false)
 {
     for (size_t r = 0; r < m.removes.size();) {
         auto it = std::find(m.adds.begin(), m.adds.end(), m.removes[r]);
@@ -413,9 +417,53 @@ void simplify(Merge& m)
             ++r;
         }
     }
-    if (!m.adds.empty() && std::all_of(m.adds.begin(), m.adds.end(), [&](const std::string& a) { return a == m.adds[0]; })) {
+    if (!strict && !m.adds.empty()
+        && std::all_of(m.adds.begin(), m.adds.end(), [&](const std::string& a) { return a == m.adds[0]; })) {
         m.adds.resize(1);
         m.removes.clear();
+    }
+}
+
+bool writeLines(const Merge& m, const WriteOptions& options, std::string& out, bool strict = false);
+
+// a − r + b as plain text when every hunk of it resolves by cancellation alone (in each hunk a or
+// b is r): exactly the same value, as one file.
+std::optional<std::string> cleanMerge(const std::string& r, const std::string& a, const std::string& b)
+{
+    Merge three{{a, b}, {r}};
+    simplifyPairs(three, true);
+    if (three.isResolved())
+        return three.adds[0];
+    std::string out;
+    if (!writeLines(three, WriteOptions{}, out, true))
+        return std::nullopt;
+    return out;
+}
+
+} // namespace
+
+void simplify(Merge& m)
+{
+    simplifyPairs(m);
+    // Terms that merge cleanly collapse: a − r + b is one file when every hunk of that three-way
+    // merge resolves. Terms that cancel hunk by hunk but differ as whole files (the same change
+    // made in other surroundings) then cancel too; without this a conflict rebased away and back
+    // keeps such terms and grows each time.
+    for (bool collapsed = true; collapsed && !m.removes.empty() && m.adds.size() >= 2;) {
+        collapsed = false;
+        for (size_t k = 0; k < m.removes.size() && !collapsed; ++k)
+            for (size_t i = 0; i < m.adds.size() && !collapsed; ++i)
+                for (size_t j = i + 1; j < m.adds.size() && !collapsed; ++j) {
+                    auto merged = cleanMerge(m.removes[k], m.adds[i], m.adds[j]);
+                    if (!merged)
+                        continue;
+                    m.adds.erase(m.adds.begin() + static_cast<std::ptrdiff_t>(j));
+                    m.adds[i] = std::move(*merged);
+                    m.removes.erase(m.removes.begin() + static_cast<std::ptrdiff_t>(k));
+                    collapsed = true;
+                }
+        if (collapsed)
+            simplifyPairs(m);
     }
 }
 
@@ -484,11 +532,12 @@ std::string writeRegion(const std::vector<std::string>& sides, const std::vector
     return out;
 }
 
-std::string materialize(Merge m, const WriteOptions& options)
+namespace {
+
+// §7.4 for an unresolved merge value: anchors copied, each hunk plain when it resolves, else a
+// region with every term (the same sides in every region). True when every hunk resolved.
+bool writeLines(const Merge& m, const WriteOptions& options, std::string& out, bool strict)
 {
-    simplify(m);
-    if (m.isResolved())
-        return m.adds[0];
     // Terms in writing order: a0, r1, a1, …; the reference is r1.
     std::vector<const std::string*> terms;
     for (size_t k = 0; k < m.adds.size(); ++k) {
@@ -512,7 +561,7 @@ std::string materialize(Merge m, const WriteOptions& options)
         if (all)
             anchors.push_back(i);
     }
-    std::string out;
+    bool clean = true;
     std::vector<size_t> cursor(terms.size(), 0);
     auto emitGap = [&](const std::vector<size_t>& until) {
         Merge hunk;
@@ -523,11 +572,17 @@ std::string materialize(Merge m, const WriteOptions& options)
             else
                 hunk.removes.push_back(std::move(part));
         }
-        simplify(hunk);
-        if (hunk.isResolved())
-            out += hunk.adds[0];
-        else
+        // Resolved when the hunk alone simplifies to one side. Otherwise the region keeps every
+        // term of the file, in the file's order: each region then has the same sides, and
+        // reading the file back (§7.1) rebuilds each term, not a mix of terms across regions.
+        Merge simplified = hunk;
+        simplifyPairs(simplified, strict || !options.sameChangeResolves);
+        if (simplified.isResolved()) {
+            out += simplified.adds[0];
+        } else {
+            clean = false;
             out += writeRegion(hunk.adds, hunk.removes, options);
+        }
     };
     for (size_t anchor : anchors) {
         std::vector<size_t> until(terms.size());
@@ -542,6 +597,24 @@ std::string materialize(Merge m, const WriteOptions& options)
     for (size_t t = 0; t < terms.size(); ++t)
         ends[t] = lines[t].size();
     emitGap(ends);
+    return clean;
+}
+
+} // namespace
+
+std::string materialize(Merge m, const WriteOptions& options)
+{
+    simplify(m);
+    if (!options.sameChangeResolves && m.adds.size() > 1) {
+        // Only the cancellations (simplify's final "all adds agree" is Git's rule too).
+        std::string out;
+        writeLines(m, options, out);
+        return out;
+    }
+    if (m.isResolved())
+        return m.adds[0];
+    std::string out;
+    writeLines(m, options, out);
     return out;
 }
 

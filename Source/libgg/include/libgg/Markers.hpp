@@ -61,6 +61,9 @@ void simplify(Merge& m);
 struct WriteOptions {
     int markerSize = 7;          // conflict-marker-size attribute (minimum 7)
     std::vector<std::string> sideLabels; // optional labels per side (index = side)
+    // Git's rule: a hunk where every side made the same change is resolved to it. Off, such a
+    // hunk stays a region (the exact term algebra: a − r + a is not a).
+    bool sameChangeResolves = true;
 };
 
 // Materialises a merge value as file bytes (§7.4): plain when resolved, otherwise the

@@ -542,6 +542,8 @@ CONF-EDGE-EMPTY | 3 | §4.10 | Empty sides round-trip
 CONF-EDGE-MARKERLIKE | 3 | §4.10 | Marker-like content round-trips (longer markers)
 CONF-NWAY-MERGE | 3 | §4.10 | N-way term merge and simplification
 CONF-NO-NESTING | 3 | §4.10 | No nested markers after cancellation sequences
+CONF-STACK-REBASE | 3 | §4.10 | A stack holding first-class conflicts rebased onto an edited ancestor: well-formed regions only, never nested, the scanner agrees; no exception
+CONF-STACK-REWRITE-ROBUST | 3 | §4.10 | Ancestors edited under a stack with first-class conflicts: every rewrite computes and applies, the stack stays well-formed (no nesting), fsck passes
 CONF-AUTO-RESOLVE | 3 | §4.10 | Reordering back / dropping the cause resolves
 CONF-PREFLIGHT-BINARY | 3 | §4.10 | Pre-flight: binary conflict
 CONF-PREFLIGHT-MODIFY-DELETE | 3 | §4.10 | Pre-flight: modify/delete

@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-4)
 
-Covered: 679/679 required IDs; 679/679 of the whole catalogue.
+Covered: 681/681 required IDs; 681/681 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -564,6 +564,8 @@ Covered: 679/679 required IDs; 679/679 of the whole catalogue.
 | CONF-EDGE-MARKERLIKE | 3 | §4.10 | Marker-like content round-trips (longer markers) | edges/round trips through first-class conflicts are byte-exact: no newline, CRLF, empty side, marker-like text |
 | CONF-NWAY-MERGE | 3 | §4.10 | N-way term merge and simplification | edges/N-way: merging two conflicted lines gives three sides; merging again simplifies |
 | CONF-NO-NESTING | 3 | §4.10 | No nested markers after cancellation sequences | edges/randomized reorders of N changes to one place always come back exact<br>edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them |
+| CONF-STACK-REBASE | 3 | §4.10 | A stack holding first-class conflicts rebased onto an edited ancestor: well-formed regions only, never nested, the scanner agrees; no exception | conflict-stress/algebra: a stack with first-class conflicts rebased onto an edited ancestor stays well-formed and never nests |
+| CONF-STACK-REWRITE-ROBUST | 3 | §4.10 | Ancestors edited under a stack with first-class conflicts: every rewrite computes and applies, the stack stays well-formed (no nesting), fsck passes | conflict-stress/engine: ancestors edited under a stack with first-class conflicts; every rewrite applies and stays well-formed |
 | CONF-AUTO-RESOLVE | 3 | §4.10 | Reordering back / dropping the cause resolves | edit/text conflicts become first-class and never stop a rewrite; a later rewrite resolves them<br>rebase-i/conflicted input: carried along like git rebase -i, resolved by rebasing onto the cause |
 | CONF-PREFLIGHT-BINARY | 3 | §4.10 | Pre-flight: binary conflict | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |
 | CONF-PREFLIGHT-MODIFY-DELETE | 3 | §4.10 | Pre-flight: modify/delete | preflight/every non-text conflict kind asks for a decision, then the rewrite goes through |

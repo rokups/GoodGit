@@ -159,6 +159,12 @@ merge(base, ours, theirs) = ours + theirs − base
 1. **Cancel**: while some add equals some remove (byte-equal), delete one of each.
 2. **Resolved** when one add remains (and no removes).
 3. **All sides agree**: when every remaining add is equal, the result is that add.
+4. **Collapse**: while two adds `aᵢ`, `aⱼ` and a remove `rₖ` merge cleanly *by cancellation
+   alone* (§7.4 with rule 3 left out: in every hunk `aᵢ` or `aⱼ` equals `rₖ`), replace the three
+   by the merged file, then apply rules 1–3 again. This is the same value in fewer terms. It lets
+   terms cancel that differ as whole files but cancel hunk by hunk (the same change made in other
+   surroundings), which rule 1 alone cannot see: without it a conflict rebased away and back
+   keeps such terms and grows each time.
 
 ### 7.4 Materialising (writing back)
 If §7.3 resolves the value, the plain content is written. Otherwise the file is merged line by
@@ -167,10 +173,14 @@ line:
 1. Reference = the first remove `r₁`. Every add and remove is diffed against `r₁` (line diff).
 2. Reference lines unchanged in **every** term are anchors; anchors are copied as plain text.
 3. Between anchors, each term contributes its lines for that span, giving a hunk-level merge
-   value, which is simplified with §7.3.
-4. A resolved hunk is written as plain text. An unresolved hunk becomes a region: two sides
-   (`n = 1`) → the two-sided diff3 form (side A = `a₀`, base = `r₁`, side B = `a₁`); more
-   sides → the extended form, sections in term order `a₀, r₁, a₁, …, rₙ, aₙ`.
+   value. The hunk is resolved when §7.3 rules 1–3 resolve it.
+4. A resolved hunk is written as plain text. An unresolved hunk becomes a region with **every
+   term of the file**, not the hunk's simplified terms: two sides (`n = 1`) → the two-sided diff3
+   form (side A = `a₀`, base = `r₁`, side B = `a₁`); more sides → the extended form, sections in
+   term order `a₀, r₁, a₁, …, rₙ, aₙ`. Every region of a file thus has the same sides in the same
+   order, and §7.1 rebuilds each term from its own sections. (Simplifying each hunk on its own
+   gave regions with different sides, and reading the file back paired one term's side in one
+   region with another term's in the next: a conflict whose sides no commit had.)
 5. Adjacent changes (no anchor between them) belong to the same hunk.
 
 ### 7.5 No nesting
