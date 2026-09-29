@@ -484,6 +484,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
     Result result;
     try {
         std::map<std::string, std::string> byKey;     // step key → new commit
+        // New commit → the original commit it replays: conflict labels name that one, since a
+        // new commit's id depends on the time it was made (a preview and the real run differ).
+        std::map<std::string, std::string> originalOf;
         std::map<std::string, std::string> newOf(plan.replaced.begin(), plan.replaced.end()); // original → new
         std::set<std::string> droppedSet(plan.dropped.begin(), plan.dropped.end());
         std::string currentKey; // the step being built (a redirect never points a step at itself)
@@ -585,6 +588,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     committedAt ? &*committedAt : nullptr);
             }
             byKey[pending->key] = id;
+            if (id != pending->source)
+                originalOf[id] = pending->source; // "" for a commit with no original: no label
             if (!pending->unchanged && !pending->contributors.empty())
                 contributorsOf[id] = pending->contributors;
             if (!pending->source.empty() && id != pending->source && pending->mapSource)
@@ -733,7 +738,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 if (!step.onlyPaths.empty())
                     change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths);
                 // `ours` is replayed onto the new parent `p.parents.front()` (the engine's step state).
-                const std::string oursCommit = p.parents.empty() ? std::string() : p.parents.front();
+                std::string oursCommit = p.parents.empty() ? std::string() : p.parents.front();
+                if (auto o = originalOf.find(oursCommit); o != originalOf.end())
+                    oursCommit = o->second;
                 p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result,
                     oursCommit, baseCommit);
             }

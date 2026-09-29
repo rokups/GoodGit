@@ -1,4 +1,5 @@
 // Conflicts: native in-progress operations and first-class conflicts (§4.10; P2-18, P2-19, P2-24).
+#include <thread>
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
@@ -996,6 +997,41 @@ GG_TEST("conflicts", "engine: rebasing an already-conflicted commit keeps old la
     GG_REQUIRE(region.bases.size() == static_cast<size_t>(2));
     GG_CHECK(region.bases[0].label == "old-base");
     GG_CHECK(region.bases[1].label == baseCommit.substr(0, 7) + " Base commit");
+}
+
+GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrite's trees do not depend on the time",
+    "CONF-SIDE-LABELS")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "side-labels-stable");
+    s.commitFile(repo, "f.txt", "x=0\n", "Base");
+    const std::string base = s.head(repo);
+    s.commitFile(repo, "f.txt", "x=1\n", "One");
+    s.commitFile(repo, "f.txt", "x=2\n", "Two");
+    const fs::path copy = repo.parent_path() / "side-labels-stable-copy";
+    fs::copy(repo, copy, fs::copy_options::recursive);
+    // Editing the base makes both descendants conflict; each lands on a rewritten parent whose
+    // new id depends on the commit time. The same rewrite a second later gives the same trees.
+    auto rewrite = [&](const fs::path& where) {
+        gg::git2::Repository r = gg::git2::openRepository(where);
+        gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {base});
+        for (auto& step : plan.steps)
+            if (step.source == base)
+                step.setFiles.push_back({"f.txt", "x=9\n"});
+        gg::rewrite::Rewriter rewriter(where);
+        gg::rewrite::Result result = rewriter.compute(plan);
+        std::string error;
+        GG_CHECK(result.ok && rewriter.apply(plan, result, error));
+        std::vector<std::string> trees;
+        for (const char* rev : {"HEAD~2^{tree}", "HEAD~1^{tree}", "HEAD^{tree}"})
+            trees.push_back(s.revParse(where, rev));
+        return trees;
+    };
+    const auto first = rewrite(repo);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100)); // another second: other commit ids
+    const auto second = rewrite(copy);
+    GG_CHECK(s.head(repo) != s.head(copy));
+    GG_CHECK(first == second);
+    GG_CHECK(gg::markers::isConflicted(s.git(repo, {"show", "HEAD:f.txt"}).out));
 }
 
 } // namespace ggtest
