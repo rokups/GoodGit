@@ -505,6 +505,20 @@ void simplify(Merge& m)
     simplify(m, false);
 }
 
+bool sameValue(std::string_view a, std::string_view b)
+{
+    if (a == b)
+        return true;
+    const Merge x = toMerge(a), y = toMerge(b);
+    Merge d;
+    d.adds = x.adds;
+    d.adds.insert(d.adds.end(), y.removes.begin(), y.removes.end());
+    d.removes = x.removes;
+    d.removes.insert(d.removes.end(), y.adds.begin(), y.adds.end());
+    simplify(d, /*strict=*/true);
+    return d.adds.empty() && d.removes.empty();
+}
+
 std::string writeRegion(const std::vector<std::string>& sides, const std::vector<std::string>& bases,
     const WriteOptions& options)
 {

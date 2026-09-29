@@ -372,6 +372,81 @@ GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute a
 
 namespace ggtest {
 
+GG_TEST("conflicts", "engine: a rewrite that leaves a conflicted file's value unchanged reuses its exact blob",
+    "CONF-REUSE-UNCHANGED")
+{
+    // docs/spec/conflict-markers.md §7.4a: a writer that produces a value equal to an input's
+    // value keeps that input's bytes. Build a stack where the child already holds a first-class
+    // conflict (hand-written, with labels and a marker length the writer itself would never
+    // choose), then rewrite the ancestor in an unrelated hunk so that the replayed child's value
+    // does not change at all: the rewritten commit's blob for that file must be byte-identical
+    // to the original, not a freshly materialised (and differently formatted) equivalent.
+    const fs::path repo = s.fixture(Recipe::Empty, "reuse-unchanged");
+    s.track(repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+
+    // Two independent hunks, far enough apart to anchor separately: "x" (plain) and "y" (becomes
+    // a conflict in the child).
+    const std::string base = "top\nx=0\nmid\nPLAINY\nbottom\n";
+    s.commitFile(repo, "f.txt", base, "base");
+    const std::string baseCommit = s.head(repo);
+
+    // The child: "x" already edited (x=0 -> x=1) and "y" already a hand-written first-class
+    // conflict — labels "mine"/"orig"/"theirs", marker length 9 though the content (no leading
+    // marker-like runs) only needs 7.
+    const std::string child = "top\nx=1\nmid\n"
+        "<<<<<<<<< mine\nY-A\n||||||||| orig\nPLAINY\n=========\nY-B\n>>>>>>>>> theirs\n"
+        "bottom\n";
+    GG_REQUIRE(gg::markers::isConflicted(child));
+    GG_REQUIRE(gg::markers::parse(child).regions.front().markerLength == 9);
+    s.commitFile(repo, "f.txt", child, "child (already conflicted)");
+    const std::string childCommit = s.head(repo);
+    const std::string originalBlob = s.gitOut(repo, {"rev-parse", childCommit + ":f.txt"});
+
+    // Rewrite the ancestor: apply the very same "x" edit the child already carries (an edit
+    // unrelated to the "y" conflict region). Replaying the child on top recomputes f.txt through
+    // the marker algebra (both the new ancestor and the child changed it relative to the old
+    // ancestor), but the resulting value is exactly what the child already had.
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {baseCommit});
+    bool found = false;
+    for (auto& step : plan.steps)
+        if (step.source == baseCommit) {
+            step.setFiles.push_back({"f.txt", "top\nx=1\nmid\nPLAINY\nbottom\n"});
+            found = true;
+        }
+    GG_REQUIRE(found);
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.unresolved.empty());
+    std::string error;
+    GG_REQUIRE(rewriter.apply(plan, result, error));
+
+    const std::string rewrittenBlob = s.gitOut(repo, {"rev-parse", "HEAD:f.txt"});
+    GG_CHECK_EQ(rewrittenBlob, originalBlob); // reused the original blob, not a fresh equivalent
+    const std::string rewrittenText = s.git(repo, {"show", "HEAD:f.txt"}).out;
+    GG_CHECK_EQ(rewrittenText, child); // same exact bytes: labels and marker length preserved
+
+    // libgg-level check of sameValue itself (docs/spec/conflict-markers.md §7.3, strict).
+    GG_CHECK(gg::markers::sameValue(child, child)); // equal values written the same way
+    const std::string reformatted = gg::markers::mergeFiles(base, "top\nx=1\nmid\nPLAINY\nbottom\n", child);
+    GG_CHECK(gg::markers::sameValue(reformatted, child)); // equal values, written differently
+    const std::string differentValue = "top\nx=1\nmid\n"
+        "<<<<<<<<< mine\nY-A\n||||||||| orig\nPLAINY\n=========\nZ-DIFFERENT\n>>>>>>>>> theirs\n"
+        "bottom\n";
+    GG_CHECK(!gg::markers::sameValue(child, differentValue)); // different values
+    // Git's same-change rule ("all adds agree") is excluded: x - r + x is not x under sameValue.
+    gg::markers::WriteOptions strict;
+    strict.sameChangeResolves = false;
+    const std::string changed = "top\nx=1\nmid\nPLAINY\nbottom\n";
+    const std::string sameChangeBothSides = gg::markers::mergeFiles(base, changed, changed, strict);
+    GG_REQUIRE(gg::markers::isConflicted(sameChangeBothSides)); // stays a region, not resolved
+    GG_CHECK(!gg::markers::sameValue(sameChangeBothSides, changed));
+}
+
+} // namespace ggtest
+
+namespace ggtest {
+
 GG_TEST("conflicts", "marker grammar edge cases (docs/spec/conflict-markers.md)", "CONF-PARSE-DIFF3", "CONF-PARSE-NWAY",
     "CONF-WELLFORMED-ONLY", "CONF-MARKER-LENGTH", "CLI-CONFLICTS")
 {

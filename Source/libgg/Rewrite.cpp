@@ -86,6 +86,21 @@ struct Rewriter::Impl {
         return id;
     }
 
+    // A merge result as a blob. A conflict with the same value (§7.3, exact) as an input keeps
+    // that input's bytes (labels, marker length, layout) rather than new ones; theirs first, the
+    // commit's own old file.
+    git_oid writeMerged(const std::string& merged, const git_oid& ours, const std::string& oursText,
+        const git_oid& theirs, const std::string& theirsText)
+    {
+        if (gg::markers::isConflicted(merged)) {
+            if (gg::markers::isConflicted(theirsText) && gg::markers::sameValue(merged, theirsText))
+                return theirs;
+            if (gg::markers::isConflicted(oursText) && gg::markers::sameValue(merged, oursText))
+                return ours;
+        }
+        return writeBlob(merged);
+    }
+
     // A tree with the source's change restricted to (or excluding) some paths, against `base`.
     std::string filteredChange(const std::string& baseTree, const std::string& sourceTree, const std::vector<std::string>& only)
     {
@@ -232,9 +247,10 @@ struct Rewriter::Impl {
                     mode = decided != plan.resolutions.end() && decided->second.mode ? *decided->second.mode : c.theirs->mode;
                 else if (c.anc && c.ours->mode == c.anc->mode)
                     mode = c.theirs->mode;
+                const std::string oursText = blobText(c.ours->id), theirsText = blobText(c.theirs->id);
                 const std::string merged = gg::markers::mergeFiles(c.anc ? blobText(c.anc->id) : std::string(),
-                    blobText(c.ours->id), blobText(c.theirs->id), gg::conflicts::writeOptions(repo.get(), path));
-                addEntry(path, writeBlob(merged), mode);
+                    oursText, theirsText, gg::conflicts::writeOptions(repo.get(), path));
+                addEntry(path, writeMerged(merged, c.ours->id, oursText, c.theirs->id, theirsText), mode);
                 continue;
             }
             // Non-text: the decision, or a provisional one (the replayed side) to go on.
@@ -361,7 +377,7 @@ struct Rewriter::Impl {
                     addEntry(path, writeBlob(kept), mode);
                 continue;
             }
-            addEntry(path, writeBlob(gg::markers::mergeFiles(bt, ot, tt, options)), mode);
+            addEntry(path, writeMerged(gg::markers::mergeFiles(bt, ot, tt, options), o, ot, t, tt), mode);
         }
         git_oid out;
         check(git_index_write_tree_to(&out, index.get(), repo.get()), "git_index_write_tree_to");

@@ -57,6 +57,9 @@ Merge toMerge(std::string_view text);
 Merge combine(const Merge& base, const Merge& ours, const Merge& theirs);
 // Cancels equal add/remove pairs and resolves when all adds agree (§7.3).
 void simplify(Merge& m);
+// True when a and b are the same conflict value: toMerge(a) − toMerge(b) simplifies to nothing
+// under the strict algebra (no Git same-change rule; §7.3).
+bool sameValue(std::string_view a, std::string_view b);
 
 struct WriteOptions {
     int markerSize = 7;          // conflict-marker-size attribute (minimum 7)

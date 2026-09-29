@@ -95,19 +95,6 @@ bool nested(std::string_view text)
     return false;
 }
 
-// The same conflict value: a − b simplifies to nothing (§7.3, whole terms or hunk by hunk).
-bool sameValue(std::string_view a, std::string_view b)
-{
-    const mk::Merge x = mk::toMerge(a), y = mk::toMerge(b);
-    mk::Merge d;
-    d.adds = x.adds;
-    d.adds.insert(d.adds.end(), y.removes.begin(), y.removes.end());
-    d.removes = x.removes;
-    d.removes.insert(d.removes.end(), y.adds.begin(), y.adds.end());
-    mk::simplify(d);
-    return d.adds.empty() && d.removes.empty();
-}
-
 std::string shown(std::string_view s)
 {
     std::string out;
@@ -184,7 +171,7 @@ GG_TEST("conflict-stress", "algebra: a stack with first-class conflicts rebased 
         for (size_t i = 0; i < back.size(); ++i) {
             if (back[i] == start[i])
                 ++exact;
-            else if (sameValue(back[i], start[i]))
+            else if (mk::sameValue(back[i], start[i]))
                 ++sameValueOnly;
             else
                 ++differentValue;

@@ -195,6 +195,13 @@ line:
    region with another term's in the next: a conflict whose sides no commit had.)
 5. Adjacent changes (no anchor between them) belong to the same hunk.
 
+### 7.4.1 Reuse when a value is unchanged
+A writer that produces a value equal to one of its inputs' values (§7.3, the exact algebra:
+`gg::markers::sameValue`, strict — no same-change rule) keeps that input's exact bytes instead
+of materialising its own. This applies whether or not the value resolves; a conflicted result
+equal to a conflicted input reuses that input's blob (same labels, marker length, region
+layout), so a rewrite that leaves a conflict's value unchanged does not churn its blob id.
+
 ### 7.5 No nesting
 Regions are built only from terms, and terms never contain regions of their own (§7.1
 flattens them), so files written by ggui never contain nested markers.
