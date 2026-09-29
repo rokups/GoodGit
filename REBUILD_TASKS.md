@@ -2047,9 +2047,16 @@ All done (2026-09-28).
 
 ## Windows test suite
 
-### [ ] WIN-01 The suite passes on Windows (MinGW and MSVC CI jobs)
-- **Status:** first CI runs on 2026-09-28: builds and packages pass; the MinGW run segfaults, MSVC
-  has failing CLI and conflict tests; under wine (MinGit 2.55) about 70 of 257 tests fail.
+### [x] WIN-01 The suite passes on Windows (MinGW and MSVC CI jobs)
+- **Status:** done 2026-09-29: both Windows toolchains pass the suite (263 tests) and both gates in CI. On the way: the
+  harness starts its stand-in scripts through .cmd launchers, writes paths for sh with forward slashes, removes
+  read-only git objects, runs git daemon in a job object, and cleans up after itself; product fixes: headless
+  rendering keeps one frame in flight (SDL's D3D12 ran out of descriptor heaps on WARP and crashed), a repository
+  deleted under the summary worker no longer ends the process, git gg ui finds ggui.exe, git-gg writes LF line
+  ends, plain git operations get their command as label and hooks find the git process through GG_HOOK_SHELL
+  (MSYS fork/exec breaks the process tree), paths compare equal across 8.3 names, and F5 re-reads the journal.
+  The runner prints each test as it starts, reports crashes with a stack, and a watchdog ends a hung run (600 s).
+  CI builds each toolchain once and runs 4 shards per toolchain.
 - **Do:** after UF-32 … UF-50. Port what assumes POSIX: `fakeTool` stand-ins are `#!/bin/sh`
   scripts (not startable by CreateProcess), PATH is joined with ":", stubs read `/proc`, fixtures
   create symlinks (needs Developer Mode). Find the exception that escapes on the UI thread
