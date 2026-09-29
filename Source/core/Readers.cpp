@@ -15,6 +15,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <thread>
 #include <unordered_set>
 
 namespace ggui::core {
@@ -447,10 +448,11 @@ StatusEntry entryFromDelta(const git_diff_delta* d)
 
 } // namespace
 
-StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
+namespace {
+
+StatusPtr readStatusOnce(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
     const std::function<void(StatusPtr)>& partial)
 {
-    gg::assertNotUiThread("readStatus");
     auto result = std::make_shared<StatusResult>();
     result->generation = generation;
     if (git_repository_is_bare(repo) == 1)
@@ -606,6 +608,25 @@ StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::C
     std::sort(result->untracked.begin(), result->untracked.end(), byPath);
     std::sort(result->conflicted.begin(), result->conflicted.end(), byPath);
     return result;
+}
+
+} // namespace
+
+StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
+    const std::function<void(StatusPtr)>& partial)
+{
+    gg::assertNotUiThread("readStatus");
+    // A file replaced or removed while it is hashed (another writer: a checkout, an undo, an
+    // editor saving) fails the scan with an OS error; the next scan sees the new state.
+    for (int attempt = 0;; ++attempt) {
+        try {
+            return readStatusOnce(repo, generation, cancel, partial);
+        } catch (const gg::git2::Error& e) {
+            if (e.klass() != GIT_ERROR_OS || attempt >= 2 || cancel.cancelled())
+                throw;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
 }
 
 // HEAD's blob content at `path` ("" when the path does not exist there or is not a blob).
