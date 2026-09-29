@@ -384,7 +384,7 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     fs::copy(repo, copy, fs::copy_options::recursive);
     s.track(copy);
     const fs::path listFile = writeTodo(s, "remaining.txt", saved);
-    s.git(copy, {"-c", "sequence.editor=cp '" + listFile.string() + "'", "rebase", "--edit-todo"});
+    s.git(copy, {"-c", "sequence.editor=cp '" + listFile.generic_string() + "'", "rebase", "--edit-todo"});
     // git's list changed meanwhile (the copy's continues elsewhere): Save refuses.
     const std::string before = s.read(repo, ".git/rebase-merge/git-rebase-todo");
     s.write(repo, ".git/rebase-merge/git-rebase-todo", before + "exec true\n");
@@ -436,7 +436,7 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_REQUIRE(s.gitgg(r.path, {"hooks", "install"}).ok());
     const fs::path list = writeTodo(s, "todo.txt",
         "pick " + r.c[2] + "\nedit " + r.c[3] + "\npick " + r.c[4] + "\npick " + r.c[5] + "\n");
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.string() + "'");
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.generic_string() + "'");
     s.git(r.path, {"rebase", "-i", r.c[1]});
     ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
     GG_REQUIRE(fs::exists(r.path / ".git" / "rebase-merge" / "interactive"));
@@ -729,7 +729,7 @@ GG_TEST("rebase-native", "Edit remaining todo reads a hand-edited list (short co
     const std::string c6 = s.head(r.path);
     s.git(r.path, {"switch", "-q", "main"});
     const fs::path list = writeTodo(s, "todo.txt", "pick " + r.c[2] + "\nedit " + r.c[3] + "\npick " + r.c[4] + "\npick " + r.c[5] + "\n");
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.string() + "'");
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.generic_string() + "'");
     s.git(r.path, {"rebase", "-i", r.c[1]});
     ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
     GG_REQUIRE(s.openRepository(r.path));

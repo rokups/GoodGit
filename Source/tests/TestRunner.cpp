@@ -217,7 +217,9 @@ void writeGlobalGitConfig(const fs::path& home)
 void isolateEnvironment(const fs::path& dir)
 {
     const fs::path home = dir / "home";
-    fs::create_directories(home / ".config");
+    // $XDG_CONFIG_HOME/git exists before libgit2 looks: on Windows it keeps only directories that
+    // exist when its search paths are set (below).
+    fs::create_directories(home / ".config" / "git");
     fs::create_directories(dir / "prefs");
     writeGlobalGitConfig(home);
     // Scenarios start without the first-open hooks prompt; hook scenarios turn it on.
@@ -245,6 +247,7 @@ void isolateEnvironment(const fs::path& dir)
     ggui::unsetEnv("GIT_SSH_COMMAND");
     ggui::unsetEnv("GG_HOOKS_MODE");
     ggui::unsetEnv("GG_GGUI");
+    ggui::unsetEnv("GG_DEBUG_PROCESS");
     ggui::setEnv("EDITOR", "true");
     gg::git2::resetConfigSearchPaths();
 }

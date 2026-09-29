@@ -232,7 +232,7 @@ todo::Todo gitStartingTodo(Scenario& s, const fs::path& pristine, const std::str
     const fs::path copy = copyRepo(s, pristine, name);
     const fs::path out = s.root() / (name + ".todo");
     const fs::path keep = script(s, "keep-todo.sh", "#!/bin/sh\ncp \"$1\" \"$GG_KEEP_TODO\"\nexit 1\n");
-    std::vector<std::string> a{"-c", "sequence.editor=" + keep.string(), "rebase", "-i"};
+    std::vector<std::string> a{"-c", "sequence.editor=" + keep.generic_string(), "rebase", "-i"};
     a.insert(a.end(), args.begin(), args.end());
     gitDated(copy, a, "true", {{"GG_KEEP_TODO", out.string()}});
     std::ifstream in(out, std::ios::binary);
@@ -671,7 +671,7 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
     std::ofstream(todoFile, std::ios::binary) << todoText;
     const fs::path retell = script(s, "retell.sh",
         "#!/bin/sh\nif head -n 1 \"$1\" | grep -q \"^Merge branch 'topic'$\"; then printf 'Merge topic, retold\\n' > \"$1\"; fi\n");
-    const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i", "--rebase-merges",
+    const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--rebase-merges",
                                         s.gitAtLeast(2, 45) ? "--empty=stop" : "--empty=ask", r.c0},
         retell.string());
     GG_CHECK(copyRun.ok());
@@ -937,14 +937,14 @@ GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git 
         GG_REQUIRE(started);
         const fs::path todoFile = s.root() / ("list-" + std::to_string(round) + ".todo");
         std::ofstream(todoFile, std::ios::binary) << todoText;
-        std::vector<std::string> args{"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i", "--rebase-merges",
+        std::vector<std::string> args{"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--rebase-merges",
             "--empty=keep"};
         if (ontoUp) {
             args.push_back("--onto");
             args.push_back("up");
         }
         args.push_back(r.c0);
-        const auto copyRun = gitDated(copy, args, rewordEditor.string());
+        const auto copyRun = gitDated(copy, args, rewordEditor.generic_string());
         GG_CHECK(copyRun.ok());
 
         checkClean(s, r.path);
@@ -1041,7 +1041,7 @@ GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, p
     std::ofstream(todoFile, std::ios::binary) << todoText;
     // (--empty=stop is --empty=ask before git 2.45.)
     const std::string empty = s.gitAtLeast(2, 45) ? "--empty=stop" : "--empty=ask";
-    const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i", "--rebase-merges",
+    const auto copyRun = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--rebase-merges",
                                             empty, "--onto", "up", c0},
         "true");
     GG_CHECK(copyRun.ok());

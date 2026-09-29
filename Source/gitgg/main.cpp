@@ -15,6 +15,11 @@
 // Exit codes follow git: 0 success, 1 "found something" / refused, 128 fatal, 129 usage.
 
 #include "Askpass.hpp"
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <stdio.h>
+#endif
 #include "SequenceEditor.hpp"
 
 #include <libgg/Conflicts.hpp>
@@ -259,6 +264,11 @@ int cmdUi(const std::string& path)
 
 int main(int argc, char** argv)
 {
+#ifdef _WIN32
+    // Output as git writes it, "\n" line ends (text mode would make them "\r\n" in pipes and files).
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+#endif
     // Askpass mode: git runs $GIT_ASKPASS with the prompt as the only argument. A command name
     // ("undo", "help", ...) run from a terminal inside ggui is never a prompt.
     static const std::set<std::string> kCommands{"new", "undo", "redo", "op", "conflicts", "hooks", "hook", "ui",

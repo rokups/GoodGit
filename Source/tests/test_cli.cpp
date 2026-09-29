@@ -142,6 +142,8 @@ GG_TEST("cli", "git gg ui starts ggui on the repository", "CLI-UI")
     r.cwd = repo;
     r.env.emplace_back("PATH", dir.string() + kPathSep + ggui::getEnv("PATH"));
     const auto res = gg::run(r);
+    if (res.exitCode != 7)
+        ctx->LogInfo("git gg ui: exit %d, stderr: %s", res.exitCode, res.err.c_str());
     GG_CHECK_EQ(res.exitCode, 7); // ggui's exit code is passed on
     GG_CHECK_STR_EQ(s.read(log.parent_path(), log.filename().string()), fs::canonical(repo).string() + "\n");
 }

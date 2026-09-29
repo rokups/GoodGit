@@ -564,7 +564,7 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
 
     // Git's todo for the same range (the sequence editor copies it out and empties it: nothing runs).
     const fs::path out = s.root() / "git-todo.txt";
-    s.gitMayFail(p, {"-c", "sequence.editor=f() { cp \"$1\" '" + out.string() + "'; : > \"$1\"; }; f", "rebase", "-i",
+    s.gitMayFail(p, {"-c", "sequence.editor=f() { cp \"$1\" '" + out.generic_string() + "'; : > \"$1\"; }; f", "rebase", "-i",
                         "--autosquash", c1});
     GG_CHECK(!fs::exists(p / ".git" / "rebase-merge"));
     Rows expected;
@@ -905,7 +905,7 @@ GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, th
     const bool moves = gitMovesBranches(s);
     const std::string listed = todo::format(editor(s).todo());
     s.write(s.root(), "todo.txt", moves ? listed : withoutUpdateRefRows(listed));
-    std::vector<std::string> args{"-c", "sequence.editor=cp '" + (s.root() / "todo.txt").string() + "'", "-c",
+    std::vector<std::string> args{"-c", "sequence.editor=cp '" + (s.root() / "todo.txt").generic_string() + "'", "-c",
         "core.editor=true", "rebase", "-q", "-i"};
     if (moves)
         args.push_back("--update-refs");
@@ -1334,14 +1334,14 @@ void gitRebase(Scenario& s, const fs::path& copy, std::string todoText, const st
         std::ofstream(editorFile, std::ios::binary) << kRewordEditor;
         fs::permissions(editorFile, fs::perms::owner_all, fs::perm_options::add);
     }
-    std::vector<std::string> args{"-c", "sequence.editor=cp '" + todoFile.string() + "'", "rebase", "-q", "-i",
+    std::vector<std::string> args{"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i",
         std::string("--empty=") + empty};
     if (!onto.empty()) {
         args.push_back("--onto");
         args.push_back(onto);
     }
     args.push_back(upstream);
-    ggui::setEnv("GIT_EDITOR", editorFile.string()); // the test runner's GIT_EDITOR=true beats core.editor
+    ggui::setEnv("GIT_EDITOR", editorFile.generic_string()); // the test runner's GIT_EDITOR=true beats core.editor
     s.git(copy, args);
     ggui::setEnv("GIT_EDITOR", "true");
 }

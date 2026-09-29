@@ -367,7 +367,7 @@ std::string Scenario::installSshShim(const std::string& password)
     script += "exec sh -c \"$*\"\n";
     write(m_root, "fake-ssh", script);
     fs::permissions(shim, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
-    ggui::setEnv("GIT_SSH_COMMAND", shim.string());
+    ggui::setEnv("GIT_SSH_COMMAND", shim.generic_string());
     return "ssh://test@localhost";
 }
 

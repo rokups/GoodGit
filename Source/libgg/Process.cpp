@@ -1,5 +1,6 @@
 #include "libgg/Process.hpp"
 
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -14,6 +15,61 @@
 namespace gg {
 
 namespace {
+
+#ifdef _WIN32
+// Another process's command line (NtQueryInformationProcess, ProcessCommandLineInformation),
+// with the program path replaced by its name without .exe: "git commit -m x".
+std::string commandLineOf(DWORD pid)
+{
+    using Query = LONG(WINAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+    static const auto query = reinterpret_cast<Query>(
+        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess")));
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h || !query) {
+        if (h)
+            CloseHandle(h);
+        return {};
+    }
+    constexpr ULONG kCommandLine = 60; // ProcessCommandLineInformation
+    ULONG size = 0;
+    query(h, kCommandLine, nullptr, 0, &size);
+    std::string buffer(size ? size : 1, '\0');
+    struct Unicode {
+        USHORT length;
+        USHORT maximum;
+        PWSTR text;
+    };
+    std::wstring line;
+    if (size && query(h, kCommandLine, buffer.data(), size, &size) >= 0) {
+        const auto* u = reinterpret_cast<const Unicode*>(buffer.data());
+        line.assign(u->text, u->length / sizeof(wchar_t));
+    }
+    CloseHandle(h);
+    // The program: quoted or up to the first space.
+    size_t rest = 0;
+    if (!line.empty() && line[0] == L'"') {
+        const auto close = line.find(L'"', 1);
+        rest = close == std::wstring::npos ? line.size() : close + 1;
+    } else {
+        rest = line.find(L' ');
+        if (rest == std::wstring::npos)
+            rest = line.size();
+    }
+    std::wstring program = line.substr(0, rest);
+    std::erase(program, L'"');
+    if (const auto slash = program.find_last_of(L"/\\"); slash != std::wstring::npos)
+        program = program.substr(slash + 1);
+    if (program.size() > 4 && _wcsicmp(program.c_str() + program.size() - 4, L".exe") == 0)
+        program.resize(program.size() - 4);
+    const std::wstring text = program + line.substr(rest);
+    const int n = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), n, nullptr, nullptr);
+    while (!out.empty() && out.back() == ' ')
+        out.pop_back();
+    return out;
+}
+#endif
 
 #ifndef _WIN32
 std::uint64_t startTime(long long pid)
@@ -79,8 +135,9 @@ bool isGitProgram(std::string program)
 }
 
 // How far up to look for the git command. A hook runs as git → hook (config command, or the
-// wrapper script and its pipeline subshell) → runner → git-gg.
-constexpr int kMaxAncestors = 8;
+// wrapper script and its pipeline subshell) → runner → git-gg; on Windows every MSYS fork and
+// exec in between is a process of its own, so the chain is longer there.
+constexpr int kMaxAncestors = 32;
 
 } // namespace
 
@@ -107,6 +164,21 @@ ProcessInfo parentProcess()
             procs[e.th32ProcessID] = {e.th32ParentProcessID, exe};
         }
         CloseHandle(snap);
+        // Diagnostics: GG_DEBUG_PROCESS=<file> appends the ancestor chain this lookup saw.
+        if (const char* debug = std::getenv("GG_DEBUG_PROCESS"); debug && *debug) {
+            std::ofstream d(debug, std::ios::app);
+            d << self;
+            for (DWORD p = procs.count(self) ? procs[self].parent : 0, i = 0; i < 40 && p; ++i) {
+                const auto it = procs.find(p);
+                if (it == procs.end()) {
+                    d << " <- " << p << " (gone)";
+                    break;
+                }
+                d << " <- " << p << " " << it->second.exe;
+                p = it->second.parent;
+            }
+            d << "\n";
+        }
         const auto me = procs.find(self);
         if (me != procs.end()) {
             info.pid = me->second.parent;
@@ -129,7 +201,9 @@ ProcessInfo parentProcess()
             info.start = (static_cast<std::uint64_t>(created.dwHighDateTime) << 32) | created.dwLowDateTime;
         CloseHandle(h);
     }
-    info.commandLine = "git";
+    info.commandLine = commandLineOf(static_cast<DWORD>(info.pid));
+    if (info.commandLine.empty())
+        info.commandLine = "git";
 #else
     // The nearest git ancestor (the hook's shell and runner sit in between), else the parent.
     info.pid = getppid();

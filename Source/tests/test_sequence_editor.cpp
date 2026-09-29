@@ -539,26 +539,34 @@ GG_TEST("sequence-editor", "no ggui has the repository open: git gg starts ggui 
     GG_CHECK(!fs::exists(r.path / ".git" / "rebase-merge"));
     GG_CHECK_STR_EQ(s.head(r.path), main);
 
-    // No display: git's own editor (GIT_EDITOR) edits the list.
-    const fs::path gitEditor = gguiStub(s, "drop-first", "sed -i '1s/^pick/drop/' \"$1\"\n");
+    // No display: git's own editor (GIT_EDITOR) edits the list. (git runs an editor with sh: the
+    // script itself, not its Windows launcher.) Windows always has a display.
+    gguiStub(s, "drop-first", "sed -i '1s/^pick/drop/' \"$1\"\n");
+    const fs::path gitEditor = s.root() / "fake-bin" / "drop-first";
+#ifndef _WIN32
     {
         BackgroundGit rebase(r.path, {"rebase", "-i", r.c[1]},
             Env{{"GG_GGUI", stub.string()}, {"DISPLAY", std::nullopt}, {"WAYLAND_DISPLAY", std::nullopt},
-                {"GIT_EDITOR", gitEditor.string()}});
+                {"GIT_EDITOR", gitEditor.generic_string()}});
         const auto result = rebase.finish(s);
         GG_CHECK_EQ(result.exitCode, 0);
         GG_CHECK(result.err.find("no display to show ggui on; using git's editor") != std::string::npos);
     }
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c1"}));
+#endif
     // A missing ggui program: git's editor as well.
     {
         BackgroundGit rebase(r.path, {"rebase", "-i", r.c[1]},
-            Env{{"GG_GGUI", (s.root() / "no-such-ggui").string()}, {"DISPLAY", ":97"}, {"GIT_EDITOR", gitEditor.string()}});
+            Env{{"GG_GGUI", (s.root() / "no-such-ggui").generic_string()}, {"DISPLAY", ":97"}, {"GIT_EDITOR", gitEditor.generic_string()}});
         const auto result = rebase.finish(s);
         GG_CHECK_EQ(result.exitCode, 0);
         GG_CHECK(result.err.find("ggui was not found; using git's editor") != std::string::npos);
     }
+#ifdef _WIN32
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c1"}));
+#else
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c1"}));
+#endif
     GG_CHECK(s.fsck(r.path));
 }
 

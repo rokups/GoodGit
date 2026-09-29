@@ -153,8 +153,13 @@ GG_TEST("hooks", "wrapper scripts chain existing hooks (exit status kept) and un
     };
     if (!ops.empty())
         GG_CHECK(gitLabel(ops.back().label));
+    const fs::path chains = s.path("process-chains.txt"); // Windows: which ancestors the hooks saw
+    ggui::setEnv("GG_DEBUG_PROCESS", chains.string());
     s.git(repo, {"checkout", "-q", "-b", "wrapped"});
+    ggui::unsetEnv("GG_DEBUG_PROCESS");
     ops = journalOps(repo, "git");
+    if (ops.size() != 2)
+        ctx->LogInfo("hook process chains:\n%s", s.read(chains.parent_path(), chains.filename().string()).c_str());
     GG_CHECK_EQ(ops.size(), static_cast<size_t>(2));
     if (!ops.empty())
         GG_CHECK(gitLabel(ops.back().label));

@@ -153,7 +153,13 @@ GG_TEST("harness", "transport fixtures: git daemon and ssh shim", "HARNESS-FIXTU
     const fs::path work = s.fixture(Recipe::Linear);
     const std::string url = s.startGitDaemon(served);
     GG_REQUIRE(!url.empty());
+#ifdef _WIN32
+    // Git for Windows' daemon hangs on a push (receive-pack): fill it locally, check it serves.
+    s.git(work, {"push", "-q", (served / "repo.git").string(), "main"});
+    GG_CHECK(s.gitOut(work, {"ls-remote", url + "repo.git", "refs/heads/main"}).rfind(s.head(work), 0) == 0);
+#else
     s.git(work, {"push", "-q", url + "repo.git", "main"});
+#endif
     GG_CHECK(s.gitOut(served / "repo.git", {"rev-parse", "main"}) == s.head(work));
     const std::string ssh = s.installSshShim();
     const fs::path clone = s.path("ssh-clone");

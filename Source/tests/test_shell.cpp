@@ -804,7 +804,7 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
     const fs::path list = s.root() / "todo.txt";
     std::ofstream(list) << "edit " << s.head(repo) << "\n";
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.string() + "'");
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.generic_string() + "'");
     s.git(repo, {"rebase", "-q", "-i", "HEAD~1"});
     ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//##Toolbar/Progress##tb_rebase_progress"); }));

@@ -92,7 +92,7 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     const fs::path hang = s.root() / "hanging-ssh";
     s.write(s.root(), "hanging-ssh", "#!/bin/sh\nexec sleep 60\n");
     fs::permissions(hang, fs::perms::owner_all);
-    ggui::setEnv("GIT_SSH_COMMAND", hang.string());
+    ggui::setEnv("GIT_SSH_COMMAND", hang.generic_string());
     const fs::path dest = s.path("cancelled");
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
@@ -109,7 +109,7 @@ GG_TEST("network", "cancel a clone: no directory left behind", "REMOTE-CLONE-CAN
     const fs::path stubborn = s.root() / "stubborn-ssh";
     s.write(s.root(), "stubborn-ssh", "#!/bin/sh\ntrap '' TERM\nsleep 60 &\nwait\n");
     fs::permissions(stubborn, fs::perms::owner_all);
-    ggui::setEnv("GIT_SSH_COMMAND", stubborn.string());
+    ggui::setEnv("GIT_SSH_COMMAND", stubborn.generic_string());
     const fs::path dest2 = s.path("cancelled-stubborn");
     ctx->ItemClick("//Welcome/###welcome_clone");
     GG_REQUIRE(s.dialogOpen("Clone repository"));
