@@ -41,6 +41,19 @@ bool isConflicted(std::string_view text);
 // True when the bytes look binary (NUL within the first 8000 bytes, Git's heuristic).
 bool looksBinary(std::string_view text);
 
+// Broken-region diagnostic (not part of the grammar: a warning, §8 of the spec). `before` is
+// the committed (HEAD) text, `after` an edit of it. An edit that removes a structural line of a
+// region (the separator, a base, ...) while keeping its opening/closing marker leaves that
+// marker as ordinary text instead of resolving the file: `after` is no longer conflicted, but
+// it is not a clean resolution either. Returns the 1-based line numbers in `after` of such
+// leftover opening (`<`) or closing (`>`) marker lines: lines whose marker length equals the
+// length of some region `before` had, and which are not part of a well-formed region of
+// `after`. To ignore marker-like text that was already there outside `before`'s own regions,
+// a length only counts when `after` has *more* such stray lines than `before` did (simple
+// count comparison; it does not try to match which particular stray line is "new"). Empty when
+// `before` has no regions.
+std::vector<size_t> brokenMarkers(std::string_view before, std::string_view after);
+
 // ---- Term algebra ------------------------------------------------------------------------------
 
 // M = a0 - r1 + a1 - … - rn + an (adds.size() == removes.size() + 1).

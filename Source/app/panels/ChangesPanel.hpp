@@ -40,6 +40,10 @@ struct FileRow {
     bool firstClass = false;
     int sides = 0;           // first-class conflicts: number of sides
     std::string conflict;
+    // Set when this file's edit broke a conflict region HEAD held (a "=======" / "|||||||" line
+    // was deleted, leaving "<<<<<<<"/">>>>>>>" behind): 1-based line numbers of the leftover
+    // markers (core::StatusEntry::brokenMarkerLines).
+    std::vector<size_t> brokenMarkerLines;
     std::string key() const { return std::string(groupName(group)) + ":" + path; }
 };
 

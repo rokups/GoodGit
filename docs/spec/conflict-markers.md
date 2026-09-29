@@ -108,6 +108,22 @@ The parser scans lines top to bottom:
 A file is **conflicted exactly when it contains at least one well-formed region.** Any edit
 that leaves no well-formed region resolves the file.
 
+### 4.10 Broken-region warning (diagnostic, not grammar)
+
+An edit can delete a structural line of a region (the separator `=======`, a base `|||||||`, a
+side/base marker of the extended form, ...) while leaving the region's opening (`<`) and/or
+closing (`>`) marker line in place. By §4 this is not malformed text kept as-is: the file
+simply has no well-formed region there any more, so it "resolves" silently, with stray marker
+lines sitting in it as if they were content. This is very likely a mistake rather than an
+intended resolution, so ggui warns about it (Status, the Changes panel and the pre-commit hook,
+§8 REBUILD_PLAN) without treating the file as still conflicted: `gg::markers::brokenMarkers`
+(`Source/libgg/Markers.cpp`) compares a file's committed (HEAD) text with its edited text and
+reports the leftover opening/closing marker lines whose length matches a region HEAD had, that
+are not part of a well-formed region of the edit. It ignores marker-like lines that were
+already plain text outside HEAD's regions (a simple stray-line-count comparison per marker
+length, not a diff of which line is "new"). This is purely a diagnostic: it does not change
+whether a file is parsed as conflicted (§4) or eligible (§6).
+
 ## 5. In-band edge cases
 
 | Case | Encoding |

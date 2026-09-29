@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-4)
 
-Covered: 686/686 required IDs; 686/686 of the whole catalogue.
+Covered: 687/687 required IDs; 687/687 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -592,6 +592,7 @@ Covered: 686/686 required IDs; 686/686 of the whole catalogue.
 | CONF-TRANSPARENCY | 3 | §4.10 | Plain git rebase/cherry-pick/amend/merge/stash/gc/clone/push keep conflicts | edges/plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push |
 | CONF-GIT-MERGE-GGUI-REGIONS | 3 | §4.10 | Plain git merging a file with ggui regions | edges/plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push |
 | CONF-PREPUSH-HOOK | 3 | §4.10 | Managed pre-push refuses conflicted commits for plain git push | hooks/managed pre-push refuses plain git pushes of conflicted commits |
+| CONF-BROKEN-WARN | 3 | §4.10 | Broken conflict-region edit warns (Status, Changes, pre-commit hook) instead of silently resolving | conflicts/an edit that breaks a conflict region warns (Status, Changes) instead of silently resolving<br>conflicts/brokenMarkers: unit cases for the broken-region diagnostic (§4.10, §8)<br>hooks/managed pre-commit warns about a broken conflict region without blocking the commit |
 | CONF-NATIVE-IREBASE-EDIT-TODO | 3 | §4.10 | Stopped interactive rebase: Edit remaining todo | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
 | CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue | rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along<br>rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation<br>shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress |

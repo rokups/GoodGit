@@ -348,6 +348,55 @@ Parsed parse(std::string_view text)
 
 bool isConflicted(std::string_view text) { return !looksBinary(text) && parse(text).conflicted(); }
 
+namespace {
+
+// 1-based line numbers of `<`/`>` marker lines of length L in `text` that are not part of any
+// region of `parsed` (i.e. plain text sitting outside every well-formed region).
+std::vector<size_t> outsideBoundaryMarkers(std::string_view text, const Parsed& parsed, int L)
+{
+    std::vector<size_t> result;
+    const auto lines = splitLines(text);
+    size_t region = 0;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        while (region < parsed.regions.size() && parsed.regions[region].end <= lines[i].offset)
+            ++region;
+        const bool inside = region < parsed.regions.size() && parsed.regions[region].begin <= lines[i].offset
+            && lines[i].offset < parsed.regions[region].end;
+        if (inside)
+            continue;
+        char kind = 0;
+        if (markerRun(lines[i].body, &kind) == L && (kind == '<' || kind == '>'))
+            result.push_back(i + 1);
+    }
+    return result;
+}
+
+} // namespace
+
+std::vector<size_t> brokenMarkers(std::string_view before, std::string_view after)
+{
+    const Parsed beforeParsed = parse(before);
+    if (!beforeParsed.conflicted())
+        return {};
+    std::vector<int> lengths;
+    for (const auto& r : beforeParsed.regions)
+        if (std::find(lengths.begin(), lengths.end(), r.markerLength) == lengths.end())
+            lengths.push_back(r.markerLength);
+    const Parsed afterParsed = parse(after);
+    std::vector<size_t> broken;
+    for (int L : lengths) {
+        const size_t beforeStray = outsideBoundaryMarkers(before, beforeParsed, L).size();
+        std::vector<size_t> afterStray = outsideBoundaryMarkers(after, afterParsed, L);
+        // Only a net increase counts: a length whose stray count did not grow was already
+        // ordinary text before the edit, not something the edit broke.
+        if (afterStray.size() > beforeStray)
+            broken.insert(broken.end(), afterStray.begin(), afterStray.end());
+    }
+    std::sort(broken.begin(), broken.end());
+    broken.erase(std::unique(broken.begin(), broken.end()), broken.end());
+    return broken;
+}
+
 bool looksBinary(std::string_view text)
 {
     return text.substr(0, std::min<size_t>(text.size(), 8000)).find('\0') != std::string_view::npos;

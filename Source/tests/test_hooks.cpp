@@ -416,4 +416,20 @@ GG_TEST("hooks", "managed pre-push refuses plain git pushes of conflicted commit
     GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "status"}).exitCode, 1);
 }
 
+GG_TEST("hooks", "managed pre-commit warns about a broken conflict region without blocking the commit", "CONF-BROKEN-WARN")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    // Break the region: delete the "=======" separator, leaving the opening/closing markers as
+    // plain text. HEAD still holds the conflict; the staged edit does not.
+    s.write(repo, "conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "conflict.txt"});
+    const std::string before = s.head(repo);
+    const auto r = s.gitMayFail(repo, {"commit", "-q", "-m", "Break the region"});
+    GG_CHECK(r.ok()); // the warning never blocks the commit
+    GG_CHECK(r.err.find("ggui: conflict.txt: conflict markers left at line 2, 7 (the edit broke a conflict region)")
+        != std::string::npos);
+    GG_CHECK(s.head(repo) != before);
+}
+
 } // namespace ggtest

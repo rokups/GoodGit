@@ -96,6 +96,7 @@ FileRow rowFromStatus(FileGroup g, const core::StatusEntry& e)
     r.conflict = e.conflictDescription;
     r.sides = e.sides;
     r.firstClass = e.firstClass;
+    r.brokenMarkerLines = e.brokenMarkerLines;
     return r;
 }
 
@@ -535,7 +536,11 @@ void ChangesPanel::drawFile(const FileRow& row, int)
         label += "  (intent to add)";
     if (!row.conflict.empty())
         label += "  (" + row.conflict + ")";
-    ImGui::PushStyleColor(ImGuiCol_Text, row.firstClass ? theme().palette().conflict : kindColor(row.kind));
+    const bool broken = !row.brokenMarkerLines.empty();
+    if (broken)
+        label += "  \xE2\x9A\xA0 broken conflict markers"; // this edit broke a conflict region
+    ImGui::PushStyleColor(ImGuiCol_Text, broken ? theme().palette().warning
+                                                 : (row.firstClass ? theme().palette().conflict : kindColor(row.kind)));
     const std::string id = label + "###file_" + row.path;
     if (ImGui::Selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
         const ImGuiIO& io = ImGui::GetIO();
@@ -570,8 +575,19 @@ void ChangesPanel::drawFile(const FileRow& row, int)
         }
     }
     ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        ImGui::SetTooltip("%s", row.path.c_str());
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (broken) {
+            std::string lines;
+            for (size_t i = 0; i < row.brokenMarkerLines.size(); ++i)
+                lines += (i ? ", " : "") + std::to_string(row.brokenMarkerLines[i]);
+            ImGui::SetTooltip(
+                "Conflict markers left at line %s: this edit broke a conflict region, so the file no longer "
+                "counts as conflicted. Fix the markers or remove them.",
+                lines.c_str());
+        } else {
+            ImGui::SetTooltip("%s", row.path.c_str());
+        }
+    }
     // Drag files between Staged and Unstaged, or onto a commit in History. The payload is the
     // group name ("@<commit>" for a commit's files), then one path per line.
     const bool fromCommit = row.group == FileGroup::Commit && m_selection.kind == SelKind::Commit;

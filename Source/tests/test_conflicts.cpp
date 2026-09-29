@@ -13,6 +13,8 @@
 #include <libgg/Markers.hpp>
 #include <libgg/Rewrite.hpp>
 
+#include <algorithm>
+
 namespace ggtest {
 
 namespace {
@@ -775,6 +777,56 @@ GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=2\nbottom\n"; }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "conflict.txt");
+}
+
+} // namespace ggtest
+
+namespace ggtest {
+
+GG_TEST("conflicts", "brokenMarkers: unit cases for the broken-region diagnostic (§4.10, §8)", "CONF-BROKEN-WARN")
+{
+    using gg::markers::brokenMarkers;
+    const std::string region = "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n";
+    // Region intact: no warning.
+    GG_CHECK(brokenMarkers(region, region).empty());
+    // Separator deleted: the opening and closing marker lines (1-based, in `after`) are reported.
+    const std::string separatorDeleted = "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\nx=2\n>>>>>>> side 2\nbottom\n";
+    GG_CHECK((brokenMarkers(region, separatorDeleted) == std::vector<size_t>{2, 7}));
+    // Properly resolved (every marker line removed): no warning.
+    const std::string resolved = "top\nx=2\nbottom\n";
+    GG_CHECK(brokenMarkers(region, resolved).empty());
+    // Marker-like text of another length: not reported (it does not match any region's length).
+    const std::string otherLength = region + "<<<<<<<<\nfoo\n>>>>>>>>\n";
+    GG_CHECK(brokenMarkers(region, otherLength).empty());
+    // `before` without regions: always empty, whatever `after` looks like.
+    const std::string plain = "no conflict here\n";
+    const std::string strayMarkers = "<<<<<<< a\nx\n>>>>>>> b\n";
+    GG_CHECK(brokenMarkers(plain, strayMarkers).empty());
+}
+
+GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Changes) instead of silently resolving",
+    "CONF-BROKEN-WARN")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    // Break the region: delete the "=======" separator. HEAD is still conflicted; the working
+    // tree edit is not (it parses as plain text with stray "<<<<<<<"/">>>>>>>" lines).
+    s.write(repo, "conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\nx=2\n>>>>>>> side 2\nbottom\n");
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string row = s.child("//Changes", "##files") + "/Unstaged/conflict.txt/###file_conflict.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    GG_CHECK(s.waitUntil([&] {
+        const auto st = s.session()->status();
+        if (!st)
+            return false;
+        const auto it = std::find_if(st->unstaged.begin(), st->unstaged.end(),
+            [](const ggui::core::StatusEntry& e) { return e.path == "conflict.txt"; });
+        return it != st->unstaged.end() && it->brokenMarkerLines == std::vector<size_t>{2, 7};
+    }));
+    // Not shown under Conflicted: it is an ordinary Modified row carrying the warning.
+    GG_CHECK(!s.itemExists((s.child("//Changes", "##files") + "/Conflicted/conflict.txt/###file_conflict.txt").c_str()));
+    ctx->MouseMove(row.c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "Conflict markers left at line 2, 7"));
 }
 
 } // namespace ggtest

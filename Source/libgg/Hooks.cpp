@@ -4,6 +4,7 @@
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
+#include "libgg/Markers.hpp"
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Process.hpp"
@@ -139,7 +140,7 @@ std::string configCommand(const fs::path& runner, const std::string& name)
 const std::vector<std::string>& managedHooks()
 {
     static const std::vector<std::string> names{"reference-transaction", "post-checkout", "post-merge",
-        "post-rewrite", "post-commit", "pre-push"};
+        "post-rewrite", "post-commit", "pre-push", "pre-commit"};
     return names;
 }
 
@@ -525,6 +526,61 @@ int runHook(const std::string& name, const std::vector<std::string>& args, std::
         }
         err << "Resolve the conflicts first (or bypass with git push --no-verify).\n";
         return 1;
+    }
+    if (name == "pre-commit") {
+        // Warns (never blocks: stderr only, exit 0) about staged files whose HEAD version held
+        // a first-class conflict and whose staged edit broke the region instead of resolving it.
+        conflicts::Cache cache{commonDir};
+        git_oid head;
+        if (git_reference_name_to_id(&head, repo.get(), "HEAD") != 0) {
+            git_error_clear();
+            return 0;
+        }
+        const auto headFiles = conflicts::commitConflicts(repo.get(), head, cache);
+        if (headFiles.empty())
+            return 0;
+        Commit headCommit = lookupCommit(repo.get(), head);
+        Tree headTree = commitTree(headCommit.get());
+        git_index* rawIndex = nullptr;
+        if (git_repository_index(&rawIndex, repo.get()) != 0) {
+            git_error_clear();
+            return 0;
+        }
+        Index index(rawIndex);
+        for (const auto& f : headFiles) {
+            const git_index_entry* entry = git_index_get_bypath(index.get(), f.path.c_str(), 0);
+            if (!entry)
+                continue; // no longer in the index (deleted, renamed away, ...)
+            git_tree_entry* rawHeadEntry = nullptr;
+            if (git_tree_entry_bypath(&rawHeadEntry, headTree.get(), f.path.c_str()) != 0) {
+                git_error_clear();
+                continue;
+            }
+            TreeEntry headEntry(rawHeadEntry);
+            git_blob* rawHeadBlob = nullptr;
+            git_blob* rawStagedBlob = nullptr;
+            if (git_blob_lookup(&rawHeadBlob, repo.get(), git_tree_entry_id(headEntry.get())) != 0
+                || git_blob_lookup(&rawStagedBlob, repo.get(), &entry->id) != 0) {
+                git_error_clear();
+                if (rawHeadBlob)
+                    git_blob_free(rawHeadBlob);
+                continue;
+            }
+            Blob headBlob(rawHeadBlob), stagedBlob(rawStagedBlob);
+            const std::string_view headText(static_cast<const char*>(git_blob_rawcontent(headBlob.get())),
+                static_cast<size_t>(git_blob_rawsize(headBlob.get())));
+            const std::string_view stagedText(static_cast<const char*>(git_blob_rawcontent(stagedBlob.get())),
+                static_cast<size_t>(git_blob_rawsize(stagedBlob.get())));
+            const auto broken = markers::brokenMarkers(headText, stagedText);
+            if (broken.empty())
+                continue;
+            std::string lines;
+            for (size_t i = 0; i < broken.size(); ++i)
+                lines += (i ? ", " : "") + std::to_string(broken[i]);
+            err << "ggui: " << f.path << ": conflict markers left at line " << lines
+                << " (the edit broke a conflict region)\n";
+        }
+        return 0;
     }
     err << "git gg hook: unknown hook '" << name << "'\n";
     return 0;

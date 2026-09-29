@@ -181,6 +181,10 @@ struct StatusEntry {
     std::string conflictDescription; // "both modified", "deleted by them", …
     bool firstClass = false;          // conflicted through in-file markers, index clean
     int sides = 0;                    // number of sides for first-class conflicts
+    // Set on an ordinary Modified entry when HEAD held a first-class conflict for this path and
+    // the edit broke the region (left an opening/closing marker as plain text) instead of
+    // resolving it: 1-based line numbers of the leftover markers (gg::markers::brokenMarkers).
+    std::vector<size_t> brokenMarkerLines;
 };
 
 struct StatusResult {

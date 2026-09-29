@@ -608,6 +608,29 @@ StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::C
     return result;
 }
 
+// HEAD's blob content at `path` ("" when the path does not exist there or is not a blob).
+std::string headBlobText(git_repository* repo, const git_tree* headTree, const std::string& path)
+{
+    if (!headTree)
+        return {};
+    git_tree_entry* raw = nullptr;
+    if (git_tree_entry_bypath(&raw, headTree, path.c_str()) != 0) {
+        git_error_clear();
+        return {};
+    }
+    TreeEntry entry(raw);
+    if (git_tree_entry_type(entry.get()) != GIT_OBJECT_BLOB)
+        return {};
+    git_blob* rawBlobPtr = nullptr;
+    if (git_blob_lookup(&rawBlobPtr, repo, git_tree_entry_id(entry.get())) != 0) {
+        git_error_clear();
+        return {};
+    }
+    Blob blob(rawBlobPtr);
+    const auto* data = static_cast<const char*>(git_blob_rawcontent(blob.get()));
+    return std::string(data, static_cast<size_t>(git_blob_rawsize(blob.get())));
+}
+
 void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* conflictCache)
 {
     if (git_repository_is_bare(repo) == 1)
@@ -622,14 +645,24 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
         for (const auto& e : *list)
             changed.insert(e.path);
     std::map<std::string, int> found;
+    std::set<std::string> headConflicted; // paths whose HEAD blob holds a first-class conflict
     git_oid head;
+    Tree headTree;
     if (git_reference_name_to_id(&head, repo, "HEAD") == 0) {
-        for (const auto& f : gg::conflicts::commitConflicts(repo, head, cache))
+        Commit headCommit = lookupCommit(repo, head);
+        headTree = commitTree(headCommit.get());
+        for (const auto& f : gg::conflicts::commitConflicts(repo, head, cache)) {
+            headConflicted.insert(f.path);
             if (!changed.count(f.path))
                 found[f.path] = f.sides;
+        }
     }
     git_error_clear();
-    // Edited files: their content on disk decides.
+    // Edited files: their content on disk decides. A file whose HEAD version was conflicted but
+    // whose edit is no longer conflicted may have broken the region instead of resolving it
+    // (deleted a "=======" / "|||||||" line, leaving "<<<<<<<"/">>>>>>>" behind as plain text):
+    // record that on its ordinary Modified entry so Changes and the hooks can warn about it.
+    std::map<std::string, std::vector<size_t>> broken;
     for (const auto& path : changed) {
         if (native.count(path))
             continue;
@@ -637,9 +670,18 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
         const fs::path p = workdir / path;
         if (!fs::is_regular_file(p, ec) || fs::file_size(p, ec) > kMaxTextBytes)
             continue;
-        const int sides = gg::conflicts::contentSides(readFileText(p));
-        if (sides > 0 && gg::conflicts::eligible(repo, nullptr, path))
+        const std::string content = readFileText(p);
+        const int sides = gg::conflicts::contentSides(content);
+        if (sides > 0 && gg::conflicts::eligible(repo, nullptr, path)) {
             found[path] = sides;
+            continue;
+        }
+        if (headConflicted.count(path)) {
+            const std::string headText = headBlobText(repo, headTree.get(), path);
+            auto lines = gg::markers::brokenMarkers(headText, content);
+            if (!lines.empty())
+                broken[path] = std::move(lines);
+        }
     }
     for (const auto& [path, sides] : found) {
         StatusEntry e;
@@ -652,6 +694,11 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
     }
     std::sort(status.conflicted.begin(), status.conflicted.end(),
         [](const StatusEntry& a, const StatusEntry& b) { return a.path < b.path; });
+    if (!broken.empty())
+        for (auto* list : {&status.staged, &status.unstaged})
+            for (auto& e : *list)
+                if (auto it = broken.find(e.path); it != broken.end())
+                    e.brokenMarkerLines = it->second;
 }
 
 // ---- Diff --------------------------------------------------------------------------------------
