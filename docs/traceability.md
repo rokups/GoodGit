@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-4)
 
-Covered: 682/682 required IDs; 682/682 of the whole catalogue.
+Covered: 685/685 required IDs; 685/685 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -260,6 +260,7 @@ Covered: 682/682 required IDs; 682/682 of the whole catalogue.
 | SET-MERGETOOL | 2 | §4.1 | Settings: merge.tool | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-DIFFTOOL | 2 | §4.1 | Settings: diff.tool | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-PULL-METHOD | 2 | §4.1 | Settings: default pull method: merge, rebase, rebase keeping merges, fast-forward only (UF-19) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
+| SET-SAME-CHANGE | 2 | §4.1 | Settings ▸ Git: gg.sameChange (Accept / Keep) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email (UF-20) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
 | SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21) | setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides |
@@ -593,6 +594,8 @@ Covered: 682/682 required IDs; 682/682 of the whole catalogue.
 | CONF-NATIVE-IREBASE-EDIT-TODO | 3 | §4.10 | Stopped interactive rebase: Edit remaining todo | rebase-native/conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase |
 | CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue | rebase-native/conflicted input: git rebase -i stops at edit on a commit with first-class conflicts; they are carried along<br>rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo |
 | CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation<br>shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress |
+| CONF-SAME-CHANGE-SETTING | 3 | §4.10 | gg.sameChange: keep leaves a same-change hunk conflicted, accept (default) resolves it | conflicts/gg.sameChange setting and conflict-marker-size attribute are applied by writes |
+| CONF-MARKER-SIZE-ATTR | 3 | §4.10 | conflict-marker-size attribute is applied by rewrites | conflicts/gg.sameChange setting and conflict-marker-size attribute are applied by writes |
 | HOOK-REWRITE-RUN | 3 | §4.12 | pre-rebase/post-rewrite/post-checkout run via git hook run for rewrites | rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy<br>rewrite/pre-rebase can veto a rebase; post-checkout runs when HEAD moves |
 | HOOK-PREPUSH | 3 | §4.12 | pre-push refuses conflicted commits | hooks/managed pre-push refuses plain git pushes of conflicted commits |
 | IR-ENTRY-HISTORY-KEY | 3 | §4.13 | History: I key | rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches |

@@ -79,8 +79,10 @@ at least that size (readers accept any `L ≥ 7`).
 
 **Writer rule.** Let `m` be the longest leading run of a single marker character
 (`< | = > + -`) found at the start of any content line of any section of the region. The writer
-chooses `L = max(7, conflict-marker-size, m + 1)`. Therefore no content line of a written
-region is a marker line of length `L`, and parsing is unambiguous.
+chooses `L = max(7, conflict-marker-size, m + 4)` (the margin of 4, as Jujutsu does, leaves room
+to paste marker-like text into a side while editing without it becoming ambiguous with the
+region's own markers). Therefore no content line of a written region is a marker line of
+length `L`, and parsing is unambiguous.
 
 ## 4. Parsing a file
 
@@ -165,7 +167,10 @@ merge(base, ours, theirs) = ours + theirs − base
 ### 7.3 Simplification
 1. **Cancel**: while some add equals some remove (byte-equal), delete one of each.
 2. **Resolved** when one add remains (and no removes).
-3. **All sides agree**: when every remaining add is equal, the result is that add.
+3. **All sides agree**: when every remaining add is equal, the result is that add. Applies
+   unless the repo config `gg.sameChange` is `keep` (default `accept`), in which case this
+   rule is left out and such a hunk stays a region (the exact term algebra: `a − r + a` is
+   not `a`).
 4. **Collapse**: while two adds `aᵢ`, `aⱼ` and a remove `rₖ` merge cleanly *by cancellation
    alone* (§7.4 with rule 3 left out: in every hunk `aᵢ` or `aⱼ` equals `rₖ`), replace the three
    by the merged file, then apply rules 1–3 again. This is the same value in fewer terms. It lets
@@ -239,16 +244,16 @@ x=2⏎
 Terms: `x=1⏎ − x=0⏎ + x=2⏎`.
 
 **E2 – marker-like content.** Side 1 contains the line `=======⏎` and `<<<<<<<<⏎` (8). Then
-`m = 8`, `L = 9`:
+`m = 8`, `L = 12`:
 ```
-<<<<<<<<< side 1⏎
+<<<<<<<<<<<< side 1⏎
 =======⏎
 <<<<<<<<⏎
-||||||||| base⏎
-=========⏎
->>>>>>>>> side 2⏎
+|||||||||||| base⏎
+============⏎
+>>>>>>>>>>>> side 2⏎
 ```
-(base and side 2 empty). `=======` and `<<<<<<<<` are content: they are not markers of length 9.
+(base and side 2 empty). `=======` and `<<<<<<<<` are content: they are not markers of length 12.
 
 **E3 – missing final newline.** At end of file: ours `a` (no newline), base `b⏎`, theirs `c`:
 ```

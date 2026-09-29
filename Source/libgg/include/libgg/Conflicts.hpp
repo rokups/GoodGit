@@ -8,6 +8,7 @@
 
 #include "libgg/Cancel.hpp"
 #include "libgg/Git2.hpp"
+#include "libgg/Markers.hpp"
 
 #include <filesystem>
 #include <string>
@@ -57,6 +58,11 @@ bool eligible(git_repository* repo, const git_oid* commit, const std::string& pa
 // Why a path may not hold first-class conflicts: "" (it may), "opt-out" (gg-conflicts=false)
 // or "filtered" (filter=, binary, -text, -diff).
 std::string ineligibleReason(git_repository* repo, const git_oid* commit, const std::string& path);
+
+// Marker write options for `path`, from repo config and gitattributes: gg.sameChange
+// ("accept", the default, or "keep"; unknown values fall back to "accept") and the
+// conflict-marker-size attribute (invalid or absent: the default minimum, 7).
+gg::markers::WriteOptions writeOptions(git_repository* repo, const std::string& path);
 
 // Sides of a conflicted blob content (0 = not conflicted).
 int contentSides(std::string_view content);

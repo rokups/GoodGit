@@ -233,7 +233,7 @@ struct Rewriter::Impl {
                 else if (c.anc && c.ours->mode == c.anc->mode)
                     mode = c.theirs->mode;
                 const std::string merged = gg::markers::mergeFiles(c.anc ? blobText(c.anc->id) : std::string(),
-                    blobText(c.ours->id), blobText(c.theirs->id));
+                    blobText(c.ours->id), blobText(c.theirs->id), gg::conflicts::writeOptions(repo.get(), path));
                 addEntry(path, writeBlob(merged), mode);
                 continue;
             }
@@ -310,7 +310,9 @@ struct Rewriter::Impl {
         }
 
         // 2. Files both sides changed and libgit2 merged cleanly: when any version holds
-        //    first-class regions, merge them with the algebra instead (no nesting).
+        //    first-class regions, merge them with the algebra instead (no nesting). With
+        //    gg.sameChange=keep, also where Git's same-change rule alone made the merge clean:
+        //    the algebra keeps those hunks a conflict.
         auto changedPaths = [&](git_tree* a, git_tree* b) {
             git_diff* raw = nullptr;
             check(git_diff_tree_to_tree(&raw, repo.get(), a, b, nullptr), "git_diff_tree_to_tree");
@@ -343,10 +345,23 @@ struct Rewriter::Impl {
             if (isBinary(o) || isBinary(t) || !gg::conflicts::eligible(repo.get(), &sourceOid, path))
                 continue;
             const std::string bt = blobText(b), ot = blobText(o), tt = blobText(t);
-            if (!gg::markers::isConflicted(bt) && !gg::markers::isConflicted(ot) && !gg::markers::isConflicted(tt))
-                continue;
+            const auto options = gg::conflicts::writeOptions(repo.get(), path);
             const std::uint32_t mode = merged->mode;
-            addEntry(path, writeBlob(gg::markers::mergeFiles(bt, ot, tt)), mode);
+            if (!gg::markers::isConflicted(bt) && !gg::markers::isConflicted(ot) && !gg::markers::isConflicted(tt)) {
+                if (options.sameChangeResolves)
+                    continue;
+                // Only when the same-change rule is the difference: where the algebra's own diff
+                // disagrees with libgit2's (a conflict either way), libgit2's clean merge stands.
+                auto accept = options;
+                accept.sameChangeResolves = true;
+                if (gg::markers::isConflicted(gg::markers::mergeFiles(bt, ot, tt, accept)))
+                    continue;
+                const std::string kept = gg::markers::mergeFiles(bt, ot, tt, options);
+                if (gg::markers::isConflicted(kept))
+                    addEntry(path, writeBlob(kept), mode);
+                continue;
+            }
+            addEntry(path, writeBlob(gg::markers::mergeFiles(bt, ot, tt, options)), mode);
         }
         git_oid out;
         check(git_index_write_tree_to(&out, index.get(), repo.get()), "git_index_write_tree_to");

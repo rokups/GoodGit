@@ -128,6 +128,7 @@ SET-EDITOR-WORKTREE | 2 | §4.1 | Settings: core.editor (Worktree)
 SET-MERGETOOL | 2 | §4.1 | Settings: merge.tool
 SET-DIFFTOOL | 2 | §4.1 | Settings: diff.tool
 SET-PULL-METHOD | 2 | §4.1 | Settings: default pull method: merge, rebase, rebase keeping merges, fast-forward only (UF-19)
+SET-SAME-CHANGE | 2 | §4.1 | Settings ▸ Git: gg.sameChange (Accept / Keep)
 SET-IDENTITY | 2 | §4.1 | Settings: user.name and user.email (UF-20)
 SET-SCOPE-TABS | 2 | §4.1 | Settings: one field per option; the scope (user / repository / worktree) is a tab (UF-21)
 SET-SCOPE-HINT | 2 | §4.1 | Settings: an unset field shows the inherited lower-scope value as a hint (UF-21)
@@ -571,6 +572,8 @@ CONF-PREPUSH-HOOK | 3 | §4.10 | Managed pre-push refuses conflicted commits for
 CONF-NATIVE-IREBASE-EDIT-TODO | 3 | §4.10 | Stopped interactive rebase: Edit remaining todo
 CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and continue
 CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view
+CONF-SAME-CHANGE-SETTING | 3 | §4.10 | gg.sameChange: keep leaves a same-change hunk conflicted, accept (default) resolves it
+CONF-MARKER-SIZE-ATTR | 3 | §4.10 | conflict-marker-size attribute is applied by rewrites
 
 # ---- §4.11 Patches ----------------------------------------------------------------------------
 PATCH-COPY | 1 | §4.11 | Copy patch

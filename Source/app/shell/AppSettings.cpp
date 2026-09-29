@@ -8,6 +8,8 @@
 #include <imgui_stdlib.h>
 #include <libgg/GitRunner.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <set>
 
 namespace ggui {
@@ -39,6 +41,21 @@ int pullMethod(const std::string& rebase, const std::string& ff)
     if (ff == "only")
         return 4;
     if (!rebase.empty())
+        return 1;
+    return 0;
+}
+
+// gg.sameChange: whether a hunk every side changed the same way resolves (Git's/jj's "accept",
+// the default) or stays a conflict ("keep", the exact term algebra; jj's merge.same-change).
+constexpr const char* kSameChangeOptions[] = {"(not set)", "Accept", "Keep"};
+
+int sameChangeIndex(const std::string& v)
+{
+    std::string lower = v;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lower == "keep")
+        return 2;
+    if (lower == "accept")
         return 1;
     return 0;
 }
@@ -209,6 +226,42 @@ void App::drawGitConfigSettings(Session& s)
             setConfig(sc.flag, std::move(set));
         }
         ImGui::Separator();
+        // gg.sameChange: how rewrites treat a hunk every side changed the same way.
+        const int sameChange = sameChangeIndex(value(sc.scope, "gg.sameChange"));
+        int lowerSameChange = 0;
+        const char* sameChangeFrom = nullptr;
+        for (size_t k = si; k-- > 0 && !sameChangeFrom;)
+            if (int m = sameChangeIndex(value(kScopes[k].scope, "gg.sameChange")); m != 0) {
+                lowerSameChange = m;
+                sameChangeFrom = kScopes[k].label;
+            }
+        if (!sameChangeFrom)
+            if (int m = sameChangeIndex(value("system", "gg.sameChange")); m != 0) {
+                lowerSameChange = m;
+                sameChangeFrom = "System";
+            }
+        std::string sameChangePreview = kSameChangeOptions[sameChange];
+        if (sameChange == 0)
+            sameChangePreview = sameChangeFrom ? std::string(kSameChangeOptions[lowerSameChange]) + "  (" + sameChangeFrom + ")"
+                                                : "Accept  (default)";
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+        ImGui::BeginDisabled(!editable);
+        if (ImGui::BeginCombo("Same-change resolution##same_change", sameChangePreview.c_str())) {
+            for (int m = 0; m < static_cast<int>(std::size(kSameChangeOptions)); ++m) {
+                if (!ImGui::Selectable(kSameChangeOptions[m], m == sameChange) || m == sameChange)
+                    continue;
+                const char* values[] = {"", "accept", "keep"};
+                setConfig(sc.flag, {{"gg.sameChange", values[m]}});
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        helpMarker("When both sides of a merge make the same change: Accept treats it as resolved (like Git; "
+                   "rebasing back can lose that change); Keep leaves it a conflict so the term algebra stays exact.");
+        if (sameChange != 0 && sameChangeFrom && inheritButton("same_change", kSameChangeOptions[lowerSameChange], sameChangeFrom))
+            setConfig(sc.flag, {{"gg.sameChange", ""}});
+        ImGui::Separator();
         // ggui's todo editor for plain `git rebase -i`: sequence.editor at this scope. Turning it on
         // asks before replacing a sequence.editor of the user's own (kept for turning it off);
         // turning it off removes only ggui's value.
@@ -259,7 +312,7 @@ void App::drawGitConfigSettings(Session& s)
 
 void App::drawSettingsWindow()
 {
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 38, ImGui::GetFontSize() * 26), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 38, ImGui::GetFontSize() * 29), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Settings", &m_showSettings, ImGuiWindowFlags_NoDocking)) {
         ImGui::End();
         return;

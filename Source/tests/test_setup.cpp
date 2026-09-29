@@ -140,8 +140,8 @@ GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoab
 namespace ggtest {
 
 GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides", "SET-EDITOR-USER",
-    "SET-EDITOR-REPO", "SET-EDITOR-WORKTREE", "SET-MERGETOOL", "SET-DIFFTOOL", "SET-PULL-METHOD", "SET-IDENTITY",
-    "SET-SCOPE-TABS", "SET-SCOPE-HINT", "SET-SCOPE-INHERIT", "SET-WORKTREE-TOGGLE")
+    "SET-EDITOR-REPO", "SET-EDITOR-WORKTREE", "SET-MERGETOOL", "SET-DIFFTOOL", "SET-PULL-METHOD", "SET-SAME-CHANGE",
+    "SET-IDENTITY", "SET-SCOPE-TABS", "SET-SCOPE-HINT", "SET-SCOPE-INHERIT", "SET-WORKTREE-TOGGLE")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -173,6 +173,8 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     GG_CHECK(s.waitUntil([&] { return config("--global", "core.editor") == "editor-for-user"; }));
     s.comboSelect((tab + "Pull method##pull_method").c_str(), "Rebase, keeping merges");
     GG_CHECK(s.waitUntil([&] { return config("--global", "pull.rebase") == "merges"; }));
+    s.comboSelect((tab + "Same-change resolution##same_change").c_str(), "Keep");
+    GG_CHECK(s.waitUntil([&] { return config("--global", "gg.sameChange") == "keep"; }));
     // Repository scope: the user values show as hints until overridden.
     tab = scope("Repository");
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "Ui User  (User)"); }));
@@ -210,6 +212,15 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     // Emptying a field unsets the value at that scope.
     edit(tab, "merge.tool", "");
     GG_CHECK(s.waitUntil([&] { return config("--local", "merge.tool").empty(); }));
+    // Same-change resolution: overriding, then Inherit falls back to the user scope's "Keep".
+    s.comboSelect((tab + "Same-change resolution##same_change").c_str(), "Accept");
+    GG_CHECK(s.waitUntil([&] { return config("--local", "gg.sameChange") == "accept"; }));
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "Inherit##same_change").c_str()); }));
+    ctx->ItemClick((tab + "Inherit##same_change").c_str());
+    GG_CHECK(s.waitUntil([&] { return config("--local", "gg.sameChange").empty(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "gg.sameChange"}), "keep");
     // Worktree scope: its tab exists only while "Worktree settings" (extensions.worktreeConfig) is
     // on (git would write the repository's config otherwise).
     const std::string worktreeSettings = "//Settings/##settings_tabs/Git/Worktree settings##worktree_config";

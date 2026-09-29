@@ -10,6 +10,8 @@ namespace gg::markers {
 namespace {
 
 constexpr int kMinMarker = 7;
+// Room for the user to paste marker-like text while editing (as Jujutsu does).
+constexpr int kMarkerLengthMargin = 4;
 constexpr const char* kNoEolFlag = "[no newline]";
 
 struct Line {
@@ -472,9 +474,10 @@ std::optional<std::string> cleanMerge(const std::string& r, const std::string& a
 
 } // namespace
 
-void simplify(Merge& m)
+// strict: without Git's same-change rule ("all adds agree"), the exact term algebra.
+static void simplify(Merge& m, bool strict)
 {
-    simplifyPairs(m);
+    simplifyPairs(m, strict);
     // Terms that merge cleanly collapse: a − r + b is one file when every hunk of that three-way
     // merge resolves. Terms that cancel hunk by hunk but differ as whole files (the same change
     // made in other surroundings) then cancel too; without this a conflict rebased away and back
@@ -493,8 +496,13 @@ void simplify(Merge& m)
                     collapsed = true;
                 }
         if (collapsed)
-            simplifyPairs(m);
+            simplifyPairs(m, strict);
     }
+}
+
+void simplify(Merge& m)
+{
+    simplify(m, false);
 }
 
 std::string writeRegion(const std::vector<std::string>& sides, const std::vector<std::string>& bases,
@@ -522,7 +530,7 @@ std::string writeRegion(const std::vector<std::string>& sides, const std::vector
         scan(s);
     for (const auto& b : bases)
         scan(b);
-    const int L = std::max({kMinMarker, options.markerSize, run + 1});
+    const int L = std::max({kMinMarker, options.markerSize, run + kMarkerLengthMargin});
     const std::string eol = crlf > lf ? "\r\n" : "\n";
     auto marker = [&](char c, const std::string& label, bool noEol) {
         std::string line(static_cast<size_t>(L), c);
@@ -634,13 +642,7 @@ bool writeLines(const Merge& m, const WriteOptions& options, std::string& out, b
 
 std::string materialize(Merge m, const WriteOptions& options)
 {
-    simplify(m);
-    if (!options.sameChangeResolves && m.adds.size() > 1) {
-        // Only the cancellations (simplify's final "all adds agree" is Git's rule too).
-        std::string out;
-        writeLines(m, options, out);
-        return out;
-    }
+    simplify(m, !options.sameChangeResolves);
     if (m.isResolved())
         return m.adds[0];
     std::string out;

@@ -3,6 +3,9 @@
 #include "libgg/Markers.hpp"
 #include "libgg/Thread.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -172,6 +175,30 @@ std::vector<ConflictedFile> scanTree(git_repository* repo, const git_oid& tree, 
 bool eligible(git_repository* repo, const git_oid* commit, const std::string& path)
 {
     return ineligibleReason(repo, commit, path).empty();
+}
+
+gg::markers::WriteOptions writeOptions(git_repository* repo, const std::string& path)
+{
+    gg::markers::WriteOptions options;
+    // gg.sameChange: "accept" (default, Git's/jj's behaviour: a hunk every side changed the same
+    // way is resolved) or "keep" (the exact term algebra). Unknown values fall back to accept.
+    const Config cfg = git2::repositoryConfig(repo);
+    if (auto v = git2::configString(cfg.get(), "gg.sameChange")) {
+        std::string lower = *v;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        options.sameChangeResolves = lower != "keep";
+    }
+    // conflict-marker-size attribute (§3.3): same attribute source as eligibility below.
+    git_attr_options opts = GIT_ATTR_OPTIONS_INIT;
+    opts.flags = GIT_ATTR_CHECK_FILE_THEN_INDEX | GIT_ATTR_CHECK_NO_SYSTEM;
+    std::string sizeStr;
+    if (attr(repo, &opts, path, "conflict-marker-size", &sizeStr) == GIT_ATTR_VALUE_STRING) {
+        char* end = nullptr;
+        const long size = std::strtol(sizeStr.c_str(), &end, 10);
+        if (end != sizeStr.c_str() && size > 0)
+            options.markerSize = static_cast<int>(size);
+    }
+    return options;
 }
 
 std::string ineligibleReason(git_repository* repo, const git_oid* commit, const std::string& path)

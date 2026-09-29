@@ -8,7 +8,10 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <libgg/Conflicts.hpp>
+#include <libgg/Git2.hpp>
 #include <libgg/Markers.hpp>
+#include <libgg/Rewrite.hpp>
 
 namespace ggtest {
 
@@ -264,6 +267,105 @@ GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(scanned(s, nway));
     GG_CHECK(s.waitUntil([&] { return files(optout) == before; }));
+}
+
+GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute are applied by writes",
+    "CONF-SAME-CHANGE-SETTING", "CONF-MARKER-SIZE-ATTR")
+{
+    // gg::conflicts::writeOptions(repo, path) is what every write site (Rewrite.cpp, Actions.cpp)
+    // calls before gg::markers::mergeFiles/materialize; check it end to end on a real repo, then
+    // that its options actually change what mergeFiles writes (docs/spec/conflict-markers.md §7.3
+    // rule 3, §3.3).
+    const fs::path repo = s.fixture(Recipe::Empty, "same-change");
+    s.track(repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    // A file with two separate hunks (anchor lines keep them apart): the "x" hunk both sides
+    // change identically, the "y" hunk they change differently (always a real conflict, so the
+    // whole file never trivially resolves and the "x" hunk is diffed on its own, §7.4).
+    const std::string base = "top\nx=0\nmid\ny=0\nbottom\n";
+    const std::string ours = "top\nx=1\nmid\ny=1\nbottom\n";
+    const std::string theirs = "top\nx=1\nmid\ny=2\nbottom\n";
+    // Default (gg.sameChange unset): accept, like Git — the "x" hunk both sides changed the same
+    // way resolves plainly; only "y" stays a region.
+    GG_CHECK(gg::conflicts::writeOptions(r.get(), "f.txt").sameChangeResolves);
+    {
+        const std::string merged = gg::markers::mergeFiles(base, ours, theirs, gg::conflicts::writeOptions(r.get(), "f.txt"));
+        GG_CHECK(merged.find("top\nx=1\nmid\n") != std::string::npos); // "x" resolved, out of any region
+        GG_CHECK_EQ(gg::markers::parse(merged).regions.size(), static_cast<size_t>(1)); // only "y" conflicts
+    }
+    // gg.sameChange=keep: the exact term algebra (a - r + a is not a) keeps "x" a conflict too.
+    s.git(repo, {"config", "gg.sameChange", "keep"});
+    GG_CHECK(!gg::conflicts::writeOptions(r.get(), "f.txt").sameChangeResolves);
+    {
+        const std::string merged = gg::markers::mergeFiles(base, ours, theirs, gg::conflicts::writeOptions(r.get(), "f.txt"));
+        GG_CHECK_EQ(gg::markers::parse(merged).regions.size(), static_cast<size_t>(2)); // "x" and "y" both conflict
+    }
+    // The whole file changed the same way on both sides: a − r + a stays a conflict too.
+    GG_CHECK(gg::markers::isConflicted(
+        gg::markers::mergeFiles(base, ours, ours, gg::conflicts::writeOptions(r.get(), "f.txt"))));
+    // An unknown value falls back to accept.
+    s.git(repo, {"config", "gg.sameChange", "bogus"});
+    GG_CHECK(gg::conflicts::writeOptions(r.get(), "f.txt").sameChangeResolves);
+    s.git(repo, {"config", "--unset", "gg.sameChange"});
+    // conflict-marker-size attribute: absent, the default; set, applied to a genuine conflict's
+    // marker length (base x=0, ours x=2, theirs x=1 disagree, so it stays a region).
+    GG_CHECK_EQ(gg::conflicts::writeOptions(r.get(), "f.txt").markerSize, 7);
+    s.write(repo, ".gitattributes", "f.txt conflict-marker-size=11\n");
+    {
+        const auto options = gg::conflicts::writeOptions(r.get(), "f.txt");
+        GG_CHECK_EQ(options.markerSize, 11);
+        const std::string merged = gg::markers::mergeFiles("x=0\n", "x=1\n", "x=2\n", options);
+        const auto parsed = gg::markers::parse(merged);
+        GG_REQUIRE(parsed.conflicted());
+        GG_CHECK_EQ(parsed.regions.front().markerLength, 11);
+    }
+    // End to end through the rewrite engine: a real Pick recreates this same conflict with the
+    // attribute's marker length (Rewrite.cpp's write sites use gg::conflicts::writeOptions too).
+    s.commitFile(repo, "f.txt", "x=0\n", "base");
+    const std::string baseCommit = s.head(repo);
+    s.commitFile(repo, "f.txt", "x=1\n", "child");
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {baseCommit});
+    bool found = false;
+    for (auto& step : plan.steps)
+        if (step.source == baseCommit) {
+            step.setFiles.push_back({"f.txt", "x=2\n"});
+            found = true;
+        }
+    GG_REQUIRE(found);
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.unresolved.empty());
+    std::string error;
+    GG_REQUIRE(rewriter.apply(plan, result, error));
+    const auto rewritten = gg::markers::parse(s.gitOut(repo, {"show", "HEAD:f.txt"}));
+    GG_REQUIRE(rewritten.conflicted());
+    GG_CHECK_EQ(rewritten.regions.front().markerLength, 11);
+
+    // A plain file (no regions yet) that libgit2 merges cleanly only by Git's same-change rule:
+    // accept keeps libgit2's merge, keep makes the same-change hunk a first-class conflict.
+    // (Hunks further apart than in the file above: git's merge joins changes one line apart.)
+    const std::string gOld = "top\nx=0\n1\n2\n3\n4\ny=0\nbottom\n";
+    const std::string gNew = "top\nx=1\n1\n2\n3\n4\ny=1\nbottom\n";
+    auto sameChangeRewrite = [&]() -> std::string {
+        s.commitFile(repo, "g.txt", gOld, "g base");
+        const std::string gBase = s.head(repo);
+        s.commitFile(repo, "g.txt", gNew, "g child"); // x=1 and y=1
+        gg::rewrite::Plan p = gg::rewrite::replayPlan(r.get(), {gBase});
+        for (auto& step : p.steps)
+            if (step.source == gBase)
+                step.setFiles.push_back({"g.txt", "top\nx=1\n1\n2\n3\n4\ny=0\nbottom\n"}); // the same x change
+        gg::rewrite::Rewriter w(repo);
+        gg::rewrite::Result computed = w.compute(p);
+        std::string err;
+        const bool applied = computed.ok && w.apply(p, computed, err);
+        GG_CHECK(applied);
+        return applied ? s.git(repo, {"show", "HEAD:g.txt"}).out : std::string();
+    };
+    GG_CHECK_EQ(sameChangeRewrite(), gNew);
+    s.git(repo, {"config", "gg.sameChange", "keep"});
+    const std::string kept = sameChangeRewrite();
+    GG_CHECK(gg::markers::isConflicted(kept));
+    s.git(repo, {"config", "--unset", "gg.sameChange"});
 }
 
 } // namespace ggtest

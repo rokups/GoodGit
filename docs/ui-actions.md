@@ -196,6 +196,7 @@ covered by `cli/` tests), P4-05 changes two labels. A test that needs a newer gi
 | Git ▸ scope tabs (User, Repository, Worktree) | tab | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ user.name, user.email, core.editor, merge.tool, diff.tool | text field | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Pull method | combo | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
+| Git ▸ Same-change resolution | combo | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Inherit | click | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Worktree settings (on and off; the Worktree tab follows) | checkbox | `setup/Settings ▸ Git: scope tabs, one field per option, inherited hints and overrides` | tested |
 | Git ▸ Use ggui's todo editor for git rebase -i (per scope: on, off) | checkbox | `sequence-editor/Settings: ggui's todo editor for git rebase -i per scope; off removes only ggui's value; a user's own sequence.editor is kept unless replaced`<br>`sequence-editor/plain git rebase -i opens ggui's todo editor; Save hands the edited list back and git runs it; git rebase --edit-todo from a terminal` | tested |

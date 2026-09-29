@@ -319,7 +319,7 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
                 folded.adds[static_cast<size_t>(pair)] = rs.str();
                 folded.adds.erase(folded.adds.begin() + pair + 1);
                 folded.removes.erase(folded.removes.begin() + pair);
-                const std::string materialized = gg::markers::materialize(std::move(folded));
+                const std::string materialized = gg::markers::materialize(std::move(folded), gg::conflicts::writeOptions(ctx.repo(), path));
                 std::ofstream out(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
                 out << materialized;
                 out.close();
@@ -865,7 +865,8 @@ void Actions::commitWithConflicts()
             if (gg::markers::looksBinary(*ours) || gg::markers::looksBinary(*theirs)
                 || (base && gg::markers::looksBinary(*base)))
                 throw MutationError{Outcome::Refused, p + " is binary: resolve binary conflicts first", {}};
-            contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs));
+            contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs,
+                gg::conflicts::writeOptions(ctx.repo(), p)));
         }
         for (const auto& [p, text] : contents) {
             std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
