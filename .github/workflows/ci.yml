@@ -167,100 +167,116 @@ jobs:
             traceability.md
             coverage.md
 
-  windows-mingw:
+  # Windows: each toolchain is built once; its binaries run the suite in shards (like Linux), and
+  # the shards' traces are gated together per toolchain.
+  windows-build:
     needs: catalogue
     runs-on: windows-2022
-    defaults:
-      run:
-        shell: msys2 {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [mingw, msvc]
     steps:
       - uses: actions/checkout@v4
-      # Git for Windows (on the runner's PATH), as users have it: MSYS2's own git writes POSIX
-      # paths (/tmp/...) that native programs such as ggui cannot follow.
-      - uses: msys2/setup-msys2@v2
+      - if: matrix.toolchain == 'mingw'
+        uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           path-type: inherit
           install: >-
             patch mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-python
+      - if: matrix.toolchain == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
       - uses: actions/cache@v4
         with:
           path: .cache/CPM
-          key: cpm-mingw-${{ hashFiles('cmake/Dependencies.cmake') }}
+          key: cpm-${{ matrix.toolchain }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build (mingw-x64-static)
+        if: matrix.toolchain == 'mingw'
+        shell: msys2 {0}
         env:
           CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
         run: |
           cmake --preset mingw-x64-static -DCPM_SOURCE_CACHE="$CPM_SOURCE_CACHE"
           cmake --build --preset mingw-x64-static
-      - name: Tests (headless, D3D12/WARP)
-        # A hang fails the job instead of holding the runner for the 6 h default.
-        timeout-minutes: 45
-        env:
-          GGUI_HEADLESS: "1"
-        run: build/mingw-x64-static/bin/ggui.exe --test --trace=trace-mingw.json
-      - name: Gates (traceability, UI actions) on the Windows trace
-        if: always()
-        run: |
-          git --version
-          python3 scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability-mingw.md trace-mingw.json
-          python3 scripts/ui_actions_check.py trace-mingw.json
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: windows-mingw
-          path: |
-            trace-mingw.json
-            traceability-mingw.md
-            test-artifacts/
-      # The binaries, for symbolizing a crash report's module offsets (addr2line).
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: windows-mingw-bin
-          path: build/mingw-x64-static/bin/
-
-  windows-msvc:
-    needs: catalogue
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-      - uses: actions/cache@v4
-        with:
-          path: .cache/CPM
-          key: cpm-msvc-${{ hashFiles('cmake/Dependencies.cmake') }}
+          mv build/mingw-x64-static/bin windows-bin
       - name: Build (msvc-x64)
+        if: matrix.toolchain == 'msvc'
+        shell: bash
         run: |
           cmake --preset msvc-x64 -DCPM_SOURCE_CACHE="${{ github.workspace }}/.cache/CPM"
           cmake --build --preset msvc-x64
-      - name: Tests (headless, D3D12/WARP)
+          mv build/msvc-x64/bin windows-bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-bin-${{ matrix.toolchain }}
+          path: windows-bin/
+          retention-days: 3
+
+  windows:
+    needs: windows-build
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [mingw, msvc]
+        shard: [0, 1, 2, 3]
+    defaults:
+      run:
+        shell: bash # Git for Windows' bash; git is Git for Windows, as users have it
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-bin-${{ matrix.toolchain }}
+          path: bin
+      - uses: actions/cache@v4
+        with:
+          path: .cache/ggui-fixtures
+          key: fixtures-large-v1-windows
+      - run: git --version
+      - name: Tests (shard ${{ matrix.shard }}/4, headless, D3D12/WARP)
         # A hang fails the job instead of holding the runner for the 6 h default.
-        timeout-minutes: 45
+        timeout-minutes: 30
         env:
           GGUI_HEADLESS: "1"
-        run: build/msvc-x64/bin/ggui.exe --test --trace=trace-msvc.json
-      - name: Gates (traceability, UI actions) on the Windows trace
-        if: always()
-        shell: bash
         run: |
-          git --version
-          python scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability-msvc.md trace-msvc.json
-          python scripts/ui_actions_check.py trace-msvc.json
+          mkdir -p out
+          bin/ggui.exe --test --shard=${{ matrix.shard }}/$SHARDS --trace=out/trace-${{ matrix.toolchain }}-${{ matrix.shard }}.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: windows-msvc
+          name: windows-${{ matrix.toolchain }}-${{ matrix.shard }}
           path: |
-            trace-msvc.json
-            traceability-msvc.md
+            out/
             test-artifacts/
-      - uses: actions/upload-artifact@v4
-        if: failure()
+
+  windows-gates:
+    needs: windows
+    if: always()
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [mingw, msvc]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: windows-msvc-bin
-          path: build/msvc-x64/bin/
+          pattern: windows-${{ matrix.toolchain }}-*
+          path: shards
+      - name: Functional gate (traceability; no failing test)
+        run: |
+          python3 scripts/traceability.py --phase "$GGUI_DELIVERED_PHASE" --out traceability-${{ matrix.toolchain }}.md \
+            shards/windows-${{ matrix.toolchain }}-*/out/trace-*.json
+      - name: UI-action gate (every docs/ui-actions.md row has a passing test)
+        if: always()
+        run: python3 scripts/ui_actions_check.py shards/windows-${{ matrix.toolchain }}-*/out/trace-*.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports-windows-${{ matrix.toolchain }}
+          path: traceability-${{ matrix.toolchain }}.md
 
   # Release packages (task P4-04): release presets (no test engine), CPack, then the package
   # smoke checks. Packages are uploaded as artifacts.

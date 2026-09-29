@@ -104,8 +104,8 @@ must be green:
 | `linux-build` | one clang coverage build; the binaries are the `linux-bin` artifact |
 | `linux` (8 jobs: git minimum/latest × shards 0–3) | the suite from `linux-bin` under Xvfb + lavapipe; first CI restore of the large fixture cache (`fixtures-large-v1`, P0-11) |
 | `gates` | functional gate 660/660 with no failing test; UI-action gate; coverage report uploaded (`reports` artifact: `traceability.md`, `coverage.md`), COVERAGE_EXCL within the allowlist |
-| `windows-mingw` | first run of the suite on Windows (headless, D3D12/WARP) incl. the responsiveness scenario (P1-21); gates on its own trace |
-| `windows-msvc` | first native MSVC build (P0-06) and suite run; gates on its own trace |
+| `windows-build` (MinGW, MSVC) | one build per toolchain (P0-06); the binaries are the `windows-bin-<toolchain>` artifacts |
+| `windows` (8 jobs: MinGW/MSVC × shards 0–3) and `windows-gates` | the suite on Windows (headless, D3D12/WARP) incl. the responsiveness scenario (P1-21); both gates on each toolchain's merged traces |
 | `package-linux` | `package_smoke.sh --container ubuntu:24.04` (the .deb installed with apt in a clean container); `removal_audit.sh --packages` |
 | `package-mingw`, `package-msvc` | `package_smoke_windows.sh` incl. its runtime checks on Windows |
 
