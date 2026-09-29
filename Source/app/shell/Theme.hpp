@@ -17,12 +17,15 @@ struct Palette {
     ImU32 branchText, branchCurrentText, remoteText, tagText;        // the same, as text colours
     ImU32 badgeText;
     ImU32 unpublished;      // text colour of commits not on any remote
-    ImU32 conflict;
+    ImU32 conflict;         // conflict as text/graph colour
+    ImU32 conflictFill;     // conflict badge fill (against badgeText)
+    ImU32 sectionHeader, sectionHeaderHovered, sectionHeaderActive; // neutral CollapsingHeader/TreeNode bars
     ImU32 added, removed, addedBg, removedBg, hunkHeader, lineNumber;
     ImU32 dim;
     ImU32 error, errorBg, warning;  // error: text on errorBg
     ImU32 errorText;                 // an error as text on the panel
     ImU32 selection;
+    ImU32 selectionHovered; // a selected list row under the mouse (hover alone is a neutral overlay)
     ImU32 staged, unstaged, untracked;
 };
 
@@ -48,6 +51,15 @@ private:
 };
 
 ThemeManager& theme();
+
+// Neutral grey for collapsing section bars and tree nodes (blue is for selection only): construct
+// around the CollapsingHeader/TreeNode call.
+struct SectionHeaderColors {
+    SectionHeaderColors();
+    ~SectionHeaderColors();
+    SectionHeaderColors(const SectionHeaderColors&) = delete;
+    SectionHeaderColors& operator=(const SectionHeaderColors&) = delete;
+};
 
 // WCAG contrast ratio of two colours (1 to 21; alpha ignored).
 float contrastRatio(ImU32 a, ImU32 b);

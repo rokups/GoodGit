@@ -4,3 +4,4 @@ build/
 *.profdata
 build-*.log
 __pycache__/
+test-artifacts/

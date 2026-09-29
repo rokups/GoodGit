@@ -6,6 +6,7 @@
 #include <imgui.h>
 
 #include <filesystem>
+#include <initializer_list>
 #include <string>
 
 namespace ggui {
@@ -13,8 +14,9 @@ namespace ggui {
 bool containsNoCase(const std::string& haystack, const std::string& needle);
 // "main → origin/main ↑1 ↓2" style summary of a recent repository.
 std::string summaryText(const core::RepoSummary& s);
-// A disabled menu item with a tooltip explaining why.
-void disabledMenuItem(const char* label, const char* reason, const char* shortcut = nullptr);
+// A disabled menu item with a tooltip explaining why. `icon` should match the icon used by the
+// enabled counterpart of this item so disabled entries line up with enabled ones.
+void disabledMenuItem(const char* icon, const char* label, const char* reason, const char* shortcut = nullptr);
 // A small coloured badge (label may contain ##id); hover and clicks go to what it sits on.
 void drawBadge(const char* label, ImU32 color, bool outlined = false);
 // Plain text registered as an item (tests find it; tooltips and context menus attach to it) with
@@ -36,6 +38,15 @@ void spinner(const char* id, float radius);
 void openInFileManager(const std::filesystem::path& path);
 // Help marker "(?)" with a tooltip.
 void helpMarker(const char* text);
+// Layout helpers so toolbars flow like words instead of clipping at the panel edge.
+// ImGui::SameLine(), except that when fewer than `nextWidth` pixels remain the next item starts a new line.
+void sameLineIfFits(float nextWidth);
+// Width of ImGui::Checkbox(label): box + inner spacing + visible label text.
+float checkboxWidth(const char* label);
+// Width of an ImGui::Combo wide enough for its widest option (text + frame padding + arrow button).
+float comboWidth(std::initializer_list<const char*> options);
+// Width of an item of `fieldWidth` followed by its visible `label` (as InputText/Combo draw it).
+float labelledWidth(float fieldWidth, const char* label);
 // Formats "YYYY-MM-DD HH:MM".
 std::string dateText(std::int64_t unixSeconds);
 

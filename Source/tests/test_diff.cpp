@@ -419,7 +419,8 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
     showFile(s, r.change, "code.cpp");
     GG_CHECK(s.textShown(body(s).c_str(), "int line5 = 1; // changed"));
     s.comboSelect("//Settings/##settings_tabs/General/Theme##theme", "Dark");
-    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->WindowClose("//Settings");
+    ctx->Yield(2);
 
     // A right-click in the text (not the gutter) selects that line and opens the same menu.
     {

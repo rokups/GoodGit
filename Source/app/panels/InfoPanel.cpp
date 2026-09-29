@@ -5,6 +5,9 @@
 #include "shell/Theme.hpp"
 #include "util/Ui.hpp"
 
+#include "shell/Widgets.hpp"
+
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
@@ -54,7 +57,7 @@ void InfoPanel::draw(bool* open)
             }
             ImGui::InputTextMultiline("##merge_message", &m_mergeMessage, ImVec2(-1, ImGui::GetTextLineHeight() * 6));
             ImGui::BeginDisabled(!m_session.actions().busy().empty() || m_mergeMessage == snap->mergeMessage);
-            if (ImGui::Button("Save message##save_merge_message"))
+            if (button(ICON_MS_SAVE, "Save message##save_merge_message"))
                 m_session.actions().saveMergeMessage(m_mergeMessage);
             ImGui::EndDisabled();
         }
@@ -110,11 +113,11 @@ void InfoPanel::draw(bool* open)
         const std::string author = d.authorName + " <" + d.authorEmail + ">";
         plainText((author + "###author").c_str());
         if (ImGui::BeginPopupContextItem("##author_menu", ImGuiPopupFlags_MouseButtonRight)) {
-            if (ImGui::MenuItem("Copy name"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(d.authorName.c_str());
-            if (ImGui::MenuItem("Copy email"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy email"))
                 ImGui::SetClipboardText(d.authorEmail.c_str());
-            if (ImGui::MenuItem("Edit author...", nullptr, false, free && m_selection.kind == SelKind::Commit)) {
+            if (menuItem(ICON_MS_EDIT, "Edit author...", nullptr, false, free && m_selection.kind == SelKind::Commit)) {
                 Form f;
                 f.title = "Edit author";
                 f.add(Field{Field::Text, "name", "Name", d.authorName});
@@ -164,7 +167,7 @@ void InfoPanel::draw(bool* open)
                 const auto& [path, sides] = (*conflicts)[i];
                 const std::string text = path + " (" + std::to_string(sides) + " sides)###conflict_" + std::to_string(i);
                 ImGui::PushStyleColor(ImGuiCol_Text, p.conflict);
-                if (ImGui::Selectable(text.c_str()))
+                if (selectable(text.c_str()))
                     m_session.blameFile(path, d.id);
                 ImGui::PopStyleColor();
             }
@@ -174,7 +177,7 @@ void InfoPanel::draw(bool* open)
             ImGui::TextDisabled("(root commit)");
         for (size_t i = 0; i < d.parents.size(); ++i) {
             const std::string id = d.parents[i].shortHex(10) + "###parent_" + std::to_string(i);
-            if (ImGui::Selectable(id.c_str(), false, ImGuiSelectableFlags_None, ImGui::CalcTextSize(id.c_str(), nullptr, true)))
+            if (selectable(id.c_str(), false, ImGuiSelectableFlags_None, ImGui::CalcTextSize(id.c_str(), nullptr, true)))
                 m_session.revealCommit(d.parents[i]);
             if (i + 1 < d.parents.size())
                 ImGui::SameLine();

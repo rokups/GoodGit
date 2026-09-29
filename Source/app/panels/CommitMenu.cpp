@@ -6,10 +6,12 @@
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
+#include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
 
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 
 namespace ggui {
@@ -37,41 +39,41 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     const bool ok = free(session);
     const bool merge = row.parents.size() > 1;
     const bool root = row.parents.empty();
-    if (ImGui::MenuItem("New commit before", nullptr, false, ok))
+    if (menuItem(ICON_MS_ADD, "New commit before", nullptr, false, ok))
         session.actions().insertCommit(row.id, true, {});
-    if (ImGui::MenuItem("New commit after", nullptr, false, ok))
+    if (menuItem(ICON_MS_ADD, "New commit after", nullptr, false, ok))
         session.actions().insertCommit(row.id, false, {});
     ImGui::Separator();
-    if (ImGui::MenuItem("Duplicate", "D", false, ok))
+    if (menuItem(ICON_MS_CONTROL_POINT_DUPLICATE, "Duplicate", "D", false, ok))
         session.actions().duplicate(row.id, false);
-    if (ImGui::MenuItem("Duplicate branch", "Shift+D", false, ok))
+    if (menuItem(ICON_MS_CONTROL_POINT_DUPLICATE, "Duplicate branch", "Shift+D", false, ok))
         session.actions().duplicate(row.id, true);
-    if (ImGui::MenuItem("Rebase onto...", nullptr, false, ok))
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, false, ok))
         showRebaseDialog(session, row.id);
-    if (ImGui::MenuItem("Interactive rebase from here...", "I", false, ok))
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase from here...", "I", false, ok))
         openInteractiveRebase(session, row.id);
     // HEAD and this commit (plan §4.3 "Merge into @", "Rebase @ onto"): also in Branches.
     const auto snap = session.snapshot();
     const bool isHead = snap->head == row.id; // null when unborn
     const bool headCommit = !snap->headUnborn;
-    if (ImGui::MenuItem("Merge into HEAD...", nullptr, false, ok && headCommit && !isHead))
+    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, ok && headCommit && !isHead))
         showMergeDialog(session, session.shortId(row.id), true);
-    if (ImGui::MenuItem("Rebase HEAD onto this", nullptr, false, ok && headCommit && !snap->headDetached && !isHead))
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto this", nullptr, false, ok && headCommit && !snap->headDetached && !isHead))
         session.actions().rebaseHeadOnto(session.shortId(row.id));
-    if (ImGui::MenuItem("Squash...", "S", false, ok && !merge && !root))
+    if (menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, ok && !merge && !root))
         showSquashDialog(session, row.id);
-    if (ImGui::MenuItem("Squash descendants into this", "Shift+S", false, ok))
+    if (menuItem(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S", false, ok))
         session.actions().squashDescendants(row.id);
-    if (ImGui::MenuItem("Split...", "Alt+S", false, ok && !merge))
+    if (menuItem(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", false, ok && !merge))
         showSplitDialog(session, row.id);
-    if (ImGui::MenuItem("Restore from...", nullptr, false, ok))
+    if (menuItem(ICON_MS_RESTORE, "Restore from...", nullptr, false, ok))
         showRestoreDialog(session, row.id);
-    if (ImGui::MenuItem("Simplify parents", nullptr, false, ok && merge))
+    if (menuItem(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, false, ok && merge))
         session.actions().simplifyParents(row.id);
     ImGui::Separator();
-    if (ImGui::MenuItem("Abandon", "A", false, ok))
+    if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon", "A", false, ok))
         session.actions().abandon(row.id, false);
-    if (ImGui::MenuItem("Abandon branch...", "Shift+A", false, ok))
+    if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A", false, ok))
         showAbandonBranchDialog(session, row.id);
 }
 

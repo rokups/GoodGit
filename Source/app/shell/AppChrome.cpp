@@ -7,6 +7,7 @@
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
+#include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
 #include <imgui.h>
@@ -69,6 +70,36 @@ bool nativeConflicts(Session& s)
     return st && std::any_of(st->conflicted.begin(), st->conflicted.end(), [](const auto& e) { return !e.firstClass; });
 }
 
+// Icon for a dockable panel's View-menu visibility toggle.
+const char* panelIcon(const char* name)
+{
+    if (name == panel::History)
+        return ICON_MS_HISTORY;
+    if (name == panel::Changes)
+        return ICON_MS_CHECKLIST;
+    if (name == panel::Info)
+        return ICON_MS_INFO;
+    if (name == panel::Diff)
+        return ICON_MS_DIFFERENCE;
+    if (name == panel::Blame)
+        return ICON_MS_PERSON_SEARCH;
+    if (name == panel::Branches)
+        return ICON_MS_FORK_RIGHT;
+    if (name == panel::Tags)
+        return ICON_MS_SELL;
+    if (name == panel::Worktrees)
+        return ICON_MS_WORKSPACES;
+    if (name == panel::Remotes)
+        return ICON_MS_CLOUD;
+    if (name == panel::Stashes)
+        return ICON_MS_INVENTORY_2;
+    if (name == panel::Reflog)
+        return ICON_MS_MANAGE_HISTORY;
+    if (name == panel::Operations)
+        return ICON_MS_BUILD;
+    return ICON_MS_VISIBILITY;
+}
+
 } // namespace
 
 void App::handleShortcuts()
@@ -113,7 +144,7 @@ void App::drawRecentMenu()
         for (const auto& info : m_recentInfo)
             if (info.path == fs::path(path))
                 detail = summaryText(info);
-        if (ImGui::MenuItem((path + "###recent_menu_" + std::to_string(i)).c_str(), detail.c_str()))
+        if (menuItem(ICON_MS_FOLDER, (path + "###recent_menu_" + std::to_string(i)).c_str(), detail.c_str()))
             post([this, path] { openRepository(path); });
         ++shown;
     }
@@ -128,73 +159,73 @@ void App::drawMenuBar()
     Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
     const bool free = s && s->actions().busy().empty();
     if (ImGui::BeginMenu("Repository")) {
-        if (ImGui::MenuItem("Open...", "Ctrl+O"))
+        if (menuItem(ICON_MS_FOLDER_OPEN, "Open...", "Ctrl+O"))
             pickAndOpenRepository();
-        if (ImGui::MenuItem("Initialize..."))
+        if (menuItem(ICON_MS_CREATE_NEW_FOLDER, "Initialize..."))
             initializeRepository();
-        if (ImGui::MenuItem("Clone..."))
+        if (menuItem(ICON_MS_CLOUD_DOWNLOAD, "Clone..."))
             showCloneDialog();
-        if (ImGui::BeginMenu("Recent")) {
+        if (beginMenu(ICON_MS_HISTORY, "Recent")) {
             drawRecentMenu();
             ImGui::EndMenu();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Open working directory", nullptr, false, s && !s->snapshot()->bare))
+        if (menuItem(ICON_MS_OPEN_IN_NEW, "Open working directory", nullptr, false, s && !s->snapshot()->bare))
             openInFileManager(s->snapshot()->workdir);
-        if (ImGui::MenuItem("Copy path", nullptr, false, s != nullptr))
+        if (menuItem(ICON_MS_CONTENT_COPY, "Copy path", nullptr, false, s != nullptr))
             ImGui::SetClipboardText(s->path().string().c_str());
-        if (ImGui::MenuItem("Close repository", "Ctrl+W", false, s != nullptr))
+        if (menuItem(ICON_MS_CLOSE, "Close repository", "Ctrl+W", false, s != nullptr))
             post([this] { closeRepository(); });
-        if (ImGui::MenuItem("Refresh", "F5", false, s != nullptr))
+        if (menuItem(ICON_MS_REFRESH, "Refresh", "F5", false, s != nullptr))
             s->refresh();
         ImGui::Separator();
-        if (ImGui::MenuItem("Fetch", nullptr, false, free))
+        if (menuItem(ICON_MS_DOWNLOAD, "Fetch", nullptr, false, free))
             s->actions().fetch("", false, false);
         std::string reason;
-        if (ImGui::MenuItem("Pull", nullptr, false, free && s->pullAvailable(&reason)))
+        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, free && s->pullAvailable(&reason)))
             s->actions().pull(PullMode::Config);
-        if (ImGui::MenuItem("Push", nullptr, false, free && !s->snapshot()->headDetached))
+        if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && !s->snapshot()->headDetached))
             s->pushCurrent();
         ImGui::Separator();
-        if (ImGui::MenuItem("Settings..."))
+        if (menuItem(ICON_MS_SETTINGS, "Settings..."))
             openSettings();
-        if (ImGui::MenuItem("Quit", "Ctrl+Q"))
+        if (menuItem(ICON_MS_LOGOUT, "Quit", "Ctrl+Q"))
             requestQuit();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Commit")) {
         const core::Oid at = s ? targetCommit(*s) : core::Oid{};
-        if (ImGui::MenuItem("New commit", "Ctrl+N", false, free))
+        if (menuItem(ICON_MS_ADD, "New commit", "Ctrl+N", false, free))
             s->newCommitOn(newParents(*s), false);
-        if (ImGui::MenuItem("New detached commit", nullptr, false, free && !at.isNull()))
+        if (menuItem(ICON_MS_ADD_CIRCLE, "New detached commit", nullptr, false, free && !at.isNull()))
             s->newCommitOn(newParents(*s), true);
-        if (ImGui::MenuItem("Commit...", nullptr, false, free && !s->snapshot()->bare))
+        if (menuItem(ICON_MS_CHECK, "Commit...", nullptr, false, free && !s->snapshot()->bare))
             s->showCommitDialog(false);
-        if (ImGui::MenuItem("Amend...", nullptr, false, free && !s->snapshot()->headUnborn))
+        if (menuItem(ICON_MS_EDIT_NOTE, "Amend...", nullptr, false, free && !s->snapshot()->headUnborn))
             s->showCommitDialog(true);
         ImGui::Separator();
-        if (ImGui::MenuItem("Move HEAD to parent", nullptr, false, free && !s->snapshot()->headUnborn))
+        if (menuItem(ICON_MS_ARROW_UPWARD, "Move HEAD to parent", nullptr, false, free && !s->snapshot()->headUnborn))
             s->actions().moveHead(false);
-        if (ImGui::MenuItem("Move HEAD to child", nullptr, false, free && !s->headChild().isNull()))
+        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move HEAD to child", nullptr, false, free && !s->headChild().isNull()))
             s->actions().moveHead(true, s->headChild());
         // The selected commit's history editing actions.
         const core::HistoryRow* selected = s && s->selection().kind == SelKind::Commit ? s->history().row(s->selection().id) : nullptr;
         ImGui::Separator();
-        if (ImGui::BeginMenu("Selected commit", selected != nullptr)) {
+        if (beginMenu(ICON_MS_LIST_ALT, "Selected commit", selected != nullptr)) {
             drawCommitEditItems(*s, *selected);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Interactive rebase...", nullptr, false, free && !s->snapshot()->headUnborn))
+        if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase...", nullptr, false, free && !s->snapshot()->headUnborn))
             showInteractiveRebaseDialog(*s, "HEAD");
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Edit")) {
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, free))
+        if (menuItem(ICON_MS_UNDO, "Undo", "Ctrl+Z", false, free))
             s->actions().undo(false);
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, free))
+        if (menuItem(ICON_MS_REDO, "Redo", "Ctrl+Y", false, free))
             s->actions().undo(true);
         ImGui::Separator();
-        if (ImGui::MenuItem("Apply patch...", nullptr, false, free))
+        if (menuItem(ICON_MS_CONTENT_PASTE, "Apply patch...", nullptr, false, free))
             s->showApplyPatchDialog();
         ImGui::EndMenu();
     }
@@ -202,18 +233,18 @@ void App::drawMenuBar()
         auto& panels = m_settings.data().panels;
         for (const char* name : panel::All) {
             bool visible = panels.count(name) ? panels[name] : panel::defaultVisible(name);
-            if (ImGui::MenuItem(name, nullptr, &visible, s != nullptr)) {
+            if (menuItem(panelIcon(name), name, nullptr, &visible, s != nullptr)) {
                 panels[name] = visible;
                 m_settings.save();
             }
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Previous changed file", "Shift+F6", false, s != nullptr))
+        if (menuItem(ICON_MS_NAVIGATE_BEFORE, "Previous changed file", "Shift+F6", false, s != nullptr))
             s->nextChangedFile(-1);
-        if (ImGui::MenuItem("Next changed file", "F6", false, s != nullptr))
+        if (menuItem(ICON_MS_NAVIGATE_NEXT, "Next changed file", "F6", false, s != nullptr))
             s->nextChangedFile(+1);
         ImGui::Separator();
-        if (ImGui::MenuItem("Reset layout"))
+        if (menuItem(ICON_MS_GRID_VIEW, "Reset layout"))
             resetLayout();
         ImGui::EndMenu();
     }
@@ -256,12 +287,12 @@ void App::drawRepositoryButtons()
         ImGui::OpenPopup("##fetch_menu");
     if (ImGui::BeginPopup("##fetch_menu")) {
         for (const auto& r : s->snapshot()->remotes)
-            if (ImGui::MenuItem(("Fetch " + r.name).c_str()))
+            if (menuItem(ICON_MS_DOWNLOAD, ("Fetch " + r.name).c_str()))
                 s->actions().fetch(r.name, false, false);
         ImGui::Separator();
-        if (ImGui::MenuItem("Fetch and prune"))
+        if (menuItem(ICON_MS_DELETE_SWEEP, "Fetch and prune"))
             s->actions().fetch("", true, false);
-        if (ImGui::MenuItem("Fetch tags"))
+        if (menuItem(ICON_MS_SELL, "Fetch tags"))
             s->actions().fetch("", false, true);
         ImGui::EndPopup();
     }
@@ -277,11 +308,11 @@ void App::drawRepositoryButtons()
     if (iconButton(ICON_MS_EXPAND_MORE, "##tb_pull_menu", tip("Pull options"), free && canPull))
         ImGui::OpenPopup("##pull_menu");
     if (ImGui::BeginPopup("##pull_menu")) {
-        if (ImGui::MenuItem("Pull (merge)"))
+        if (menuItem(ICON_MS_MERGE, "Pull (merge)"))
             s->actions().pull(PullMode::Merge);
-        if (ImGui::MenuItem("Pull (rebase)"))
+        if (menuItem(ICON_MS_LOW_PRIORITY, "Pull (rebase)"))
             s->actions().pull(PullMode::Rebase);
-        if (ImGui::MenuItem("Pull (fast-forward only)"))
+        if (menuItem(ICON_MS_FAST_FORWARD, "Pull (fast-forward only)"))
             s->actions().pull(PullMode::FastForwardOnly);
         ImGui::EndPopup();
     }
@@ -295,9 +326,9 @@ void App::drawRepositoryButtons()
     if (iconButton(ICON_MS_EXPAND_MORE, "##tb_push_menu", tip("Push options"), free && hasRemotes))
         ImGui::OpenPopup("##push_menu");
     if (ImGui::BeginPopup("##push_menu")) {
-        if (ImGui::MenuItem("Push to...", nullptr, false, canPush))
+        if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, canPush))
             s->showPushToDialog();
-        if (ImGui::MenuItem("Force with lease...", nullptr, false, canPush)) {
+        if (menuItem(ICON_MS_WARNING, "Force with lease...", nullptr, false, canPush)) {
             const auto* b = s->snapshot()->currentBranch();
             if (b && !b->upstream.empty()) {
                 const auto slash = b->upstream.find('/');
@@ -312,7 +343,7 @@ void App::drawRepositoryButtons()
                 s->showPushToDialog();
             }
         }
-        if (ImGui::MenuItem("Push tags")) {
+        if (menuItem(ICON_MS_SELL, "Push tags")) {
             const auto* b = s->snapshot()->currentBranch();
             std::string remote = s->snapshot()->remotes.front().name;
             if (b && !b->upstream.empty())
@@ -341,7 +372,7 @@ void App::drawStateBadge()
     std::string badge = core::repoStateBadge(snap.state);
     if (!snap.stateDetail.empty())
         badge += " " + snap.stateDetail;
-    drawBadge((badge + "###tb_state").c_str(), theme().palette().conflict);
+    drawBadge((badge + "###tb_state").c_str(), theme().palette().conflictFill);
     // While git waits for the todo list (ggui as sequence.editor) the rebase has not started yet.
     const bool free = s.actions().busy().empty() && !editingForGit();
     if (editingForGit() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
@@ -349,20 +380,20 @@ void App::drawStateBadge()
     ImGui::BeginDisabled(!free);
     const bool bisect = snap.state == core::RepoState::Bisecting;
     ImGui::SameLine();
-    if (!bisect && ImGui::SmallButton("Continue##tb_continue"))
+    if (!bisect && smallButton(ICON_MS_PLAY_ARROW, "Continue##tb_continue"))
         s.actions().continueOperation();
     if (!bisect)
         ImGui::SameLine();
     const bool canSkip = snap.state != core::RepoState::Merging;
-    if (canSkip && ImGui::SmallButton("Skip##tb_skip"))
+    if (canSkip && smallButton(ICON_MS_SKIP_NEXT, "Skip##tb_skip"))
         s.actions().skipOperation();
     if (canSkip)
         ImGui::SameLine();
-    if (ImGui::SmallButton((bisect ? "Reset##tb_abort" : "Abort##tb_abort")))
+    if (smallButton(bisect ? ICON_MS_RESTART_ALT : ICON_MS_CANCEL, (bisect ? "Reset##tb_abort" : "Abort##tb_abort")))
         s.actions().abortOperation();
     if (textConflictsOnly(s)) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("Commit with conflicts##tb_commit_conflicts"))
+        if (smallButton(ICON_MS_CHECK_CIRCLE, "Commit with conflicts##tb_commit_conflicts"))
             s.actions().commitWithConflicts();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Record the text conflicts as first-class conflicts in the commit and finish the %s",
@@ -372,13 +403,13 @@ void App::drawStateBadge()
         // A stopped interactive rebase (§4.10 native, §4.13): amend, edit the rest, see where it is.
         if (!nativeConflicts(s)) {
             ImGui::SameLine();
-            if (ImGui::SmallButton("Amend and continue##tb_amend_continue"))
+            if (smallButton(ICON_MS_EDIT_NOTE, "Amend and continue##tb_amend_continue"))
                 s.actions().amendAndContinue();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
                 ImGui::SetTooltip("Amend HEAD with the staged changes (git commit --amend), then continue the rebase");
         }
         ImGui::SameLine();
-        if (ImGui::SmallButton("Edit remaining todo##tb_edit_todo")) {
+        if (smallButton(ICON_MS_LIST_ALT, "Edit remaining todo##tb_edit_todo")) {
             RebasePanel::Request r;
             r.remaining = true;
             s.rebase().open(std::move(r));
@@ -387,7 +418,7 @@ void App::drawStateBadge()
     ImGui::EndDisabled();
     if (snap.rebase) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("Progress##tb_rebase_progress"))
+        if (smallButton(ICON_MS_PENDING_ACTIONS, "Progress##tb_rebase_progress"))
             ImGui::OpenPopup("##rebase_progress");
         if (ImGui::BeginPopup("##rebase_progress")) {
             drawRebaseProgress(s, *snap.rebase);
@@ -466,7 +497,7 @@ void App::drawToolbar()
         for (size_t i = 0; i < m_settings.data().recent.size(); ++i) {
             const std::string& path = m_settings.data().recent[i];
             const bool selected = m_session && m_session->path().string() == path;
-            if (ImGui::Selectable((path + "###switch_" + std::to_string(i)).c_str(), selected) && !selected)
+            if (selectable((path + "###switch_" + std::to_string(i)).c_str(), selected) && !selected)
                 post([this, path] { openRepository(path); });
         }
         ImGui::EndCombo();
@@ -531,7 +562,7 @@ void App::drawToolbar()
         else
             ImGui::TextUnformatted(first.label.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton("Cancel##tb_cancel") && m_session)
+        if (smallButton(ICON_MS_CANCEL, "Cancel##tb_cancel") && m_session)
             m_session->cancelAll();
     }
     ImGui::End();

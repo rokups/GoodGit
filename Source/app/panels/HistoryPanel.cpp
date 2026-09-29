@@ -4,6 +4,7 @@
 
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
+#include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
 #include <imgui.h>
@@ -437,15 +438,15 @@ void HistoryPanel::drawDropChooser()
     const auto [source, target] = *m_pendingDrop;
     auto& actions = m_session.actions();
     bool chosen = true;
-    if (ImGui::MenuItem("Move before", "Ctrl+Shift"))
+    if (menuItem(ICON_MS_MOVE_UP, "Move before", "Ctrl+Shift"))
         actions.reorder(source, target, false, false);
-    else if (ImGui::MenuItem("Move after", "Shift"))
+    else if (menuItem(ICON_MS_MOVE_DOWN, "Move after", "Shift"))
         actions.reorder(source, target, true, false);
-    else if (ImGui::MenuItem("Copy after"))
+    else if (menuItem(ICON_MS_CONTENT_COPY, "Copy after"))
         actions.reorder(source, target, true, true);
-    else if (ImGui::MenuItem("Squash into", "Ctrl"))
+    else if (menuItem(ICON_MS_JOIN_INNER, "Squash into", "Ctrl"))
         actions.squash(source, target.hex(), true);
-    else if (ImGui::MenuItem("Rebase onto", "Alt"))
+    else if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt"))
         actions.rebaseOnto(source, target.hex(), true);
     else
         chosen = false;
@@ -465,7 +466,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     const bool selected = sel.kind == kind;
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
     const std::string sid = std::string(label) + "###" + id;
-    if (ImGui::Selectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+    if (selectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
         m_session.select(Selection{kind, {}, -1});
     ImGui::PopStyleColor();
     if (kind == SelKind::WorkingTree && ImGui::BeginPopupContextItem("##wt_menu")) {
@@ -473,18 +474,18 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
         const bool free = actions.busy().empty();
         const bool dirty = m_hasWorktreeChanges;
         const bool unborn = m_snapshot->headUnborn;
-        if (ImGui::MenuItem("Commit...", nullptr, false, free))
+        if (menuItem(ICON_MS_CHECK, "Commit...", nullptr, false, free))
             m_session.showCommitDialog(false);
-        if (ImGui::MenuItem("Amend into HEAD...", nullptr, false, free && !unborn))
+        if (menuItem(ICON_MS_EDIT_NOTE, "Amend into HEAD...", nullptr, false, free && !unborn))
             m_session.showCommitDialog(true);
-        if (ImGui::MenuItem("Discard changes...", nullptr, false, free && dirty && !unborn))
+        if (menuItem(ICON_MS_UNDO, "Discard changes...", nullptr, false, free && dirty && !unborn))
             m_session.showDiscardAllDialog();
-        if (ImGui::MenuItem("Stash changes...", nullptr, false, free && dirty && !unborn))
+        if (menuItem(ICON_MS_ADD, "Stash changes...", nullptr, false, free && dirty && !unborn))
             m_session.showStashDialog();
         ImGui::Separator();
-        if (ImGui::MenuItem("Stage all", nullptr, false, free && dirty))
+        if (menuItem(ICON_MS_ADD, "Stage all", nullptr, false, free && dirty))
             actions.stageAll();
-        if (ImGui::MenuItem("Unstage all", nullptr, false, free && m_hasStaged))
+        if (menuItem(ICON_MS_REMOVE, "Unstage all", nullptr, false, free && m_hasStaged))
             actions.unstageAll();
         ImGui::EndPopup();
     }
@@ -534,38 +535,38 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     for (const auto& e : m_extra)
         if (e != row.id)
             parents.push_back(e);
-    if (ImGui::MenuItem(parents.size() > 1 ? "New merge commit" : "New", "N", false, free))
+    if (menuItem(ICON_MS_ADD, parents.size() > 1 ? "New merge commit" : "New", "N", false, free))
         m_session.newCommitOn(parents, false);
-    if (ImGui::MenuItem("New detached", "Alt+N", false, free))
+    if (menuItem(ICON_MS_ADD_CIRCLE, "New detached", "Alt+N", false, free))
         m_session.newCommitOn(parents, true);
-    if (ImGui::BeginMenu("Check out", free)) {
+    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free)) {
         for (const auto& b : branchesHere)
-            if (ImGui::MenuItem(b.c_str()))
+            if (menuItem(ICON_MS_SWAP_HORIZ, b.c_str()))
                 actions.checkout(b, false);
         if (!branchesHere.empty())
             ImGui::Separator();
-        if (ImGui::MenuItem("Detached HEAD"))
+        if (menuItem(ICON_MS_SWAP_HORIZ, "Detached HEAD"))
             actions.checkout(hex, true);
         ImGui::EndMenu();
     }
-    if (ImGui::MenuItem("Create branch...", nullptr, false, free))
+    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free))
         m_session.showCreateBranchDialog(hex);
-    if (ImGui::MenuItem("Create tag...", nullptr, false, free))
+    if (menuItem(ICON_MS_ADD, "Create tag...", nullptr, false, free))
         m_session.showCreateTagDialog(hex);
-    if (ImGui::BeginMenu("Move branch", free && !m_snapshot->branches.empty())) {
+    if (beginMenu(ICON_MS_DRIVE_FILE_MOVE, "Move branch", free && !m_snapshot->branches.empty())) {
         for (const auto& b : m_snapshot->branches)
-            if (b.target != row.id && ImGui::MenuItem(b.name.c_str()))
+            if (b.target != row.id && menuItem(ICON_MS_DRIVE_FILE_MOVE, b.name.c_str()))
                 m_session.showMoveBranchDialog(b.name, hex);
         ImGui::EndMenu();
     }
-    if (ImGui::BeginMenu("Delete branch", free && !branchesHere.empty())) {
+    if (beginMenu(ICON_MS_DELETE, "Delete branch", free && !branchesHere.empty())) {
         for (const auto& b : branchesHere)
-            if (ImGui::MenuItem(b.c_str()))
+            if (menuItem(ICON_MS_DELETE, b.c_str()))
                 m_session.showDeleteBranchDialog(b, 0);
         ImGui::EndMenu();
     }
     const bool pushable = free && !branchesHere.empty() && !m_snapshot->remotes.empty();
-    if (ImGui::MenuItem("Push", nullptr, false, pushable)) {
+    if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, pushable)) {
         const auto* b = m_snapshot->findBranch(branchesHere.front());
         if (b && !b->upstream.empty()) {
             const auto slash = b->upstream.find('/');
@@ -574,12 +575,12 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
             m_session.showPushToDialog(branchesHere.front());
         }
     }
-    if (ImGui::MenuItem("Push to...", nullptr, false, pushable))
+    if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, pushable))
         m_session.showPushToDialog(branchesHere.front());
     ImGui::Separator();
-    if (ImGui::BeginMenu("Copy")) {
+    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy")) {
         copyIdMenuItem("ID", row.shortId, hex);
-        if (ImGui::MenuItem("Full description")) {
+        if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
             std::string text = hex + " " + row.subject + "\nAuthor: " + row.author + " <" + row.authorEmail
                 + ">\nDate: " + core::formatTime(row.time, true);
             ImGui::SetClipboardText(text.c_str());
@@ -588,12 +589,12 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     }
     if (mergeToggle(row)) {
         ImGui::Separator();
-        if (ImGui::MenuItem(row.collapsed ? "Expand merged history" : "Collapse merged history"))
+        if (menuItem(row.collapsed ? ICON_MS_UNFOLD_MORE : ICON_MS_UNFOLD_LESS, row.collapsed ? "Expand merged history" : "Collapse merged history"))
             toggleMerge(row.id);
     }
     ImGui::Separator();
     drawCommitEditItems(m_session, row);
-    if (parents.size() > 1 && ImGui::MenuItem("Interactive rebase selection...", nullptr, false, free))
+    if (parents.size() > 1 && menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free))
         openInteractiveRebaseSelection(m_session, parents);
     ImGui::EndPopup();
 }
@@ -615,7 +616,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     m_rowTops.emplace_back(index, cellStart.y);
     const std::string label = row.shortId + " " + row.subject + "###row_" + row.id.hex();
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
-    if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+    if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
         if (ImGui::GetIO().KeyCtrl && sel.kind == SelKind::Commit && sel.id != row.id) {
             // Ctrl-click adds (or removes) further commits: New on several commits = merge.
             if (extra)
@@ -778,26 +779,29 @@ void HistoryPanel::draw(bool* open)
         return;
     }
     // Header: filter, toggles.
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
-    if (ImGui::InputTextWithHint("##hist_filter", ICON_MS_SEARCH " Filter: message, ID, branch, tag", &m_filter)) {
+    // Wide enough for its hint, never wider than the panel; the toggles after it flow to the next line when short of room.
+    const char* filterHint = ICON_MS_SEARCH " Filter: message, ID, branch, tag";
+    ImGui::SetNextItemWidth(std::clamp(ImGui::CalcTextSize(filterHint).x + ImGui::GetStyle().FramePadding.x * 2.0f,
+        std::min(ImGui::GetFontSize() * 8, ImGui::GetContentRegionAvail().x), ImGui::GetContentRegionAvail().x));
+    if (ImGui::InputTextWithHint("##hist_filter", filterHint, &m_filter)) {
         m_appliedFilter = m_filter;
         m_matches.clear();
         m_visibleDirty = true;
         if (!m_appliedFilter.empty())
             m_searchRequest = m_session.engine().searchHistory(m_appliedFilter);
     }
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Conflicted only"));
     if (ImGui::Checkbox("Conflicted only##hist_conflicted", &m_conflictedOnly))
         m_visibleDirty = true;
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Stashes"));
     bool showStashes = m_session.app().settings().data().historyShowStashes;
     if (ImGui::Checkbox("Stashes##hist_stashes", &showStashes)) {
         m_session.app().settings().data().historyShowStashes = showStashes;
         m_session.app().settings().save();
     }
     if (!m_hidden.empty()) {
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Show all refs##hist_all"))
+        sameLineIfFits(buttonWidth(ICON_MS_VISIBILITY, "Show all refs"));
+        if (smallButton(ICON_MS_VISIBILITY, "Show all refs##hist_all"))
             showAllRefs();
     }
     if (m_loading) {
@@ -899,7 +903,7 @@ void HistoryPanel::draw(bool* open)
             ImGui::BeginDisabled(m_loading);
             const std::string more = std::string(ICON_MS_EXPAND_MORE " Load more (") + std::to_string(m_rows.size())
                 + " commits shown)###hist_load_more";
-            if (ImGui::Selectable(more.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
+            if (selectable(more.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
                 showMore();
             ImGui::EndDisabled();
         }

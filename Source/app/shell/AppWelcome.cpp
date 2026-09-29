@@ -6,6 +6,9 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include "shell/Widgets.hpp"
+
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -105,7 +108,7 @@ void App::drawWelcome()
     const bool enter = ImGui::InputTextWithHint("##welcome_path", "Path to a repository", &m_welcomePath,
         ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    if ((ImGui::Button("Open") || enter) && !m_welcomePath.empty())
+    if ((button(ICON_MS_FOLDER_OPEN, "Open") || enter) && !m_welcomePath.empty())
         post([this, path = m_welcomePath] { openRepository(path); });
     ImGui::EndDisabled();
 
@@ -115,7 +118,7 @@ void App::drawWelcome()
         ImGui::SameLine();
         ImGui::Text("Opening %s...", m_session->path().string().c_str());
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##open"))
+        if (button(ICON_MS_CLOSE, "Cancel##open"))
             m_session->cancelOpen();
     }
     if (cloning) {
@@ -126,7 +129,7 @@ void App::drawWelcome()
         ImGui::Text("Cloning into %s... %s %s", m_clone.destination().string().c_str(), m_clone.phase().c_str(),
             pct >= 0 ? (std::to_string(pct) + "%").c_str() : "");
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##clone"))
+        if (button(ICON_MS_CLOSE, "Cancel##clone"))
             m_clone.cancel();
     }
 
@@ -140,7 +143,7 @@ void App::drawWelcome()
         const std::string& path = recent[i];
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
         const std::string label = recentRowText(i) + "###row";
-        if (ImGui::Selectable(label.c_str(), m_recentFocus == static_cast<int>(i), ImGuiSelectableFlags_AllowDoubleClick,
+        if (selectable(label.c_str(), m_recentFocus == static_cast<int>(i), ImGuiSelectableFlags_AllowDoubleClick,
                 ImVec2(width, 0)))
             post([this, path] { openRepository(path); });
         if (ImGui::IsItemFocused())
@@ -148,7 +151,7 @@ void App::drawWelcome()
         if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete))
             forget = path;
         if (ImGui::BeginPopupContextItem("##recent_menu")) {
-            if (ImGui::MenuItem("Forget"))
+            if (menuItem(ICON_MS_REMOVE, "Forget"))
                 forget = path;
             ImGui::EndPopup();
         }

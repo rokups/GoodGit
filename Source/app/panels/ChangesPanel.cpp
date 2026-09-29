@@ -6,6 +6,8 @@
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
 #include "util/Ui.hpp"
+#include "shell/Widgets.hpp"
+#include <IconsMaterialSymbols.h>
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
@@ -73,11 +75,11 @@ bool compareWithField(const char* id, std::string& text)
         ImGui::SetTooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
     if (ImGui::BeginPopupContextItem((std::string(id) + "_menu").c_str())) {
         for (const char* choice : {"HEAD", "Work Tree"})
-            if (ImGui::MenuItem(choice)) {
+            if (menuItem(ICON_MS_COMPARE_ARROWS, choice)) {
                 text = choice;
                 apply = true;
             }
-        if (ImGui::MenuItem("Clear", nullptr, false, !text.empty())) {
+        if (menuItem(ICON_MS_CLEAR, "Clear", nullptr, false, !text.empty())) {
             text.clear();
             apply = true;
         }
@@ -394,28 +396,28 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             existing.push_back(r->path);
     }
     const bool rowExists = std::find(existing.begin(), existing.end(), row.path) != existing.end();
-    if (ImGui::MenuItem("Open working-copy file", nullptr, false, free && rowExists))
+    if (menuItem(ICON_MS_FILE_OPEN, "Open working-copy file", nullptr, false, free && rowExists))
         actions.openInEditor(row.path);
-    if (ImGui::MenuItem("Open containing folder", nullptr, false, !snap->bare))
+    if (menuItem(ICON_MS_FOLDER_OPEN, "Open containing folder", nullptr, false, !snap->bare))
         openInFileManager((snap->workdir / row.path).parent_path());
-    if (ImGui::BeginMenu("Copy")) {
-        if (ImGui::MenuItem("Name"))
+    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy")) {
+        if (menuItem(ICON_MS_CONTENT_COPY, "Name"))
             ImGui::SetClipboardText(fs::path(row.path).filename().string().c_str());
-        if (ImGui::MenuItem("Relative path"))
+        if (menuItem(ICON_MS_CONTENT_COPY, "Relative path"))
             ImGui::SetClipboardText(row.path.c_str());
-        if (ImGui::MenuItem("Absolute path", nullptr, false, !snap->bare))
+        if (menuItem(ICON_MS_CONTENT_COPY, "Absolute path", nullptr, false, !snap->bare))
             ImGui::SetClipboardText((snap->workdir / row.path).lexically_normal().string().c_str());
         ImGui::EndMenu();
     }
     if (worktree) {
         ImGui::Separator();
-        if (ImGui::MenuItem("Stage", "Space", false, free && !stage.empty()))
+        if (menuItem(ICON_MS_ADD, "Stage", "Space", false, free && !stage.empty()))
             actions.stage(stage);
-        if (ImGui::MenuItem("Unstage", "Space", false, free && !unstage.empty()))
+        if (menuItem(ICON_MS_REMOVE, "Unstage", "Space", false, free && !unstage.empty()))
             actions.unstage(unstage);
-        if (ImGui::MenuItem("Discard...", nullptr, false, free && (!discardTracked.empty() || !discardUntracked.empty())))
+        if (menuItem(ICON_MS_UNDO, "Discard...", nullptr, false, free && (!discardTracked.empty() || !discardUntracked.empty())))
             m_session.showDiscardDialog(discardTracked, discardUntracked);
-        if (ImGui::MenuItem("Intent to add", nullptr, false, free && !untracked.empty()))
+        if (menuItem(ICON_MS_PLAYLIST_ADD, "Intent to add", nullptr, false, free && !untracked.empty()))
             actions.intentToAdd(untracked);
         ImGui::Separator();
         const bool firstClassRow = row.group == FileGroup::Conflicted && row.firstClass;
@@ -430,30 +432,30 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             return text;
         };
         if (firstClassRow && row.sides > 2) {
-            if (ImGui::BeginMenu("Resolve with merge tool", free && firstClassPairEligible)) {
+            if (beginMenu(ICON_MS_CALL_MERGE, "Resolve with merge tool", free && firstClassPairEligible)) {
                 for (int k = 0; k + 1 < row.sides; ++k) {
                     const std::string text = "Sides " + std::to_string(k + 1) + " and " + std::to_string(k + 2)
                         + "###pair" + std::to_string(k);
-                    if (ImGui::MenuItem(text.c_str()))
+                    if (menuItem(ICON_MS_CALL_MERGE, text.c_str()))
                         actions.mergeToolFirstClass(row.path, k);
                 }
                 ImGui::EndMenu();
             }
-        } else if (ImGui::MenuItem("Resolve with merge tool", nullptr, false,
+        } else if (menuItem(ICON_MS_CALL_MERGE, "Resolve with merge tool", nullptr, false,
                        free && (nativeConflicts.size() == 1 || (firstClassRow && row.sides == 2 && conflicts.size() == 1)))) {
             if (firstClassRow)
                 actions.mergeToolFirstClass(row.path);
             else
                 actions.mergeTool(nativeConflicts.front());
         }
-        if (firstClassRow && ImGui::BeginMenu("Take side", free)) {
+        if (firstClassRow && beginMenu(ICON_MS_CHECK, "Take side", free)) {
             for (int k = 0; k < row.sides; ++k) {
                 const std::string text = sideMenuLabel(k) + " (whole file)###wholeside" + std::to_string(k);
-                if (ImGui::MenuItem(text.c_str()))
+                if (menuItem(ICON_MS_CHECK, text.c_str()))
                     actions.takeConflictSide({row.path}, k);
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("In one region...")) {
+            if (menuItem(ICON_MS_CHECK, "In one region...")) {
                 Form f;
                 f.title = "Take side in a region";
                 f.add(Field{Field::Text, "region", "Region (1 = the first in the file)", "1"});
@@ -469,15 +471,15 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             }
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Take ours", nullptr, false, free && !nativeConflicts.empty()))
+        if (menuItem(ICON_MS_CHECK, "Take ours", nullptr, false, free && !nativeConflicts.empty()))
             actions.takeSide(nativeConflicts, Side::Ours);
-        if (ImGui::MenuItem("Take theirs", nullptr, false, free && !nativeConflicts.empty()))
+        if (menuItem(ICON_MS_CHECK, "Take theirs", nullptr, false, free && !nativeConflicts.empty()))
             actions.takeSide(nativeConflicts, Side::Theirs);
-        if (ImGui::MenuItem("Mark resolved", nullptr, false, free && !conflicts.empty()))
+        if (menuItem(ICON_MS_CHECK_CIRCLE, "Mark resolved", nullptr, false, free && !conflicts.empty()))
             actions.markResolved(conflicts);
     }
     ImGui::Separator();
-    if (ImGui::BeginMenu("Patch")) {
+    if (beginMenu(ICON_MS_DIFFERENCE, "Patch")) {
         // Of the selected files in this row's group, or of this file.
         core::DiffQuery q = patchQuery(row);
         if (m_selected.size() > 1) {
@@ -486,9 +488,9 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
                 if (m_selected.count(r.key()) && r.group == row.group)
                     q.paths.push_back(r.path);
         }
-        if (ImGui::MenuItem("Copy"))
+        if (menuItem(ICON_MS_CONTENT_COPY, "Copy"))
             m_session.engine().diff(q, kSlotCopyPatch);
-        if (ImGui::MenuItem("Save...")) {
+        if (menuItem(ICON_MS_SAVE, "Save...")) {
             const std::string name = fs::path(row.path).filename().string() + ".patch";
             m_session.app().pickSaveFile("Save patch", name, [this, q](const std::string& path) {
                 if (path.empty())
@@ -500,17 +502,17 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         ImGui::EndMenu();
     }
     const bool canBlame = row.kind != core::ChangeKind::Deleted && row.group != FileGroup::StashUntracked;
-    if (ImGui::MenuItem("Blame file", nullptr, false, canBlame)) {
+    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, canBlame)) {
         core::Oid at;
         if (m_selection.kind == SelKind::Commit)
             at = m_selection.id;
         m_session.blameFile(row.path, at);
     }
-    if (ImGui::BeginMenu("External diff", free && !snap->bare)) {
+    if (beginMenu(ICON_MS_OPEN_IN_NEW, "External diff", free && !snap->bare)) {
         const std::string commit = m_selection.kind == SelKind::Commit ? m_selection.id.hex() : std::string();
-        if (ImGui::MenuItem("vs HEAD"))
+        if (menuItem(ICON_MS_COMPARE_ARROWS, "vs HEAD"))
             actions.externalDiff(row.path, "HEAD", commit);
-        if (ImGui::MenuItem("vs parent", nullptr, false, !commit.empty()))
+        if (menuItem(ICON_MS_COMPARE_ARROWS, "vs parent", nullptr, false, !commit.empty()))
             actions.externalDiff(row.path, commit + "^", commit);
         ImGui::EndMenu();
     }
@@ -521,21 +523,21 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             paths.push_back(r->path);
         ImGui::Separator();
         const core::Oid id = m_selection.id;
-        if (ImGui::MenuItem("Move to parent", nullptr, false, free))
+        if (menuItem(ICON_MS_ARROW_UPWARD, "Move to parent", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
-        if (ImGui::MenuItem("Move to child", nullptr, false, free))
+        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to child", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Child, paths, {});
-        if (ImGui::MenuItem("Move to the working tree", nullptr, false, free))
+        if (menuItem(ICON_MS_DRIVE_FILE_MOVE, "Move to the working tree", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::WorkingTree, paths, {});
-        if (ImGui::MenuItem("Revert", nullptr, false, free))
+        if (menuItem(ICON_MS_UNDO, "Revert", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Revert, paths, {});
     }
     if (m_selection.kind == SelKind::Stash && row.group != FileGroup::StashIndex) {
-        if (ImGui::MenuItem("Apply this file", nullptr, false, free))
+        if (menuItem(ICON_MS_CONTENT_PASTE, "Apply this file", nullptr, false, free))
             actions.stashApplyFile(m_selection.stashIndex, row.path);
     }
     ImGui::Separator();
-    if (worktree && ImGui::MenuItem("Delete file...", nullptr, false, free && !existing.empty()))
+    if (worktree && menuItem(ICON_MS_DELETE, "Delete file...", nullptr, false, free && !existing.empty()))
         m_session.showDeleteFilesDialog(existing);
     ImGui::EndPopup();
 }
@@ -583,7 +585,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     ImGui::PushStyleColor(ImGuiCol_Text, broken ? theme().palette().warning
                                                  : (row.firstClass ? theme().palette().conflict : kindColor(row.kind)));
     const std::string id = label + "###file_" + row.path;
-    if (ImGui::Selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+    if (selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
         const ImGuiIO& io = ImGui::GetIO();
         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             openFile(row);
@@ -675,24 +677,31 @@ void ChangesPanel::drawGroup(FileGroup group, const char* title, int count)
     ImGui::PushID(groupName(group));
     const std::string header = std::string(title) + " (" + std::to_string(count) + ")###group";
     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-    const bool open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_AllowOverlap);
+    bool open;
+    {
+        const SectionHeaderColors neutral;
+        open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_AllowOverlap);
+    }
     if (worktreeGroup)
         dropTarget(group);
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
     ImGui::BeginDisabled(!free);
     if (group == FileGroup::Unstaged || group == FileGroup::Untracked) {
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFontSize() * (group == FileGroup::Unstaged ? 13.5f : 5.0f));
-        if (ImGui::SmallButton("Stage all##stage_all"))
+        float width = buttonWidth(ICON_MS_ADD, "Stage all");
+        if (group == FileGroup::Unstaged)
+            width += ImGui::GetStyle().ItemSpacing.x + buttonWidth(ICON_MS_ADD, "Stage modified");
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - width);
+        if (smallButton(ICON_MS_ADD, "Stage all##stage_all"))
             actions.stageAll();
         if (group == FileGroup::Unstaged) {
             ImGui::SameLine();
-            if (ImGui::SmallButton("Stage modified##stage_modified"))
+            if (smallButton(ICON_MS_ADD, "Stage modified##stage_modified"))
                 actions.stageModified();
         }
     } else if (group == FileGroup::Staged) {
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFontSize() * 6.0f);
-        if (ImGui::SmallButton("Unstage all##unstage_all"))
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - buttonWidth(ICON_MS_REMOVE, "Unstage all"));
+        if (smallButton(ICON_MS_REMOVE, "Unstage all##unstage_all"))
             actions.unstageAll();
     }
     ImGui::EndDisabled();
@@ -732,13 +741,19 @@ void ChangesPanel::draw(bool* open)
         ImGui::SameLine();
         ImGui::TextDisabled(m_scanning ? "scanning..." : "loading...");
     }
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+    // The filter and "Compare with" share the row; each is at least wide enough for its hint.
+    const float pad = ImGui::GetStyle().FramePadding.x * 2.0f;
+    const float filterMin = ImGui::CalcTextSize(ICON_MS_SEARCH " Filter").x + pad;
+    const float compareMin = ImGui::CalcTextSize("Compare with").x + pad;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
+    ImGui::SetNextItemWidth(std::max(filterMin, half));
     ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter);
-    ImGui::SameLine();
+    sameLineIfFits(compareMin);
     // Compares the whole commit with a revision or the working tree; the working tree and index
     // already compare with HEAD's side.
     ImGui::BeginDisabled(m_selection.kind != SelKind::Commit);
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+    ImGui::SetNextItemWidth(std::max(compareMin, ImGui::GetContentRegionAvail().x));
     if (compareWithField("##compare_with", m_compareText)) {
         const CompareTarget target = CompareTarget::parse(m_compareText);
         if (target != m_compare) {

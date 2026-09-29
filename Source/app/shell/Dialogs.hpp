@@ -33,6 +33,8 @@ struct FormButton {
     std::string label;
     std::function<void(Form&)> action; // may be empty (Cancel)
     std::function<bool(const Form&)> enabled;
+    // Icon shown before the label; nullptr: chosen from the label's verb (Cancel, Delete, Push...).
+    const char* icon = nullptr;
 };
 
 struct Form {

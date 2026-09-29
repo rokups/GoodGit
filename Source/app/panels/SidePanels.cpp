@@ -5,6 +5,7 @@
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Theme.hpp"
+#include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
 #include <imgui.h>
@@ -48,7 +49,7 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
     const std::string item = label + "###" + id;
     if (doubleClickable) {
-        ImGui::Selectable(item.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick);
+        selectable(item.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick);
         events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     } else {
         plainText(item.c_str());
@@ -134,8 +135,13 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
         if (filtering)
             ImGui::SetNextItemOpen(true);
         const std::string id = idPrefix + e.label + "/";
-        if (ImGui::TreeNodeEx((e.label + "###group_" + rowId(id)).c_str(),
-                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        bool open;
+        {
+            const SectionHeaderColors neutral;
+            open = ImGui::TreeNodeEx((e.label + "###group_" + rowId(id)).c_str(),
+                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+        }
+        if (open) {
             drawTree(e.children, id, filtering, leaf);
             ImGui::TreePop();
         }
@@ -150,20 +156,20 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
     const bool free = actions.busy().empty();
     const auto snap = session.snapshot();
     const auto* current = snap->currentBranch();
-    if (ImGui::MenuItem("Copy name"))
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(r.name.c_str());
     ImGui::Separator();
-    if (ImGui::MenuItem("Fetch", nullptr, false, free))
+    if (menuItem(ICON_MS_DOWNLOAD, "Fetch", nullptr, false, free))
         actions.fetch(r.name, false, false);
     const bool pullable = free && current && current->upstream.rfind(r.name + "/", 0) == 0;
-    if (ImGui::MenuItem("Pull", nullptr, false, pullable))
+    if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, pullable))
         actions.pull(PullMode::Config);
     bool prune = r.pruneOnFetch;
-    if (ImGui::MenuItem("Prune on fetch", nullptr, &prune, free))
+    if (menuItem(ICON_MS_DELETE_SWEEP, "Prune on fetch", nullptr, &prune, free))
         actions.setPruneOnFetch(r.name, prune);
-    if (ImGui::MenuItem("Edit URL...", nullptr, false, free))
+    if (menuItem(ICON_MS_EDIT, "Edit URL...", nullptr, false, free))
         session.showEditRemoteDialog(r.name);
-    if (ImGui::MenuItem("Delete", nullptr, false, free)) {
+    if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free)) {
         Form f;
         f.title = "Delete remote";
         f.message = "Delete the remote '" + r.name + "' and its remote-tracking branches?";
@@ -185,27 +191,27 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
     const bool hasRemotes = !m_snapshot->remotes.empty();
-    if (ImGui::MenuItem("Reveal"))
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
         m_session.revealCommit(b.target);
-    if (ImGui::MenuItem("Copy name"))
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(b.name.c_str());
     ImGui::Separator();
-    if (ImGui::MenuItem("Check out", nullptr, false, free && !b.isHead))
+    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free && !b.isHead))
         actions.checkout(b.name, false);
     const bool headAttached = !m_snapshot->headDetached && !m_snapshot->headUnborn;
-    if (ImGui::MenuItem("Merge into HEAD...", nullptr, false, free && !b.isHead && !m_snapshot->headUnborn))
+    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !b.isHead && !m_snapshot->headUnborn))
         showMergeDialog(m_session, b.name);
-    if (ImGui::MenuItem("Rebase HEAD onto branch", nullptr, false, free && !b.isHead && headAttached))
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && !b.isHead && headAttached))
         actions.rebaseHeadOnto(b.name);
-    if (ImGui::MenuItem("Interactive rebase onto...", nullptr, false, free))
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase onto...", nullptr, false, free))
         showInteractiveRebaseDialog(m_session, b.name);
     if (b.isHead)
-        disabledMenuItem("Check out in new worktree...", "Checked out in this worktree");
+        disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", "Checked out in this worktree");
     else if (!b.worktree.empty())
-        disabledMenuItem("Check out in new worktree...", ("Checked out in " + b.worktree).c_str());
-    else if (ImGui::MenuItem("Check out in new worktree...", nullptr, false, free))
+        disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", ("Checked out in " + b.worktree).c_str());
+    else if (menuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", nullptr, false, free))
         m_session.showAddWorktreeDialog(1, b.name);
-    if (ImGui::MenuItem("Push", nullptr, false, free && hasRemotes)) {
+    if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && hasRemotes)) {
         if (!b.upstream.empty()) {
             const auto slash = b.upstream.find('/');
             actions.push(b.upstream.substr(0, slash), b.name, b.upstream.substr(slash + 1), false, false);
@@ -213,11 +219,11 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
             m_session.showPushToDialog(b.name);
         }
     }
-    if (ImGui::MenuItem("Push to...", nullptr, false, free && hasRemotes))
+    if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, free && hasRemotes))
         m_session.showPushToDialog(b.name);
-    if (ImGui::MenuItem("Pull", nullptr, false, free && b.isHead && !b.upstream.empty()))
+    if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, free && b.isHead && !b.upstream.empty()))
         actions.pull(PullMode::Config);
-    if (ImGui::MenuItem("Reconcile with remote or branch...", nullptr, false, free && b.isHead)) {
+    if (menuItem(ICON_MS_SYNC_ALT, "Reconcile with remote or branch...", nullptr, false, free && b.isHead)) {
         Form f;
         f.title = "Reconcile";
         f.message = b.upstream.empty() ? b.name + " has no upstream: name the branch to reconcile with."
@@ -240,23 +246,23 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         m_session.app().dialogs().open(std::move(f));
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Rename...", nullptr, false, free))
+    if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Rename...", nullptr, false, free))
         m_session.showRenameBranchDialog(b.name);
-    if (ImGui::BeginMenu("Delete", free)) {
-        if (ImGui::MenuItem("Local", nullptr, false, !b.isHead))
+    if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
+        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, !b.isHead))
             m_session.showDeleteBranchDialog(b.name, 0);
-        if (ImGui::MenuItem("On its remote", nullptr, false, !b.upstream.empty()))
+        if (menuItem(ICON_MS_DELETE, "On its remote", nullptr, false, !b.upstream.empty()))
             m_session.showDeleteBranchDialog(b.name, 1);
-        if (ImGui::MenuItem("Local and all remotes", nullptr, false, !b.isHead))
+        if (menuItem(ICON_MS_DELETE, "Local and all remotes", nullptr, false, !b.isHead))
             m_session.showDeleteBranchDialog(b.name, 2);
         ImGui::EndMenu();
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Set upstream...", nullptr, false, free))
+    if (menuItem(ICON_MS_LINK, "Set upstream...", nullptr, false, free))
         m_session.showSetUpstreamDialog(b.name);
-    if (ImGui::MenuItem("Unset upstream", nullptr, false, free && !b.upstream.empty()))
+    if (menuItem(ICON_MS_LINK_OFF, "Unset upstream", nullptr, false, free && !b.upstream.empty()))
         actions.unsetUpstream(b.name);
-    if (ImGui::MenuItem("Fast-forward to upstream", nullptr, false, free && !b.upstream.empty() && b.behind > 0 && b.ahead == 0))
+    if (menuItem(ICON_MS_FAST_FORWARD, "Fast-forward to upstream", nullptr, false, free && !b.upstream.empty() && b.behind > 0 && b.ahead == 0))
         actions.fastForward(b.name);
     ImGui::EndPopup();
 }
@@ -281,18 +287,18 @@ void BranchesPanel::draw(bool* open)
         all.push_back("refs/heads/" + b.name);
     for (const auto& r : m_snapshot->remoteBranches)
         all.push_back("refs/remotes/" + r.name);
-    ImGui::SameLine();
+    sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_branches"))
         history.setRefsVisible(all, true);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         ImGui::SetTooltip("Show all branches in History");
-    ImGui::SameLine();
+    sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_branches"))
         history.setRefsVisible(all, false);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         ImGui::SetTooltip("Hide all branches in History");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-1);
+    sameLineIfFits(ImGui::GetFontSize() * 6);
+    ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter);
     const Palette& p = theme().palette();
     const bool filtering = !m_filter.empty();
@@ -345,7 +351,11 @@ void BranchesPanel::draw(bool* open)
         for (const auto& r : m_snapshot->remotes)
             if (r.name == remote)
                 info = &r;
-        const bool nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+        bool nodeOpen;
+        {
+            const SectionHeaderColors neutral;
+            nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+        }
         // The remote has the Remotes panel's menu.
         if (info && ImGui::BeginPopupContextItem("##remote_menu")) {
             remoteMenuItems(m_session, *info);
@@ -364,12 +374,12 @@ void BranchesPanel::draw(bool* open)
                 if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
                 if (ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r.name)).c_str())) {
-                    if (ImGui::MenuItem("Reveal"))
+                    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
                         m_session.revealCommit(r.target);
-                    if (ImGui::MenuItem("Copy name"))
+                    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                         ImGui::SetClipboardText(r.name.c_str());
                     // ... and its remote's menu.
-                    if (info && ImGui::BeginMenu(("Remote " + remote).c_str())) {
+                    if (info && beginMenu(ICON_MS_CLOUD, ("Remote " + remote).c_str())) {
                         remoteMenuItems(m_session, *info);
                         ImGui::EndMenu();
                     }
@@ -401,8 +411,8 @@ void TagsPanel::draw(bool* open)
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Create tag at HEAD...");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-1);
+    sameLineIfFits(ImGui::GetFontSize() * 6);
+    ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
     auto& history = m_session.history();
     // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
@@ -430,17 +440,17 @@ void TagsPanel::draw(bool* open)
             }
         }
         if (local && remotes.empty()) {
-            if (ImGui::MenuItem("Delete", nullptr, false, free))
+            if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
                 actions.deleteTag(name);
             return;
         }
-        if (!ImGui::BeginMenu("Delete", free))
+        if (!beginMenu(ICON_MS_DELETE, "Delete", free))
             return;
-        if (ImGui::MenuItem("Local", nullptr, false, local))
+        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
             actions.deleteTag(name);
         ImGui::Separator();
         for (size_t i = 0; i < remotes.size(); ++i)
-            if (ImGui::MenuItem(remotes[i].c_str()))
+            if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
                 actions.deleteRemoteTag(names[i], name);
         ImGui::EndMenu();
     };
@@ -453,15 +463,15 @@ void TagsPanel::draw(bool* open)
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty())
             ImGui::SetTooltip("%s", t.message.c_str());
         if (ImGui::BeginPopupContextItem(("##tag_menu_" + rowId(t.name)).c_str())) {
-            if (ImGui::MenuItem("Reveal"))
+            if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
                 m_session.revealCommit(t.target);
-            if (ImGui::MenuItem("Copy name"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(t.name.c_str());
             ImGui::Separator();
             deleteItems(t.name, true);
-            if (ImGui::BeginMenu("Push tag", free && !m_snapshot->remotes.empty())) {
+            if (beginMenu(ICON_MS_UPLOAD, "Push tag", free && !m_snapshot->remotes.empty())) {
                 for (const auto& r : m_snapshot->remotes)
-                    if (ImGui::MenuItem(r.name.c_str()))
+                    if (menuItem(ICON_MS_UPLOAD, r.name.c_str()))
                         actions.pushTag(r.name, t.name);
                 ImGui::EndMenu();
             }
@@ -489,7 +499,7 @@ void TagsPanel::draw(bool* open)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             ImGui::SetTooltip("Only on %s: fetch to get it here", where.c_str());
         if (ImGui::BeginPopupContextItem("##rtag_menu")) {
-            if (ImGui::MenuItem("Copy name"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(name.c_str());
             ImGui::Separator();
             deleteItems(name, false);
@@ -532,7 +542,7 @@ void WorktreesPanel::draw(bool* open)
         label += "  " + (w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(8)) : w.branch);
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
-        ImGui::Selectable((label + "###row").c_str(), w.isCurrent);
+        selectable((label + "###row").c_str(), w.isCurrent);
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string tip = w.path.string();
@@ -548,46 +558,46 @@ void WorktreesPanel::draw(bool* open)
             ImGui::SetTooltip("%s", tip.c_str());
         }
         if (ImGui::BeginPopupContextItem("##worktree_menu")) {
-            if (ImGui::MenuItem("Copy name"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(w.name.c_str());
-            if (ImGui::MenuItem("Copy path"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
                 ImGui::SetClipboardText(w.path.string().c_str());
-            if (ImGui::MenuItem("Reveal HEAD", nullptr, false, !w.head.isNull()))
+            if (menuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", nullptr, false, !w.head.isNull()))
                 m_session.revealCommit(w.head);
-            if (ImGui::MenuItem("Open directory", nullptr, false, !w.missing))
+            if (menuItem(ICON_MS_OPEN_IN_NEW, "Open directory", nullptr, false, !w.missing))
                 openInFileManager(w.path);
             ImGui::Separator();
             const std::string path = w.path.string();
             if (w.isCurrent)
-                disabledMenuItem("Open here", "This window shows this worktree");
+                disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open here", "This window shows this worktree");
             else if (w.missing)
-                disabledMenuItem("Open here", "Its directory is gone");
-            else if (ImGui::MenuItem("Open here"))
+                disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open here", "Its directory is gone");
+            else if (menuItem(ICON_MS_FOLDER_OPEN, "Open here"))
                 m_session.app().openRepository(w.path);
             if (w.missing)
-                disabledMenuItem("Open in new window", "Its directory is gone");
-            else if (ImGui::MenuItem("Open in new window"))
+                disabledMenuItem(ICON_MS_LAUNCH, "Open in new window", "Its directory is gone");
+            else if (menuItem(ICON_MS_LAUNCH, "Open in new window"))
                 m_session.actions().openInNewWindow(path);
             ImGui::Separator();
-            if (ImGui::MenuItem("Add...", nullptr, false, canAdd))
+            if (menuItem(ICON_MS_ADD, "Add...", nullptr, false, canAdd))
                 m_session.showAddWorktreeDialog();
             if (w.isMain)
-                disabledMenuItem("Remove...", "The main worktree cannot be removed");
+                disabledMenuItem(ICON_MS_DELETE, "Remove...", "The main worktree cannot be removed");
             else if (w.isCurrent)
-                disabledMenuItem("Remove...", "This window shows this worktree: open another one first");
-            else if (ImGui::MenuItem("Remove...", nullptr, false, free))
+                disabledMenuItem(ICON_MS_DELETE, "Remove...", "This window shows this worktree: open another one first");
+            else if (menuItem(ICON_MS_DELETE, "Remove...", nullptr, false, free))
                 m_session.showRemoveWorktreeDialog(w);
             if (w.isMain)
-                disabledMenuItem("Lock...", "The main worktree cannot be locked");
-            else if (w.locked ? ImGui::MenuItem("Unlock", nullptr, false, free) : ImGui::MenuItem("Lock...", nullptr, false, free)) {
+                disabledMenuItem(ICON_MS_LOCK, "Lock...", "The main worktree cannot be locked");
+            else if (w.locked ? menuItem(ICON_MS_LOCK_OPEN, "Unlock", nullptr, false, free) : menuItem(ICON_MS_LOCK, "Lock...", nullptr, false, free)) {
                 if (w.locked)
                     m_session.actions().unlockWorktree(path);
                 else
                     m_session.showLockWorktreeDialog(w);
             }
-            if (ImGui::MenuItem("Prune...", nullptr, false, free))
+            if (menuItem(ICON_MS_DELETE_SWEEP, "Prune...", nullptr, false, free))
                 m_session.showPruneWorktreesDialog();
-            if (ImGui::MenuItem("Repair...", nullptr, false, free))
+            if (menuItem(ICON_MS_HANDYMAN, "Repair...", nullptr, false, free))
                 m_session.showRepairWorktreeDialog(w);
             ImGui::EndPopup();
         }
@@ -612,13 +622,13 @@ void RemotesPanel::draw(bool* open)
         m_session.showAddRemoteDialog();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Add remote...");
-    ImGui::SameLine();
-    if (ImGui::Button("Fetch all##fetch_all") && !snap->remotes.empty())
+    sameLineIfFits(buttonWidth(ICON_MS_DOWNLOAD, "Fetch all"));
+    if (button(ICON_MS_DOWNLOAD, "Fetch all##fetch_all") && !snap->remotes.empty())
         actions.fetch("", false, false);
     ImGui::EndDisabled();
     for (const auto& r : snap->remotes) {
         ImGui::PushID(("remote_" + r.name).c_str());
-        ImGui::Selectable((r.name + "  " + r.url + (r.pruneOnFetch ? "  (prune)" : "") + "###row").c_str());
+        selectable((r.name + "  " + r.url + (r.pruneOnFetch ? "  (prune)" : "") + "###row").c_str());
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             ImGui::SetTooltip("fetch: %s\npush: %s%s", r.url.c_str(), r.pushUrl.empty() ? r.url.c_str() : r.pushUrl.c_str(),
                 r.pruneOnFetch ? "\nprune on fetch" : "");
@@ -645,19 +655,19 @@ void StashesPanel::draw(bool* open)
     const bool free = actions.busy().empty();
     const auto status = m_session.status();
     ImGui::BeginDisabled(!free || !status || status->empty());
-    if (ImGui::Button("Stash changes...##stash_changes"))
+    if (button(ICON_MS_ADD, "Stash changes...##stash_changes"))
         m_session.showStashDialog();
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    sameLineIfFits(buttonWidth(ICON_MS_DELETE_SWEEP, "Clear all..."));
     ImGui::BeginDisabled(!free || m_snapshot->stashes.empty());
-    if (ImGui::Button("Clear all...##clear_stashes"))
+    if (button(ICON_MS_DELETE_SWEEP, "Clear all...##clear_stashes"))
         m_session.showClearStashesDialog();
     ImGui::EndDisabled();
     for (const auto& s : m_snapshot->stashes) {
         ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
         const std::string label = "stash@{" + std::to_string(s.index) + "} " + s.message;
         const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
-        if (ImGui::Selectable((label + "###row").c_str(), selected))
+        if (selectable((label + "###row").c_str(), selected))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             idTooltip(s.commit.hex(), m_session.shortId(s.commit).size(),
@@ -665,18 +675,18 @@ void StashesPanel::draw(bool* open)
                     + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
         // The menu belongs to the row (the last item before it must be the Selectable).
         if (ImGui::BeginPopupContextItem("##stash_menu")) {
-            if (ImGui::MenuItem("Apply", nullptr, false, free))
+            if (menuItem(ICON_MS_UNARCHIVE, "Apply", nullptr, false, free))
                 actions.stashApply(s.index, false, false);
-            if (ImGui::MenuItem("Apply (restore index)", nullptr, false, free))
+            if (menuItem(ICON_MS_UNARCHIVE, "Apply (restore index)", nullptr, false, free))
                 actions.stashApply(s.index, false, true);
-            if (ImGui::MenuItem("Pop", nullptr, false, free))
+            if (menuItem(ICON_MS_OUTBOX, "Pop", nullptr, false, free))
                 actions.stashApply(s.index, true, false);
-            if (ImGui::MenuItem("Pop (restore index)", nullptr, false, free))
+            if (menuItem(ICON_MS_OUTBOX, "Pop (restore index)", nullptr, false, free))
                 actions.stashApply(s.index, true, true);
             ImGui::Separator();
-            if (ImGui::MenuItem("Branch from stash...", nullptr, false, free))
+            if (menuItem(ICON_MS_FORK_RIGHT, "Branch from stash...", nullptr, false, free))
                 m_session.showBranchFromStashDialog(s.index);
-            if (ImGui::MenuItem("Drop...", nullptr, false, free))
+            if (menuItem(ICON_MS_DELETE, "Drop...", nullptr, false, free))
                 m_session.showDropStashDialog(s.index);
             ImGui::EndPopup();
         }
@@ -731,12 +741,12 @@ void ReflogPanel::draw(bool* open)
         if (!m_snapshot->stashes.empty())
             refs.push_back("refs/stash");
         for (const auto& r : refs)
-            if (ImGui::Selectable((r + "###ref_" + rowId(r)).c_str(), r == m_ref))
+            if (selectable((r + "###ref_" + rowId(r)).c_str(), r == m_ref))
                 choose(r);
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-1);
+    sameLineIfFits(ImGui::GetFontSize() * 6);
+    ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter);
     if (m_reflog) {
         if (ImGui::BeginTable("##reflog_table", 3,
@@ -756,19 +766,19 @@ void ReflogPanel::draw(bool* open)
                 ImGui::PushID(("r" + std::to_string(i)).c_str());
                 const std::string label = (e.oldId.isNull() ? std::string("0000000") : e.oldId.shortHex()) + " \xe2\x86\x92 "
                     + e.newId.shortHex() + "###reflog_" + std::to_string(i);
-                ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+                selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
                 if (ImGui::BeginPopupContextItem("##reflog_menu")) {
                     copyIdMenuItem("Copy new ID", m_session.shortId(e.newId), e.newId.hex());
                     copyIdMenuItem("Copy old ID", m_session.shortId(e.oldId), e.oldId.hex(), !e.oldId.isNull());
-                    if (ImGui::MenuItem("Reveal new commit"))
+                    if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
                         m_session.revealCommit(e.newId);
-                    if (ImGui::MenuItem("Reveal old commit", nullptr, false, !e.oldId.isNull()))
+                    if (menuItem(ICON_MS_MY_LOCATION, "Reveal old commit", nullptr, false, !e.oldId.isNull()))
                         m_session.revealCommit(e.oldId);
                     ImGui::Separator();
                     const bool free = m_session.actions().busy().empty();
-                    if (ImGui::MenuItem("Create branch from new...", nullptr, false, free))
+                    if (menuItem(ICON_MS_ADD, "Create branch from new...", nullptr, false, free))
                         m_session.showCreateBranchDialog(e.newId.hex());
-                    if (ImGui::MenuItem("Create branch from old...", nullptr, false, free && !e.oldId.isNull()))
+                    if (menuItem(ICON_MS_ADD, "Create branch from old...", nullptr, false, free && !e.oldId.isNull()))
                         m_session.showCreateBranchDialog(e.oldId.hex());
                     ImGui::EndPopup();
                 }
@@ -795,15 +805,16 @@ void OperationsPanel::draw(bool* open)
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
     ImGui::BeginDisabled(!free);
-    if (ImGui::Button(ICON_MS_UNDO " Undo###ops_undo"))
+    if (button(ICON_MS_UNDO, "Undo###ops_undo"))
         actions.undo(false);
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_MS_REDO " Redo###ops_redo"))
+    sameLineIfFits(buttonWidth(ICON_MS_REDO, "Redo"));
+    if (button(ICON_MS_REDO, "Redo###ops_redo"))
         actions.undo(true);
     ImGui::EndDisabled();
     if (!m_session.hooksInstalled()) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("Undo covers ggui and git gg only; use the Reflog for plain git operations.");
+        const char* note = "Undo covers ggui and git gg only; use the Reflog for plain git operations.";
+        sameLineIfFits(ImGui::CalcTextSize(note).x);
+        ImGui::TextDisabled("%s", note);
     }
     const auto& ops = m_session.operations();
     if (ImGui::BeginTable("##ops_table", 3, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
@@ -818,7 +829,7 @@ void OperationsPanel::draw(bool* open)
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(("op_" + op.id).c_str());
             const std::string time = core::formatTime(op.time / 1000, true);
-            ImGui::Selectable((time + "###row").c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+            selectable((time + "###row").c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty()) {
                 ImGui::BeginTooltip();
                 for (const auto& r : op.refs)
@@ -826,9 +837,9 @@ void OperationsPanel::draw(bool* open)
                 ImGui::EndTooltip();
             }
             if (ImGui::BeginPopupContextItem("##op_menu")) {
-                if (ImGui::MenuItem("Restore (undo this operation)", nullptr, false, free && op.restorable()))
+                if (menuItem(ICON_MS_RESTORE, "Restore (undo this operation)", nullptr, false, free && op.restorable()))
                     actions.restore(op.id);
-                if (ImGui::MenuItem("Copy operation ID"))
+                if (menuItem(ICON_MS_CONTENT_COPY, "Copy operation ID"))
                     ImGui::SetClipboardText(op.id.c_str());
                 ImGui::EndPopup();
             }

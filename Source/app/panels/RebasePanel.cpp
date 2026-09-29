@@ -11,6 +11,9 @@
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 
+#include "shell/Widgets.hpp"
+
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -839,7 +842,7 @@ void RebasePanel::draw()
         spinner("##ir_loading", ImGui::GetFontSize() * 0.4f);
         ImGui::SameLine();
         ImGui::TextDisabled("Reading the commits...");
-        if (ImGui::Button("Cancel###ir_cancel"))
+        if (button(ICON_MS_CLOSE, "Cancel###ir_cancel"))
             close();
         ImGui::End();
         return;
@@ -893,7 +896,7 @@ void RebasePanel::drawHeader()
     if (!startable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("%s", reason.c_str());
     ImGui::SameLine();
-    const bool cancel = ImGui::Button("Cancel###ir_cancel");
+    const bool cancel = button(ICON_MS_CLOSE, "Cancel###ir_cancel");
     if (m_sequence && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("%s", m_sequence->remaining ? "git rebase --edit-todo keeps the list as it was"
                                                       : "git rebase -i stops and nothing changes (git gets an empty list)");
@@ -929,6 +932,7 @@ void RebasePanel::drawOptions()
 void RebasePanel::drawRunOptions()
 {
     const bool native = m_engine.engine == todo::Engine::Native;
+    // The options flow like words: an item that does not fit in the rest of the row starts the next one.
     const float field = ImGui::GetFontSize() * 12;
     ImGui::SetNextItemWidth(field);
     if (ImGui::InputTextWithHint("Onto###ir_onto", m_state.context->upstream.empty() ? "the root" : "the upstream", &m_onto,
@@ -941,46 +945,48 @@ void RebasePanel::drawRunOptions()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("New base (branch, tag or commit); Enter applies. Empty = the upstream.");
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Autosquash"));
     bool autosquash = m_state.autosquash;
     if (ImGui::Checkbox("Autosquash###ir_autosquash", &autosquash))
         setAutosquash(autosquash);
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Update refs"));
     bool updateRefs = m_state.updateRefs;
     if (ImGui::Checkbox("Update refs###ir_update_refs", &updateRefs))
         setUpdateRefs(updateRefs);
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Rebase merges"));
     bool rebaseMerges = m_state.rebaseMerges;
     if (ImGui::Checkbox("Rebase merges###ir_rebase_merges", &rebaseMerges))
         setRebaseMerges(rebaseMerges);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("git rebase --rebase-merges: keep the merges. The list gets label, reset and merge rows "
                           "(Git's list, so the edits so far are replaced) and runs through git rebase.");
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Autostash"));
     ImGui::Checkbox("Autostash###ir_autostash", &m_options.autostash);
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Run as git rebase"));
     if (ImGui::Checkbox("Run as git rebase###ir_native", &m_options.runAsGitRebase))
         onTodoChanged();
 
     ImGui::SetNextItemWidth(field);
     if (ImGui::InputTextWithHint("Exec after every commit###ir_exec_each", "command", &m_options.execEach))
         onTodoChanged();
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9);
+    const char* dates[] = {"Use now", "Keep original"};
+    const float dateWidth = comboWidth({dates[0], dates[1]});
+    sameLineIfFits(labelledWidth(dateWidth, "Committer date"));
+    ImGui::SetNextItemWidth(dateWidth);
     // git rebase always sets the committer date to now (--committer-date-is-author-date is another
     // thing): Keep original is for the in-memory engine only.
     int date = m_options.keepCommitterDate && !native ? 1 : 0;
-    const char* dates[] = {"Use now", "Keep original"};
     ImGui::BeginDisabled(native);
     if (ImGui::Combo("Committer date###ir_committer_date", &date, dates, 2))
         m_options.keepCommitterDate = date == 1;
     ImGui::EndDisabled();
     if (native && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("git rebase sets the committer date to now; Keep original needs the in-memory engine.");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
-    int emptied = static_cast<int>(m_options.emptied);
     const char* emptyChoices[] = {"Keep", "Drop", "Ask"}; // gg::rewrite::Emptied order
+    const float emptyWidth = comboWidth({emptyChoices[0], emptyChoices[1], emptyChoices[2]});
+    sameLineIfFits(labelledWidth(emptyWidth, "Becoming empty"));
+    ImGui::SetNextItemWidth(emptyWidth);
+    int emptied = static_cast<int>(m_options.emptied);
     if (ImGui::Combo("Becoming empty###ir_empty", &emptied, emptyChoices, 3)) {
         m_options.emptied = static_cast<gg::rewrite::Emptied>(emptied);
         onTodoChanged();
@@ -999,43 +1005,44 @@ void RebasePanel::drawTools()
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Undo (Ctrl+Z)");
-    ImGui::SameLine();
+    sameLineIfFits(ImGui::GetFrameHeight());
     ImGui::BeginDisabled(m_redo.empty());
     if (ImGui::Button(ICON_MS_REDO "###ir_redo"))
         undo(true);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Redo (Ctrl+Y)");
-    ImGui::SameLine();
-    if (ImGui::Button("Insert exec###ir_insert_exec"))
+    sameLineIfFits(buttonWidth(ICON_MS_TERMINAL, "Insert exec"));
+    if (button(ICON_MS_TERMINAL, "Insert exec###ir_insert_exec"))
         insertRow(Action::Exec);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("After the selected rows (x)");
-    ImGui::SameLine();
-    if (ImGui::Button("Insert break###ir_insert_break"))
+    sameLineIfFits(buttonWidth(ICON_MS_PAUSE, "Insert break"));
+    if (button(ICON_MS_PAUSE, "Insert break###ir_insert_break"))
         insertRow(Action::Break);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("After the selected rows (b)");
     if (m_state.rebaseMerges || todo::hasMergeRows(m_state.todo)) {
         struct Insert {
+            const char* icon;
             const char* label;
             Action action;
             const char* tip;
         };
         constexpr Insert inserts[] = {
-            {"Insert label###ir_insert_label", Action::Label, "Name the commit made so far, after the selected rows (l)"},
-            {"Insert reset###ir_insert_reset", Action::Reset, "Go back to a label (onto = the new base), after the selected rows (t)"},
-            {"Insert merge###ir_insert_merge", Action::Merge, "Merge a label into the commit made so far, after the selected rows (m)"},
+            {ICON_MS_LABEL, "Insert label###ir_insert_label", Action::Label, "Name the commit made so far, after the selected rows (l)"},
+            {ICON_MS_RESTART_ALT, "Insert reset###ir_insert_reset", Action::Reset, "Go back to a label (onto = the new base), after the selected rows (t)"},
+            {ICON_MS_MERGE, "Insert merge###ir_insert_merge", Action::Merge, "Merge a label into the commit made so far, after the selected rows (m)"},
         };
         for (const auto& in : inserts) {
-            ImGui::SameLine();
-            if (ImGui::Button(in.label))
+            sameLineIfFits(buttonWidth(in.icon, in.label));
+            if (button(in.icon, in.label))
                 insertRow(in.action);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", in.tip);
         }
     }
-    ImGui::SameLine();
+    sameLineIfFits(checkboxWidth("Newest first"));
     ImGui::Checkbox("Newest first###ir_newest_first", &m_newestFirst);
 }
 
@@ -1175,7 +1182,7 @@ void RebasePanel::drawPreview()
         ImGui::PushID(static_cast<int>(k));
         const ImVec2 cellStart = ImGui::GetCursorScreenPos();
         // Clicking a result selects its rows in the list.
-        if (ImGui::Selectable(("###irp_row_" + std::to_string(k)).c_str(), m_selection.count(row.todoRow) > 0,
+        if (selectable(("###irp_row_" + std::to_string(k)).c_str(), m_selection.count(row.todoRow) > 0,
                 ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
             m_selection.clear();
             for (size_t i = 0; i < m_state.todo.items.size(); ++i)
@@ -1295,12 +1302,24 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     ImGui::PushID(static_cast<int>(row));
     ImGui::TableNextRow();
 
-    // Selection, drag and drop: the whole row.
+    // Selection, drag and drop: the whole row. The selectable is only text-high while the row is
+    // as high as its action combo, so the highlight is painted as the row background instead.
     ImGui::TableSetColumnIndex(1);
+    ImGui::AlignTextToFramePadding();
     const std::string idText = hasInfo ? shortHex(item.commit, n) : std::string();
     const bool selected = m_selection.count(row) > 0;
-    if (ImGui::Selectable((idText + "###ir_" + key).c_str(), selected,
-            ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+    ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32_BLACK_TRANS);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32_BLACK_TRANS);
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32_BLACK_TRANS);
+    const bool clicked = ImGui::Selectable((idText + "###ir_" + key).c_str(), selected,
+        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
+    ImGui::PopStyleColor(3);
+    const bool rowHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem);
+    if (selected)
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, rowHovered ? p.selectionHovered : p.selection);
+    else if (rowHovered)
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, ImGui::GetColorU32(ImGuiCol_HeaderHovered));
+    if (clicked)
         clickRow(row);
     if (ImGui::BeginDragDropSource()) {
         const std::string payload = std::to_string(row);
@@ -1336,7 +1355,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         }
         if (ImGui::BeginCombo(("###ir_action_" + key).c_str(), current.c_str())) {
             for (const auto& e : merge ? std::span<const ActionEntry>(kMergeActions) : std::span<const ActionEntry>(kActions))
-                if (ImGui::Selectable(e.label, current == e.label)) {
+                if (selectable(e.label, current == e.label)) {
                     const Action a = e.action;
                     const FixupMessage f = e.fixup;
                     edit([&](State& s) {

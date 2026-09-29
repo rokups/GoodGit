@@ -4,6 +4,8 @@
 #include "shell/Theme.hpp"
 #include "util/PatchBuilder.hpp"
 #include "util/Ui.hpp"
+#include "shell/Widgets.hpp"
+#include <IconsMaterialSymbols.h>
 
 #include <TextEditor.h>
 #include <imgui.h>
@@ -656,28 +658,40 @@ void DiffPanel::drawToolbar()
     // The controls flow like words: one that does not fit starts the next line (the panel never
     // scrolls sideways).
     const float em = ImGui::GetFontSize();
-    auto next = [](float width) {
-        ImGui::SameLine();
-        if (ImGui::GetContentRegionAvail().x < width)
-            ImGui::NewLine();
-    };
+    const ImGuiStyle& style = ImGui::GetStyle();
     const char* views[] = {"Unified", "Side by side"};
     int view = d.diffSideBySide ? 1 : 0;
-    ImGui::SetNextItemWidth(em * 7);
+    ImGui::SetNextItemWidth(comboWidth({views[0], views[1]}));
     if (ImGui::Combo("##diff_view", &view, views, 2)) {
         d.diffSideBySide = view == 1;
         settings.save();
     }
     const char* ws[] = {"Whitespace: normal", "Whitespace: ignore changes", "Whitespace: ignore all"};
-    next(em * 11);
-    ImGui::SetNextItemWidth(em * 11);
+    const float wsWidth = comboWidth({ws[0], ws[1], ws[2]});
+    sameLineIfFits(wsWidth);
+    ImGui::SetNextItemWidth(wsWidth);
     if (ImGui::Combo("##diff_ws", &d.diffWhitespace, ws, 3)) {
         settings.save();
         request();
     }
-    next(em * 4.5f + ImGui::CalcTextSize("Context").x + ImGui::GetStyle().ItemInnerSpacing.x);
-    ImGui::SetNextItemWidth(em * 4.5f);
-    if (ImGui::InputInt("Context##diff_context", &d.diffContext, 1, 5)) {
+    // Context lines: a narrow number field (typing works) with its own icon -/+ (Ctrl: by 5).
+    const float number = ImGui::CalcTextSize("100").x + style.FramePadding.x * 2.0f;
+    const float square = ImGui::GetFrameHeight();
+    sameLineIfFits(labelledWidth(number, "Context") + (style.ItemSpacing.x + square) * 2);
+    ImGui::SetNextItemWidth(number);
+    bool contextChanged = ImGui::InputInt("Context##diff_context", &d.diffContext, 0, 0);
+    const int step = ImGui::GetIO().KeyCtrl ? 5 : 1;
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_MS_REMOVE "##diff_context_dec", ImVec2(square, square))) {
+        d.diffContext -= step;
+        contextChanged = true;
+    }
+    ImGui::SameLine(0, style.ItemInnerSpacing.x);
+    if (ImGui::Button(ICON_MS_ADD "##diff_context_inc", ImVec2(square, square))) {
+        d.diffContext += step;
+        contextChanged = true;
+    }
+    if (contextChanged) {
         d.diffContext = std::clamp(d.diffContext, 0, 100);
         settings.save();
         request();
@@ -687,11 +701,14 @@ void DiffPanel::drawToolbar()
         std::vector<std::string> terms{"Raw markers"};
         for (int k = 1; k <= sides; ++k)
             terms.push_back("Base \xe2\x86\x92 side " + std::to_string(k));
-        next(em * 10);
-        ImGui::SetNextItemWidth(em * 10);
+        float termWidth = comboWidth({terms[0].c_str()});
+        for (const std::string& t : terms)
+            termWidth = std::max(termWidth, comboWidth({t.c_str()}));
+        sameLineIfFits(termWidth);
+        ImGui::SetNextItemWidth(termWidth);
         if (ImGui::BeginCombo("##term_view", terms[static_cast<size_t>(std::clamp(m_termView, 0, sides))].c_str())) {
             for (int k = 0; k <= sides; ++k)
-                if (ImGui::Selectable(terms[static_cast<size_t>(k)].c_str(), k == m_termView)) {
+                if (selectable(terms[static_cast<size_t>(k)].c_str(), k == m_termView)) {
                     m_termView = k;
                     request();
                 }
@@ -700,15 +717,16 @@ void DiffPanel::drawToolbar()
     }
     if (m_file && m_file->group == FileGroup::Conflicted && !m_file->firstClass) {
         const char* stageViews[] = {"Working tree", "Base \xe2\x86\x92 ours", "Base \xe2\x86\x92 theirs", "Ours \xe2\x86\x92 theirs"};
-        next(em * 11);
-        ImGui::SetNextItemWidth(em * 11);
+        const float stageWidth = comboWidth({stageViews[0], stageViews[1], stageViews[2], stageViews[3]});
+        sameLineIfFits(stageWidth);
+        ImGui::SetNextItemWidth(stageWidth);
         if (ImGui::Combo("##conflict_view", &m_conflictView, stageViews, 4))
             request();
     }
     // This file only; the Changes panel's "Compare with" switches the whole commit. It takes the
     // rest of the line (at least 6 em), leaving room for "loading...".
     const float loading = ImGui::CalcTextSize("loading...").x + ImGui::GetStyle().ItemSpacing.x;
-    next(em * 6 + loading);
+    sameLineIfFits(em * 6 + loading);
     ImGui::BeginDisabled(!canCompare());
     ImGui::SetNextItemWidth(std::max(em * 6, ImGui::GetContentRegionAvail().x - loading));
     if (compareWithField("##diff_compare_with", m_fileCompareText)) {
@@ -750,7 +768,7 @@ void DiffPanel::drawPlaceholder(const core::DiffFile& f)
     if (f.truncated) {
         ImGui::TextDisabled("Large diff: only the first lines are shown.");
         ImGui::SameLine();
-        if (ImGui::SmallButton("Load full diff##load_full")) {
+        if (smallButton(ICON_MS_DOWNLOAD, "Load full diff##load_full")) {
             m_full = true;
             request();
         }
@@ -760,9 +778,9 @@ void DiffPanel::drawPlaceholder(const core::DiffFile& f)
 void DiffPanel::drawMenuItems()
 {
     const std::string text = selectedText();
-    if (ImGui::MenuItem("Copy", "Ctrl+C", false, !text.empty()))
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy", "Ctrl+C", false, !text.empty()))
         ImGui::SetClipboardText(text.c_str());
-    if (ImGui::MenuItem("Blame file", nullptr, false, m_file.has_value())) {
+    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, m_file.has_value())) {
         core::Oid at;
         if (m_selection.kind == SelKind::Commit)
             at = m_selection.id;
@@ -780,19 +798,19 @@ void DiffPanel::drawMenuItems()
     }
     if (mode == StagingMode::Unstaged) {
         ImGui::Separator();
-        if (ImGui::MenuItem("Stage line(s)", nullptr, false, free && changes))
+        if (menuItem(ICON_MS_ADD, "Stage line(s)", nullptr, false, free && changes))
             applyLines(lines, StagingAction::Stage);
-        if (ImGui::MenuItem("Discard line(s)", nullptr, false, free && changes))
+        if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, free && changes))
             applyLines(lines, StagingAction::Discard);
-        if (ImGui::MenuItem("Stage hunk(s)", nullptr, false, free && !hunks.empty()))
+        if (menuItem(ICON_MS_ADD, "Stage hunk(s)", nullptr, false, free && !hunks.empty()))
             applyLines(hunks, StagingAction::Stage);
-        if (ImGui::MenuItem("Discard hunk(s)", nullptr, false, free && !hunks.empty()))
+        if (menuItem(ICON_MS_UNDO, "Discard hunk(s)", nullptr, false, free && !hunks.empty()))
             applyLines(hunks, StagingAction::Discard);
     } else if (mode == StagingMode::Staged) {
         ImGui::Separator();
-        if (ImGui::MenuItem("Unstage line(s)", nullptr, false, free && changes))
+        if (menuItem(ICON_MS_REMOVE, "Unstage line(s)", nullptr, false, free && changes))
             applyLines(lines, StagingAction::Unstage);
-        if (ImGui::MenuItem("Unstage hunk(s)", nullptr, false, free && !hunks.empty()))
+        if (menuItem(ICON_MS_REMOVE, "Unstage hunk(s)", nullptr, false, free && !hunks.empty()))
             applyLines(hunks, StagingAction::Unstage);
     }
     // History editing on the selected lines of a commit's change.
@@ -802,15 +820,15 @@ void DiffPanel::drawMenuItems()
         const bool can = free && !patch.empty();
         const core::Oid id = m_selection.id;
         auto& actions = m_session.actions();
-        if (ImGui::MenuItem("Move line(s) to parent", nullptr, false, can))
+        if (menuItem(ICON_MS_ARROW_UPWARD, "Move line(s) to parent", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Parent, {}, patch);
-        if (ImGui::MenuItem("Move line(s) to child", nullptr, false, can))
+        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move line(s) to child", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Child, {}, patch);
-        if (ImGui::MenuItem("Move line(s) to active commit", nullptr, false, can))
+        if (menuItem(ICON_MS_MY_LOCATION, "Move line(s) to active commit", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Active, {}, patch);
-        if (ImGui::MenuItem("Move line(s) to working tree", nullptr, false, can))
+        if (menuItem(ICON_MS_DRIVE_FILE_MOVE, "Move line(s) to working tree", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::WorkingTree, {}, patch);
-        if (ImGui::MenuItem("Revert line(s)", nullptr, false, can))
+        if (menuItem(ICON_MS_UNDO, "Revert line(s)", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Revert, {}, patch);
     }
 }

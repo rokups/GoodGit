@@ -1,0 +1,120 @@
+// imgui_internal.h wants IMGUI_DEFINE_MATH_OPERATORS defined before imgui.h is first included.
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
+#define IMGUI_DEFINE_MATH_OPERATORS
+#endif
+
+#include "shell/Widgets.hpp"
+
+#include "shell/Theme.hpp"
+
+#include <imgui_internal.h>
+
+#include <string>
+
+namespace ggui {
+
+bool menuItem(const char* icon, const char* label, const char* shortcut, bool selected, bool enabled)
+{
+    return ImGui::MenuItemEx(label, icon, shortcut, selected, enabled);
+}
+
+bool menuItem(const char* icon, const char* label, const char* shortcut, bool* p_selected, bool enabled)
+{
+    if (ImGui::MenuItemEx(label, icon, shortcut, p_selected ? *p_selected : false, enabled)) {
+        if (p_selected)
+            *p_selected = !*p_selected;
+        return true;
+    }
+    return false;
+}
+
+bool beginMenu(const char* icon, const char* label, bool enabled)
+{
+    return ImGui::BeginMenuEx(label, icon, enabled);
+}
+
+namespace {
+
+// "icon  visible-label", the text button()/smallButton() render.
+std::string visibleText(const char* icon, const char* label)
+{
+    std::string visible(icon);
+    visible += "  ";
+    visible.append(label, ImGui::FindRenderedTextEnd(label));
+    return visible;
+}
+
+// Shared by button()/smallButton(): mirrors ImGui::ButtonEx exactly (ItemSize/ItemAdd/
+// ButtonBehavior/RenderNavHighlight/RenderFrame/RenderText + the test-engine item info call),
+// except the rendered text is "icon  visible-label" while the ID and the label registered with
+// the test engine stay `label` unchanged (ImGui::GetID(label), same as plain ImGui::Button).
+bool iconButtonEx(const char* icon, const char* label, const ImVec2& size_arg, ImGuiButtonFlags flags)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const ImGuiID id = window->GetID(label);
+
+    const std::string visible = visibleText(icon, label);
+
+    ImVec2 pos = window->DC.CursorPos;
+    if ((flags & ImGuiButtonFlags_AlignTextBaseLine) && style.FramePadding.y < window->DC.CurrLineTextBaseOffset)
+        pos.y += window->DC.CurrLineTextBaseOffset - style.FramePadding.y;
+    const ImVec2 label_size = ImGui::CalcTextSize(visible.c_str(), nullptr, true);
+    const ImVec2 size
+        = ImGui::CalcItemSize(size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f);
+
+    const ImRect bb(pos, pos + size);
+    ImGui::ItemSize(size, style.FramePadding.y);
+    if (!ImGui::ItemAdd(bb, id))
+        return false;
+
+    bool hovered, held;
+    const bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held, flags);
+
+    const ImU32 col = ImGui::GetColorU32((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+    ImGui::RenderNavHighlight(bb, id);
+    ImGui::RenderFrame(bb.Min, bb.Max, col, true, style.FrameRounding);
+    ImGui::RenderTextClipped(bb.Min + style.FramePadding, bb.Max - style.FramePadding, visible.c_str(), nullptr, &label_size,
+        style.ButtonTextAlign, &bb);
+
+    IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);
+    return pressed;
+}
+
+} // namespace
+
+bool button(const char* icon, const char* label, ImVec2 size)
+{
+    return iconButtonEx(icon, label, size, ImGuiButtonFlags_None);
+}
+
+bool smallButton(const char* icon, const char* label)
+{
+    ImGuiContext& g = *GImGui;
+    const float backup_padding_y = g.Style.FramePadding.y;
+    g.Style.FramePadding.y = 0.0f;
+    const bool pressed = iconButtonEx(icon, label, ImVec2(0, 0), ImGuiButtonFlags_AlignTextBaseLine);
+    g.Style.FramePadding.y = backup_padding_y;
+    return pressed;
+}
+
+float buttonWidth(const char* icon, const char* label)
+{
+    return ImGui::CalcTextSize(visibleText(icon, label).c_str(), nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+}
+
+bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+{
+    if (selected)
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, theme().palette().selectionHovered);
+    const bool pressed = ImGui::Selectable(label, selected, flags, size);
+    if (selected)
+        ImGui::PopStyleColor();
+    return pressed;
+}
+
+} // namespace ggui

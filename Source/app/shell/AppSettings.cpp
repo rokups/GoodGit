@@ -3,6 +3,9 @@
 #include "shell/Session.hpp"
 #include "util/Ui.hpp"
 
+#include "shell/Widgets.hpp"
+
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -136,6 +139,12 @@ void App::drawGitConfigSettings(Session& s)
         if (!ImGui::BeginTabItem(sc.label))
             continue;
         const bool editable = free;
+        // One field width for every row, leaving room for the longest label, its help marker and
+        // the Inherit button after the field.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float trailing = style.ItemInnerSpacing.x + ImGui::CalcTextSize("Same-change resolution").x
+            + (style.ItemSpacing.x + ImGui::CalcTextSize("(?)").x) * 2.0f + buttonWidth(ICON_MS_RESTART_ALT, "Inherit");
+        const float fieldWidth = std::max(ImGui::GetFontSize() * 12, ImGui::GetContentRegionAvail().x - trailing);
         // The value this scope would inherit: the nearest lower-precedence scope that sets it, down
         // to the system configuration (read-only here).
         auto inherited = [&](const std::string& key) -> std::pair<std::string, const char*> {
@@ -149,7 +158,7 @@ void App::drawGitConfigSettings(Session& s)
         auto inheritButton = [&](const char* id, const std::string& lower, const char* from) {
             ImGui::SameLine();
             ImGui::BeginDisabled(!editable);
-            const bool clicked = ImGui::SmallButton((std::string("Inherit##") + id).c_str());
+            const bool clicked = smallButton(ICON_MS_RESTART_ALT, (std::string("Inherit##") + id).c_str());
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
                 ImGui::SetTooltip("Clear this override and use %s from %s", lower.c_str(), from);
@@ -167,7 +176,7 @@ void App::drawGitConfigSettings(Session& s)
                 m_configSeen[mapKey] = mine;
             }
             const std::string hint = from ? lower + "  (" + from + ")" : std::string();
-            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+            ImGui::SetNextItemWidth(fieldWidth);
             ImGui::BeginDisabled(!editable);
             ImGui::InputTextWithHint(label.c_str(), hint.c_str(), &text);
             ImGui::EndDisabled();
@@ -202,11 +211,11 @@ void App::drawGitConfigSettings(Session& s)
         std::string preview = kPullMethods[method];
         if (method == 0)
             preview = lowerFrom ? std::string(kPullMethods[lowerMethod]) + "  (" + lowerFrom + ")" : "Merge  (git default)";
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+        ImGui::SetNextItemWidth(fieldWidth);
         ImGui::BeginDisabled(!editable);
         if (ImGui::BeginCombo("Pull method##pull_method", preview.c_str())) {
             for (int m = 0; m < static_cast<int>(std::size(kPullMethods)); ++m) {
-                if (!ImGui::Selectable(kPullMethods[m], m == method) || m == method)
+                if (!selectable(kPullMethods[m], m == method) || m == method)
                     continue;
                 const std::string ff = value(sc.scope, "pull.ff");
                 std::vector<std::pair<std::string, std::string>> set;
@@ -244,11 +253,11 @@ void App::drawGitConfigSettings(Session& s)
         if (sameChange == 0)
             sameChangePreview = sameChangeFrom ? std::string(kSameChangeOptions[lowerSameChange]) + "  (" + sameChangeFrom + ")"
                                                 : "Accept  (default)";
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+        ImGui::SetNextItemWidth(fieldWidth);
         ImGui::BeginDisabled(!editable);
         if (ImGui::BeginCombo("Same-change resolution##same_change", sameChangePreview.c_str())) {
             for (int m = 0; m < static_cast<int>(std::size(kSameChangeOptions)); ++m) {
-                if (!ImGui::Selectable(kSameChangeOptions[m], m == sameChange) || m == sameChange)
+                if (!selectable(kSameChangeOptions[m], m == sameChange) || m == sameChange)
                     continue;
                 const char* values[] = {"", "accept", "keep"};
                 setConfig(sc.flag, {{"gg.sameChange", values[m]}});
@@ -312,7 +321,7 @@ void App::drawGitConfigSettings(Session& s)
 
 void App::drawSettingsWindow()
 {
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 38, ImGui::GetFontSize() * 29), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 46, ImGui::GetFontSize() * 34), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Settings", &m_showSettings, ImGuiWindowFlags_NoDocking)) {
         ImGui::End();
         return;
@@ -342,6 +351,7 @@ void App::drawSettingsWindow()
         if (ImGui::BeginTabItem("Git")) {
             const char* staged[] = {"Ask in the Commit dialog", "Stage all tracked changes", "Stage the selected files"};
             int ns = static_cast<int>(d.nothingStaged);
+            ImGui::SetNextItemWidth(comboWidth({staged[0], staged[1], staged[2]}));
             if (ImGui::Combo("Commit with nothing staged##nothing_staged", &ns, staged, 3)) {
                 d.nothingStaged = static_cast<NothingStaged>(ns);
                 m_settings.save();
@@ -394,7 +404,7 @@ void App::drawSettingsWindow()
                                    "plain git push refuses commits with first-class conflicts. Existing hooks keep running.");
                 const bool free = s->actions().busy().empty();
                 ImGui::BeginDisabled(!free);
-                if (ImGui::Button("Install hooks##install_hooks"))
+                if (button(ICON_MS_DOWNLOAD, "Install hooks##install_hooks"))
                     s->actions().installHooks([s](const core::MutationFinishedEvent& e) {
                         if (e.outcome != core::Outcome::Ok)
                             s->app().showError("Install hooks", e.message);
@@ -402,7 +412,7 @@ void App::drawSettingsWindow()
                         s->engine().readOperations();
                     });
                 ImGui::SameLine();
-                if (ImGui::Button("Remove hooks##remove_hooks"))
+                if (button(ICON_MS_DELETE, "Remove hooks##remove_hooks"))
                     s->actions().uninstallHooks([s](const core::MutationFinishedEvent& e) {
                         if (e.outcome != core::Outcome::Ok)
                             s->app().showError("Remove hooks", e.message);

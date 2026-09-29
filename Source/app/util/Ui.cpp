@@ -1,9 +1,11 @@
 #include "util/Ui.hpp"
 
 #include "shell/Theme.hpp"
+#include "shell/Widgets.hpp"
 
 #include <libgg/GitRunner.hpp>
 
+#include <IconsMaterialSymbols.h>
 #include <imgui_internal.h>
 
 #include <algorithm>
@@ -11,6 +13,33 @@
 #include <thread>
 
 namespace ggui {
+
+void sameLineIfFits(float nextWidth)
+{
+    ImGui::SameLine();
+    if (ImGui::GetContentRegionAvail().x < nextWidth)
+        ImGui::NewLine();
+}
+
+float checkboxWidth(const char* label)
+{
+    const float text = ImGui::CalcTextSize(label, nullptr, true).x;
+    return ImGui::GetFrameHeight() + (text > 0.0f ? ImGui::GetStyle().ItemInnerSpacing.x + text : 0.0f);
+}
+
+float comboWidth(std::initializer_list<const char*> options)
+{
+    float widest = 0.0f;
+    for (const char* option : options)
+        widest = std::max(widest, ImGui::CalcTextSize(option).x);
+    return widest + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetFrameHeight();
+}
+
+float labelledWidth(float fieldWidth, const char* label)
+{
+    const float text = ImGui::CalcTextSize(label, nullptr, true).x;
+    return fieldWidth + (text > 0.0f ? ImGui::GetStyle().ItemInnerSpacing.x + text : 0.0f);
+}
 
 bool containsNoCase(const std::string& haystack, const std::string& needle)
 {
@@ -36,9 +65,9 @@ std::string summaryText(const core::RepoSummary& s)
     return text;
 }
 
-void disabledMenuItem(const char* label, const char* reason, const char* shortcut)
+void disabledMenuItem(const char* icon, const char* label, const char* reason, const char* shortcut)
 {
-    ImGui::MenuItem(label, shortcut, false, false);
+    ImGui::MenuItemEx(label, icon, shortcut, false, false);
     if (reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
         ImGui::SetTooltip("%s", reason);
 }
@@ -132,7 +161,7 @@ void copyId(const std::string& shortId, const std::string& fullId)
 
 bool copyIdMenuItem(const char* label, const std::string& shortId, const std::string& fullId, bool enabled)
 {
-    if (!ImGui::MenuItem(label, kCopyIdHint, false, enabled))
+    if (!menuItem(ICON_MS_CONTENT_COPY, label, kCopyIdHint, false, enabled))
         return false;
     copyId(shortId, fullId);
     return true;

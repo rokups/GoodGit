@@ -4,6 +4,9 @@
 #include "shell/Theme.hpp"
 #include "util/Ui.hpp"
 
+#include "shell/Widgets.hpp"
+
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
@@ -94,18 +97,18 @@ void BlamePanel::drawLineMenu(int index)
         return;
     const auto& line = m_blame->lines[static_cast<size_t>(index)];
     const bool committed = !line.commit.isNull();
-    if (ImGui::MenuItem("Blame before this change", nullptr, false, committed))
+    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame before this change", nullptr, false, committed))
         open(line.origPath, line.commit, true, line.origLine);
-    if (ImGui::MenuItem("Show originating source", nullptr, false, committed))
+    if (menuItem(ICON_MS_SOURCE, "Show originating source", nullptr, false, committed))
         open(line.origPath, line.commit, false, line.origLine);
     ImGui::Separator();
-    if (ImGui::MenuItem("Reveal commit", nullptr, false, committed))
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
     copyIdMenuItem("Copy commit ID", m_session.shortId(line.commit), line.commit.hex(), committed);
     ImGui::Separator();
-    if (ImGui::MenuItem("Select change block"))
+    if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
         blockText(index, &m_selFirst, &m_selLast);
-    if (ImGui::MenuItem("Copy change block"))
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy change block"))
         ImGui::SetClipboardText(blockText(index, nullptr, nullptr).c_str());
     ImGui::EndPopup();
 }
@@ -132,18 +135,23 @@ void BlamePanel::draw(bool* open)
     if (ImGui::Button(ICON_MS_ARROW_FORWARD "###blame_fwd"))
         forward();
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
-    ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    // The label and "loading..." come first; the filter takes the rest of the row (wrapping to its
+    // own line when the label leaves too little).
     if (m_pos >= 0) {
         const auto& q = m_history[static_cast<size_t>(m_pos)];
         ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("%s at %s", q.path.c_str(), q.commit.isNull() ? "working tree" : q.commit.shortHex(10).c_str());
     }
     if (m_loading) {
         ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("loading...");
     }
+    const float filterMin = ImGui::GetFontSize() * 8;
+    sameLineIfFits(filterMin);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter);
     if (!m_blame) {
         ImGui::TextDisabled("Use \"Blame file\" on a file to see who changed each line.");
         ImGui::End();
@@ -192,7 +200,7 @@ void BlamePanel::draw(bool* open)
                 const std::string label = (newBlock ? commitText : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
                 if (l.commit.isNull())
                     ImGui::PushStyleColor(ImGuiCol_Text, p.unstaged);
-                if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                     if (ImGui::GetIO().KeyShift && m_selFirst >= 0) {
                         m_selFirst = std::min(m_selFirst, i);
                         m_selLast = std::max(m_selLast, i);

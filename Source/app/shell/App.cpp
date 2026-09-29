@@ -10,6 +10,9 @@
 #include <libgg/GitRunner.hpp>
 
 #include <SDL3/SDL.h>
+#include "shell/Widgets.hpp"
+
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -559,7 +562,7 @@ void App::drawToasts()
         if (ImGui::SmallButton(ICON_MS_CLOSE "###toast_close"))
             closed.push_back(t.id);
         if (ImGui::BeginPopupContextWindow("##toast_menu")) {
-            if (ImGui::MenuItem("Copy message"))
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy message"))
                 ImGui::SetClipboardText((t.title + ": " + t.message).c_str());
             ImGui::EndPopup();
         }

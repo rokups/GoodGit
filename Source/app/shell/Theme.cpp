@@ -90,6 +90,19 @@ ThemeManager& theme()
     return instance;
 }
 
+SectionHeaderColors::SectionHeaderColors()
+{
+    const Palette& p = theme().palette();
+    ImGui::PushStyleColor(ImGuiCol_Header, p.sectionHeader);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, p.sectionHeaderHovered);
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, p.sectionHeaderActive);
+}
+
+SectionHeaderColors::~SectionHeaderColors()
+{
+    ImGui::PopStyleColor(3);
+}
+
 void ThemeManager::loadFonts()
 {
     m_ui = addFont(ggui_font_noto_sans_mono, ggui_font_noto_sans_mono_size_value(), "NotoSansMono");
@@ -106,79 +119,237 @@ void ThemeManager::apply(Theme t, float scale)
         ImGui::StyleColorsDark(&style);
     else
         ImGui::StyleColorsLight(&style);
-    style.WindowRounding = 3.0f;
-    style.FrameRounding = 3.0f;
-    style.TabRounding = 3.0f;
-    style.PopupRounding = 3.0f;
-    style.GrabRounding = 3.0f;
-    style.ScrollbarRounding = 3.0f;
-    style.WindowPadding = ImVec2(6, 6);
-    style.FramePadding = ImVec2(6, 3);
-    style.ItemSpacing = ImVec2(6, 4);
-    style.CellPadding = ImVec2(4, 1);
-    style.IndentSpacing = 14.0f;
+
+    // Material-style 8dp spacing grid with Blender's crisp, low rounding.
+    style.WindowRounding = 4.0f;
+    style.ChildRounding = 4.0f;
+    style.FrameRounding = 4.0f;
+    style.TabRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.ScrollbarRounding = 6.0f;
+    style.WindowPadding = ImVec2(8, 8);
+    style.FramePadding = ImVec2(8, 3);
+    style.ItemSpacing = ImVec2(8, 4);
+    style.ItemInnerSpacing = ImVec2(6, 4);
+    style.CellPadding = ImVec2(6, 2);
+    style.IndentSpacing = 16.0f;
+    style.ScrollbarSize = 12.0f;
+    style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize = 1.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
+    style.TabBarBorderSize = 1.0f;
     style.FontSizeBase = kBaseFontSize;
     style.ScaleAllSizes(scale);
     style.FontScaleMain = scale;
+
+    // Blender 4.x's accent blue and active-item orange, reused for both themes.
+    const ImU32 accent = rgb(71, 114, 179);       // #4772b3
+    const ImU32 accentHover = rgb(86, 128, 194);  // #5680c2
+    const ImU32 accentOrange = rgb(255, 175, 41); // #ffaf29
+
+    auto setColor = [&](ImGuiCol idx, ImU32 col) { style.Colors[idx] = ImGui::ColorConvertU32ToFloat4(col); };
+
+    if (t == Theme::Dark) {
+        setColor(ImGuiCol_Text, rgb(230, 230, 230));
+        setColor(ImGuiCol_TextDisabled, rgb(140, 140, 140));
+        setColor(ImGuiCol_WindowBg, rgb(48, 48, 48));
+        setColor(ImGuiCol_ChildBg, rgb(43, 43, 43));
+        setColor(ImGuiCol_PopupBg, rgb(24, 24, 24, 250));
+        setColor(ImGuiCol_Border, rgb(61, 61, 61));
+        setColor(ImGuiCol_BorderShadow, rgb(0, 0, 0, 0));
+        setColor(ImGuiCol_FrameBg, rgb(29, 29, 29));
+        setColor(ImGuiCol_FrameBgHovered, rgb(35, 35, 35));
+        setColor(ImGuiCol_FrameBgActive, rgb(42, 42, 42));
+        setColor(ImGuiCol_TitleBg, rgb(38, 38, 38));
+        setColor(ImGuiCol_TitleBgActive, rgb(48, 48, 48));
+        setColor(ImGuiCol_TitleBgCollapsed, rgb(32, 32, 32, 200));
+        setColor(ImGuiCol_MenuBarBg, rgb(38, 38, 38));
+        setColor(ImGuiCol_ScrollbarBg, rgb(43, 43, 43));
+        setColor(ImGuiCol_ScrollbarGrab, rgb(92, 92, 92));
+        setColor(ImGuiCol_ScrollbarGrabHovered, rgb(110, 110, 110));
+        setColor(ImGuiCol_ScrollbarGrabActive, rgb(128, 128, 128));
+        setColor(ImGuiCol_CheckMark, rgb(230, 230, 230));
+        setColor(ImGuiCol_SliderGrab, accent);
+        setColor(ImGuiCol_SliderGrabActive, accentHover);
+        setColor(ImGuiCol_Button, rgb(84, 84, 84));
+        setColor(ImGuiCol_ButtonHovered, rgb(101, 101, 101));
+        setColor(ImGuiCol_ButtonActive, accent);
+        // Header = a selected row/menu item (blue); hover is a neutral Material state layer.
+        setColor(ImGuiCol_Header, rgb(71, 114, 179, 150));
+        setColor(ImGuiCol_HeaderHovered, rgb(255, 255, 255, 22));
+        setColor(ImGuiCol_HeaderActive, accent);
+        setColor(ImGuiCol_Separator, rgb(61, 61, 61));
+        setColor(ImGuiCol_SeparatorHovered, rgb(120, 120, 120));
+        setColor(ImGuiCol_SeparatorActive, accent);
+        setColor(ImGuiCol_ResizeGrip, rgb(61, 61, 61, 50));
+        setColor(ImGuiCol_ResizeGripHovered, rgb(120, 120, 120));
+        setColor(ImGuiCol_ResizeGripActive, accent);
+        setColor(ImGuiCol_InputTextCursor, rgb(230, 230, 230));
+        setColor(ImGuiCol_Tab, rgb(35, 35, 35));
+        setColor(ImGuiCol_TabHovered, rgb(72, 72, 72));
+        setColor(ImGuiCol_TabSelected, rgb(61, 61, 61));
+        setColor(ImGuiCol_TabSelectedOverline, accentOrange);
+        setColor(ImGuiCol_TabDimmed, rgb(30, 30, 30));
+        setColor(ImGuiCol_TabDimmedSelected, rgb(50, 50, 50));
+        setColor(ImGuiCol_TabDimmedSelectedOverline, rgb(0, 0, 0, 0));
+        setColor(ImGuiCol_DockingPreview, rgb(71, 114, 179, 150));
+        setColor(ImGuiCol_DockingEmptyBg, rgb(48, 48, 48));
+        setColor(ImGuiCol_PlotLines, accent);
+        setColor(ImGuiCol_PlotLinesHovered, accentHover);
+        setColor(ImGuiCol_PlotHistogram, accentOrange);
+        setColor(ImGuiCol_PlotHistogramHovered, rgb(255, 195, 100));
+        setColor(ImGuiCol_TableHeaderBg, rgb(38, 38, 38));
+        setColor(ImGuiCol_TableBorderStrong, rgb(61, 61, 61));
+        setColor(ImGuiCol_TableBorderLight, rgb(45, 45, 45));
+        setColor(ImGuiCol_TableRowBg, rgb(0, 0, 0, 0));
+        setColor(ImGuiCol_TableRowBgAlt, rgb(43, 43, 43));
+        setColor(ImGuiCol_TextLink, accentHover);
+        setColor(ImGuiCol_TextSelectedBg, rgb(71, 114, 179, 100));
+        setColor(ImGuiCol_TreeLines, rgb(61, 61, 61, 120));
+        setColor(ImGuiCol_DragDropTarget, accentOrange);
+        setColor(ImGuiCol_DragDropTargetBg, rgb(255, 175, 41, 50));
+        setColor(ImGuiCol_UnsavedMarker, accentOrange);
+        setColor(ImGuiCol_NavCursor, accent);
+        setColor(ImGuiCol_NavWindowingHighlight, rgb(230, 230, 230, 180));
+        setColor(ImGuiCol_NavWindowingDimBg, rgb(0, 0, 0, 120));
+        setColor(ImGuiCol_ModalWindowDimBg, rgb(0, 0, 0, 140));
+    } else {
+        setColor(ImGuiCol_Text, rgb(26, 26, 26));
+        setColor(ImGuiCol_TextDisabled, rgb(120, 120, 120));
+        setColor(ImGuiCol_WindowBg, rgb(188, 188, 188));
+        setColor(ImGuiCol_ChildBg, rgb(212, 212, 212));
+        setColor(ImGuiCol_PopupBg, rgb(235, 235, 235, 250));
+        setColor(ImGuiCol_Border, rgb(140, 140, 140));
+        setColor(ImGuiCol_BorderShadow, rgb(0, 0, 0, 0));
+        setColor(ImGuiCol_FrameBg, rgb(230, 230, 230));
+        setColor(ImGuiCol_FrameBgHovered, rgb(240, 240, 240));
+        setColor(ImGuiCol_FrameBgActive, rgb(255, 255, 255));
+        setColor(ImGuiCol_TitleBg, rgb(188, 188, 188));
+        setColor(ImGuiCol_TitleBgActive, rgb(212, 212, 212));
+        setColor(ImGuiCol_TitleBgCollapsed, rgb(180, 180, 180, 200));
+        setColor(ImGuiCol_MenuBarBg, rgb(188, 188, 188));
+        setColor(ImGuiCol_ScrollbarBg, rgb(212, 212, 212));
+        setColor(ImGuiCol_ScrollbarGrab, rgb(160, 160, 160));
+        setColor(ImGuiCol_ScrollbarGrabHovered, rgb(144, 144, 144));
+        setColor(ImGuiCol_ScrollbarGrabActive, rgb(128, 128, 128));
+        setColor(ImGuiCol_CheckMark, accent);
+        setColor(ImGuiCol_SliderGrab, accent);
+        setColor(ImGuiCol_SliderGrabActive, accentHover);
+        setColor(ImGuiCol_Button, rgb(230, 230, 230));
+        setColor(ImGuiCol_ButtonHovered, rgb(240, 240, 240));
+        setColor(ImGuiCol_ButtonActive, accent);
+        setColor(ImGuiCol_Header, rgb(71, 114, 179, 110));
+        setColor(ImGuiCol_HeaderHovered, rgb(0, 0, 0, 18));
+        setColor(ImGuiCol_HeaderActive, accent);
+        setColor(ImGuiCol_Separator, rgb(160, 160, 160));
+        setColor(ImGuiCol_SeparatorHovered, rgb(120, 120, 120));
+        setColor(ImGuiCol_SeparatorActive, accent);
+        setColor(ImGuiCol_ResizeGrip, rgb(160, 160, 160, 60));
+        setColor(ImGuiCol_ResizeGripHovered, rgb(120, 120, 120));
+        setColor(ImGuiCol_ResizeGripActive, accent);
+        setColor(ImGuiCol_InputTextCursor, rgb(26, 26, 26));
+        setColor(ImGuiCol_Tab, rgb(200, 200, 200));
+        setColor(ImGuiCol_TabHovered, rgb(205, 205, 205));
+        setColor(ImGuiCol_TabSelected, rgb(230, 230, 230));
+        setColor(ImGuiCol_TabSelectedOverline, rgb(224, 140, 16));
+        setColor(ImGuiCol_TabDimmed, rgb(205, 205, 205));
+        setColor(ImGuiCol_TabDimmedSelected, rgb(220, 220, 220));
+        setColor(ImGuiCol_TabDimmedSelectedOverline, rgb(0, 0, 0, 0));
+        setColor(ImGuiCol_DockingPreview, rgb(71, 114, 179, 120));
+        setColor(ImGuiCol_DockingEmptyBg, rgb(188, 188, 188));
+        setColor(ImGuiCol_PlotLines, accent);
+        setColor(ImGuiCol_PlotLinesHovered, accentHover);
+        setColor(ImGuiCol_PlotHistogram, accentOrange);
+        setColor(ImGuiCol_PlotHistogramHovered, rgb(255, 195, 100));
+        setColor(ImGuiCol_TableHeaderBg, rgb(200, 200, 200));
+        setColor(ImGuiCol_TableBorderStrong, rgb(160, 160, 160));
+        setColor(ImGuiCol_TableBorderLight, rgb(180, 180, 180));
+        setColor(ImGuiCol_TableRowBg, rgb(0, 0, 0, 0));
+        setColor(ImGuiCol_TableRowBgAlt, rgb(212, 212, 212));
+        setColor(ImGuiCol_TextLink, accent);
+        setColor(ImGuiCol_TextSelectedBg, rgb(71, 114, 179, 90));
+        setColor(ImGuiCol_TreeLines, rgb(160, 160, 160, 120));
+        setColor(ImGuiCol_DragDropTarget, accentOrange);
+        setColor(ImGuiCol_DragDropTargetBg, rgb(255, 175, 41, 60));
+        setColor(ImGuiCol_UnsavedMarker, accentOrange);
+        setColor(ImGuiCol_NavCursor, accent);
+        setColor(ImGuiCol_NavWindowingHighlight, rgb(26, 26, 26, 150));
+        setColor(ImGuiCol_NavWindowingDimBg, rgb(255, 255, 255, 120));
+        setColor(ImGuiCol_ModalWindowDimBg, rgb(0, 0, 0, 90));
+    }
     ImGui::GetStyle() = style;
 
     Palette& p = m_palette;
     if (t == Theme::Dark) {
-        const ImU32 lanes[8] = {rgb(86, 156, 214), rgb(214, 157, 86), rgb(106, 190, 106), rgb(204, 102, 204),
-            rgb(220, 90, 90), rgb(90, 200, 200), rgb(200, 200, 90), rgb(160, 130, 230)};
+        // Blender's viewport axis/gizmo hues, tuned for contrast on a #2b2b2b/#282828 backdrop.
+        // Lane 0 (the main line) is blue; red is not first.
+        const ImU32 lanes[8] = {rgb(40, 144, 255), rgb(139, 220, 0), rgb(255, 51, 82), rgb(255, 175, 41),
+            rgb(176, 124, 255), rgb(63, 208, 208), rgb(255, 122, 184), rgb(216, 200, 90)};
         std::copy(lanes, lanes + 8, p.lanes);
-        p.branch = rgb(46, 110, 60);
-        p.branchCurrent = rgb(60, 150, 80);
-        p.remote = rgb(60, 80, 130);
-        p.tag = rgb(130, 100, 40);
-        p.head = rgb(150, 60, 60);
-        p.worktree = rgb(90, 70, 130);
-        p.stash = rgb(90, 90, 90);
+        p.branch = rgb(84, 104, 132); // muted slate: must not read as a selected (blue) item
+        p.branchCurrent = rgb(255, 175, 41); // Blender's active-item orange for the current branch
+        p.remote = rgb(63, 176, 176);
+        p.tag = rgb(196, 140, 50);
+        p.head = rgb(255, 175, 41); // same orange emphasis for a detached HEAD
+        p.worktree = rgb(150, 110, 220);
+        p.stash = rgb(120, 120, 120);
         p.badgeText = rgb(240, 240, 240);
-        p.unpublished = rgb(255, 200, 120);
-        p.conflict = rgb(255, 90, 90);
-        p.added = rgb(120, 210, 120);
-        p.removed = rgb(240, 120, 120);
-        p.addedBg = rgb(40, 80, 40, 140);
-        p.removedBg = rgb(90, 40, 40, 140);
+        p.unpublished = rgb(255, 205, 130);
+        p.conflict = rgb(255, 60, 90);
+        p.conflictFill = rgb(190, 50, 60);
+        p.sectionHeader = rgb(61, 61, 61);
+        p.sectionHeaderHovered = rgb(72, 72, 72);
+        p.sectionHeaderActive = rgb(84, 84, 84);
+        p.added = rgb(139, 220, 0);
+        p.removed = rgb(255, 90, 106);
+        p.addedBg = rgb(47, 61, 39, 140);
+        p.removedBg = rgb(67, 40, 43, 140);
         p.hunkHeader = rgb(120, 160, 220);
         p.lineNumber = rgb(120, 120, 120);
         p.dim = rgb(140, 140, 140);
         p.error = rgb(255, 255, 255);
-        p.errorBg = rgb(150, 40, 40);
-        p.warning = rgb(235, 175, 60);
-        p.selection = rgb(60, 90, 140, 160);
-        p.staged = rgb(120, 210, 120);
-        p.unstaged = rgb(230, 190, 90);
-        p.untracked = rgb(150, 150, 150);
+        p.errorBg = rgb(160, 40, 50);
+        p.warning = rgb(255, 175, 41);
+        p.selection = rgb(71, 114, 179, 100);
+        p.selectionHovered = rgb(86, 128, 194, 175);
+        p.staged = rgb(139, 220, 0);
+        p.unstaged = rgb(230, 175, 60);
+        p.untracked = rgb(150, 160, 170);
     } else {
-        const ImU32 lanes[8] = {rgb(30, 100, 180), rgb(190, 110, 20), rgb(40, 140, 40), rgb(160, 50, 160),
-            rgb(190, 40, 40), rgb(20, 140, 140), rgb(140, 140, 20), rgb(110, 80, 190)};
+        const ImU32 lanes[8] = {rgb(30, 110, 200), rgb(70, 140, 20), rgb(200, 40, 60), rgb(190, 110, 20),
+            rgb(120, 70, 190), rgb(20, 130, 130), rgb(190, 70, 120), rgb(140, 120, 30)};
         std::copy(lanes, lanes + 8, p.lanes);
-        p.branch = rgb(70, 150, 90);
-        p.branchCurrent = rgb(40, 130, 60);
-        p.remote = rgb(80, 110, 180);
-        p.tag = rgb(170, 130, 50);
-        p.head = rgb(180, 70, 70);
-        p.worktree = rgb(120, 90, 170);
-        p.stash = rgb(120, 120, 120);
+        p.branch = rgb(84, 104, 132);
+        p.branchCurrent = rgb(210, 130, 20);
+        p.remote = rgb(20, 120, 120);
+        p.tag = rgb(150, 110, 40);
+        p.head = rgb(210, 130, 20);
+        p.worktree = rgb(110, 70, 160);
+        p.stash = rgb(110, 110, 110);
         p.badgeText = rgb(255, 255, 255);
-        p.unpublished = rgb(170, 90, 0);
-        p.conflict = rgb(200, 30, 30);
-        p.added = rgb(20, 130, 20);
-        p.removed = rgb(180, 30, 30);
-        p.addedBg = rgb(200, 240, 200, 200);
-        p.removedBg = rgb(250, 210, 210, 200);
+        p.unpublished = rgb(170, 100, 10);
+        p.conflict = rgb(200, 30, 45);
+        p.conflictFill = rgb(190, 40, 50);
+        p.sectionHeader = rgb(170, 170, 170);
+        p.sectionHeaderHovered = rgb(160, 160, 160);
+        p.sectionHeaderActive = rgb(150, 150, 150);
+        p.added = rgb(50, 130, 10);
+        p.removed = rgb(190, 40, 50);
+        p.addedBg = rgb(210, 235, 195, 200);
+        p.removedBg = rgb(245, 210, 205, 200);
         p.hunkHeader = rgb(40, 90, 170);
-        p.lineNumber = rgb(140, 140, 140);
+        p.lineNumber = rgb(130, 130, 130);
         p.dim = rgb(120, 120, 120);
         p.error = rgb(255, 255, 255);
-        p.errorBg = rgb(190, 50, 50);
-        p.warning = rgb(190, 120, 0);
-        p.selection = rgb(170, 200, 240, 200);
-        p.staged = rgb(20, 130, 20);
-        p.unstaged = rgb(170, 110, 0);
-        p.untracked = rgb(110, 110, 110);
+        p.errorBg = rgb(190, 50, 55);
+        p.warning = rgb(190, 120, 10);
+        p.selection = rgb(71, 114, 179, 90);
+        p.selectionHovered = rgb(86, 128, 194, 135);
+        p.staged = rgb(50, 130, 10);
+        p.unstaged = rgb(190, 120, 10);
+        p.untracked = rgb(110, 120, 130);
     }
     p.branchText = p.branch;
     p.branchCurrentText = p.branchCurrent;
@@ -203,7 +374,7 @@ void ThemeManager::apply(Theme t, float scale)
     for (ImU32* c : {&p.lineNumber, &p.dim, &p.untracked})
         readable(*c, kDimContrast);
     // Badge fills against their text.
-    for (ImU32* c : {&p.branch, &p.branchCurrent, &p.remote, &p.tag, &p.head, &p.worktree, &p.stash})
+    for (ImU32* c : {&p.branch, &p.branchCurrent, &p.remote, &p.tag, &p.head, &p.worktree, &p.stash, &p.conflictFill})
         *c = readableOn(*c, p.badgeText, kTextContrast);
     ImGuiStyle& live = ImGui::GetStyle();
     ImU32 disabled = ImGui::ColorConvertFloat4ToU32(live.Colors[ImGuiCol_TextDisabled]);

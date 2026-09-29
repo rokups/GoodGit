@@ -1,15 +1,66 @@
 #include "shell/Dialogs.hpp"
 #include "shell/Theme.hpp"
+#include "shell/Widgets.hpp"
 
 #include "shell/Session.hpp"
 #include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
 
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
+#include <algorithm>
+#include <cfloat>
+
 namespace ggui {
+
+namespace {
+
+// The icon for a dialog button, from its label's verb (the label, and so the ID, stays as is).
+const char* dialogButtonIcon(const FormButton& button)
+{
+    if (button.icon)
+        return button.icon;
+    static const std::pair<const char*, const char*> verbs[] = {
+        {"Cancel", ICON_MS_CLOSE},
+        {"Close", ICON_MS_CLOSE},
+        {"Not now", ICON_MS_SCHEDULE},
+        {"Never", ICON_MS_BLOCK},
+        {"Ignore", ICON_MS_VISIBILITY_OFF},
+        {"Quit", ICON_MS_LOGOUT},
+        {"OK", ICON_MS_CHECK},
+        {"Commit", ICON_MS_CHECK},
+        {"Amend", ICON_MS_EDIT},
+        {"Apply", ICON_MS_CHECK},
+        {"Set", ICON_MS_CHECK},
+        {"Save", ICON_MS_SAVE},
+        {"Stash", ICON_MS_INVENTORY_2},
+        {"Push", ICON_MS_UPLOAD},
+        {"Create", ICON_MS_ADD},
+        {"Add", ICON_MS_ADD},
+        {"Clone", ICON_MS_DOWNLOAD},
+        {"Install", ICON_MS_DOWNLOAD},
+        {"Rename", ICON_MS_DRIVE_FILE_RENAME_OUTLINE},
+        {"Move", ICON_MS_DRIVE_FILE_MOVE},
+        {"Replace", ICON_MS_SWAP_HORIZ},
+        {"Retry", ICON_MS_REFRESH},
+        {"Discard", ICON_MS_UNDO},
+        {"Delete", ICON_MS_DELETE},
+        {"Delete changes and remove", ICON_MS_DELETE},
+        {"Drop", ICON_MS_DELETE},
+        {"Clear all", ICON_MS_DELETE_SWEEP},
+        {"Clean up", ICON_MS_CLEANING_SERVICES},
+        {"Copy message", ICON_MS_CONTENT_COPY},
+    };
+    for (const auto& [label, icon] : verbs)
+        if (button.label == label)
+            return icon;
+    return nullptr;
+}
+
+} // namespace
 
 const Field* Form::field(const std::string& id) const
 {
@@ -51,7 +102,10 @@ void Dialogs::draw()
     }
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 28, 0), ImVec2(vp->WorkSize.x * 0.9f, vp->WorkSize.y * 0.9f));
+    // Fields fill the dialog width; a dialog with a multi-line field starts wider.
+    const bool multiline = std::any_of(form.fields.begin(), form.fields.end(),
+        [](const Field& f) { return f.kind == Field::Multiline; });
+    ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * (multiline ? 38 : 30), 0), ImVec2(vp->WorkSize.x * 0.9f, vp->WorkSize.y * 0.9f));
     bool keepOpen = true;
     if (!ImGui::BeginPopupModal(form.title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         // Closed by ImGui (should not happen for modals without a close button).
@@ -78,7 +132,7 @@ void Dialogs::draw()
             continue;
         ImGui::SameLine();
         ImGui::PushID(("reveal_" + std::to_string(i)).c_str());
-        if (ImGui::SmallButton("Reveal") && form.onReveal) {
+        if (smallButton(ICON_MS_MY_LOCATION, "Reveal") && form.onReveal) {
             form.onReveal(id);
             keepOpen = false;
         }
@@ -99,7 +153,7 @@ void Dialogs::draw()
         case Field::Password:
             if (!f.label.empty())
                 ImGui::TextUnformatted(f.label.c_str());
-            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 28);
+            ImGui::SetNextItemWidth(-FLT_MIN);
             if (ImGui::InputTextWithHint(id.c_str(), f.hint.c_str(), &f.text,
                     ImGuiInputTextFlags_EnterReturnsTrue | (f.kind == Field::Password ? ImGuiInputTextFlags_Password : 0)))
                 enterPressed = true;
@@ -107,13 +161,14 @@ void Dialogs::draw()
         case Field::Multiline:
             if (!f.label.empty())
                 ImGui::TextUnformatted(f.label.c_str());
-            ImGui::InputTextMultiline(id.c_str(), &f.text, ImVec2(ImGui::GetFontSize() * 36, ImGui::GetTextLineHeight() * 8));
+            ImGui::InputTextMultiline(id.c_str(), &f.text, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 8));
             break;
         case Field::Check:
             ImGui::Checkbox((f.label + id).c_str(), &f.checked);
             break;
         case Field::Combo: {
-            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+            ImGui::SetNextItemWidth(std::max(ImGui::GetFontSize() * 12,
+                ImGui::GetContentRegionAvail().x - labelledWidth(0.0f, f.label.c_str())));
             const char* preview = f.options.empty() ? "" : f.options[static_cast<size_t>(f.choice)].c_str();
             if (ImGui::BeginCombo((f.label + id).c_str(), preview)) {
                 bool pickFirst = false;
@@ -134,7 +189,7 @@ void Dialogs::draw()
                         ImGui::CloseCurrentPopup();
                         break;
                     }
-                    if (ImGui::Selectable(f.options[k].c_str(), static_cast<int>(k) == f.choice))
+                    if (selectable(f.options[k].c_str(), static_cast<int>(k) == f.choice))
                         f.choice = static_cast<int>(k);
                 }
                 ImGui::EndCombo();
@@ -155,7 +210,8 @@ void Dialogs::draw()
         if (b)
             ImGui::SameLine();
         ImGui::BeginDisabled(!enabled);
-        if (ImGui::Button(button.label.c_str()))
+        const char* icon = dialogButtonIcon(button);
+        if (icon ? ggui::button(icon, button.label.c_str()) : ImGui::Button(button.label.c_str()))
             clicked = static_cast<int>(b);
         ImGui::EndDisabled();
         // Enter on a single-line field activates the first (primary) button.
