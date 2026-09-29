@@ -57,6 +57,8 @@ struct TestInfo {
     TestBody body = nullptr;
     const char* file = nullptr;
     int line = 0;
+    // Not part of the suite: runs only when the --test filter names its category.
+    bool manual = false;
 };
 
 std::vector<TestInfo>& registry();
@@ -78,17 +80,21 @@ void writeFailureOutput(ImGuiTestContext* ctx, const TestInfo& info, const Scena
 
 struct Registrar {
     Registrar(const char* category, const char* name, std::initializer_list<const char*> specs, TestBody body,
-        const char* file, int line);
+        const char* file, int line, bool manual = false);
 };
 
 #define GG_TEST_CONCAT2(a, b) a##b
 #define GG_TEST_CONCAT(a, b) GG_TEST_CONCAT2(a, b)
-#define GG_TEST(category, name, ...)                                                                     \
+#define GG_TEST_IMPL(manual, category, name, ...)                                                        \
     static void GG_TEST_CONCAT(ggTestBody_, __LINE__)(ImGuiTestContext * ctx, ::ggtest::Scenario & s);   \
     static const ::ggtest::Registrar GG_TEST_CONCAT(ggTestReg_, __LINE__)(                              \
-        category, name, {__VA_ARGS__}, &GG_TEST_CONCAT(ggTestBody_, __LINE__), __FILE__, __LINE__);     \
+        category, name, {__VA_ARGS__}, &GG_TEST_CONCAT(ggTestBody_, __LINE__), __FILE__, __LINE__, manual); \
     static void GG_TEST_CONCAT(ggTestBody_, __LINE__)([[maybe_unused]] ImGuiTestContext * ctx,          \
         [[maybe_unused]] ::ggtest::Scenario & s)
+#define GG_TEST(category, name, ...) GG_TEST_IMPL(false, category, name, __VA_ARGS__)
+// A test left out of the suite (e.g. a screenshot gallery for reviewing the look): it runs only
+// with --test=<category>.
+#define GG_MANUAL_TEST(category, name, ...) GG_TEST_IMPL(true, category, name, __VA_ARGS__)
 
 // Ends the test as skipped when the git on PATH is older than major.minor, for a scenario whose
 // subject needs a newer git than the pinned minimum (2.36), e.g. update-ref rows in git rebase -i

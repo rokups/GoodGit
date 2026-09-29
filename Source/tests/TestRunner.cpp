@@ -385,9 +385,10 @@ std::vector<TestInfo>& registry()
 }
 
 Registrar::Registrar(const char* category, const char* name, std::initializer_list<const char*> specs, TestBody body,
-    const char* file, int line)
+    const char* file, int line, bool manual)
 {
     TestInfo info;
+    info.manual = manual;
     info.category = category;
     info.name = name;
     for (const char* s : specs)
@@ -547,6 +548,8 @@ void TestRunner::start(const std::string& filter, const std::string& traceFile, 
 #endif
     std::vector<ImGuiTest*> registered;
     for (const auto& info : registry()) {
+        if (info.manual && filter.find(info.category) == std::string::npos)
+            continue;
         ImGuiTest* t = ImGuiTestEngine_RegisterTest(m_engine, info.category.c_str(), info.name.c_str(), info.file, info.line);
         const TestInfo* ptr = &info;
         t->TestFunc = [ptr](ImGuiTestContext* ctx) { runTest(ctx, *ptr); };

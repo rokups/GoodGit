@@ -41,6 +41,7 @@ against the real repository on disk with plain `git`.
 ```sh
 build/ninja/bin/ggui --test                 # run the whole suite
 build/ninja/bin/ggui --test='conflicts/*'   # filter by name
+build/ninja/bin/ggui --test=gallery         # manual: screenshots of the UI to test-artifacts/screens
 build/ninja/bin/ggui --list-tests           # list test names
 
 # Headless, sharded (as CI runs it): 4 shards in parallel, one trace file each
