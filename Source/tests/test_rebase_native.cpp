@@ -73,9 +73,18 @@ bool rowReady(Scenario& s, const std::string& hex)
 // Opens the editor from `hex` with the I key.
 bool openFrom(Scenario& s, const std::string& hex)
 {
-    if (!rowReady(s, hex))
+    // A history reload (a commit the test just made) can shift the rows under the click:
+    // click again until the selection is the commit asked for.
+    bool selected = false;
+    for (int attempt = 0; attempt < 3 && !selected; ++attempt) {
+        if (!rowReady(s, hex))
+            return false;
+        s.settle();
+        s.ctx->ItemClick(historyRow(hex).c_str());
+        selected = s.waitUntil([&] { return s.session()->selection().id.hex() == hex; }, 2.0f);
+    }
+    if (!selected)
         return false;
-    s.ctx->ItemClick(historyRow(hex).c_str());
     s.ctx->KeyPress(ImGuiKey_I);
     return editorReady(s);
 }
