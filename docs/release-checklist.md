@@ -108,6 +108,7 @@ must be green:
 | `windows` (8 jobs: MinGW/MSVC × shards 0–3) and `windows-gates` | the suite on Windows (headless, D3D12/WARP) incl. the responsiveness scenario (P1-21); both gates on each toolchain's merged traces |
 | `package-linux` | `package_smoke.sh --container ubuntu:24.04` (the .deb installed with apt in a clean container); `removal_audit.sh --packages` |
 | `package-mingw`, `package-msvc` | `package_smoke_windows.sh` incl. its runtime checks on Windows |
+| `release` (master only) | after all of the above: the `latest` tag moves to the commit and the `latest` pre-release gets its packages |
 
 Watch: the Windows gates see one git version. With git older than 2.54 on the runner the
 config-defined hooks test is skipped there and the traceability step reports HOOK-CONFIG-DEFINED

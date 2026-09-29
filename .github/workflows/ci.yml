@@ -9,10 +9,12 @@
 # merged: a test skipped on git 2.36 must pass on the latest git) and on each Windows job. The
 # coverage report is published but does not gate; COVERAGE_EXCL markers may not grow past the
 # allowlist. Every shard runs with the UI-thread assertion on (the default in test builds).
+# A green build of master replaces the "latest" pre-release's packages (the release job).
 name: ci
 
 on:
   push:
+    branches: ["**"] # not tags: the release job moves the "latest" tag
   pull_request:
 
 env:
@@ -364,3 +366,40 @@ jobs:
         with:
           name: package-msvc
           path: build/packages/*.zip
+
+  # The "latest" pre-release: on master, once every build, test, gate and package job passed,
+  # its tag moves to this commit and its assets are replaced with this build's packages.
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [catalogue, linux, gates, windows, windows-gates, package-linux, package-mingw, package-msvc]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: release-latest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+      - name: Update the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
+          notes="Built by CI from master at ${GITHUB_SHA::7} (all tests and gates passed). Replaced on every successful master build."
+          if ! gh release view latest >/dev/null 2>&1; then
+            gh release create latest --prerelease --title "Latest build" --notes "$notes" --target "$GITHUB_SHA"
+          fi
+          # Old packages go (their names carry the version), this build's come in.
+          gh release view latest --json assets -q '.assets[].name' | while read -r asset; do
+            gh release delete-asset latest "$asset" --yes
+          done
+          gh release upload latest dist/* --clobber
+          gh release edit latest --prerelease --title "Latest build" --notes "$notes"
