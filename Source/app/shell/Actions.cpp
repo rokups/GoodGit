@@ -263,18 +263,25 @@ void Actions::takeConflictSide(const std::vector<std::string>& paths, int side, 
     }, {}, false, true);
 }
 
-void Actions::mergeToolFirstClass(const std::string& path)
+void Actions::mergeToolFirstClass(const std::string& path, int pair)
 {
     run("merge tool " + path,
-        [path](MutationContext& ctx) {
-            // Stages 1–3 from the regions of the working tree file, then git mergetool (which
-            // stages the result). If the tool gives up, the index goes back to HEAD for the path.
+        [path, pair](MutationContext& ctx) {
+            // Stages 1–3 from the region terms for sides `pair`/`pair+1`, then git mergetool
+            // (which stages the result). If the tool gives up, the index goes back to HEAD for
+            // the path. On an N-sided file (N >= 3) success folds the resolved pair into one
+            // term and leaves the file a first-class conflict with one side fewer.
             std::ifstream in(ctx.cwd() / path, std::ios::binary);
             std::ostringstream ss;
             ss << in.rdbuf();
+            in.close();
             const std::string text = ss.str();
-            if (gg::markers::parse(text).maxSides() != 2)
-                throw MutationError{Outcome::Refused, "merge tools handle two-sided conflicts only; take a side first", {}};
+            gg::markers::Merge m = gg::markers::toMerge(text);
+            const int n = static_cast<int>(m.adds.size());
+            if (n < 2)
+                throw MutationError{Outcome::Refused, "not a conflict; take a side first", {}};
+            if (pair < 0 || pair + 1 >= n)
+                throw MutationError{Outcome::Refused, "no such pair of sides in this conflict", {}};
             // "<mode> <id> <stage>\t<path>" (ls-files --format needs git 2.38).
             const std::string staged = ctx.git({"ls-files", "-s", "-z", "--", path}).out;
             std::string mode = staged.substr(0, staged.find(' '));
@@ -283,14 +290,40 @@ void Actions::mergeToolFirstClass(const std::string& path)
             auto blob = [&](const std::string& content) { return gg::trim(ctx.git({"hash-object", "-w", "--stdin"}, content).out); };
             const std::string zero(gg::git2::hexSize(gg::git2::oidType(ctx.repo())), '0');
             std::string input = "0 " + zero + "\t" + path + "\n";
-            input += mode + " " + blob(gg::markers::takeBase(text)) + " 1\t" + path + "\n";
-            input += mode + " " + blob(gg::markers::takeSide(text, 0)) + " 2\t" + path + "\n";
-            input += mode + " " + blob(gg::markers::takeSide(text, 1)) + " 3\t" + path + "\n";
+            input += mode + " " + blob(m.removes[static_cast<size_t>(pair)]) + " 1\t" + path + "\n";
+            input += mode + " " + blob(m.adds[static_cast<size_t>(pair)]) + " 2\t" + path + "\n";
+            input += mode + " " + blob(m.adds[static_cast<size_t>(pair) + 1]) + " 3\t" + path + "\n";
             ctx.git({"update-index", "--index-info"}, input);
             const auto r = ctx.gitMayFail(withPaths({"mergetool", "-y"}, {path}));
             if (!r.ok()) {
                 ctx.gitMayFail({"reset", "-q", "--", path});
+                if (n > 2) {
+                    // The tool may have written into the working tree file before giving up.
+                    std::ifstream check(ctx.cwd() / path, std::ios::binary);
+                    std::ostringstream cs;
+                    cs << check.rdbuf();
+                    check.close();
+                    if (cs.str() != text) {
+                        std::ofstream restore(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
+                        restore << text;
+                    }
+                }
                 throw MutationError{Outcome::Failed, r.message(), r.message()};
+            }
+            if (n > 2) {
+                std::ifstream res(ctx.cwd() / path, std::ios::binary);
+                std::ostringstream rs;
+                rs << res.rdbuf();
+                res.close();
+                gg::markers::Merge folded = m;
+                folded.adds[static_cast<size_t>(pair)] = rs.str();
+                folded.adds.erase(folded.adds.begin() + pair + 1);
+                folded.removes.erase(folded.removes.begin() + pair);
+                const std::string materialized = gg::markers::materialize(std::move(folded));
+                std::ofstream out(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
+                out << materialized;
+                out.close();
+                ctx.gitMayFail({"reset", "-q", "--", path});
             }
         },
         {}, true, false);

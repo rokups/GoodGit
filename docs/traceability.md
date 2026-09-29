@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-4)
 
-Covered: 681/681 required IDs; 681/681 of the whole catalogue.
+Covered: 682/682 required IDs; 682/682 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -581,6 +581,7 @@ Covered: 681/681 required IDs; 681/681 of the whole catalogue.
 | CONF-CHECKOUT-CLEAN | 3 | §4.10 | Checking out a conflicted commit: git status clean, markers in files | conflicts/checking out a conflicted commit: clean status by default, index stages when asked |
 | CONF-CHECKOUT-EXPAND-STAGES | 3 | §4.10 | Setting: expand to index stages on checkout | conflicts/checking out a conflicted commit: clean status by default, index stages when asked |
 | CONF-RESOLVE-MERGETOOL | 3 | §4.10 | First-class: resolve with merge tool | conflicts/first-class: resolve with the merge tool (stages from the regions) |
+| CONF-RESOLVE-MERGETOOL-NSIDED | 3 | §4.10 | First-class: resolve one pair of sides of an N-sided conflict | conflicts/first-class: resolve one pair of sides of an N-sided conflict with the merge tool |
 | CONF-RESOLVE-TAKE-SIDE | 3 | §4.10 | First-class: take side N (region / whole file) | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |
 | CONF-RESOLVE-EDITOR | 3 | §4.10 | First-class: edit in editor | conflicts/first-class: take a side in one region; resolve in the editor and commit on top |
 | CONF-MARK-RESOLVED-REFUSE | 3 | §4.10 | Mark resolved refused while regions remain | conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too |

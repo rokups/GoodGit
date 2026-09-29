@@ -539,8 +539,11 @@ commit is conflicted is a pure function of its tree.
 
 **Resolving**
 - Resolve with merge tool: ggui extracts base, ours and theirs from the regions and runs
-  the configured `merge.tool`. Take side N (per region or whole file). Edit in editor.
-  Mark resolved means the file has no regions left, and ggui refuses if it still does.
+  the configured `merge.tool`. On an N-sided conflict (N ≥ 3), a submenu offers each
+  adjacent pair of sides; resolving pair k folds sides k and k+1 into one term, leaving
+  the file a first-class conflict with one side fewer. Take side N (per region or whole
+  file). Edit in editor. Mark resolved means the file has no regions left, and ggui
+  refuses if it still does.
 - Then either:
   - **Amend** the commit: descendants are rebased, and their copies of the conflict
     resolve too, or

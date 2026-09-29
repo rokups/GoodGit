@@ -405,7 +405,7 @@ The same items appear in the History row menu and in Commit ▸ Selected commit;
 | File ▸ Unstage | context menu | `staging/stage, unstage and discard files` | tested |
 | File ▸ Discard... | context menu | `staging/stage, unstage and discard files` | tested |
 | File ▸ Intent to add | context menu | `staging/intent to add, delete; no Track / Untrack` | tested |
-| File ▸ Resolve with merge tool | context menu | `conflicts/native: resolve with the configured merge tool`<br>`conflicts/first-class: resolve with the merge tool (stages from the regions)` | tested |
+| File ▸ Resolve with merge tool | context menu | `conflicts/native: resolve with the configured merge tool`<br>`conflicts/first-class: resolve with the merge tool (stages from the regions)`<br>`conflicts/first-class: resolve one pair of sides of an N-sided conflict with the merge tool` | tested |
 | File ▸ Take side ▸ Side N (whole file) | context menu | `conflicts/first-class: term view, take a side, Mark resolved, Amend resolves the descendants too` | tested |
 | File ▸ Take side ▸ In one region... | context menu | `conflicts/first-class: take a side in one region; resolve in the editor and commit on top` | tested |
 | File ▸ Take ours | context menu | `conflicts/native merge: three-way diff, take ours, edit the message, continue`<br>`edges/plain git keeps first-class conflicts: rebase, cherry-pick, amend, merge, stash, gc, clone, push` | tested |

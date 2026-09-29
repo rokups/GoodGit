@@ -8,6 +8,8 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <libgg/Markers.hpp>
+
 namespace ggtest {
 
 namespace {
@@ -496,6 +498,52 @@ GG_TEST("conflicts", "first-class: resolve with the merge tool (stages from the 
     GG_CHECK(args.find("_BASE_") != std::string::npos);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "conflict.txt");
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
+}
+
+GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided conflict with the merge tool",
+    "CONF-RESOLVE-MERGETOOL-NSIDED")
+{
+    const fs::path repo = s.fixture(Recipe::ConflictedN); // HEAD: 3-sided conflict.txt (x=3/x=1/x=2, bases x=0/x=0)
+    const std::string original = s.read(repo, "conflict.txt");
+    const fs::path contentLog = s.root() / "fc-merge-tool-n-content.log";
+    s.fakeTool("fc-merge-tool-n",
+        "cat \"$1\" \"$2\" \"$3\" > \"" + contentLog.generic_string() + "\"\nprintf 'merged\\n' > \"$4\"\n");
+    s.git(repo, {"config", "merge.tool", "fctooln"});
+    s.git(repo, {"config", "mergetool.fctooln.cmd", "fc-merge-tool-n \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\""});
+    s.git(repo, {"config", "mergetool.fctooln.trustExitCode", "true"});
+    s.git(repo, {"config", "mergetool.keepBackup", "false"});
+    s.git(repo, {"config", "mergetool.gives-up.cmd", "false"});
+    s.git(repo, {"config", "mergetool.gives-up.trustExitCode", "true"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()); }));
+
+    // A failing tool on one pair leaves the file byte-identical and the index at HEAD.
+    s.git(repo, {"config", "merge.tool", "gives-up"});
+    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2");
+    GG_CHECK(s.dismissError());
+    GG_CHECK_STR_EQ(s.read(repo, "conflict.txt"), original);
+    GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
+    GG_CHECK(s.statusPorcelain(repo).empty());
+
+    // Resolving sides 1 and 2 (pair 0): the tool saw base 1 (x=0), side 1 (x=3), side 2 (x=1).
+    s.git(repo, {"config", "merge.tool", "fctooln"});
+    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2");
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") != original; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(s.root(), "fc-merge-tool-n-content.log"), "x=0\nx=3\nx=1\n");
+
+    // The file is now a two-sided conflict: terms {merged, x=2}, base r2 (x=0).
+    const std::string after = s.read(repo, "conflict.txt");
+    const gg::markers::Merge m = gg::markers::toMerge(after);
+    GG_REQUIRE(m.adds.size() == 2);
+    GG_CHECK_STR_EQ(m.adds[0], "merged\n");
+    GG_CHECK_STR_EQ(m.adds[1], "x=2\n");
+    GG_REQUIRE(m.removes.size() == 1);
+    GG_CHECK_STR_EQ(m.removes[0], "x=0\n");
+
+    // The index is back to HEAD for the path: no stages, nothing staged.
+    GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
+    GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
 }
 
 GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-backend rebase, skip and reset a bisect; merge tool on a first-class conflict",

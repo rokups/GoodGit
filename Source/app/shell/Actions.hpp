@@ -50,8 +50,11 @@ public:
     // First-class conflicts in working tree files: side `side` (0-based) for every region, or
     // only region `region` (0-based).
     void takeConflictSide(const std::vector<std::string>& paths, int side, int region = -1);
-    // Stages 1–3 from the file's regions, then the configured merge tool.
-    void mergeToolFirstClass(const std::string& path);
+    // Stages 1–3 from the file's regions, then the configured merge tool. `pair` k (0-based)
+    // resolves sides k and k+1 (with the base between them); for a two-sided conflict it must
+    // be 0. On an N-sided conflict (N >= 3) success folds the pair into one term, leaving the
+    // file a first-class conflict with one side fewer.
+    void mergeToolFirstClass(const std::string& path, int pair = 0);
     void deleteFiles(const std::vector<std::string>& paths);
     // A patch (hunk/line staging, discard, Apply patch…).
     void applyPatch(const std::string& label, const std::string& patch, bool cached, bool reverse, Callback done = {});

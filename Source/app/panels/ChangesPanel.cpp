@@ -391,8 +391,16 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             actions.intentToAdd(untracked);
         ImGui::Separator();
         const bool firstClassRow = row.group == FileGroup::Conflicted && row.firstClass;
-        if (ImGui::MenuItem("Resolve with merge tool", nullptr, false,
-                free && (nativeConflicts.size() == 1 || (firstClassRow && row.sides == 2 && conflicts.size() == 1)))) {
+        const bool firstClassPairEligible = firstClassRow && row.sides >= 2 && conflicts.size() == 1;
+        if (firstClassRow && row.sides > 2) {
+            if (ImGui::BeginMenu("Resolve with merge tool", free && firstClassPairEligible)) {
+                for (int k = 0; k + 1 < row.sides; ++k)
+                    if (ImGui::MenuItem(("Sides " + std::to_string(k + 1) + " and " + std::to_string(k + 2)).c_str()))
+                        actions.mergeToolFirstClass(row.path, k);
+                ImGui::EndMenu();
+            }
+        } else if (ImGui::MenuItem("Resolve with merge tool", nullptr, false,
+                       free && (nativeConflicts.size() == 1 || (firstClassRow && row.sides == 2 && conflicts.size() == 1)))) {
             if (firstClassRow)
                 actions.mergeToolFirstClass(row.path);
             else

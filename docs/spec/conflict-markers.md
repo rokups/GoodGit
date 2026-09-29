@@ -187,6 +187,23 @@ line:
 Regions are built only from terms, and terms never contain regions of their own (§7.1
 flattens them), so files written by ggui never contain nested markers.
 
+### 7.6 Resolving one pair of sides with a merge tool
+A two-sided file (`M = a₀ − r₁ + a₁`) is resolved directly by an external merge tool: index
+stages 1–3 are `r₁` (base), `a₀` (ours), `a₁` (theirs). For an N-sided file (`N ≥ 3`), the
+"Resolve with merge tool" action instead resolves one adjacent pair of sides at a time. For
+pair `k` (0-based, sides `k` and `k+1`, `0 ≤ k < N−1`), stages 1–3 are `rₖ₊₁` (base), `aₖ`
+(ours), `aₖ₊₁` (theirs).
+
+If the tool succeeds, its result `R` replaces the two terms `aₖ` and `aₖ₊₁` by the single term
+`R` at position `k`, and the base `rₖ₊₁` between them is dropped: `M` loses one add and one
+remove. Materialising the new value (§7.4) writes the file back with one side fewer; it stays
+a first-class conflict when more than one add remains. For example, resolving pair 0 of a
+3-sided file `M = a₀ − r₁ + a₁ − r₂ + a₂` leaves a 2-sided file `M' = R − r₂ + a₂`: terms
+`{R, a₂}` with base `r₂`.
+
+If the tool gives up, the working tree file is left byte-identical and the index is reset to
+HEAD for the path (stages 1–3 removed).
+
 ## 8. Plain Git regions next to ggui regions
 
 - While a path has index stages 1–3 (a native Git conflict), it is a **native** conflict and the
