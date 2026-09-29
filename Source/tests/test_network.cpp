@@ -45,8 +45,15 @@ bool disabled(Scenario& s, const char* ref) { return (s.ctx->ItemInfo(ref).ItemF
 
 void popupItem(Scenario& s, const char* button, const char* item)
 {
-    s.ctx->ItemClick(button);
-    s.ctx->ItemClick((std::string("//$FOCUSED/") + item).c_str());
+    // The toolbar can redraw under a refresh (an outside commit) and swallow the click: open the
+    // menu again until the item is there.
+    const std::string path = std::string("//$FOCUSED/") + item;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        s.ctx->ItemClick(button);
+        if (s.waitUntil([&] { return s.itemExists(path.c_str()); }, 2.0f))
+            break;
+    }
+    s.ctx->ItemClick(path.c_str());
 }
 
 bool originHas(Scenario& s, const fs::path& repo, const std::string& ref, const std::string& id)
@@ -384,6 +391,8 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags",
 
     // Force with lease from the dropdown.
     s.git(repo, {"commit", "-q", "--amend", "-m", "Mine, amended"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->outgoing() == 1 && s.session()->incoming() == 1; }));
+    s.settle();
     popupItem(s, "//##Toolbar/###tb_push_menu", "Force with lease...");
     GG_REQUIRE(s.dialogOpen("Force push"));
     s.dialogButton("Force push", "Force push");
