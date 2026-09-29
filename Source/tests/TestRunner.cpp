@@ -447,6 +447,18 @@ void prepareProcessForTests(const char* argv0)
     removeAll(g_root);
     fs::create_directories(g_root);
     g_root = fs::canonical(g_root);
+#ifdef _WIN32
+    // The long form (TEMP can be an 8.3 name such as RUNNER~1): git and Windows report long ones.
+    {
+        const std::wstring shortPath = g_root.wstring();
+        std::wstring longPath(32768, L'\0');
+        const DWORD n = GetLongPathNameW(shortPath.c_str(), longPath.data(), static_cast<DWORD>(longPath.size()));
+        if (n > 0 && n < longPath.size()) {
+            longPath.resize(n);
+            g_root = fs::path(longPath);
+        }
+    }
+#endif
     if (const char* a = std::getenv("GGUI_TEST_ARTIFACTS"); a && *a)
         g_artifacts = a;
     else

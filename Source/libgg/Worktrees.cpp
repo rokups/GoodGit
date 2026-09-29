@@ -72,6 +72,10 @@ std::vector<Entry> list(const fs::path& cwd, std::string* error)
 
 bool samePath(const fs::path& a, const fs::path& b)
 {
+    // The same existing file or directory, however named (Windows: 8.3 short names, case; links).
+    std::error_code ec;
+    if (fs::equivalent(a, b, ec) && !ec)
+        return true;
     std::error_code ec1, ec2;
     fs::path ca = fs::weakly_canonical(a, ec1);
     fs::path cb = fs::weakly_canonical(b, ec2);
