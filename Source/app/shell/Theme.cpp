@@ -283,10 +283,10 @@ void ThemeManager::apply(Theme t, float scale)
 
     Palette& p = m_palette;
     if (t == Theme::Dark) {
-        // Blender's viewport axis/gizmo hues, tuned for contrast on a #2b2b2b/#282828 backdrop.
-        // Lane 0 (the main line) is blue; red is not first.
-        const ImU32 lanes[8] = {rgb(40, 144, 255), rgb(139, 220, 0), rgb(255, 51, 82), rgb(255, 175, 41),
-            rgb(176, 124, 255), rgb(63, 208, 208), rgb(255, 122, 184), rgb(216, 200, 90)};
+        // Soft pastels: calm on the #2b2b2b backdrop, and a conflict (saturated red) still stands
+        // out among them. Lane 0 (the main line) is blue; red is last.
+        const ImU32 lanes[8] = {rgb(137, 180, 250), rgb(166, 218, 149), rgb(250, 179, 135), rgb(203, 166, 247),
+            rgb(148, 226, 213), rgb(249, 226, 175), rgb(245, 194, 231), rgb(243, 139, 168)};
         std::copy(lanes, lanes + 8, p.lanes);
         p.branch = rgb(84, 104, 132); // muted slate: must not read as a selected (blue) item
         p.branchCurrent = rgb(255, 175, 41); // Blender's active-item orange for the current branch
@@ -318,8 +318,9 @@ void ThemeManager::apply(Theme t, float scale)
         p.unstaged = rgb(230, 175, 60);
         p.untracked = rgb(150, 160, 170);
     } else {
-        const ImU32 lanes[8] = {rgb(30, 110, 200), rgb(70, 140, 20), rgb(200, 40, 60), rgb(190, 110, 20),
-            rgb(120, 70, 190), rgb(20, 130, 130), rgb(190, 70, 120), rgb(140, 120, 30)};
+        // The same hues, deep enough to read on a light backdrop but still soft.
+        const ImU32 lanes[8] = {rgb(86, 130, 210), rgb(96, 160, 100), rgb(215, 130, 80), rgb(140, 110, 210),
+            rgb(60, 160, 150), rgb(185, 150, 50), rgb(205, 110, 170), rgb(210, 95, 110)};
         std::copy(lanes, lanes + 8, p.lanes);
         p.branch = rgb(84, 104, 132);
         p.branchCurrent = rgb(210, 130, 20);

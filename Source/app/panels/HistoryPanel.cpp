@@ -506,7 +506,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     const ImVec2 c(laneX(min.x, 0, laneWidth), min.y + h * 0.5f);
     const Palette& p = theme().palette();
     const ImU32 col = (kind == SelKind::WorkingTree && m_nativeConflicts) ? p.conflict : p.dim;
-    const float r = h * 0.22f;
+    const float r = graph::dotRadius(h);
     const float thickness = std::max(1.5f, ImGui::GetFontSize() * 0.12f);
     if (kind == SelKind::Index)
         dl->AddLine(ImVec2(c.x, min.y - pad), ImVec2(c.x, c.y - r), col, thickness);
@@ -641,12 +641,14 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     if (m_graphShown)
         graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head, mergeToggle(row));
     if (m_graphShown && mergeToggle(row)) {
-        const float r = rowHeight * 0.32f;
+        const float r = graph::mergeHitHalf(rowHeight);
         const ImVec2 c(laneX(cellStart.x, row.lane, laneWidth),
             cellStart.y - ImGui::GetStyle().CellPadding.y + rowHeight * 0.5f);
         ImGui::SetCursorScreenPos(ImVec2(c.x - r, c.y - r));
         if (ImGui::InvisibleButton("###merge_toggle", ImVec2(r * 2, r * 2)))
             toggleMerge(row.id);
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         if (!m_scrolling && ImGui::IsItemHovered())
             ImGui::SetTooltip(row.collapsed ? "Expand merged history (%d commits hidden)" : "Collapse merged history",
                 row.collapsedCount);

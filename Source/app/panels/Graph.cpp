@@ -14,7 +14,7 @@ float inset(float laneWidth)
 {
     const float rowHeight = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
     const float thickness = std::max(1.5f, ImGui::GetFontSize() * 0.12f);
-    return std::max(0.0f, rowHeight * 0.32f + thickness * 2.0f - laneWidth * 0.5f);
+    return std::max(0.0f, dotRadius(rowHeight) + thickness * 2.0f - laneWidth * 0.5f);
 }
 
 float laneX(float cellX, int lane, float laneWidth)
@@ -43,25 +43,31 @@ void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImV
     }
     const ImVec2 c(x0 + row.lane * laneWidth, ys[1]);
     const ImU32 col = row.conflicted ? p.conflict : p.lanes[row.color % 8];
+    const float r = dotRadius(rowHeight);
     if (row.parents.size() > 1) {
-        // Merge bubble: click toggles its merged history (+ collapsed, − expanded).
-        const float r = rowHeight * 0.32f;
-        const bool hovered = mergeToggle && ImGui::IsMouseHoveringRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r));
-        dl->AddCircleFilled(c, r, hovered ? withAlpha(col, 90) : ImGui::GetColorU32(ImGuiCol_WindowBg));
+        // Merge: hollow ring; a collapsed one trails a fading "⋯" to its right (hidden history).
+        const float hit = mergeHitHalf(rowHeight);
+        const bool hovered = mergeToggle && ImGui::IsMouseHoveringRect(ImVec2(c.x - hit, c.y - hit), ImVec2(c.x + hit, c.y + hit));
+        dl->AddCircleFilled(c, r, ImGui::GetColorU32(ImGuiCol_WindowBg));
+        if (hovered)
+            dl->AddCircleFilled(c, r, withAlpha(col, 110));
         dl->AddCircle(c, r, col, 0, thickness);
-        if (mergeToggle) {
-            const float a = r * 0.55f;
-            dl->AddLine(ImVec2(c.x - a, c.y), ImVec2(c.x + a, c.y), col, thickness);
-            if (row.collapsed)
-                dl->AddLine(ImVec2(c.x, c.y - a), ImVec2(c.x, c.y + a), col, thickness);
+        if (mergeToggle && row.collapsed) {
+            // Three dots right of the ring, spaced by their own size so they read as an ellipsis.
+            const float dr = std::max(1.5f, thickness * 0.8f);
+            const float first = r + thickness * 0.5f + dr * 2.2f;
+            const float spacing = dr * 3.2f;
+            static constexpr int alphas[3] = {255, 190, 130};
+            for (int i = 0; i < 3; ++i) {
+                const float dx = first + spacing * static_cast<float>(i);
+                dl->AddCircleFilled(ImVec2(c.x + dx, c.y), dr, withAlpha(col, alphas[i]));
+            }
         }
     } else {
-        const float r = rowHeight * 0.22f;
         dl->AddCircleFilled(c, r, col);
     }
     if (head)
-        dl->AddCircle(c, rowHeight * (row.parents.size() > 1 ? 0.32f : 0.22f) + thickness * 1.5f,
-            ImGui::GetColorU32(ImGuiCol_Text), 0, thickness);
+        dl->AddCircle(c, r + thickness * 1.5f, ImGui::GetColorU32(ImGuiCol_Text), 0, thickness);
 }
 
 } // namespace ggui::graph
