@@ -585,6 +585,9 @@ GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git 
     const std::string u1 = s.head(r.path);
     s.git(r.path, {"switch", "-q", "main"});
     const std::string c2 = s.revParse(r.path, "main~4");
+    // The new branch adds a history row: wait for that reload so the rows stop moving.
+    GG_REQUIRE(rowReady(s, u1));
+    s.settle();
     GG_REQUIRE(openFrom(s, c2));
     ctx->ItemClick(irWidget("ir_onto").c_str());
     ctx->KeyChars("up");
