@@ -601,7 +601,7 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     }
     GG_CHECK(removed && added);
     // Take side 2 for the whole file, mark resolved, amend.
-    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Take side/Side 2 (whole file)");
+    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Take side/Side 2 (whole file)###wholeside1");
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=2\nbottom\n"; }));
     s.settle();
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()) || s.session()->status()->unstaged.size() == 1; }));
@@ -698,7 +698,7 @@ GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided confl
 
     // A failing tool on one pair leaves the file byte-identical and the index at HEAD.
     s.git(repo, {"config", "merge.tool", "gives-up"});
-    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2");
+    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2###pair0");
     GG_CHECK(s.dismissError());
     GG_CHECK_STR_EQ(s.read(repo, "conflict.txt"), original);
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
@@ -706,7 +706,7 @@ GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided confl
 
     // Resolving sides 1 and 2 (pair 0): the tool saw base 1 (x=0), side 1 (x=3), side 2 (x=1).
     s.git(repo, {"config", "merge.tool", "fctooln"});
-    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2");
+    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2###pair0");
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") != original; }));
     s.settle();
     GG_CHECK_STR_EQ(s.read(s.root(), "fc-merge-tool-n-content.log"), "x=0\nx=3\nx=1\n");
@@ -827,6 +827,175 @@ GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Chang
     ctx->MouseMove(row.c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Conflict markers left at line 2, 7"));
+}
+
+GG_TEST("conflicts", "materialize labels sides/base from termLabels; labels round-trip, sanitize, and truncate",
+    "CONF-SIDE-LABELS")
+{
+    // Two hunks far enough apart to anchor separately (docs/spec/conflict-markers.md §7.4 rule
+    // 4): a genuine 2-region conflict, so a whole-file term's label must show up the same way in
+    // every region.
+    const std::string base = "top\nx=0\nmid\ny=0\nbottom\n";
+    const std::string ours = "top\nx=1\nmid\ny=1\nbottom\n";
+    const std::string theirs = "top\nx=2\nmid\ny=2\nbottom\n";
+    gg::markers::WriteOptions options;
+    options.termLabels[ours] = "1a2b3c4 Fix the parser";
+    options.termLabels[theirs] = "9f8e7d6 Alternative fix";
+    options.termLabels[base] = "deadbee Base commit";
+    const std::string merged = gg::markers::mergeFiles(base, ours, theirs, options);
+    const auto parsed = gg::markers::parse(merged);
+    GG_REQUIRE(parsed.regions.size() == static_cast<size_t>(2));
+    for (const auto& region : parsed.regions) {
+        GG_REQUIRE(region.sides.size() == static_cast<size_t>(2));
+        GG_CHECK(region.sides[0].label == "1a2b3c4 Fix the parser");
+        GG_CHECK(region.sides[1].label == "9f8e7d6 Alternative fix");
+        GG_REQUIRE(region.bases.size() == static_cast<size_t>(1));
+        GG_CHECK(region.bases[0].label == "deadbee Base commit");
+    }
+    GG_CHECK(merged.find("<<<<<<< 1a2b3c4 Fix the parser") != std::string::npos);
+    // §3.1: the closing marker of the two-sided form labels side B, not a separate "end" label.
+    GG_CHECK(merged.find(">>>>>>> 9f8e7d6 Alternative fix") != std::string::npos);
+
+    // termLabels(parse back) round-trips: the whole-file terms map to the same labels.
+    const auto recovered = gg::markers::termLabels(merged);
+    GG_REQUIRE(recovered.count(ours) == 1);
+    GG_CHECK(recovered.at(ours) == "1a2b3c4 Fix the parser");
+    GG_REQUIRE(recovered.count(theirs) == 1);
+    GG_CHECK(recovered.at(theirs) == "9f8e7d6 Alternative fix");
+    GG_REQUIRE(recovered.count(base) == 1);
+    GG_CHECK(recovered.at(base) == "deadbee Base commit");
+
+    // Labels with newlines are sanitized (a label lives on one marker line); long subjects
+    // truncated so a marker line stays readable.
+    gg::markers::WriteOptions dirty;
+    dirty.termLabels[ours] = "abc1234 Multi\nline\rsubject";
+    dirty.termLabels[theirs] = "def5678 " + std::string(100, 'x'); // well past the ~72-byte cap
+    const std::string merged2 = gg::markers::mergeFiles(base, ours, theirs, dirty);
+    const auto parsed2 = gg::markers::parse(merged2);
+    GG_REQUIRE(parsed2.conflicted());
+    const std::string label0 = parsed2.regions.front().sides[0].label;
+    GG_CHECK(label0.find('\n') == std::string::npos);
+    GG_CHECK(label0.find('\r') == std::string::npos);
+    GG_CHECK(label0 == "abc1234 Multi line subject");
+    const std::string label1 = parsed2.regions.front().sides[1].label;
+    GG_CHECK(label1.size() <= 72);
+    GG_REQUIRE(label1.size() >= 3);
+    GG_CHECK(label1.substr(label1.size() - 3) == "...");
+    // Truncation never splits a UTF-8 character ("é" is two bytes; 34 of them cross the cap).
+    gg::markers::WriteOptions wide;
+    std::string accents;
+    for (int i = 0; i < 40; ++i)
+        accents += "\xC3\xA9";
+    wide.termLabels[theirs] = accents; // the cut at byte 69 falls inside a character
+    const auto parsed3 = gg::markers::parse(gg::markers::mergeFiles(base, ours, theirs, wide));
+    GG_REQUIRE(parsed3.conflicted());
+    const std::string label3 = parsed3.regions.front().sides[1].label;
+    GG_CHECK(label3.size() <= 72);
+    GG_CHECK_EQ(label3.size(), static_cast<size_t>(68 + 3)); // 34 whole characters, then "..."
+    GG_CHECK(label3 == accents.substr(0, 68) + "...");
+
+    // The "[no newline]" flag still round-trips together with a label.
+    gg::markers::WriteOptions noeol;
+    noeol.sideLabels = {"mine", "theirs"};
+    const std::string noeolMerged = gg::markers::mergeFiles("a\nb\n", "a\nB1", "a\nB2", noeol);
+    const auto parsedNoeol = gg::markers::parse(noeolMerged);
+    GG_REQUIRE(parsedNoeol.conflicted());
+    GG_CHECK(parsedNoeol.regions.front().sides[0].label == "mine");
+    GG_CHECK(parsedNoeol.regions.front().sides[0].noEol);
+    GG_CHECK(parsedNoeol.regions.front().sides[0].value() == "B1");
+    GG_CHECK(parsedNoeol.regions.front().sides[1].label == "theirs");
+    GG_CHECK(parsedNoeol.regions.front().sides[1].noEol);
+    GG_CHECK(parsedNoeol.regions.front().sides[1].value() == "B2");
+}
+
+GG_TEST("conflicts", "engine: a rewrite that creates a conflict labels ours/theirs/base with the right commits",
+    "CONF-SIDE-LABELS")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "side-labels");
+    s.track(repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+
+    s.commitFile(repo, "f.txt", "x=0\n", "Base commit");
+    const std::string baseCommit = s.head(repo);
+    s.commitFile(repo, "f.txt", "x=1\n", "Ours change");
+    const std::string oursCommit = s.head(repo);
+
+    // A commit on another line that changes the same place differently, replayed onto oursCommit:
+    // base = baseCommit, ours = oursCommit (the new parent), theirs = the replayed commit itself.
+    s.git(repo, {"switch", "-q", "-c", "side", baseCommit});
+    s.commitFile(repo, "f.txt", "x=2\n", "Theirs change");
+    const std::string theirsCommit = s.head(repo);
+    s.git(repo, {"switch", "-q", "main"});
+
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {theirsCommit});
+    GG_REQUIRE(plan.steps.size() == 1);
+    plan.steps[0].parents = {oursCommit};
+    plan.steps[0].sourceParents = false;
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.unresolved.empty());
+    std::string error;
+    GG_REQUIRE(rewriter.apply(plan, result, error));
+
+    const std::string newCommit = result.steps.at(plan.steps[0].key.empty() ? theirsCommit : plan.steps[0].key);
+    const std::string text = s.git(repo, {"show", newCommit + ":f.txt"}).out;
+    GG_REQUIRE(gg::markers::isConflicted(text));
+    const auto region = gg::markers::parse(text).regions.front();
+    GG_REQUIRE(region.sides.size() == static_cast<size_t>(2));
+    GG_CHECK(region.sides[0].label == oursCommit.substr(0, 7) + " Ours change");
+    GG_CHECK(region.sides[1].label == theirsCommit.substr(0, 7) + " Theirs change");
+    GG_REQUIRE(region.bases.size() == static_cast<size_t>(1));
+    GG_CHECK(region.bases[0].label == baseCommit.substr(0, 7) + " Base commit");
+}
+
+GG_TEST("conflicts", "engine: rebasing an already-conflicted commit keeps old labels and labels the new term",
+    "CONF-SIDE-LABELS")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "side-labels-stack");
+    s.track(repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+
+    s.commitFile(repo, "f.txt", "x=0\n", "Base commit");
+    const std::string baseCommit = s.head(repo);
+    // The commit whose replay creates the conflict already carries one (hand-written, labelled),
+    // simulating a first-class conflict that survived an earlier rewrite. Distinct side/base
+    // content so nothing here coincides byte-for-byte with the new base/parent below (a plain
+    // input's label only overwrites a parsed one for the exact same whole-file-term content).
+    const std::string alreadyConflicted = "<<<<<<< old-side-a\nx=old-a\n||||||| old-base\nx=old-base\n"
+                                           "=======\nx=old-b\n>>>>>>> old-side-b\n";
+    s.commitFile(repo, "f.txt", alreadyConflicted, "Already conflicted");
+    const std::string conflictedCommit = s.head(repo);
+
+    // A new ancestor edit that conflicts with the whole (single-line) file the child changes.
+    s.git(repo, {"switch", "-q", "-c", "side", baseCommit});
+    s.commitFile(repo, "f.txt", "x=2\n", "New base edit");
+    const std::string newBaseCommit = s.head(repo);
+    s.git(repo, {"switch", "-q", "main"});
+
+    // Replay conflictedCommit onto newBaseCommit (original parent baseCommit): the resulting
+    // merge value is 3-sided — the new base's own change (a fresh term, labelled from its
+    // commit) plus the two surviving terms of the old conflict (still labelled from before).
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {conflictedCommit});
+    GG_REQUIRE(plan.steps.size() == 1);
+    plan.steps[0].parents = {newBaseCommit};
+    plan.steps[0].sourceParents = false;
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.unresolved.empty());
+    std::string error;
+    GG_REQUIRE(rewriter.apply(plan, result, error));
+
+    const std::string newCommit = result.steps.at(plan.steps[0].key.empty() ? conflictedCommit : plan.steps[0].key);
+    const std::string text = s.git(repo, {"show", newCommit + ":f.txt"}).out;
+    GG_REQUIRE(gg::markers::isConflicted(text));
+    const auto region = gg::markers::parse(text).regions.front();
+    GG_REQUIRE(region.sides.size() == static_cast<size_t>(3));
+    GG_CHECK(region.sides[0].label == newBaseCommit.substr(0, 7) + " New base edit"); // the fresh term
+    GG_CHECK(region.sides[1].label == "old-side-a"); // survived from the old conflict, unchanged
+    GG_CHECK(region.sides[2].label == "old-side-b");
+    GG_REQUIRE(region.bases.size() == static_cast<size_t>(2));
+    GG_CHECK(region.bases[0].label == "old-base");
+    GG_CHECK(region.bases[1].label == baseCommit.substr(0, 7) + " Base commit");
 }
 
 } // namespace ggtest

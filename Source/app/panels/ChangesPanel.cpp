@@ -11,14 +11,41 @@
 #include <imgui_stdlib.h>
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/Markers.hpp>
 
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <sstream>
 
 namespace ggui {
 
 namespace fs = std::filesystem;
+
+namespace {
+
+// Side labels for the "Take side" / merge-tool menus (CONF-SIDE-LABELS): read cheaply, only
+// while the menu holding them is open, from the working-tree file's first region. Empty when the
+// file carries no non-default labels (defaults: "side N").
+std::vector<std::string> workingTreeSideLabels(const fs::path& file)
+{
+    std::ifstream in(file, std::ios::binary);
+    if (!in)
+        return {};
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    const gg::markers::Parsed parsed = gg::markers::parse(ss.str());
+    if (parsed.regions.empty())
+        return {};
+    std::vector<std::string> labels;
+    for (size_t k = 0; k < parsed.regions.front().sides.size(); ++k) {
+        const std::string& label = parsed.regions.front().sides[k].label;
+        labels.push_back(label == "side " + std::to_string(k + 1) ? std::string() : label);
+    }
+    return labels;
+}
+
+} // namespace
 
 CompareTarget CompareTarget::parse(const std::string& text)
 {
@@ -393,11 +420,23 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         ImGui::Separator();
         const bool firstClassRow = row.group == FileGroup::Conflicted && row.firstClass;
         const bool firstClassPairEligible = firstClassRow && row.sides >= 2 && conflicts.size() == 1;
+        // Cheap: only while a menu that shows them is actually open (BeginMenu/BeginPopup gate).
+        const std::vector<std::string> sideLabels = firstClassRow && !snap->bare
+            ? workingTreeSideLabels(snap->workdir / row.path) : std::vector<std::string>();
+        auto sideMenuLabel = [&](int k) {
+            std::string text = "Side " + std::to_string(k + 1);
+            if (static_cast<size_t>(k) < sideLabels.size() && !sideLabels[k].empty())
+                text += " — " + sideLabels[k];
+            return text;
+        };
         if (firstClassRow && row.sides > 2) {
             if (ImGui::BeginMenu("Resolve with merge tool", free && firstClassPairEligible)) {
-                for (int k = 0; k + 1 < row.sides; ++k)
-                    if (ImGui::MenuItem(("Sides " + std::to_string(k + 1) + " and " + std::to_string(k + 2)).c_str()))
+                for (int k = 0; k + 1 < row.sides; ++k) {
+                    const std::string text = "Sides " + std::to_string(k + 1) + " and " + std::to_string(k + 2)
+                        + "###pair" + std::to_string(k);
+                    if (ImGui::MenuItem(text.c_str()))
                         actions.mergeToolFirstClass(row.path, k);
+                }
                 ImGui::EndMenu();
             }
         } else if (ImGui::MenuItem("Resolve with merge tool", nullptr, false,
@@ -408,9 +447,11 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
                 actions.mergeTool(nativeConflicts.front());
         }
         if (firstClassRow && ImGui::BeginMenu("Take side", free)) {
-            for (int k = 0; k < row.sides; ++k)
-                if (ImGui::MenuItem(("Side " + std::to_string(k + 1) + " (whole file)").c_str()))
+            for (int k = 0; k < row.sides; ++k) {
+                const std::string text = sideMenuLabel(k) + " (whole file)###wholeside" + std::to_string(k);
+                if (ImGui::MenuItem(text.c_str()))
                     actions.takeConflictSide({row.path}, k);
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("In one region...")) {
                 Form f;

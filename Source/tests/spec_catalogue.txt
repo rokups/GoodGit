@@ -576,6 +576,7 @@ CONF-NATIVE-AMEND-CONTINUE | 3 | §4.10 | Stopped interactive rebase: Amend and 
 CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view
 CONF-SAME-CHANGE-SETTING | 3 | §4.10 | gg.sameChange: keep leaves a same-change hunk conflicted, accept (default) resolves it
 CONF-MARKER-SIZE-ATTR | 3 | §4.10 | conflict-marker-size attribute is applied by rewrites
+CONF-SIDE-LABELS | 3 | §4.10 | Conflict sides/base labelled with where they came from (commit short id + subject); labels round-trip and survive further edits
 
 # ---- §4.11 Patches ----------------------------------------------------------------------------
 PATCH-COPY | 1 | §4.11 | Copy patch

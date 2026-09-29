@@ -1,6 +1,6 @@
 # Traceability matrix (phases 0-4)
 
-Covered: 687/687 required IDs; 687/687 of the whole catalogue.
+Covered: 688/688 required IDs; 688/688 of the whole catalogue.
 
 | Spec ID | Phase | Section | Description | Passing tests |
 |---|---|---|---|---|
@@ -598,6 +598,7 @@ Covered: 687/687 required IDs; 687/687 of the whole catalogue.
 | CONF-NATIVE-PROGRESS | 3 | §4.10 | Stopped interactive rebase: progress view | rebase-native/edit, break and a failing exec stop git rebase -i; Amend and continue; progress; one Undo<br>rebase-native/plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation<br>shell/toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress |
 | CONF-SAME-CHANGE-SETTING | 3 | §4.10 | gg.sameChange: keep leaves a same-change hunk conflicted, accept (default) resolves it | conflicts/gg.sameChange setting and conflict-marker-size attribute are applied by writes |
 | CONF-MARKER-SIZE-ATTR | 3 | §4.10 | conflict-marker-size attribute is applied by rewrites | conflicts/gg.sameChange setting and conflict-marker-size attribute are applied by writes |
+| CONF-SIDE-LABELS | 3 | §4.10 | Conflict sides/base labelled with where they came from (commit short id + subject); labels round-trip and survive further edits | conflicts/engine: a rewrite that creates a conflict labels ours/theirs/base with the right commits<br>conflicts/engine: rebasing an already-conflicted commit keeps old labels and labels the new term<br>conflicts/materialize labels sides/base from termLabels; labels round-trip, sanitize, and truncate |
 | HOOK-REWRITE-RUN | 3 | §4.12 | pre-rebase/post-rewrite/post-checkout run via git hook run for rewrites | rebase-i/failure paths: pre-rebase veto, a hook refusing the ref transaction, local changes in the way, a corrupt journal<br>rebase-i/randomized differential: in-memory engine vs git rebase -i on a copy<br>rebase-i/update-ref before squash/fixup rows: the branch keeps the finished commit, as with git rebase -i<br>rebase-merges/randomized differential: --rebase-merges lists vs git rebase -i --rebase-merges on a copy<br>rewrite/pre-rebase can veto a rebase; post-checkout runs when HEAD moves |
 | HOOK-PREPUSH | 3 | §4.12 | pre-push refuses conflicted commits | hooks/managed pre-push refuses plain git pushes of conflicted commits |
 | IR-ENTRY-HISTORY-KEY | 3 | §4.13 | History: I key | rebase-i/entry points: I key, History menu, selection, Commit menu (asks for a base), Branches |

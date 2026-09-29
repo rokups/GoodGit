@@ -5,6 +5,7 @@
 // are applied by callers.
 #pragma once
 
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -77,6 +78,11 @@ bool sameValue(std::string_view a, std::string_view b);
 struct WriteOptions {
     int markerSize = 7;          // conflict-marker-size attribute (minimum 7)
     std::vector<std::string> sideLabels; // optional labels per side (index = side)
+    std::vector<std::string> baseLabels; // optional labels per base (index = base)
+    // Whole-file term content -> label. For each whole-file term of the merge value (m.adds[k] /
+    // m.removes[k]) that matches an entry here, its label is used for every region of the file
+    // (materialize fills sideLabels/baseLabels from this before writing; see Markers.cpp).
+    std::map<std::string, std::string> termLabels;
     // Git's rule: a hunk where every side made the same change is resolved to it. Off, such a
     // hunk stays a region (the exact term algebra: a − r + a is not a).
     bool sameChangeResolves = true;
@@ -89,6 +95,16 @@ std::string materialize(Merge m, const WriteOptions& options = {});
 // Convenience: three-way merge of plain or conflicted files.
 std::string mergeFiles(std::string_view base, std::string_view ours, std::string_view theirs,
     const WriteOptions& options = {});
+
+// For a conflicted file, maps each of its whole-file terms (as toMerge builds them: adds[i],
+// removes[i]) to the label its section carries in the file's regions. Takes the first region
+// whose side count equals the file's term count (maxSides()); skips default labels ("side N",
+// "base", "base N") and empty labels, so only labels a writer actually chose come back. If
+// toMerge had to flatten (a term's own text was itself conflicted), only the unflattened part
+// can be matched by index; entries beyond that are simply absent (documented at call sites: the
+// flattened terms lose their old labels, which is acceptable — they were already the result of a
+// previous merge with no single "side" of their own).
+std::map<std::string, std::string> termLabels(std::string_view text);
 
 // Writes one region; exposed for "take side" / "commit with conflicts".
 std::string writeRegion(const std::vector<std::string>& sides, const std::vector<std::string>& bases,

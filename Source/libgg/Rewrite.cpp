@@ -79,6 +79,43 @@ struct Rewriter::Impl {
         return git_blob_is_binary(b.get()) != 0;
     }
 
+    // "<7-hex short id> <first line of the message>", for conflict-side labels (CONF-SIDE-LABELS).
+    std::string commitLabel(const std::string& id)
+    {
+        if (id.empty())
+            return {};
+        return id.substr(0, 7) + " " + firstLine(commitMessage(commit(id).get()));
+    }
+
+    // Whole-file term labels for a mergeTrees() text conflict: parsed labels already on the
+    // conflicted inputs (gg::markers::termLabels), overridden for any input that is a plain file
+    // by the commit it came from ("<short id> <subject>"). A side whose tree isn't tied to one
+    // commit (a growing squash/merge result) passes an empty id and is simply left unlabelled.
+    std::map<std::string, std::string> conflictTermLabels(const std::string& baseText, const std::string& baseCommit,
+        const std::string& oursText, const std::string& oursCommit, const std::string& theirsText,
+        const std::string& theirsCommit)
+    {
+        std::map<std::string, std::string> labels;
+        auto addParsed = [&](const std::string& text) {
+            if (gg::markers::isConflicted(text)) {
+                auto parsed = gg::markers::termLabels(text);
+                labels.insert(parsed.begin(), parsed.end());
+            }
+        };
+        addParsed(baseText);
+        addParsed(oursText);
+        addParsed(theirsText);
+        // Plain-input commit labels win over parsed ones for the same content.
+        auto addPlain = [&](const std::string& text, const std::string& id) {
+            if (!gg::markers::isConflicted(text) && !id.empty())
+                labels[text] = commitLabel(id);
+        };
+        addPlain(baseText, baseCommit);
+        addPlain(oursText, oursCommit);
+        addPlain(theirsText, theirsCommit);
+        return labels;
+    }
+
     git_oid writeBlob(const std::string& content)
     {
         git_oid id;
@@ -138,8 +175,13 @@ struct Rewriter::Impl {
     }
 
     // Three-way merge of trees with first-class text conflicts (see the header).
+    // `oursCommit`/`baseCommit`: the commit `oursTree`/`baseTree` came from, when it is a single
+    // commit's tree (not a growing squash/merge accumulator) — used only to label plain-file
+    // conflict sides (CONF-SIDE-LABELS). `sourceCommit` is always the commit `theirsTree` came
+    // from and doubles as its label source.
     std::string mergeTrees(const std::string& baseTree, const std::string& oursTree, const std::string& theirsTree,
-        const std::string& stepKey, const std::string& sourceCommit, const Plan& plan, Result& result)
+        const std::string& stepKey, const std::string& sourceCommit, const Plan& plan, Result& result,
+        const std::string& oursCommit = {}, const std::string& baseCommit = {})
     {
         if (oursTree == baseTree)
             return theirsTree;
@@ -248,8 +290,10 @@ struct Rewriter::Impl {
                 else if (c.anc && c.ours->mode == c.anc->mode)
                     mode = c.theirs->mode;
                 const std::string oursText = blobText(c.ours->id), theirsText = blobText(c.theirs->id);
-                const std::string merged = gg::markers::mergeFiles(c.anc ? blobText(c.anc->id) : std::string(),
-                    oursText, theirsText, gg::conflicts::writeOptions(repo.get(), path));
+                const std::string baseText = c.anc ? blobText(c.anc->id) : std::string();
+                auto textOptions = gg::conflicts::writeOptions(repo.get(), path);
+                textOptions.termLabels = conflictTermLabels(baseText, baseCommit, oursText, oursCommit, theirsText, sourceCommit);
+                const std::string merged = gg::markers::mergeFiles(baseText, oursText, theirsText, textOptions);
                 addEntry(path, writeMerged(merged, c.ours->id, oursText, c.theirs->id, theirsText), mode);
                 continue;
             }
@@ -361,7 +405,8 @@ struct Rewriter::Impl {
             if (isBinary(o) || isBinary(t) || !gg::conflicts::eligible(repo.get(), &sourceOid, path))
                 continue;
             const std::string bt = blobText(b), ot = blobText(o), tt = blobText(t);
-            const auto options = gg::conflicts::writeOptions(repo.get(), path);
+            auto options = gg::conflicts::writeOptions(repo.get(), path);
+            options.termLabels = conflictTermLabels(bt, baseCommit, ot, oursCommit, tt, sourceCommit);
             const std::uint32_t mode = merged->mode;
             if (!gg::markers::isConflicted(bt) && !gg::markers::isConflicted(ot) && !gg::markers::isConflicted(tt)) {
                 if (options.sameChangeResolves)
@@ -589,10 +634,12 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 }
                 Commit src = m->commit(step.source);
                 const std::string srcTree = toHex(*git_commit_tree_id(src.get()));
-                const std::string srcBase = git_commit_parentcount(src.get()) > 0
-                    ? m->treeOf(toHex(*git_commit_parent_id(src.get(), 0)))
-                    : m->emptyTree();
-                pending->tree = m->mergeTrees(srcBase, pending->tree, srcTree, key, step.source, plan, result);
+                const std::string srcBaseCommit = git_commit_parentcount(src.get()) > 0
+                    ? toHex(*git_commit_parent_id(src.get(), 0)) : std::string();
+                const std::string srcBase = srcBaseCommit.empty() ? m->emptyTree() : m->treeOf(srcBaseCommit);
+                // `pending->tree` is a growing squash accumulator, not one commit's tree: no ours label.
+                pending->tree = m->mergeTrees(srcBase, pending->tree, srcTree, key, step.source, plan, result,
+                    /*oursCommit=*/{}, srcBaseCommit);
                 pending->squashed.push_back(step.source);
                 pending->contributors.push_back(step.source);
                 pending->unchanged = false;
@@ -667,19 +714,28 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 for (size_t k = 1; k < p.parents.size(); ++k) {
                     git_oid a = *fromHex(p.parents.front()), b = *fromHex(p.parents[k]), mb;
                     std::string baseTree = m->emptyTree();
-                    if (git_merge_base(&mb, m->repo.get(), &a, &b) == 0)
-                        baseTree = m->treeOf(toHex(mb));
+                    std::string baseCommit;
+                    if (git_merge_base(&mb, m->repo.get(), &a, &b) == 0) {
+                        baseCommit = toHex(mb);
+                        baseTree = m->treeOf(baseCommit);
+                    }
                     git_error_clear();
-                    p.tree = m->mergeTrees(baseTree, p.tree, m->treeOf(p.parents[k]), key, p.parents[k], plan, result);
+                    // `p.tree` is the pairwise merge accumulator, not one commit's tree: no ours label.
+                    p.tree = m->mergeTrees(baseTree, p.tree, m->treeOf(p.parents[k]), key, p.parents[k], plan, result,
+                        /*oursCommit=*/{}, baseCommit);
                 }
             } else {
                 Commit src = m->commit(step.source);
                 const std::string srcTree = toHex(*git_commit_tree_id(src.get()));
-                const std::string oldBaseTree = originalParents.empty() ? m->emptyTree() : m->treeOf(originalParents.front());
+                const std::string baseCommit = originalParents.empty() ? std::string() : originalParents.front();
+                const std::string oldBaseTree = baseCommit.empty() ? m->emptyTree() : m->treeOf(baseCommit);
                 std::string change = srcTree;
                 if (!step.onlyPaths.empty())
                     change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths);
-                p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result);
+                // `ours` is replayed onto the new parent `p.parents.front()` (the engine's step state).
+                const std::string oursCommit = p.parents.empty() ? std::string() : p.parents.front();
+                p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result,
+                    oursCommit, baseCommit);
             }
             if (!step.setFiles.empty()) {
                 Tree t = lookupTree(m->repo.get(), *fromHex(p.tree));

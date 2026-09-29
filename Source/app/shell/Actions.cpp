@@ -33,6 +33,31 @@ std::vector<std::string> withPaths(std::vector<std::string> args, const std::vec
     return args;
 }
 
+// "<7-hex short id> <first line of the message>", for conflict-side labels (CONF-SIDE-LABELS).
+std::string commitLabel(git_repository* repo, const git_oid& id)
+{
+    gg::git2::Commit c = gg::git2::lookupCommit(repo, id);
+    const std::string message = gg::git2::commitMessage(c.get());
+    return gg::git2::toHex(id).substr(0, 7) + " " + message.substr(0, message.find('\n'));
+}
+
+// Reads a "<oid>[...]\n" ref file (MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, REBASE_HEAD) and
+// labels the commit it names, or empty when absent/unreadable.
+std::string headFileLabel(git_repository* repo, const fs::path& gitDir, const char* name)
+{
+    std::error_code ec;
+    if (!fs::exists(gitDir / name, ec))
+        return {};
+    std::ifstream f(gitDir / name, std::ios::binary);
+    std::string line;
+    std::getline(f, line);
+    line = gg::trim(line);
+    const auto id = gg::git2::fromHex(line);
+    if (!id)
+        return {};
+    return commitLabel(repo, *id);
+}
+
 Actions::Actions(Session& session) : m_session(session) { }
 
 std::string Actions::busy() const { return m_session.engine().busyLabel(); }
@@ -319,7 +344,11 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
                 folded.adds[static_cast<size_t>(pair)] = rs.str();
                 folded.adds.erase(folded.adds.begin() + pair + 1);
                 folded.removes.erase(folded.removes.begin() + pair);
-                const std::string materialized = gg::markers::materialize(std::move(folded), gg::conflicts::writeOptions(ctx.repo(), path));
+                // Surviving sides keep their old labels (the pair just resolved has no single
+                // label of its own: it is a merge-tool result, not one side any more).
+                auto options = gg::conflicts::writeOptions(ctx.repo(), path);
+                options.termLabels = gg::markers::termLabels(text);
+                const std::string materialized = gg::markers::materialize(std::move(folded), options);
                 std::ofstream out(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
                 out << materialized;
                 out.close();
@@ -851,6 +880,20 @@ void Actions::commitWithConflicts()
             paths.push_back(e.path);
     run("commit with conflicts", [cmd, paths](MutationContext& ctx) {
         // Text-only: write diff3 regions from stages 1–3 (base, ours, theirs), stage, finish.
+        // Sides are labelled from the operation's own state: ours is HEAD, theirs whichever of
+        // MERGE_HEAD/CHERRY_PICK_HEAD/REVERT_HEAD/REBASE_HEAD is present, base a plain "base".
+        const fs::path gitDir = git_repository_path(ctx.repo());
+        std::string oursLabel;
+        git_oid head;
+        if (git_reference_name_to_id(&head, ctx.repo(), "HEAD") == 0)
+            oursLabel = commitLabel(ctx.repo(), head);
+        git_error_clear();
+        std::string theirsLabel;
+        for (const char* name : {"MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD"}) {
+            theirsLabel = headFileLabel(ctx.repo(), gitDir, name);
+            if (!theirsLabel.empty())
+                break;
+        }
         std::vector<std::pair<std::string, std::string>> contents;
         for (const auto& p : paths) {
             auto stage = [&](int n) {
@@ -865,8 +908,10 @@ void Actions::commitWithConflicts()
             if (gg::markers::looksBinary(*ours) || gg::markers::looksBinary(*theirs)
                 || (base && gg::markers::looksBinary(*base)))
                 throw MutationError{Outcome::Refused, p + " is binary: resolve binary conflicts first", {}};
-            contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs,
-                gg::conflicts::writeOptions(ctx.repo(), p)));
+            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
+            options.sideLabels = {oursLabel, theirsLabel};
+            options.baseLabels = {"base"};
+            contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs, options));
         }
         for (const auto& [p, text] : contents) {
             std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);

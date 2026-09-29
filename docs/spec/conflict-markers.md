@@ -218,6 +218,35 @@ of materialising its own. This applies whether or not the value resolves; a conf
 equal to a conflicted input reuses that input's blob (same labels, marker length, region
 layout), so a rewrite that leaves a conflict's value unchanged does not churn its blob id.
 
+### 7.4.2 Side and base labels (informational)
+
+Labels are never part of a term's value (§2: the grammar allows any label, and §7.1 reads a
+section's `value()` without its label). Writers may choose a label per whole-file term to say
+where that side or base came from, e.g. `<<<<<<< 1a2b3c4 Fix the parser` instead of the default
+`side 1`. The rule:
+
+- `WriteOptions.termLabels` maps a whole-file term's content (`Merge::adds[k]` /
+  `Merge::removes[k]`, as built by §7.1) to a label. Before writing (§7.4), each term of the
+  value being materialised is looked up; a match fills that term's `sideLabels[k]` /
+  `baseLabels[k]` unless the caller already set one explicitly (explicit labels win).
+- Because every region of a file carries the same terms in the same order (§7.4 rule 4), a term's
+  label is the same in every region it appears in.
+- Unlabelled terms fall back to the existing defaults: `side k+1`; `base` for the two-sided form's
+  single base, `base k+1` for the extended form.
+- The closing `>` marker of the two-sided form carries side B's label (§3.1), not a separate
+  "end" label; the extended form's closing marker keeps the fixed `end of conflict` label (it
+  does not belong to any one term).
+- `gg::markers::termLabels(text)` recovers a conflicted file's own per-term labels (skipping
+  defaults), for reuse when materialising a further edit of the same file (e.g. one pair of
+  sides resolved by a merge tool, §7.6: the surviving sides keep their old labels).
+- Labels never contain `\n`/`\r` (a label lives on one marker line) and are truncated to a bounded
+  length; the writer sanitises whatever a caller supplies.
+
+ggui's own writers label a text conflict's sides and base with the commit each came from
+(`<short id> <subject>`) when that commit is known; a side whose content is itself the result of
+an earlier merge (no single commit of its own — e.g. a growing squash or multi-parent merge
+accumulator) is left unlabelled (the default).
+
 ### 7.5 No nesting
 Regions are built only from terms, and terms never contain regions of their own (§7.1
 flattens them), so files written by ggui never contain nested markers.

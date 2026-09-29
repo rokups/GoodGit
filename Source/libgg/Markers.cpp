@@ -297,6 +297,27 @@ std::string concat(const std::vector<std::string_view>& lines, size_t from, size
     return s;
 }
 
+// A label sits on a single marker line: it can never carry '\n'/'\r' (that would either break
+// the line into two, corrupting the grammar, or be silently swallowed by the CRLF handling in
+// splitLines). Long subjects are truncated so a marker line stays readable.
+constexpr size_t kMaxLabelBytes = 72;
+
+std::string sanitizeLabel(std::string label)
+{
+    std::string out;
+    out.reserve(label.size());
+    for (char c : label)
+        out.push_back(c == '\n' || c == '\r' ? ' ' : c);
+    if (out.size() > kMaxLabelBytes) {
+        constexpr std::string_view ellipsis = "...";
+        size_t keep = kMaxLabelBytes - ellipsis.size();
+        while (keep > 0 && (static_cast<unsigned char>(out[keep]) & 0xC0) == 0x80)
+            --keep; // not inside a UTF-8 character
+        out = out.substr(0, keep) + std::string(ellipsis);
+    }
+    return out;
+}
+
 } // namespace
 
 std::string Section::value() const
@@ -597,7 +618,7 @@ std::string writeRegion(const std::vector<std::string>& sides, const std::vector
     const std::string eol = crlf > lf ? "\r\n" : "\n";
     auto marker = [&](char c, const std::string& label, bool noEol) {
         std::string line(static_cast<size_t>(L), c);
-        std::string text = label;
+        std::string text = sanitizeLabel(label);
         if (noEol)
             text += text.empty() ? kNoEolFlag : std::string(" ") + kNoEolFlag;
         if (!text.empty())
@@ -607,16 +628,22 @@ std::string writeRegion(const std::vector<std::string>& sides, const std::vector
     auto body = [](const std::string& s) { return (!s.empty() && s.back() != '\n') ? s + "\n" : s; };
     auto noEol = [](const std::string& s) { return !s.empty() && s.back() != '\n'; };
     auto sideLabel = [&](size_t k) {
-        return k < options.sideLabels.size() ? options.sideLabels[k] : "side " + std::to_string(k + 1);
+        return (k < options.sideLabels.size() && !options.sideLabels[k].empty())
+            ? options.sideLabels[k] : "side " + std::to_string(k + 1);
+    };
+    auto baseLabel = [&](size_t k, const std::string& fallback) {
+        return (k < options.baseLabels.size() && !options.baseLabels[k].empty())
+            ? options.baseLabels[k] : fallback;
     };
     std::string out;
     if (sides.size() == 2 && bases.size() == 1) {
         out += marker('<', sideLabel(0), noEol(sides[0]));
         out += body(sides[0]);
-        out += marker('|', "base", noEol(bases[0]));
+        out += marker('|', baseLabel(0, "base"), noEol(bases[0]));
         out += body(bases[0]);
         out += std::string(static_cast<size_t>(L), '=') + eol;
         out += body(sides[1]);
+        // §3.1: the closing `>` marker of the 2-sided diff3 form labels side B.
         out += marker('>', sideLabel(1), noEol(sides[1]));
         return out;
     }
@@ -625,7 +652,7 @@ std::string writeRegion(const std::vector<std::string>& sides, const std::vector
         out += marker('+', sideLabel(k), noEol(sides[k]));
         out += body(sides[k]);
         if (k < bases.size()) {
-            out += marker('-', "base " + std::to_string(k + 1), noEol(bases[k]));
+            out += marker('-', baseLabel(k, "base " + std::to_string(k + 1)), noEol(bases[k]));
             out += body(bases[k]);
         }
     }
@@ -708,14 +735,73 @@ std::string materialize(Merge m, const WriteOptions& options)
     simplify(m, !options.sameChangeResolves);
     if (m.isResolved())
         return m.adds[0];
+    // Resolve whole-file term labels (options.termLabels) to per-index side/base labels, so
+    // every region of the file uses the same label for the same term (writeLines carries all
+    // terms through every region in the same order, §7.4). Explicit sideLabels/baseLabels
+    // entries (already set by the caller) win over ones derived from termLabels.
+    WriteOptions opts = options;
+    if (!opts.termLabels.empty()) {
+        if (opts.sideLabels.size() < m.adds.size())
+            opts.sideLabels.resize(m.adds.size());
+        if (opts.baseLabels.size() < m.removes.size())
+            opts.baseLabels.resize(m.removes.size());
+        for (size_t k = 0; k < m.adds.size(); ++k) {
+            if (!options.sideLabels.empty() && k < options.sideLabels.size() && !options.sideLabels[k].empty())
+                continue;
+            auto it = opts.termLabels.find(m.adds[k]);
+            if (it != opts.termLabels.end())
+                opts.sideLabels[k] = it->second;
+        }
+        for (size_t k = 0; k < m.removes.size(); ++k) {
+            if (!options.baseLabels.empty() && k < options.baseLabels.size() && !options.baseLabels[k].empty())
+                continue;
+            auto it = opts.termLabels.find(m.removes[k]);
+            if (it != opts.termLabels.end())
+                opts.baseLabels[k] = it->second;
+        }
+    }
     std::string out;
-    writeLines(m, options, out);
+    writeLines(m, opts, out);
     return out;
 }
 
 std::string mergeFiles(std::string_view base, std::string_view ours, std::string_view theirs, const WriteOptions& options)
 {
     return materialize(combine(toMerge(base), toMerge(ours), toMerge(theirs)), options);
+}
+
+std::map<std::string, std::string> termLabels(std::string_view text)
+{
+    std::map<std::string, std::string> out;
+    const Parsed p = parse(text);
+    if (!p.conflicted())
+        return out;
+    const Merge m = toMerge(text);
+    const size_t n = m.adds.size();
+    const Region* match = nullptr;
+    for (const auto& r : p.regions) {
+        if (r.sides.size() == n) {
+            match = &r;
+            break;
+        }
+    }
+    if (!match)
+        return out; // toMerge flattened past this parse's own regions: nothing to match by index
+    auto isDefaultSide = [](const std::string& label, size_t k) {
+        return label.empty() || label == "side " + std::to_string(k + 1);
+    };
+    auto isDefaultBase = [&](const std::string& label, size_t k) {
+        if (label.empty())
+            return true;
+        return match->extended ? label == "base " + std::to_string(k + 1) : label == "base";
+    };
+    for (size_t k = 0; k < n && k < match->sides.size(); ++k)
+        if (!isDefaultSide(match->sides[k].label, k))
+            out[m.adds[k]] = match->sides[k].label;
+    for (size_t k = 0; k < m.removes.size() && k < match->bases.size(); ++k)
+        if (!isDefaultBase(match->bases[k].label, k))
+            out[m.removes[k]] = match->bases[k].label;
+    return out;
 }
 
 std::string takeSide(std::string_view text, int side, int region)
