@@ -337,7 +337,11 @@ GG_TEST("revert-pick", "refusals: HEAD itself, an ancestor of HEAD, staged chang
     GG_CHECK(s.app.errorMessage().find("staged changes") != std::string::npos);
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--cached", "--name-only"}), "c.txt");
     s.git(r.path, {"reset", "-q", "--hard"});
+    // The index row goes away and the history rows shift: wait for both before clicking.
+    GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.empty(); }));
     s.settle();
+    GG_REQUIRE(rowReady(s, r.c2));
+    ctx->Yield(3);
     // Reverting c2 twice: the second changes nothing ("Drop them": nothing to change).
     s.contextMenu(rowRef(r.c2).c_str(), "Revert and commit");
     GG_CHECK(changed(s, r.path, r.c4));
