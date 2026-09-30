@@ -15,6 +15,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -227,6 +228,90 @@ void Actions::commit(const std::string& message, bool noVerify, CommitMode mode,
                 args.emplace_back("--no-verify");
             ctx.git(args, message);
             ctx.result = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
+        },
+        std::move(done));
+}
+
+// Commits only the working tree's own changes (unstaged tracked edits and untracked files), leaving
+// the staged changes staged. The commit is made from a temporary index A (HEAD + the unstaged patch
+// + untracked files) through GIT_INDEX_FILE, so hooks and an unborn HEAD behave as for any commit.
+// The new real index is then built in a second temporary index B (the new HEAD + the staged patch)
+// and renamed over the real one; if the staged patch cannot be replayed, HEAD is put back.
+void Actions::commitWorktree(const std::string& message, Callback done)
+{
+    run("commit working tree",
+        [message](MutationContext& ctx) {
+            const fs::path gitDir = fs::absolute(git_repository_path(ctx.repo()));
+            if (fs::exists(gitDir / "MERGE_HEAD"))
+                throw MutationError{Outcome::Refused, "Finish the merge first: use the Commit dialog", {}};
+            const fs::path indexA = gitDir / "gg-commit-index-a";
+            const fs::path indexB = gitDir / "gg-commit-index-b";
+            struct Cleanup {
+                fs::path a, b;
+                ~Cleanup()
+                {
+                    std::error_code ec;
+                    fs::remove(a, ec);
+                    fs::remove(b, ec);
+                }
+            } cleanup{indexA, indexB};
+            std::error_code ec;
+            fs::remove(indexA, ec);
+            fs::remove(indexB, ec);
+            const std::string oldHead = gg::trim(ctx.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out);
+            auto diffOf = [&](bool cached) {
+                std::vector<std::string> args{"diff", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv",
+                    "--src-prefix=a/", "--dst-prefix=b/"};
+                if (cached)
+                    args.insert(args.begin() + 1, "--cached");
+                return ctx.git(args).out;
+            };
+            const std::string staged = diffOf(true);
+            const std::string unstaged = diffOf(false);
+            const std::string untracked = ctx.git({"ls-files", "--others", "--exclude-standard", "-z"}).out;
+            auto useIndex = [&](const fs::path& f) {
+                ctx.env.erase(std::remove_if(ctx.env.begin(), ctx.env.end(),
+                                  [](const auto& e) { return e.first == "GIT_INDEX_FILE"; }),
+                    ctx.env.end());
+                ctx.env.emplace_back("GIT_INDEX_FILE", f.string());
+            };
+            auto resetTo = [&](const std::string& head) {
+                ctx.git(head.empty() ? std::vector<std::string>{"read-tree", "--empty"}
+                                     : std::vector<std::string>{"read-tree", head});
+            };
+            useIndex(indexA);
+            resetTo(oldHead);
+            if (!unstaged.empty()) {
+                const auto r = ctx.gitMayFail({"apply", "--cached", "--binary", "--whitespace=nowarn", "-"}, unstaged);
+                if (!r.ok())
+                    throw MutationError{Outcome::Refused,
+                        "The unstaged changes of a file that is also staged do not apply on HEAD; stage or commit that "
+                        "file first",
+                        r.err};
+            }
+            if (!untracked.empty())
+                ctx.git({"add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"}, untracked);
+            ctx.git({"commit", "-q", "-F", "-"}, message);
+            const std::string newHead = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
+            useIndex(indexB);
+            resetTo("HEAD");
+            bool ok = true;
+            if (!staged.empty()) {
+                ok = ctx.gitMayFail({"apply", "--cached", "--binary", "--whitespace=nowarn", "-"}, staged).ok();
+                if (!ok) {
+                    resetTo("HEAD");
+                    ok = ctx.gitMayFail({"apply", "--cached", "--3way", "-"}, staged).ok();
+                }
+            }
+            ctx.env.pop_back();
+            if (!ok) {
+                ctx.git(oldHead.empty() ? std::vector<std::string>{"update-ref", "-d", "HEAD"}
+                                        : std::vector<std::string>{"update-ref", "HEAD", oldHead});
+                throw MutationError{Outcome::Refused,
+                    "The staged changes cannot be kept staged on top of the new commit; nothing was committed", {}};
+            }
+            fs::rename(indexB, gitDir / "index");
+            ctx.result = newHead;
         },
         std::move(done));
 }

@@ -69,6 +69,8 @@ public:
     // ---- commits (§4.3) -------------------------------------------------------------------
     void commit(const std::string& message, bool noVerify, CommitMode mode, const std::vector<std::string>& selected,
         Callback done = {});
+    // Commits only the unstaged and untracked changes; the staged ones stay staged.
+    void commitWorktree(const std::string& message, Callback done = {});
     void amend(const std::string& message, bool noVerify, bool messageOnly, Callback done = {});
     void newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message = {});
     // `edit`: Edit commit (the target detached, with an edit session to return from).

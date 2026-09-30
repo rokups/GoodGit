@@ -48,6 +48,29 @@ void InfoPanel::draw(bool* open)
             ImGui::Text("%zu staged, %zu unstaged, %zu untracked, %zu conflicted", status->staged.size(),
                 status->unstaged.size(), status->untracked.size(), status->conflicted.size());
         }
+        const bool index = m_selection.kind == SelKind::Index;
+        ImGui::InputTextMultiline("##commit_message", &m_commitMessage, ImVec2(-1, ImGui::GetTextLineHeight() * 6));
+        const bool nothing =
+            !status || (index ? status->staged.empty() : status->unstaged.empty() && status->untracked.empty());
+        ImGui::BeginDisabled(!m_session.actions().busy().empty() || nothing || gg::trim(m_commitMessage).empty());
+        if (ImGui::Button(ICON_MS_CHECK " Commit###info_commit")) {
+            Session* session = &m_session;
+            std::string* field = &m_commitMessage;
+            auto done = [session, field](const core::MutationFinishedEvent& e) {
+                if (e.outcome == core::Outcome::Ok)
+                    field->clear();
+                else if (e.outcome != core::Outcome::Cancelled)
+                    session->app().showError(e.label, e.detail.empty() ? e.message : e.detail);
+            };
+            if (index)
+                m_session.actions().commit(m_commitMessage, false, CommitMode::Index, {}, done);
+            else
+                m_session.actions().commitWorktree(m_commitMessage, done);
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%s", index ? "Commit the staged changes (git commit)"
+                                          : "Commit only the unstaged and untracked changes; the staged changes stay staged");
         const auto snap = m_session.snapshot();
         if (snap && snap->state != core::RepoState::None) {
             ImGui::SeparatorText("Message in progress (MERGE_MSG)");

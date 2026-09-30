@@ -24,6 +24,7 @@ private:
     core::RequestId m_request = 0;
     core::CommitDetailsPtr m_details;
     std::string m_message; // editor buffer
+    std::string m_commitMessage; // Working tree / Index commit field
     std::string m_mergeMessage;
     std::string m_mergeMessageSource;
 };

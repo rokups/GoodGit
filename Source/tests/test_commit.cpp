@@ -122,6 +122,90 @@ GG_TEST("commit", "default for nothing staged comes from Settings")
     s.dialogButton("Amend", "Cancel");
 }
 
+GG_TEST("commit", "Change information: Commit on the Index commits the staged changes")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f1.txt", "one staged\n");
+    s.write(repo, "f2.txt", "two unstaged\n");
+    s.git(repo, {"add", "f1.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
+    ctx->ItemClick("//History/**/###row_index");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##commit_message"); }));
+    GG_CHECK(ctx->ItemInfo("//Change information/###info_commit").ItemFlags & ImGuiItemFlags_Disabled);
+    s.setText("//Change information/##commit_message", "From the index");
+    ctx->Yield(2);
+    ctx->ItemClick("//Change information/###info_commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "From the index"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "--name-only", "--format=", "HEAD"}), "f1.txt");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--name-only"}), "f2.txt");
+    GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
+}
+
+GG_TEST("commit", "Change information: Commit on the Working tree leaves staged files staged")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "a.txt", "a\n");
+    s.write(repo, "b.txt", "b\n");
+    s.git(repo, {"add", "a.txt", "b.txt"});
+    s.git(repo, {"commit", "-q", "-m", "add a and b"});
+    s.write(repo, "a.txt", "a staged\n");
+    s.git(repo, {"add", "a.txt"});
+    s.write(repo, "b.txt", "b unstaged\n");
+    s.write(repo, "c.txt", "c untracked\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->untracked.size() == 1; }));
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##commit_message"); }));
+    s.setText("//Change information/##commit_message", "Worktree only");
+    ctx->Yield(2);
+    ctx->ItemClick("//Change information/###info_commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Worktree only"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "--name-only", "--format=", "HEAD"}), "b.txt\nc.txt");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "a.txt");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:a.txt"}), "a");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":a.txt"}), "a staged");
+    GG_CHECK(s.gitOut(repo, {"diff", "--name-only"}).empty());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "M  a.txt");
+}
+
+GG_TEST("commit", "Change information: Working tree commit takes only the unstaged hunk of a partly staged file")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string base;
+    for (int i = 1; i <= 30; i++)
+        base += "line " + std::to_string(i) + "\n";
+    s.write(repo, "p.txt", base);
+    s.git(repo, {"add", "p.txt"});
+    s.git(repo, {"commit", "-q", "-m", "add p"});
+    std::string withTop = base;
+    withTop.replace(withTop.find("line 2\n"), 7, "line 2 staged\n");
+    s.write(repo, "p.txt", withTop);
+    s.git(repo, {"add", "p.txt"});
+    std::string withBoth = withTop;
+    withBoth.replace(withBoth.find("line 28\n"), 8, "line 28 unstaged\n");
+    s.write(repo, "p.txt", withBoth);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] {
+        return s.session()->status() && s.session()->status()->staged.size() == 1 && s.session()->status()->unstaged.size() == 1;
+    }));
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##commit_message"); }));
+    s.setText("//Change information/##commit_message", "Bottom hunk");
+    ctx->Yield(2);
+    ctx->ItemClick("//Change information/###info_commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Bottom hunk"; }));
+    s.settle();
+    std::string expectHead = base;
+    expectHead.replace(expectHead.find("line 28\n"), 8, "line 28 unstaged\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:p.txt"}) + "\n", expectHead);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":p.txt"}) + "\n", withBoth);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--numstat"}), "1\t1\tp.txt");
+    GG_CHECK(s.gitOut(repo, {"diff", "--name-only"}).empty());
+}
+
 GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
