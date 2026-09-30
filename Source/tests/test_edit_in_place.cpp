@@ -214,7 +214,7 @@ GG_TEST("edit-in-place", "one Undo reverts the amend and the restack")
     GG_CHECK_STR_EQ(s.head(p), r.b);
 }
 
-GG_TEST("edit-in-place", "Alt+E on a mid-stack commit starts an edit session; plain E only checks it out")
+GG_TEST("edit-in-place", "E on a mid-stack commit starts an edit session")
 {
     const StackRepo r = makeStack(s);
     const fs::path& p = r.path;
@@ -222,14 +222,6 @@ GG_TEST("edit-in-place", "Alt+E on a mid-stack commit starts an edit session; pl
     GG_REQUIRE(rowReady(s, r.b));
     ctx->ItemClick(rowRef(r.b).c_str());
     ctx->KeyPress(ImGuiKey_E);
-    GG_CHECK(s.waitUntil([&] { return detached(s, p) && s.head(p) == r.b; }));
-    s.settle();
-    GG_CHECK(!s.session()->editSession());
-    GG_CHECK(noSessionFile(p));
-    s.git(p, {"switch", "-q", "main"});
-    GG_REQUIRE(s.waitUntil([&] { return !detached(s, p); }));
-    ctx->ItemClick(rowRef(r.b).c_str());
-    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_E);
     GG_CHECK(editing(s, r.b, "main"));
     GG_CHECK(detached(s, p));
     GG_CHECK_STR_EQ(s.head(p), r.b);

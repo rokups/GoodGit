@@ -177,7 +177,6 @@ public:
     void showPruneWorktreesDialog();
     void showRepairWorktreeDialog(const core::WorktreeInfo& w);
     void newCommitOn(const std::vector<core::Oid>& parents, bool detach);
-    void checkoutCommit(const core::Oid& id);
     void pushCurrent();
     void popStash();
     void maybePromptHooks();

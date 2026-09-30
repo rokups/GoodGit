@@ -414,16 +414,6 @@ void Session::newCommitOn(const std::vector<core::Oid>& parents, bool detach)
     m_actions->newCommit(specs, detach);
 }
 
-void Session::checkoutCommit(const core::Oid& id)
-{
-    for (const auto& b : m_snapshot->branches)
-        if (b.target == id) {
-            m_actions->checkout(b.name, false);
-            return;
-        }
-    m_actions->checkout(id.hex(), true);
-}
-
 void Session::pushCurrent()
 {
     if (m_snapshot->headDetached)

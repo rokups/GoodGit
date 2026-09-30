@@ -87,7 +87,7 @@ GG_TEST("new", "several parents make a merge commit")
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
 }
 
-GG_TEST("checkout", "switch to a branch, detach, E key")
+GG_TEST("checkout", "switch to a branch, detach")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string topic = s.revParse(repo, "topic");
@@ -100,9 +100,7 @@ GG_TEST("checkout", "switch to a branch, detach, E key")
     s.contextMenu(rowRef(featureParent).c_str(), "Check out/Detached HEAD");
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, featureParent) && symbolicHead(s, repo) == "(detached)"; }));
     s.settle();
-    // E on a branch tip switches to the branch.
-    ctx->ItemClick(rowRef(s.revParse(repo, "main")).c_str());
-    ctx->KeyPress(ImGuiKey_E);
+    s.contextMenu(rowRef(s.revParse(repo, "main")).c_str(), "Check out/main");
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "main"; }));
     s.settle();
     GG_CHECK(s.statusPorcelain(repo).empty());
