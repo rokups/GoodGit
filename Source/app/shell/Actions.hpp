@@ -71,7 +71,9 @@ public:
         Callback done = {});
     void amend(const std::string& message, bool noVerify, bool messageOnly, Callback done = {});
     void newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message = {});
-    void checkout(const std::string& target, bool detach, bool stashFirst = false);
+    // `edit`: Edit commit (the target detached, with an edit session to return from).
+    void checkout(const std::string& target, bool detach, bool stashFirst = false, bool edit = false);
+    void editCommit(const core::Oid& id);
     void moveHead(bool toChild, const core::Oid& child = {});
 
     // ---- branches, tags, remotes (§4.7) ---------------------------------------------------

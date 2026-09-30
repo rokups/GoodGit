@@ -5,6 +5,7 @@
 #include "shell/Session.hpp"
 
 #include <libgg/Conflicts.hpp>
+#include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/Hooks.hpp>
 #include <libgg/Markers.hpp>
@@ -230,9 +231,26 @@ void Actions::commit(const std::string& message, bool noVerify, CommitMode mode,
         std::move(done));
 }
 
+namespace {
+
+fs::path editSessionFile(MutationContext& ctx)
+{
+    return gg::edit::sessionFile(git_repository_path(ctx.repo()), git_repository_commondir(ctx.repo()));
+}
+
+} // namespace
+
 void Actions::amend(const std::string& message, bool noVerify, bool messageOnly, Callback done)
 {
-    run(messageOnly ? "reword HEAD" : "amend",
+    const std::string label = messageOnly ? "reword HEAD" : "amend";
+    if (!done)
+        done = [this, label](const core::MutationFinishedEvent& e) {
+            if (e.outcome == Outcome::Ok && !e.message.empty())
+                m_session.app().notify(App::Notice::Warning, label, e.message);
+            else
+                handleDefault(e);
+        };
+    run(label,
         [message, noVerify, messageOnly](MutationContext& ctx) {
             std::vector<std::string> args{"commit", "-q", "--amend", "--allow-empty"};
             if (messageOnly)
@@ -246,28 +264,73 @@ void Actions::amend(const std::string& message, bool noVerify, bool messageOnly,
             if (noVerify)
                 args.emplace_back("--no-verify");
             const std::string before = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
+            // Descendants of the amended commit (an edited commit in the middle of a stack, a
+            // conflicted commit, …) are restacked onto it, all or nothing: the restack is first
+            // computed in memory with the index as the new tree, so one that cannot be done
+            // refuses before the commit (and its hooks) run. Should it still fail afterwards (a
+            // hook changed the commit), HEAD goes back to the original commit. All of it is one
+            // operation, undone in one step.
+            const auto desc = gg::rewrite::descendants(ctx.repo(), {before});
+            if (desc.size() > 1) {
+                gg::rewrite::Plan pre = gg::rewrite::replayPlan(ctx.repo(), {before});
+                for (auto& st : pre.steps)
+                    if (st.source == before) {
+                        const auto tree = ctx.gitMayFail({"write-tree"});
+                        if (!messageOnly && tree.ok())
+                            st.tree = gg::trim(tree.out);
+                        if (!message.empty())
+                            st.message = message.back() == '\n' ? message : message + "\n";
+                    }
+                pre.keepHead = true;
+                gg::rewrite::Rewriter rewriter(ctx.cwd());
+                const gg::rewrite::Result r = rewriter.compute(pre);
+                if (!r.unresolved.empty()) {
+                    const auto& u = r.unresolved.front();
+                    const std::string error = "restacking " + u.commit.substr(0, 10) + " would give a " + u.kind
+                        + " conflict in " + u.path;
+                    throw MutationError{Outcome::Refused, "cannot amend: " + error, error};
+                }
+                if (!r.ok)
+                    throw MutationError{Outcome::Refused, "cannot amend: restacking the descendants failed: " + r.error,
+                        r.error};
+            }
             ctx.git(args, message);
             ctx.result = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
-            // Descendants of the amended commit (a conflicted commit checked out in the middle of
-            // a branch, …) are rebased onto it: their copies of a resolved conflict resolve too.
-            gg::rewrite::Plan plan;
-            for (const auto& c : gg::rewrite::descendants(ctx.repo(), {before}))
-                if (c != before) {
-                    gg::rewrite::Step st;
-                    st.source = c;
-                    plan.steps.push_back(st);
+            if (desc.size() > 1) {
+                gg::rewrite::Plan plan;
+                for (const auto& c : desc)
+                    if (c != before) {
+                        gg::rewrite::Step st;
+                        st.source = c;
+                        plan.steps.push_back(st);
+                    }
+                plan.replaced[before] = ctx.result;
+                plan.reflogMessage = "ggui: amend (rebase descendants)";
+                plan.rewriteKind = "amend";
+                plan.keepHead = true;
+                gg::rewrite::Rewriter rewriter(ctx.cwd());
+                gg::rewrite::Result r = rewriter.compute(plan);
+                std::string error = r.unresolved.empty() ? r.error : "unresolved non-text conflicts";
+                if (!r.ok || !r.unresolved.empty() || !rewriter.apply(plan, r, error)) {
+                    ctx.git({"update-ref", "-m", "ggui: amend (rolled back)", "HEAD", before, ctx.result});
+                    ctx.result = before;
+                    throw MutationError{Outcome::Failed, "amend undone: restacking the descendants failed: " + error,
+                        error};
                 }
-            if (plan.steps.empty())
-                return;
-            plan.replaced[before] = ctx.result;
-            plan.reflogMessage = "ggui: amend (rebase descendants)";
-            plan.rewriteKind = "amend";
-            plan.keepHead = true;
-            gg::rewrite::Rewriter rewriter(ctx.cwd());
-            gg::rewrite::Result r = rewriter.compute(plan);
-            std::string error = r.error;
-            if (!r.ok || !rewriter.apply(plan, r, error))
-                throw MutationError{Outcome::Failed, "amended, but rebasing the descendants failed: " + error, error};
+                if (!r.conflicted.empty()) {
+                    std::string list;
+                    for (const auto& id : r.conflicted)
+                        list += (list.empty() ? "" : ", ") + id.substr(0, 10);
+                    ctx.info = std::to_string(r.conflicted.size()) + " restacked commit(s) now have first-class conflicts: "
+                        + list;
+                }
+            }
+            // An edit session follows the amended commit.
+            const fs::path file = editSessionFile(ctx);
+            if (auto session = gg::edit::read(file); session && session->commit == before) {
+                session->commit = ctx.result;
+                gg::edit::write(file, *session);
+            }
         },
         std::move(done));
 }
@@ -420,12 +483,36 @@ void collapseConflictStages(MutationContext& ctx)
 
 } // namespace
 
-void Actions::checkout(const std::string& target, bool detach, bool stashFirst)
+void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit)
 {
-    const std::string label = detach ? "check out " + target.substr(0, 10) : "switch to " + target;
+    const std::string label = edit ? "edit " + target.substr(0, 10)
+        : detach                    ? "check out " + target.substr(0, 10)
+                                    : "switch to " + target;
     const bool expand = m_session.app().settings().data().expandConflictStages;
     run(label,
-        [target, detach, stashFirst, expand](MutationContext& ctx) {
+        [target, detach, stashFirst, expand, edit](MutationContext& ctx) {
+            // Edit commit: the branch to return to is the one HEAD is on (or the current edit
+            // session's) if it contains the commit, else the first local branch that does.
+            std::string branch;
+            if (edit) {
+                std::vector<std::string> candidates{gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out)};
+                if (auto session = gg::edit::read(editSessionFile(ctx)))
+                    candidates.push_back(session->branch);
+                for (const auto& b : candidates)
+                    if (!b.empty() && ctx.gitMayFail({"merge-base", "--is-ancestor", target, "refs/heads/" + b}).ok()) {
+                        branch = b;
+                        break;
+                    }
+                if (branch.empty())
+                    for (const auto& b : gg::splitLines(ctx.gitMayFail(
+                             {"for-each-ref", "--contains", target, "--format=%(refname:short)", "refs/heads/"}).out))
+                        if (!b.empty()) {
+                            branch = b;
+                            break;
+                        }
+                if (branch.empty())
+                    throw MutationError{Outcome::Refused, "The commit is not on a local branch", {}};
+            }
             collapseConflictStages(ctx);
             if (stashFirst)
                 ctx.git({"stash", "push", "-q", "-m", "ggui: before switching to " + target});
@@ -436,20 +523,31 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst)
             if (expand)
                 expandConflictStages(ctx);
             ctx.worktreeFollowsIndex = true;
+            if (edit) {
+                const std::string head = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
+                const int n = static_cast<int>(gg::rewrite::descendants(ctx.repo(), {head}).size()) - 1;
+                gg::edit::write(editSessionFile(ctx), {head, branch, n});
+            }
         },
-        [this, target, detach](const core::MutationFinishedEvent& e) {
+        [this, target, detach, edit](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::LocalChanges) {
                 Form f;
                 f.title = "Stash and switch";
                 f.message = "Your local changes would be overwritten by the checkout.\n\n" + e.message
                     + "\n\nStash them first and then switch?";
-                f.buttons.push_back({"Stash and switch", [this, target, detach](Form&) { checkout(target, detach, true); }});
+                f.buttons.push_back(
+                    {"Stash and switch", [this, target, detach, edit](Form&) { checkout(target, detach, true, edit); }});
                 f.buttons.push_back({"Cancel", {}});
                 m_session.app().dialogs().open(std::move(f));
                 return;
             }
             handleDefault(e);
         });
+}
+
+void Actions::editCommit(const core::Oid& id)
+{
+    checkout(id.hex(), true, false, true);
 }
 
 void Actions::moveHead(bool toChild, const core::Oid& child)

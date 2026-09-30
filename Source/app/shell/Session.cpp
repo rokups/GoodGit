@@ -176,6 +176,12 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
     m_tags->onSnapshot(m_snapshot);
     m_reflog->onSnapshot(m_snapshot);
     m_stashes->onSnapshot(m_snapshot);
+    const auto editFile = gg::edit::sessionFile(m_snapshot->gitDir, m_snapshot->commonDir);
+    m_editSession = gg::edit::read(editFile);
+    if (m_editSession && (!m_snapshot->headDetached || !m_snapshot->findBranch(m_editSession->branch))) {
+        gg::edit::clear(editFile);
+        m_editSession.reset();
+    }
     if (first) {
         if (!m_snapshot->bare)
             select(Selection{SelKind::WorkingTree, {}, -1});
@@ -192,6 +198,12 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
         if (!found)
             select(Selection{SelKind::WorkingTree, {}, -1});
     }
+}
+
+void Session::stopEditing()
+{
+    gg::edit::clear(gg::edit::sessionFile(m_snapshot->gitDir, m_snapshot->commonDir));
+    m_editSession.reset();
 }
 
 void Session::select(const Selection& sel)

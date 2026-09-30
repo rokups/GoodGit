@@ -838,6 +838,8 @@ void HistoryPanel::draw(bool* open)
             }
             else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyAlt)
                 m_session.checkoutCommit(sel.id);
+            else if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+                m_session.actions().editCommit(sel.id);
             else if (const auto* r = row(sel.id))
                 handleCommitEditKeys(m_session, *r);
         }

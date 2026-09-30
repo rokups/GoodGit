@@ -201,7 +201,7 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   Blame file · External diff ▸ (vs HEAD, vs parent) · Revert · Move to parent/child · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
-New commit, Edit/Check out, Commit…, Amend…, Describe (Save message), Edit author, Duplicate
+New commit, Edit/Check out, Edit commit (Alt+E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Amend…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
 Abandon/Abandon branch, Simplify parents, Move HEAD to previous/next, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:

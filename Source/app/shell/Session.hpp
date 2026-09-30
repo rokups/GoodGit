@@ -6,9 +6,11 @@
 #include "shell/Actions.hpp"
 
 #include <core/Engine.hpp>
+#include <libgg/EditSession.hpp>
 
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <set>
 #include <memory>
 #include <string>
@@ -113,6 +115,10 @@ public:
     const std::unordered_map<core::Oid, ConflictList, core::OidHash>& conflicts() const { return m_conflicts; }
     const std::vector<gg::journal::Operation>& operations() const { return m_operations; }
     bool hooksInstalled() const { return m_hooksInstalled; }
+    // The Edit commit session (§4.3), read with each snapshot; a stale one (HEAD no longer
+    // detached, or its branch gone) is cleared.
+    const std::optional<gg::edit::Session>& editSession() const { return m_editSession; }
+    void stopEditing();
     const std::optional<gg::hooks::Status>& hooksStatus() const { return m_hooksStatus; }
     void requestHooksStatus();
     const std::map<std::string, std::map<std::string, std::string>>& config() const { return m_config; }
@@ -206,6 +212,7 @@ private:
     std::unordered_map<core::Oid, ConflictList, core::OidHash> m_conflicts;
     std::vector<gg::journal::Operation> m_operations;
     bool m_hooksInstalled = false;
+    std::optional<gg::edit::Session> m_editSession;
     std::optional<gg::hooks::Status> m_hooksStatus;
     bool m_hooksPromptChecked = false;
     bool m_ggRefsPromptChecked = false;

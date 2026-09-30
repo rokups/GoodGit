@@ -362,6 +362,29 @@ void App::drawRepositoryButtons()
         s->popStash();
 }
 
+void App::drawEditBanner()
+{
+    // An Edit commit session (§4.3): amending HEAD restacks what comes after it.
+    Session& s = *m_session;
+    const auto& edit = s.editSession();
+    if (!edit)
+        return;
+    ImGui::SameLine();
+    const std::string text = "Editing " + edit->commit.substr(0, s.shortIdLength()) + " of " + edit->branch
+        + " \xe2\x80\x94 amend to restack " + std::to_string(edit->descendants) + " descendant"
+        + (edit->descendants == 1 ? "" : "s");
+    drawBadge((text + "###tb_edit").c_str(), theme().palette().conflictFill);
+    const std::string branch = edit->branch;
+    ImGui::BeginDisabled(!s.actions().busy().empty());
+    ImGui::SameLine();
+    if (smallButton(ICON_MS_KEYBOARD_RETURN, ("Return to " + branch + "##tb_edit_return").c_str()))
+        s.actions().checkout(branch, false);
+    ImGui::SameLine();
+    if (smallButton(ICON_MS_CLOSE, "Stop editing##tb_edit_stop"))
+        s.stopEditing();
+    ImGui::EndDisabled();
+}
+
 void App::drawStateBadge()
 {
     Session& s = *m_session;
@@ -530,6 +553,7 @@ void App::drawToolbar()
             }
         }
         drawStateBadge();
+        drawEditBanner();
     }
 
     // Activity spinner + Cancel

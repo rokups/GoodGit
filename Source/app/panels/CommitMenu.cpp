@@ -39,6 +39,9 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     const bool ok = free(session);
     const bool merge = row.parents.size() > 1;
     const bool root = row.parents.empty();
+    if (menuItem(ICON_MS_EDIT, "Edit commit", "Alt+E", false, ok))
+        session.actions().editCommit(row.id);
+    ImGui::Separator();
     if (menuItem(ICON_MS_ADD, "New commit before", nullptr, false, ok))
         session.actions().insertCommit(row.id, true, {});
     if (menuItem(ICON_MS_ADD, "New commit after", nullptr, false, ok))
