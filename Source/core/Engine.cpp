@@ -29,6 +29,7 @@ constexpr int kSlotDiffBase = 10;
 constexpr int kSlotBlame = 20;
 constexpr int kSlotReflog = 30;
 constexpr int kSlotDetails = 40;
+constexpr int kSlotMessages = 41;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotHooks = 5;
@@ -297,6 +298,16 @@ RequestId Engine::commitDetails(const Oid& id)
 {
     return submit(Queue::Content, "Reading commit", kSlotDetails, true, [this, id](Job& job) {
         emit(CommitDetailsEvent{job.id, readCommitDetails(job.repo(), id)});
+    });
+}
+
+RequestId Engine::commitMessages(const std::vector<Oid>& ids)
+{
+    return submit(Queue::Content, "Reading commits", kSlotMessages, true, [this, ids](Job& job) {
+        CommitMessagesEvent e{job.id, {}};
+        for (const auto& id : ids)
+            e.messages.push_back(readCommitDetails(job.repo(), id)->message);
+        emit(std::move(e));
     });
 }
 

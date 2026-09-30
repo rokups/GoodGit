@@ -522,6 +522,48 @@ void Actions::squash(const core::Oid& commit, const std::string& target, bool co
     });
 }
 
+void Actions::squashRange(const std::vector<core::Oid>& commits, const std::string& message)
+{
+    std::vector<std::string> ids; // oldest first
+    for (auto it = commits.rbegin(); it != commits.rend(); ++it)
+        ids.push_back(it->hex());
+    rewrite("squash " + std::to_string(ids.size()) + " commits", [ids, message](git_repository* repo) {
+        if (ids.size() < 2)
+            refuse("nothing to squash");
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const auto parents = parentsOf(repo, ids[i]);
+            if (parents.size() > 1)
+                refuse("a merge commit cannot be squashed");
+            if (i > 0 && (parents.empty() || parents.front() != ids[i - 1]))
+                refuse("the commits to squash are not adjacent");
+        }
+        std::string text = message;
+        while (!text.empty() && text.back() == '\n')
+            text.pop_back();
+        text.push_back('\n');
+        const std::set<std::string> folded(ids.begin() + 1, ids.end());
+        rw::Plan plan;
+        plan.reflogMessage = "ggui: squash";
+        for (const auto& c : rw::descendants(repo, {ids.front()})) {
+            if (folded.count(c))
+                continue;
+            rw::Step s;
+            s.source = c;
+            plan.steps.push_back(s);
+            if (c == ids.front()) {
+                for (size_t i = 1; i < ids.size(); ++i) {
+                    rw::Step fold;
+                    fold.kind = rw::Step::Kind::Squash;
+                    fold.source = ids[i];
+                    fold.message = text;
+                    plan.steps.push_back(fold);
+                }
+            }
+        }
+        return plan;
+    });
+}
+
 void Actions::squashDescendants(const core::Oid& commit)
 {
     const std::string id = commit.hex();

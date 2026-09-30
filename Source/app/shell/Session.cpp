@@ -115,6 +115,12 @@ void Session::handle(core::Event& event)
                 m_reflog->onReflog(e);
             } else if constexpr (std::is_same_v<T, core::CommitDetailsEvent>) {
                 m_info->onDetails(e);
+            } else if constexpr (std::is_same_v<T, core::CommitMessagesEvent>) {
+                if (const auto it = m_messageWaiters.find(e.request); it != m_messageWaiters.end()) {
+                    auto done = std::move(it->second);
+                    m_messageWaiters.erase(it);
+                    done(e.messages);
+                }
             } else if constexpr (std::is_same_v<T, core::ErrorEvent>) {
                 if (e.request == m_openRequest && !m_opened) {
                     m_failed = true;
@@ -165,6 +171,13 @@ void Session::handle(core::Event& event)
             }
         },
         event);
+}
+
+void Session::commitMessages(const std::vector<core::Oid>& ids, std::function<void(const std::vector<std::string>&)> done)
+{
+    m_messageWaiters.clear(); // a newer request supersedes the older one (same worker slot)
+    const core::RequestId id = m_engine->commitMessages(ids);
+    m_messageWaiters[id] = std::move(done);
 }
 
 void Session::onSnapshot(core::SnapshotPtr snap, bool first)

@@ -31,7 +31,11 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row);
 
 // `prefill` fills the dialog's commit field (see otherCommit in CommitMenu.cpp).
 void showRebaseDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
-void showSquashDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
+// Squash the commits (newest first, each the parent of the one before) into one, asking for its
+// message (prefilled from theirs). The oldest is the base the others fold into.
+void showSquashDialog(Session& session, const std::vector<core::Oid>& commits);
+// Squash (S / the menu item) for the History selection: its dialog when it can be squashed.
+void squashSelection(Session& session);
 void showSplitDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
 void showRestoreDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});

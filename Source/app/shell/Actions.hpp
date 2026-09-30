@@ -153,6 +153,9 @@ public:
     // Folds `commit` into `target` (its parent by default); combine or keep the target's message.
     void squash(const core::Oid& commit, const std::string& target, bool combineMessages); // target "" = parent
     // Folds the commit's descendants (a linear chain) into it.
+    // One commit from `commits` (newest first, each the parent of the one before; none a merge): the
+    // oldest with the rest folded into it, carrying `message`.
+    void squashRange(const std::vector<core::Oid>& commits, const std::string& message);
     void squashDescendants(const core::Oid& commit);
     void split(const core::Oid& commit, const std::vector<std::string>& paths, const std::string& firstMessage);
     void abandon(const core::Oid& commit, bool withDescendants, std::function<void()> then = {});

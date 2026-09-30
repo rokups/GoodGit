@@ -793,34 +793,15 @@ GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto 
     GG_CHECK(rows(s) == (Rows{"pick c4", "pick c5"}));
     GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
     ctx->ItemClick(irWidget("ir_cancel").c_str());
-    // An unknown target is refused.
+    // Squash c4 into its parent c3 as an interactive rebase: c4 becomes a squash row.
     s.contextMenu(historyRow(r.c[4]).c_str(), "Squash...");
     GG_REQUIRE(s.dialogOpen("Squash"));
-    s.dialogText("Squash", "target", "nope");
-    s.dialogButton("Squash", "Open as interactive rebase...");
-    GG_CHECK(s.dismissError());
-    GG_CHECK(!editor(s).isOpen());
-    // Squash c4 into c2: c4 moves after c2 as squash; its message is the combination.
-    s.contextMenu(historyRow(r.c[4]).c_str(), "Squash...");
-    GG_REQUIRE(s.dialogOpen("Squash"));
-    s.dialogText("Squash", "target", r.c[2]);
     s.dialogButton("Squash", "Open as interactive rebase...");
     GG_REQUIRE(editorReady(s));
-    GG_CHECK(rows(s) == (Rows{"pick c2", "squash c4", "pick c3", "update-ref refs/heads/part1", "pick c5"}));
+    GG_CHECK(rows(s) == (Rows{"pick c3", "update-ref refs/heads/part1", "squash c4", "pick c5"}));
     GG_REQUIRE(start(s));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main~2"}), "c2 add b\n\nc4 add d");
-    GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), s.revParse(r.path, "main~1"));
-    // Squash into the parent with the fixup choice: c5 into c3'.
-    const std::string tip = s.revParse(r.path, "main");
-    GG_REQUIRE(rowReady(s, tip));
-    s.contextMenu(historyRow(tip).c_str(), "Squash...");
-    GG_REQUIRE(s.dialogOpen("Squash"));
-    s.dialogCheck("Squash", "combine", "Combine the messages (squash; otherwise keep the target's: fixup)", false);
-    s.dialogButton("Squash", "Open as interactive rebase...");
-    GG_REQUIRE(editorReady(s));
-    GG_CHECK(rows(s) == (Rows{"pick c3", "fixup c5", "update-ref refs/heads/part1"}));
-    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main~1"}), "c3 add c\n\nc4 add d");
 }
 
 GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch")

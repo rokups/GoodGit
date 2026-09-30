@@ -850,6 +850,10 @@ void HistoryPanel::draw(bool* open)
         const bool free = m_session.actions().busy().empty();
         if (ImGui::IsKeyPressed(ImGuiKey_F7, false))
             selectConflicted(io.KeyShift ? -1 : +1);
+        // Squash (S) also takes a range of adjacent selected commits.
+        if (sel.kind == SelKind::Commit && free && !m_extra.empty() && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt
+            && ImGui::IsKeyPressed(ImGuiKey_S, false))
+            squashSelection(m_session);
         // The commit keys act on a single selected commit.
         if (sel.kind == SelKind::Commit && free && !io.KeyCtrl && m_extra.empty()) {
             if (ImGui::IsKeyPressed(ImGuiKey_N, false))

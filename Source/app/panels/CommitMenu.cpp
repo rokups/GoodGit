@@ -16,6 +16,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <set>
 #include <unordered_set>
 
 namespace ggui {
@@ -60,29 +61,34 @@ Other otherCommit(Session& s, const core::HistoryRow& row)
     return {snap->head, snap->headDetached || snap->headBranch.empty() ? s.shortId(snap->head) : snap->headBranch};
 }
 
-// True when `anc` is a strict ancestor of `row` through the loaded history rows.
-bool isStrictAncestor(Session& s, const core::HistoryRow& row, const core::Oid& anc)
+// What Squash acts on: the commits to fold into one, newest first. One selected commit with a
+// single parent: it and its parent. Adjacent selected commits (none a merge): exactly those.
+// Empty, and `why` set, when the selection cannot be squashed.
+std::vector<core::Oid> squashCommits(Session& s, const SelectionShape& sel, const char** why)
 {
-    std::vector<core::Oid> todo(row.parents.begin(), row.parents.end());
-    std::unordered_set<std::string> seen;
-    while (!todo.empty()) {
-        const core::Oid id = todo.back();
-        todo.pop_back();
-        if (id == anc)
-            return true;
-        if (!seen.insert(id.hex()).second)
-            continue;
-        if (const core::HistoryRow* r = s.history().row(id))
-            todo.insert(todo.end(), r->parents.begin(), r->parents.end());
+    *why = nullptr;
+    std::vector<core::Oid> out;
+    if (sel.ids.empty() || !(sel.single() || sel.range())) {
+        *why = "Select one commit, or adjacent commits (no gaps).";
+        return out;
     }
-    return false;
-}
-
-// The squash target: the other commit, when it is a strict ancestor of `row`; else empty.
-std::string squashPrefill(Session& s, const core::HistoryRow& row)
-{
-    const Other o = otherCommit(s, row);
-    return !o.id.isNull() && isStrictAncestor(s, row, o.id) ? o.ref : std::string();
+    for (const auto& id : sel.ids) {
+        const core::HistoryRow* r = s.history().row(id);
+        if (!r || r->parents.size() > 1) {
+            *why = "A merge commit cannot be squashed.";
+            return out;
+        }
+    }
+    out = sel.ids;
+    if (sel.single()) {
+        const core::HistoryRow* r = s.history().row(sel.ids.front());
+        if (r->parents.empty()) {
+            *why = "A root commit has no parent to squash into.";
+            return {};
+        }
+        out.push_back(r->parents.front());
+    }
+    return out;
 }
 
 } // namespace
@@ -123,7 +129,6 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     const SelectionShape sel = selectionShape(session);
     const Other other = otherCommit(session, row);
     const bool merge = row.parents.size() > 1;
-    const bool root = row.parents.empty();
     // Holding Shift swaps an item for its sibling (the same variants as the Shift+key hotkeys).
     const bool shift = ImGui::GetIO().KeyShift;
     // An item acting on one commit: disabled unless exactly one commit is selected (and `enabled`).
@@ -193,9 +198,13 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     if (shift) {
         if (one(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S"))
             session.actions().squashDescendants(row.id);
-    } else if (one(ICON_MS_JOIN_INNER, "Squash...", "S", !merge && !root,
-                   merge ? "A merge commit cannot be squashed." : "A root commit has no parent to squash into.", true)) {
-        showSquashDialog(session, row.id, squashPrefill(session, row));
+    } else {
+        const char* why = nullptr;
+        const auto commits = squashCommits(session, sel, &why);
+        const bool hit = menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, free && !commits.empty());
+        disabledHint(commits.empty() && why, why);
+        if (hit)
+            showSquashDialog(session, commits);
     }
     if (one(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", !merge, "A merge commit cannot be split."))
         showSplitDialog(session, row.id);
@@ -227,8 +236,8 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
         showSplitDialog(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyShift)
         session.actions().squashDescendants(row.id);
-    else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && row.parents.size() == 1)
-        showSquashDialog(session, row.id, squashPrefill(session, row));
+    else if (ImGui::IsKeyPressed(ImGuiKey_S, false))
+        squashSelection(session);
     else if (ImGui::IsKeyPressed(ImGuiKey_A, false) && io.KeyShift)
         showAbandonBranchDialog(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_A, false))
@@ -263,53 +272,67 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const std::stri
     session.app().dialogs().open(std::move(f));
 }
 
-void showSquashDialog(Session& session, const core::Oid& commit, const std::string& prefill)
+void squashSelection(Session& session)
 {
-    Form f;
-    f.title = "Squash";
-    f.message = "Squash this commit into an earlier one.";
-    f.add(commitInfo(session, "Squash", commit));
-    const core::HistoryRow* row = session.history().row(commit);
-    f.add(commitField(session, "target", "Into (empty = the parent; or an ancestor)", prefill, "the parent",
-        row && row->parents.size() == 1 ? row->parents.front() : core::Oid{}));
-    Field combine{Field::Check, "combine", "Combine the messages (squash; otherwise keep the target's: fixup)"};
-    combine.checked = true;
-    f.add(combine);
+    const char* why = nullptr;
+    if (const auto commits = squashCommits(session, selectionShape(session), &why); !commits.empty())
+        showSquashDialog(session, commits);
+}
+
+void showSquashDialog(Session& session, const std::vector<core::Oid>& commits)
+{
+    if (commits.size() < 2)
+        return;
+    // The prefilled message is the inputs' full messages, which the worker reads first.
     Session* s = &session;
-    f.buttons.push_back({"Squash", [s, commit](Form& form) {
-                             s->actions().squash(commit, gg::trim(form.text("target")), form.checked("combine"));
-                         }});
-    // From the target on, with the commit moved after it as squash (or fixup).
-    f.buttons.push_back({"Open as interactive rebase...", [s, commit](Form& form) {
-                             const std::string target = gg::trim(form.text("target"));
-                             const bool squash = form.checked("combine");
-                             RebasePanel::Request r;
-                             r.from = target.empty() ? commit.hex() + "^" : target;
-                             r.tipContaining = commit.hex();
-                             r.selected = {commit.hex()};
-                             const std::string id = commit.hex();
-                             r.adjust = [id, squash](gg::todo::Todo& t, const gg::todo::Context& c) {
-                                 auto& items = t.items;
-                                 auto find = [&](const std::string& commitId) {
-                                     return std::find_if(items.begin(), items.end(),
-                                         [&](const gg::todo::Item& i) { return i.isCommit() && i.commit == commitId; });
-                                 };
-                                 auto src = find(id);
-                                 if (c.range.empty() || src == items.end() || src->commit == c.range.front())
-                                     return;
-                                 gg::todo::Item moved = *src;
-                                 moved.action = squash ? gg::todo::Action::Squash : gg::todo::Action::Fixup;
-                                 items.erase(src);
-                                 auto at = find(c.range.front()) + 1;
-                                 while (at != items.end()
-                                     && (at->action == gg::todo::Action::Squash || at->action == gg::todo::Action::Fixup))
-                                     ++at;
-                                 items.insert(at, moved);
-                             };
-                             s->rebase().open(std::move(r));
-                         }});
-    f.buttons.push_back({"Cancel", {}});
-    session.app().dialogs().open(std::move(f));
+    session.commitMessages(commits, [s, commits](const std::vector<std::string>& messages) {
+        Form f;
+        f.title = "Squash";
+        f.message = "The commits become one; the new commit takes the message below.";
+        for (size_t i = 0; i < commits.size(); ++i) {
+            const bool into = i + 1 == commits.size();
+            Field info = commitInfo(*s, into ? "Into" : "Squash", commits[i]);
+            info.id = "info_squash_" + std::to_string(i);
+            f.add(std::move(info));
+        }
+        std::string text; // oldest first, a blank line between
+        for (size_t i = messages.size(); i-- > 0;) {
+            std::string m = messages[i];
+            while (!m.empty() && (m.back() == '\n' || m.back() == '\r'))
+                m.pop_back();
+            if (!text.empty())
+                text += "\n\n";
+            text += m;
+        }
+        Field message{Field::Multiline, "message", "Message"};
+        message.text = text;
+        f.add(std::move(message));
+        f.buttons.push_back({"Squash", [s, commits](Form& form) { s->actions().squashRange(commits, form.text("message")); },
+            [](const Form& form) { return !gg::trim(form.text("message")).empty(); }});
+        // From the base on, the other commits changed to squash (messages are then edited there).
+        const core::HistoryRow* base = s->history().row(commits.back());
+        const bool baseHasParent = base && !base->parents.empty();
+        f.buttons.push_back({"Open as interactive rebase...",
+            [s, commits](Form&) {
+                RebasePanel::Request r;
+                r.from = commits.back().hex();
+                r.tipContaining = commits.front().hex();
+                std::set<std::string> folded;
+                for (size_t i = 0; i + 1 < commits.size(); ++i) {
+                    r.selected.push_back(commits[i].hex());
+                    folded.insert(commits[i].hex());
+                }
+                r.adjust = [folded](gg::todo::Todo& t, const gg::todo::Context&) {
+                    for (auto& item : t.items)
+                        if (item.isCommit() && folded.count(item.commit))
+                            item.action = gg::todo::Action::Squash;
+                };
+                s->rebase().open(std::move(r));
+            },
+            [baseHasParent](const Form&) { return baseHasParent; }});
+        f.buttons.push_back({"Cancel", {}});
+        s->app().dialogs().open(std::move(f));
+    });
 }
 
 void showSplitDialog(Session& session, const core::Oid& commit)

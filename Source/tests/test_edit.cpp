@@ -92,7 +92,7 @@ GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copie
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
 }
 
-GG_TEST("edit", "Rebase, Squash and Restore dialogs prefill their commit field from the other selected commit or HEAD")
+GG_TEST("edit", "Rebase and Restore dialogs prefill their commit field from the other selected commit or HEAD")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -113,10 +113,6 @@ GG_TEST("edit", "Rebase, Squash and Restore dialogs prefill their commit field f
     open(r.c2, "Restore from...", "Restore");
     GG_CHECK_STR_EQ(field("from"), "main");
     s.dialogButton("Restore", "Cancel");
-    // Squash: HEAD (c4) is not an ancestor of c3, so the target stays empty.
-    open(r.c3, "Squash...", "Squash");
-    GG_CHECK_STR_EQ(field("target"), "");
-    s.dialogButton("Squash", "Cancel");
     // The clicked commit is HEAD: nothing to prefill.
     open(r.c4, "Rebase onto...", "Rebase onto");
     GG_CHECK_STR_EQ(field("destination"), "");
@@ -130,9 +126,6 @@ GG_TEST("edit", "Rebase, Squash and Restore dialogs prefill their commit field f
     open(r.c3, "Rebase onto...", "Rebase onto");
     GG_CHECK_STR_EQ(field("destination"), c1Short);
     s.dialogButton("Rebase onto", "Cancel");
-    open(r.c3, "Squash...", "Squash"); // c1 is an ancestor of c3
-    GG_CHECK_STR_EQ(field("target"), c1Short);
-    s.dialogButton("Squash", "Cancel");
     open(r.c3, "Restore from...", "Restore");
     GG_CHECK_STR_EQ(field("from"), c1Short);
     s.dialogButton("Restore", "Cancel");
@@ -225,11 +218,17 @@ GG_TEST("edit", "commit fields preview the commit they name: prefilled, live, an
     s.dialogText("Rebase onto", "destination", "garbage");
     GG_CHECK(sees("destination", "Not found"));
     s.dialogButton("Rebase onto", "Cancel");
-    // Squash with an empty target: the preview says it is the parent.
+    // Squash: a single commit goes into its parent; the dialog names both.
     s.contextMenu(rowRef(r.c3).c_str(), "Squash...");
     GG_REQUIRE(s.dialogOpen("Squash"));
-    GG_CHECK(sees("target", "the parent: "));
-    GG_CHECK(sees("target", "c2 add b"));
+    {
+        std::string all;
+        for (const auto& f : form()->fields)
+            if (f.kind == ggui::Field::Info)
+                all += f.text + "\n";
+        GG_CHECK(all.find("Squash: ") != std::string::npos && all.find("c3 change a") != std::string::npos);
+        GG_CHECK(all.find("Into: ") != std::string::npos && all.find("c2 add b") != std::string::npos);
+    }
     s.dialogButton("Squash", "Cancel");
 }
 
@@ -260,7 +259,11 @@ GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto anot
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c1 add a"}));
 }
 
-GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants into a commit (Shift+S)")
+namespace {
+const ggui::Form* currentForm(Scenario& s) { return s.session()->app().dialogs().current(); }
+} // namespace
+
+GG_TEST("edit", "squash a commit into its parent (S) with the concatenated message, and descendants into a commit (Shift+S)")
 {
     const EditRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "main^{tree}");
@@ -269,32 +272,95 @@ GG_TEST("edit", "squash into the parent (S), into an ancestor, and descendants i
     ctx->ItemClick(rowRef(r.c4).c_str());
     ctx->KeyPress(ImGuiKey_S);
     GG_REQUIRE(s.dialogOpen("Squash"));
+    // Prefilled: the full messages of the parent and the commit, oldest first.
+    GG_CHECK_STR_EQ(currentForm(s)->text("message"), "c3 change a\n\nc4 add c and d");
+    s.dialogText("Squash", "message", "c3+c4 squashed\n\nedited body");
     s.dialogButton("Squash", "Squash");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
     GG_CHECK(subjects(s, r.path).size() == 3);
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B"}), "c3 change a\n\nc4 add c and d");
-    // The tip into c1 (an ancestor), keeping c1's message (fixup).
-    const std::string tip = s.head(r.path);
-    GG_REQUIRE(rowReady(s, tip));
-    s.contextMenu(rowRef(tip).c_str(), "Squash...");
-    GG_REQUIRE(s.dialogOpen("Squash"));
-    s.dialogText("Squash", "target", r.c1);
-    s.dialogCheck("Squash", "combine", "Combine the messages (squash; otherwise keep the target's: fixup)");
-    s.dialogButton("Squash", "Squash");
-    GG_CHECK(changed(s, r.path, tip));
-    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
-    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2 add b", "c1 add a"}));
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"show", "HEAD~1:a.txt"}), "one\nTWO\nthree");
-    // Everything after c1' into it.
-    const std::string root = s.revParse(r.path, "HEAD~1");
-    GG_REQUIRE(rowReady(s, root));
-    ctx->ItemClick(rowRef(root).c_str());
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B"}), "c3+c4 squashed\n\nedited body");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~1"), r.c2);
+    // Everything after c1 into it.
+    const std::string c1 = r.c1;
+    GG_REQUIRE(rowReady(s, c1));
+    ctx->ItemClick(rowRef(c1).c_str());
     const std::string beforeAll = s.head(r.path);
     ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_S);
     GG_CHECK(changed(s, r.path, beforeAll));
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c1 add a"}));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+}
+
+GG_TEST("edit", "squash three adjacent selected commits into one replacing exactly them")
+{
+    const EditRepo r = makeRepo(s);
+    const std::string tree = s.revParse(r.path, "main^{tree}");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    GG_REQUIRE(rowReady(s, r.c2));
+    // c2..c4 selected (Ctrl-click): they become one commit on top of c1.
+    ctx->ItemClick(rowRef(r.c4).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->ItemClick(rowRef(r.c2).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->KeyPress(ImGuiKey_S);
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    GG_CHECK_STR_EQ(currentForm(s)->text("message"), "c2 add b\n\nc3 change a\n\nc4 add c and d");
+    s.dialogButton("Squash", "Squash");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~1"), r.c1);
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B"}), "c2 add b\n\nc3 change a\n\nc4 add c and d");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+GG_TEST("edit", "Squash is disabled for a gapped selection and for the root commit, and squashes a range that starts at the root")
+{
+    const EditRepo r = makeRepo(s);
+    const std::string tree = s.revParse(r.path, "main^{tree}");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    GG_REQUIRE(rowReady(s, r.c1));
+    auto squashDisabled = [&](const std::string& commit) {
+        ctx->ItemClick(rowRef(commit).c_str(), ImGuiMouseButton_Right);
+        const bool off = (ctx->ItemInfo("//$FOCUSED/Squash...").ItemFlags & ImGuiItemFlags_Disabled) != 0;
+        ctx->KeyPress(ImGuiKey_Escape);
+        return off;
+    };
+    // The root alone: no parent.
+    ctx->ItemClick(rowRef(r.c1).c_str());
+    GG_CHECK(squashDisabled(r.c1));
+    ctx->KeyPress(ImGuiKey_S);
+    ctx->Yield(10);
+    GG_CHECK(!s.dialogOpen("Squash", 0.5f));
+    // c4 and c2 (c3 between them is not selected).
+    ctx->ItemClick(rowRef(r.c4).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(r.c2).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->Yield(2);
+    ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Squash...").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->KeyPress(ImGuiKey_S);
+    ctx->Yield(10);
+    GG_CHECK(!s.dialogOpen("Squash", 0.5f));
+    GG_CHECK_STR_EQ(s.head(r.path), r.c4);
+    // c1..c2 (the range starts at the root): one root commit.
+    ctx->ItemClick(rowRef(r.c2).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(r.c1).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->KeyPress(ImGuiKey_S);
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    GG_CHECK_STR_EQ(currentForm(s)->text("message"), "c1 add a\n\nc2 add b");
+    s.dialogButton("Squash", "Squash");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c3 change a", "c1 add a"}));
 }
 
 GG_TEST("edit", "split a commit by files (Alt+S)")
@@ -607,13 +673,6 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     // The root commit has no parent to take changes.
     fileMenu(r.c1, "a.txt", 1, "Move to parent");
     refused("moving changes needs a commit with exactly one parent");
-    // Squash into a commit that is not an ancestor.
-    ctx->ItemClick(rowRef(r.c3).c_str());
-    ctx->KeyPress(ImGuiKey_S);
-    GG_REQUIRE(s.dialogOpen("Squash"));
-    s.dialogText("Squash", "target", r.c4);
-    s.dialogButton("Squash", "Squash");
-    refused("the target must be an ancestor of the commit");
     // Rebase onto an unknown revision, or onto the commit's own descendant.
     s.contextMenu(rowRef(r.c2).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));

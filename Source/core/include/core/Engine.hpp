@@ -84,6 +84,11 @@ struct CommitDetailsEvent {
     RequestId request = 0;
     CommitDetailsPtr details;
 };
+// The full messages of the requested commits, in request order.
+struct CommitMessagesEvent {
+    RequestId request = 0;
+    std::vector<std::string> messages;
+};
 struct ErrorEvent {
     RequestId request = 0;
     std::string title;                  // e.g. "Open failed"
@@ -166,7 +171,7 @@ struct RebasePreviewEvent {
 };
 
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
-    DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
+    DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, CommitMessagesEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
     MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent, RebasePreviewEvent,
     RemoteTagsEvent>;
 
@@ -262,6 +267,8 @@ public:
     RequestId blame(const BlameQuery& query);
     RequestId reflog(const std::string& ref);
     RequestId commitDetails(const Oid& id);
+    // The full messages of `ids` (CommitMessagesEvent, in the same order).
+    RequestId commitMessages(const std::vector<Oid>& ids);
 
     // ---- mutations ------------------------------------------------------------------------
     RequestId mutate(MutationSpec spec);

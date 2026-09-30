@@ -91,6 +91,9 @@ public:
     // ---- shared state ---------------------------------------------------------------------
     App& app() { return m_app; }
     core::Engine& engine() { return *m_engine; }
+    // Reads the full messages of `ids` on the worker, then calls `done` (on the UI thread) with
+    // them in the same order. Not called when the request is superseded or fails.
+    void commitMessages(const std::vector<core::Oid>& ids, std::function<void(const std::vector<std::string>&)> done);
     Actions& actions() { return *m_actions; }
     // Set from the first OpenedEvent on (opened()). Panels, menus and actions run only for an
     // opened session, so they use it without a null check.
@@ -209,6 +212,7 @@ private:
     std::unique_ptr<core::Engine> m_engine;
     std::unique_ptr<Actions> m_actions;
     core::RequestId m_openRequest = 0;
+    std::map<core::RequestId, std::function<void(const std::vector<std::string>&)>> m_messageWaiters;
     bool m_opened = false;
     bool m_failed = false;
     core::SnapshotPtr m_snapshot;
