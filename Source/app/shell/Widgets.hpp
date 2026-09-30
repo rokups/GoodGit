@@ -19,6 +19,9 @@ bool beginMenu(const char* icon, const char* label, bool enabled = true);
 // ImGui::Button whose ID stays exactly ImGui::GetID(label) (same as plain ImGui::Button(label)),
 // but which renders "icon  visible-text" (visible text = label up to "##"). `size` as for Button.
 bool button(const char* icon, const char* label, ImVec2 size = ImVec2(0, 0));
+// Icon-only square-ish button (`id` like "##name", ID = ImGui::GetID(id)) that centres the
+// glyph's drawn bounds in the frame, ignoring the icon font's baseline GlyphOffset and advance.
+bool iconButton(const char* icon, const char* id, ImVec2 size);
 // ImGui::SmallButton counterpart: same ID/icon contract as button(), fits within a text line.
 bool smallButton(const char* icon, const char* label);
 // ImGui::Selectable that stays blue while hovered when selected (ImGui draws a hovered row with

@@ -92,6 +92,43 @@ bool button(const char* icon, const char* label, ImVec2 size)
     return iconButtonEx(icon, label, size, ImGuiButtonFlags_None);
 }
 
+bool iconButton(const char* icon, const char* id, ImVec2 size_arg)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const ImGuiID gid = window->GetID(id);
+    const float frame = ImGui::GetFrameHeight();
+    const ImVec2 size = ImGui::CalcItemSize(size_arg, frame, frame);
+    const ImVec2 pos = window->DC.CursorPos;
+    const ImRect bb(pos, pos + size);
+    ImGui::ItemSize(size, style.FramePadding.y);
+    if (!ImGui::ItemAdd(bb, gid))
+        return false;
+
+    bool hovered, held;
+    const bool pressed = ImGui::ButtonBehavior(bb, gid, &hovered, &held, ImGuiButtonFlags_None);
+    const ImU32 col = ImGui::GetColorU32((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+    ImGui::RenderNavHighlight(bb, gid);
+    ImGui::RenderFrame(bb.Min, bb.Max, col, true, style.FrameRounding);
+
+    unsigned int c = 0;
+    ImTextCharFromUtf8(&c, icon, nullptr);
+    const ImVec2 centre = bb.GetCenter();
+    if (const ImFontGlyph* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(c))) {
+        // Vertically the icon stays where text sits (the font's GlyphOffset puts it on the baseline
+        // of neighbouring labels); horizontally its ink is centred, not its advance.
+        const ImVec2 at(IM_TRUNC(centre.x - (glyph->X0 + glyph->X1) * 0.5f), IM_TRUNC(centre.y - g.FontSize * 0.5f));
+        window->DrawList->AddText(at, ImGui::GetColorU32(ImGuiCol_Text), icon);
+    }
+
+    IMGUI_TEST_ENGINE_ITEM_INFO(gid, id, g.LastItemData.StatusFlags);
+    return pressed;
+}
+
 bool smallButton(const char* icon, const char* label)
 {
     ImGuiContext& g = *GImGui;

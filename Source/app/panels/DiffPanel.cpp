@@ -744,12 +744,12 @@ void DiffPanel::drawToolbar()
     bool contextChanged = ImGui::InputInt("Context##diff_context", &d.diffContext, 0, 0);
     const int step = ImGui::GetIO().KeyCtrl ? 5 : 1;
     ImGui::SameLine();
-    if (ImGui::Button(ICON_MS_REMOVE "##diff_context_dec", ImVec2(square, square))) {
+    if (iconButton(ICON_MS_REMOVE, "##diff_context_dec", ImVec2(square, square))) {
         d.diffContext -= step;
         contextChanged = true;
     }
     ImGui::SameLine(0, style.ItemInnerSpacing.x);
-    if (ImGui::Button(ICON_MS_ADD "##diff_context_inc", ImVec2(square, square))) {
+    if (iconButton(ICON_MS_ADD, "##diff_context_inc", ImVec2(square, square))) {
         d.diffContext += step;
         contextChanged = true;
     }
@@ -786,8 +786,8 @@ void DiffPanel::drawToolbar()
             request();
     }
     // This file only; the Changes panel's "Compare with" switches the whole commit. It takes the
-    // rest of the line (at least 6 em), leaving room for "loading...".
-    const float loading = ImGui::CalcTextSize("loading...").x + ImGui::GetStyle().ItemSpacing.x;
+    // rest of the line (at least 6 em), leaving room for "loading..." while it shows.
+    const float loading = m_loading ? ImGui::CalcTextSize("loading...").x + ImGui::GetStyle().ItemSpacing.x : 0.0f;
     sameLineIfFits(em * 6 + loading);
     ImGui::BeginDisabled(!canCompare());
     ImGui::SetNextItemWidth(std::max(em * 6, ImGui::GetContentRegionAvail().x - loading));
