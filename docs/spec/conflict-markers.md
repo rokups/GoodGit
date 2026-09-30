@@ -115,25 +115,25 @@ side/base marker of the extended form, ...) while leaving the region's opening (
 closing (`>`) marker line in place. By §4 this is not malformed text kept as-is: the file
 simply has no well-formed region there any more, so it "resolves" silently, with stray marker
 lines sitting in it as if they were content. This is very likely a mistake rather than an
-intended resolution, so ggui warns about it (Status, the Changes panel and the pre-commit hook,
-product spec §8) without treating the file as still conflicted: `gg::markers::brokenMarkers`
-(`Source/libgg/Markers.cpp`) compares a file's committed (HEAD) text with its edited text and
+intended resolution, so ggui warns about it (Status, the Changes panel, and the Commit and Amend dialogs and the
+Info panel's Commit button, product spec §4.10) without treating the file as still conflicted:
+`gg::markers::brokenMarkers` (`Source/libgg/Markers.cpp`) compares a file's committed (HEAD) text with its edited text and
 reports the leftover opening/closing marker lines whose length matches a region HEAD had, that
 are not part of a well-formed region of the edit. It ignores marker-like lines that were
 already plain text outside HEAD's regions (a simple stray-line-count comparison per marker
 length, not a diff of which line is "new"). This is purely a diagnostic: it does not change
 whether a file is parsed as conflicted (§4) or eligible (§6).
 
-The pre-commit hook only *warns* (stderr, never blocks the commit), and only for staged paths
+The commit warning never blocks the commit, and only covers staged paths
 the commit actually touches (its staged blob differs from HEAD's) — an unrelated commit is
 silent about a conflict, broken or otherwise, that already sits unchanged in HEAD. The
-pre-commit hook additionally warns, in the same never-blocking way, when a staged path this
+warning additionally appears, in the same never-blocking way, when a staged path this
 commit touches holds a first-class conflict itself (the file is still conflicted, not broken):
 committing a conflict is fine locally, but push refuses it (§4.10 Safety below), so the warning
-flags it early. Push (the managed pre-push hook and ggui's own Push, `gg::outgoing::brokenOutgoing`
+flags it early. ggui's own Push (`gg::outgoing::brokenOutgoing`
 next to `conflictedOutgoing`) *refuses* a commit that left broken markers where its first
 parent's version of the file held a first-class conflict — the same refusal as a commit that
-still carries a first-class conflict, and bypassed the same way (`git push --no-verify`).
+still carries a first-class conflict, and never bypassed in ggui (plain `git push` is not guarded).
 
 ## 5. In-band edge cases
 

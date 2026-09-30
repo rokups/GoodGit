@@ -1,8 +1,8 @@
 # Undo journal — format and semantics (U1)
 
 Status: **draft for review**. Implements product spec §5 U1 and §4.12 B.
-Implementation: `Source/libgg/Journal.cpp`; used by ggui, `git gg undo|redo|op log` and
-`git gg hook …`.
+Implementation: `Source/libgg/Journal.cpp` and `Source/libgg/Reconcile.cpp`; used by ggui and
+`git gg undo|redo|op log`. Plain git is recorded by the reconciler (§4), without hooks.
 
 The journal is **history only**. Deleting it disables Undo for past operations and changes
 nothing else: no commit, file, ref or conflict means something different without it.
@@ -14,7 +14,9 @@ nothing else: no commit, file, ref or conflict means something different without
 | Path | Content |
 |---|---|
 | `$GIT_COMMON_DIR/gg/journal` | The journal (one file, shared by all worktrees) |
-| `$GIT_COMMON_DIR/gg/journal.lock` | Lock file while appending |
+| `$GIT_COMMON_DIR/gg/journal.lock` | Lock file while appending or reconciling |
+| `$GIT_COMMON_DIR/gg/reconcile.json` | Reconciler state: baseline and HEAD reflog cursors (§4) |
+| `$GIT_COMMON_DIR/gg/rebase/<W>/` | The operation that spans a native rebase in worktree *W* (§4.1) |
 | `$GIT_COMMON_DIR/gg/cache/` | Disposable caches (not part of this spec) |
 
 `$GIT_COMMON_DIR` is `.git` of the main worktree (or the bare repository). A linked worktree
@@ -44,7 +46,7 @@ a linked worktree (`worktree` records) belongs to the worktree that ran it only 
 
 | `t` | Fields | Meaning |
 |---|---|---|
-| `begin` | `op`, `src`, `label`, `time`, `wt`, optional `undoes`, optional `cmd` | Opens operation `op` |
+| `begin` | `op`, `src`, `label`, `time`, `wt`, optional `undoes`, optional `cmd`, optional `pid`, `pstart` | Opens operation `op` |
 | `refs` | `op`, `u`: list of `[ref, old, new]` | Ref updates that happened in `op` |
 | `index` | `op`, `wt`, `before`, `after` | Index tree of worktree `wt` before/after (tree IDs) |
 | `map` | `op`, `m`: list of `[old commit, new commit]` | Rewrite mapping (post-rewrite) |
@@ -52,15 +54,22 @@ a linked worktree (`worktree` records) belongs to the worktree that ran it only 
 | `worktree` | `op`, `do`, `path`, optional `head`, `branch`, `locked`, `reason` | `op` added, removed, locked or unlocked the linked worktree at `path` (§5.4) |
 | `end` | `op`, optional `ok` (false = failed) | Closes operation `op` |
 
-- `op` — operation ID: `<unix-ms>-<8 hex>` for ggui/git-gg; `git-<pid>-<start>` for operations
-  opened by the hooks for a plain git command (§4).
-- `src` — `ggui`, `git-gg`, or `git`.
+- `op` — operation ID: `<unix-ms>-<8 hex>` for everything written now (ggui, git-gg and the
+  reconciler). `git-<pid>-<start>` only appears in journals written by older versions, whose hooks
+  opened such operations for a plain git command; readers accept both.
+- `src` — `ggui`, `git-gg`, or `git` (plain git, recorded by the reconciler, §4).
 - `label` — human text shown in the Operations panel, e.g. `commit`, `git rebase -i`,
   `undo "commit"`.
-- `time` — Unix time in milliseconds.
+- `time` — Unix time in milliseconds. For a reconciler operation made from a reflog entry: that
+  entry's time (1 s granularity).
+- `pid`, `pstart` — process ID and start time (as `/proc` or the Windows process times give it) of
+  the ggui or git-gg process that opened the operation. Absent in older journals and on reconciler
+  operations. They tell the reconciler whether an open operation is still being written (§4).
 - `wt` — worktree key of the process that opened the operation (`main` or the linked id).
 - `undoes` — on an undo operation: the `op` it reverts. Redo is an undo of an undo.
-- `cmd` — for `src:"git"`: the git command line when known.
+- `cmd` — for `src:"git"`: the reflog message of the command (e.g. `commit: fix typo`,
+  `checkout: moving from main to feat`); empty for a lump (§4). Operations of older
+  versions hold the git command line instead.
 - `do` — `add`, `remove`, `lock` or `unlock`. `path` is the worktree's directory as
   `git worktree list` shows it. For `add`/`remove`: `head` is the commit it had checked out,
   `branch` its branch (`refs/heads/<name>`, absent when detached), `locked`/`reason` its lock at
@@ -68,8 +77,11 @@ a linked worktree (`worktree` records) belongs to the worktree that ran it only 
   in the order they happened.
 
 An operation is the set of all records with the same `op`. Records of different operations may
-interleave (concurrent processes). An operation without `end` is **open**; readers treat an open
-operation older than 10 minutes, or whose process no longer exists, as closed.
+interleave (concurrent processes). An operation without `end` is **open**. Readers close open
+`src:"git"` operations only: a reconciler operation at once, a legacy `git-<pid>-<start>` one after
+10 minutes or when its process is gone. Open ggui and git-gg operations are never closed by readers;
+the reconciler stops deferring to one (§4) when its `pid`/`pstart` process is gone, or, without
+`pid`, after 10 minutes. A rebase operation (§4.1) stays open until its `end`.
 
 ### 2.2 Example
 ```
@@ -87,68 +99,120 @@ operation older than 10 minutes, or whose process no longer exists, as closed.
 
 - **Append-only.** Records are only ever appended. Nothing is rewritten in place.
 - **Locking** follows Git's ref-lock rules: create `journal.lock` with `O_CREAT|O_EXCL`; if it
-  exists, retry for up to 1 s (10 ms steps), then give up. Git-gg hook callers give up silently
-  (the operation is not recorded); ggui reports "journal busy". A lock older than 10 minutes is
-  stale and is removed.
+  exists, retry for up to 1 s (10 ms steps), then give up: ggui reports "journal busy", a reconcile
+  pass is skipped (the next event retries). A lock older than 10 minutes is stale and is removed.
+- The reconciler's `Journal::Transaction` holds the lock across its whole pass: it reads the
+  journal, the refs and the reflogs, appends its records and writes `reconcile.json` before
+  releasing it, so it serialises with every other writer. It never refreshes the lock, so a pass
+  stays short.
 - Each record is written with a single `write` of the complete line to a file opened with
   `O_APPEND`, then the lock is deleted. `fsync` is not required (history only).
 - **Torn or corrupt lines** (no trailing `\n`, invalid JSON, missing `op`) are skipped by readers.
   The next writer first appends a `\n` if the file does not end in one, so a torn line never
   merges with a new record.
 
-## 4. Grouping and the loop guard
+## 4. Recording plain git: the reconciler
 
-- ggui and git-gg open an operation (`begin`), set `GG_OPERATION=<op>` in the environment of
-  every child git process, record ref and index state themselves, and close it (`end`).
-- The managed `reference-transaction` hook (`git gg hook reference-transaction committed`)
-  appends a `refs` record with the updates read from stdin:
-  - if `GG_OPERATION` is set, the updates join that operation (no `begin`): this is the loop
-    guard that prevents duplicates;
-  - otherwise the hook computes a command key from the git process that runs it (its parent
-    PID and that process's start time; on Linux from `/proc`, on Windows best effort). If the
-    journal's tail (last 64 KiB) has a record of operation `git-<pid>-<start>` (its `begin`, or
-    a later record of it when the `begin` is further back: git before 2.51 fetches with one ref
-    transaction per ref), the updates join it; otherwise it appends `begin` (src `git`, label
-    from the command line, e.g. `git rebase -i`) followed by the `refs` record. The git process is
-    the nearest `git` ancestor of the hook (the hook's shell and the runner sit in between).
-- `post-checkout`, `post-merge`, `post-commit` and `post-rewrite` hooks add context to the same
-  operation: `map` records (post-rewrite stdin), index trees, and `end` when the command is known
-  to be finished (post-merge, post-commit and post-checkout of a top-level command; post-rewrite
-  of `rebase`).
-- Older git (2.36 at least) points HEAD at another branch (`git checkout <branch>`, `checkout -b`,
-  `switch`) without a ref transaction, so the `reference-transaction` hook never sees it. The
-  `post-checkout` hook of a branch checkout (flag 1) that leaves HEAD on a branch then records
-  HEAD's change itself, when the operation has no HEAD change yet: from the branch git resolves
-  as `@{-1}` (or the commit it left, when HEAD was detached) to `ref:<branch now>`.
-- One plain git command therefore yields exactly one operation.
-- `git worktree add` creates the new worktree's HEAD from the worktree it runs in, and git names
-  it `HEAD` in the transaction all the same. The hook keeps a `HEAD` update only when this
-  worktree's HEAD has that value after the transaction; otherwise it belongs to another worktree
-  and is left out (so a plain `git worktree add` never looks like the main worktree switching
-  branches). The hooks cannot see worktrees being added or removed: only ggui and git-gg write
-  `worktree` records.
+ggui and git-gg open an operation (`begin`), record ref and index state themselves, and close it
+(`end`). Plain git (terminal, other tools) runs no code of ours. The **reconciler**
+(`gg::reconcile::run`) finds what it did afterwards, from the refs and their reflogs, and writes
+it to the journal as operations with `src:"git"`. No hooks are involved.
+
+- **Known value.** The journal says what every ref should be: *Known(ref)* is the last `new` value
+  of the ref over all operations (undo and open ones included), else the baseline value from
+  `reconcile.json`, else the null ID. After a pass, Known equals the current value of every ref:
+  all `refs/*` (except `refs/gg/*`) and this worktree's `HEAD`. Other worktrees' `HEAD` keys are
+  not judged by a pass of this one.
+- **State file** `$GIT_COMMON_DIR/gg/reconcile.json`:
+  `{"v":1,"baseline":{"<ref>":"<value>"},"journal":"<first op id>","cursors":{"<HEAD key>":{"n","old","new","time","msg"}}}`.
+  Written to a temp file and renamed, only when it changed. Disposable, like the journal.
+  - The **first run** (no file) writes the baseline (every ref's current value) and the cursors
+    (reflog tips). Nothing is replayed: what happened before ggui first looked is not history.
+  - `journal` is the ID of the journal's first operation. When it no longer matches (the journal
+    was deleted or replaced) the baseline and cursors are made again from the current refs: no
+    operations, no replay. A ref the reconciler sees for the first time after the first run counts
+    as created (Known = null ID); the baseline gets the value of a worktree's `HEAD` the first
+    time that worktree is seen.
+- **When it runs.** On repository open and on every Watcher ref or journal change (ggui); at the
+  start of every ggui and git-gg operation (`OperationRecorder::begin`); before Undo and Redo plan;
+  in `git gg op log`. Under the journal lock (§3); when the lock is busy or the journal unreadable
+  the pass is skipped and the next event retries.
+- **Deferral.** A pass does nothing while another ggui or git-gg operation is open and being
+  written: `src` not `git`, not spanning a rebase (§4.1), and its `pid`/`pstart` are alive (no
+  `pid` recorded: it is younger than 10 minutes). Its refs are not recorded yet, so a snapshot now
+  would call them external. That operation's `OperationRecorder` records its own changes; its
+  `finish` moves the HEAD cursor past the reflog entries of the git commands it ran, so they are
+  never journaled twice.
+- **HEAD reflog, one operation per git command.** The reflog of this worktree's `HEAD` is read
+  from the cursor (the entry with the stored fingerprint, searched where it would be if nothing
+  expired) to the tip. Every entry is one plain git command and becomes one operation:
+  - `label`: `git commit`, `git checkout feat`, `git reset HEAD~1`, `git merge x`, `git rebase`,
+    `git pull`, `git cherry-pick`, `git revert`, else `git <action word>`; `cmd`: the reflog
+    message; `time`: the entry's time.
+  - The HEAD value is derived, not read: `checkout: moving from A to B` puts HEAD on branch `B`
+    when it exists (else detached); a rebase start detaches it; `rebase (finish): returning to
+    refs/heads/x` puts it back on `x`. It is recorded as `ref:<branch>` when symbolic. While HEAD
+    is on a branch, a HEAD entry that is not a checkout implies the same change of that branch,
+    in the same operation. A branch created by `checkout -b` / `switch -c` is created in it too.
+  - Entries that changed nothing (`git stash`'s `reset: moving to HEAD`, a rebase that ended where
+    it started) are dropped. The derived HEAD is forced to equal the actual HEAD.
+  - No match for the cursor (reflog expired, rewritten or deleted) or no reflog: HEAD is handled
+    by the snapshot difference (the lump below).
+- **Branch chain-walk.** For each `refs/heads/*` and `refs/stash` whose value differs from Known
+  after the HEAD operations, its own reflog is walked newest to oldest while it is chain-consistent
+  (each entry's `new` is the younger one's `old`, the newest's `new` is the ref now) until an
+  entry starts at Known (at most 1000 entries). Each step is one operation: `git branch -f x`,
+  `git branch x`, `git branch -m`, `git branch -c`, `git stash`. A step with the same old, new and
+  message as a HEAD operation joins that operation; a rename step joins by its message alone.
+- **Lump.** What is left is written as **one** operation per pass: remote-tracking refs, tags,
+  other refs, every deletion, refs whose reflog chain does not reach Known, and HEAD without a
+  usable cursor. Label `git fetch`, `git push` or `git pull` when the newest reflog entry of a
+  changed remote-tracking ref says so (at most three reflogs are read), else `external changes`;
+  `cmd` empty, `time` now. It restores to Known, so Undo of a lump puts every ref back at once.
+- **Dedupe.** `OperationRecorder::finish` may advance the cursor without the lock when that stays
+  busy, and ggui may crash between its append and the cursor. An operation derived from reflog entries whose
+  ref changes already are the newest journal changes of those refs is not written again.
+- **Result.** Each plain git command is one operation in the Operations panel, labelled as typed
+  (`git commit`, `git checkout feat`), also for commands run while ggui was closed. One
+  operation per command, and a rebase from start to finish one operation (§4.1). Operations with no
+  restorable change are not written.
+- **Limits.** Plain-git steps on refs without a reflog (tags, deleted branches) made between two
+  passes are lumped into one operation. `checkout --detach <branch>` cannot be told from a checkout
+  of the commit in the reflog. A chain longer than 1000 entries, or rewritten (`stash drop`),
+  falls back to the lump. The reflog is read around the refs and a pass retries when the tip moved
+  between the reads. Reftable repositories are not supported (libgit2). An apply-backend rebase
+  (`rebase-apply/`, `git rebase --apply`, `git am`) is not detected as in progress. `git worktree add|remove|lock|unlock` are never
+  recorded by the reconciler: only ggui and git-gg write `worktree` records.
 
 ### 4.1 Native rebases (several git commands, one operation)
 A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git commands
-(`git rebase -i`, `git rebase --continue`, …). From `rebase (start)` to `rebase (finish)` it is
-**one** operation:
-- The operation that first changes refs while a rebase is in progress in worktree *W* (ggui's
-  Start, or the hooks for the plain `git rebase -i` process) is remembered in
-  `$GIT_COMMON_DIR/gg/rebase/<W>/operation` with the rebase's identity (`orig-head`, `onto` and
-  `head-name` from `rebase-merge/`), and a `rebase` record is appended: the operation stays open
-  (and cannot be undone) until its `end`, even after the git process that began it is gone.
-- While that rebase is in progress, ggui and git-gg operations (other than undo/redo) and the hooks
-  of later git commands (`git rebase --continue` in a terminal) join it instead of opening their own.
-- It ends when the rebase is gone: ggui's step that finished it writes `end`; the
-  `post-rewrite rebase` hook of a terminal command does (adding the final index tree for an
-  operation ggui opened). A remembered operation whose rebase is no longer in progress (aborted,
-  or finished without the hooks) gets its `end` the next time ggui, git-gg or a hook records
-  anything, and before Undo plans.
+(`git rebase -i`, `git rebase --continue`, …). From `rebase (start)` to `rebase (finish)` or
+`(abort)` it is **one** operation:
+- The HEAD reflog entries of a rebase are grouped by the reconciler: from `rebase … (start)` (also
+  `pull --rebase … (start)`) to `(finish)` / `(abort)`, whatever git commands the user ran in
+  between (`commit --amend` at an edit stop, the commit that resolves a conflict), however many
+  passes it takes. A plain rebase is one operation from start to finish, also when it ran while
+  ggui was closed.
+- While the rebase is in progress the operation is **open** (and cannot be undone) until its
+  `end`. It is remembered in `$GIT_COMMON_DIR/gg/rebase/<W>/operation` with the rebase's identity
+  (`orig-head`, `onto` and `head-name` from `rebase-merge/`) and the `src` of the operation's
+  opener, and a `rebase` record is appended. A rebase that ggui started (its Start step opens the
+  operation) and that is finished in a terminal stays that one operation: the reconciler appends
+  the rest of its ref changes and the final index tree.
+- While that rebase is in progress, ggui and git-gg operations (other than undo/redo) join it
+  instead of opening their own, and the reconciler appends the plain git commands' ref changes to
+  it.
+- It ends when its `finish` or `abort` entry is seen (ggui's step that finished it writes `end`
+  itself). A remembered operation whose rebase is no longer in progress and that has no such entry
+  (`git rebase --quit`, an expired reflog) gets its `end` the next time a pass runs or before Undo
+  plans.
+- **Undo refuses while a merge-backend rebase (`rebase-merge/`, git's default) is in progress** in the worktree ("finish or abort the rebase
+  first"), for every operation, older ones included: undoing what came before would pull refs out
+  from under git.
 - Deleting `gg/rebase/` only splits the rebase into several operations.
-- When git detaches a symbolic HEAD (a rebase starting), the transaction reports the branch's commit
-  as HEAD's old value; the hook records `ref:<branch>` instead (the branch is not in the same
-  transaction). Undo skips refs whose recorded old and new values are equal (HEAD back on its
-  branch at the end of a rebase).
+- When git detaches a symbolic HEAD (a rebase starting), HEAD is recorded as `ref:<branch>`, never
+  as the branch's commit. Undo skips refs whose recorded old and new values are equal (HEAD back
+  on its branch at the end of a rebase).
 
 ## 5. Undo and redo
 
@@ -171,10 +235,20 @@ Undo of operation *X* is a **new operation** (`undoes: X`) that:
 2. checks the working tree of *W*: if restoring HEAD would overwrite uncommitted changes, Undo is
    refused with an offer to stash first;
 3. applies all ref changes back to their first recorded `old` values in **one**
-   `git update-ref --stdin` transaction (old values verified), creating reflog entries;
+   `git update-ref --stdin` transaction (old values verified), creating reflog entries. A symbolic
+   ref (`HEAD` on a branch, `refs/remotes/<r>/HEAD`) is restored by name with `git symbolic-ref`
+   after that transaction, each on its own; HEAD is detached first, on its own, when it goes back
+   to a detached commit while its branch is restored too;
 4. restores *W*'s index to *X*'s recorded `before` index tree when known (`git read-tree`), and
    updates the working tree only when that is lossless (`git read-tree -m -u` between the two
-   HEAD trees).
+   HEAD trees). A reconciler operation (`src:"git"`, no index recorded) carries a clean index and
+   working tree back along with HEAD when its reflog action word (from `cmd`) is `checkout`,
+   `rebase`, `merge`, `pull`, `cherry-pick`, `revert`, `am` or `reset`; `commit` never carries
+   (its changes stay in the working tree). Legacy `git-<pid>-<start>` operations keep the
+   command-line parser.
+
+Before it plans, Undo runs a reconcile pass (§4), so plain git since the last pass is undoable.
+Undo and Redo are refused while a rebase is in progress (§4.1).
 
 A branch the restore would delete must not be checked out in any worktree (git refuses to delete
 one too): Undo is refused ("the branch x is checked out in <path>"), unless that worktree is *W*

@@ -30,7 +30,7 @@ OUT="$BUILD/coverage"
 rm -rf "$OUT"
 mkdir -p "$OUT/profiles" "$OUT/traces"
 export GGUI_TEST_ARTIFACTS="$OUT/test-artifacts"
-# Every process (ggui and each git-gg child started by git hooks) writes its own profile.
+# Every process (ggui and each git-gg child process) writes its own profile.
 export LLVM_PROFILE_FILE="$OUT/profiles/%p-%m.profraw"
 
 # Like CI: a window on a virtual X display (the windowed code paths run too).

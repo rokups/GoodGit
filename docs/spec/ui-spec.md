@@ -118,13 +118,13 @@ has a `sequence.editor` of the user's own, the dialog `Replace sequence.editor` 
 *Replace* (keeps it in `gg.previousSequenceEditor` at the same scope) / *Cancel*; off removes only
 ggui's value and puts a kept one back. Below it, dimmed: "git rebase -i here uses: ggui's todo
 editor | '<command>' | git's editor (sequence.editor is not set)" and the scope it comes from.),
-**Hooks** (N: status, Install, Remove, first-open answer), **Conflicts** (N, Phase 3: "Expand to
+**Conflicts** (N, Phase 3: "Expand to
 index stages on checkout"). **D** max-new-file-size.
 
 ### 1.7 One-time prompts on open (N)
 - "git not found / too old" (blocking modal `Git required`): shows the found version and the
   minimum 2.36; buttons *Retry*, *Quit*.
-- Managed hooks (`Install ggui hooks?`): Install / Not now / Never for this repository.
+- No hooks prompt: managed hooks of older versions are removed silently on open (product spec §4.12 B).
 
 ### 1.8 Default dock layout (K + N)
 ```
@@ -442,8 +442,8 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
 - **Reflog** `"Reflog"`: chooser `##reflog_ref` (HEAD, branches, stash), filter, rows with old →
   new, message. Context: Copy old/new ID · Reveal old/new · Create branch from old/new….
 - **Operations** `"Operations"` (M): rows `op_<id>` (time, source label, description). Context:
-  Restore (undo back to before this operation). Footer note when managed hooks are not
-  installed: "Undo covers ggui and git gg only; use the Reflog for plain git operations."
+  Restore (undo back to before this operation). Plain git commands appear as `git <command>` rows (source `git`), journaled by the reconciler
+  (undo-journal §4); there is no footer note.
 
 ## 9. Dialogs
 Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dialog>` and

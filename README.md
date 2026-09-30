@@ -31,7 +31,7 @@ small `git gg` command-line companion.
   metadata. Conflicted commits are marked in the graph, and you resolve them whenever you like,
   as ordinary edits. Pushing a conflicted commit is always refused.
 - **Everything can be undone.** Every operation lands in an undo journal: Undo and Redo cover
-  what you do in ggui, in `git gg`, and — with the managed hooks installed — in plain `git`.
+  what you do in ggui, in `git gg`, and in plain `git` (read from the reflogs, no hooks needed).
 - **History rewrites happen in memory.** Rebase, squash, split, reorder and interactive rebase run
   on libgit2 in memory and land as one atomic ref update: one step, one Undo, nothing left
   half-done on disk.
@@ -51,7 +51,8 @@ small `git gg` command-line companion.
 - **Interactive rebase** with a live preview of the resulting graph, merges kept (`--rebase-merges`
   lists), and native `git rebase -i` when the list needs `edit`, `break` or `exec`.
 - **Branches, tags, remotes, stashes and worktrees** in side panels; fetch, pull and push.
-- **Hooks:** managed hooks chain your own and feed the undo journal.
+- **Hooks:** your own hooks run as git runs them. GoodGit installs none: plain `git` reaches the
+  undo journal through the reflogs.
 - **Looks:** a dark theme after Blender (and a light one), icons on every action, UI scaling.
 
 ## `git gg`
@@ -62,7 +63,6 @@ A deliberately minimal companion CLI that shares ggui's undo journal:
 git gg new [-m MSG] [--detach] [--before REV | --after REV] [PARENT...]   # empty or merge commit
 git gg undo | git gg redo | git gg op log                                # the undo journal
 git gg conflicts [REV]      # files with first-class conflicts (exit status 1 if any)
-git gg hooks install|uninstall|status
 git gg ui [PATH]            # open ggui on a repository
 ```
 

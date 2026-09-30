@@ -19,9 +19,10 @@ scripts and code comments cite them.
   transport, commit, checkout, stash, merge, branch/tag, worktree and staging patches.
   libgit2 does reads, the graph, diff and blame, and in-memory rewrites and conflict merging.
   `git` ≥ 2.36 is a runtime requirement (G2).
-- Managed hooks: ggui **asks on first open** of each repository (H1).
-- **Pushing commits with first-class conflicts is always refused** by ggui, and by the
-  managed `pre-push` hook for plain git.
+- **No managed hooks** (H1): plain `git` is journaled by the reconciler from reflogs and ref
+  snapshots (§4.12 B). Hooks of older installs are removed silently on open.
+- **Pushing commits with first-class conflicts is always refused** by ggui. Plain `git push` is
+  not guarded (P1).
 - **Undo** restores refs and the index. It updates the working tree only when nothing is
   lost; otherwise it refuses or offers to stash first (U1).
 - Leftover `refs/gg/*` from the old gg: **deleted automatically and silently** on open, in ggui and git-gg (C3).
@@ -43,7 +44,7 @@ scripts and code comments cite them.
 | **First-class conflicts**: a commit can contain unresolved text conflicts. They live **entirely inside the conflicted file** as self-describing markers, with no metadata. Binary and other non-text conflicts must be resolved immediately, as in Git (§4.10) | The Jujutsu-style model: change IDs/aliases, **all** `refs/gg/*` storage (workspaces, aliases, visible heads, conflict metadata), auto-snapshotting the working tree into `@` | |
 | UI layout: docked panels, menus, toolbar, dialogs, shortcuts, drag and drop | The "max new file size" snapshot setting and other snapshot-only concepts | Stash: list, create, apply, pop, drop, inspect, branch from stash |
 | Every user-facing function (mapped to Git semantics where it was jj-specific; see §4) | | A Git-centric workflow: native index, native conflicts, native merge/rebase states, native worktrees |
-| | | **Git hooks integration**: ggui runs the repository's standard hooks itself (libgit2 does not), and optional managed hooks let Undo cover plain `git` operations (§4.12) |
+| | | **Git hooks integration**: ggui runs the repository's standard hooks itself (libgit2 does not), and Undo covers plain `git` operations without hooks (§4.12) |
 
 **Principle:** the rebuild is specified by *behavior*, not by the existing code. The existing
 architecture (monolithic `Application` class spread over ~20 files, a 1.4k-line worker,
@@ -80,7 +81,7 @@ layer that wraps libgit2.
                +-------------v-------------+
                | libgg (internal static    |  shared code only: journal,
                | lib, not installed)       |  conflict markers, `new`,
-               | plain functions taking    |  hook install/entry points,
+               | plain functions taking    |  reconciler, PATH setup,
                | git_repository*           |  git runner, libgit2 helpers
                +---------------------------+
 ```
@@ -90,8 +91,8 @@ layer that wraps libgit2.
   error-to-exception or error-to-`expected` check, OID/string conversion, and small
   iterator adaptors. They are conveniences, not an abstraction boundary.
 - **libgg holds only code that both `ggui` and `git-gg` need**: the undo journal,
-  conflict-marker parser/writer and N-way term merge, `new`, hook install and entry points,
-  the git process runner, and the libgit2 helpers. Everything else lives in `ggui_core`.
+  conflict-marker parser/writer and N-way term merge, `new`, the reconciler (plain git into the journal), the legacy hook removal, the git process
+  runner, and the libgit2 helpers. Everything else lives in `ggui_core`.
 - **Git access rules (decision G2):**
   - **Reads use libgit2:** snapshot, history walk, diff, blame, reflog, stash list,
     index/status, and scanning for conflict markers.
@@ -117,8 +118,8 @@ layer that wraps libgit2.
      be rebuilt from the objects
   3. `edit/<worktree>`: ggui's edit-session state (§4.3 Edit commit: the commit and the branch
      to return to); losing it only ends the session, HEAD and every ref stay as they are
-- **Hooks:** mostly handled by git itself (G2). `git-gg` provides the entry points for the
-  managed hooks that feed the undo journal (§4.12).
+- **Hooks:** the user's hooks are handled by git itself (G2). There are no managed hooks: the
+  undo journal learns about plain git from the refs and reflogs (§4.12 B).
 - **The UI talks to a small engine with an explicit contract**: commands in, immutable
   snapshots and events out, with cancel and progress, embodied in `Commands.hpp`/`Events.hpp`.
   See §3.1 for the threading rules.
@@ -185,8 +186,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   recent list (Delete key forgets an entry), progress and cancel while opening.
   Update the tagline to Git wording.
 - **K** Auto-open argv[1], otherwise the most recent repository that still exists.
-- **N** On open, show one-time prompts where relevant: install managed hooks (H1) and
-  "git not found / too old" (G2), which is blocking. Old gg refs (C3) get no prompt.
+- **N** On open, show the one-time prompt "git not found / too old" (G2), which is blocking.
+  Managed hooks of older versions (H1) and old gg refs (C3) are removed silently, without a prompt.
 - **K** Main menu:
   - **Repository:** Open… (Ctrl+O), Initialize…, Clone…, Recent ▸ (filterable; shows
     branch, upstream and ahead/behind), Open working directory, Copy path, Close repository
@@ -235,10 +236,9 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **K** Settings window: UI scale (50–300%), theme (dark/light), `core.editor` per scope
   (User / Repository / Workspace). **D** max-new-file-size. **N** merge tool and diff tool
   selection (`merge.tool`, `diff.tool`), pull strategy (`pull.rebase`), and the default for
-  "commit all when nothing is staged". **N** A Hooks tab: install or remove the managed
-  hooks for this repository and show their status (§4.12).
+  "commit all when nothing is staged".
 - **N** Settings > General "Add GoodGit to PATH" (Linux with systemd only): puts the ggui
-  executable directory, which holds `git-gg` (the hooks need it on PATH), on the login PATH by
+  executable directory, which holds `git-gg` (so `git gg` works in a terminal), on the login PATH by
   writing `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` (default `~/.config`; one line
   `PATH=<dir>:${PATH}` under a comment saying ggui manages it); unchecking deletes the file. The
   state is read from the file, not stored: checked iff it exists and names the current
@@ -385,8 +385,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 - **K Reflog panel:** HEAD reflog with filter. Copy/reveal old and new commits, and create
   a branch from either. **N** Choose a reflog: HEAD, any branch, or stash.
 - **M Operations panel:** list of operations from the undo journal, with Restore (§5,
-  decision U1). This includes plain `git` operations when the managed hooks are
-  installed (§4.12), each labelled with its source (ggui, git-gg, or `git <command>`).
+  decision U1). This includes plain `git` operations (§4.12 B), each labelled with its source (ggui, git-gg, or `git <command>`).
 
 ### 4.8 Remote operations
 - **K** Clone (with progress and cancel). Fetch (one remote or all). Push (branch, force
@@ -536,20 +535,18 @@ commit is conflicted is a pure function of its tree.
 - **ggui always refuses to push** when the pushed range contains commits with
   first-class conflicts. The error lists the commits and conflicted files, with a
   "Reveal" button for each. There is no override in ggui.
-- With the managed `pre-push` hook installed (§4.12), plain `git push` is refused the same
-  way. Only Git's own `--no-verify` can bypass it, and ggui cannot prevent that.
+- Plain `git push` in a terminal is **not guarded**: there are no managed hooks (§4.12 B, P1).
+  Undo can still put the refs back.
 - The check is limited to commits not yet reachable from the remote's tracking refs, so
   it stays cheap.
-- **ggui and the managed `pre-push` hook also refuse commits that left broken conflict
-  markers** (docs/spec/conflict-markers.md §4.10): a commit whose file's first-parent
+- **ggui also refuses to push commits that left broken conflict markers** (docs/spec/conflict-markers.md §4.10): a commit whose file's first-parent
   version held a first-class conflict, and whose own version has leftover marker lines
   instead of a resolution (`gg::markers::brokenMarkers`). Same message style, same
-  "Reveal", same `--no-verify`-only bypass. The managed `pre-commit` hook warns (never
-  blocks) about this earlier, at commit time, for staged files the commit touches — both
-  a broken region and a staged file that is itself still a first-class conflict. ggui's
-  Commit and Amend dialogs and the Info panel's Commit button (on the Index) show the same
-  warning (`gg::outgoing::stagedConflictWarnings`, read off the UI thread and refreshed on every
-  status change); it never blocks committing.
+  "Reveal", no override. The same check warns (never blocks) earlier, at commit time, for staged
+  files the commit touches — both a broken region and a staged file that is itself still a
+  first-class conflict. ggui's Commit and Amend dialogs and the Info panel's Commit button (on
+  the Index) show the warning (`gg::outgoing::stagedConflictWarnings`, read off the UI thread and
+  refreshed on every status change); it never blocks committing.
 
 **Native in-progress operations: N**
 - Detect merge, rebase (interactive and apply), cherry-pick, revert and bisect states.
@@ -570,7 +567,7 @@ commit is conflicted is a pure function of its tree.
 - **K** Apply patch (from clipboard or file). Copy patch. Save patch… (file or selection).
 - **N** "Apply to index" vs "apply to working tree" option (`git apply --cached`).
 
-### 4.12 Hooks (new)
+### 4.12 Hooks and plain git (new)
 **A. The user's hooks (always on).** Mutations go through the `git` CLI, so git runs the
 user's hooks natively. For in-memory rewrites, git runs `reference-transaction` natively
 through `git update-ref --stdin`. ggui runs `post-rewrite` and `post-checkout` (and
@@ -579,46 +576,32 @@ stdin.
 - A failing blocking hook aborts the operation, and its output is shown in an error popup.
 - Commit dialogs get a "Skip hooks" checkbox (`--no-verify`).
 
-**B. Managed hooks for undo and safety.** On the first open of a repository without them,
-ggui asks once: "Install ggui hooks (Undo for all git operations, block pushing
-conflicts)?", with the choices Install / Not now / Never for this repository. The answer
-is stored in ggui's settings, not in the repository. You can change it later in Settings
-or with `git gg hooks install|uninstall`.
-- **`reference-transaction`:**
-  - Git calls it for every ref update. On `committed`, it runs `git gg hook
-    reference-transaction`, which appends the old and new values to the undo journal.
-  - Updates in one Git command form one journal operation, labelled with the command.
-    The parent process is identified through `GIT_*` environment variables and the
-    process tree where possible.
-  - This is what lets Undo/Redo and the Operations panel cover **plain `git` commits,
-    rebases, resets, merges, branch deletes, stash operations** and so on.
-- **`post-checkout`, `post-merge`, `post-rewrite`, `post-commit`:** add context to the
-  current journal operation: the command name, rewritten commit mappings, and the index
-  tree when useful.
-- **`pre-push`:** refuses conflicted commits, and commits that left broken conflict markers
-  (§4.10).
-- **`pre-commit`:** warns (never blocks) about staged files the commit touches that are
-  themselves a first-class conflict, or whose HEAD version held one and whose staged edit
-  broke the region instead of resolving it (§4.10). ggui's commit dialog and the Info
-  panel's Commit button show the same warning.
-- **Installing:**
-  - Hooks are chained, never clobbered. An existing hook keeps running, before or after
-    ours as appropriate, and its exit status is respected.
-  - If the installed Git supports config-defined hooks, use them. Otherwise install small
-    wrapper scripts in the active hooks directory (`core.hooksPath` or `.git/hooks`) that
-    call `git gg hook <name>` and then any previous hook.
-  - Works in linked worktrees (shared hooks, per-worktree journal).
-  - "Uninstall" restores the previous hooks exactly.
-- **Loop guard:** during its own operations, ggui and git-gg set `GG_OPERATION=<id>`, so
-  hook-reported updates join the operation already open instead of creating duplicates.
-- **Safety:**
-  - If the hook binary is missing (`git-gg` not on `PATH`), the wrapper **silently does
-    nothing** apart from `pre-push`, which warns. Plain Git must never break because ggui
-    is not installed.
-  - The journal is append-only and locked, with the same lock rules as Git's ref locks.
-    A corrupt or partly written journal is skipped, never fatal.
-- **Without managed hooks,** Undo covers only ggui and git-gg operations. The UI says
-  this, and the Reflog panel remains the recovery path for plain Git operations.
+**B. Plain git in Undo (no managed hooks).** ggui installs no hooks and asks nothing. Undo and
+the Operations panel cover plain `git` commands (commits, rebases, resets, merges, branch moves
+and deletes, stash, fetch, push) because the **reconciler** reads what happened from the refs and
+their reflogs: on repository open, when refs change, before every ggui or git-gg operation, before
+Undo, and in `git gg op log`. Format and rules: `docs/spec/undo-journal.md` §4.
+- Each plain git command in HEAD's reflog is one operation labelled as typed (`git commit`,
+  `git checkout feat`), also when it ran while ggui was closed. A plain rebase is one operation
+  from start to finish. Fetches, pushes, tags and deletions are one operation per change pass.
+- Undo carries the working tree back for checkout, rebase, merge, pull, cherry-pick, revert, am
+  and reset when it is clean. A commit never carries.
+- Undo refuses while a rebase (merge backend, git's default) is in progress: finish or abort it
+  first.
+- **Limits:** steps on refs without a reflog (tags, deleted branches) made between two passes
+  are one operation. `checkout --detach <branch>` looks like a checkout of a commit. Reftable
+  repositories are not supported. The first time a repository is opened there is nothing to
+  replay: Undo starts from then. Plain `git push` is not guarded (§4.10, P1).
+- **Migration of older installs (H1).** On open (ggui, and every `git gg` command that opens a
+  repository), managed hooks of older versions are uninstalled silently: previous hooks are
+  restored byte-exact (config-defined and wrapper modes), and `refs/gg/*` is deleted (C3). No
+  prompt, nothing is kept. `git gg hook …` stays as a silent exit-0 no-op for stale installs;
+  `git gg hooks install|status` print "managed hooks were removed; Undo covers plain git without
+  them"; `git gg hooks uninstall` runs the uninstall.
+- The journal is append-only and locked, with the same lock rules as Git's ref locks. A
+  corrupt or partly written journal is skipped, never fatal. Plain git never depends on ggui:
+  nothing of ggui runs inside it.
+- The Reflog panel stays the recovery path for anything Undo refuses.
 
 ### 4.13 Interactive rebase (new)
 **Entry points**
@@ -701,8 +684,9 @@ or with `git gg hooks install|uninstall`.
    - Because it is plain Git, the user can also finish in a terminal with
      `git rebase --continue`, and ggui follows along.
    - Undo: the whole native rebase, from `rebase (start)` to `rebase (finish)`, becomes one
-     journal operation. That holds when ggui started it (`GG_OPERATION` is set for the
-     child git), and for plain git rebases when the managed hooks are installed.
+     journal operation. That holds when ggui started it and for plain git rebases (the
+     reconciler groups them from HEAD's reflog; undo-journal §4.1). Undo refuses while a rebase
+     (merge backend) is in progress.
 
 **Plain `git rebase -i` started outside ggui**
 - It is detected from `.git/rebase-merge/`. ggui shows the done, current and remaining
@@ -721,18 +705,18 @@ user wants to adjust more.
 
 | ID | Decision | Recommendation |
 |---|---|---|
-| U1 (confirmed) | How Undo/Redo and the Operations panel work without the gg operation log | Scope: **refs plus index; worktree updated only when lossless**, otherwise refuse or offer to stash. A **ref-state journal** in `.git/gg/journal` (per worktree for HEAD, shared for other refs). Each entry is one operation: its source (ggui / git-gg / plain git via hooks), the before and after values of every ref it touched (HEAD, branches, tags, `refs/stash` and other reflog-backed refs), and the index tree when known. **Undo** is itself a new operation that restores the before values, like jj and gg, so Redo = undo the undo. Undo refuses if the refs no longer match the entry's after values (moved outside the journal, for example with hooks not installed). It also refuses if the working tree would lose data, and offers to stash first. Commits that are only reachable from the journal are protected from `gc` by using the refs' reflogs (Git's `gc` keeps reflog entries until they expire), so there are no private refs. The journal is history only: deleting it disables past Undo and nothing else |
+| U1 (confirmed) | How Undo/Redo and the Operations panel work without the gg operation log | Scope: **refs plus index; worktree updated only when lossless**, otherwise refuse or offer to stash. A **ref-state journal** in `.git/gg/journal` (per worktree for HEAD, shared for other refs). Each entry is one operation: its source (ggui / git-gg / plain git via the reconciler), the before and after values of every ref it touched (HEAD, branches, tags, `refs/stash` and other reflog-backed refs), and the index tree when known. **Undo** is itself a new operation that restores the before values, like jj and gg, so Redo = undo the undo. Undo refuses if the refs no longer match the entry's after values (moved outside the journal, for example by a tool that changed refs since the last pass). It also refuses if the working tree would lose data, and offers to stash first. Commits that are only reachable from the journal are protected from `gc` by using the refs' reflogs (Git's `gc` keeps reflog entries until they expire), so there are no private refs. The journal is history only: deleting it disables past Undo and nothing else |
 | R1 | Rewriting history that conflicts | Do rewrites in memory. **Text conflicts** become in-file first-class conflicts and the rewrite continues. **Non-text conflicts** are resolved in the pre-flight dialog before anything is written (§4.10). A ggui rewrite never leaves a native sequencer state, **except** an interactive rebase the user runs with the native engine (R3). Only failures outside content conflicts abort the rewrite with nothing changed: locked refs, worktree collisions, hook rejection, I/O errors |
 | K1 (confirmed) | Which conflicts may be first-class | Text content only. Binary, filtered (LFS), mode, type, delete and rename conflicts must be resolved immediately (§4.10 table) |
 | M1 | Marker format | Standard Git diff3 markers for two-sided conflicts, with the base always present. Extended alternating side and base sections for N sides. Marker length grows to avoid ambiguity. Edge cases (final newline, CRLF, empty sides) are encoded in-band. The spec defines the grammar formally; there is **no** separate storage |
-| H1 (confirmed) | Hooks | The user's hooks run through git natively (G2). The managed hooks (reference-transaction, post-*, pre-push) are **offered on first open**, chained, safe when `git-gg` is missing, and power Undo for plain Git operations (§4.12) |
+| H1 (confirmed) | Hooks | The user's hooks run through git natively (G2). **No managed hooks**: plain git is journaled from reflogs and ref snapshots by the reconciler (§4.12 B, undo-journal §4). Older installs' hooks are removed silently on open |
 | R3 (confirmed) | Interactive rebase engine | **In-memory by default** (pick, reword, squash, fixup, drop, update-ref, reorder): atomic, undoable as one operation, conflicts become first-class. **Native `git rebase -i`** when the todo has `edit`/`break`/`exec` or the user asks for it: the todo and messages are fed through `GIT_SEQUENCE_EDITOR`/`GIT_EDITOR`, and stops use the native in-progress UI. The editor always shows which engine will run and why |
 | R2 | Which descendants get rebased | Descendants reachable from local branches that contain the rewritten commit, plus a detached HEAD. Never move remote-tracking refs. Refuse to move branches checked out in other worktrees unless the user confirms |
 | C1 | Commit when nothing is staged | Configurable. Default: prompt "Stage all and commit?" |
 | T1 (confirmed) | Transport | **`git` CLI** for clone, fetch, pull and push. The built-in credential dialog goes away; ggui is only an askpass prompt when needed |
 | G1 | Filter drivers (LFS etc.) | **Not needed.** Checkout, add and staging go through `git`, which runs the filters. In-memory rewrites work on stored (clean) blobs, and conflicts in filtered files must be resolved immediately (K1) |
 | G2 (confirmed) | Git access | Hybrid: libgit2 for reads and in-memory rewrites; `git` CLI for every mutation plain git has; ref moves after a rewrite go through one `git update-ref --stdin`. Minimum **git 2.36** (for `git hook run`), checked on startup with a clear error |
-| P1 (confirmed) | Push with conflicts | Always refused by ggui; refused by the managed `pre-push` hook for plain git |
+| P1 (confirmed) | Push with conflicts | Always refused by ggui; plain `git push` is not guarded |
 | C3 (confirmed) | Leftover `refs/gg/*` from the old gg | On open (ggui and git-gg), delete them automatically and silently with one `git update-ref --no-deref --stdin`, with no prompt, no backup branches and no setting. The deletion is not journaled (the journal never records `refs/gg/*`), so it cannot be undone. Nothing is kept |
 | X1 (confirmed) | Platforms | First release: **Linux and Windows** (MinGW-static and MSVC presets). macOS later: it needs the SDL_GPU MSL/Metal path, signing and a preset |
 | I1 | CLI name | Ship the executable as `git-gg` so Git's subcommand lookup finds it as `git gg` |
@@ -748,16 +732,15 @@ config wrapper.
 git gg new [-m MSG] [--detach] [--before REV | --after REV] [PARENT...]
            # empty commit; default parent HEAD; advances the attached branch;
            # multiple parents create an empty merge commit
-git gg undo                # undo last journal operation (ggui, git-gg, or plain git
-                           # when the managed hooks are installed)
+git gg undo                # undo last journal operation (ggui, git-gg, or plain git,
+                           # read from the reflogs)
 git gg redo
 git gg op log              # list journal entries
-git gg hooks install|uninstall|status
-                           # manage the chained hooks for this repo (§4.12)
+git gg hooks uninstall     # legacy: removes managed hooks of older versions (§4.12 B);
+                           # `install` and `status` only say they were removed
 git gg hook <hook-name> [ARGS...]
-                           # hook entry point called by the managed hooks; not for
-                           # interactive use. reference-transaction/post-* append to
-                           # the journal; pre-push refuses conflicted commits
+                           # legacy: silent no-op (exit 0) for stale installs whose
+                           # hooks still call it
 git gg conflicts [REV]     # list files with first-class conflicts in REV (default
                            # HEAD); exit status 1 when there are any. Scriptable
 git gg ui [PATH]           # optional: launch ggui on the repo
@@ -774,8 +757,8 @@ Rules:
 - `git gg help <cmd>` / `--help` print plain text. No man-page or completion generator at
   first. `git gg` completion can be added later via a `git-completion` hook.
 - Anything Git already does (commit, rebase, stash, worktree…) is **not** duplicated.
-- `git gg` has to be fast to start, because hooks run it on every ref update: no repository
-  scan, and journal appends only.
+- `git gg hook` must return immediately, before opening the repository: stale hooks of older
+  versions run it on every ref update.
 
 ---
 
@@ -790,9 +773,8 @@ Rules:
   filesystem. Internal functions are covered only by the user-visible behavior that needs
   them.
 - **`git-gg` is tested inside the same scenarios.** A test runs `git gg …` or plain `git`
-  commands as steps (for example `git commit` with managed hooks installed, then Undo in
-  ggui). `git-gg` then runs as a real child process from real hooks, and its coverage data
-  is collected too.
+  commands as steps (for example a plain `git commit`, then Undo in
+  ggui). `git-gg` then runs as a real child process, and its coverage data is collected too.
 - **Real processes, real repositories:** each test builds its fixture repository with plain
   `git` in a temporary directory. It uses an isolated `HOME`, `XDG_CONFIG_HOME`,
   `GIT_CONFIG_GLOBAL`, preferences directory and `PATH` containing the `git-gg` under test.
@@ -859,7 +841,8 @@ Rules:
   - **Plain-Git transparency:** `git rebase`, `cherry-pick`, `commit --amend`, `merge`,
     `stash`, `gc --prune=now`, `clone` and `push` to a bare repo, run as test steps
     between UI checks. Deleting `.git/gg/` changes nothing ggui reports.
-  - Push refusal, from ggui and from plain `git push` with hooks installed.
+  - Push refusal from ggui (conflicted and broken-marker commits). Plain `git push` is not
+    guarded, and Undo restores what it moved.
 - **Interactive rebase:**
   - A randomized differential scenario: the same todo list is entered in the editor and run
     with the in-memory engine, and fed to `git rebase -i` on a copy of the repository.
@@ -868,13 +851,27 @@ Rules:
     Undo, and following a plain `git rebase -i` started as a test step.
 - **Staging:** randomized hunk and line selections staged through the Diff panel, compared
   with the index that `git apply --cached` produces for the same patch.
-- **Hooks:**
-  - First-open prompt (Install / Not now / Never).
+- **Plain git without hooks (reconciler):**
   - Every plain Git ref-changing command in the fixture list becomes exactly one journal
-    operation, and Undo restores it.
-  - User hooks chained and their exit codes respected.
-  - `git-gg` missing from `PATH` → plain git unaffected.
-  - Uninstall is byte-exact.
+    operation, labelled as typed, and Undo restores it: commit, amend, reset, checkout/switch,
+    merge, cherry-pick, branch -f/-m/-c/-D, stash, tag, fetch, push.
+  - Commands run while ggui is closed are journaled on open; `git gg undo` in a terminal
+    reconciles first; ggui's own operations are never journaled twice.
+  - A plain rebase (also `-i` with an edit stop, or run while ggui is closed) is one operation;
+    abort leaves nothing to undo; Undo refuses while a rebase is in progress.
+  - Undo carry by action word: reset --hard carries the clean tree, commit keeps the changes.
+  - No replay on the first run, after the state file is deleted, or after the journal is
+    deleted; an expired reflog falls back to the snapshot difference without duplicates; a stale
+    cursor never duplicates an operation; a fetch of thousands of refs is one fast operation.
+  - Linked worktrees: a plain commit is journaled from that worktree's own reflog; another
+    worktree's HEAD is never seen as created or deleted.
+  - Undo of a symbolic ref restores it by name.
+- **Hooks and migration:**
+  - User hooks run and their exit codes are respected.
+  - Managed hooks of older versions (config mode, wrapper scripts, relative `core.hooksPath`,
+    linked worktrees) are uninstalled silently on open in ggui and in `git gg`, previous hooks
+    restored byte-exact, and plain git is journaled afterwards; `git gg hook` exits 0 silently;
+    `git gg hooks install|status|uninstall` behave as in §4.12 B.
 - **Stash, remotes, worktrees, blame, reflog, settings, recent repositories, and old gg
   refs cleanup:** at least one scenario per spec ID.
 - **Responsiveness:**
@@ -882,7 +879,7 @@ Rules:
   - A frame-time scenario on the large fixture, with slow-git mode, asserts no frame
     exceeds ~33 ms because of repository work.
   - Cancel works for every long operation.
-- **Failure paths are required for branch coverage:** hook rejection, git missing or too
+- **Failure paths are required for branch coverage:** user-hook rejection, git missing or too
   old, locked refs, checkout collisions, network failure (unreachable remote), cancelled
   operations, and a corrupt journal. Each is triggered from the scenario, never simulated
   inside the code.

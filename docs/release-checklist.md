@@ -13,8 +13,8 @@ Linux: a fresh Ubuntu 24.04 desktop VM, plus one other glibc ≥ 2.39 distributi
 1. `sudo apt install ./ggui_<version>_amd64.deb`; the dependencies (git, Vulkan ICD, X11) come in.
 2. Start ggui from the application menu (icon, window class); open a repository; stage, commit,
    Undo; interactive rebase with an edit stop; fetch/push to a local bare remote.
-3. In a terminal: `ggui --version`, `git gg --version`, `git gg hooks install`, a plain
-   `git commit`, then Undo in ggui.
+3. In a terminal: `ggui --version`, `git gg --version`, a plain
+   `git commit`, then Undo in ggui (it lists `git commit`).
 4. `sudo apt remove ggui` leaves nothing under /usr. Unpack the tar.gz in `$HOME` on the second
    distribution and repeat step 2 from `bin/ggui`.
 
@@ -23,7 +23,7 @@ with the current release), for the MinGW ZIP and the MSVC ZIP each.
 1. Unzip; start `ggui.exe` from Explorer: no console window, the icon, and version details
    (Properties ▸ Details) on `ggui.exe` and `git-gg.exe`.
 2. From cmd and PowerShell: `ggui --version` prints in the console; with the folder on `PATH`,
-   `git gg --version`, `git gg hooks install`, a plain `git commit`, Undo in ggui.
+   `git gg --version`, a plain `git commit`, Undo in ggui (it lists `git commit`).
 3. A repository on another drive and in a path with spaces and non-ASCII characters; Worktrees ▸
    Open in new window (the `GetModuleFileNameW`/`CreateProcessW` path); ggui as
    `sequence.editor` for a `git rebase -i` started in Git Bash.
