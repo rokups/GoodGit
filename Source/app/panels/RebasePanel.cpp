@@ -935,8 +935,10 @@ void RebasePanel::drawRunOptions()
     // The options flow like words: an item that does not fit in the rest of the row starts the next one.
     const float field = ImGui::GetFontSize() * 12;
     ImGui::SetNextItemWidth(field);
-    if (ImGui::InputTextWithHint("Onto###ir_onto", m_state.context->upstream.empty() ? "the root" : "the upstream", &m_onto,
-            ImGuiInputTextFlags_EnterReturnsTrue)) {
+    bool applyOnto = ImGui::InputTextWithHint("Onto###ir_onto", m_state.context->upstream.empty() ? "the root" : "the upstream",
+        &m_onto, ImGuiInputTextFlags_EnterReturnsTrue);
+    applyOnto = acceptCommitDrop(m_onto) || applyOnto;
+    if (applyOnto) {
         Request r;
         r.upstream = m_read.upstream;
         r.tip = m_read.tip;

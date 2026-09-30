@@ -748,6 +748,7 @@ void ReflogPanel::draw(bool* open)
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    acceptCommitDrop(m_filter);
     if (m_reflog) {
         if (ImGui::BeginTable("##reflog_table", 3,
                 ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable)) {

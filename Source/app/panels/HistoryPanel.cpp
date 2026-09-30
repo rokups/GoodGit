@@ -778,7 +778,9 @@ void HistoryPanel::draw(bool* open)
     const char* filterHint = ICON_MS_SEARCH " Filter: message, ID, branch, tag";
     ImGui::SetNextItemWidth(std::clamp(ImGui::CalcTextSize(filterHint).x + ImGui::GetStyle().FramePadding.x * 2.0f,
         std::min(ImGui::GetFontSize() * 8, ImGui::GetContentRegionAvail().x), ImGui::GetContentRegionAvail().x));
-    if (ImGui::InputTextWithHint("##hist_filter", filterHint, &m_filter)) {
+    bool filterChanged = ImGui::InputTextWithHint("##hist_filter", filterHint, &m_filter);
+    filterChanged = acceptCommitDrop(m_filter) || filterChanged;
+    if (filterChanged) {
         m_appliedFilter = m_filter;
         m_matches.clear();
         m_visibleDirty = true;

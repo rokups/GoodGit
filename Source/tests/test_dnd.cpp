@@ -190,3 +190,30 @@ GG_TEST("dnd", "the chooser's choices and Escape; a commit's files onto its chil
 }
 
 } // namespace ggtest
+
+namespace ggtest {
+
+GG_TEST("dnd", "a dragged commit fills the History filter and the Changes \"Compare with\" field")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    // History filter: the ID applies as if typed.
+    drag(s, rowRef(r.c[1]), "//History/##hist_filter");
+    GG_CHECK(s.waitUntil([&] {
+        const auto v = history.visibleIds();
+        return history.searchActive() && v.size() == 1 && v[0].hex() == r.c[1];
+    }));
+    ctx->ItemInputValue("//History/##hist_filter", "");
+    GG_REQUIRE(s.waitUntil([&] { return history.visibleIds().size() == history.rows().size(); }));
+    // Changes "Compare with": applies right away.
+    ctx->ItemClick(rowRef(r.c[3]).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Changes/##compare_with"); }));
+    drag(s, rowRef(r.c[0]), "//Changes/##compare_with");
+    GG_CHECK(s.waitUntil([&] {
+        const auto t = s.session()->changes().compareTarget();
+        return t.kind == ggui::CompareTarget::Rev && t.rev == r.c[0];
+    }));
+}
+
+} // namespace ggtest

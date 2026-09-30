@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <cstddef>
+#include <string>
 
 namespace ggui {
 
@@ -36,5 +37,8 @@ bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const
 bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size);
 // Width button()/smallButton() will take for this icon and label, for right-aligning rows.
 float buttonWidth(const char* icon, const char* label);
+// Makes the item just submitted (a commit-ID/ref input) a drop target for History's commits and branch badges:
+// `text` becomes the commit's hex ID or the branch name. True when it was filled.
+bool acceptCommitDrop(std::string& text);
 
 } // namespace ggui

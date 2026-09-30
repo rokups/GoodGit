@@ -71,6 +71,7 @@ bool compareWithField(const char* id, std::string& text)
 {
     bool apply = ImGui::InputTextWithHint(id, "Compare with", &text, ImGuiInputTextFlags_EnterReturnsTrue);
     apply = apply || ImGui::IsItemDeactivatedAfterEdit();
+    apply = acceptCommitDrop(text) || apply;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         ImGui::SetTooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
     if (ImGui::BeginPopupContextItem((std::string(id) + "_menu").c_str())) {

@@ -215,4 +215,18 @@ bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiS
     return pressed;
 }
 
+bool acceptCommitDrop(std::string& text)
+{
+    if (!ImGui::BeginDragDropTarget())
+        return false;
+    bool filled = false;
+    for (const char* type : {"GG_COMMIT", "GG_BRANCH"})
+        if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload(type)) {
+            text.assign(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
+            filled = true;
+        }
+    ImGui::EndDragDropTarget();
+    return filled;
+}
+
 } // namespace ggui
