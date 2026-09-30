@@ -61,6 +61,8 @@ public:
     int quitRequests() const { return m_quitRequests; }
     // Text of recent row `i` as shown on the Welcome screen (path + summary).
     std::string recentRowText(size_t i) const;
+    // Normalised path of the open repository (as stored in Recent), or empty.
+    std::string currentRepoKey() const;
 
     // Test isolation: closes the repository and reloads settings from the (new)
     // preferences directory, as on a fresh start.
@@ -178,6 +180,7 @@ private:
     int m_pendingOpens = 0;
     std::string m_welcomePath;
     std::string m_recentFilter;
+    std::string m_recordedRecent; // path of the open repository already moved to the front of Recent
     std::string m_errorTitle;
     std::string m_errorMessage;
     std::vector<Toast> m_toasts;

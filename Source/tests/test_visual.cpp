@@ -287,6 +287,21 @@ GG_TEST("visual", "no ImGui default blue survives in either theme")
                 ctx->LogError("%s is not neutral", ImGui::GetStyleColorName(i));
             GG_CHECK(saturation(applied.Colors[i]) < 0.05f);
         }
+        // No blue anywhere in the interaction colours: selection, headers, focus, grabs, checks, links.
+        for (ImGuiCol i : {ImGuiCol_CheckMark, ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive, ImGuiCol_SeparatorActive,
+                 ImGuiCol_ResizeGripActive, ImGuiCol_NavCursor, ImGuiCol_TextSelectedBg, ImGuiCol_DockingPreview,
+                 ImGuiCol_PlotLines, ImGuiCol_PlotLinesHovered}) {
+            if (saturation(applied.Colors[i]) >= 0.1f)
+                ctx->LogError("%s is not neutral", ImGui::GetStyleColorName(i));
+            GG_CHECK(saturation(applied.Colors[i]) < 0.1f);
+        }
+        const ggui::Palette& pal = ggui::theme().palette();
+        for (ImU32 c : {pal.selection, pal.selectionHovered}) {
+            const ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
+            GG_CHECK(saturation(v) < 0.05f);
+            // Clearly stronger than the hover overlay, so a selected row stands out from a hovered one.
+            GG_CHECK(v.w > applied.Colors[ImGuiCol_HeaderHovered].w * 2.0f);
+        }
     }
     ggui::theme().apply(original, scale);
 }

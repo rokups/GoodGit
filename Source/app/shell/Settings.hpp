@@ -48,6 +48,7 @@ private:
 enum class Theme { Dark, Light };
 enum class HooksAnswer { Unasked, Installed, NotNow, Never };
 enum class NothingStaged { Ask, StageAll, StageSelected };
+enum class RecentOrder { MostRecent, Alphabetical }; // order of the Recent lists (storage stays by recency)
 
 struct RepoPrefs {
     HooksAnswer hooks = HooksAnswer::Unasked;
@@ -57,7 +58,8 @@ struct RepoPrefs {
 struct SettingsData {
     float uiScale = 1.0f;          // 0.5 – 3.0
     Theme theme = Theme::Dark;
-    std::vector<std::string> recent; // most recent first
+    std::vector<std::string> recent; // most recent first, unique (normalised paths)
+    RecentOrder recentOrder = RecentOrder::MostRecent;
     std::map<std::string, RepoPrefs> repos;
     std::map<std::string, bool> panels; // window name → visible
     // Diff panel
@@ -105,6 +107,15 @@ private:
 
 nlohmann::json toJson(const SettingsData& d);
 SettingsData fromJson(const nlohmann::json& j);
+
+// A repository path as stored in Recent: absolute, symlinks resolved where the path exists, no
+// trailing separator ("/a/b/" and "/a/b" are the same entry).
+std::string normalizeRepoPath(const std::string& path);
+// `paths` without repeated repositories (after normalisation), first occurrence kept.
+std::vector<std::string> uniqueRepoPaths(const std::vector<std::string>& paths);
+// Indices into `paths` in display order: as stored, or alphabetical by the unique display name
+// (case-insensitive; base name first, then the parent prefix).
+std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, RecentOrder order);
 
 // Short display name of a recent repository: `base` is the last path component; `prefix` holds
 // the parent folders ("work/") added to tell it apart from other entries with the same base.

@@ -52,7 +52,7 @@ private:
 
 ThemeManager& theme();
 
-// Neutral grey for collapsing section bars and tree nodes (blue is for selection only): construct
+// Neutral grey for collapsing section bars and tree nodes (selection has its own stronger highlight): construct
 // around the CollapsingHeader/TreeNode call.
 struct SectionHeaderColors {
     SectionHeaderColors();

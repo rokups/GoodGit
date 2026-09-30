@@ -398,6 +398,16 @@ void App::drawSettingsWindow()
                 applyTheme();
                 m_settings.save();
             }
+            const char* orders[] = {"Most recently opened", "Alphabetical"};
+            int ro = static_cast<int>(d.recentOrder);
+            ImGui::SetNextItemWidth(comboWidth({orders[0], orders[1]}));
+            if (ImGui::Combo("Recent repositories order##recent_order", &ro, orders, 2)) {
+                d.recentOrder = static_cast<RecentOrder>(ro);
+                m_settings.save();
+            }
+            ImGui::SameLine();
+            helpMarker("How the Recent lists (toolbar switcher, Repository > Recent and the welcome screen) are ordered. "
+                       "Alphabetical sorts by the name shown.");
             drawPathSetting();
             ImGui::EndTabItem();
         }

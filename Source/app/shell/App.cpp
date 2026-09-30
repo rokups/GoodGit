@@ -477,11 +477,13 @@ void App::frame()
         m_session->pump();
         if (m_session->failed()) {
             m_closing.push_back(std::move(m_session));
-        } else if (m_session->opened() && (m_settings.data().recent.empty()
-                       || m_settings.data().recent.front() != m_session->path().string())) {
-            m_settings.addRecent(m_session->path().string());
+        } else if (m_session->opened() && m_recordedRecent != m_session->path().string()) {
+            m_recordedRecent = m_session->path().string();
+            m_settings.addRecent(m_recordedRecent);
         }
     }
+    if (!m_session || !m_session->opened())
+        m_recordedRecent.clear(); // reopening the same repository moves it to the front again
 
     pumpAskpass();
     pumpSequenceEditor();

@@ -186,6 +186,109 @@ GG_TEST("shell", "recent repositories: unique short display names")
     GG_CHECK(uniqueRecentNames({}).empty());
 }
 
+GG_TEST("shell", "recent repositories: paths are normalised and unique, display order follows the setting")
+{
+    using namespace ggui;
+    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b/"), "/a/b");
+    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b//"), "/a/b");
+    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b"), "/a/b");
+    GG_CHECK_STR_EQ(normalizeRepoPath("/"), "/");
+    const auto unique = uniqueRepoPaths({"/a/b/", "/c/d", "/a/b", "/c/d/"});
+    GG_REQUIRE(unique.size() == 2);
+    GG_CHECK_STR_EQ(unique[0], "/a/b");
+    GG_CHECK_STR_EQ(unique[1], "/c/d");
+    // addRecent: "/a/b/" and "/a/b" are one entry, moved to the front.
+    Settings& st = s.app.settings();
+    st.addRecent("/a/b/");
+    st.addRecent("/x/y");
+    st.addRecent("/a/b");
+    const auto& recent = st.data().recent;
+    GG_REQUIRE(recent.size() >= 2);
+    GG_CHECK_STR_EQ(recent[0], "/a/b");
+    GG_CHECK_STR_EQ(recent[1], "/x/y");
+    GG_CHECK_EQ(std::count(recent.begin(), recent.end(), std::string("/a/b")), 1);
+    st.forgetRecent("/a/b");
+    st.forgetRecent("/x/y");
+    // Loading a settings file with repeats keeps the most recent occurrence; the order persists.
+    SettingsData d = fromJson(nlohmann::json::parse(
+        R"({"recent":["/a/b/","/c/d","/a/b","/c/d/"],"recentOrder":"alphabetical"})"));
+    GG_REQUIRE(d.recent.size() == 2);
+    GG_CHECK_STR_EQ(d.recent[0], "/a/b");
+    GG_CHECK(d.recentOrder == RecentOrder::Alphabetical);
+    GG_CHECK_STR_EQ(toJson(d)["recentOrder"].get<std::string>(), "alphabetical");
+    GG_CHECK(fromJson(toJson(SettingsData{})).recentOrder == RecentOrder::MostRecent);
+    // Display order: as stored, or by unique name (case-insensitive, base first).
+    const std::vector<std::string> paths{"/w/zeta", "/x/Alpha", "/b/app", "/a/app"};
+    GG_CHECK((recentDisplayOrder(paths, RecentOrder::MostRecent) == std::vector<size_t>{0, 1, 2, 3}));
+    GG_CHECK((recentDisplayOrder(paths, RecentOrder::Alphabetical) == std::vector<size_t>{1, 3, 2, 0}));
+}
+
+GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Delete forgets a hovered entry")
+{
+    const fs::path a = s.fixture(Recipe::Linear, "left/proj");
+    const fs::path b = s.fixture(Recipe::Linear, "right/proj");
+    const fs::path c = s.fixture(Recipe::Linear, "alpha");
+    GG_REQUIRE(s.openRepository(a));
+    GG_REQUIRE(s.openRepository(b));
+    GG_REQUIRE(s.openRepository(c));
+    s.settle();
+    ggui::Settings& st = s.app.settings();
+    GG_REQUIRE(st.data().recent.size() >= 3);
+    // Most recent first: c, b, a.
+    auto comboItem = [&](size_t i) { return std::string("//$FOCUSED/###switch_") + std::to_string(i); };
+    auto y = [&](size_t i) { return ctx->ItemInfo(comboItem(i).c_str()).RectFull.Min.y; };
+    ctx->ItemClick("//##Toolbar/##tb_repo");
+    ctx->Yield(2);
+    GG_CHECK(s.itemLabel(comboItem(0).c_str()).find("alpha") == 0);
+    GG_CHECK(s.itemLabel(comboItem(1).c_str()).find("right/proj") == 0);
+    GG_CHECK(s.itemLabel(comboItem(2).c_str()).find("left/proj") == 0);
+    GG_CHECK(y(0) < y(1) && y(1) < y(2));
+    s.screenshot("recent-switcher");
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+
+    // Alphabetical: alpha, left/proj, right/proj (storage indices 0, 2, 1).
+    st.data().recentOrder = ggui::RecentOrder::Alphabetical;
+    ctx->ItemClick("//##Toolbar/##tb_repo");
+    ctx->Yield(2);
+    GG_CHECK(y(0) < y(2) && y(2) < y(1));
+    // Delete on the current repository (alpha) does nothing.
+    ctx->MouseMove(comboItem(0).c_str());
+    ctx->KeyPress(ImGuiKey_Delete);
+    ctx->Yield(2);
+    GG_CHECK_EQ(st.data().recent.size(), size_t(3));
+    // Delete on a hovered other entry forgets it.
+    ctx->MouseMove(comboItem(2).c_str());
+    ctx->KeyPress(ImGuiKey_Delete);
+    GG_CHECK(s.waitUntil([&] { return st.data().recent.size() == 2; }, 5.0f));
+    for (const auto& r : st.data().recent)
+        GG_CHECK(!fs::equivalent(r, a));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+
+    // The Recent menu: same rule.
+    ctx->MenuClick("//##MainMenuBar/Repository/Recent");
+    const std::string menu = "//###Menu_01";
+    ctx->MouseMove((menu + "/###recent_menu_0").c_str()); // current repository
+    ctx->KeyPress(ImGuiKey_Delete);
+    ctx->Yield(2);
+    GG_CHECK_EQ(st.data().recent.size(), size_t(2));
+    ctx->MouseMove((menu + "/###recent_menu_1").c_str());
+    ctx->KeyPress(ImGuiKey_Delete);
+    GG_CHECK(s.waitUntil([&] { return st.data().recent.size() == 1; }, 5.0f));
+    GG_CHECK(fs::equivalent(st.data().recent.front(), c));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    st.data().recentOrder = ggui::RecentOrder::MostRecent;
+    // The Welcome list: hovering a row (no keyboard focus) and pressing Delete.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_W);
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    ctx->Yield(2);
+    ctx->MouseMove("//Welcome/recent_0/###row");
+    ctx->KeyPress(ImGuiKey_Delete);
+    GG_CHECK(s.waitUntil([&] { return st.data().recent.empty(); }, 5.0f));
+}
+
 GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
 {
     const fs::path remote = s.fixture(Recipe::WithRemote);

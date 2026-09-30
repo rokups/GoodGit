@@ -7,6 +7,9 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <set>
 #include <fstream>
 #include <sstream>
 
@@ -145,6 +148,7 @@ nlohmann::json toJson(const SettingsData& d)
     j["uiScale"] = d.uiScale;
     j["theme"] = d.theme == Theme::Light ? "light" : "dark";
     j["recent"] = d.recent;
+    j["recentOrder"] = d.recentOrder == RecentOrder::Alphabetical ? "alphabetical" : "recent";
     nlohmann::json repos = nlohmann::json::object();
     for (const auto& [path, prefs] : d.repos)
         repos[path] = {{"hooks", hooksName(prefs.hooks)}, {"ignoreOldGgRefs", prefs.ignoreOldGgRefs}};
@@ -173,6 +177,9 @@ SettingsData fromJson(const nlohmann::json& j)
         for (const auto& r : j["recent"])
             if (r.is_string())
                 d.recent.push_back(r.get<std::string>());
+    d.recent = uniqueRepoPaths(d.recent);
+    d.recentOrder = j.value("recentOrder", std::string("recent")) == "alphabetical" ? RecentOrder::Alphabetical
+                                                                                    : RecentOrder::MostRecent;
     if (j.contains("repos") && j["repos"].is_object())
         for (auto it = j["repos"].begin(); it != j["repos"].end(); ++it) {
             RepoPrefs p;
@@ -267,8 +274,59 @@ void Settings::saveIni(std::string text)
     });
 }
 
-void Settings::addRecent(const std::string& path)
+std::string normalizeRepoPath(const std::string& path)
 {
+    if (path.empty())
+        return path;
+    std::error_code ec;
+    fs::path p = fs::weakly_canonical(fs::absolute(fs::path(path), ec), ec);
+    if (ec)
+        p = fs::path(path).lexically_normal();
+    std::string out = p.string();
+    while (out.size() > 1 && (out.back() == '/' || out.back() == '\\'))
+        out.pop_back();
+    return out;
+}
+
+std::vector<std::string> uniqueRepoPaths(const std::vector<std::string>& paths)
+{
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    for (const auto& raw : paths) {
+        std::string p = normalizeRepoPath(raw);
+        if (!p.empty() && seen.insert(p).second)
+            out.push_back(std::move(p));
+    }
+    return out;
+}
+
+std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, RecentOrder order)
+{
+    std::vector<size_t> idx(paths.size());
+    for (size_t i = 0; i < idx.size(); ++i)
+        idx[i] = i;
+    if (order != RecentOrder::Alphabetical)
+        return idx;
+    const auto names = uniqueRecentNames(paths);
+    auto lower = [](std::string s) {
+        for (char& c : s)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    std::stable_sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
+        const std::string ba = lower(names[a].base), bb = lower(names[b].base);
+        if (ba != bb)
+            return ba < bb;
+        return lower(names[a].prefix) < lower(names[b].prefix);
+    });
+    return idx;
+}
+
+void Settings::addRecent(const std::string& rawPath)
+{
+    const std::string path = normalizeRepoPath(rawPath);
+    if (path.empty())
+        return;
     auto& r = m_data.recent;
     std::erase(r, path);
     r.insert(r.begin(), path);
@@ -280,6 +338,7 @@ void Settings::addRecent(const std::string& path)
 void Settings::forgetRecent(const std::string& path)
 {
     std::erase(m_data.recent, path);
+    std::erase(m_data.recent, normalizeRepoPath(path));
     save();
 }
 

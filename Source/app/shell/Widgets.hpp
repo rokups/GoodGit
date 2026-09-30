@@ -27,13 +27,16 @@ bool button(const char* icon, const char* label, ImVec2 size = ImVec2(0, 0));
 bool iconButton(const char* icon, const char* id, ImVec2 size);
 // ImGui::SmallButton counterpart: same ID/icon contract as button(), fits within a text line.
 bool smallButton(const char* icon, const char* label);
-// ImGui::Selectable that stays blue while hovered when selected (ImGui draws a hovered row with
+// ImGui::Selectable that stays highlighted while hovered when selected (ImGui draws a hovered row with
 // HeaderHovered, the neutral hover overlay, which would hide the selection).
 bool selectable(const char* label, bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
 // menuItem()/selectable() whose visible label starts with `dimLen` bytes (a folder prefix) drawn in
 // the dimmed text colour; the rest keeps the normal colour. The widget is laid out, identified and
 // registered exactly like the plain call with the same `label`.
 bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const char* shortcut = nullptr);
+// True on the frame Delete is pressed while the last item is hovered (and no text field is being
+// edited): a list entry's "remove" key.
+bool hoveredDeletePressed();
 bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size);
 // selectable() whose visible label has bytes [dimBegin, dimEnd) drawn dimmed (e.g. a "@host" suffix).
 bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected = false, ImGuiSelectableFlags flags = 0,

@@ -127,7 +127,9 @@ void App::drawRecentMenu()
     const auto& recent = m_settings.data().recent;
     const auto names = uniqueRecentNames(recent);
     int shown = 0;
-    for (size_t i = 0; i < recent.size(); ++i) {
+    const std::string currentKey = currentRepoKey();
+    std::string forget;
+    for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
         const std::string& path = recent[i];
         if (!m_recentFilter.empty() && !containsNoCase(path, m_recentFilter))
             continue;
@@ -138,10 +140,15 @@ void App::drawRecentMenu()
         const std::string label = names[i].text() + "###recent_menu_" + std::to_string(i);
         if (menuItemDimPrefix(ICON_MS_FOLDER, label.c_str(), names[i].prefix.size(), detail.c_str()))
             post([this, path] { openRepository(path); });
+        const bool current = path == currentKey;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            ImGui::SetTooltip("%s", path.c_str());
+            ImGui::SetTooltip(current ? "%s" : "%s\nDel removes", path.c_str());
+        if (!current && hoveredDeletePressed())
+            forget = path;
         ++shown;
     }
+    if (!forget.empty())
+        m_settings.forgetRecent(forget);
     if (shown == 0)
         ImGui::TextDisabled("No recent repositories");
 }
@@ -513,14 +520,28 @@ void App::drawToolbar()
 
     // Repository switcher (open + recent)
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
-    const std::string current = m_session ? m_session->displayName() : std::string("No repository");
+    const auto& recent = m_settings.data().recent;
+    const auto names = uniqueRecentNames(recent);
+    const std::string currentKey = currentRepoKey();
+    std::string current = m_session ? m_session->displayName() : std::string("No repository");
+    for (size_t i = 0; i < recent.size(); ++i)
+        if (!currentKey.empty() && recent[i] == currentKey)
+            current = names[i].text();
     if (ImGui::BeginCombo("##tb_repo", current.c_str())) {
-        for (size_t i = 0; i < m_settings.data().recent.size(); ++i) {
-            const std::string& path = m_settings.data().recent[i];
-            const bool selected = m_session && m_session->path().string() == path;
-            if (selectable((path + "###switch_" + std::to_string(i)).c_str(), selected) && !selected)
+        std::string forget;
+        for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
+            const std::string& path = recent[i];
+            const bool selected = path == currentKey;
+            const std::string label = names[i].text() + "###switch_" + std::to_string(i);
+            if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), selected, 0, ImVec2(0, 0)) && !selected)
                 post([this, path] { openRepository(path); });
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                ImGui::SetTooltip(selected ? "%s" : "%s\nDel removes", path.c_str());
+            if (!selected && hoveredDeletePressed())
+                forget = path;
         }
+        if (!forget.empty())
+            m_settings.forgetRecent(forget);
         ImGui::EndCombo();
     }
     ImGui::SameLine();

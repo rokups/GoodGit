@@ -147,7 +147,7 @@ float buttonWidth(const char* icon, const char* label)
 
 bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
 {
-    // The theme's Header colours are neutral (menus, plain rows); blue is for selection only.
+    // The theme's Header colours are neutral (menus, plain rows); selection uses its own stronger neutral highlight.
     if (selected) {
         const Palette& p = theme().palette();
         ImGui::PushStyleColor(ImGuiCol_Header, p.selection);
@@ -211,6 +211,11 @@ bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const
         drawDimPrefixText(ImVec2(pos.x + cols.OffsetLabel, pos.y), label, dimLen);
     }
     return pressed;
+}
+
+bool hoveredDeletePressed()
+{
+    return ImGui::IsItemHovered() && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false);
 }
 
 bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size)

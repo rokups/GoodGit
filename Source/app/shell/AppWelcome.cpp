@@ -60,6 +60,11 @@ void App::showCloneDialog()
     m_dialogs.open(std::move(f));
 }
 
+std::string App::currentRepoKey() const
+{
+    return m_session && m_session->opened() ? normalizeRepoPath(m_session->path().string()) : std::string();
+}
+
 std::string App::recentRowText(size_t i) const
 {
     const auto& recent = m_settings.data().recent;
@@ -139,8 +144,9 @@ void App::drawWelcome()
     if (recent.empty())
         ImGui::TextDisabled("No recent repositories");
     const auto names = uniqueRecentNames(recent);
+    const std::string currentKey = currentRepoKey();
     std::string forget;
-    for (size_t i = 0; i < recent.size(); ++i) {
+    for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
         const std::string& path = recent[i];
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
         const std::string label = recentRowText(i) + "###row";
@@ -148,10 +154,10 @@ void App::drawWelcome()
                 ImGuiSelectableFlags_AllowDoubleClick, ImVec2(width, 0)))
             post([this, path] { openRepository(path); });
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            ImGui::SetTooltip("%s", path.c_str());
+            ImGui::SetTooltip("%s\nDel removes", path.c_str());
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);
-        if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete))
+        if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) || (path != currentKey && hoveredDeletePressed()))
             forget = path;
         if (ImGui::BeginPopupContextItem("##recent_menu")) {
             if (menuItem(ICON_MS_REMOVE, "Forget"))

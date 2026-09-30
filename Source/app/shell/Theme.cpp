@@ -144,9 +144,8 @@ void ThemeManager::apply(Theme t, float scale)
     style.ScaleAllSizes(scale);
     style.FontScaleMain = scale;
 
-    // Blender 4.x's accent blue and active-item orange, reused for both themes.
-    const ImU32 accent = rgb(71, 114, 179);       // #4772b3
-    const ImU32 accentHover = rgb(86, 128, 194);  // #5680c2
+    // Blender 4.x's active-item orange, reused for both themes. The rest of the chrome (selection,
+    // grabs, focus, links' neighbours) is neutral grey: no blue.
     const ImU32 accentOrange = rgb(255, 175, 41); // #ffaf29
 
     auto setColor = [&](ImGuiCol idx, ImU32 col) { style.Colors[idx] = ImGui::ColorConvertU32ToFloat4(col); };
@@ -171,22 +170,22 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_ScrollbarGrabHovered, rgb(110, 110, 110));
         setColor(ImGuiCol_ScrollbarGrabActive, rgb(128, 128, 128));
         setColor(ImGuiCol_CheckMark, rgb(230, 230, 230));
-        setColor(ImGuiCol_SliderGrab, accent);
-        setColor(ImGuiCol_SliderGrabActive, accentHover);
+        setColor(ImGuiCol_SliderGrab, rgb(150, 150, 150));
+        setColor(ImGuiCol_SliderGrabActive, rgb(195, 195, 195));
         setColor(ImGuiCol_Button, rgb(84, 84, 84));
         setColor(ImGuiCol_ButtonHovered, rgb(101, 101, 101));
         setColor(ImGuiCol_ButtonActive, rgb(130, 130, 130)); // pressed: lighter grey, not blue
         // Header/hover/press are neutral Material state layers (open menus, plain rows); selectable()
-        // paints selected rows with the blue selection colours instead.
+        // paints selected rows with the stronger (still neutral) selection colours instead.
         setColor(ImGuiCol_Header, rgb(255, 255, 255, 34));
         setColor(ImGuiCol_HeaderHovered, rgb(255, 255, 255, 22));
         setColor(ImGuiCol_HeaderActive, rgb(255, 255, 255, 50));
         setColor(ImGuiCol_Separator, rgb(61, 61, 61));
         setColor(ImGuiCol_SeparatorHovered, rgb(120, 120, 120));
-        setColor(ImGuiCol_SeparatorActive, accent);
+        setColor(ImGuiCol_SeparatorActive, rgb(165, 165, 165));
         setColor(ImGuiCol_ResizeGrip, rgb(61, 61, 61, 50));
         setColor(ImGuiCol_ResizeGripHovered, rgb(120, 120, 120));
-        setColor(ImGuiCol_ResizeGripActive, accent);
+        setColor(ImGuiCol_ResizeGripActive, rgb(165, 165, 165));
         setColor(ImGuiCol_InputTextCursor, rgb(230, 230, 230));
         setColor(ImGuiCol_Tab, rgb(35, 35, 35));
         setColor(ImGuiCol_TabHovered, rgb(72, 72, 72));
@@ -195,10 +194,10 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_TabDimmed, rgb(30, 30, 30));
         setColor(ImGuiCol_TabDimmedSelected, rgb(50, 50, 50));
         setColor(ImGuiCol_TabDimmedSelectedOverline, rgb(0, 0, 0, 0));
-        setColor(ImGuiCol_DockingPreview, rgb(71, 114, 179, 150));
+        setColor(ImGuiCol_DockingPreview, rgb(210, 210, 210, 100));
         setColor(ImGuiCol_DockingEmptyBg, rgb(48, 48, 48));
-        setColor(ImGuiCol_PlotLines, accent);
-        setColor(ImGuiCol_PlotLinesHovered, accentHover);
+        setColor(ImGuiCol_PlotLines, rgb(170, 170, 170));
+        setColor(ImGuiCol_PlotLinesHovered, rgb(215, 215, 215));
         setColor(ImGuiCol_PlotHistogram, accentOrange);
         setColor(ImGuiCol_PlotHistogramHovered, rgb(255, 195, 100));
         setColor(ImGuiCol_TableHeaderBg, rgb(38, 38, 38));
@@ -206,13 +205,13 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_TableBorderLight, rgb(45, 45, 45));
         setColor(ImGuiCol_TableRowBg, rgb(0, 0, 0, 0));
         setColor(ImGuiCol_TableRowBgAlt, rgb(43, 43, 43));
-        setColor(ImGuiCol_TextLink, accentHover);
-        setColor(ImGuiCol_TextSelectedBg, rgb(71, 114, 179, 100));
+        setColor(ImGuiCol_TextLink, accentOrange);
+        setColor(ImGuiCol_TextSelectedBg, rgb(255, 255, 255, 70));
         setColor(ImGuiCol_TreeLines, rgb(61, 61, 61, 120));
         setColor(ImGuiCol_DragDropTarget, accentOrange);
         setColor(ImGuiCol_DragDropTargetBg, rgb(255, 175, 41, 50));
         setColor(ImGuiCol_UnsavedMarker, accentOrange);
-        setColor(ImGuiCol_NavCursor, accent);
+        setColor(ImGuiCol_NavCursor, rgb(230, 230, 230));
         setColor(ImGuiCol_NavWindowingHighlight, rgb(230, 230, 230, 180));
         setColor(ImGuiCol_NavWindowingDimBg, rgb(0, 0, 0, 120));
         setColor(ImGuiCol_ModalWindowDimBg, rgb(0, 0, 0, 140));
@@ -235,9 +234,9 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_ScrollbarGrab, rgb(160, 160, 160));
         setColor(ImGuiCol_ScrollbarGrabHovered, rgb(144, 144, 144));
         setColor(ImGuiCol_ScrollbarGrabActive, rgb(128, 128, 128));
-        setColor(ImGuiCol_CheckMark, accent);
-        setColor(ImGuiCol_SliderGrab, accent);
-        setColor(ImGuiCol_SliderGrabActive, accentHover);
+        setColor(ImGuiCol_CheckMark, rgb(26, 26, 26));
+        setColor(ImGuiCol_SliderGrab, rgb(110, 110, 110));
+        setColor(ImGuiCol_SliderGrabActive, rgb(70, 70, 70));
         setColor(ImGuiCol_Button, rgb(230, 230, 230));
         setColor(ImGuiCol_ButtonHovered, rgb(240, 240, 240));
         setColor(ImGuiCol_ButtonActive, rgb(205, 205, 205)); // pressed: darker grey, not blue
@@ -246,10 +245,10 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_HeaderActive, rgb(0, 0, 0, 45));
         setColor(ImGuiCol_Separator, rgb(160, 160, 160));
         setColor(ImGuiCol_SeparatorHovered, rgb(120, 120, 120));
-        setColor(ImGuiCol_SeparatorActive, accent);
+        setColor(ImGuiCol_SeparatorActive, rgb(90, 90, 90));
         setColor(ImGuiCol_ResizeGrip, rgb(160, 160, 160, 60));
         setColor(ImGuiCol_ResizeGripHovered, rgb(120, 120, 120));
-        setColor(ImGuiCol_ResizeGripActive, accent);
+        setColor(ImGuiCol_ResizeGripActive, rgb(90, 90, 90));
         setColor(ImGuiCol_InputTextCursor, rgb(26, 26, 26));
         setColor(ImGuiCol_Tab, rgb(200, 200, 200));
         setColor(ImGuiCol_TabHovered, rgb(205, 205, 205));
@@ -258,10 +257,10 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_TabDimmed, rgb(205, 205, 205));
         setColor(ImGuiCol_TabDimmedSelected, rgb(220, 220, 220));
         setColor(ImGuiCol_TabDimmedSelectedOverline, rgb(0, 0, 0, 0));
-        setColor(ImGuiCol_DockingPreview, rgb(71, 114, 179, 120));
+        setColor(ImGuiCol_DockingPreview, rgb(50, 50, 50, 100));
         setColor(ImGuiCol_DockingEmptyBg, rgb(188, 188, 188));
-        setColor(ImGuiCol_PlotLines, accent);
-        setColor(ImGuiCol_PlotLinesHovered, accentHover);
+        setColor(ImGuiCol_PlotLines, rgb(100, 100, 100));
+        setColor(ImGuiCol_PlotLinesHovered, rgb(50, 50, 50));
         setColor(ImGuiCol_PlotHistogram, accentOrange);
         setColor(ImGuiCol_PlotHistogramHovered, rgb(255, 195, 100));
         setColor(ImGuiCol_TableHeaderBg, rgb(200, 200, 200));
@@ -269,13 +268,13 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_TableBorderLight, rgb(180, 180, 180));
         setColor(ImGuiCol_TableRowBg, rgb(0, 0, 0, 0));
         setColor(ImGuiCol_TableRowBgAlt, rgb(212, 212, 212));
-        setColor(ImGuiCol_TextLink, accent);
-        setColor(ImGuiCol_TextSelectedBg, rgb(71, 114, 179, 90));
+        setColor(ImGuiCol_TextLink, rgb(170, 100, 0));
+        setColor(ImGuiCol_TextSelectedBg, rgb(0, 0, 0, 60));
         setColor(ImGuiCol_TreeLines, rgb(160, 160, 160, 120));
         setColor(ImGuiCol_DragDropTarget, accentOrange);
         setColor(ImGuiCol_DragDropTargetBg, rgb(255, 175, 41, 60));
         setColor(ImGuiCol_UnsavedMarker, accentOrange);
-        setColor(ImGuiCol_NavCursor, accent);
+        setColor(ImGuiCol_NavCursor, rgb(26, 26, 26));
         setColor(ImGuiCol_NavWindowingHighlight, rgb(26, 26, 26, 150));
         setColor(ImGuiCol_NavWindowingDimBg, rgb(255, 255, 255, 120));
         setColor(ImGuiCol_ModalWindowDimBg, rgb(0, 0, 0, 90));
@@ -313,8 +312,8 @@ void ThemeManager::apply(Theme t, float scale)
         p.error = rgb(255, 255, 255);
         p.errorBg = rgb(160, 40, 50);
         p.warning = rgb(255, 175, 41);
-        p.selection = rgb(71, 114, 179, 100);
-        p.selectionHovered = rgb(86, 128, 194, 175);
+        p.selection = rgb(255, 255, 255, 64);  // neutral: clearly above hover (22) and plain rows
+        p.selectionHovered = rgb(255, 255, 255, 88);
         p.staged = rgb(139, 220, 0);
         p.unstaged = rgb(230, 175, 60);
         p.untracked = rgb(150, 160, 170);
@@ -347,8 +346,8 @@ void ThemeManager::apply(Theme t, float scale)
         p.error = rgb(255, 255, 255);
         p.errorBg = rgb(190, 50, 55);
         p.warning = rgb(190, 120, 10);
-        p.selection = rgb(71, 114, 179, 90);
-        p.selectionHovered = rgb(86, 128, 194, 135);
+        p.selection = rgb(0, 0, 0, 64);
+        p.selectionHovered = rgb(0, 0, 0, 86);
         p.staged = rgb(50, 130, 10);
         p.unstaged = rgb(190, 120, 10);
         p.untracked = rgb(110, 120, 130);
