@@ -35,8 +35,10 @@ screenshot, the app log and the git commands it ran under `test-artifacts/<test>
 Manual tests (`GG_MANUAL_TEST`) are not part of the suite and run only when the filter names
 their category. `--test=gallery` writes screenshots of menus, popups, dialogs and panels, in
 both themes and at two UI scales, to `test-artifacts/screens/gallery-*.png`, for reviewing the
-look after a theme or layout change. `--test=readme` builds a sample project with branches, merges
-and a remote, and writes the README screenshots (`readme-*.png`) there.
+look after a theme or layout change. `--test=readme` writes the README screenshots
+(`readme-*.png`) there, taken on a real repository: set `GGUI_README_REPO` to a full clone of
+<https://github.com/ocornut/imgui> (with its remote-tracking branches, e.g. `docking`). The test
+clones it into its temp directory, pins the copy to a fixed commit and never modifies the original.
 
 ## Docs map
 
