@@ -19,6 +19,7 @@ public:
     const core::CommitDetailsPtr& details() const { return m_details; }
 
 private:
+    void drawPendingCommitInfo(const core::StatusResult* status, const core::Snapshot* snap);
     Session& m_session;
     Selection m_selection;
     core::RequestId m_request = 0;

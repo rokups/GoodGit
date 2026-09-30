@@ -143,6 +143,32 @@ GG_TEST("commit", "Change information: Commit on the Index commits the staged ch
     GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
 }
 
+GG_TEST("commit", "Change information: Working tree and Index show what the commit would be (author, parent, branch)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f1.txt", "one staged\n");
+    s.write(repo, "f2.txt", "two unstaged\n");
+    s.git(repo, {"add", "f1.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
+    const std::string name = s.gitOut(repo, {"config", "user.name"});
+    const std::string email = s.gitOut(repo, {"config", "user.email"});
+    const std::string head = s.head(repo);
+    const std::string branch = s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"});
+    GG_REQUIRE(!name.empty() && !email.empty());
+    for (const char* row : {"###row_wt", "###row_index"}) {
+        ctx->ItemClick((std::string("//History/**/") + row).c_str());
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/**/###parent_0"); }));
+        GG_CHECK(s.waitUntil([&] {
+            return s.itemExists("//Change information/**/###author") &&
+                   s.itemText("//Change information/**/###author") == name + " <" + email + ">";
+        }));
+        GG_CHECK(s.itemText("//Change information/**/###parent_0").rfind(head.substr(0, 7), 0) == 0);
+        GG_CHECK_STR_EQ(s.itemText("//Change information/**/###branch"), branch);
+        GG_CHECK(s.itemExists("//Change information/##commit_message"));
+    }
+}
+
 GG_TEST("commit", "Change information: Commit on the Working tree leaves staged files staged")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

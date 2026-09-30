@@ -140,6 +140,7 @@ struct Snapshot {
     std::string stateDetail;         // e.g. "2/5" while rebasing
     std::string stateOnto;           // rebase onto / merge head description
     std::string mergeMessage;        // MERGE_MSG (in progress, or after --no-commit)
+    std::vector<Oid> mergeHeads;     // MERGE_HEAD: the other parents of the merge commit being made
     std::optional<RebaseProgress> rebase; // interactive rebase in progress
     std::vector<BranchInfo> branches;
     std::vector<RemoteBranchInfo> remoteBranches;

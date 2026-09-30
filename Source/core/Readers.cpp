@@ -206,6 +206,15 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     snap->state = detectState(repo, snap->stateDetail);
     // git commit takes MERGE_MSG whenever it exists (e.g. after cherry-pick --no-commit too).
     snap->mergeMessage = readFileText(snap->gitDir / "MERGE_MSG");
+    {
+        std::istringstream heads(readFileText(snap->gitDir / "MERGE_HEAD"));
+        std::string line;
+        while (std::getline(heads, line)) {
+            const Oid id = Oid::fromHex(gg::trim(line));
+            if (!id.isNull())
+                snap->mergeHeads.push_back(id);
+        }
+    }
     if (snap->state != RepoState::None) {
         if (snap->state == RepoState::RebasingInteractive || snap->state == RepoState::Rebasing) {
             const fs::path dir = fs::exists(snap->gitDir / "rebase-merge") ? snap->gitDir / "rebase-merge"

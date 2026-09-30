@@ -1,5 +1,6 @@
 #include "panels/InfoPanel.hpp"
 #include "shell/Dialogs.hpp"
+#include "panels/HistoryPanel.hpp"
 
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
@@ -13,6 +14,8 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <ctime>
+
 namespace ggui {
 
 InfoPanel::InfoPanel(Session& session) : m_session(session) { }
@@ -22,6 +25,8 @@ void InfoPanel::onSelection(const Selection& sel)
     m_selection = sel;
     m_details.reset();
     m_message.clear();
+    if (sel.kind == SelKind::WorkingTree || sel.kind == SelKind::Index)
+        m_session.requestConfig(); // the identity shown as the author; arrives asynchronously
     if (sel.kind == SelKind::Commit || sel.kind == SelKind::Stash)
         m_request = m_session.engine().commitDetails(sel.id);
 }
@@ -34,6 +39,83 @@ void InfoPanel::onDetails(const core::CommitDetailsEvent& event)
     m_message = m_details->message;
 }
 
+// The rows a real commit shows, filled with what the commit would be if made now: the configured
+// identity (read asynchronously, see onSelection), the current time, HEAD (and MERGE_HEAD) as
+// parents and the branch it would advance.
+void InfoPanel::drawPendingCommitInfo(const core::StatusResult* status, const core::Snapshot* snap)
+{
+    const Palette& p = theme().palette();
+    if (!ImGui::BeginTable("##info_table", 2, ImGuiTableFlags_SizingFixedFit))
+        return;
+    ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed);
+    ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
+    auto label = [](const char* text) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextDisabled("%s", text);
+        ImGui::TableSetColumnIndex(1);
+    };
+    auto configValue = [&](const char* key) {
+        const auto& cfg = m_session.config();
+        const auto scope = cfg.find("effective");
+        if (scope == cfg.end())
+            return std::string();
+        const auto it = scope->second.find(key);
+        return it == scope->second.end() ? std::string() : it->second;
+    };
+    label("Author");
+    const std::string name = configValue("user.name");
+    const std::string email = configValue("user.email");
+    if (m_session.config().empty())
+        ImGui::TextDisabled("Reading git configuration...");
+    else if (name.empty() && email.empty())
+        ImGui::TextDisabled("(user.name and user.email are not set)");
+    else
+        plainText((name + " <" + email + ">###author").c_str());
+    label("Date");
+    ImGui::TextUnformatted(core::formatTime(static_cast<std::int64_t>(std::time(nullptr)), true).c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("(set on commit)");
+    label("State");
+    ImGui::PushStyleColor(ImGuiCol_Text, p.unpublished);
+    ImGui::TextUnformatted("Not published");
+    ImGui::PopStyleColor();
+    label("Commit");
+    ImGui::TextDisabled("(not committed)");
+    label("Branch");
+    if (!snap)
+        ImGui::TextDisabled("...");
+    else if (snap->headDetached)
+        plainText("(detached HEAD)###branch");
+    else
+        plainText((snap->headBranch + "###branch").c_str());
+    label("Changes");
+    if (status) {
+        ImGui::Text("%zu staged, %zu unstaged, %zu untracked, %zu conflicted", status->staged.size(),
+            status->unstaged.size(), status->untracked.size(), status->conflicted.size());
+    }
+    label("Parents");
+    std::vector<core::Oid> parents;
+    if (snap && !snap->head.isNull())
+        parents.push_back(snap->head);
+    if (snap)
+        parents.insert(parents.end(), snap->mergeHeads.begin(), snap->mergeHeads.end());
+    if (parents.empty())
+        ImGui::TextDisabled("(root commit)");
+    for (size_t i = 0; i < parents.size(); ++i) {
+        const std::string id = m_session.shortId(parents[i]) + "###parent_" + std::to_string(i);
+        if (selectable(id.c_str(), false, ImGuiSelectableFlags_None, ImGui::CalcTextSize(id.c_str(), nullptr, true)))
+            m_session.revealCommit(parents[i]);
+        if (const core::HistoryRow* row = m_session.history().row(parents[i])) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", row->subject.c_str());
+        }
+        if (i + 1 < parents.size())
+            ImGui::SameLine();
+    }
+    ImGui::EndTable();
+}
+
 void InfoPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Info, open)) {
@@ -43,11 +125,6 @@ void InfoPanel::draw(bool* open)
     const Palette& p = theme().palette();
     if (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index) {
         const auto status = m_session.status();
-        ImGui::TextUnformatted(m_selection.kind == SelKind::WorkingTree ? "Working tree" : "Index (staged)");
-        if (status) {
-            ImGui::Text("%zu staged, %zu unstaged, %zu untracked, %zu conflicted", status->staged.size(),
-                status->unstaged.size(), status->untracked.size(), status->conflicted.size());
-        }
         const bool index = m_selection.kind == SelKind::Index;
         ImGui::InputTextMultiline("##commit_message", &m_commitMessage, ImVec2(-1, ImGui::GetTextLineHeight() * 6));
         const bool nothing =
@@ -72,6 +149,7 @@ void InfoPanel::draw(bool* open)
             ImGui::SetTooltip("%s", index ? "Commit the staged changes (git commit)"
                                           : "Commit only the unstaged and untracked changes; the staged changes stay staged");
         const auto snap = m_session.snapshot();
+        drawPendingCommitInfo(status.get(), snap.get());
         if (snap && snap->state != core::RepoState::None) {
             ImGui::SeparatorText("Message in progress (MERGE_MSG)");
             if (m_mergeMessageSource != snap->mergeMessage) {
