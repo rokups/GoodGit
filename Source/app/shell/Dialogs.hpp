@@ -13,8 +13,21 @@ class Session;
 
 struct Form;
 
+// What a Field::Commit input currently names, as the line under it shows it: "a1b2c3d Subject"
+// (after `prefix`, e.g. "the parent: "), or `message` when nothing was found.
+struct CommitPreview {
+    bool found = false;
+    std::string prefix;
+    std::string shortId;
+    std::string subject;
+    std::string message;
+    bool warning = false;  // `message` says something is wrong (drawn as a warning)
+    std::string line() const { return found ? prefix + shortId + " " + subject : prefix + message; }
+};
+
 struct Field {
-    enum Kind { Text, Password, Multiline, Check, Combo, Info };
+    // Commit: a Text input that names a commit (branch, tag, id, HEAD~2...), with a preview line.
+    enum Kind { Text, Password, Multiline, Check, Combo, Info, Commit };
     Kind kind = Text;
     std::string id;           // widget id: "##<id>"
     std::string label;
@@ -27,6 +40,12 @@ struct Field {
     std::string filter;
     // Shown only while this returns true (empty: always); a hidden field keeps its value.
     std::function<bool(const Form&)> visible;
+    // Commit: resolves the text to its preview (no git: the loaded history); redone when the text
+    // changes. `preview` is what was last shown.
+    std::function<CommitPreview(const std::string&)> resolve;
+    CommitPreview preview;
+    std::string previewFor;
+    bool previewValid = false;
 };
 
 struct FormButton {

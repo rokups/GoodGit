@@ -4,6 +4,7 @@
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/RevResolve.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
@@ -135,6 +136,101 @@ GG_TEST("edit", "Rebase, Squash and Restore dialogs prefill their commit field f
     open(r.c3, "Restore from...", "Restore");
     GG_CHECK_STR_EQ(field("from"), c1Short);
     s.dialogButton("Restore", "Cancel");
+}
+
+GG_TEST("edit", "resolveRev finds HEAD, branches, tags, id prefixes and ~N / ^ suffixes among loaded rows")
+{
+    using ggui::core::HistoryRow;
+    using ggui::core::Oid;
+    auto oid = [](const std::string& prefix) { return Oid::fromHex(prefix + std::string(40 - prefix.size(), '0')); };
+    // a <- b <- c (c = main = HEAD), d a side merge of c and a; ids abcd... and abce... share "abc".
+    std::vector<HistoryRow> rows(4);
+    const char* ids[] = {"c0de1", "abcd1", "abce1", "f00d1"};
+    const char* subjects[] = {"c", "b", "a", "d"};
+    for (size_t i = 0; i < rows.size(); ++i) {
+        rows[i].id = oid(ids[i]);
+        rows[i].shortId = rows[i].id.hex().substr(0, 7);
+        rows[i].subject = subjects[i];
+    }
+    rows[0].parents = {rows[1].id};
+    rows[1].parents = {rows[2].id};
+    rows[3].parents = {rows[0].id, rows[2].id};
+    ggui::core::Snapshot snap;
+    snap.head = rows[0].id;
+    snap.branches.push_back({"main", rows[0].id});
+    snap.remoteBranches.push_back({"origin", "origin/main", rows[1].id});
+    snap.tags.push_back({"v1", rows[2].id});
+    auto lookup = [&](const Oid& id) -> const HistoryRow* {
+        for (const auto& r : rows)
+            if (r.id == id)
+                return &r;
+        return nullptr;
+    };
+    auto subject = [&](const std::string& text) {
+        const HistoryRow* r = ggui::resolveRev(snap, rows, lookup, text);
+        return r ? r->subject : std::string("<none>");
+    };
+    GG_CHECK_STR_EQ(subject("HEAD"), "c");
+    GG_CHECK_STR_EQ(subject("main"), "c");
+    GG_CHECK_STR_EQ(subject("origin/main"), "b");
+    GG_CHECK_STR_EQ(subject("refs/tags/v1"), "a");
+    GG_CHECK_STR_EQ(subject("v1"), "a");
+    GG_CHECK_STR_EQ(subject("c0de1"), "c");
+    GG_CHECK_STR_EQ(subject(rows[1].id.hex()), "b");
+    GG_CHECK_STR_EQ(subject("abcd"), "b");
+    GG_CHECK_STR_EQ(subject("abc"), "<none>"); // too short, and ambiguous
+    GG_CHECK_STR_EQ(subject("abce"), "a");
+    GG_CHECK_STR_EQ(subject("HEAD~1"), "b");
+    GG_CHECK_STR_EQ(subject("HEAD~"), "b");
+    GG_CHECK_STR_EQ(subject("HEAD^"), "b");
+    GG_CHECK_STR_EQ(subject("main~2"), "a");
+    GG_CHECK_STR_EQ(subject("HEAD~3"), "<none>");
+    GG_CHECK_STR_EQ(subject("f00d1^2"), "a");
+    GG_CHECK_STR_EQ(subject("f00d1^3"), "<none>");
+    GG_CHECK_STR_EQ(subject("f00d1^2~0^0"), "a");
+    GG_CHECK_STR_EQ(subject("nope"), "<none>");
+    GG_CHECK_STR_EQ(subject(""), "<none>");
+    GG_CHECK_STR_EQ(subject("HEAD^{tree}"), "<none>");
+}
+
+GG_TEST("edit", "commit fields preview the commit they name: prefilled, live, and a warning for unknown text")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    auto form = [&]() -> const ggui::Form* { return s.session()->app().dialogs().current(); };
+    auto preview = [&](const char* id) {
+        const ggui::Form* f = form();
+        const ggui::Field* field = f ? f->field(id) : nullptr;
+        return field ? field->preview.line() : std::string("<no field>");
+    };
+    auto sees = [&](const char* id, const std::string& text) {
+        return s.waitUntil([&] { return preview(id).find(text) != std::string::npos; }, 3.0f);
+    };
+    const std::string c4Short = s.session()->shortId(ggui::core::Oid::fromHex(r.c4));
+    const std::string c1Short = s.session()->shortId(ggui::core::Oid::fromHex(r.c1));
+    s.contextMenu(rowRef(r.c3).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    // The source is named, and the destination (HEAD's branch) previews its commit.
+    const ggui::Field* info = form()->fields.empty() ? nullptr : &form()->fields.front();
+    GG_REQUIRE(info && info->kind == ggui::Field::Info);
+    GG_CHECK(info->text.find("c3 change a") != std::string::npos);
+    GG_CHECK(sees("destination", c4Short + " c4 add c and d"));
+    s.dialogText("Rebase onto", "destination", r.c1);
+    GG_CHECK(sees("destination", c1Short + " c1 add a"));
+    s.dialogText("Rebase onto", "destination", "main~2");
+    GG_CHECK(sees("destination", "c2 add b"));
+    s.dialogText("Rebase onto", "destination", "side");
+    GG_CHECK(sees("destination", "s1 add s"));
+    s.dialogText("Rebase onto", "destination", "garbage");
+    GG_CHECK(sees("destination", "Not found"));
+    s.dialogButton("Rebase onto", "Cancel");
+    // Squash with an empty target: the preview says it is the parent.
+    s.contextMenu(rowRef(r.c3).c_str(), "Squash...");
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    GG_CHECK(sees("target", "the parent: "));
+    GG_CHECK(sees("target", "c2 add b"));
+    s.dialogButton("Squash", "Cancel");
 }
 
 GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto another branch")
@@ -399,7 +495,14 @@ GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD
     const std::string shortS1 = s.session()->shortId(ggui::core::Oid::fromHex(r.s1));
     s.contextMenu(rowRef(r.s1).c_str(), "Merge into HEAD...");
     GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
-    GG_CHECK(s.textShown("//Merge into HEAD", "Merge commit " + shortS1 + " into HEAD."));
+    {
+        // The commit to merge is an input prefilled with it, previewing its subject; HEAD is named too.
+        const ggui::Form* f = s.session()->app().dialogs().current();
+        GG_REQUIRE(f && f->field("rev"));
+        GG_CHECK_STR_EQ(f->text("rev"), shortS1);
+        GG_CHECK(s.waitUntil([&] { return f->field("rev")->preview.line() == shortS1 + " s1 add s"; }, 3.0f));
+        GG_CHECK(f->fields.front().text.find("Into HEAD: ") == 0);
+    }
     s.dialogButton("Merge into HEAD", "Merge");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^1"), r.c4);

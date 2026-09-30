@@ -60,6 +60,52 @@ const char* dialogButtonIcon(const FormButton& button)
     return nullptr;
 }
 
+// `text` cut to `width` pixels with an ellipsis.
+std::string fitText(const std::string& text, float width)
+{
+    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+        return text;
+    const float room = width - ImGui::CalcTextSize("\xE2\x80\xA6").x;
+    size_t cut = 0;
+    while (cut < text.size()) {
+        size_t next = cut + 1;
+        while (next < text.size() && (static_cast<unsigned char>(text[next]) & 0xC0) == 0x80)
+            ++next;
+        if (ImGui::CalcTextSize(text.c_str(), text.c_str() + next).x > room)
+            break;
+        cut = next;
+    }
+    return text.substr(0, cut) + "\xE2\x80\xA6";
+}
+
+// The line under a commit input: the commit it names (id dimmed), or why there is none.
+void drawCommitPreview(Field& f)
+{
+    if (!f.resolve)
+        return;
+    if (!f.previewValid || f.previewFor != f.text) {
+        f.preview = f.resolve(f.text);
+        f.previewFor = f.text;
+        f.previewValid = true;
+    }
+    const CommitPreview& p = f.preview;
+    const float width = ImGui::GetContentRegionAvail().x;
+    if (!p.found) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.warning ? theme().palette().warning
+                                                                              : ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextUnformatted(fitText(p.line(), width).c_str());
+        ImGui::PopStyleColor();
+        return;
+    }
+    if (!p.prefix.empty()) {
+        ImGui::TextDisabled("%s", p.prefix.c_str());
+        ImGui::SameLine(0, 0);
+    }
+    ImGui::TextDisabled("%s", p.shortId.c_str());
+    ImGui::SameLine();
+    ImGui::TextUnformatted(fitText(p.subject, std::max(ImGui::GetContentRegionAvail().x, ImGui::GetFontSize() * 6)).c_str());
+}
+
 } // namespace
 
 const Field* Form::field(const std::string& id) const
@@ -144,12 +190,13 @@ void Dialogs::draw()
         if (f.visible && !f.visible(form))
             continue;
         const std::string id = "##" + f.id;
-        if (m_focusFirst && (f.kind == Field::Text || f.kind == Field::Password || f.kind == Field::Multiline)) {
+        if (m_focusFirst && (f.kind == Field::Text || f.kind == Field::Commit || f.kind == Field::Password || f.kind == Field::Multiline)) {
             ImGui::SetKeyboardFocusHere();
             m_focusFirst = false;
         }
         switch (f.kind) {
         case Field::Text:
+        case Field::Commit:
         case Field::Password:
             if (!f.label.empty())
                 ImGui::TextUnformatted(f.label.c_str());
@@ -157,6 +204,8 @@ void Dialogs::draw()
             if (ImGui::InputTextWithHint(id.c_str(), f.hint.c_str(), &f.text,
                     ImGuiInputTextFlags_EnterReturnsTrue | (f.kind == Field::Password ? ImGuiInputTextFlags_Password : 0)))
                 enterPressed = true;
+            if (f.kind == Field::Commit)
+                drawCommitPreview(f);
             break;
         case Field::Multiline:
             if (!f.label.empty())

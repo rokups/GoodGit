@@ -5,6 +5,7 @@
 #include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/RevResolve.hpp"
 #include "shell/Session.hpp"
 #include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
@@ -191,9 +192,9 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const std::stri
 {
     Form f;
     f.title = "Rebase onto";
-    Field dest{Field::Text, "destination", "Destination (branch, tag or commit)"};
-    dest.text = prefill;
-    f.add(dest);
+    f.message = "Move this commit onto another commit.";
+    f.add(commitInfo(session, "Rebase", commit));
+    f.add(commitField(session, "destination", "Onto (branch, tag or commit)", prefill));
     Field with{Field::Check, "with_descendants", "With its descendants"};
     with.checked = true;
     f.add(with);
@@ -219,9 +220,11 @@ void showSquashDialog(Session& session, const core::Oid& commit, const std::stri
 {
     Form f;
     f.title = "Squash";
-    Field targetField{Field::Text, "target", "Into (empty = the parent; or an ancestor)"};
-    targetField.text = prefill;
-    f.add(targetField);
+    f.message = "Squash this commit into an earlier one.";
+    f.add(commitInfo(session, "Squash", commit));
+    const core::HistoryRow* row = session.history().row(commit);
+    f.add(commitField(session, "target", "Into (empty = the parent; or an ancestor)", prefill, "the parent",
+        row && row->parents.size() == 1 ? row->parents.front() : core::Oid{}));
     Field combine{Field::Check, "combine", "Combine the messages (squash; otherwise keep the target's: fixup)"};
     combine.checked = true;
     f.add(combine);
@@ -273,6 +276,7 @@ void showSplitDialog(Session& session, const core::Oid& commit)
     Form f;
     f.title = "Split";
     f.message = "The checked files go into a new first commit; the rest stays in this one.";
+    f.add(commitInfo(session, "Split", commit));
     for (size_t i = 0; i < files.size(); ++i)
         f.add(Field{Field::Check, "file_" + std::to_string(i), files[i]});
     f.add(Field{Field::Text, "message", "Message of the first commit", {}, false, 0, {}, "empty = the same message"});
@@ -300,6 +304,7 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
     Form f;
     f.title = "Abandon branch";
     f.message = "Drop this commit and everything after it.";
+    f.add(commitInfo(session, "Abandon from", commit));
     Field del{Field::Check, "delete_branches", "Delete the branches that only point into it"};
     del.checked = true;
     f.add(del);
@@ -334,10 +339,10 @@ void showRestoreDialog(Session& session, const core::Oid& commit, const std::str
     std::vector<std::string> paths = session.selectedPaths();
     Form f;
     f.title = "Restore";
-    f.message = paths.empty() ? "Select files in Changes first." : std::to_string(paths.size()) + " selected file(s).";
-    Field fromField{Field::Text, "from", "From (branch, tag or commit)"};
-    fromField.text = prefill;
-    f.add(fromField);
+    f.message = paths.empty() ? "Select files in Changes first."
+                              : "Restore the " + std::to_string(paths.size()) + " selected file(s) from another commit.";
+    f.add(commitInfo(session, "Commit", commit));
+    f.add(commitField(session, "from", "From (branch, tag or commit)", prefill));
     Field where{Field::Combo, "where", "Restore into"};
     where.options = {"This commit (rewrite it)", "The working tree (git restore)"};
     f.add(where);
@@ -359,16 +364,23 @@ void showMergeDialog(Session& session, const std::string& branch, bool commit)
 {
     Form f;
     f.title = "Merge into HEAD";
-    f.message = "Merge " + std::string(commit ? "commit " : "") + branch + " into HEAD.";
-    f.add(Field{Field::Text, "message", "Message", (commit ? "Merge commit '" : "Merge branch '") + branch + "'"});
+    f.message = "Merge another commit into the current one.";
+    f.add(commitInfo(session, "Into HEAD", std::string("HEAD")));
+    f.add(commitField(session, "rev", "Merge (branch, tag or commit)", branch));
+    const std::string quote = commit ? "Merge commit '" : "Merge branch '";
+    f.add(Field{Field::Text, "message", "Message", quote + branch + "'"});
     f.add(Field{Field::Check, "native", "Use native git merge (stops with index conflicts)"});
     Session* s = &session;
-    f.buttons.push_back({"Merge", [s, branch](Form& form) {
-                             if (form.checked("native"))
-                                 s->actions().mergeNative(branch);
-                             else
-                                 s->actions().mergeIntoHead(branch, form.text("message"));
-                         }});
+    f.buttons.push_back({"Merge",
+        [s, branch, quote](Form& form) {
+            const std::string rev = gg::trim(form.text("rev"));
+            if (form.checked("native"))
+                s->actions().mergeNative(rev);
+            else
+                // The default message names the commit it was made for.
+                s->actions().mergeIntoHead(rev, form.text("message") == quote + branch + "'" ? quote + rev + "'" : form.text("message"));
+        },
+        [](const Form& form) { return !gg::trim(form.text("rev")).empty(); }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }
@@ -403,8 +415,17 @@ void showInteractiveRebaseDialog(Session& session, const std::string& tip)
 {
     Form f;
     f.title = "Interactive rebase onto";
-    f.message = "Rebase " + tip + " interactively: the commits not on the base are listed in the todo editor.";
-    f.add(Field{Field::Text, "base", "Base (branch, tag or commit)"});
+    f.message = "The commits not on the base are listed in the todo editor.";
+    f.add(commitInfo(session, "Rebase", tip));
+    // The branch's upstream, else the commit before the tip.
+    std::string prefill = tip + "~1";
+    const auto snap = session.snapshot();
+    if (snap) {
+        const core::BranchInfo* b = tip == "HEAD" ? snap->currentBranch() : snap->findBranch(tip);
+        if (b && !b->upstream.empty() && !b->upstreamGone)
+            prefill = b->upstream;
+    }
+    f.add(commitField(session, "base", "Onto base (branch, tag or commit)", prefill));
     Session* s = &session;
     f.buttons.push_back({"Open",
         [s, tip](Form& form) {
