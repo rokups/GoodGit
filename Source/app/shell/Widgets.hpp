@@ -35,6 +35,9 @@ bool selectable(const char* label, bool selected = false, ImGuiSelectableFlags f
 // registered exactly like the plain call with the same `label`.
 bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const char* shortcut = nullptr);
 bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size);
+// selectable() whose visible label has bytes [dimBegin, dimEnd) drawn dimmed (e.g. a "@host" suffix).
+bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected = false, ImGuiSelectableFlags flags = 0,
+    ImVec2 size = ImVec2(0, 0));
 // Width button()/smallButton() will take for this icon and label, for right-aligning rows.
 float buttonWidth(const char* icon, const char* label);
 // Makes the item just submitted (a commit-ID/ref input) a drop target for History's commits and branch badges:

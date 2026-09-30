@@ -630,10 +630,22 @@ void RemotesPanel::draw(bool* open)
     ImGui::EndDisabled();
     for (const auto& r : snap->remotes) {
         ImGui::PushID(("remote_" + r.name).c_str());
-        selectable((r.name + "  " + r.url + (r.pruneOnFetch ? "  (prune)" : "") + "###row").c_str());
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            ImGui::SetTooltip("fetch: %s\npush: %s%s", r.url.c_str(), r.pushUrl.empty() ? r.url.c_str() : r.pushUrl.c_str(),
-                r.pruneOnFetch ? "\nprune on fetch" : "");
+        // "name@host" with the "@host" (and the prune note) dimmed; a local remote shows just its name.
+        const std::string host = remoteHost(r.url);
+        std::string label = r.name;
+        const size_t dimBegin = label.size();
+        if (!host.empty())
+            label += "@" + host;
+        if (r.pruneOnFetch)
+            label += "  (prune)";
+        selectableDimRange((label + "###row").c_str(), dimBegin, label.size());
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
+            std::string tip = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
+            if (r.pruneOnFetch)
+                tip += "\nPrunes on fetch";
+            ImGui::SetTooltip("%s", tip.c_str());
+        }
         if (ImGui::BeginPopupContextItem("##remote_menu")) {
             remoteMenuItems(m_session, r);
             ImGui::EndPopup();

@@ -162,19 +162,28 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
 
 namespace {
 
-// Draws the visible part of `label` at `pos`: the first dimLen bytes dimmed, the rest in Text.
-void drawDimPrefixText(ImVec2 pos, const char* label, size_t dimLen)
+// Draws the visible part of `label` at `pos`: bytes [dimBegin, dimEnd) dimmed, the rest in Text.
+void drawDimRangeText(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd)
 {
     const char* end = ImGui::FindRenderedTextEnd(label);
     const size_t total = static_cast<size_t>(end - label);
-    dimLen = std::min(dimLen, total);
+    dimEnd = std::min(dimEnd, total);
+    dimBegin = std::min(dimBegin, dimEnd);
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
     const ImU32 dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-    if (dimLen > 0) {
-        dl->AddText(pos, dim, label, label + dimLen);
-        pos.x += ImGui::CalcTextSize(label, label + dimLen).x;
+    const char* parts[4] = {label, label + dimBegin, label + dimEnd, end};
+    for (int i = 0; i < 3; ++i) {
+        if (parts[i] == parts[i + 1])
+            continue;
+        dl->AddText(pos, i == 1 ? dim : text, parts[i], parts[i + 1]);
+        pos.x += ImGui::CalcTextSize(parts[i], parts[i + 1]).x;
     }
-    dl->AddText(pos, ImGui::GetColorU32(ImGuiCol_Text), label + dimLen, end);
+}
+
+void drawDimPrefixText(ImVec2 pos, const char* label, size_t dimLen)
+{
+    drawDimRangeText(pos, label, 0, dimLen);
 }
 
 // Invisible placeholder text: the plain widget still does the sizing, hit-testing and test-engine
@@ -216,6 +225,22 @@ bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiS
     if (ImGui::IsItemVisible()) {
         const ImVec2 min = ImGui::GetItemRectMin();
         drawDimPrefixText(ImVec2(min.x, min.y + baseline), label, dimLen);
+    }
+    return pressed;
+}
+
+bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const float baseline = window->DC.CurrLineTextBaseOffset;
+    bool pressed;
+    {
+        HiddenText hidden;
+        pressed = selectable(label, selected, flags, size);
+    }
+    if (ImGui::IsItemVisible()) {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        drawDimRangeText(ImVec2(min.x, min.y + baseline), label, dimBegin, dimEnd);
     }
     return pressed;
 }

@@ -11,6 +11,9 @@
 
 namespace ggui {
 
+// The host of a remote URL ("github.com" for https://user@github.com:443/o/r.git, ssh://git@github.com/o/r
+// and git@github.com:o/r.git), without user or port; empty for local paths and file:// URLs.
+std::string remoteHost(const std::string& url);
 bool containsNoCase(const std::string& haystack, const std::string& needle);
 // "main → origin/main ↑1 ↓2" style summary of a recent repository.
 std::string summaryText(const core::RepoSummary& s);

@@ -14,6 +14,33 @@
 
 namespace ggui {
 
+std::string remoteHost(const std::string& url)
+{
+    std::string authority;
+    const size_t scheme = url.find("://");
+    if (scheme != std::string::npos) {
+        if (url.compare(0, scheme, "file") == 0)
+            return {};
+        const size_t start = scheme + 3;
+        authority = url.substr(start, std::min(url.find_first_of("/?#", start), url.size()) - start);
+        if (const size_t at = authority.rfind('@'); at != std::string::npos)
+            authority.erase(0, at + 1);
+        // Port: after the last ':' unless inside an IPv6 literal's brackets.
+        const size_t colon = authority.rfind(':');
+        if (colon != std::string::npos && (authority.empty() || authority.back() != ']'))
+            authority.erase(colon);
+        return authority;
+    }
+    // scp-like "[user@]host:path": a colon before any slash, and more than a drive letter before it.
+    const size_t colon = url.find(':');
+    if (colon == std::string::npos || colon < 2 || url.find('/') < colon)
+        return {};
+    authority = url.substr(0, colon);
+    if (const size_t at = authority.rfind('@'); at != std::string::npos)
+        authority.erase(0, at + 1);
+    return authority;
+}
+
 void sameLineIfFits(float nextWidth)
 {
     ImGui::SameLine();

@@ -5,6 +5,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include "util/Ui.hpp"
+
 #include <algorithm>
 
 namespace ggtest {
@@ -131,6 +133,42 @@ GG_TEST("panels", "remotes: list and copy")
     GG_CHECK(remotes[1].url.rfind("file://", 0) == 0);
     s.contextMenu("//Remotes/remote_origin/###row", "Copy name");
     GG_CHECK_STR_EQ(s.clipboard(), "origin");
+}
+
+GG_TEST("panels", "remotes: name@host label with the host dimmed, tooltip shows the URL once")
+{
+    using ggui::remoteHost;
+    GG_CHECK_STR_EQ(remoteHost("https://github.com/owner/repo.git"), "github.com");
+    GG_CHECK_STR_EQ(remoteHost("https://user:secret@git.example.org:8443/owner/repo.git"), "git.example.org");
+    GG_CHECK_STR_EQ(remoteHost("ssh://git@github.com:22/owner/repo.git"), "github.com");
+    GG_CHECK_STR_EQ(remoteHost("ssh://host.lan"), "host.lan");
+    GG_CHECK_STR_EQ(remoteHost("ssh://git@[::1]:2222/repo"), "[::1]");
+    GG_CHECK_STR_EQ(remoteHost("git@github.com:owner/repo.git"), "github.com");
+    GG_CHECK_STR_EQ(remoteHost("github.com:owner/repo.git"), "github.com");
+    GG_CHECK_STR_EQ(remoteHost("file:///srv/git/repo.git"), "");
+    GG_CHECK_STR_EQ(remoteHost("/srv/git/repo.git"), "");
+    GG_CHECK_STR_EQ(remoteHost("../repo.git"), "");
+    GG_CHECK_STR_EQ(remoteHost("C:/repos/repo.git"), "");
+    GG_CHECK_STR_EQ(remoteHost(""), "");
+
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "backup", "https://user@example.invalid:8443/backup.git"});
+    s.git(repo, {"remote", "add", "split", "https://example.invalid/fetch.git"});
+    s.git(repo, {"remote", "set-url", "--push", "split", "ssh://git@example.invalid/push.git"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Remotes");
+    GG_CHECK(s.idShownDimmed("//Remotes", "backup@example.invalid", 6));
+    // A local remote has no host: just the name.
+    GG_CHECK(s.textShown("//Remotes", "origin"));
+    GG_CHECK(!s.textShown("//Remotes", "origin@"));
+    ctx->MouseMove("//Remotes/remote_backup/###row");
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "https://user@example.invalid:8443/backup.git"));
+    GG_CHECK(s.drawnText("//##Tooltip_00").size() == 1);
+    ctx->MouseMove("//Remotes/remote_split/###row");
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "Fetch: https://example.invalid/fetch.git"));
+    GG_CHECK(s.textShown("//##Tooltip_00", "Push: ssh://git@example.invalid/push.git"));
 }
 
 GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
