@@ -18,6 +18,15 @@
 
 namespace ggui {
 
+// A fully staged file to discard back to HEAD (index and working tree). `remove`: the path is new
+// (added, copied, renamed-to, or HEAD is unborn), so it leaves the index and is deleted; `oldPath`
+// (renames) is restored from HEAD.
+struct StagedDiscard {
+    std::string path;
+    std::string oldPath;
+    bool remove = false;
+};
+
 class Session;
 
 enum class PullMode { Config, Merge, Rebase, FastForwardOnly };
@@ -48,7 +57,8 @@ public:
     // ---- files (§4.4) ---------------------------------------------------------------------
     void stage(const std::vector<std::string>& paths);
     void unstage(const std::vector<std::string>& paths);
-    void discard(const std::vector<std::string>& tracked, const std::vector<std::string>& untracked);
+    void discard(const std::vector<std::string>& tracked, const std::vector<std::string>& untracked,
+        const std::vector<StagedDiscard>& staged = {});
     void stageAll();
     void unstageAll();
     void stageModified();

@@ -157,7 +157,8 @@ public:
     void showCreateTagDialog(const std::string& at);
     void showAddRemoteDialog();
     void showEditRemoteDialog(const std::string& remote);
-    void showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked);
+    void showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked,
+        std::vector<StagedDiscard> staged = {});
     void showDiscardAllDialog();
     void showApplyPatchDialog();
     void showRenameBranchDialog(const std::string& branch);

@@ -208,7 +208,8 @@ void Session::showEditRemoteDialog(const std::string& remote)
     m_app.dialogs().open(std::move(f));
 }
 
-void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked)
+void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked,
+    std::vector<StagedDiscard> staged)
 {
     Form f;
     f.title = "Discard changes";
@@ -217,8 +218,16 @@ void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<st
         list += "  " + p + "\n";
     for (const auto& p : untracked)
         list += "  " + p + " (untracked: deleted)\n";
+    for (const auto& s : staged) {
+        if (!s.remove)
+            list += "  " + s.path + " (staged)\n";
+        else if (!s.oldPath.empty())
+            list += "  " + s.path + " (staged: deleted, " + s.oldPath + " restored)\n";
+        else
+            list += "  " + s.path + " (staged: deleted)\n";
+    }
     f.message = "Discard the changes of these files? This cannot be undone.\n\n" + list;
-    f.buttons.push_back({"Discard", [this, tracked, untracked](Form&) { m_actions->discard(tracked, untracked); }});
+    f.buttons.push_back({"Discard", [this, tracked, untracked, staged](Form&) { m_actions->discard(tracked, untracked, staged); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

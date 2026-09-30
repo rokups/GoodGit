@@ -71,18 +71,69 @@ GG_TEST("staging", "stage, unstage and discard files")
     GG_CHECK(waitXY(s, repo, "b.txt", "M."));
     s.contextMenu(fileRef(s, "Staged", "a.txt").c_str(), "Unstage");
     GG_CHECK(waitXY(s, repo, "a.txt", ".M"));
-    // Discard the unstaged part of c.txt (the staged part stays).
-    s.contextMenu(fileRef(s, "Unstaged", "c.txt").c_str(), "Discard...");
+    // Discard the unstaged change of a.txt (unstaged above; not partially staged).
+    s.contextMenu(fileRef(s, "Unstaged", "a.txt").c_str(), "Discard...");
     GG_REQUIRE(s.dialogOpen("Discard changes"));
     s.dialogButton("Discard changes", "Discard");
-    GG_CHECK(waitXY(s, repo, "c.txt", "M."));
-    GG_CHECK_STR_EQ(s.read(repo, "c.txt"), "c staged\n");
+    GG_CHECK(waitXY(s, repo, "a.txt", ""));
+    GG_CHECK_STR_EQ(s.read(repo, "a.txt"), "a\n");
     // Discarding an untracked file deletes it (after confirmation).
     s.contextMenu(fileRef(s, "Untracked", "u.txt").c_str(), "Discard...");
     GG_REQUIRE(s.dialogOpen("Discard changes"));
     s.dialogButton("Discard changes", "Discard");
     GG_CHECK(s.waitUntil([&] { return !fs::exists(repo / "u.txt"); }));
     s.settle();
+}
+
+GG_TEST("staging", "discard fully staged files, not partially staged ones")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowsReady(s, 7));
+    // Partially staged (c.txt is in both groups): Discard... is disabled on either row.
+    for (const char* group : {"Staged", "Unstaged"}) {
+        ctx->ItemClick(fileRef(s, group, "c.txt").c_str(), ImGuiMouseButton_Right);
+        GG_CHECK(ctx->ItemInfo("//$FOCUSED/Discard...").ItemFlags & ImGuiItemFlags_Disabled);
+        ctx->KeyPress(ImGuiKey_Escape);
+    }
+    // D does nothing on it either.
+    ctx->ItemClick(fileRef(s, "Staged", "c.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    s.settle();
+    GG_CHECK(!s.dialogOpen("Discard changes", 0.5f));
+    // A fully staged modified file goes back to HEAD, in the index and the working tree.
+    GG_REQUIRE(xy(s, repo, "a.txt") == "M.");
+    ctx->ItemClick(fileRef(s, "Staged", "a.txt").c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Discard...").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
+    s.contextMenu(fileRef(s, "Staged", "a.txt").c_str(), "Discard...");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(waitXY(s, repo, "a.txt", ""));
+    GG_CHECK_STR_EQ(s.read(repo, "a.txt"), "a\n");
+}
+
+GG_TEST("staging", "discard a staged new file and a staged rename with the D key")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    s.write(repo, "new.txt", "new\n");
+    s.git(repo, {"add", "new.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowsReady(s, 8));
+    ctx->ItemClick(fileRef(s, "Staged", "new.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(s.waitUntil([&] { return !fs::exists(repo / "new.txt") && xy(s, repo, "new.txt").empty(); }));
+    GG_CHECK(s.gitOut(repo, {"ls-files", "new.txt"}).empty());
+    s.settle();
+    // The renamed file: the new path goes away, the old one comes back.
+    ctx->ItemClick(fileRef(s, "Staged", "e.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(s.waitUntil([&] { return fs::exists(repo / "d.txt") && !fs::exists(repo / "e.txt"); }));
+    GG_CHECK(waitXY(s, repo, "d.txt", ""));
 }
 
 GG_TEST("staging", "Space and Enter toggle staging")

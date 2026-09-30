@@ -378,6 +378,44 @@ void ChangesPanel::toggleStaging(const std::vector<const FileRow*>& rows)
         actions.stage(stage);
 }
 
+ChangesPanel::DiscardPlan ChangesPanel::discardPlan(const std::vector<const FileRow*>& rows) const
+{
+    DiscardPlan plan;
+    const auto status = m_session.status();
+    const bool unborn = m_session.snapshot()->headUnborn;
+    auto in = [](const std::vector<core::StatusEntry>& list, const std::string& path) {
+        return std::any_of(list.begin(), list.end(), [&](const auto& e) { return e.path == path; });
+    };
+    for (const FileRow* r : rows) {
+        switch (r->group) {
+        case FileGroup::Staged: {
+            if (status && in(status->unstaged, r->path)) {
+                plan.partial = true;
+                break;
+            }
+            StagedDiscard s{r->path, {}, false};
+            if (unborn || r->kind == core::ChangeKind::Added || r->kind == core::ChangeKind::Copied)
+                s.remove = true;
+            else if (r->kind == core::ChangeKind::Renamed) {
+                s.remove = true;
+                s.oldPath = r->oldPath;
+            }
+            plan.staged.push_back(std::move(s));
+            break;
+        }
+        case FileGroup::Unstaged:
+            if (status && in(status->staged, r->path))
+                plan.partial = true;
+            else if (!r->intentToAdd)
+                plan.tracked.push_back(r->path);
+            break;
+        case FileGroup::Untracked: plan.untracked.push_back(r->path); break;
+        default: break;
+        }
+    }
+    return plan;
+}
+
 void ChangesPanel::drawFileMenu(const FileRow& row)
 {
     if (!ImGui::BeginPopupContextItem("##file_menu"))
@@ -391,20 +429,17 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     const bool free = actions.busy().empty();
     const bool worktree = m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index;
     const auto rows = actionRows(row);
-    std::vector<std::string> stage, unstage, discardTracked, discardUntracked, untracked, nativeConflicts,
+    std::vector<std::string> stage, unstage, untracked, nativeConflicts,
         conflicts, existing;
     for (const FileRow* r : rows) {
         switch (r->group) {
         case FileGroup::Staged: unstage.push_back(r->path); break;
         case FileGroup::Unstaged:
             stage.push_back(r->path);
-            if (!r->intentToAdd)
-                discardTracked.push_back(r->path);
             break;
         case FileGroup::Untracked:
             stage.push_back(r->path);
             untracked.push_back(r->path);
-            discardUntracked.push_back(r->path);
             break;
         case FileGroup::Conflicted:
             conflicts.push_back(r->path);
@@ -440,8 +475,9 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         } else if (menuItem(ICON_MS_ADD, "Stage", "Space", false, free && !stage.empty())) {
             actions.stage(stage);
         }
-        if (menuItem(ICON_MS_UNDO, "Discard...", nullptr, false, free && (!discardTracked.empty() || !discardUntracked.empty())))
-            m_session.showDiscardDialog(discardTracked, discardUntracked);
+        const DiscardPlan discardPlanForRows = discardPlan(rows);
+        if (menuItem(ICON_MS_UNDO, "Discard...", "D", false, free && discardPlanForRows.enabled()))
+            discard(discardPlanForRows);
         if (menuItem(ICON_MS_PLAYLIST_ADD, "Intent to add", nullptr, false, free && !untracked.empty()))
             actions.intentToAdd(untracked);
         ImGui::Separator();
@@ -818,6 +854,15 @@ void ChangesPanel::draw(bool* open)
             && (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index)) {
             if (const FileRow* cur = current())
                 toggleStaging(actionRows(*cur));
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods
+            && (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index)
+            && m_session.actions().busy().empty()) {
+            if (const FileRow* cur = current()) {
+                const DiscardPlan plan = discardPlan(actionRows(*cur));
+                if (plan.enabled())
+                    discard(plan);
+            }
         }
     }
     if (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index) {

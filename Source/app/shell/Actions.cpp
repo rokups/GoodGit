@@ -134,11 +134,27 @@ void Actions::unstage(const std::vector<std::string>& paths)
     });
 }
 
-void Actions::discard(const std::vector<std::string>& tracked, const std::vector<std::string>& untracked)
+void Actions::discard(const std::vector<std::string>& tracked, const std::vector<std::string>& untracked,
+    const std::vector<StagedDiscard>& staged)
 {
-    run("discard changes", [tracked, untracked](MutationContext& ctx) {
+    run("discard changes", [tracked, untracked, staged](MutationContext& ctx) {
         if (!tracked.empty())
             ctx.git(withPaths({"restore", "--worktree"}, tracked));
+        // Fully staged files: new paths leave the index and disk, the rest (and renames' old
+        // paths) come back from HEAD in both places.
+        std::vector<std::string> remove, restore;
+        for (const auto& s : staged) {
+            if (s.remove)
+                remove.push_back(s.path);
+            else
+                restore.push_back(s.path);
+            if (!s.oldPath.empty())
+                restore.push_back(s.oldPath);
+        }
+        if (!remove.empty())
+            ctx.git(withPaths({"rm", "-f", "-q"}, remove));
+        if (!restore.empty())
+            ctx.git(withPaths({"restore", "--staged", "--worktree", "--source=HEAD"}, restore));
         if (!untracked.empty())
             ctx.git(withPaths({"clean", "-f", "-q"}, untracked));
     });

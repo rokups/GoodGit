@@ -86,6 +86,15 @@ private:
     // The rows an action on `row` applies to: the selection when `row` is selected.
     std::vector<const FileRow*> actionRows(const FileRow& row) const;
     void toggleStaging(const std::vector<const FileRow*>& rows);
+    // What Discard... does to `rows`; shared by the menu item and the D key.
+    struct DiscardPlan {
+        std::vector<std::string> tracked, untracked;
+        std::vector<StagedDiscard> staged;
+        bool partial = false; // a selected file is both staged and unstaged: Discard is off
+        bool enabled() const { return !partial && (!tracked.empty() || !untracked.empty() || !staged.empty()); }
+    };
+    DiscardPlan discardPlan(const std::vector<const FileRow*>& rows) const;
+    void discard(const DiscardPlan& plan) { m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged); }
     std::vector<const FileRow*> visibleRows() const;
     core::DiffQuery patchQuery(const FileRow& row) const;
 
