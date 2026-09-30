@@ -137,6 +137,24 @@ GG_TEST("pathsetup", "Settings toggles the file (needs systemd, else the control
         ctx->ItemClick(box);
         ctx->Yield(2);
         GG_CHECK(!ggui::readPathSetup(home, dir).present);
+        // A file naming another GoodGit: a warning with Point to this GoodGit and Remove.
+        const char* repoint = "//Settings/##settings_tabs/General/Point to this GoodGit##path_repoint";
+        const char* remove = "//Settings/##settings_tabs/General/Remove the file##path_remove";
+        GG_CHECK(ggui::writePathSetup(PathSetupSupport::Available, home, "/opt/elsewhere", true).empty());
+        ctx->WindowClose("//Settings");
+        s.app.openSettings();
+        ctx->Yield(2);
+        ctx->ItemClick(repoint);
+        ctx->Yield(2);
+        GG_CHECK(ggui::readPathSetup(home, dir).enabled);
+        GG_CHECK(!ctx->ItemExists(repoint));
+        GG_CHECK(ggui::writePathSetup(PathSetupSupport::Available, home, "/opt/elsewhere", true).empty());
+        ctx->WindowClose("//Settings");
+        s.app.openSettings();
+        ctx->Yield(2);
+        ctx->ItemClick(remove);
+        ctx->Yield(2);
+        GG_CHECK(!ggui::readPathSetup(home, dir).present);
     }
     ctx->WindowClose("//Settings");
     if (savedXdg.empty())

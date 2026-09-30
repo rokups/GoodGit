@@ -242,8 +242,9 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   writing `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` (default `~/.config`; one line
   `PATH=<dir>:${PATH}` under a comment saying ggui manages it); unchecking deletes the file. The
   state is read from the file, not stored: checked iff it exists and names the current
-  directory (a file naming another directory is shown as "points to <dir>", and checking rewrites
-  it). Written atomically; a directory containing `$ \ " ' :` or a line break is refused with an
+  directory. A file naming another directory (or no PATH entry) shows a warning, in the warning
+  colour, that the git-gg found there may be stale or missing, with **Point to this GoodGit**
+  (rewrites it; checking does the same) and **Remove the file**. Written atomically; a directory containing `$ \ " ' :` or a line break is refused with an
   error. Takes effect at next login. Systemd is detected as `/run/systemd/system` being a
   directory; elsewhere the control is disabled with an explanatory tooltip.
 - **K** Open a linked worktree in a new window. Open files in the external editor, open

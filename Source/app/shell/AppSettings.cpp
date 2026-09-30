@@ -1,6 +1,7 @@
 // Settings window (product spec §4.1 Settings).
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "shell/Theme.hpp"
 #include "util/Env.hpp"
 #include "util/Ui.hpp"
 
@@ -345,9 +346,27 @@ void App::drawPathSetting()
         ImGui::SetTooltip("Puts %s, which holds git-gg, on your login PATH (systemd environment.d). "
                           "Takes effect at next login.", dir.c_str());
     }
-    if (m_pathSetup.present && !m_pathSetup.enabled)
-        ImGui::TextDisabled("%s points to %s", pathSetupFile(home).c_str(),
-            m_pathSetup.otherDir.empty() ? "no PATH entry" : m_pathSetup.otherDir.c_str());
+    if (!m_pathSetup.present || m_pathSetup.enabled)
+        return;
+    // The file is there but names another GoodGit (moved, or another install) or no PATH entry.
+    ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().warning);
+    if (m_pathSetup.otherDir.empty())
+        ImGui::TextWrapped("%s has no PATH entry GoodGit understands.", pathSetupFile(home).c_str());
+    else
+        ImGui::TextWrapped("%s puts %s on PATH, not this GoodGit: the git-gg found there may be stale or missing.",
+            pathSetupFile(home).c_str(), m_pathSetup.otherDir.c_str());
+    ImGui::PopStyleColor();
+    const auto fix = [&](bool enable) {
+        const std::string err = writePathSetup(support, home, dir, enable);
+        if (!err.empty())
+            showError("Add GoodGit to PATH", err);
+        m_pathSetup = readPathSetup(home, dir);
+    };
+    if (ImGui::Button("Point to this GoodGit##path_repoint"))
+        fix(true);
+    ImGui::SameLine();
+    if (ImGui::Button("Remove the file##path_remove"))
+        fix(false);
 }
 
 void App::drawSettingsWindow()
