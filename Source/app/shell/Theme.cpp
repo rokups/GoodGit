@@ -175,11 +175,12 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_SliderGrabActive, accentHover);
         setColor(ImGuiCol_Button, rgb(84, 84, 84));
         setColor(ImGuiCol_ButtonHovered, rgb(101, 101, 101));
-        setColor(ImGuiCol_ButtonActive, accent);
-        // Header = a selected row/menu item (blue); hover is a neutral Material state layer.
-        setColor(ImGuiCol_Header, rgb(71, 114, 179, 150));
+        setColor(ImGuiCol_ButtonActive, rgb(130, 130, 130)); // pressed: lighter grey, not blue
+        // Header/hover/press are neutral Material state layers (open menus, plain rows); selectable()
+        // paints selected rows with the blue selection colours instead.
+        setColor(ImGuiCol_Header, rgb(255, 255, 255, 34));
         setColor(ImGuiCol_HeaderHovered, rgb(255, 255, 255, 22));
-        setColor(ImGuiCol_HeaderActive, accent);
+        setColor(ImGuiCol_HeaderActive, rgb(255, 255, 255, 50));
         setColor(ImGuiCol_Separator, rgb(61, 61, 61));
         setColor(ImGuiCol_SeparatorHovered, rgb(120, 120, 120));
         setColor(ImGuiCol_SeparatorActive, accent);
@@ -239,10 +240,10 @@ void ThemeManager::apply(Theme t, float scale)
         setColor(ImGuiCol_SliderGrabActive, accentHover);
         setColor(ImGuiCol_Button, rgb(230, 230, 230));
         setColor(ImGuiCol_ButtonHovered, rgb(240, 240, 240));
-        setColor(ImGuiCol_ButtonActive, accent);
-        setColor(ImGuiCol_Header, rgb(71, 114, 179, 110));
+        setColor(ImGuiCol_ButtonActive, rgb(205, 205, 205)); // pressed: darker grey, not blue
+        setColor(ImGuiCol_Header, rgb(0, 0, 0, 30));
         setColor(ImGuiCol_HeaderHovered, rgb(0, 0, 0, 18));
-        setColor(ImGuiCol_HeaderActive, accent);
+        setColor(ImGuiCol_HeaderActive, rgb(0, 0, 0, 45));
         setColor(ImGuiCol_Separator, rgb(160, 160, 160));
         setColor(ImGuiCol_SeparatorHovered, rgb(120, 120, 120));
         setColor(ImGuiCol_SeparatorActive, accent);

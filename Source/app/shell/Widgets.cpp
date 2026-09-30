@@ -147,11 +147,16 @@ float buttonWidth(const char* icon, const char* label)
 
 bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
 {
-    if (selected)
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, theme().palette().selectionHovered);
+    // The theme's Header colours are neutral (menus, plain rows); blue is for selection only.
+    if (selected) {
+        const Palette& p = theme().palette();
+        ImGui::PushStyleColor(ImGuiCol_Header, p.selection);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, p.selectionHovered);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, p.selectionHovered);
+    }
     const bool pressed = ImGui::Selectable(label, selected, flags, size);
     if (selected)
-        ImGui::PopStyleColor();
+        ImGui::PopStyleColor(3);
     return pressed;
 }
 

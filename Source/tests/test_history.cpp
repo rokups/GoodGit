@@ -174,6 +174,30 @@ GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-cl
         GG_CHECK(s.session()->history().refVisible(std::string("refs/heads/") + b));
 }
 
+GG_TEST("history", "row highlights span the whole row pitch: adjacent rows leave no gap")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string a = s.revParse(repo, "HEAD~1");
+    const std::string b = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(a).c_str()) && s.itemExists(rowRef(b).c_str()); }));
+    // Select both rows, so the selection highlight covers them.
+    ctx->ItemClick(rowRef(a).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(b).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->Yield(3);
+    const ImGuiTestItemInfo ia = ctx->ItemInfo(rowRef(a).c_str());
+    const ImGuiTestItemInfo ib = ctx->ItemInfo(rowRef(b).c_str());
+    GG_REQUIRE(ia.ID != 0 && ib.ID != 0);
+    const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
+    // The Selectable covers a full pitch (the row's cell padding included) and the next row starts
+    // where this one ends.
+    GG_CHECK(std::abs(ia.RectFull.GetHeight() - pitch) < 0.51f);
+    GG_CHECK(std::abs(ib.RectFull.GetHeight() - pitch) < 0.51f);
+    GG_CHECK(std::abs(ia.RectFull.Max.y - ib.RectFull.Min.y) < 0.51f);
+}
+
 GG_TEST("history", "search by message, ID, branch and tag; no graph while filtering")
 {
     const fs::path repo = s.fixture(Recipe::Merges);

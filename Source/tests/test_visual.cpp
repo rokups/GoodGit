@@ -251,6 +251,46 @@ GG_TEST("visual", "readable colours: text keeps its contrast in the dark and the
     }
 }
 
+GG_TEST("visual", "no ImGui default blue survives in either theme")
+{
+    const ggui::Theme original = ggui::theme().theme();
+    const float scale = ggui::theme().scale();
+    auto blueish = [](const ImVec4& c) { return c.w > 0.05f && c.z > c.x + 0.25f && c.z >= c.y; };
+    auto saturation = [](const ImVec4& c) { return std::max({c.x, c.y, c.z}) - std::min({c.x, c.y, c.z}); };
+    for (ggui::Theme t : {ggui::Theme::Dark, ggui::Theme::Light}) {
+        ggui::theme().apply(t, scale);
+        ImGuiStyle defaults;
+        if (t == ggui::Theme::Dark)
+            ImGui::StyleColorsDark(&defaults);
+        else
+            ImGui::StyleColorsLight(&defaults);
+        const ImGuiStyle& applied = ImGui::GetStyle();
+        int blues = 0;
+        for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+            if (!blueish(defaults.Colors[i]))
+                continue;
+            ++blues;
+            const ImVec4& a = applied.Colors[i];
+            const ImVec4& d = defaults.Colors[i];
+            const bool same = std::abs(a.x - d.x) < 0.02f && std::abs(a.y - d.y) < 0.02f && std::abs(a.z - d.z) < 0.02f
+                && std::abs(a.w - d.w) < 0.02f;
+            if (same)
+                ctx->LogError("%s theme: %s is still ImGui's default blue", t == ggui::Theme::Dark ? "Dark" : "Light",
+                    ImGui::GetStyleColorName(i));
+            GG_CHECK(!same);
+        }
+        GG_CHECK(blues > 10);
+        // Menus, plain rows and pressed buttons are neutral: blue is for selection only.
+        for (ImGuiCol i : {ImGuiCol_Header, ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive, ImGuiCol_Button,
+                 ImGuiCol_ButtonHovered, ImGuiCol_ButtonActive}) {
+            if (saturation(applied.Colors[i]) >= 0.05f)
+                ctx->LogError("%s is not neutral", ImGui::GetStyleColorName(i));
+            GG_CHECK(saturation(applied.Colors[i]) < 0.05f);
+        }
+    }
+    ggui::theme().apply(original, scale);
+}
+
 GG_TEST("visual", "icon glyphs are vertically centred on the text")
 {
     // Compare glyph boxes as baked for the UI and mono fonts at a few sizes: an icon's centre sits

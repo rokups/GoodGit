@@ -457,6 +457,21 @@ void HistoryPanel::drawDropChooser()
     ImGui::EndPopup();
 }
 
+namespace {
+
+// A row's Selectable, stretched over the table's cell padding so that neighbouring rows' highlights
+// (selected or hovered) meet without a gap: ImGui grows a Selectable by half the item spacing above
+// and below, and the table keeps ItemSpacing.y at 0.
+bool rowSelectable(const char* label, bool selected, ImGuiSelectableFlags flags)
+{
+    ImGui::PushStyleVarY(ImGuiStyleVar_ItemSpacing, ImGui::GetStyle().CellPadding.y * 2);
+    const bool pressed = selectable(label, selected, flags);
+    ImGui::PopStyleVar();
+    return pressed;
+}
+
+} // namespace
+
 void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth)
 {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2);
@@ -466,7 +481,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     const bool selected = sel.kind == kind;
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
     const std::string sid = std::string(label) + "###" + id;
-    if (selectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+    if (rowSelectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
         m_session.select(Selection{kind, {}, -1});
     ImGui::PopStyleColor();
     if (kind == SelKind::WorkingTree && ImGui::BeginPopupContextItem("##wt_menu")) {
@@ -634,7 +649,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     m_rowTops.emplace_back(index, cellStart.y);
     const std::string label = row.shortId + " " + row.subject + "###row_" + row.id.hex();
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
-    if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+    if (rowSelectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
         if (ImGui::GetIO().KeyCtrl && sel.kind == SelKind::Commit && sel.id != row.id) {
             // Ctrl-click adds (or removes) further commits.
             if (extra)
@@ -928,7 +943,7 @@ void HistoryPanel::draw(bool* open)
             ImGui::BeginDisabled(m_loading);
             const std::string more = std::string(ICON_MS_EXPAND_MORE " Load more (") + std::to_string(m_rows.size())
                 + " commits shown)###hist_load_more";
-            if (selectable(more.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
+            if (rowSelectable(more.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
                 showMore();
             ImGui::EndDisabled();
         }
