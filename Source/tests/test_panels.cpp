@@ -260,7 +260,7 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     s.write(repo, "dirty.txt", "dirty\n");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->untracked.empty(); }));
     s.showPanel("Stashes");
-    ctx->ItemClick("//Stashes/Stash changes...##stash_changes");
+    ctx->ItemClick("//Stashes/Push##stash_push");
     GG_REQUIRE(s.dialogOpen("Stash changes"));
     s.dialogText("Stash changes", "message", "from the Stashes panel");
     s.dialogCheck("Stash changes", "untracked", "Include untracked files");

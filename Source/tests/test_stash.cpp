@@ -109,6 +109,47 @@ GG_TEST("stash", "create: message, untracked, keep index, staged only, selected 
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "f1.txt");
 }
 
+GG_TEST("stash", "Changes menu stashes the selected files only; Stashes toolbar Push and Pop round-trip")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f1.txt", "f1 modified\n");
+    s.write(repo, "f2.txt", "f2 modified\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 2; }));
+    // Stash f2 only, with a message.
+    s.contextMenu(fileRef(s, "Unstaged", "f2.txt").c_str(), "Stash selected...");
+    GG_REQUIRE(s.dialogOpen("Stash selected files"));
+    s.dialogText("Stash selected files", "message", "just f2");
+    s.dialogButton("Stash selected files", "Stash");
+    GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 1; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "f2.txt"), "line 2\n");
+    GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "f1 modified\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "show", "--name-only"}), "f2.txt");
+    GG_CHECK(s.gitOut(repo, {"stash", "list"}).find("just f2") != std::string::npos);
+
+    // Stashes toolbar: Push stashes what is left (f1), Pop restores the newest.
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    ctx->ItemClick("//Stashes/Push##stash_push");
+    GG_REQUIRE(s.dialogOpen("Stash changes"));
+    s.dialogButton("Stash changes", "Stash");
+    GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 2; }));
+    s.settle();
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    ctx->ItemClick("//Stashes/Pop##stash_pop");
+    GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 1; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "f1 modified\n");
+    GG_CHECK_STR_EQ(s.read(repo, "f2.txt"), "line 2\n");
+    // With a stash selected, Pop takes that one (stash@{0} is f2's now; the only one left).
+    ctx->ItemClick(stashRow(0).c_str());
+    ctx->ItemClick("//Stashes/Pop##stash_pop");
+    GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 0; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "f2.txt"), "f2 modified\n");
+}
+
 GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo, clear")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);

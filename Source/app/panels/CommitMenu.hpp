@@ -43,6 +43,9 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit);
 // selection) shows: a commit (rewrite it, or the working tree), the working tree or the index
 // (git restore --source, both index and files). Opened from the Changes file menu.
 void showRestoreDialog(Session& session, const Selection& in, std::vector<std::string> paths, const std::string& prefill = {});
+// Stash `paths` (git stash push -m <message> [--include-untracked] [--staged] -- <paths>), with an
+// optional message. `stagedOnly` (all selected rows are staged) stashes just their index part.
+void showStashFilesDialog(Session& session, std::vector<std::string> paths, bool untracked, bool stagedOnly);
 // Merge `rev` into HEAD: a branch name, or a commit (`commit` = true: git's "Merge commit '<rev>'"
 // message).
 void showMergeDialog(Session& session, const std::string& rev, bool commit = false);

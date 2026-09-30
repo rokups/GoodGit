@@ -402,12 +402,9 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
     session.app().dialogs().open(std::move(f));
 }
 
-void showRestoreDialog(Session& session, const Selection& in, std::vector<std::string> paths, const std::string& prefill)
+// "Files: a, b" for up to four paths, else "Files: N selected".
+static std::string filesSummary(const std::vector<std::string>& paths)
 {
-    const bool commit = in.kind == SelKind::Commit;
-    Form f;
-    f.title = "Restore";
-    f.message = "Restore the selected files from another commit.";
     std::string files = "Files: ";
     if (paths.size() <= 4) {
         for (size_t i = 0; i < paths.size(); ++i)
@@ -415,7 +412,33 @@ void showRestoreDialog(Session& session, const Selection& in, std::vector<std::s
     } else {
         files += std::to_string(paths.size()) + " selected";
     }
-    f.add(Field{Field::Info, "info_files", "", files});
+    return files;
+}
+
+void showStashFilesDialog(Session& session, std::vector<std::string> paths, bool untracked, bool stagedOnly)
+{
+    Form f;
+    f.title = "Stash selected files";
+    f.message = stagedOnly ? "Stash the staged changes of the selected files." : "Stash the selected files.";
+    f.add(Field{Field::Info, "info_files", "", filesSummary(paths)});
+    f.add(Field{Field::Text, "message", "Message", "", false, 0, {}, "optional"});
+    Session* s = &session;
+    f.buttons.push_back({"Stash",
+        [s, paths, untracked, stagedOnly](Form& form) {
+            s->actions().stashPush(form.text("message"), false, untracked, stagedOnly, paths);
+        },
+        [paths](const Form&) { return !paths.empty(); }});
+    f.buttons.push_back({"Cancel", {}});
+    session.app().dialogs().open(std::move(f));
+}
+
+void showRestoreDialog(Session& session, const Selection& in, std::vector<std::string> paths, const std::string& prefill)
+{
+    const bool commit = in.kind == SelKind::Commit;
+    Form f;
+    f.title = "Restore";
+    f.message = "Restore the selected files from another commit.";
+    f.add(Field{Field::Info, "info_files", "", filesSummary(paths)});
     if (commit)
         f.add(commitInfo(session, "In", in.id));
     else

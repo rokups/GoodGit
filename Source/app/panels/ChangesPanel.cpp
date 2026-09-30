@@ -671,6 +671,22 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             showRestoreDialog(m_session, m_selection, restorable, prefill);
         }
     }
+    if (worktree) {
+        // Stash the selected files (an untracked one brings --include-untracked; all-staged rows stash only
+        // their index part). Conflicted files cannot be stashed.
+        std::vector<std::string> paths;
+        bool anyConflict = false, anyUntracked = false, allStaged = true;
+        for (const FileRow* r : rows) {
+            paths.push_back(r->path);
+            anyConflict |= r->group == FileGroup::Conflicted;
+            anyUntracked |= r->group == FileGroup::Untracked;
+            allStaged &= r->group == FileGroup::Staged;
+        }
+        const bool hit = menuItem(ICON_MS_INVENTORY_2, "Stash selected...", nullptr, false, free && !paths.empty() && !anyConflict);
+        disabledHint(anyConflict, "Conflicted files cannot be stashed. Resolve them first.");
+        if (hit)
+            showStashFilesDialog(m_session, paths, anyUntracked, allStaged && !anyUntracked);
+    }
     ImGui::Separator();
     if (worktree && menuItem(ICON_MS_DELETE, "Delete file...", nullptr, false, free && !existing.empty()))
         m_session.showDeleteFilesDialog(existing);

@@ -668,10 +668,27 @@ void StashesPanel::draw(bool* open)
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
     const auto status = m_session.status();
+    // Pop takes the selected stash, else the newest.
+    const Selection& sel = m_session.selection();
+    int popIndex = 0;
+    if (sel.kind == SelKind::Stash)
+        for (const auto& s : m_snapshot->stashes)
+            if (s.commit == sel.id)
+                popIndex = s.index;
+    const bool hasStashes = !m_snapshot->stashes.empty();
     ImGui::BeginDisabled(!free || !status || status->empty());
-    if (button(ICON_MS_ADD, "Stash changes...##stash_changes"))
+    if (button(ICON_MS_ADD, "Push##stash_push"))
         m_session.showStashDialog();
     ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Stash the changes in the working tree...");
+    sameLineIfFits(buttonWidth(ICON_MS_OUTBOX, "Pop"));
+    ImGui::BeginDisabled(!free || !hasStashes);
+    if (button(ICON_MS_OUTBOX, "Pop##stash_pop"))
+        actions.stashApply(popIndex, true, false);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Apply stash@{%d} and drop it", popIndex);
     sameLineIfFits(buttonWidth(ICON_MS_DELETE_SWEEP, "Clear all..."));
     ImGui::BeginDisabled(!free || m_snapshot->stashes.empty());
     if (button(ICON_MS_DELETE_SWEEP, "Clear all...##clear_stashes"))
