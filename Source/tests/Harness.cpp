@@ -757,10 +757,16 @@ void Scenario::comboSelect(const char* combo, const char* item)
     ctx->ItemClick(ImGuiTestRef(("//" + std::string(popup->Name) + "/**/" + item).c_str()));
 }
 
-void Scenario::contextMenu(const char* ref, const char* path)
+void Scenario::contextMenu(const char* ref, const char* path, bool shift)
 {
     ctx->ItemClick(ref, ImGuiMouseButton_Right);
+    if (shift) {
+        ctx->KeyDown(ImGuiMod_Shift);
+        ctx->Yield(2); // the menu swaps its items while Shift is held
+    }
     ctx->MenuClick(("//$FOCUSED/" + std::string(path)).c_str());
+    if (shift)
+        ctx->KeyUp(ImGuiMod_Shift);
 }
 
 std::string Scenario::itemLabel(const char* ref)

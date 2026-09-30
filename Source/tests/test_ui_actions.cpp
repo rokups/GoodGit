@@ -116,7 +116,7 @@ GG_TEST("ui", "History: Ctrl-click drops a commit from the selection; New merge 
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
 }
 
-GG_TEST("ui", "Push without an upstream opens Push to (History, Branches); remote, upstream and force with lease")
+GG_TEST("ui", "Push without an upstream opens Push to (Branches); remote, upstream and force with lease")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const fs::path backup = addBareRemote(s, repo, "backup");
@@ -125,9 +125,11 @@ GG_TEST("ui", "Push without an upstream opens Push to (History, Branches); remot
     std::string tip = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(rowShown(s, tip));
-    // History ▸ Push on a branch without an upstream: Push to, --set-upstream checked. Push to
+    // Branches ▸ Push on a branch without an upstream: Push to, --set-upstream checked. Push to
     // the second remote without setting the upstream.
-    s.contextMenu(rowRef(tip).c_str(), "Push");
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("topic").c_str()); }));
+    s.contextMenu(branchRow("topic").c_str(), "Push");
     GG_REQUIRE(s.dialogOpen("Push to"));
     GG_CHECK(s.app.dialogs().current()->checked("set_upstream"));
     s.comboSelect("//Push to/Remote##remote", "backup");

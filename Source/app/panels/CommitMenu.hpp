@@ -16,11 +16,12 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row);
 // Keyboard shortcuts for the selected commit (History panel focused).
 void handleCommitEditKeys(Session& session, const core::HistoryRow& row);
 
-void showRebaseDialog(Session& session, const core::Oid& commit);
-void showSquashDialog(Session& session, const core::Oid& commit);
+// `prefill` fills the dialog's commit field (see otherCommit in CommitMenu.cpp).
+void showRebaseDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
+void showSquashDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
 void showSplitDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
-void showRestoreDialog(Session& session, const core::Oid& commit);
+void showRestoreDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
 // Merge `rev` into HEAD: a branch name, or a commit (`commit` = true: git's "Merge commit '<rev>'"
 // message).
 void showMergeDialog(Session& session, const std::string& rev, bool commit = false);

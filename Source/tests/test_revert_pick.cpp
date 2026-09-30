@@ -148,7 +148,7 @@ GG_TEST("revert-pick", "revert and commit, cherry-pick and commit: a new commit 
     const std::string me = s.gitOut(r.path, {"config", "user.name"});
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c3));
-    s.contextMenu(rowRef(r.c3).c_str(), "Revert and commit");
+    s.contextMenu(rowRef(r.c3).c_str(), "Revert and commit", true);
     GG_CHECK(changed(s, r.path, r.c4));
     const std::string reverted = s.head(r.path);
     s.git(plain, {"revert", "--no-edit", r.c3});
@@ -163,7 +163,7 @@ GG_TEST("revert-pick", "revert and commit, cherry-pick and commit: a new commit 
     // Cherry-pick and commit s1 (a local change elsewhere stays): Other Person stays the author.
     s.write(r.path, "c.txt", "local\n");
     GG_REQUIRE(rowReady(s, r.s1));
-    s.contextMenu(rowRef(r.s1).c_str(), "Cherry-pick and commit");
+    s.contextMenu(rowRef(r.s1).c_str(), "Cherry-pick and commit", true);
     GG_CHECK(changed(s, r.path, reverted));
     const std::string picked = s.head(r.path);
     s.git(plain, {"cherry-pick", r.s1});
@@ -190,7 +190,10 @@ GG_TEST("revert-pick", "revert and commit, cherry-pick and commit: a new commit 
     GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
     s.settle();
     ctx->ItemClick(rowRef(r.s1).c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
     ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Cherry-pick and commit");
+    ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK(changed(s, r.path, reverted));
     GG_CHECK(s.session()->snapshot()->headDetached);
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), reverted);
@@ -217,7 +220,7 @@ GG_TEST("revert-pick", "conflicts: and commit lands first-class conflicts; witho
     };
     std::uint64_t seen = lastToast();
     // Cherry-pick and commit: a commit with first-class conflicts; plain git sees a clean tree.
-    s.contextMenu(rowRef(r.s2).c_str(), "Cherry-pick and commit");
+    s.contextMenu(rowRef(r.s2).c_str(), "Cherry-pick and commit", true);
     GG_CHECK(changed(s, r.path, c5));
     GG_CHECK(conflictToast(seen));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), c5);
@@ -237,7 +240,7 @@ GG_TEST("revert-pick", "conflicts: and commit lands first-class conflicts; witho
 
     // Revert and commit c3: the same.
     seen = lastToast();
-    s.contextMenu(rowRef(r.c3).c_str(), "Revert and commit");
+    s.contextMenu(rowRef(r.c3).c_str(), "Revert and commit", true);
     GG_CHECK(changed(s, r.path, c5));
     GG_CHECK(conflictToast(seen));
     GG_CHECK_STR_EQ(message(s, r.path), revertMsg(s, r.path, r.c3));
@@ -287,7 +290,7 @@ GG_TEST("revert-pick", "merge commits are reverted and picked against their firs
     const fs::path plain = twin(s, p);
     GG_REQUIRE(s.openRepository(p));
     GG_REQUIRE(rowReady(s, m1));
-    s.contextMenu(rowRef(m1).c_str(), "Revert and commit");
+    s.contextMenu(rowRef(m1).c_str(), "Revert and commit", true);
     GG_CHECK(changed(s, p, c6));
     s.git(plain, {"revert", "--no-edit", "-m", "1", m1});
     GG_CHECK_STR_EQ(s.revParse(p, "HEAD^{tree}"), s.revParse(plain, "HEAD^{tree}"));
@@ -312,8 +315,11 @@ GG_TEST("revert-pick", "refusals: HEAD itself, an ancestor of HEAD, staged chang
     // HEAD: nothing to pick (the items are disabled); reverting it is fine.
     ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
     GG_CHECK(ctx->ItemInfo("//$FOCUSED/Cherry-pick").ItemFlags & ImGuiItemFlags_Disabled);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Cherry-pick and commit").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Revert").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyDown(ImGuiMod_Shift); // Shift swaps in the "and commit" variants
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Cherry-pick and commit").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyUp(ImGuiMod_Shift);
     ctx->KeyPress(ImGuiKey_Escape);
     auto refused = [&](const char* why) {
         GG_CHECK(s.dismissError());
@@ -323,7 +329,7 @@ GG_TEST("revert-pick", "refusals: HEAD itself, an ancestor of HEAD, staged chang
         GG_CHECK(s.statusPorcelain(r.path).empty());
     };
     // An ancestor of HEAD is already there.
-    s.contextMenu(rowRef(r.c2).c_str(), "Cherry-pick and commit");
+    s.contextMenu(rowRef(r.c2).c_str(), "Cherry-pick and commit", true);
     refused("already in HEAD's history");
     s.contextMenu(rowRef(r.c2).c_str(), "Cherry-pick");
     refused("already in HEAD's history");
@@ -343,10 +349,10 @@ GG_TEST("revert-pick", "refusals: HEAD itself, an ancestor of HEAD, staged chang
     GG_REQUIRE(rowReady(s, r.c2));
     ctx->Yield(3);
     // Reverting c2 twice: the second changes nothing ("Drop them": nothing to change).
-    s.contextMenu(rowRef(r.c2).c_str(), "Revert and commit");
+    s.contextMenu(rowRef(r.c2).c_str(), "Revert and commit", true);
     GG_CHECK(changed(s, r.path, r.c4));
     const std::string once = s.head(r.path);
-    s.contextMenu(rowRef(r.c2).c_str(), "Revert and commit");
+    s.contextMenu(rowRef(r.c2).c_str(), "Revert and commit", true);
     GG_REQUIRE(s.dialogOpen("Commits become empty"));
     s.dialogButton("Commits become empty", "Drop them");
     GG_CHECK(s.waitUntil([&] {

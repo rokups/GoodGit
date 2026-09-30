@@ -312,7 +312,8 @@ GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefi
     s.commitFile(repo, "p3.txt", "3\n", "Push three");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->outgoing() == 1; }));
     GG_REQUIRE(rowLoaded(s, s.head(repo)));
-    s.contextMenu(("//History/**/###row_" + s.head(repo)).c_str(), "Push");
+    s.showPanel("Branches");
+    s.contextMenu("//Branches/branch_main/###branch_main", "Push");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", s.head(repo)); }));
     s.settle();
 
@@ -327,21 +328,13 @@ GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefi
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "--abbrev-ref", "topic@{upstream}"}), "origin/topic");
 
-    // Push to... from the dropdown, History and Branches, under other remote branch names.
+    // Push to... from the dropdown and Branches, under other remote branch names.
     popupItem(s, "//##Toolbar/###tb_push_menu", "Push to...");
     GG_REQUIRE(s.dialogOpen("Push to"));
     s.dialogText("Push to", "branch", "renamed-a");
     s.dialogButton("Push to", "Push");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "renamed-a", s.head(repo)); }));
     s.settle();
-    GG_REQUIRE(rowLoaded(s, s.head(repo)));
-    s.contextMenu(("//History/**/###row_" + s.head(repo)).c_str(), "Push to...");
-    GG_REQUIRE(s.dialogOpen("Push to"));
-    s.dialogText("Push to", "branch", "renamed-b");
-    s.dialogButton("Push to", "Push");
-    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "renamed-b", s.head(repo)); }));
-    s.settle();
-    s.showPanel("Branches");
     s.contextMenu("//Branches/branch_main/###branch_main", "Push to...");
     GG_REQUIRE(s.dialogOpen("Push to"));
     s.dialogText("Push to", "branch", "renamed-c");

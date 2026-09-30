@@ -91,6 +91,52 @@ GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copie
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
 }
 
+GG_TEST("edit", "Rebase, Squash and Restore dialogs prefill their commit field from the other selected commit or HEAD")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    GG_REQUIRE(rowReady(s, r.c1));
+    auto field = [&](const char* id) {
+        const ggui::Form* f = s.session()->app().dialogs().current();
+        return f ? f->text(id) : std::string("<no dialog>");
+    };
+    auto open = [&](const std::string& commit, const char* item, const char* title) {
+        s.contextMenu(rowRef(commit).c_str(), item);
+        GG_REQUIRE(s.dialogOpen(title));
+    };
+    // No other selection: HEAD's branch name.
+    open(r.c2, "Rebase onto...", "Rebase onto");
+    GG_CHECK_STR_EQ(field("destination"), "main");
+    s.dialogButton("Rebase onto", "Cancel");
+    open(r.c2, "Restore from...", "Restore");
+    GG_CHECK_STR_EQ(field("from"), "main");
+    s.dialogButton("Restore", "Cancel");
+    // Squash: HEAD (c4) is not an ancestor of c3, so the target stays empty.
+    open(r.c3, "Squash...", "Squash");
+    GG_CHECK_STR_EQ(field("target"), "");
+    s.dialogButton("Squash", "Cancel");
+    // The clicked commit is HEAD: nothing to prefill.
+    open(r.c4, "Rebase onto...", "Rebase onto");
+    GG_CHECK_STR_EQ(field("destination"), "");
+    s.dialogButton("Rebase onto", "Cancel");
+    // An extra multi-selected commit (Ctrl-click) is the other commit.
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(r.c1).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    const std::string c1Short = s.session()->shortId(ggui::core::Oid::fromHex(r.c1));
+    open(r.c3, "Rebase onto...", "Rebase onto");
+    GG_CHECK_STR_EQ(field("destination"), c1Short);
+    s.dialogButton("Rebase onto", "Cancel");
+    open(r.c3, "Squash...", "Squash"); // c1 is an ancestor of c3
+    GG_CHECK_STR_EQ(field("target"), c1Short);
+    s.dialogButton("Squash", "Cancel");
+    open(r.c3, "Restore from...", "Restore");
+    GG_CHECK_STR_EQ(field("from"), c1Short);
+    s.dialogButton("Restore", "Cancel");
+}
+
 GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto another branch")
 {
     const EditRepo r = makeRepo(s);
@@ -250,12 +296,30 @@ GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Redundant merge");
 }
 
+GG_TEST("edit", "the commit menu swaps items for their siblings while Shift is held")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c2));
+    ctx->ItemClick(rowRef(r.c2).c_str(), ImGuiMouseButton_Right);
+    auto shown = [&](const char* label) { return ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError).ID != 0; };
+    GG_CHECK(shown("Duplicate") && !shown("Duplicate branch"));
+    GG_CHECK(shown("Abandon") && !shown("Abandon branch..."));
+    GG_CHECK(!shown("Push"));
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    GG_CHECK(shown("Duplicate branch") && !shown("Duplicate"));
+    GG_CHECK(shown("Abandon branch...") && !shown("Abandon"));
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
 GG_TEST("edit", "insert a new commit before or after one")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c2));
-    s.contextMenu(rowRef(r.c2).c_str(), "New commit after");
+    s.contextMenu(rowRef(r.c2).c_str(), "New commit after", true);
     GG_CHECK(changed(s, r.path, r.c4));
     auto count = [&] { return std::stoi(s.gitOut(r.path, {"rev-list", "--count", "HEAD"})); };
     GG_CHECK_EQ(count(), 5);
@@ -272,7 +336,7 @@ GG_TEST("edit", "insert a new commit before or after one")
     // After the tip: the branch advances onto it.
     const std::string newTip = s.head(r.path);
     GG_REQUIRE(rowReady(s, newTip));
-    s.contextMenu(rowRef(newTip).c_str(), "New commit after");
+    s.contextMenu(rowRef(newTip).c_str(), "New commit after", true);
     GG_CHECK(changed(s, r.path, newTip));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), newTip);
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
@@ -443,7 +507,10 @@ GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected c
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c3));
     ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
     ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/New commit after");
+    ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c3); // everything up to c3 kept its id
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~3"), r.c2);
@@ -666,7 +733,7 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
     // Duplicate branch: c3 and c4 copied onto c2.
     const std::string copy = s.head(r.path);
-    s.contextMenu(rowRef(r.c3).c_str(), "Duplicate branch");
+    s.contextMenu(rowRef(r.c3).c_str(), "Duplicate branch", true);
     GG_CHECK(changed(s, r.path, copy));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c2);
     GG_CHECK(s.revParse(r.path, "HEAD~1") != r.c3);
@@ -674,7 +741,7 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
     const std::string branchCopy = s.head(r.path);
     // Squash descendants into this: c4 folded into c3 on main.
-    s.contextMenu(rowRef(r.c3).c_str(), "Squash descendants into this");
+    s.contextMenu(rowRef(r.c3).c_str(), "Squash descendants into this", true);
     GG_CHECK(changed(s, r.path, r.c4, "main"));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c3 change a", "c2 add b", "c1 add a"}));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), c4Tree);
@@ -695,7 +762,7 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--name-only", "main~2", "main~1"}), "a.txt");
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), c4Tree);
     // Abandon branch: s1 dropped; side (which only pointed into it) is kept at its parent.
-    s.contextMenu(rowRef(r.s1).c_str(), "Abandon branch...");
+    s.contextMenu(rowRef(r.s1).c_str(), "Abandon branch...", true);
     GG_REQUIRE(s.dialogOpen("Abandon branch"));
     s.dialogCheck("Abandon branch", "delete_branches", "Delete the branches that only point into it", false);
     s.dialogButton("Abandon branch", "Abandon");

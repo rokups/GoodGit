@@ -276,7 +276,7 @@ public:
     // Opens the combo `combo` (any ref, "**/" wildcards allowed) and clicks `item` in it.
     void comboSelect(const char* combo, const char* item);
     // Opens the context menu of `ref` and clicks `path` in it ("Copy/ID" for submenus).
-    void contextMenu(const char* ref, const char* path);
+    void contextMenu(const char* ref, const char* path, bool shift = false); // shift: held while choosing
     std::string itemLabel(const char* ref);
     // Text of the clipboard.
     std::string clipboard();

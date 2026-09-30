@@ -126,6 +126,7 @@ private:
     bool m_rowPitchOk = true;
     // The graph column is hidden while a filter is active (the graph of filtered rows is broken).
     bool m_graphShown = true;
+    ImVec2 m_menuItemSpacing{}; // the style's ItemSpacing, before the table zeroes it (for the row context menu)
     int column(int c) const { return m_graphShown ? c : c - 1; }
 
     // Scroll anchoring: the rows in view (top first) and their slots (Working tree / Index rows

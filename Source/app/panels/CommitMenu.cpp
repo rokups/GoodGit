@@ -14,6 +14,8 @@
 #include <IconsMaterialSymbols.h>
 #include <imgui.h>
 
+#include <unordered_set>
+
 namespace ggui {
 
 namespace {
@@ -32,27 +34,75 @@ std::vector<std::string> commitFiles(Session& s, const core::Oid& id)
     return out;
 }
 
+// The "other" commit for a dialog opened on `row`: another commit of the History selection, else
+// HEAD. `ref` is what a dialog field holds: HEAD's branch name, or a short id; empty (and a null
+// `id`) when there is none (unborn HEAD, or the other commit is `row` itself).
+struct Other {
+    core::Oid id;
+    std::string ref;
+};
+
+Other otherCommit(Session& s, const core::HistoryRow& row)
+{
+    std::vector<core::Oid> picked;
+    if (s.selection().kind == SelKind::Commit)
+        picked.push_back(s.selection().id);
+    for (const auto& e : s.history().extraSelection())
+        picked.push_back(e);
+    for (const auto& id : picked)
+        if (id != row.id && !id.isNull())
+            return {id, s.shortId(id)};
+    const auto snap = s.snapshot();
+    if (snap->headUnborn || snap->head.isNull() || snap->head == row.id)
+        return {};
+    return {snap->head, snap->headDetached || snap->headBranch.empty() ? s.shortId(snap->head) : snap->headBranch};
+}
+
+// True when `anc` is a strict ancestor of `row` through the loaded history rows.
+bool isStrictAncestor(Session& s, const core::HistoryRow& row, const core::Oid& anc)
+{
+    std::vector<core::Oid> todo(row.parents.begin(), row.parents.end());
+    std::unordered_set<std::string> seen;
+    while (!todo.empty()) {
+        const core::Oid id = todo.back();
+        todo.pop_back();
+        if (id == anc)
+            return true;
+        if (!seen.insert(id.hex()).second)
+            continue;
+        if (const core::HistoryRow* r = s.history().row(id))
+            todo.insert(todo.end(), r->parents.begin(), r->parents.end());
+    }
+    return false;
+}
+
+// The squash target: the other commit, when it is a strict ancestor of `row`; else empty.
+std::string squashPrefill(Session& s, const core::HistoryRow& row)
+{
+    const Other o = otherCommit(s, row);
+    return !o.id.isNull() && isStrictAncestor(s, row, o.id) ? o.ref : std::string();
+}
+
 } // namespace
 
 void drawCommitEditItems(Session& session, const core::HistoryRow& row)
 {
     const bool ok = free(session);
+    const Other other = otherCommit(session, row);
     const bool merge = row.parents.size() > 1;
     const bool root = row.parents.empty();
+    // Holding Shift swaps an item for its sibling (the same variants as the Shift+key hotkeys).
+    const bool shift = ImGui::GetIO().KeyShift;
     if (menuItem(ICON_MS_EDIT, "Edit commit", "E", false, ok))
         session.actions().editCommit(row.id);
     ImGui::Separator();
-    if (menuItem(ICON_MS_ADD, "New commit before", nullptr, false, ok))
-        session.actions().insertCommit(row.id, true, {});
-    if (menuItem(ICON_MS_ADD, "New commit after", nullptr, false, ok))
-        session.actions().insertCommit(row.id, false, {});
+    if (menuItem(ICON_MS_ADD, shift ? "New commit after" : "New commit before", nullptr, false, ok))
+        session.actions().insertCommit(row.id, !shift, {});
     ImGui::Separator();
-    if (menuItem(ICON_MS_CONTROL_POINT_DUPLICATE, "Duplicate", "D", false, ok))
-        session.actions().duplicate(row.id, false);
-    if (menuItem(ICON_MS_CONTROL_POINT_DUPLICATE, "Duplicate branch", "Shift+D", false, ok))
-        session.actions().duplicate(row.id, true);
+    if (menuItem(ICON_MS_CONTROL_POINT_DUPLICATE, shift ? "Duplicate branch" : "Duplicate", shift ? "Shift+D" : "D", false, ok))
+        session.actions().duplicate(row.id, shift);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, false, ok))
-        showRebaseDialog(session, row.id);
+        showRebaseDialog(session, row.id, other.ref);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase from here...", "I", false, ok))
         openInteractiveRebase(session, row.id);
     // HEAD and this commit (plan §4.3 "Merge into @", "Rebase @ onto"): also in Branches.
@@ -81,31 +131,39 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
                 ImGui::SetTooltip("%s", tip.c_str());
             }
         };
-        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", headCommit,
-            "Undo this commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
-        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", headCommit,
-            "A new commit on HEAD that undoes this commit. Text conflicts become first-class conflicts.", true, true);
-        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", blocked.empty(),
-            "Apply this commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false,
-            false);
-        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick and commit", blocked.empty(),
-            "A copy of this commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
+        if (shift)
+            item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", headCommit,
+                "A new commit on HEAD that undoes this commit. Text conflicts become first-class conflicts.", true, true);
+        else
+            item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", headCommit,
+                "Undo this commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
+        if (shift)
+            item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick and commit", blocked.empty(),
+                "A copy of this commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
+        else
+            item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", blocked.empty(),
+                "Apply this commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false,
+                false);
     }
-    if (menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, ok && !merge && !root))
-        showSquashDialog(session, row.id);
-    if (menuItem(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S", false, ok))
-        session.actions().squashDescendants(row.id);
+    if (shift) {
+        if (menuItem(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S", false, ok))
+            session.actions().squashDescendants(row.id);
+    } else if (menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, ok && !merge && !root)) {
+        showSquashDialog(session, row.id, squashPrefill(session, row));
+    }
     if (menuItem(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", false, ok && !merge))
         showSplitDialog(session, row.id);
     if (menuItem(ICON_MS_RESTORE, "Restore from...", nullptr, false, ok))
-        showRestoreDialog(session, row.id);
+        showRestoreDialog(session, row.id, other.ref);
     if (menuItem(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, false, ok && merge))
         session.actions().simplifyParents(row.id);
     ImGui::Separator();
-    if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon", "A", false, ok))
+    if (shift) {
+        if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A", false, ok))
+            showAbandonBranchDialog(session, row.id);
+    } else if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon", "A", false, ok)) {
         session.actions().abandon(row.id, false);
-    if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A", false, ok))
-        showAbandonBranchDialog(session, row.id);
+    }
 }
 
 void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
@@ -124,18 +182,20 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyShift)
         session.actions().squashDescendants(row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && row.parents.size() == 1)
-        showSquashDialog(session, row.id);
+        showSquashDialog(session, row.id, squashPrefill(session, row));
     else if (ImGui::IsKeyPressed(ImGuiKey_A, false) && io.KeyShift)
         showAbandonBranchDialog(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_A, false))
         session.actions().abandon(row.id, false);
 }
 
-void showRebaseDialog(Session& session, const core::Oid& commit)
+void showRebaseDialog(Session& session, const core::Oid& commit, const std::string& prefill)
 {
     Form f;
     f.title = "Rebase onto";
-    f.add(Field{Field::Text, "destination", "Destination (branch, tag or commit)"});
+    Field dest{Field::Text, "destination", "Destination (branch, tag or commit)"};
+    dest.text = prefill;
+    f.add(dest);
     Field with{Field::Check, "with_descendants", "With its descendants"};
     with.checked = true;
     f.add(with);
@@ -157,11 +217,13 @@ void showRebaseDialog(Session& session, const core::Oid& commit)
     session.app().dialogs().open(std::move(f));
 }
 
-void showSquashDialog(Session& session, const core::Oid& commit)
+void showSquashDialog(Session& session, const core::Oid& commit, const std::string& prefill)
 {
     Form f;
     f.title = "Squash";
-    f.add(Field{Field::Text, "target", "Into (empty = the parent; or an ancestor)"});
+    Field targetField{Field::Text, "target", "Into (empty = the parent; or an ancestor)"};
+    targetField.text = prefill;
+    f.add(targetField);
     Field combine{Field::Check, "combine", "Combine the messages (squash; otherwise keep the target's: fixup)"};
     combine.checked = true;
     f.add(combine);
@@ -269,13 +331,15 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
     session.app().dialogs().open(std::move(f));
 }
 
-void showRestoreDialog(Session& session, const core::Oid& commit)
+void showRestoreDialog(Session& session, const core::Oid& commit, const std::string& prefill)
 {
     std::vector<std::string> paths = session.selectedPaths();
     Form f;
     f.title = "Restore";
     f.message = paths.empty() ? "Select files in Changes first." : std::to_string(paths.size()) + " selected file(s).";
-    f.add(Field{Field::Text, "from", "From (branch, tag or commit)"});
+    Field fromField{Field::Text, "from", "From (branch, tag or commit)"};
+    fromField.text = prefill;
+    f.add(fromField);
     Field where{Field::Combo, "where", "Restore into"};
     where.options = {"This commit (rewrite it)", "The working tree (git restore)"};
     f.add(where);

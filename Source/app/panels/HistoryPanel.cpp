@@ -522,6 +522,8 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
 {
     if (!ImGui::BeginPopupContextItem("##row_menu"))
         return;
+    // The table runs with zero vertical item spacing; the menu uses the regular one.
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
     if (m_session.selection().id != row.id)
         m_session.selectCommit(row.id);
     auto& actions = m_session.actions();
@@ -565,18 +567,6 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
                 m_session.showDeleteBranchDialog(b, 0);
         ImGui::EndMenu();
     }
-    const bool pushable = free && !branchesHere.empty() && !m_snapshot->remotes.empty();
-    if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, pushable)) {
-        const auto* b = m_snapshot->findBranch(branchesHere.front());
-        if (b && !b->upstream.empty()) {
-            const auto slash = b->upstream.find('/');
-            actions.push(b->upstream.substr(0, slash), b->name, b->upstream.substr(slash + 1), false, false);
-        } else {
-            m_session.showPushToDialog(branchesHere.front());
-        }
-    }
-    if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, pushable))
-        m_session.showPushToDialog(branchesHere.front());
     ImGui::Separator();
     if (beginMenu(ICON_MS_CONTENT_COPY, "Copy")) {
         copyIdMenuItem("ID", row.shortId, hex);
@@ -596,6 +586,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     drawCommitEditItems(m_session, row);
     if (parents.size() > 1 && menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free))
         openInteractiveRebaseSelection(m_session, parents);
+    ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
 
@@ -848,7 +839,8 @@ void HistoryPanel::draw(bool* open)
         ImGui::GetContentRegionAvail().x * 0.4f);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
+    m_menuItemSpacing = ImGui::GetStyle().ItemSpacing;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(m_menuItemSpacing.x, 0));
     m_graphShown = m_appliedFilter.empty() && !m_conflictedOnly;
     const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
     const int virtualRows = !m_snapshot->bare ? (m_hasStaged ? 2 : 1) : 0;
