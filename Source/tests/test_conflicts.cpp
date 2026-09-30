@@ -224,6 +224,34 @@ GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change i
     ctx->ItemClick("//History/Conflicted only##hist_conflicted");
 }
 
+GG_TEST("conflicts", "a conflicted commit selected in History marks its files with the side count")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    const std::string conflictedId = s.revParse(repo, "HEAD~1"); // its descendant adds other.txt only
+    const std::string base = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(scanned(s, base));
+    GG_CHECK(s.waitUntil([&] { return conflicted(s, conflictedId); }));
+    ctx->ItemClick(("//History/**/###row_" + conflictedId).c_str());
+    auto conflictRow = [&]() -> const ggui::FileRow* {
+        for (const auto& r : s.session()->changes().rows())
+            if (r.path == "conflict.txt")
+                return &r;
+        return nullptr;
+    };
+    GG_CHECK(s.waitUntil([&] { return conflictRow() && conflictRow()->sides == 2; }));
+    GG_REQUIRE(conflictRow() != nullptr);
+    GG_CHECK_STR_EQ(conflictRow()->conflict, "2-sided conflict");
+    GG_CHECK(!conflictRow()->firstClass); // a commit's row offers no working-tree actions
+    GG_CHECK(conflictRow()->group == ggui::FileGroup::Commit);
+    GG_CHECK(s.itemExists((s.child("//Changes", "##files") + "/conflict.txt/###file_conflict.txt").c_str()));
+    // A commit that is not conflicted has plain rows.
+    ctx->ItemClick(("//History/**/###row_" + base).c_str());
+    GG_CHECK(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    for (const auto& r : s.session()->changes().rows())
+        GG_CHECK_EQ(r.sides, 0);
+}
+
 GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out, disposable cache")
 {
     const fs::path repo = s.fixture(Recipe::ConflictedN);

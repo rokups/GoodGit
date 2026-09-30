@@ -261,6 +261,7 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
             return;
         m_filesError = d.error;
         m_rows = rowsFromDiff(FileGroup::Commit, d);
+        markConflicts();
     } else if (m_selection.kind == SelKind::Stash) {
         if (d.query.a != m_selection.id)
             return;
@@ -274,6 +275,27 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
         return;
     }
     m_loading = false;
+}
+
+// Flags the commit's files that hold first-class conflicts (Readers.cpp wording); the scan may
+// finish after the file list, so draw() repeats it. Not `firstClass`: the working-tree actions
+// (stage, take a side, mark resolved) do not apply to a commit's rows.
+void ChangesPanel::markConflicts()
+{
+    if (m_selection.kind != SelKind::Commit)
+        return;
+    const ConflictList* conflicts = m_session.conflictsOf(m_selection.id);
+    for (auto& r : m_rows) {
+        r.sides = 0;
+        r.conflict.clear();
+        if (!conflicts)
+            continue;
+        for (const auto& [path, sides] : *conflicts)
+            if (path == r.path) {
+                r.sides = sides;
+                r.conflict = std::to_string(sides) + "-sided conflict";
+            }
+    }
 }
 
 const FileRow* ChangesPanel::current() const
@@ -550,7 +572,9 @@ void ChangesPanel::openFile(const FileRow& row)
     auto& actions = m_session.actions();
     std::error_code ec;
     const bool added = row.kind == core::ChangeKind::Added || row.kind == core::ChangeKind::Untracked;
-    if ((added || row.group == FileGroup::Conflicted) && fs::exists(snap->workdir / row.path, ec)) {
+    // A conflicted commit's file has markers the diff tool cannot read: at HEAD the working copy is it.
+    const bool headConflict = row.group == FileGroup::Commit && row.sides > 0 && m_selection.id == snap->head;
+    if ((added || headConflict || row.group == FileGroup::Conflicted) && fs::exists(snap->workdir / row.path, ec)) {
         actions.openInEditor(row.path);
         return;
     }
@@ -583,7 +607,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     if (broken)
         label += "  \xE2\x9A\xA0 broken conflict markers"; // this edit broke a conflict region
     ImGui::PushStyleColor(ImGuiCol_Text, broken ? theme().palette().warning
-                                                 : (row.firstClass ? theme().palette().conflict : kindColor(row.kind)));
+                                                 : (row.firstClass || row.sides > 0 ? theme().palette().conflict : kindColor(row.kind)));
     const std::string id = label + "###file_" + row.path;
     if (selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
         const ImGuiIO& io = ImGui::GetIO();
@@ -721,6 +745,7 @@ void ChangesPanel::draw(bool* open)
         return;
     }
     const auto snap = m_session.snapshot();
+    markConflicts();
     std::string title;
     switch (m_selection.kind) {
     case SelKind::WorkingTree:

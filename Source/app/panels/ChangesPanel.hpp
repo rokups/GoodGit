@@ -75,6 +75,7 @@ public:
 private:
     void requestFiles();
     void rebuildFromStatus();
+    void markConflicts();
     void setCurrent(const std::string& key); // a row's key: shows that file in Diff
     void drawGroup(FileGroup group, const char* title, int count);
     void drawFile(const FileRow& row, int flatIndex);

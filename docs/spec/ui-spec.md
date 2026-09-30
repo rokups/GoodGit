@@ -188,7 +188,8 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   "Index", short ID and commit subject, stash message), filter `##changes_filter`, toggle
   *Compare with HEAD* `##compare_head` (enabled for commits only).
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
-  renames shown `old → new`.
+  renames shown `old → new`; files holding first-class conflicts are in the conflict colour with
+  "N-sided conflict", and double-clicking one at HEAD opens the editor.
 - For Working tree / Index (N): groups `Staged`, `Unstaged`, `Untracked`, `Conflicted`, each a
   collapsible header with a count and group buttons (Stage all / Unstage all). Space/Enter
   toggles staging of the selection; drag rows between Staged and Unstaged.
