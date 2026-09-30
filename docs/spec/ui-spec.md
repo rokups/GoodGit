@@ -103,7 +103,7 @@ is held (the menu item says "Shift: full ID").
   replaces the older one.
 
 ### 1.6 Settings window `"Settings"` (K/N)
-Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light),
+Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light, *Add GoodGit to PATH* `##add_to_path` (N, Linux with systemd: checked iff `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` names the executable directory; a note "points to <dir>" when it names another; "Takes effect at next login"; disabled with a tooltip without systemd or off Linux; errors in the `Add GoodGit to PATH` error popup)),
 **Git** (N: "When nothing is staged" default: Ask / Stage all tracked / Stage selected; git
 configuration with scope tabs `##config_scope` User / Repository / Worktree, one field per option:
 `user.name`, `user.email`, `core.editor`, `merge.tool`, `diff.tool`, *Pull method*

@@ -3,6 +3,7 @@
 // each panel has its own view model.
 #pragma once
 
+#include "platform/PathSetup.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Settings.hpp"
 
@@ -136,6 +137,7 @@ private:
     void drawWelcome();
     void drawDockHost();
     void drawSettingsWindow();
+    void drawPathSetting();
     void pumpSummaries();
     void pumpAskpass();
     // Hands lists from `git gg sequence-editor` (plain git rebase -i) to the todo editor.
@@ -169,6 +171,7 @@ private:
     bool m_quit = false;
     bool m_showSettings = false;
     bool m_settingsFreshOpen = false;
+    PathSetupState m_pathSetup; // "Add GoodGit to PATH", read from disk when Settings opens
     bool m_autoOpenDone = false;
     bool m_layoutPending = false;
     bool m_iniApplied = false;

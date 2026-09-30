@@ -1,6 +1,7 @@
 // Settings window (product spec §4.1 Settings).
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "util/Env.hpp"
 #include "util/Ui.hpp"
 
 #include "shell/Widgets.hpp"
@@ -319,6 +320,36 @@ void App::drawGitConfigSettings(Session& s)
     ImGui::EndTabBar();
 }
 
+// "Add GoodGit to PATH": the state is the environment.d file on disk (platform/PathSetup.hpp).
+void App::drawPathSetting()
+{
+    const PathSetupSupport support = pathSetupSupport();
+    const std::string dir = executableDir();
+    const std::string home = pathSetupConfigHome();
+    bool on = m_pathSetup.enabled;
+    ImGui::Separator();
+    ImGui::BeginDisabled(support != PathSetupSupport::Available);
+    if (ImGui::Checkbox("Add GoodGit to PATH##add_to_path", &on)) {
+        const std::string err = writePathSetup(support, home, dir, on);
+        if (!err.empty())
+            showError("Add GoodGit to PATH", err);
+        m_pathSetup = readPathSetup(home, dir);
+    }
+    ImGui::EndDisabled();
+    if (support != PathSetupSupport::Available) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", pathSetupUnavailableReason(support).c_str());
+        return;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Puts %s, which holds git-gg, on your login PATH (systemd environment.d). "
+                          "Takes effect at next login.", dir.c_str());
+    }
+    if (m_pathSetup.present && !m_pathSetup.enabled)
+        ImGui::TextDisabled("%s points to %s", pathSetupFile(home).c_str(),
+            m_pathSetup.otherDir.empty() ? "no PATH entry" : m_pathSetup.otherDir.c_str());
+}
+
 void App::drawSettingsWindow()
 {
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 46, ImGui::GetFontSize() * 34), ImGuiCond_FirstUseEver);
@@ -329,6 +360,8 @@ void App::drawSettingsWindow()
     auto& d = m_settings.data();
     Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
     if (ImGui::BeginTabBar("##settings_tabs")) {
+        if (m_settingsFreshOpen)
+            m_pathSetup = readPathSetup(pathSetupConfigHome(), executableDir());
         const ImGuiTabItemFlags first = m_settingsFreshOpen ? ImGuiTabItemFlags_SetSelected : 0;
         m_settingsFreshOpen = false;
         if (ImGui::BeginTabItem("General", nullptr, first)) {
@@ -346,6 +379,7 @@ void App::drawSettingsWindow()
                 applyTheme();
                 m_settings.save();
             }
+            drawPathSetting();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Git")) {

@@ -237,6 +237,15 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   selection (`merge.tool`, `diff.tool`), pull strategy (`pull.rebase`), and the default for
   "commit all when nothing is staged". **N** A Hooks tab: install or remove the managed
   hooks for this repository and show their status (§4.12).
+- **N** Settings > General "Add GoodGit to PATH" (Linux with systemd only): puts the ggui
+  executable directory, which holds `git-gg` (the hooks need it on PATH), on the login PATH by
+  writing `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` (default `~/.config`; one line
+  `PATH=<dir>:${PATH}` under a comment saying ggui manages it); unchecking deletes the file. The
+  state is read from the file, not stored: checked iff it exists and names the current
+  directory (a file naming another directory is shown as "points to <dir>", and checking rewrites
+  it). Written atomically; a directory containing `$ \ " ' :` or a line break is refused with an
+  error. Takes effect at next login. Systemd is detected as `/run/systemd/system` being a
+  directory; elsewhere the control is disabled with an explanatory tooltip.
 - **K** Open a linked worktree in a new window. Open files in the external editor, open
   folders, run the external diff tool (vs HEAD, vs parent) and the three-way merge tool.
 - **K** File watcher: debounced refresh of the paths that changed. Also watch `.git/index`,
