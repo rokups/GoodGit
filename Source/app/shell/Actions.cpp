@@ -987,6 +987,92 @@ void Actions::stashDrop(int index)
     run("stash drop " + ref, [ref](MutationContext& ctx) { ctx.git({"stash", "drop", "-q", ref}); });
 }
 
+void Actions::stashReword(int index, const core::Oid& commit, const std::string& message)
+{
+    const std::string oldId = commit.hex();
+    std::string text = message;
+    if (!text.empty() && text.back() != '\n')
+        text.push_back('\n');
+    m_session.stashRewordPending(true);
+    Session* session = &m_session;
+    run(
+        "reword stash@{" + std::to_string(index) + "}",
+        [index, oldId, text](MutationContext& ctx) {
+            // New stash commit: same tree, parents and author; only the message differs.
+            const auto ids = gg::splitLines(ctx.git({"rev-parse", oldId + "^{tree}", oldId + "^@"}).out);
+            std::vector<std::string> args{"commit-tree"};
+            bool tree = true;
+            for (const auto& line : ids) {
+                const std::string id = gg::trim(line);
+                if (id.empty())
+                    continue;
+                if (tree)
+                    args.push_back(id);
+                else {
+                    args.emplace_back("-p");
+                    args.push_back(id);
+                }
+                tree = false;
+            }
+            const auto who = gg::splitLines(ctx.git({"log", "-1", "--date=raw", "--format=%an%n%ae%n%ad", oldId}).out);
+            if (who.size() >= 3) {
+                ctx.env.emplace_back("GIT_AUTHOR_NAME", gg::trim(who[0]));
+                ctx.env.emplace_back("GIT_AUTHOR_EMAIL", gg::trim(who[1]));
+                ctx.env.emplace_back("GIT_AUTHOR_DATE", gg::trim(who[2]));
+            }
+            const std::string fresh = gg::trim(ctx.git(args, text).out);
+            ctx.env.clear();
+
+            // The stash list, newest first: sha and reflog subject.
+            struct Entry {
+                std::string sha, subject;
+            };
+            std::vector<Entry> entries;
+            for (const auto& line : gg::splitLines(ctx.git({"stash", "list", "--format=%H%x00%gs"}).out)) {
+                const auto nul = line.find('\0');
+                if (nul != std::string::npos)
+                    entries.push_back({line.substr(0, nul), gg::trim(line.substr(nul + 1))});
+            }
+            if (index < 0 || static_cast<size_t>(index) >= entries.size() || entries[index].sha != oldId)
+                throw MutationError{Outcome::Refused, "The stash list changed; select the stash again", {}};
+            std::string subject = text.substr(0, text.find('\n'));
+            // Drop stash@{0}..stash@{index} and store them back oldest first, so the order stays.
+            std::vector<Entry> removed(entries.begin(), entries.begin() + index + 1);
+            removed[index] = {fresh, subject};
+            size_t stored = 0;
+            auto restore = [&](const std::vector<Entry>& list) {
+                stored = 0;
+                for (size_t i = list.size(); i-- > 0;) {
+                    const auto r = ctx.gitMayFail({"stash", "store", "-m", list[i].subject, list[i].sha});
+                    if (!r.ok())
+                        return r.message();
+                    ++stored;
+                }
+                return std::string();
+            };
+            for (int i = 0; i <= index; ++i)
+                ctx.git({"stash", "drop", "-q"});
+            const std::string failure = restore(removed);
+            if (!failure.empty()) {
+                // Undo the partial rewrite: drop what was stored, then store the originals back.
+                for (size_t i = 0; i < stored; ++i)
+                    ctx.gitMayFail({"stash", "drop", "-q"});
+                restore(std::vector<Entry>(entries.begin(), entries.begin() + index + 1));
+                throw MutationError{Outcome::Failed, "Could not rewrite the stash list", failure};
+            }
+            ctx.result = fresh;
+        },
+        [session, oldId, index](const core::MutationFinishedEvent& e) {
+            session->stashRewordPending(false);
+            if (e.outcome == core::Outcome::Ok) {
+                session->stashRewordDone(oldId, e.result, index);
+                return;
+            }
+            if (e.outcome != core::Outcome::Cancelled)
+                session->app().showError(e.label, e.detail.empty() ? e.message : e.detail);
+        });
+}
+
 void Actions::stashClear()
 {
     run("stash clear", [](MutationContext& ctx) { ctx.git({"stash", "clear"}); });

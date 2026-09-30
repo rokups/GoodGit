@@ -176,21 +176,25 @@ void InfoPanel::draw(bool* open)
     const bool isHead = snap && m_selection.kind == SelKind::Commit && d.id == snap->head;
     // Rewording HEAD is an amend (git runs the commit hooks); any other commit is rewritten in
     // memory with its descendants.
-    const bool editable = m_selection.kind == SelKind::Commit;
+    const bool stash = m_selection.kind == SelKind::Stash;
+    const bool editable = m_selection.kind == SelKind::Commit || stash;
     ImGui::InputTextMultiline("##message", &m_message, ImVec2(-1, ImGui::GetTextLineHeight() * 6),
         editable ? ImGuiInputTextFlags_None : ImGuiInputTextFlags_ReadOnly);
     const bool free = m_session.actions().busy().empty();
     ImGui::BeginDisabled(!editable || !free || m_message == d.message || gg::trim(m_message).empty());
     if (ImGui::Button(ICON_MS_SAVE " Save message###save_message")) {
-        if (isHead)
+        if (stash)
+            m_session.actions().stashReword(m_selection.stashIndex, d.id, m_message);
+        else if (isHead)
             m_session.actions().amend(m_message, false, true);
         else
             m_session.actions().reword(d.id, m_message);
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("%s", isHead ? "Reword HEAD (git commit --amend --only)"
-                                       : "Reword this commit; its descendants are rebased onto it");
+        ImGui::SetTooltip("%s", stash  ? "Change the stash message; its content and position stay"
+                                : isHead ? "Reword HEAD (git commit --amend --only)"
+                                         : "Reword this commit; its descendants are rebased onto it");
     if (isHead) {
         const auto status = m_session.status();
         const bool cleanIndex = status && status->staged.empty();

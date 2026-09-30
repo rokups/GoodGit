@@ -102,6 +102,11 @@ public:
     const core::StatusPtr& status() const { return m_status; }
     const Selection& selection() const { return m_selection; }
     void select(const Selection& sel);
+    // While a stash message is being rewritten its commit id changes: the selected stash is kept
+    // (not reset to the working tree when a snapshot arrives without it), then re-pointed at the
+    // new commit, same index.
+    void stashRewordPending(bool pending) { m_stashRewordPending = pending; }
+    void stashRewordDone(const std::string& oldCommit, const std::string& newCommit, int index);
     void selectCommit(const core::Oid& id);
     void revealCommit(const core::Oid& id);
     void refresh();
@@ -218,6 +223,7 @@ private:
     core::SnapshotPtr m_snapshot;
     core::StatusPtr m_status;
     Selection m_selection;
+    bool m_stashRewordPending = false;
     std::unordered_map<core::Oid, ConflictList, core::OidHash> m_conflicts;
     std::vector<gg::journal::Operation> m_operations;
     bool m_hooksInstalled = false;

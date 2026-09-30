@@ -224,6 +224,49 @@ GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo,
     s.settle();
 }
 
+GG_TEST("stash", "Change information edits a stash message in place: same index, content and order")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRow(2).c_str()); }));
+    auto subjects = [&] { return s.gitOut(repo, {"stash", "list", "--format=%gs"}); };
+    auto lines = [&] { return gg::splitLines(subjects()); };
+    const auto before = lines();
+    GG_REQUIRE(before.size() == 3);
+    const std::string top = s.revParse(repo, "stash@{0}");
+    const std::string bottom = s.revParse(repo, "stash@{2}");
+    const std::string middle = s.revParse(repo, "stash@{1}");
+    const std::string diff = s.gitOut(repo, {"diff", middle + "^1", middle});
+    const std::string tree = s.revParse(repo, "stash@{1}^{tree}");
+    const std::string parents = s.gitOut(repo, {"rev-list", "--parents", "-n1", middle});
+
+    ctx->ItemClick(stashRow(1).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled); // unchanged text
+    s.setText("//Change information/##message", "Renamed middle stash");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return lines().size() == 3 && lines()[1] == "Renamed middle stash"; }));
+    s.settle();
+    const auto after = lines();
+    GG_REQUIRE(after.size() == 3);
+    GG_CHECK_STR_EQ(after[0], before[0]);
+    GG_CHECK_STR_EQ(after[2], before[2]);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{0}"), top);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{2}"), bottom);
+    GG_CHECK(s.revParse(repo, "stash@{1}") != middle);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{1}^{tree}"), tree);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "stash@{1}^1", "stash@{1}"}), diff);
+    const std::string newParents = s.gitOut(repo, {"rev-list", "--parents", "-n1", "stash@{1}"});
+    GG_CHECK_STR_EQ(newParents.substr(newParents.find(' ')), parents.substr(parents.find(' ')));
+    // The selection stays on the same stash and shows the new message.
+    GG_CHECK_EQ(s.session()->selection().stashIndex, 1);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::Stash);
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled);
+    s.settle();
+}
+
 GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflicts")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);

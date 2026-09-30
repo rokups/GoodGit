@@ -208,9 +208,20 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
                 m_selection.stashIndex = s.index;
                 found = true;
             }
-        if (!found)
+        if (!found && !m_stashRewordPending)
             select(Selection{SelKind::WorkingTree, {}, -1});
     }
+}
+
+void Session::stashRewordDone(const std::string& oldCommit, const std::string& newCommit, int index)
+{
+    if (m_selection.kind != SelKind::Stash || m_selection.id.hex() != oldCommit)
+        return;
+    const core::Oid id = core::Oid::fromHex(newCommit);
+    if (!id.isNull())
+        select(Selection{SelKind::Stash, id, index});
+    else
+        select(Selection{SelKind::WorkingTree, {}, -1});
 }
 
 void Session::stopEditing()

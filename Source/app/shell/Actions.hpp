@@ -195,6 +195,8 @@ public:
         const std::vector<std::string>& paths, Callback done = {});
     void stashApply(int index, bool pop, bool restoreIndex);
     void stashDrop(int index);
+    // Rewrites the message of stash@{index} (a new stash commit, same content and position).
+    void stashReword(int index, const core::Oid& commit, const std::string& message);
     void stashClear();
     void stashBranch(int index, const std::string& branch);
     void stashApplyFile(int index, const std::string& path);
