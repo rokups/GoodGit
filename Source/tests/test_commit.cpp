@@ -310,4 +310,99 @@ GG_TEST("commit", "reword HEAD from Change information (amend mode)")
     GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled);
 }
 
+GG_TEST("commit", "commit dialog warns about a staged first-class conflict and still commits")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    // A new staged file that is itself a first-class conflict.
+    s.write(repo, "new_conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "new_conflict.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
+    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    GG_CHECK(s.waitUntil([&] { return !s.session()->commitWarnings().empty(); }));
+    ctx->Yield(2);
+    GG_CHECK(s.textShown("//Commit", "new_conflict.txt: committing a first-class conflict (2-sided)"));
+    // conflict.txt sits unchanged in HEAD: not this commit's doing, not listed.
+    GG_CHECK(!s.textShown("//Commit", "conflict.txt: conflict markers"));
+    GG_CHECK_EQ(s.session()->commitWarnings().size(), size_t(1));
+    s.dialogText("Commit", "message", "Add a conflicted file");
+    s.dialogButton("Commit", "Commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("Add a conflicted file", 0) == 0; }));
+    s.settle();
+    // The next commit touches nothing conflicted: no warning.
+    s.write(repo, "unrelated.txt", "hello\n");
+    s.git(repo, {"add", "unrelated.txt"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
+    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.settle();
+    ctx->Yield(2);
+    GG_CHECK(s.session()->commitWarnings().empty());
+    GG_CHECK(!s.textShown("//Commit", "first-class conflict"));
+    s.dialogButton("Commit", "Cancel");
+}
+
+GG_TEST("commit", "commit dialog warns about broken conflict markers and still commits")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    // Break the region: delete the "=======" separator. HEAD still holds the conflict; the staged
+    // edit does not.
+    s.write(repo, "conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "conflict.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
+    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    GG_CHECK(s.waitUntil([&] { return !s.session()->commitWarnings().empty(); }));
+    ctx->Yield(2);
+    GG_CHECK(s.textShown("//Commit", "conflict.txt: conflict markers left at line 2, 7"));
+    const std::string before = s.head(repo);
+    s.dialogText("Commit", "message", "Break the region");
+    s.dialogButton("Commit", "Commit");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != before; }));
+    GG_CHECK(headMessage(s, repo).rfind("Break the region", 0) == 0);
+}
+
+GG_TEST("commit", "commit dialog warning follows the index while the dialog is open")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    s.write(repo, "new_conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() != nullptr; }));
+    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    ctx->Yield(2);
+    GG_CHECK(!s.textShown("//Commit", "first-class conflict"));
+    s.git(repo, {"add", "new_conflict.txt"});
+    GG_CHECK(s.waitUntil([&] { return !s.session()->commitWarnings().empty(); }));
+    ctx->Yield(2);
+    GG_CHECK(s.textShown("//Commit", "new_conflict.txt: committing a first-class conflict (2-sided)"));
+    s.git(repo, {"reset", "-q", "new_conflict.txt"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->commitWarnings().empty(); }));
+    ctx->Yield(2);
+    GG_CHECK(!s.textShown("//Commit", "first-class conflict"));
+    s.dialogButton("Commit", "Cancel");
+}
+
+GG_TEST("commit", "Change information: Commit on the Index warns about a staged first-class conflict and still commits")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    s.write(repo, "new_conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n");
+    s.git(repo, {"add", "new_conflict.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
+    ctx->ItemClick("//History/**/###row_index");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##commit_message"); }));
+    GG_CHECK(s.waitUntil([&] { return !s.session()->commitWarnings().empty(); }));
+    ctx->Yield(2);
+    GG_CHECK(s.textShown("//Change information", "new_conflict.txt: committing a first-class conflict (2-sided)"));
+    s.setText("//Change information/##commit_message", "From the index");
+    ctx->Yield(2);
+    ctx->ItemClick("//Change information/###info_commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "From the index"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "--name-only", "--format=", "HEAD"}), "new_conflict.txt");
+}
+
 } // namespace ggtest

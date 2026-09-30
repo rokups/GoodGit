@@ -130,7 +130,7 @@ silent about a conflict, broken or otherwise, that already sits unchanged in HEA
 pre-commit hook additionally warns, in the same never-blocking way, when a staged path this
 commit touches holds a first-class conflict itself (the file is still conflicted, not broken):
 committing a conflict is fine locally, but push refuses it (§4.10 Safety below), so the warning
-flags it early. Push (the managed pre-push hook and ggui's own Push, `gg::hooks::brokenOutgoing`
+flags it early. Push (the managed pre-push hook and ggui's own Push, `gg::outgoing::brokenOutgoing`
 next to `conflictedOutgoing`) *refuses* a commit that left broken markers where its first
 parent's version of the file held a first-class conflict — the same refusal as a commit that
 still carries a first-class conflict, and bypassed the same way (`git push --no-verify`).

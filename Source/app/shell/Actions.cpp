@@ -8,6 +8,7 @@
 #include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/Hooks.hpp>
+#include <libgg/Outgoing.hpp>
 #include <libgg/Markers.hpp>
 #include <libgg/NewCommit.hpp>
 #include <libgg/Rewrite.hpp>
@@ -861,7 +862,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 // Never push first-class conflicts (§4.10 Safety, P1): refuse before git runs.
                 const std::string local = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
                 const auto remoteOid = ctx.gitMayFail({"rev-parse", "--verify", "-q", "refs/remotes/" + remote + "/" + remoteBranch});
-                const auto conflicted = gg::hooks::conflictedOutgoing(ctx.cwd(), local, remote,
+                const auto conflicted = gg::outgoing::conflictedOutgoing(ctx.cwd(), local, remote,
                     remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
                 if (!conflicted.empty()) {
                     std::string list;
@@ -872,7 +873,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                     }
                     throw MutationError{Outcome::Refused, "The pushed commits contain first-class conflicts", list};
                 }
-                const auto broken = gg::hooks::brokenOutgoing(ctx.cwd(), local, remote,
+                const auto broken = gg::outgoing::brokenOutgoing(ctx.cwd(), local, remote,
                     remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
                 if (!broken.empty()) {
                     std::string list;

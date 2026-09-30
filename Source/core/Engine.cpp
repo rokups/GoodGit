@@ -35,6 +35,7 @@ constexpr int kSlotMessages = 41;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotHooks = 5;
+constexpr int kSlotCommitWarnings = 7;
 constexpr int kSlotReconcile = 6;
 constexpr int kSlotRebasePreview = 1;
 constexpr int kSlotRemoteTags = 1;
@@ -643,6 +644,13 @@ RequestId Engine::readHooksStatus()
         const std::filesystem::path dir = git_repository_workdir(repo) ? std::filesystem::path(git_repository_workdir(repo))
                                                                         : std::filesystem::path(git_repository_path(repo));
         emit(HooksEvent{job.id, gg::hooks::status(dir)});
+    });
+}
+
+RequestId Engine::readCommitWarnings()
+{
+    return submit(Queue::Snapshot, "Checking the staged files for conflicts", kSlotCommitWarnings, true, [this](Job& job) {
+        emit(CommitWarningsEvent{job.id, gg::outgoing::stagedConflictWarnings(job.repo())});
     });
 }
 

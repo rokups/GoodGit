@@ -91,6 +91,11 @@ void Session::handle(core::Event& event)
                 m_status = e.status;
                 m_history->onStatus(m_status);
                 m_changes->onStatus(m_status);
+                // The commit warning follows the index.
+                if (!m_status || m_status->staged.empty())
+                    m_commitWarnings.clear();
+                else
+                    m_engine->readCommitWarnings();
             } else if constexpr (std::is_same_v<T, core::HistoryEvent>) {
                 std::vector<core::Oid> ids;
                 for (const auto& row : e.batch->rows)
@@ -162,6 +167,8 @@ void Session::handle(core::Event& event)
                 }
             } else if constexpr (std::is_same_v<T, core::ConfigEvent>) {
                 m_config = std::move(e.values);
+            } else if constexpr (std::is_same_v<T, core::CommitWarningsEvent>) {
+                m_commitWarnings = std::move(e.warnings);
             } else if constexpr (std::is_same_v<T, core::HooksEvent>) {
                 m_hooksStatus = e.status;
                 m_hooksInstalled = e.status.installed;

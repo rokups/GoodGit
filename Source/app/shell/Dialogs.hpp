@@ -27,7 +27,9 @@ struct CommitPreview {
 
 struct Field {
     // Commit: a Text input that names a commit (branch, tag, id, HEAD~2...), with a preview line.
-    enum Kind { Text, Password, Multiline, Check, Combo, Info, Commit };
+    // Warning: lines drawn in the warning color, read from `live` on every frame (nothing shown
+    // while it returns an empty string): what may change while the dialog is open.
+    enum Kind { Text, Password, Multiline, Check, Combo, Info, Commit, Warning };
     Kind kind = Text;
     std::string id;           // widget id: "##<id>"
     std::string label;
@@ -36,6 +38,7 @@ struct Field {
     int choice = 0;
     std::vector<std::string> options;
     std::string hint;
+    std::function<std::string()> live;
     bool filterable = false;  // Combo: a filter field at the top of the list (Enter picks the first match)
     std::string filter;
     // Shown only while this returns true (empty: always); a hidden field keeps its value.

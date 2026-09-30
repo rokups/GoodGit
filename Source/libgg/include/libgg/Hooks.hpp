@@ -41,30 +41,4 @@ bool uninstall(const std::filesystem::path& repoDir, std::string& error);
 int runHook(const std::string& name, const std::vector<std::string>& args, std::istream& in, std::ostream& out,
     std::ostream& err);
 
-// Commits reachable from `local` but not from `remote`'s tracking refs that hold first-class
-// conflicts, with their files ("<id> <path>" lines). Used by pre-push and by ggui's push.
-struct ConflictedCommit {
-    std::string id;
-    std::string subject;
-    std::vector<std::string> files;
-};
-std::vector<ConflictedCommit> conflictedOutgoing(const std::filesystem::path& repoDir, const std::string& localOid,
-    const std::string& remote, const std::string& remoteOid);
-
-// Commits reachable from `local` but not from `remote`'s tracking refs that left broken
-// conflict markers (product spec §4.10, §8): for a file the commit changes, its first parent's
-// version held a first-class conflict and the commit's version has gg::markers::brokenMarkers
-// non-empty. Used by pre-push and by ggui's push, alongside conflictedOutgoing.
-struct BrokenFile {
-    std::string path;
-    std::vector<size_t> lines; // 1-based, from markers::brokenMarkers
-};
-struct BrokenCommit {
-    std::string id;
-    std::string subject;
-    std::vector<BrokenFile> files;
-};
-std::vector<BrokenCommit> brokenOutgoing(const std::filesystem::path& repoDir, const std::string& localOid,
-    const std::string& remote, const std::string& remoteOid);
-
 } // namespace gg::hooks

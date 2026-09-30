@@ -546,7 +546,10 @@ commit is conflicted is a pure function of its tree.
   instead of a resolution (`gg::markers::brokenMarkers`). Same message style, same
   "Reveal", same `--no-verify`-only bypass. The managed `pre-commit` hook warns (never
   blocks) about this earlier, at commit time, for staged files the commit touches — both
-  a broken region and a staged file that is itself still a first-class conflict.
+  a broken region and a staged file that is itself still a first-class conflict. ggui's
+  Commit and Amend dialogs and the Info panel's Commit button (on the Index) show the same
+  warning (`gg::outgoing::stagedConflictWarnings`, read off the UI thread and refreshed on every
+  status change); it never blocks committing.
 
 **Native in-progress operations: N**
 - Detect merge, rebase (interactive and apply), cherry-pick, revert and bisect states.
@@ -596,7 +599,8 @@ or with `git gg hooks install|uninstall`.
   (§4.10).
 - **`pre-commit`:** warns (never blocks) about staged files the commit touches that are
   themselves a first-class conflict, or whose HEAD version held one and whose staged edit
-  broke the region instead of resolving it (§4.10).
+  broke the region instead of resolving it (§4.10). ggui's commit dialog and the Info
+  panel's Commit button show the same warning.
 - **Installing:**
   - Hooks are chained, never clobbered. An existing hook keeps running, before or after
     ours as appropriate, and its exit status is respected.

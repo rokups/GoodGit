@@ -7,6 +7,7 @@
 
 #include <core/Engine.hpp>
 #include <libgg/EditSession.hpp>
+#include <libgg/Outgoing.hpp>
 
 #include <filesystem>
 #include <map>
@@ -129,6 +130,12 @@ public:
     void stopEditing();
     const std::optional<gg::hooks::Status>& hooksStatus() const { return m_hooksStatus; }
     void requestHooksStatus();
+    // What committing the staged files would make or leave conflicted (read off the UI thread on every
+    // status change and when the commit dialog opens); never blocks.
+    const std::vector<gg::outgoing::StagedWarning>& commitWarnings() const { return m_commitWarnings; }
+    // The warning as shown by the commit dialog and the Info panel's Commit button: one line per
+    // affected file (the first few), or "" for none.
+    std::string commitWarningText() const;
     const std::map<std::string, std::map<std::string, std::string>>& config() const { return m_config; }
     void requestConfig();
 
@@ -230,6 +237,7 @@ private:
     std::optional<gg::edit::Session> m_editSession;
     std::optional<gg::hooks::Status> m_hooksStatus;
     bool m_hooksPromptChecked = false;
+    std::vector<gg::outgoing::StagedWarning> m_commitWarnings;
     std::map<std::string, std::map<std::string, std::string>> m_config;
     std::map<std::string, RemoteTags> m_remoteTags;
     std::string m_journalError; // the undo journal's problem last reported ("" = none)

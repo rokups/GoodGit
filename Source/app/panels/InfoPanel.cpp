@@ -148,6 +148,16 @@ void InfoPanel::draw(bool* open)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("%s", index ? "Commit the staged changes (git commit)"
                                           : "Commit only the unstaged and untracked changes; the staged changes stay staged");
+        if (index && !nothing) {
+            const std::string warning = m_session.commitWarningText();
+            if (!warning.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextUnformatted((std::string(ICON_MS_WARNING " ") + warning).c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::PopStyleColor();
+            }
+        }
         const auto snap = m_session.snapshot();
         drawPendingCommitInfo(status.get(), snap.get());
         if (snap && snap->state != core::RepoState::None) {

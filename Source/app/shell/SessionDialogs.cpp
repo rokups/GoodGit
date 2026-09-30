@@ -28,6 +28,31 @@ std::vector<std::string> remoteNames(const core::SnapshotPtr& snap)
 
 } // namespace
 
+// The commit dialog's warning: one line per affected file (the first few), or "" for none.
+std::string Session::commitWarningText() const
+{
+    constexpr size_t kShown = 4;
+    std::string text;
+    for (size_t i = 0; i < m_commitWarnings.size() && i < kShown; ++i) {
+        const auto& w = m_commitWarnings[i];
+        if (i)
+            text += "\n";
+        if (w.kind == gg::outgoing::StagedWarning::Kind::Conflict) {
+            text += w.path + ": committing a first-class conflict (" + std::to_string(w.sides)
+                + "-sided); push refuses it until resolved";
+            continue;
+        }
+        std::string lines;
+        for (size_t k = 0; k < w.lines.size(); ++k)
+            lines += (k ? ", " : "") + std::to_string(w.lines[k]);
+        text += w.path + ": conflict markers left at line " + lines + " (the edit broke a conflict region)";
+    }
+    if (m_commitWarnings.size() > kShown)
+        text += "\nand " + std::to_string(m_commitWarnings.size() - kShown) + " more";
+    return text;
+}
+
+
 void Session::showCommitDialog(bool amend)
 {
     Form f;
@@ -49,6 +74,16 @@ void Session::showCommitDialog(bool amend)
             msg.text.pop_back();
     }
     f.add(msg);
+    // Staged files that are (or would stay) first-class conflicts: a warning only, committing is
+    // never blocked. Read off the UI thread; refreshed while the dialog is open (Session::handle).
+    m_commitWarnings.clear();
+    m_engine->readCommitWarnings();
+    Field warning;
+    warning.kind = Field::Warning;
+    warning.id = "conflict_warning";
+    warning.live = [this] { return commitWarningText(); };
+    warning.visible = [](const Form& form) { return !form.checked("message_only"); };
+    f.add(std::move(warning));
     f.add(Field{Field::Check, "skip_hooks", "Skip hooks (--no-verify)"});
     if (amend)
         f.add(Field{Field::Check, "message_only", "Change the message only (keep the index out)"});

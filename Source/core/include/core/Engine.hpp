@@ -16,6 +16,7 @@
 #include <libgg/Cancel.hpp>
 #include <libgg/GitRunner.hpp>
 #include <libgg/Hooks.hpp>
+#include <libgg/Outgoing.hpp>
 #include <libgg/Journal.hpp>
 #include <libgg/Todo.hpp>
 
@@ -165,6 +166,12 @@ struct HooksEvent {
     gg::hooks::Status status;
 };
 
+// The staged files a commit would make (or leave) conflicted (gg::outgoing::stagedConflictWarnings).
+struct CommitWarningsEvent {
+    RequestId request = 0;
+    std::vector<gg::outgoing::StagedWarning> warnings;
+};
+
 struct RebasePreviewEvent {
     RequestId request = 0;
     RebasePreviewPtr preview;
@@ -173,7 +180,7 @@ struct RebasePreviewEvent {
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, CommitMessagesEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
     MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent, RebasePreviewEvent,
-    RemoteTagsEvent>;
+    RemoteTagsEvent, CommitWarningsEvent>;
 
 class Engine;
 
@@ -284,6 +291,9 @@ public:
     // that needs them reports an error); on its own queue so a slow remote holds up nothing else.
     RequestId readRemoteTags(std::vector<std::string> remotes);
     RequestId readHooksStatus();
+    // The warnings the commit dialog shows for what is staged (CommitWarningsEvent; a newer
+    // request replaces an older one).
+    RequestId readCommitWarnings();
     // The result of an interactive rebase todo, computed in memory (RebasePreviewEvent; nothing
     // is written). A newer request cancels the older one.
     RequestId rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::todo::Context> context,

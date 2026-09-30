@@ -248,6 +248,17 @@ void Dialogs::draw()
         case Field::Info:
             ImGui::TextDisabled("%s", f.text.c_str());
             break;
+        case Field::Warning: {
+            const std::string text = f.live ? f.live() : f.text;
+            if (text.empty())
+                break;
+            ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().warning);
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 38);
+            ImGui::TextUnformatted((std::string(ICON_MS_WARNING " ") + text).c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+            break;
+        }
         }
     }
     ImGui::Spacing();
