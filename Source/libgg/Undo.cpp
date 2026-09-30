@@ -4,6 +4,7 @@
 #include "libgg/Journal.hpp"
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
+#include "libgg/Reconcile.hpp"
 #include "libgg/Thread.hpp"
 #include "libgg/Worktrees.hpp"
 
@@ -56,6 +57,11 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     const bool bare = git_repository_is_bare(repo) == 1;
     const fs::path cwd = bare ? fs::path(git_repository_path(repo)) : fs::path(git_repository_workdir(repo));
     journal::Journal journal{fs::path(git_repository_commondir(repo))};
+    // Plain git since the last pass becomes journal operations first: Undo covers it too.
+    {
+        std::string ignored;
+        reconcile::run(repo, &ignored);
+    }
     // A native rebase finished where the hooks could not see it: its operation ends now.
     native::closeFinishedGroup(repo, journal);
     std::string readError;
@@ -238,12 +244,23 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
 
     // 2. Refs, verified against their current values, in one transaction.
     std::string input = "option no-deref\n";
-    std::string headSymbolic;
+    // Symbolic refs (HEAD, refs/remotes/<r>/HEAD, ...) going back to a target: set with
+    // symbolic-ref after the transaction, each one on its own.
+    std::vector<std::pair<std::string, std::string>> symbolics;
+    // HEAD on a branch going back to a detached commit (a rebase that finished in a terminal moved
+    // the branch too): git refuses one transaction that updates HEAD and its referent, so HEAD
+    // is detached first, on its own, and put back on the branch should the rest fail.
+    std::string detachTo, reattach;
     for (const auto& c : plan.restore) {
         const std::string ref = c.ref == journal::headKey(wt) ? std::string("HEAD") : c.ref;
+        if (ref == "HEAD" && isSymbolic(c.oldValue) && !isSymbolic(c.newValue) && !isZero(c.newValue)) {
+            detachTo = c.newValue;
+            reattach = c.oldValue.substr(4);
+            continue;
+        }
         if (isSymbolic(c.newValue)) {
             if (c.oldValue != c.newValue)
-                headSymbolic = c.newValue.substr(4); // restored with symbolic-ref below
+                symbolics.emplace_back(ref, c.newValue.substr(4));
             continue;
         }
         const std::string old = isSymbolic(c.oldValue) ? std::string() : c.oldValue;
@@ -254,9 +271,18 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         else
             input += "update " + ref + " " + c.newValue + (old.empty() ? "" : " " + old) + "\n";
     }
-    RunResult r = git(cwd, {"update-ref", "--create-reflog", "-m", result.label, "--stdin"}, input);
-    if (r.ok() && !headSymbolic.empty())
-        r = git(cwd, {"symbolic-ref", "-m", result.label, "HEAD", headSymbolic});
+    RunResult r;
+    if (!detachTo.empty())
+        r = git(cwd, {"update-ref", "--no-deref", "-m", result.label, "HEAD", detachTo});
+    if (detachTo.empty() || r.ok())
+        r = git(cwd, {"update-ref", "--create-reflog", "-m", result.label, "--stdin"}, input);
+    if (!r.ok() && !detachTo.empty())
+        git(cwd, {"symbolic-ref", "HEAD", reattach});
+    for (const auto& [ref, target] : symbolics) {
+        if (!r.ok())
+            break;
+        r = git(cwd, {"symbolic-ref", "-m", result.label, ref, target});
+    }
     if (!r.ok()) {
         // Put the index back the way it was.
         if (plan.index && !bare) {
@@ -284,6 +310,8 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
                 back += "update " + c.ref + " " + c.oldValue + " " + c.newValue + "\n";
         }
         git(cwd, {"update-ref", "-m", result.label + " (failed)", "--stdin"}, back);
+        if (!detachTo.empty())
+            git(cwd, {"symbolic-ref", "HEAD", reattach}); // HEAD was detached first: back on its branch
         recorder.finish(false);
         return result;
     }

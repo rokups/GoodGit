@@ -275,6 +275,9 @@ public:
     // Label of the running mutation ("" when none): conflicting actions are disabled meanwhile.
     std::string busyLabel() const;
     RequestId readOperations();
+    // Journals what plain git did to the refs since the last pass (gg::reconcile::run), on the
+    // mutation queue; coalesced, so calling it for every watcher event is fine.
+    RequestId reconcile();
     RequestId scanConflicts(std::vector<Oid> commits);
     RequestId readConfig(std::vector<std::string> keys);
     // The tags on each remote, one RemoteTagsEvent per remote. Never asks for credentials (a remote

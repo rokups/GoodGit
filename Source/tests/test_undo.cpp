@@ -71,9 +71,9 @@ GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists
     s.showPanel("Operations");
     GG_CHECK(s.textShown("//Operations", "git-gg"));
     GG_CHECK(s.textShown("//Operations", "ggui"));
-    // Without managed hooks the panel says what Undo covers.
+    // Without managed hooks plain git is covered too (the reconciler), so the panel needs no caveat.
     GG_CHECK(!s.session()->hooksInstalled());
-    GG_CHECK(s.textShown("//Operations", "Undo covers ggui and git gg only"));
+    GG_CHECK(!s.textShown("//Operations", "Undo covers ggui and git gg only"));
     // Restore (undo) the command-line operation from its row.
     const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + cliOp + "/###row";
     GG_REQUIRE(s.itemExists(row.c_str()));
@@ -81,7 +81,7 @@ GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists
     GG_CHECK(undone(s, repo, after));
 }
 
-GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, local changes in the way")
+GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local changes in the way")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -113,17 +113,19 @@ GG_TEST("undo", "refusals: nothing to undo, refs moved outside the journal, loca
         s.settle();
     }
 
-    // A plain git commit (no hooks) moves main behind the journal's back: refused.
+    // A plain git commit (no hooks) after a ggui operation is journaled by the reconciler when Undo
+    // runs, so Undo takes it back first (it is the newest operation) instead of refusing.
     const size_t opsBefore = opsFrom(s, "ggui");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
     GG_REQUIRE(s.waitUntil([&] { return opsFrom(s, "ggui") == opsBefore + 1; }));
     s.settle();
+    const std::string beforePlain = repoState(s, repo);
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Plain git"});
-    const std::string moved = repoState(s, repo);
+    GG_CHECK(repoState(s, repo) != beforePlain);
     ctx->ItemClick("//##Toolbar/###tb_undo");
-    GG_CHECK(s.dismissError());
-    GG_CHECK(s.app.errorMessage().find("moved outside the journal") != std::string::npos);
-    GG_CHECK_STR_EQ(repoState(s, repo), moved);
+    GG_CHECK(undone(s, repo, beforePlain));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    GG_CHECK(opsFrom(s, "git") >= 1);
 
     // Undoing a checkout must rewrite the working tree; a local edit there would be lost, so
     // ggui offers to stash it first.
@@ -441,12 +443,37 @@ GG_TEST("undo", "journal: a transaction appends several records under one lock")
     GG_CHECK(journal.appendRefs(id, {{"refs/heads/z", std::string(40, '0'), std::string(40, 'c')}}));
 }
 
+GG_TEST("undo", "planUndo refuses when a ref moved outside the journal (the reconciler normally journals such moves first)")
+{
+    const std::string a(40, 'a'), b(40, 'b'), c(40, 'c');
+    gg::journal::Operation op;
+    op.id = "p-1";
+    op.src = "ggui";
+    op.label = "commit";
+    op.wt = "main";
+    op.ended = true;
+    op.refs = {{"refs/heads/main", a, b}};
+    const std::vector<gg::journal::Operation> ops{op};
+    auto at = [&](const std::string& value) {
+        return [value](const std::string&) { return value; };
+    };
+    const auto ok = gg::journal::planUndo(ops, "main", false, at(b));
+    GG_CHECK(ok.ok);
+    const auto moved = gg::journal::planUndo(ops, "main", false, at(c));
+    GG_CHECK(!moved.ok);
+    GG_CHECK(moved.error.find("moved outside the journal") != std::string::npos);
+    GG_CHECK(moved.movedRefs == std::vector<std::string>{"refs/heads/main"});
+}
+
 GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
     const std::string mainBefore = s.revParse(repo, "main");
     const std::string wt1Before = s.revParse(repo, "wt1");
+    // (Made before ggui opens the repository: a plain git branch made later would be journaled by
+    // the reconciler as the main worktree's newest operation.)
+    s.git(repo, {"branch", "side", "main"});
     // A commit in the main worktree, then one in wt1.
     GG_REQUIRE(s.openRepository(repo));
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
@@ -473,7 +500,6 @@ GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main 
     s.settle();
     // A checkout in wt1 moves only wt1's HEAD: undone there; from the main worktree it is not
     // visible (the main worktree's newest own operation is undone instead).
-    s.git(repo, {"branch", "side", "main~1"});
     s.showPanel("Branches");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
     s.contextMenu("//Branches/branch_side/###branch_side", "Check out");

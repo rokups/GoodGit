@@ -877,11 +877,6 @@ void OperationsPanel::draw(bool* open)
     if (button(ICON_MS_REDO, "Redo###ops_redo"))
         actions.undo(true);
     ImGui::EndDisabled();
-    if (!m_session.hooksInstalled()) {
-        const char* note = "Undo covers ggui and git gg only; use the Reflog for plain git operations.";
-        sameLineIfFits(ImGui::CalcTextSize(note).x);
-        ImGui::TextDisabled("%s", note);
-    }
     const auto& ops = m_session.operations();
     if (ImGui::BeginTable("##ops_table", 3, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupScrollFreeze(0, 1);

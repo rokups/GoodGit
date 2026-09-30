@@ -2,6 +2,7 @@
 
 #include "libgg/GitRunner.hpp"
 #include "libgg/NativeRebase.hpp"
+#include "libgg/Reconcile.hpp"
 #include "libgg/Thread.hpp"
 
 namespace gg {
@@ -85,6 +86,12 @@ void OperationRecorder::setUndoes(std::string id, bool redo)
 
 void OperationRecorder::begin()
 {
+    // Changes made outside ggui since the last pass are journaled first, as their own operation,
+    // so they are not attributed to this one. Never run inside a Journal::Transaction.
+    {
+        std::string ignored;
+        reconcile::run(m_repo, &ignored);
+    }
     // A native rebase is one operation from start to finish: while one is in progress, operations
     // join the one that started it (undo operations never do).
     native::closeFinishedGroup(m_repo, m_journal);

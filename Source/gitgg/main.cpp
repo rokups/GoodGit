@@ -31,6 +31,7 @@
 #include <libgg/Legacy.hpp>
 #include <libgg/NewCommit.hpp>
 #include <libgg/Operation.hpp>
+#include <libgg/Reconcile.hpp>
 #include <libgg/Rewrite.hpp>
 #include <libgg/Undo.hpp>
 
@@ -192,6 +193,12 @@ int cmdOpLog()
     auto repo = openHere();
     gg::journal::Journal journal{fs::path(git_repository_commondir(repo.get()))};
     std::string error;
+    {
+        std::string reconcileError;
+        gg::reconcile::run(repo.get(), &reconcileError); // plain git since the last pass is listed too
+        if (!reconcileError.empty())
+            std::cerr << "warning: reconcile: " << reconcileError << "\n";
+    }
     size_t skipped = 0;
     const auto ops = journal.read(&error, &skipped);
     if (!error.empty())

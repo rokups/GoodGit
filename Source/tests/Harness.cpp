@@ -160,8 +160,11 @@ std::map<std::string, std::string> Scenario::gitDirBytes(const fs::path& repo)
     for (const auto& e : fs::recursive_directory_iterator(repo / ".git")) {
         if (!e.is_regular_file())
             continue;
-        if (fs::relative(e.path(), repo / ".git").generic_string().rfind("gg/cache/", 0) == 0)
+        const std::string rel = fs::relative(e.path(), repo / ".git").generic_string();
+        if (rel.rfind("gg/cache/", 0) == 0)
             continue; // disposable caches (the history's conflict scan writes one on open)
+        if (rel == "gg/reconcile.json")
+            continue; // the reconciler's baseline, written by the first open of a repository
         std::ifstream f(e.path(), std::ios::binary);
         std::ostringstream ss;
         ss << f.rdbuf();

@@ -11,6 +11,7 @@
 #include <libgg/Journal.hpp>
 #include <libgg/Legacy.hpp>
 #include <libgg/Operation.hpp>
+#include <libgg/Reconcile.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -34,6 +35,7 @@ constexpr int kSlotMessages = 41;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotHooks = 5;
+constexpr int kSlotReconcile = 6;
 constexpr int kSlotRebasePreview = 1;
 constexpr int kSlotRemoteTags = 1;
 
@@ -199,6 +201,8 @@ RequestId Engine::open()
                 m_watcher = std::make_unique<Watcher>(snap->workdir, snap->gitDir, snap->commonDir,
                     [this](const WatchEvent& e) {
                         emit(e);
+                        if (e.refs || e.journal)
+                            reconcile();
                         if (e.refs)
                             refresh(true);
                         else if (e.index || e.worktree)
@@ -209,6 +213,23 @@ RequestId Engine::open()
             }
         }
         emit(OpenedEvent{job.id, std::move(snap)});
+        reconcile();
+    });
+}
+
+RequestId Engine::reconcile()
+{
+    // On the mutation queue, like every journal writer of ggui. Same slot = a burst of watcher
+    // events leaves one queued pass (a running one finishes, it is not interrupted).
+    return submit(Queue::Mutation, "Checking for changes made outside ggui", kSlotReconcile, false, [this](Job& job) {
+        std::string error;
+        const gg::reconcile::Result res = gg::reconcile::run(job.repo(), &error);
+        if (!error.empty())
+            spdlog::warn("reconcile: {}", error);
+        if (res.appended > 0) {
+            spdlog::debug("reconcile: journaled {} external operation(s)", res.appended);
+            readOperations();
+        }
     });
 }
 
@@ -498,17 +519,7 @@ RequestId Engine::readOperations()
         OperationsEvent ev;
         ev.request = job.id;
         ev.operations = journal.read(&ev.error, &ev.skipped);
-        // Cheap installed check: config-defined entry or wrapper script.
-        gg::git2::Config cfg = gg::git2::repositoryConfig(repo);
-        ev.hooksInstalled = gg::git2::configString(cfg.get(), "hook.ggui-reference-transaction.command").has_value();
-        if (!ev.hooksInstalled) {
-            std::filesystem::path hooksDir = std::filesystem::path(git_repository_commondir(repo)) / "hooks";
-            if (auto p = gg::git2::configString(cfg.get(), "core.hooksPath"))
-                hooksDir = std::filesystem::path(*p);
-            std::error_code ec;
-            ev.hooksInstalled = std::filesystem::exists(hooksDir / "reference-transaction.gg-previous", ec)
-                || std::filesystem::exists(std::filesystem::path(git_repository_commondir(repo)) / "gg" / "hooks" / "run", ec);
-        }
+        ev.hooksInstalled = gg::reconcile::hooksInstalled(repo);
         emit(std::move(ev));
     });
 }
