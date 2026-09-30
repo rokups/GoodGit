@@ -415,16 +415,7 @@ GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD
     GG_REQUIRE(rowReady(s, r.c4));
     ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
     GG_CHECK(ctx->ItemInfo("//$FOCUSED/Merge into HEAD...").ItemFlags & ImGuiItemFlags_Disabled);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Rebase HEAD onto this").ItemFlags & ImGuiItemFlags_Disabled);
     ctx->KeyPress(ImGuiKey_Escape);
-    // The Commit menu: main's own commits (c3, c4) onto s1.
-    ctx->ItemClick(rowRef(r.s1).c_str());
-    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Rebase HEAD onto this");
-    GG_CHECK(changed(s, r.path, r.c4));
-    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
-    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.s1);
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
-    GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
 namespace {
@@ -566,7 +557,10 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
     s.dialogButton("Merge into HEAD", "Merge");
     refused("is already merged");
-    s.contextMenu(rowRef(r.c2).c_str(), "Rebase HEAD onto this");
+    s.git(r.path, {"branch", "at-c2", r.c2});
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_at-c2/###branch_at-c2"); }));
+    s.contextMenu("//Branches/branch_at-c2/###branch_at-c2", "Rebase HEAD onto branch");
     GG_CHECK(s.waitUntil([&] {
         for (const auto& t : s.app.toasts())
             if (t.message == "Nothing to change.")
@@ -578,7 +572,8 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     s.git(r.path, {"branch", "ahead", a1});
     GG_REQUIRE(rowReady(s, a1));
     const std::string withAhead = s.gitOut(r.path, {"for-each-ref"});
-    s.contextMenu(rowRef(a1).c_str(), "Rebase HEAD onto this");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_ahead/###branch_ahead"); }));
+    s.contextMenu("//Branches/branch_ahead/###branch_ahead", "Rebase HEAD onto branch");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("HEAD is already on") != std::string::npos);
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withAhead);

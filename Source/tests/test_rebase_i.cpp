@@ -271,7 +271,7 @@ GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (
     GG_CHECK(!editor(s).isOpen());
 
     // History menu on c2.
-    s.contextMenu(historyRow(r.c[2]).c_str(), "Interactive rebase from here...");
+    s.contextMenu(historyRow(r.c[2]).c_str(), "Interactive rebase...");
     GG_REQUIRE(editorReady(s));
     GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "update-ref refs/heads/part1", "pick c4", "pick c5"}));
     GG_CHECK(editor(s).selection() == (std::set<size_t>{0}));

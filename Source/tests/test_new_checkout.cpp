@@ -62,7 +62,12 @@ GG_TEST("new", "new detached and new on another commit")
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "(detached)");
     GG_CHECK_STR_EQ(s.revParse(repo, "main"), main); // branch untouched
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), main);
-    s.contextMenu(rowRef(older).c_str(), "New detached");
+    // Holding Alt swaps "New" for "New detached" in the row menu.
+    ctx->ItemClick(rowRef(older).c_str(), ImGuiMouseButton_Right);
+    ctx->KeyDown(ImGuiMod_Alt);
+    ctx->Yield(2);
+    ctx->MenuClick("//$FOCUSED/New detached");
+    ctx->KeyUp(ImGuiMod_Alt);
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "HEAD~1") == older; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(repo, "main"), main);

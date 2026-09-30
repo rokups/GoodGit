@@ -537,10 +537,14 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     for (const auto& e : m_extra)
         if (e != row.id)
             parents.push_back(e);
-    if (menuItem(ICON_MS_ADD, parents.size() > 1 ? "New merge commit" : "New", "N", false, free))
+    // Holding Alt swaps "New" for "New detached" (the same variants as the N / Alt+N hotkeys).
+    const bool mergeNew = parents.size() > 1;
+    if (ImGui::GetIO().KeyAlt) {
+        if (menuItem(ICON_MS_ADD_CIRCLE, mergeNew ? "New detached merge commit" : "New detached", "Alt+N", false, free))
+            m_session.newCommitOn(parents, true);
+    } else if (menuItem(ICON_MS_ADD, mergeNew ? "New merge commit" : "New", "N", false, free)) {
         m_session.newCommitOn(parents, false);
-    if (menuItem(ICON_MS_ADD_CIRCLE, "New detached", "Alt+N", false, free))
-        m_session.newCommitOn(parents, true);
+    }
     if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free)) {
         for (const auto& b : branchesHere)
             if (menuItem(ICON_MS_SWAP_HORIZ, b.c_str()))
@@ -555,16 +559,14 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         m_session.showCreateBranchDialog(hex);
     if (menuItem(ICON_MS_ADD, "Create tag...", nullptr, false, free))
         m_session.showCreateTagDialog(hex);
-    if (beginMenu(ICON_MS_DRIVE_FILE_MOVE, "Move branch", free && !m_snapshot->branches.empty())) {
-        for (const auto& b : m_snapshot->branches)
-            if (b.target != row.id && menuItem(ICON_MS_DRIVE_FILE_MOVE, b.name.c_str()))
-                m_session.showMoveBranchDialog(b.name, hex);
-        ImGui::EndMenu();
-    }
-    if (beginMenu(ICON_MS_DELETE, "Delete branch", free && !branchesHere.empty())) {
-        for (const auto& b : branchesHere)
-            if (menuItem(ICON_MS_DELETE, b.c_str()))
-                m_session.showDeleteBranchDialog(b, 0);
+    std::vector<std::string> movable;
+    for (const auto& b : m_snapshot->branches)
+        if (b.target != row.id)
+            movable.push_back(b.name);
+    if (beginMenu(ICON_MS_DRIVE_FILE_MOVE, "Move branch", free && !movable.empty())) {
+        for (const auto& name : movable)
+            if (menuItem(ICON_MS_DRIVE_FILE_MOVE, name.c_str()))
+                m_session.showMoveBranchDialog(name, hex);
         ImGui::EndMenu();
     }
     ImGui::Separator();

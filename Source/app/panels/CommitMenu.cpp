@@ -103,16 +103,14 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         session.actions().duplicate(row.id, shift);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, false, ok))
         showRebaseDialog(session, row.id, other.ref);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase from here...", "I", false, ok))
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I", false, ok))
         openInteractiveRebase(session, row.id);
-    // HEAD and this commit (plan §4.3 "Merge into @", "Rebase @ onto"): also in Branches.
+    // HEAD and this commit (plan §4.3 "Merge into @"): also in Branches.
     const auto snap = session.snapshot();
     const bool isHead = snap->head == row.id; // null when unborn
     const bool headCommit = !snap->headUnborn;
     if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, ok && headCommit && !isHead))
         showMergeDialog(session, session.shortId(row.id), true);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto this", nullptr, false, ok && headCommit && !snap->headDetached && !isHead))
-        session.actions().rebaseHeadOnto(session.shortId(row.id));
     // Revert / cherry-pick onto HEAD (plan §4.3). A merge commit's change is taken against its
     // first parent (-m 1). Picking an ancestor of HEAD other than HEAD is refused on the worker.
     {

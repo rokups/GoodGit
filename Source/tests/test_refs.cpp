@@ -59,7 +59,7 @@ GG_TEST("refs", "create, check out, rename and delete branches")
     s.dialogButton("Delete branch", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/feature-y"); }));
     s.settle();
-    // From History: create a branch at an older commit, then delete it from the row menu.
+    // From History: create a branch at an older commit, then delete it from the Branches panel.
     const std::string older = s.revParse(repo, "HEAD~3");
     s.contextMenu(("//History/**/###row_" + older).c_str(), "Create branch...");
     GG_REQUIRE(s.dialogOpen("Create branch"));
@@ -69,7 +69,7 @@ GG_TEST("refs", "create, check out, rename and delete branches")
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/from-history"); }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(repo, "from-history"), older);
-    s.contextMenu(("//History/**/###row_" + older).c_str(), "Delete branch/from-history");
+    s.contextMenu(branchRow("from-history").c_str(), "Delete/Local");
     GG_REQUIRE(s.dialogOpen("Delete branch"));
     s.dialogButton("Delete branch", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/from-history"); }));
@@ -186,6 +186,24 @@ GG_TEST("refs", "move a branch; warning for a branch checked out elsewhere")
     GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
     GG_CHECK_STR_EQ(s.read(repo, "untracked-note.txt"), "kept\n");
     fs::remove(repo / "untracked-note.txt");
+}
+
+GG_TEST("refs", "Move branch is disabled on a row where every branch already points")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string head = s.head(repo);
+    const std::string older = s.revParse(repo, "HEAD~1");
+    const std::string hereRef = "//History/**/###row_" + head;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(hereRef.c_str()); }));
+    ctx->ItemClick(hereRef.c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Move branch").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // Another row still offers main.
+    const std::string olderRef = "//History/**/###row_" + older;
+    ctx->ItemClick(olderRef.c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Move branch").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
 }
 
 GG_TEST("refs", "delete a branch on its remote, and everywhere")
