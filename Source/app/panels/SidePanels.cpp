@@ -444,13 +444,16 @@ void BranchesPanel::draw(bool* open)
                 ImGui::Dummy(ImVec2(ImGui::CalcTextSize(ICON_MS_VISIBILITY).x, ImGui::GetTextLineHeight()));
                 ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Text, p.remoteText);
-                plainText((h.name + "###" + rowId("rhead_" + h.name)).c_str());
+                plainText((h.name.substr(std::min(h.name.size(), remote.size() + 1)) + "###" + rowId("rhead_" + h.name)).c_str());
                 ImGui::PopStyleColor();
                 const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
                 remoteHeadMenu(h);
                 if (!h.symref.empty()) {
                     ImGui::SameLine(0, 0);
-                    ImGui::TextDisabled("  \xe2\x86\x92 %s", h.symref.c_str());
+                    // Under the remote's node, the target drops the "<remote>/" prefix too.
+                    const std::string prefix = remote + "/";
+                    const std::string target = h.symref.rfind(prefix, 0) == 0 ? h.symref.substr(prefix.size()) : h.symref;
+                    ImGui::TextDisabled("  \xe2\x86\x92 %s", target.c_str());
                     if (h.dangling && (hovered || ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)))
                         ImGui::SetTooltip("%s points to a branch that no longer exists.", h.name.c_str());
                 }
@@ -468,7 +471,7 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PushOverrideID(windowId);
                 ImGui::PushID(("remote_group_" + remote).c_str());
                 ImGui::PushID(remote.c_str());
-                const RowEvents events = visibilityRow("rbranch_" + r.name, shortName == r.name.substr(remote.size() + 1) ? r.name : shortName,
+                const RowEvents events = visibilityRow("rbranch_" + r.name, shortName,
                     history.refVisible(full), false, p.remoteText, false);
                 if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
