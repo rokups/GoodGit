@@ -71,6 +71,16 @@ struct RemoteBranchInfo {
     Oid target;
 };
 
+// refs/remotes/<remote>/HEAD: a local symbolic ref recording the remote's default branch. It is an
+// alias, never listed with the remote-tracking branches.
+struct RemoteHeadInfo {
+    std::string remote;          // "origin"
+    std::string name;            // "origin/HEAD"
+    std::string symref;          // "origin/main" ("" = not symbolic)
+    Oid target;                  // the commit it resolves to (null = dangling)
+    bool dangling = false;       // the target ref does not exist
+};
+
 struct TagInfo {
     std::string name;
     Oid target;                  // peeled (usually a commit)
@@ -144,6 +154,7 @@ struct Snapshot {
     std::optional<RebaseProgress> rebase; // interactive rebase in progress
     std::vector<BranchInfo> branches;
     std::vector<RemoteBranchInfo> remoteBranches;
+    std::vector<RemoteHeadInfo> remoteHeads;   // <remote>/HEAD aliases
     std::vector<TagInfo> tags;
     std::vector<RemoteInfo> remotes;
     std::vector<WorktreeInfo> worktrees;

@@ -186,6 +186,8 @@ public:
 
     // ---- network (§4.8) -------------------------------------------------------------------
     void fetch(const std::string& remote, bool prune, bool tags); // remote "" = all
+    // <remote>/HEAD, the remote's default branch: re-read from the remote (remove = false) or deleted.
+    void setRemoteHead(const std::string& remote, bool remove);
     void pull(PullMode mode, bool autostash = false);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
         bool setUpstream, bool forceWithLease, bool tags = false);

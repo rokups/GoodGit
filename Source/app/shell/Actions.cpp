@@ -820,6 +820,15 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
         {}, true);
 }
 
+void Actions::setRemoteHead(const std::string& remote, bool remove)
+{
+    run(remove ? "remove " + remote + "/HEAD" : "update " + remote + "/HEAD from the remote",
+        [remote, remove](MutationContext& ctx) {
+            ctx.git({"remote", "set-head", remote, remove ? "-d" : "-a"}, {}, !remove);
+        },
+        {}, !remove);
+}
+
 void Actions::pull(PullMode mode, bool autostash)
 {
     run("pull",

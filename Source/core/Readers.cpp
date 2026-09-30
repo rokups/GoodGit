@@ -281,6 +281,26 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     forEachReference(repo, [&](git_reference* ref) {
         gg::throwIfCancelled(cancel);
         const std::string name = git_reference_name(ref);
+        const bool remoteHeadName = name.rfind("refs/remotes/", 0) == 0 && name.size() > 18
+            && name.compare(name.size() - 5, 5, "/HEAD") == 0;
+        if (remoteHeadName) {
+            RemoteHeadInfo h;
+            h.name = name.substr(13);
+            h.remote = h.name.substr(0, h.name.size() - 5);
+            git_oid oid;
+            if (git_reference_type(ref) == GIT_REFERENCE_SYMBOLIC) {
+                h.symref = stripPrefix(git_reference_symbolic_target(ref), "refs/remotes/");
+                if (git_reference_name_to_id(&oid, repo, git_reference_symbolic_target(ref)) == 0)
+                    h.target = toOid(oid);
+                else
+                    h.dangling = true;
+                git_error_clear();
+            } else {
+                h.target = toOid(*git_reference_target(ref));
+            }
+            snap->remoteHeads.push_back(std::move(h));
+            return true;
+        }
         if (git_reference_type(ref) != GIT_REFERENCE_DIRECT)
             return true;
         const git_oid* target = git_reference_target(ref);
@@ -357,6 +377,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     auto byName = [](const auto& a, const auto& b) { return a.name < b.name; };
     std::sort(snap->branches.begin(), snap->branches.end(), byName);
     std::sort(snap->remoteBranches.begin(), snap->remoteBranches.end(), byName);
+    std::sort(snap->remoteHeads.begin(), snap->remoteHeads.end(), byName);
     std::sort(snap->tags.begin(), snap->tags.end(), byName);
 
     // Remotes

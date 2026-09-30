@@ -189,6 +189,7 @@ GG_TEST("edit", "resolveRev finds HEAD, branches, tags, id prefixes and ~N / ^ s
     snap.branches.push_back({"main", rows[0].id});
     snap.remoteBranches.push_back({"origin", "origin/main", rows[1].id});
     snap.tags.push_back({"v1", rows[2].id});
+    snap.remoteHeads.push_back({"origin", "origin/HEAD", "origin/main", rows[1].id, false}); // an alias, not a branch
     auto lookup = [&](const Oid& id) -> const HistoryRow* {
         for (const auto& r : rows)
             if (r.id == id)
@@ -202,6 +203,7 @@ GG_TEST("edit", "resolveRev finds HEAD, branches, tags, id prefixes and ~N / ^ s
     GG_CHECK_STR_EQ(subject("HEAD"), "c");
     GG_CHECK_STR_EQ(subject("main"), "c");
     GG_CHECK_STR_EQ(subject("origin/main"), "b");
+    GG_CHECK_STR_EQ(subject("origin/HEAD"), "b");
     GG_CHECK_STR_EQ(subject("refs/tags/v1"), "a");
     GG_CHECK_STR_EQ(subject("v1"), "a");
     GG_CHECK_STR_EQ(subject("c0de1"), "c");

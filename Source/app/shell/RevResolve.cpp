@@ -60,6 +60,10 @@ const core::HistoryRow* resolveBase(const core::Snapshot& snap, const std::vecto
         for (const auto& b : snap.remoteBranches)
             if (b.name == name)
                 return lookup(b.target);
+    if (!heads && !tags)
+        for (const auto& h : snap.remoteHeads)
+            if (h.name == name && !h.target.isNull())
+                return lookup(h.target);
     if (!heads && !remotes)
         for (const auto& t : snap.tags)
             if (t.name == name)
@@ -109,6 +113,10 @@ core::Oid refTarget(const core::Snapshot& snap, std::string name)
         for (const auto& b : snap.remoteBranches)
             if (b.name == name)
                 return b.target;
+    if (!heads && !tags)
+        for (const auto& h : snap.remoteHeads)
+            if (h.name == name && !h.target.isNull())
+                return h.target;
     if (!heads && !remotes)
         for (const auto& t : snap.tags)
             if (t.name == name)

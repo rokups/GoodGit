@@ -90,6 +90,8 @@ std::string Snapshot::refsFingerprint() const
         fp += b.name + "=" + b.target.hex() + ";";
     for (const auto& r : remoteBranches)
         fp += r.name + "=" + r.target.hex() + ";";
+    for (const auto& h : remoteHeads)
+        fp += h.name + "->" + h.symref + "=" + h.target.hex() + ";";
     for (const auto& t : tags)
         fp += t.name + "=" + t.target.hex() + ";";
     for (const auto& s : stashes)
