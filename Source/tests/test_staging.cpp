@@ -59,6 +59,14 @@ GG_TEST("staging", "stage, unstage and discard files")
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(rowsReady(s, 7));
+    // One staging item, picked by the file's state.
+    auto shown = [&](const char* label) { return ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError).ID != 0; };
+    ctx->ItemClick(fileRef(s, "Unstaged", "b.txt").c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(shown("Stage") && !shown("Unstage"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->ItemClick(fileRef(s, "Staged", "a.txt").c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(shown("Unstage") && !shown("Stage"));
+    ctx->KeyPress(ImGuiKey_Escape);
     s.contextMenu(fileRef(s, "Unstaged", "b.txt").c_str(), "Stage");
     GG_CHECK(waitXY(s, repo, "b.txt", "M."));
     s.contextMenu(fileRef(s, "Staged", "a.txt").c_str(), "Unstage");

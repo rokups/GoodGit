@@ -433,10 +433,13 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     }
     if (worktree) {
         ImGui::Separator();
-        if (menuItem(ICON_MS_ADD, "Stage", "Space", false, free && !stage.empty()))
+        // One item, like Space: all staged → unstage; otherwise stage what is not staged yet.
+        if (stage.empty() && !unstage.empty()) {
+            if (menuItem(ICON_MS_REMOVE, "Unstage", "Space", false, free))
+                actions.unstage(unstage);
+        } else if (menuItem(ICON_MS_ADD, "Stage", "Space", false, free && !stage.empty())) {
             actions.stage(stage);
-        if (menuItem(ICON_MS_REMOVE, "Unstage", "Space", false, free && !unstage.empty()))
-            actions.unstage(unstage);
+        }
         if (menuItem(ICON_MS_UNDO, "Discard...", nullptr, false, free && (!discardTracked.empty() || !discardUntracked.empty())))
             m_session.showDiscardDialog(discardTracked, discardUntracked);
         if (menuItem(ICON_MS_PLAYLIST_ADD, "Intent to add", nullptr, false, free && !untracked.empty()))
