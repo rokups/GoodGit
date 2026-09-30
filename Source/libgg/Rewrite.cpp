@@ -751,6 +751,22 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                         change = m->filteredChange(oldBaseTree, srcTree, step.onlyPaths);
                     p.tree = m->mergeTrees(oldBaseTree, newBaseTree, change, key, step.source, plan, result,
                         oursCommit, baseCommit);
+                    // A replayed merge keeps its own resolution, and what arrives through each other
+                    // rewritten parent is carried in too (the first parent's change came in above).
+                    if (step.kind == Step::Kind::Pick && step.onlyPaths.empty() && step.sourceParents) {
+                        for (size_t k = 1; k < originalParents.size(); ++k) {
+                            const std::string& old = originalParents[k];
+                            const std::string neu = resolve(old);
+                            if (neu.empty() || neu == old)
+                                continue;
+                            // `p.tree` is a growing accumulator, not one commit's tree: no ours label.
+                            std::string theirs = neu;
+                            if (auto o = originalOf.find(neu); o != originalOf.end() && !o->second.empty())
+                                theirs = o->second;
+                            p.tree = m->mergeTrees(m->treeOf(old), p.tree, m->treeOf(neu), key, theirs, plan, result,
+                                /*oursCommit=*/{}, old);
+                        }
+                    }
                 }
             }
             if (!step.setFiles.empty()) {

@@ -115,6 +115,8 @@ layer that wraps libgit2.
   1. the undo journal (history; losing it only disables Undo for past operations)
   2. disposable caches, for example "does this tree contain conflicts", which can always
      be rebuilt from the objects
+  3. `edit/<worktree>`: ggui's edit-session state (§4.3 Edit commit: the commit and the branch
+     to return to); losing it only ends the session, HEAD and every ref stay as they are
 - **Hooks:** mostly handled by git itself (G2). `git-gg` provides the entry points for the
   managed hooks that feed the undo journal (§4.12).
 - **The UI talks to a small engine with an explicit contract**: commands in, immutable
@@ -286,7 +288,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 |---|---|---|
 | New commit | **M** | Empty commit on the selection (`git gg new`). Advances the branch when HEAD is attached. "New detached" leaves branches alone. More than one parent gives a merge commit. Insert before/after rebases the descendants onto it |
 | Edit / Check out | **M** | `git switch` a branch or detach at a commit. Refuse if it would overwrite local changes; offer "stash and switch" (**N**) |
-| Edit commit (E) | **M** | Detach HEAD at any commit and save an edit session (the commit and the local branch to return to) in `.git/gg/edit/<worktree>`. A toolbar banner shows *Editing \<id\> of \<branch\>* with **Return to \<branch\>** and **Stop editing**. Amending it restacks its descendants and moves every branch ref that pointed at them, all or nothing: the restack is computed first, so an amend that cannot be restacked (a non-text conflict) is refused before the commit, and one that fails after it is rolled back. Text conflicts become first-class conflicts and are reported. Amend and restack are one operation, undone in one step. The session follows the amended commit and is dropped when HEAD is no longer detached or the branch is gone |
+| Edit commit (E) | **M** | Detach HEAD at any commit and save an edit session (the commit and the local branch to return to) in `.git/gg/edit/<worktree>`. A toolbar banner shows *Editing \<id\> of \<branch\>* with **Return to \<branch\>** and **Stop editing**. Amending it restacks its descendants and moves every branch ref that pointed at them, all or nothing: the restack is computed first, so an amend that cannot be restacked (a non-text conflict) is refused before the commit, and one that fails after it is rolled back. Text conflicts become first-class conflicts and are reported. A descendant merge keeps its parents and its own resolution, and the changes of every rewritten parent are carried into it (a clash with the merge's resolution becomes a first-class conflict). Amend and restack are one operation, undone in one step. The session follows the amended commit and is dropped when HEAD is no longer detached or the branch is gone |
 | Commit… | **M** | Commit the **index**. If nothing is staged, offer "commit all tracked changes" (`-a`) or "stage the selected files" |
 | Amend… | **M** | Amend HEAD with the index (message and/or content) |
 | Describe (Save message, Change information panel) | **M** | Reword any commit. Rebases descendants |

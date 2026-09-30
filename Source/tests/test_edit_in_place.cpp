@@ -109,6 +109,67 @@ void amendStaged(ImGuiTestContext* ctx, Scenario& s)
         s.dialogButton("Amend", "Amend");
 }
 
+
+// f.txt of `n` lines ("1".."n") with the given lines (1-based) replaced.
+std::string lines(const std::map<int, std::string>& changed, int n = 10)
+{
+    std::string text;
+    for (int i = 1; i <= n; ++i) {
+        auto it = changed.find(i);
+        text += (it == changed.end() ? std::to_string(i) : it->second) + "\n";
+    }
+    return text;
+}
+
+std::string lineOf(const std::string& text, int n)
+{
+    std::istringstream in(text);
+    std::string line;
+    for (int i = 1; std::getline(in, line); ++i)
+        if (i == n)
+            return line;
+    return "<missing>";
+}
+
+// b (root: f.txt 1..10) on main; "feature" from b with f1; main gets a; m merges feature into
+// main; t (another file) follows m.
+struct MergeRepo {
+    fs::path path;
+    std::string b, f1, a, m, t;
+};
+
+// `f1Lines` / `aLines` are the lines each side changes; `resolution` (when given) is the text the
+// merge is resolved to by hand.
+MergeRepo makeMerge(Scenario& s, const std::map<int, std::string>& f1Lines, const std::map<int, std::string>& aLines,
+    const std::optional<std::string>& resolution = std::nullopt)
+{
+    MergeRepo r;
+    r.path = s.fixture(Recipe::Empty);
+    const fs::path& p = r.path;
+    s.commitFile(p, "f.txt", lines({}), "b add f");
+    r.b = s.head(p);
+    s.git(p, {"switch", "-q", "-c", "feature"});
+    s.commitFile(p, "f.txt", lines(f1Lines), "f1 feature change");
+    r.f1 = s.head(p);
+    s.git(p, {"switch", "-q", "main"});
+    s.commitFile(p, "f.txt", lines(aLines), "a main change");
+    r.a = s.head(p);
+    if (resolution) {
+        s.gitMayFail(p, {"merge", "--no-ff", "-q", "-m", "m merge feature", "feature"});
+        s.write(p, "f.txt", *resolution);
+        s.git(p, {"add", "f.txt"});
+        s.git(p, {"commit", "-q", "-m", "m merge feature"});
+    } else {
+        s.git(p, {"merge", "--no-ff", "-q", "-m", "m merge feature", "feature"});
+    }
+    r.m = s.head(p);
+    s.commitFile(p, "t.txt", "t\n", "t after merge");
+    r.t = s.head(p);
+    return r;
+}
+
+std::string fileAt(Scenario& s, const fs::path& p, const std::string& rev) { return s.gitOut(p, {"show", rev + ":f.txt"}); }
+
 } // namespace
 
 GG_TEST("edit-in-place", "edit a mid-stack commit: descendants and branches restack, Return goes back")
@@ -249,6 +310,116 @@ GG_TEST("edit-in-place", "the session is cleared when HEAD is no longer detached
     GG_CHECK(s.waitUntil([&] { return !s.session()->editSession(); }));
     GG_CHECK(noSessionFile(p));
     GG_CHECK_STR_EQ(s.head(p), r.d);
+}
+
+
+GG_TEST("edit-in-place", "amending a commit on a merged branch carries the change through the merge")
+{
+    const MergeRepo r = makeMerge(s, {{3, "F1"}}, {{8, "A"}});
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.f1, "main"));
+    s.write(p, "f.txt", lines({{3, "F1-amended"}}));
+    s.git(p, {"add", "f.txt"});
+    s.settle();
+    const std::string before = repoState(s, p);
+    amendStaged(ctx, s);
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(p, "main") != r.t; }));
+    s.settle();
+    const std::string nf1 = s.revParse(p, "feature");
+    GG_CHECK(nf1 != r.f1);
+    GG_CHECK_STR_EQ(s.revParse(p, "main~1^1"), r.a);
+    GG_CHECK_STR_EQ(s.revParse(p, "main~1^2"), nf1);
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "main~1^3"}).ok());
+    GG_CHECK_STR_EQ(lineOf(fileAt(s, p, "main~1"), 3), "F1-amended");
+    GG_CHECK_STR_EQ(lineOf(fileAt(s, p, "main"), 3), "F1-amended");
+    GG_CHECK_STR_EQ(lineOf(fileAt(s, p, "main"), 8), "A");
+    GG_CHECK_STR_EQ(s.gitOut(p, {"show", "main:t.txt"}), "t");
+    // One Undo restores every ref.
+    ctx->MenuClick("//##MainMenuBar/Edit/Undo");
+    GG_CHECK(s.waitUntil([&] { return repoState(s, p) == before; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(p, "main"), r.t);
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f1);
+}
+
+GG_TEST("edit-in-place", "amending the first-parent side of a merge still reaches the tip")
+{
+    const MergeRepo r = makeMerge(s, {{3, "F1"}}, {{8, "A"}});
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.a, "main"));
+    s.write(p, "f.txt", lines({{8, "A-amended"}}));
+    s.git(p, {"add", "f.txt"});
+    amendStaged(ctx, s);
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(p, "main") != r.t; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(p, "main~1^1"), s.head(p));
+    GG_CHECK_STR_EQ(s.revParse(p, "main~1^2"), r.f1);
+    GG_CHECK_STR_EQ(lineOf(fileAt(s, p, "main"), 8), "A-amended");
+    GG_CHECK_STR_EQ(lineOf(fileAt(s, p, "main"), 3), "F1");
+}
+
+GG_TEST("edit-in-place", "a merge's hand resolution survives an amend of a merged commit elsewhere")
+{
+    const std::string resolved = lines({{5, "resolved"}, {11, "evil"}}, 11);
+    const MergeRepo r = makeMerge(s, {{5, "feat"}}, {{5, "main"}}, resolved);
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.f1, "main"));
+    s.write(p, "f.txt", lines({{2, "F1-line2"}, {5, "feat"}}));
+    s.git(p, {"add", "f.txt"});
+    amendStaged(ctx, s);
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(p, "main") != r.t; }));
+    s.settle();
+    const std::string tip = fileAt(s, p, "main");
+    GG_CHECK_STR_EQ(lineOf(tip, 2), "F1-line2");
+    GG_CHECK_STR_EQ(lineOf(tip, 5), "resolved");
+    GG_CHECK_STR_EQ(lineOf(tip, 11), "evil");
+    GG_CHECK(tip.find("<<<<<<<") == std::string::npos);
+    GG_CHECK_STR_EQ(s.revParse(p, "main~1^2"), s.revParse(p, "feature"));
+}
+
+GG_TEST("edit-in-place", "an amend that clashes with a merge's resolution records a first-class conflict")
+{
+    const std::string resolved = lines({{5, "resolved"}, {11, "evil"}}, 11);
+    const MergeRepo r = makeMerge(s, {{5, "feat"}}, {{5, "main"}}, resolved);
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.f1, "main"));
+    s.write(p, "f.txt", lines({{5, "feat-amended"}}));
+    s.git(p, {"add", "f.txt"});
+    const std::uint64_t seen = lastToast(s);
+    amendStaged(ctx, s);
+    GG_CHECK(noticeSays(s, seen, "now have first-class conflicts"));
+    s.settle();
+    GG_CHECK(s.revParse(p, "main") != r.t);
+    const std::string merged = fileAt(s, p, "main~1");
+    GG_CHECK(merged.find("<<<<<<<") != std::string::npos);
+    GG_CHECK(merged.find("resolved") != std::string::npos);
+    GG_CHECK(merged.find("feat-amended") != std::string::npos);
+    GG_CHECK(merged.find("evil") != std::string::npos);
+    GG_CHECK_STR_EQ(s.revParse(p, "main~1^2"), s.revParse(p, "feature"));
+}
+
+GG_TEST("edit-in-place", "amending below a merge base reaches the tip once, without a conflict")
+{
+    const MergeRepo r = makeMerge(s, {{3, "F1"}}, {{8, "A"}});
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.b, "main"));
+    s.write(p, "f.txt", lines({{10, "B-amended"}}));
+    s.git(p, {"add", "f.txt"});
+    amendStaged(ctx, s);
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(p, "main") != r.t; }));
+    s.settle();
+    const std::string tip = fileAt(s, p, "main");
+    GG_CHECK_STR_EQ(lineOf(tip, 10), "B-amended");
+    GG_CHECK_STR_EQ(lineOf(tip, 3), "F1");
+    GG_CHECK_STR_EQ(lineOf(tip, 8), "A");
+    GG_CHECK(tip.find("<<<<<<<") == std::string::npos);
+    GG_CHECK(s.revParse(p, "main~1^1") != r.a);
+    GG_CHECK(s.revParse(p, "main~1^2") != r.f1);
 }
 
 } // namespace ggtest
