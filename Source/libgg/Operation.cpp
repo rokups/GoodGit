@@ -137,6 +137,9 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     for (const auto& w : m_worktrees)
         m_journal.appendWorktree(m_op.id, w, &error);
     m_journal.appendRefs(m_op.id, changes, &error);
+    // The git commands this operation ran left reflog entries: they are accounted for now (the
+    // op is still open, so no reconcile pass can journal them meanwhile).
+    reconcile::advanceCursor(m_repo, &error);
     // The rebase this operation started or joined: open while it is stopped, ended with it.
     const bool rebasing = !native::rebaseIdentity(m_repo).empty();
     const bool startsGroup = !m_resumed && rebasing && !m_rebaseAtBegin && m_op.undoes.empty();

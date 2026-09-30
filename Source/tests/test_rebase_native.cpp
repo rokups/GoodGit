@@ -493,9 +493,9 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
 
-    // Without the hooks the reconciler journals the terminal's part as an external change when Undo
-    // runs: Undo takes that back (the rebase's own operation is closed all the same). Grouping it
-    // with the rebase's operation comes with the reflog-based reconciler.
+    // Without the hooks the reconciler journals the terminal's part from HEAD's reflog as "git
+    // rebase" when Undo runs: Undo takes that back (the rebase's own operation is closed all the
+    // same). Grouping it with the rebase's operation comes with the reflog rebase groups.
     GG_REQUIRE(s.gitgg(r.path, {"hooks", "uninstall"}).ok());
     GG_REQUIRE(openFrom(s, r.c[4]));
     key(s, r.c[4], ImGuiKey_D);
@@ -509,7 +509,7 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
     GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
-    GG_CHECK(countWith(operations(s, r.path), "external changes") >= 1u);
+    GG_CHECK(countWith(operations(s, r.path), "git rebase") >= 1u);
 }
 
 GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort")

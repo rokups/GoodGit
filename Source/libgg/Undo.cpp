@@ -48,6 +48,19 @@ bool updatesWorktree(const std::string& cmd)
     return false;
 }
 
+// Whether a plain git operation updated the working tree. The hooks of the old gg recorded the
+// command line (ids "git-<pid>-<start>"); the reconciler records the reflog message ("checkout:
+// moving from a to b"), and its action word says: commit never carries, the others do (the
+// clean-tree check then decides, which also covers the reset modes).
+bool updatesWorktree(const journal::Operation& op)
+{
+    if (op.id.rfind("git-", 0) == 0)
+        return updatesWorktree(op.cmd);
+    static const std::set<std::string> worktreeActions{"checkout", "rebase", "merge", "pull", "cherry-pick", "revert", "am",
+        "reset"};
+    return worktreeActions.count(reconcile::reflogActionWord(op.cmd)) > 0;
+}
+
 } // namespace
 
 UndoResult undo(git_repository* repo, bool redo, const std::string& src, const std::string& targetId)
@@ -118,11 +131,17 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
             what = op->label;
     }
     result.label = std::string(redo ? "redo" : "undo") + " \"" + what + "\"";
+    // A plain rebase that has not finished is a partial operation (the reconciler writes what the
+    // reflog shows so far): undoing it mid-rebase would pull refs out from under git.
+    if (plan.target->src == "git" && !native::rebaseIdentity(repo).empty()) {
+        result.error = "Cannot " + std::string(redo ? "redo" : "undo") + " \"" + what + "\": finish or abort the rebase first";
+        return result;
+    }
 
-    // Plain git commands that updated the working tree (recorded by the hooks, without the
+    // Plain git commands that updated the working tree (recorded without the
     // index): carry a clean index and working tree back along with HEAD, like a checkout would.
     // With local changes only the refs move (nothing is lost). A plain commit keeps its changes.
-    if (!plan.index && !bare && plan.target->src == "git" && updatesWorktree(plan.target->cmd)) {
+    if (!plan.index && !bare && plan.target->src == "git" && updatesWorktree(*plan.target)) {
         // A HEAD value: an id, or "ref:<branch>" followed to that branch's value now or after the
         // restore ("" when it has none).
         auto resolve = [&](const std::string& value, bool afterRestore) -> std::string {
