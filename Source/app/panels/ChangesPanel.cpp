@@ -3,6 +3,7 @@
 
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
+#include "panels/CommitMenu.hpp"
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
 #include "util/Ui.hpp"
@@ -643,6 +644,32 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     if (m_selection.kind == SelKind::Stash && row.group != FileGroup::StashIndex) {
         if (menuItem(ICON_MS_CONTENT_PASTE, "Apply this file", nullptr, false, free))
             actions.stashApplyFile(m_selection.stashIndex, row.path);
+    }
+    if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index) {
+        // Restore the selected files from another commit: in the commit (rewrite), or in the
+        // working tree / index. Untracked and conflicted files have nothing to restore.
+        std::vector<std::string> restorable;
+        bool skipped = false;
+        for (const FileRow* r : rows) {
+            const bool ok = worktree ? r->group == FileGroup::Staged || r->group == FileGroup::Unstaged : r->group == FileGroup::Commit;
+            if (ok)
+                restorable.push_back(r->path);
+            else
+                skipped = true;
+        }
+        const bool can = free && !restorable.empty() && !skipped;
+        const bool hit = menuItem(ICON_MS_RESTORE, "Restore from...", nullptr, false, can);
+        disabledHint(!restorable.empty() && skipped, "Untracked and conflicted files cannot be restored from a commit.");
+        if (hit) {
+            std::string prefill = "HEAD";
+            if (m_selection.kind == SelKind::Commit) {
+                const core::HistoryRow* hr = m_session.history().row(m_selection.id);
+                prefill = hr && !hr->parents.empty() ? m_session.shortId(hr->parents.front()) : std::string();
+                if (m_compare.kind == CompareTarget::Rev)
+                    prefill = m_compare.rev;
+            }
+            showRestoreDialog(m_session, m_selection, restorable, prefill);
+        }
     }
     ImGui::Separator();
     if (worktree && menuItem(ICON_MS_DELETE, "Delete file...", nullptr, false, free && !existing.empty()))

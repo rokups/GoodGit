@@ -10,6 +10,7 @@
 namespace ggui {
 
 class Session;
+struct Selection;
 
 // The commits selected in History (the primary one plus Ctrl-clicked ones), newest first.
 // `contiguous`: each commit is the first parent of the one listed before it (no gaps).
@@ -38,7 +39,10 @@ void showSquashDialog(Session& session, const std::vector<core::Oid>& commits);
 void squashSelection(Session& session);
 void showSplitDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
-void showRestoreDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
+// Restore `paths` from the commit named in the dialog's field, in what `in` (the Changes panel's
+// selection) shows: a commit (rewrite it, or the working tree), the working tree or the index
+// (git restore --source, both index and files). Opened from the Changes file menu.
+void showRestoreDialog(Session& session, const Selection& in, std::vector<std::string> paths, const std::string& prefill = {});
 // Merge `rev` into HEAD: a branch name, or a commit (`commit` = true: git's "Merge commit '<rev>'"
 // message).
 void showMergeDialog(Session& session, const std::string& rev, bool commit = false);

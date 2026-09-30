@@ -208,8 +208,6 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     }
     if (one(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", !merge, "A merge commit cannot be split."))
         showSplitDialog(session, row.id);
-    if (one(ICON_MS_RESTORE, "Restore from...", nullptr, true, nullptr, true))
-        showRestoreDialog(session, row.id, other.ref);
     if (one(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, merge, "Only a merge commit has parents to simplify."))
         session.actions().simplifyParents(row.id);
     ImGui::Separator();
@@ -404,24 +402,37 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
     session.app().dialogs().open(std::move(f));
 }
 
-void showRestoreDialog(Session& session, const core::Oid& commit, const std::string& prefill)
+void showRestoreDialog(Session& session, const Selection& in, std::vector<std::string> paths, const std::string& prefill)
 {
-    std::vector<std::string> paths = session.selectedPaths();
+    const bool commit = in.kind == SelKind::Commit;
     Form f;
     f.title = "Restore";
-    f.message = paths.empty() ? "Select files in Changes first."
-                              : "Restore the " + std::to_string(paths.size()) + " selected file(s) from another commit.";
-    f.add(commitInfo(session, "Commit", commit));
+    f.message = "Restore the selected files from another commit.";
+    std::string files = "Files: ";
+    if (paths.size() <= 4) {
+        for (size_t i = 0; i < paths.size(); ++i)
+            files += (i ? ", " : "") + paths[i];
+    } else {
+        files += std::to_string(paths.size()) + " selected";
+    }
+    f.add(Field{Field::Info, "info_files", "", files});
+    if (commit)
+        f.add(commitInfo(session, "In", in.id));
+    else
+        f.add(Field{Field::Info, "info_in", "", in.kind == SelKind::Index ? "In: Index" : "In: Working tree"});
     f.add(commitField(session, "from", "From (branch, tag or commit)", prefill));
-    Field where{Field::Combo, "where", "Restore into"};
-    where.options = {"This commit (rewrite it)", "The working tree (git restore)"};
-    f.add(where);
+    if (commit) {
+        Field where{Field::Combo, "where", "Restore into"};
+        where.options = {"This commit (rewrite it)", "The working tree (git restore)"};
+        f.add(where);
+    }
     Session* s = &session;
+    const core::Oid id = in.id;
     f.buttons.push_back({"Restore",
-        [s, commit, paths](Form& form) {
+        [s, commit, id, paths](Form& form) {
             const std::string from = gg::trim(form.text("from"));
-            if (form.choice("where") == 0)
-                s->actions().restorePaths(commit, from, paths);
+            if (commit && form.choice("where") == 0)
+                s->actions().restorePaths(id, from, paths);
             else
                 s->actions().restoreWorktree(from, paths);
         },

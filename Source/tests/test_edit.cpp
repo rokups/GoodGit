@@ -92,7 +92,7 @@ GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copie
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
 }
 
-GG_TEST("edit", "Rebase and Restore dialogs prefill their commit field from the other selected commit or HEAD")
+GG_TEST("edit", "Rebase dialog prefills their commit field from the other selected commit or HEAD")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -110,9 +110,6 @@ GG_TEST("edit", "Rebase and Restore dialogs prefill their commit field from the 
     open(r.c2, "Rebase onto...", "Rebase onto");
     GG_CHECK_STR_EQ(field("destination"), "main");
     s.dialogButton("Rebase onto", "Cancel");
-    open(r.c2, "Restore from...", "Restore");
-    GG_CHECK_STR_EQ(field("from"), "main");
-    s.dialogButton("Restore", "Cancel");
     // The clicked commit is HEAD: nothing to prefill.
     open(r.c4, "Rebase onto...", "Rebase onto");
     GG_CHECK_STR_EQ(field("destination"), "");
@@ -126,9 +123,48 @@ GG_TEST("edit", "Rebase and Restore dialogs prefill their commit field from the 
     open(r.c3, "Rebase onto...", "Rebase onto");
     GG_CHECK_STR_EQ(field("destination"), c1Short);
     s.dialogButton("Rebase onto", "Cancel");
-    open(r.c3, "Restore from...", "Restore");
-    GG_CHECK_STR_EQ(field("from"), c1Short);
+}
+
+GG_TEST("edit", "Restore from... lives in Changes: prefill, restoring one selected file, History menu has no Restore")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    const std::string files = s.child("//Changes", "##files");
+    auto field = [&](const char* id) {
+        const ggui::Form* f = s.session()->app().dialogs().current();
+        return f ? f->text(id) : std::string("<no dialog>");
+    };
+    // The History menu no longer has it.
+    ctx->ItemClick(rowRef(r.c3).c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Restore from...", ImGuiTestOpFlags_NoError).ID == 0);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // A commit's file: the prefill is the parent.
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+    s.contextMenu((files + "/a.txt/###file_a.txt").c_str(), "Restore from...");
+    GG_REQUIRE(s.dialogOpen("Restore"));
+    GG_CHECK_STR_EQ(field("from"), s.session()->shortId(ggui::core::Oid::fromHex(r.c2)));
     s.dialogButton("Restore", "Cancel");
+    // Working tree: HEAD is the prefill; only the selected file is restored (from c1).
+    s.write(r.path, "a.txt", "edited a\n");
+    s.write(r.path, "b.txt", "edited b\n");
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] {
+        for (const auto& row : s.session()->changes().rows())
+            if (row.path == "b.txt")
+                return s.session()->selection().kind == ggui::SelKind::WorkingTree;
+        return false;
+    }));
+    s.contextMenu((files + "/Unstaged/a.txt/###file_a.txt").c_str(), "Restore from...");
+    GG_REQUIRE(s.dialogOpen("Restore"));
+    GG_CHECK_STR_EQ(field("from"), "HEAD");
+    s.dialogText("Restore", "from", r.c1);
+    s.dialogButton("Restore", "Restore");
+    GG_CHECK(s.waitUntil([&] { return s.read(r.path, "a.txt") == "one\ntwo\nthree\n"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(r.path, "b.txt"), "edited b\n");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"status", "--porcelain"}), "M  a.txt\n M b.txt");
 }
 
 GG_TEST("edit", "resolveRev finds HEAD, branches, tags, id prefixes and ~N / ^ suffixes among loaded rows")
@@ -424,7 +460,7 @@ GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents
     ctx->ItemClick(rowRef(r.c4).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 2; }));
     ctx->ItemClick((s.child("//Changes", "##files") + "/c.txt/###file_c.txt").c_str());
-    s.contextMenu(rowRef(r.c4).c_str(), "Restore from...");
+    s.contextMenu((s.child("//Changes", "##files") + "/c.txt/###file_c.txt").c_str(), "Restore from...");
     GG_REQUIRE(s.dialogOpen("Restore"));
     s.dialogText("Restore", "from", r.c2);
     s.dialogButton("Restore", "Restore");
@@ -437,7 +473,7 @@ GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents
     ctx->ItemClick(rowRef(r.c3).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
     ctx->ItemClick((s.child("//Changes", "##files") + "/a.txt/###file_a.txt").c_str());
-    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Restore from...");
+    s.contextMenu((s.child("//Changes", "##files") + "/a.txt/###file_a.txt").c_str(), "Restore from...");
     GG_REQUIRE(s.dialogOpen("Restore"));
     s.dialogText("Restore", "from", r.c1);
     s.comboSelect("//Restore/Restore into##where", "The working tree (git restore)");
@@ -725,7 +761,7 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withMerge);
 }
 
-GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and set upstream without remotes, tag and remote defaults")
+GG_TEST("edit", "dialog edge cases: split one file, push and set upstream without remotes, tag and remote defaults")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
@@ -743,14 +779,6 @@ GG_TEST("edit", "dialog edge cases: split one file, restore nothing, push and se
     ctx->ItemClick(rowRef(head).c_str());
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_S);
     GG_CHECK(toast("Split"));
-    // Restore without files selected in Changes: the dialog says so and cannot run.
-    ctx->ItemClick(rowRef(head).c_str());
-    s.contextMenu(rowRef(head).c_str(), "Restore from...");
-    GG_REQUIRE(s.dialogOpen("Restore"));
-    GG_CHECK(s.app.dialogs().current()->message == "Select files in Changes first.");
-    s.dialogText("Restore", "from", "HEAD~1");
-    GG_CHECK((ctx->ItemInfo("//Restore/Restore").ItemFlags & ImGuiItemFlags_Disabled) != 0);
-    s.dialogButton("Restore", "Cancel");
     // No remotes: Push explains where to add one; Set upstream has nothing to offer.
     ctx->MenuClick("//##MainMenuBar/Repository/Push");
     GG_CHECK(toast("Push"));
