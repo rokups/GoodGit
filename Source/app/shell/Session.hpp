@@ -161,7 +161,7 @@ public:
     void showCommitDialog(bool amend);
     void showStashDialog(std::vector<std::string> paths = {});
     void showPushToDialog(const std::string& branch = {});
-    void showCreateBranchDialog(const std::string& at);
+    void showCreateBranchDialog(const std::string& at, const std::string& name = {});
     void showCreateTagDialog(const std::string& at);
     void showAddRemoteDialog();
     void showEditRemoteDialog(const std::string& remote);
@@ -171,6 +171,7 @@ public:
     void showApplyPatchDialog();
     void showRenameBranchDialog(const std::string& branch);
     void showDeleteBranchDialog(const std::string& branch, int mode); // 0 local, 1 remote, 2 all
+    void showDeleteRemoteBranchDialog(const std::string& remoteBranch); // "origin/x": git push origin --delete x
     void showMoveBranchDialog(const std::string& branch, const std::string& to);
     void showSetUpstreamDialog(const std::string& branch);
     void showBranchFromStashDialog(int index);

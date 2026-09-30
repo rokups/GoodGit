@@ -290,6 +290,56 @@ GG_TEST("refs", "delete a branch on its remote, and everywhere")
     GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "both"}).empty());
 }
 
+GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch have their own menus")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "topic", "HEAD~1"});
+    s.git(repo, {"push", "-q", "-u", "origin", "topic"});
+    s.git(repo, {"branch", "-D", "topic"}); // the branch is now only on the remote
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string node = "//Branches/remote_group_origin/origin";
+    const std::string rrow = "//Branches/remote_group_origin/origin/rbranch_origin:topic/###rbranch_origin:topic";
+    const std::string lrow = branchRow("main");
+    GG_REQUIRE(s.itemExists(rrow.c_str()));
+
+    // The remote: remote items, no branch items.
+    ctx->ItemClick(node.c_str(), ImGuiMouseButton_Right);
+    for (const char* item : {"Copy name", "Copy URL", "Fetch", "Fetch and prune", "Pull", "Prune on fetch", "Edit URL...", "Delete"})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    for (const char* item : {"Check out", "Merge into HEAD...", "Rename...", "Push", "Delete on remote...", "Set upstream..."})
+        GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+
+    // A local branch: no remote-level items.
+    ctx->ItemClick(lrow.c_str(), ImGuiMouseButton_Right);
+    for (const char* item : {"Check out", "Rename...", "Push", "Set upstream...", "Delete"})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    for (const char* item : {"Fetch", "Fetch and prune", "Copy URL", "Edit URL...", "Prune on fetch", "Remote origin", "Delete on remote..."})
+        GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+
+    // A remote-tracking branch: branch items, no remote-level items, no local-branch-only ones.
+    ctx->ItemClick(rrow.c_str(), ImGuiMouseButton_Right);
+    for (const char* item : {"Check out", "Create local branch...", "Merge into HEAD...", "Rebase HEAD onto branch", "Copy name", "Delete on remote..."})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    for (const char* item : {"Fetch", "Copy URL", "Edit URL...", "Remote origin", "Rename...", "Set upstream...", "Push"})
+        GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+
+    // Delete it on the remote although no local branch has that name.
+    s.contextMenu(rrow.c_str(), "Delete on remote...");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "topic"}).empty(); }));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(rrow.c_str()); }));
+    s.settle();
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/topic"));
+}
+
 GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

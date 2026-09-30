@@ -149,8 +149,8 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
     }
 }
 
-// The Remotes panel's menu for a remote; also on the remote and its remote-tracking branches in
-// Branches.
+// The Remotes panel's menu for a remote; also on the remote's node in Branches (remote-level items
+// only: a remote-tracking branch has its own branch menu).
 void remoteMenuItems(Session& session, const core::RemoteInfo& r)
 {
     auto& actions = session.actions();
@@ -159,9 +159,13 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
     const auto* current = snap->currentBranch();
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(r.name.c_str());
+    if (menuItem(ICON_MS_LINK, "Copy URL", nullptr, false, !r.url.empty()))
+        ImGui::SetClipboardText(r.url.c_str());
     ImGui::Separator();
     if (menuItem(ICON_MS_DOWNLOAD, "Fetch", nullptr, false, free))
         actions.fetch(r.name, false, false);
+    if (menuItem(ICON_MS_DELETE_SWEEP, "Fetch and prune", nullptr, false, free))
+        actions.fetch(r.name, true, false);
     const bool pullable = free && current && current->upstream.rfind(r.name + "/", 0) == 0;
     if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, pullable))
         actions.pull(PullMode::Config);
@@ -269,6 +273,38 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
     ImGui::EndPopup();
 }
 
+void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
+{
+    if (!ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r.name)).c_str()))
+        return;
+    auto& actions = m_session.actions();
+    const bool free = actions.busy().empty();
+    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
+    const bool headAttached = !m_snapshot->headDetached && !m_snapshot->headUnborn;
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
+        m_session.revealCommit(r.target);
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
+        ImGui::SetClipboardText(r.name.c_str());
+    ImGui::Separator();
+    // A local branch of that name is checked out; otherwise one is created to track this branch.
+    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free)) {
+        if (m_snapshot->findBranch(shortName))
+            actions.checkout(shortName, false);
+        else
+            actions.createBranch(shortName, r.name, true);
+    }
+    if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
+        m_session.showCreateBranchDialog(r.name, shortName);
+    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !m_snapshot->headUnborn))
+        showMergeDialog(m_session, r.name);
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
+        actions.rebaseHeadOnto(r.name);
+    ImGui::Separator();
+    if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
+        m_session.showDeleteRemoteBranchDialog(r.name);
+    ImGui::EndPopup();
+}
+
 void BranchesPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Branches, open)) {
@@ -358,9 +394,18 @@ void BranchesPanel::draw(bool* open)
             const SectionHeaderColors neutral;
             nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
         }
-        // The remote has the Remotes panel's menu.
+        // The remote has the Remotes panel's menu, plus History visibility of its branches.
         if (info && ImGui::BeginPopupContextItem("##remote_menu")) {
             remoteMenuItems(m_session, *info);
+            ImGui::Separator();
+            std::vector<std::string> refs;
+            for (const auto& r : m_snapshot->remoteBranches)
+                if (r.remote == remote)
+                    refs.push_back("refs/remotes/" + r.name);
+            if (menuItem(ICON_MS_VISIBILITY, "Show all branches in History"))
+                history.setRefsVisible(refs, true);
+            if (menuItem(ICON_MS_VISIBILITY_OFF, "Hide all branches in History"))
+                history.setRefsVisible(refs, false);
             ImGui::EndPopup();
         }
         if (nodeOpen) {
@@ -375,18 +420,7 @@ void BranchesPanel::draw(bool* open)
                     history.refVisible(full), false, p.remoteText, false);
                 if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
-                if (ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r.name)).c_str())) {
-                    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
-                        m_session.revealCommit(r.target);
-                    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-                        ImGui::SetClipboardText(r.name.c_str());
-                    // ... and its remote's menu.
-                    if (info && beginMenu(ICON_MS_CLOUD, ("Remote " + remote).c_str())) {
-                        remoteMenuItems(m_session, *info);
-                        ImGui::EndMenu();
-                    }
-                    ImGui::EndPopup();
-                }
+                remoteBranchMenu(r);
                 ImGui::PopID();
                 ImGui::PopID();
                 ImGui::PopID();

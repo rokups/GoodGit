@@ -143,11 +143,11 @@ void Session::showPushToDialog(const std::string& branch)
     m_app.dialogs().open(std::move(f));
 }
 
-void Session::showCreateBranchDialog(const std::string& at)
+void Session::showCreateBranchDialog(const std::string& at, const std::string& name)
 {
     Form f;
     f.title = "Create branch";
-    f.add(Field{Field::Text, "name", "Name"});
+    f.add(Field{Field::Text, "name", "Name", name});
     f.add(commitField(*this, "at", "At (branch, tag or commit)", at));
     Field checkout{Field::Check, "checkout", "Check out after creating"};
     checkout.checked = true;
@@ -336,6 +336,24 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
     f.buttons.push_back({"Delete", [this, branch, remotes, mode](Form& form) {
                              m_actions->deleteBranch(branch, form.checked("force"), remotes, mode != 1);
                          }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
+void Session::showDeleteRemoteBranchDialog(const std::string& remoteBranch)
+{
+    std::string remote;
+    for (const auto& r : m_snapshot->remoteBranches)
+        if (r.name == remoteBranch)
+            remote = r.remote;
+    if (remote.empty())
+        return;
+    const std::string branch = remoteBranch.substr(remote.size() + 1);
+    Form f;
+    f.title = "Delete branch";
+    f.message = "Delete the branch '" + branch + "' on the remote '" + remote + "'?";
+    f.add(commitInfo(*this, "Remote branch", remoteBranch));
+    f.buttons.push_back({"Delete", [this, branch, remote](Form&) { m_actions->deleteBranch(branch, false, {remote}, false); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

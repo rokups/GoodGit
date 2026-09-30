@@ -187,10 +187,6 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     s.contextMenu("//Branches/remote_group_origin/origin", "Fetch");
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
     s.settle();
-    remoteCommit(s, repo, "r7.txt", "seven\n");
-    s.contextMenu("//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main", "Remote origin/Fetch");
-    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
-    s.settle();
     s.contextMenu("//Branches/remote_group_origin/origin", "Copy name");
     GG_CHECK_STR_EQ(s.clipboard(), "origin");
     GG_CHECK_STR_EQ(s.head(repo), localMain);
