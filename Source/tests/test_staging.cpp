@@ -240,17 +240,41 @@ GG_TEST("staging", "external editor, folder and diff tools")
     GG_CHECK(logHas(editorLog, "f1.txt"));
     s.contextMenu(fileRef(s, "Unstaged", "f1.txt").c_str(), "Open containing folder");
     GG_CHECK(logHas(folderLog, repo.string()));
-    s.contextMenu(fileRef(s, "Unstaged", "f1.txt").c_str(), "External diff/vs HEAD");
+    auto logLines = [&] { return gg::splitLines(s.read(diffLog.parent_path(), diffLog.filename().string())).size(); };
+    // Unstaged: "Before" (the index) against the working tree.
+    s.contextMenu(fileRef(s, "Unstaged", "f1.txt").c_str(), "Compare/\"Before\" vs Working tree");
     GG_CHECK(logHas(diffLog, "f1.txt"));
     s.settle();
-    // vs parent, from a commit.
-    const size_t before = gg::splitLines(s.read(diffLog.parent_path(), diffLog.filename().string())).size();
+    // A commit's file: its diff against the parent.
+    size_t before = logLines();
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
-    s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "External diff/vs parent");
-    GG_CHECK(s.waitUntil([&] {
-        return gg::splitLines(s.read(diffLog.parent_path(), diffLog.filename().string())).size() >= before + 2;
-    }));
+    s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "Compare/Show diff");
+    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    s.settle();
+    // "Before" against the working tree (f5.txt is new in this commit: it differs).
+    before = logLines();
+    s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "Compare/\"Before\" vs Working tree");
+    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    s.settle();
+    // With "Compare with" set, Compare is one item: "Before" against the target.
+    before = logLines();
+    ctx->ItemClick(("//History/**/###row_" + s.revParse(repo, "HEAD~3")).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, nullptr, "f5.txt").c_str()) || !s.session()->changes().rows().empty(); }));
+    ctx->ItemInputValue("//Changes/##compare_with", "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().compareTarget().kind == ggui::CompareTarget::Rev; }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, nullptr, "f5.txt").c_str()); }));
+    s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "Compare");
+    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    s.settle();
+    ctx->ItemInputValue("//Changes/##compare_with", "");
+    // A staged file: the index against HEAD.
+    s.git(repo, {"add", "f1.txt"});
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Staged", "f1.txt").c_str()); }));
+    before = logLines();
+    s.contextMenu(fileRef(s, "Staged", "f1.txt").c_str(), "Compare/Show diff");
+    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
     s.settle();
 }
 

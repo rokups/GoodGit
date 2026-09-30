@@ -1267,13 +1267,12 @@ void Actions::openInEditor(const std::string& path)
         {}, true, false);
 }
 
-void Actions::externalDiff(const std::string& path, const std::string& from, const std::string& to)
+void Actions::externalDiff(const std::string& path, const std::vector<std::string>& revs)
 {
     run("external diff " + path,
-        [path, from, to](MutationContext& ctx) {
-            std::vector<std::string> args{"difftool", "-y", from};
-            if (!to.empty())
-                args.push_back(to);
+        [path, revs](MutationContext& ctx) {
+            std::vector<std::string> args{"difftool", "-y"};
+            args.insert(args.end(), revs.begin(), revs.end());
             ctx.git(withPaths(args, {path}));
         },
         {}, true, false);

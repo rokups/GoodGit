@@ -569,13 +569,59 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             at = m_selection.id;
         m_session.blameFile(row.path, at);
     }
-    if (beginMenu(ICON_MS_OPEN_IN_NEW, "External diff", free && !snap->bare)) {
-        const std::string commit = m_selection.kind == SelKind::Commit ? m_selection.id.hex() : std::string();
-        if (menuItem(ICON_MS_COMPARE_ARROWS, "vs HEAD"))
-            actions.externalDiff(row.path, "HEAD", commit);
-        if (menuItem(ICON_MS_COMPARE_ARROWS, "vs parent", nullptr, false, !commit.empty()))
-            actions.externalDiff(row.path, commit + "^", commit);
-        ImGui::EndMenu();
+    {
+        // "Compare": Before is the file's old side, After its new side. With "Compare with" set, a commit's
+        // file compares Before with that target (it is the left side, as in the internal diff).
+        const bool menuOn = free && !snap->bare;
+        const std::string id = m_selection.id.hex();
+        using V = std::vector<std::string>;
+        V show, beforeWt, afterWt;
+        bool canMenu = true, hasBefore = true, hasAfter = true, hasShow = true;
+        switch (row.group) {
+        case FileGroup::Commit: {
+            const auto* h = m_session.history().row(m_selection.id);
+            hasBefore = !(h && h->parents.empty()); // a root commit has no parent
+            show = {id + "^", id};
+            beforeWt = {id + "^"};
+            afterWt = {id};
+            break;
+        }
+        case FileGroup::Staged:
+            show = {"--cached", "HEAD"};
+            beforeWt = {"HEAD"};
+            break;
+        case FileGroup::Unstaged: hasAfter = false; break; // index vs working tree: After is the working tree
+        case FileGroup::StashWorktree:
+            show = {id + "^", id};
+            beforeWt = {id + "^"};
+            afterWt = {id};
+            break;
+        case FileGroup::StashIndex:
+            show = {id + "^1", id + "^2"};
+            beforeWt = {id + "^1"};
+            afterWt = {id + "^2"};
+            break;
+        default: canMenu = false; break;
+        }
+        if (canMenu && row.group == FileGroup::Commit && m_compare.kind != CompareTarget::None) {
+            const bool rev = m_compare.kind == CompareTarget::Rev;
+            if (menuItem(ICON_MS_OPEN_IN_NEW, "Compare", nullptr, false, menuOn && hasBefore))
+                actions.externalDiff(row.path, rev ? V{m_compare.rev, id + "^"} : V{id + "^"});
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+                if (rev)
+                    ImGui::SetTooltip("Compare the file before this commit with %s", m_compare.rev.c_str());
+                else
+                    ImGui::SetTooltip("Compare the file before this commit with the working tree");
+            }
+        } else if (beginMenu(ICON_MS_OPEN_IN_NEW, "Compare", menuOn && canMenu)) {
+            if (menuItem(ICON_MS_COMPARE_ARROWS, "Show diff", nullptr, false, hasShow && hasBefore))
+                actions.externalDiff(row.path, show);
+            if (menuItem(ICON_MS_COMPARE_ARROWS, "\"Before\" vs Working tree", nullptr, false, hasBefore))
+                actions.externalDiff(row.path, beforeWt);
+            if (menuItem(ICON_MS_COMPARE_ARROWS, "\"After\" vs Working tree", nullptr, false, hasAfter))
+                actions.externalDiff(row.path, afterWt);
+            ImGui::EndMenu();
+        }
     }
     if (m_selection.kind == SelKind::Commit && row.group == FileGroup::Commit) {
         // History editing on the commit's files (selection or this row).
@@ -620,10 +666,10 @@ void ChangesPanel::openFile(const FileRow& row)
     const std::string id = m_selection.id.hex();
     switch (row.group) {
     case FileGroup::Staged:
-    case FileGroup::Unstaged: actions.externalDiff(row.path, "HEAD", ""); break;
+    case FileGroup::Unstaged: actions.externalDiff(row.path, {"HEAD"}); break;
     case FileGroup::Commit:
-    case FileGroup::StashWorktree: actions.externalDiff(row.path, id + "^", id); break;
-    case FileGroup::StashIndex: actions.externalDiff(row.path, id + "^1", id + "^2"); break;
+    case FileGroup::StashWorktree: actions.externalDiff(row.path, {id + "^", id}); break;
+    case FileGroup::StashIndex: actions.externalDiff(row.path, {id + "^1", id + "^2"}); break;
     default: break;
     }
 }

@@ -238,7 +238,7 @@ public:
 
     // External tools (not journaled).
     void openInEditor(const std::string& path);
-    void externalDiff(const std::string& path, const std::string& from, const std::string& to);
+    void externalDiff(const std::string& path, const std::vector<std::string>& revs);
     void mergeTool(const std::string& path);
 
 private:
