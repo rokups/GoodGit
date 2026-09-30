@@ -28,7 +28,7 @@ jobs:
     # Builds and caches git 2.36.0, the minimum supported version (G2).
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: cache
         with:
           path: ~/git-2.36
@@ -44,7 +44,7 @@ jobs:
     # One instrumented build; every shard runs these binaries.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Dependencies
         run: |
           sudo apt-get update
@@ -52,7 +52,7 @@ jobs:
             libvulkan-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
             libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
@@ -62,7 +62,7 @@ jobs:
           cmake --build --preset coverage
       # A tarball keeps the executable bits that upload-artifact drops.
       - run: tar -C build/coverage -cf linux-bin.tar bin
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-bin
           path: linux-bin.tar
@@ -77,7 +77,7 @@ jobs:
         git: [minimum, latest]
         shard: [0, 1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Dependencies (runtime only)
         run: |
           sudo add-apt-repository -y ppa:git-core/ppa
@@ -86,18 +86,18 @@ jobs:
             libxrandr2 libxcursor1 libxi6 libxss1 libxfixes3 libxkbcommon0 libdecor-0-0
           # lavapipe's ICD is lvp_icd.x86_64.json on older Mesa, lvp_icd.json from Mesa 25.
           echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/git-2.36
           key: git-2.36.0-ubuntu-24.04
       - if: matrix.git == 'minimum'
         run: echo "$HOME/git-2.36/bin" >> "$GITHUB_PATH"
       - run: git --version
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/ggui-fixtures
           key: fixtures-large-v1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: linux-bin
       - run: mkdir -p build/coverage && tar -C build/coverage -xf linux-bin.tar && rm linux-bin.tar
@@ -109,12 +109,12 @@ jobs:
           mkdir -p out/profiles
           xvfb-run -a -s "-screen 0 1920x1080x24" \
             build/coverage/bin/ggui --test --shard=${{ matrix.shard }}/$SHARDS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: linux-${{ matrix.git }}-${{ matrix.shard }}
           path: out/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: failures-${{ matrix.git }}-${{ matrix.shard }}
@@ -125,9 +125,9 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y llvm
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: shards
       - name: Coverage report (informational; ggui + git-gg profiles merged; COVERAGE_EXCL allowlist)
@@ -139,7 +139,7 @@ jobs:
             -ignore-filename-regex='(_deps|\.cache/CPM|generated|Source/tests)' > coverage.lcov
           python3 scripts/coverage_report.py --lcov coverage.lcov --root "$PWD" \
             --allowlist scripts/coverage_excl_allowlist.txt --out coverage.md
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: reports
@@ -153,7 +153,7 @@ jobs:
       matrix:
         toolchain: [mingw, msvc]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - if: matrix.toolchain == 'mingw'
         uses: msys2/setup-msys2@v2
         with:
@@ -163,7 +163,7 @@ jobs:
             patch mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
       - if: matrix.toolchain == 'msvc'
         uses: ilammy/msvc-dev-cmd@v1
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/CPM
           key: cpm-${{ matrix.toolchain }}-${{ hashFiles('cmake/Dependencies.cmake') }}
@@ -183,7 +183,7 @@ jobs:
           cmake --preset msvc-x64 -DCPM_SOURCE_CACHE="${{ github.workspace }}/.cache/CPM"
           cmake --build --preset msvc-x64
           mv build/msvc-x64/bin windows-bin
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-bin-${{ matrix.toolchain }}
           path: windows-bin/
@@ -201,12 +201,12 @@ jobs:
       run:
         shell: bash # Git for Windows' bash; git is Git for Windows, as users have it
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: windows-bin-${{ matrix.toolchain }}
           path: bin
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/ggui-fixtures
           key: fixtures-large-v1-windows
@@ -222,7 +222,7 @@ jobs:
         run: |
           mkdir -p out
           bin/ggui.exe --test --shard=${{ matrix.shard }}/$SHARDS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: windows-${{ matrix.toolchain }}-${{ matrix.shard }}
@@ -236,7 +236,7 @@ jobs:
   package-linux:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Dependencies
         run: |
           sudo apt-get update
@@ -246,13 +246,13 @@ jobs:
             libdbus-1-dev libgtk-3-dev libssl-dev libdecor-0-dev
           # lavapipe's ICD is lvp_icd.x86_64.json on older Mesa, lvp_icd.json from Mesa 25.
           echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build, package and check (tar.gz, zip, deb; deb installed with apt in a clean container)
         run: scripts/package_smoke.sh --container ubuntu:24.04
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-linux
           path: |
@@ -266,14 +266,14 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           install: >-
             git patch unzip mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-python
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/CPM
           key: cpm-mingw-${{ hashFiles('cmake/Dependencies.cmake') }}
@@ -286,7 +286,7 @@ jobs:
           cpack --preset package-mingw
       - name: Check the package
         run: scripts/package_smoke_windows.sh build/packages/ggui-*-windows-x64-mingw.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-mingw
           path: build/packages/*.zip
@@ -294,9 +294,9 @@ jobs:
   package-msvc:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ilammy/msvc-dev-cmd@v1
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/CPM
           key: cpm-msvc-${{ hashFiles('cmake/Dependencies.cmake') }}
@@ -308,7 +308,7 @@ jobs:
       - name: Check the package (Git Bash)
         shell: bash
         run: scripts/package_smoke_windows.sh build/packages/ggui-*-windows-x64-msvc.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-msvc
           path: build/packages/*.zip
@@ -325,8 +325,8 @@ jobs:
       group: release-latest
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: package-*
           path: dist
