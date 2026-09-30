@@ -9,6 +9,7 @@
 
 #include <imgui_internal.h>
 
+#include <algorithm>
 #include <string>
 
 namespace ggui {
@@ -151,6 +152,66 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
     const bool pressed = ImGui::Selectable(label, selected, flags, size);
     if (selected)
         ImGui::PopStyleColor();
+    return pressed;
+}
+
+namespace {
+
+// Draws the visible part of `label` at `pos`: the first dimLen bytes dimmed, the rest in Text.
+void drawDimPrefixText(ImVec2 pos, const char* label, size_t dimLen)
+{
+    const char* end = ImGui::FindRenderedTextEnd(label);
+    const size_t total = static_cast<size_t>(end - label);
+    dimLen = std::min(dimLen, total);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    if (dimLen > 0) {
+        dl->AddText(pos, dim, label, label + dimLen);
+        pos.x += ImGui::CalcTextSize(label, label + dimLen).x;
+    }
+    dl->AddText(pos, ImGui::GetColorU32(ImGuiCol_Text), label + dimLen, end);
+}
+
+// Invisible placeholder text: the plain widget still does the sizing, hit-testing and test-engine
+// registration, and the caller draws the coloured text on top.
+struct HiddenText {
+    HiddenText() { ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0)); }
+    ~HiddenText() { ImGui::PopStyleColor(); }
+};
+
+} // namespace
+
+bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const char* shortcut)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
+    bool pressed;
+    {
+        HiddenText hidden;
+        pressed = ImGui::MenuItemEx(label, icon, shortcut, false, true);
+    }
+    if (ImGui::IsItemVisible()) {
+        const ImGuiMenuColumns& cols = window->DC.MenuColumns;
+        if (icon && icon[0])
+            window->DrawList->AddText(ImVec2(pos.x + cols.OffsetIcon, pos.y), ImGui::GetColorU32(ImGuiCol_Text), icon);
+        drawDimPrefixText(ImVec2(pos.x + cols.OffsetLabel, pos.y), label, dimLen);
+    }
+    return pressed;
+}
+
+bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const float baseline = window->DC.CurrLineTextBaseOffset;
+    bool pressed;
+    {
+        HiddenText hidden;
+        pressed = selectable(label, selected, flags, size);
+    }
+    if (ImGui::IsItemVisible()) {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        drawDimPrefixText(ImVec2(min.x, min.y + baseline), label, dimLen);
+    }
     return pressed;
 }
 

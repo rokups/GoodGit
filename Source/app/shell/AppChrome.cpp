@@ -135,6 +135,7 @@ void App::drawRecentMenu()
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
     ImGui::InputTextWithHint("##recent_filter", "Filter", &m_recentFilter);
     const auto& recent = m_settings.data().recent;
+    const auto names = uniqueRecentNames(recent);
     int shown = 0;
     for (size_t i = 0; i < recent.size(); ++i) {
         const std::string& path = recent[i];
@@ -144,8 +145,11 @@ void App::drawRecentMenu()
         for (const auto& info : m_recentInfo)
             if (info.path == fs::path(path))
                 detail = summaryText(info);
-        if (menuItem(ICON_MS_FOLDER, (path + "###recent_menu_" + std::to_string(i)).c_str(), detail.c_str()))
+        const std::string label = names[i].text() + "###recent_menu_" + std::to_string(i);
+        if (menuItemDimPrefix(ICON_MS_FOLDER, label.c_str(), names[i].prefix.size(), detail.c_str()))
             post([this, path] { openRepository(path); });
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            ImGui::SetTooltip("%s", path.c_str());
         ++shown;
     }
     if (shown == 0)

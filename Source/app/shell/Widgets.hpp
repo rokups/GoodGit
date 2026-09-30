@@ -6,6 +6,8 @@
 
 #include <imgui.h>
 
+#include <cstddef>
+
 namespace ggui {
 
 // ImGui::MenuItem with an icon drawn in the built-in icon column (ImGui::MenuItemEx). `label`
@@ -27,6 +29,11 @@ bool smallButton(const char* icon, const char* label);
 // ImGui::Selectable that stays blue while hovered when selected (ImGui draws a hovered row with
 // HeaderHovered, the neutral hover overlay, which would hide the selection).
 bool selectable(const char* label, bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
+// menuItem()/selectable() whose visible label starts with `dimLen` bytes (a folder prefix) drawn in
+// the dimmed text colour; the rest keeps the normal colour. The widget is laid out, identified and
+// registered exactly like the plain call with the same `label`.
+bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const char* shortcut = nullptr);
+bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size);
 // Width button()/smallButton() will take for this icon and label, for right-aligning rows.
 float buttonWidth(const char* icon, const char* label);
 

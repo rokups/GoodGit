@@ -69,7 +69,7 @@ std::string App::recentRowText(size_t i) const
     for (const auto& info : m_recentInfo)
         if (info.path == fs::path(recent[i]))
             detail = summaryText(info);
-    return recent[i] + (detail.empty() ? std::string() : "  \xe2\x80\x94  " + detail);
+    return uniqueRecentNames(recent)[i].text() + (detail.empty() ? std::string() : "  \xe2\x80\x94  " + detail);
 }
 
 void App::drawWelcome()
@@ -138,14 +138,17 @@ void App::drawWelcome()
     const auto& recent = m_settings.data().recent;
     if (recent.empty())
         ImGui::TextDisabled("No recent repositories");
+    const auto names = uniqueRecentNames(recent);
     std::string forget;
     for (size_t i = 0; i < recent.size(); ++i) {
         const std::string& path = recent[i];
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
         const std::string label = recentRowText(i) + "###row";
-        if (selectable(label.c_str(), m_recentFocus == static_cast<int>(i), ImGuiSelectableFlags_AllowDoubleClick,
-                ImVec2(width, 0)))
+        if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), m_recentFocus == static_cast<int>(i),
+                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(width, 0)))
             post([this, path] { openRepository(path); });
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            ImGui::SetTooltip("%s", path.c_str());
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);
         if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete))

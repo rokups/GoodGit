@@ -283,4 +283,56 @@ void Settings::forgetRecent(const std::string& path)
     save();
 }
 
+std::vector<RecentName> uniqueRecentNames(const std::vector<std::string>& paths)
+{
+    // Path components, ignoring trailing separators ("/" and "\\" both split).
+    std::vector<std::vector<std::string>> parts(paths.size());
+    for (size_t i = 0; i < paths.size(); ++i) {
+        std::string cur;
+        for (char c : paths[i]) {
+            if (c == '/' || c == '\\') {
+                if (!cur.empty())
+                    parts[i].push_back(std::move(cur));
+                cur.clear();
+            } else {
+                cur += c;
+            }
+        }
+        if (!cur.empty())
+            parts[i].push_back(std::move(cur));
+        if (parts[i].empty())
+            parts[i].push_back(paths[i]); // "/" or ""
+    }
+    auto nameAt = [&](size_t i, size_t depth) {
+        std::string n;
+        const auto& p = parts[i];
+        for (size_t k = p.size() - depth; k < p.size(); ++k)
+            n += (k == p.size() - depth ? "" : "/") + p[k];
+        return n;
+    };
+    std::vector<size_t> depth(paths.size(), 1);
+    for (bool grew = true; grew;) {
+        grew = false;
+        std::map<std::string, std::vector<size_t>> groups;
+        for (size_t i = 0; i < paths.size(); ++i)
+            groups[nameAt(i, depth[i])].push_back(i);
+        for (const auto& [name, members] : groups) {
+            if (members.size() < 2)
+                continue;
+            for (size_t i : members)
+                if (depth[i] < parts[i].size()) {
+                    ++depth[i];
+                    grew = true;
+                }
+        }
+    }
+    std::vector<RecentName> out(paths.size());
+    for (size_t i = 0; i < paths.size(); ++i) {
+        out[i].base = parts[i].back();
+        const std::string full = nameAt(i, depth[i]);
+        out[i].prefix = full.substr(0, full.size() - out[i].base.size());
+    }
+    return out;
+}
+
 } // namespace ggui

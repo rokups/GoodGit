@@ -4,6 +4,7 @@
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "shell/Settings.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
@@ -161,6 +162,30 @@ GG_TEST("shell", "opening shows progress and can be cancelled")
     GG_CHECK(s.waitIdle());
 }
 
+GG_TEST("shell", "recent repositories: unique short display names")
+{
+    using ggui::uniqueRecentNames;
+    auto text = [](const std::vector<std::string>& paths) {
+        std::string out;
+        for (const auto& n : uniqueRecentNames(paths))
+            out += (out.empty() ? "" : ",") + n.prefix + "|" + n.base;
+        return out;
+    };
+    GG_CHECK_STR_EQ(text({"/home/a/src/GoodGit", "/x/y/other"}), "|GoodGit,|other");
+    GG_CHECK_STR_EQ(text({"/home/a/src/GoodGit/", "/x/y/other//"}), "|GoodGit,|other"); // trailing slashes
+    // One level: only the colliding entries grow.
+    GG_CHECK_STR_EQ(text({"/w/work/app", "/h/home/app", "/x/solo"}), "work/|app,home/|app,|solo");
+    // Two levels: "a/work/app" vs "b/work/app" need the grandparent; "home/app" settles at one.
+    GG_CHECK_STR_EQ(text({"/a/work/app", "/b/work/app", "/c/home/app", "/d/solo"}),
+        "a/work/|app,b/work/|app,home/|app,|solo");
+    // Growing can collide again with a shorter entry at the same depth.
+    GG_CHECK_STR_EQ(text({"/w/app", "/x/w/app"}), "w/|app,x/w/|app");
+    // Out of parents: keep the whole path; identical paths stay identical.
+    GG_CHECK_STR_EQ(text({"/app", "/app"}), "|app,|app");
+    GG_CHECK_STR_EQ(text({"/app", "/w/app"}), "|app,w/|app");
+    GG_CHECK(uniqueRecentNames({}).empty());
+}
+
 GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
 {
     const fs::path remote = s.fixture(Recipe::WithRemote);
@@ -171,9 +196,12 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
     GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
     GG_REQUIRE(s.waitIdle());
     // Most recent first, with branch, upstream and ahead/behind.
-    GG_CHECK_STR_EQ(s.app.recentRowText(0), linear.string() + "  \xe2\x80\x94  main");
+    const auto names = ggui::uniqueRecentNames(s.app.settings().data().recent);
+    GG_CHECK(names[0].base == linear.filename().string());
+    GG_CHECK(names[1].base == remote.filename().string());
+    GG_CHECK_STR_EQ(s.app.recentRowText(0), names[0].text() + "  \xe2\x80\x94  main");
     GG_CHECK_STR_EQ(s.app.recentRowText(1),
-        remote.string() + "  \xe2\x80\x94  main \xe2\x86\x92 origin/main \xe2\x86\x91" "1 \xe2\x86\x93" "1");
+        names[1].text() + "  \xe2\x80\x94  main \xe2\x86\x92 origin/main \xe2\x86\x91" "1 \xe2\x86\x93" "1");
 
     // Click a recent entry.
     ctx->ItemClick("//Welcome/recent_1/###row");
@@ -819,7 +847,7 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main \xe2\x86\x92 origin/main") != std::string::npos; }));
     GG_CHECK(s.app.recentRowText(0).find("\xe2\x86\x91") == std::string::npos); // no ahead/behind without the ref
-    GG_CHECK(s.app.recentRowText(1).rfind(notRepo.string(), 0) == 0);
+    GG_CHECK(s.app.recentRowText(1).rfind(notRepo.filename().string(), 0) != std::string::npos);
     GG_CHECK(s.app.recentRowText(2).find("  \xe2\x80\x94  main") != std::string::npos);
     fs::rename(s.path("was-a-repo.git"), notRepo / ".git");
 }

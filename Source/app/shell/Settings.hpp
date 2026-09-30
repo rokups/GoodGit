@@ -106,4 +106,16 @@ private:
 nlohmann::json toJson(const SettingsData& d);
 SettingsData fromJson(const nlohmann::json& j);
 
+// Short display name of a recent repository: `base` is the last path component; `prefix` holds
+// the parent folders ("work/") added to tell it apart from other entries with the same base.
+struct RecentName {
+    std::string prefix;
+    std::string base;
+    std::string text() const { return prefix + base; }
+};
+// One name per path (same order). Entries whose base names collide all gain one parent folder at
+// a time until every name is unique; the others keep their base name. A path that runs out of
+// parents is shown in full (identical paths stay identical).
+std::vector<RecentName> uniqueRecentNames(const std::vector<std::string>& paths);
+
 } // namespace ggui
