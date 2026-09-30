@@ -131,9 +131,10 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
             what = op->label;
     }
     result.label = std::string(redo ? "redo" : "undo") + " \"" + what + "\"";
-    // A plain rebase that has not finished is a partial operation (the reconciler writes what the
-    // reflog shows so far): undoing it mid-rebase would pull refs out from under git.
-    if (plan.target->src == "git" && !native::rebaseIdentity(repo).empty()) {
+    // A rebase in progress has an open operation (ggui's, or the reconciler's for a plain git
+    // rebase), which cannot be undone until its end; undoing what came before would pull refs out
+    // from under git.
+    if (!native::rebaseIdentity(repo).empty()) {
         result.error = "Cannot " + std::string(redo ? "redo" : "undo") + " \"" + what + "\": finish or abort the rebase first";
         return result;
     }

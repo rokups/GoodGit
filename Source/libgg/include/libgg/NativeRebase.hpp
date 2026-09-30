@@ -39,9 +39,18 @@ std::filesystem::path stateDir(git_repository* repo);
 
 // The operation of the rebase in progress in this worktree ("" when none is remembered for it).
 std::string groupOperation(git_repository* repo);
-// Remembers `op` as the operation of the rebase in progress and marks it in the journal (it stays
-// open while the rebase is stopped).
-void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op);
+// The remembered operation of this worktree's rebase, whether or not that rebase is still in
+// progress (`active`: its identity matches; a finished one is closed by finishGroup or
+// closeFinishedGroup). `src` is the opener's: "git" for one the reconciler (or the hooks) opened.
+struct GroupInfo {
+    std::string op;
+    std::string src;
+    bool active = false;
+};
+std::optional<GroupInfo> openGroup(git_repository* repo);
+// Remembers `op` (opened by `src`) as the operation of the rebase in progress and marks it in the
+// journal (it stays open while the rebase is stopped).
+void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op, const std::string& src = "ggui");
 // A remembered operation whose rebase is no longer in progress (finished or aborted, maybe in a
 // terminal) gets its end record; the state directory is removed.
 void closeFinishedGroup(git_repository* repo, journal::Writer& journal);

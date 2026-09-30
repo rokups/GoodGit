@@ -40,6 +40,7 @@ bool writeFile(const fs::path& path, const std::string& text)
 struct Group {
     std::string op;
     std::string identity;
+    std::string src;
 };
 
 std::optional<Group> readGroup(const fs::path& dir)
@@ -50,7 +51,11 @@ std::optional<Group> readGroup(const fs::path& dir)
     const auto lines = splitLines(*text);
     if (lines.empty() || lines[0].empty())
         return std::nullopt;
-    return Group{lines[0], lines.size() > 1 ? lines[1] : std::string()};
+    // The third line is the opener's src; older state files (hooks: ids "git-<pid>-<start>") have none.
+    std::string src = lines.size() > 2 ? lines[2] : std::string();
+    if (src.empty())
+        src = lines[0].rfind("git-", 0) == 0 ? "git" : "ggui";
+    return Group{lines[0], lines.size() > 1 ? lines[1] : std::string(), src};
 }
 
 // Removes the state directory, and gg/rebase when no other worktree has one.
@@ -120,12 +125,21 @@ std::string groupOperation(git_repository* repo)
     return !identity.empty() && identity == group->identity ? group->op : std::string();
 }
 
-void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op)
+std::optional<GroupInfo> openGroup(git_repository* repo)
+{
+    const auto group = readGroup(stateDir(repo));
+    if (!group)
+        return std::nullopt;
+    const std::string identity = rebaseIdentity(repo);
+    return GroupInfo{group->op, group->src, !identity.empty() && identity == group->identity};
+}
+
+void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op, const std::string& src)
 {
     const fs::path dir = stateDir(repo);
     std::error_code ec;
     fs::create_directories(dir, ec);
-    if (writeFile(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n"))
+    if (writeFile(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
         journal.markRebase(op);
 }
 
@@ -133,9 +147,13 @@ void closeFinishedGroup(git_repository* repo, journal::Writer& journal)
 {
     const fs::path dir = stateDir(repo);
     const auto group = readGroup(dir);
-    if (!group)
-        return;
     const std::string identity = rebaseIdentity(repo);
+    if (!group) {
+        // A todo ggui prepared for a rebase that is gone (finished in a terminal) is left behind.
+        if (const auto prepared = readPrepared(dir); prepared && !prepared->identity.empty() && prepared->identity != identity)
+            removeState(dir);
+        return;
+    }
     if (!identity.empty() && identity == group->identity)
         return; // still in progress
     journal.end(group->op, true);

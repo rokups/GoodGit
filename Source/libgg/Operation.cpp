@@ -97,12 +97,13 @@ void OperationRecorder::begin()
     native::closeFinishedGroup(m_repo, m_journal);
     m_rebaseAtBegin = !native::rebaseIdentity(m_repo).empty();
     if (m_op.undoes.empty())
-        if (std::string group = native::groupOperation(m_repo); !group.empty()) {
-            m_op.id = std::move(group);
+        if (const auto group = native::openGroup(m_repo); group && group->active) {
+            m_op.id = group->op;
             m_resumed = true;
-            // A plain git rebase's operation (opened by the hooks) has no index: one taken in the
-            // middle says nothing about its start. ggui's has the start's; this adds the latest.
-            if (m_op.id.rfind("git-", 0) == 0)
+            // A plain git rebase's operation (opened by the reconciler, or by the old hooks) has no
+            // index: one taken in the middle says nothing about its start. ggui's has the start's;
+            // this adds the latest.
+            if (group->src == "git")
                 m_captureIndex = false;
         }
     m_before = readRefValues(m_repo);
@@ -160,7 +161,7 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
         if (!rebasing)
             native::finishGroup(m_repo, m_journal, ok);
     } else if (startsGroup) {
-        native::rememberGroup(m_repo, m_journal, m_op.id);
+        native::rememberGroup(m_repo, m_journal, m_op.id, m_op.src);
     } else {
         m_journal.end(m_op.id, ok, &error);
     }

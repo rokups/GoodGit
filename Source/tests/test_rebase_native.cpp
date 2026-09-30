@@ -8,6 +8,8 @@
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+
+#include <libgg/Journal.hpp>
 #include "util/Env.hpp"
 
 #include <libgg/GitRunner.hpp>
@@ -433,10 +435,9 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
     s.git(copy, {"rebase", "--abort"});
 }
 
-GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in ggui, finished in a terminal; hooks make it one operation")
+GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in ggui, finished in a terminal; the reflog makes it one operation")
 {
     const Repo r = makeRepo(s);
-    GG_REQUIRE(s.gitgg(r.path, {"hooks", "install"}).ok());
     const fs::path list = writeTodo(s, "todo.txt",
         "pick " + r.c[2] + "\nedit " + r.c[3] + "\npick " + r.c[4] + "\npick " + r.c[5] + "\n");
     ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.generic_string() + "'");
@@ -468,35 +469,18 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_REQUIRE(finished(s, r.path));
     GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->head.hex() == s.head(r.path); }));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
-    // With the managed hooks the whole plain rebase is one operation: one Undo restores it.
+    // The whole plain rebase is one operation (opened from HEAD's reflog while it was stopped,
+    // ended with its finish): one Undo restores it.
     auto ops = operations(s, r.path);
     GG_CHECK_EQ(countWith(ops, "[git] "), 1u);
-    GG_CHECK_EQ(countWith(ops, "rebase -i"), 1u);
+    GG_CHECK_EQ(countWith(ops, "git rebase"), 1u);
+    GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
     ctx->ItemClick("//##Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), r.c[3]);
 
-    // ggui starts it, the terminal finishes it: still one operation with the hooks.
-    GG_REQUIRE(openFrom(s, r.c[4]));
-    key(s, r.c[4], ImGuiKey_D);
-    key(s, r.c[4], ImGuiKey_B);
-    GG_REQUIRE(start(s));
-    GG_REQUIRE(stoppedAt(s, "break"));
-    s.git(r.path, {"rebase", "--continue"});
-    GG_REQUIRE(finished(s, r.path));
-    ops = operations(s, r.path);
-    GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i)"), 1u);
-    GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
-    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
-    ctx->ItemClick("//##Toolbar/###tb_undo");
-    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
-    s.settle();
-
-    // Without the hooks the reconciler journals the terminal's part from HEAD's reflog as "git
-    // rebase" when Undo runs: Undo takes that back (the rebase's own operation is closed all the
-    // same). Grouping it with the rebase's operation comes with the reflog rebase groups.
-    GG_REQUIRE(s.gitgg(r.path, {"hooks", "uninstall"}).ok());
+    // ggui starts it, the terminal finishes it: still one operation, with the index of its end.
     GG_REQUIRE(openFrom(s, r.c[4]));
     key(s, r.c[4], ImGuiKey_D);
     key(s, r.c[4], ImGuiKey_B);
@@ -505,11 +489,30 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_CHECK(fs::exists(r.path / ".git" / "gg" / "rebase"));
     s.git(r.path, {"rebase", "--continue"});
     GG_REQUIRE(finished(s, r.path));
+    ops = operations(s, r.path);
+    GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i)"), 1u);
+    GG_CHECK_EQ(countWith(ops, "[git] "), 1u); // (the earlier one)
+    {
+        // ggui's operation: ended by the terminal's finish, with the index at the end added.
+        gg::journal::Journal journal{r.path / ".git"};
+        std::string error;
+        const auto all = journal.read(&error);
+        const gg::journal::Operation* group = nullptr;
+        for (const auto& op : all)
+            if (op.src == "ggui" && op.label.find("interactive rebase") != std::string::npos)
+                group = &op;
+        GG_REQUIRE(group != nullptr);
+        GG_CHECK(group->ended && group->ok && group->spansRebase);
+        GG_REQUIRE(!group->index.empty());
+        GG_CHECK(!group->index.back().before.empty()); // (the start tree: one record per worktree, merged)
+        GG_CHECK_STR_EQ(group->index.back().after, gg::trim(s.gitOut(r.path, {"write-tree"})));
+    }
+    GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
     ctx->ItemClick("//##Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
-    GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
-    GG_CHECK(countWith(operations(s, r.path), "git rebase") >= 1u);
+    GG_CHECK_EQ(countWith(operations(s, r.path), "[git] "), 1u); // no "git rebase" from the terminal's part
 }
 
 GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git before 2.38 with update-ref, local changes and autostash, Abort")

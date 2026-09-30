@@ -8,8 +8,11 @@
 
 #include <libgg/Journal.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <chrono>
 #include <fstream>
+#include <sstream>
 
 namespace ggtest {
 
@@ -491,22 +494,220 @@ GG_TEST("reconcile", "a rebase started and aborted in a terminal, then a commit:
     GG_CHECK(committed != start);
 }
 
+GG_TEST("reconcile", "a plain rebase -i with an edit stop is one open op until it finishes; Undo refuses meanwhile, then restores it all")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty(); }));
+    s.settle();
+    ctx->Yield(10);
+    auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    const std::string id = ops.front().id;
+    GG_CHECK_STR_EQ(ops.front().src, "git");
+    GG_CHECK_STR_EQ(ops.front().label, "git rebase");
+    GG_CHECK(!ops.front().ended);
+    GG_CHECK(ops.front().spansRebase);
+    GG_CHECK(fs::exists(repo / ".git" / "gg" / "rebase" / "main" / "operation"));
+
+    // Undo does not reach into the stopped rebase.
+    const std::string stopped = refState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    s.settle();
+    ctx->Yield(10);
+    GG_CHECK(s.dismissError()); // "Nothing to undo": the open rebase is not a candidate
+    GG_CHECK_STR_EQ(refState(s, repo), stopped);
+    GG_CHECK_EQ(journalOps(repo).size(), 1u);
+    GG_CHECK(fs::exists(repo / ".git" / "rebase-merge"));
+
+    // Amend at the stop, go on to the next stop, amend again, finish: still the same operation.
+    s.git(repo, {"commit", "-q", "--amend", "--allow-empty", "-m", "amended once"});
+    s.git(repo, {"rebase", "--continue"});
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    s.git(repo, {"commit", "-q", "--amend", "--allow-empty", "-m", "amended twice"});
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 1 && !journalOps(repo).front().ended; }));
+    s.git(repo, {"rebase", "--continue"});
+    GG_REQUIRE(!fs::exists(repo / ".git" / "rebase-merge"));
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).front().ended; }));
+    s.settle();
+    ctx->Yield(10);
+    ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK_STR_EQ(ops.front().id, id);
+    GG_CHECK(ops.front().ok);
+    GG_CHECK(!fs::exists(repo / ".git" / "gg" / "rebase"));
+    GG_CHECK(refChange(ops.front(), "refs/heads/main") != nullptr);
+    GG_CHECK(refState(s, repo) != start);
+    GG_CHECK(s.waitUntil([&] {
+        const auto snap = s.session()->snapshot();
+        return snap && !snap->rebase;
+    }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+}
+
+GG_TEST("reconcile", "a plain rebase run entirely while ggui is closed is one op")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.git(repo, {"commit", "-q", "--amend", "--allow-empty", "-m", "amended"});
+    s.git(repo, {"rebase", "--continue"});
+    s.git(repo, {"rebase", "--continue"});
+    GG_REQUIRE(!fs::exists(repo / ".git" / "rebase-merge"));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty(); }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ended);
+    GG_CHECK(!ops.front().spansRebase);
+    GG_CHECK(!fs::exists(repo / ".git" / "gg" / "rebase"));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+}
+
+GG_TEST("reconcile", "a plain rebase --abort ends its group; there is nothing to undo from it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 1 && !journalOps(repo).front().ended; }));
+    s.git(repo, {"rebase", "--abort"});
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).front().ended; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ok);
+    GG_CHECK(!ops.front().restorable()); // HEAD and main are where they were
+    GG_CHECK(!fs::exists(repo / ".git" / "gg" / "rebase"));
+    GG_CHECK_STR_EQ(refState(s, repo), start);
+    // Nothing to undo: no undo operation is written.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.dismissError());
+    s.settle();
+    ctx->Yield(10);
+    GG_CHECK_EQ(journalOps(repo).size(), 1u);
+    GG_CHECK_STR_EQ(refState(s, repo), start);
+}
+
+GG_TEST("reconcile", "a stale cursor does not duplicate an operation the journal has")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "once"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    // Put the HEAD cursor back one entry (as after a crash between the journal append and the
+    // cursor update): the commit's entry is consumed again.
+    std::vector<std::string> log;
+    {
+        std::ifstream in(repo / ".git" / "logs" / "HEAD");
+        for (std::string line; std::getline(in, line);)
+            if (!line.empty())
+                log.push_back(line);
+    }
+    GG_REQUIRE(log.size() >= 2);
+    const std::string& prev = log[log.size() - 2];
+    const size_t tab = prev.find('\t');
+    GG_REQUIRE(tab != std::string::npos);
+    const std::string head = prev.substr(0, tab);
+    const size_t gt = head.find('>');
+    GG_REQUIRE(gt != std::string::npos);
+    std::istringstream when(head.substr(gt + 1));
+    long long time = 0;
+    when >> time;
+    const fs::path statePath = repo / ".git" / "gg" / "reconcile.json";
+    nlohmann::json state;
+    {
+        std::ifstream in(statePath);
+        in >> state;
+    }
+    state["cursors"]["HEAD"] = {{"n", log.size() - 1}, {"old", prev.substr(0, 40)}, {"new", prev.substr(41, 40)}, {"time", time},
+        {"msg", prev.substr(tab + 1)}};
+    std::ofstream(statePath, std::ios::trunc) << state.dump();
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    ctx->Yield(20);
+    s.settle();
+    GG_CHECK_EQ(gitOps(repo).size(), 1u);
+    GG_CHECK_EQ(journalOps(repo).size(), 1u);
+}
+
+GG_TEST("reconcile", "two resets away and back in one pass are two ops, each undoable")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "b"}); // journaled: main A -> B
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    const std::string a = s.gitOut(repo, {"rev-parse", "HEAD~1"});
+    const std::string atB = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    s.git(repo, {"reset", "-q", "--hard", a});
+    const std::string atA = refState(s, repo);
+    s.git(repo, {"reset", "-q", "--hard", "ORIG_HEAD"});
+    GG_CHECK_STR_EQ(refState(s, repo), atB);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 3; }));
+    s.settle();
+    ctx->Yield(10);
+    GG_CHECK_EQ(gitOps(repo).size(), 3u);
+    GG_CHECK_STR_EQ(refState(s, repo), atB);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == atA; }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == atB; }));
+}
+
 GG_TEST("reconcile", "Undo refuses a plain git operation while a rebase is in progress")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "before the rebase"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
     ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
     s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
     ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
-    GG_CHECK(s.waitUntil([&] { return !gitOps(repo).empty(); }));
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 2; }));
     s.settle();
     const std::string state = refState(s, repo);
     const size_t before = journalOps(repo).size();
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     s.settle();
     ctx->Yield(10);
+    // Not the open rebase, and not the commit before it either: git owns the refs until it ends.
+    GG_CHECK(s.dismissError());
     GG_CHECK_STR_EQ(refState(s, repo), state);
     GG_CHECK_EQ(journalOps(repo).size(), before); // no undo operation was written
     GG_CHECK(fs::exists(repo / ".git" / "rebase-merge"));

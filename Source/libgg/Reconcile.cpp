@@ -1,6 +1,7 @@
 #include "libgg/Reconcile.hpp"
 
 #include "libgg/Journal.hpp"
+#include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Process.hpp"
 
@@ -230,7 +231,8 @@ std::string actionPart(const std::string& msg)
 // A rebase run by git: "rebase (start)", "rebase -i (pick)", "pull --rebase origin main (finish)".
 bool isRebaseAction(const std::string& action)
 {
-    // ("rebase: fast-forward" is a step of a rebase too, when the picks fast-forward.)
+    // ("rebase: fast-forward" is a step of a rebase too, when the picks fast-forward: it joins the
+    // rebase in progress, and is an operation of its own outside one.)
     return action == "rebase" || (endsWith(action, ")") && (startsWith(action, "rebase") || startsWith(action, "pull")));
 }
 
@@ -291,6 +293,10 @@ struct Pending {
     std::int64_t time = 0;          // ms
     std::vector<journal::RefChange> changes;
     std::vector<Entry> entries; // the HEAD entries this operation was made from (branch steps that match one join it)
+    // A rebase sequence (start ... finish/abort of one git rebase, as far as the pass saw it).
+    bool rebase = false;
+    bool started = false;  // its "(start)" entry is in this pass
+    bool finished = false; // its "(finish)" or "(abort)" entry is
     void add(const std::string& ref, const std::string& oldValue, const std::string& newValue)
     {
         for (auto& c : changes)
@@ -337,8 +343,12 @@ std::string renameTarget(const std::string& msg)
 
 // Turns the consumed entries into operations (see the plan: "HEAD value derivation"). `known`
 // follows the walk: what the journal would say after each operation.
+// `rebaseOpen`: the entries before the first rebase entry belong to a rebase that an earlier pass
+// saw start (its operation is open): what git commands ran in it (an amend at an edit stop) are
+// part of it.
 std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::string, std::string>& known,
-    const std::map<std::string, std::string>& current, const std::string& myHead, const std::string& zero)
+    const std::map<std::string, std::string>& current, const std::string& myHead, const std::string& zero,
+    bool rebaseOpen)
 {
     std::vector<Pending> ops;
     const std::string kHead = known.count(myHead) ? known[myHead] : std::string();
@@ -349,6 +359,7 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
         return current.count(ref) || (k != known.end() && k->second != zero);
     };
     int joinable = -1; // index of an unfinished rebase's operation
+    bool inRebase = rebaseOpen; // between a rebase's (start) and its (finish) or (abort)
     std::string symAtStart; // the branch HEAD was on when the rebase in this pass started
     for (const auto& e : entries) {
         const std::string action = actionPart(e.msg);
@@ -385,6 +396,9 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
         p.label = labelFor(e.msg);
         p.time = e.time * 1000;
         p.prefix = rebase ? rebasePrefix(action) : std::string();
+        p.rebase = rebase;
+        p.started = start;
+        p.finished = end;
         p.entries.push_back(e);
         if (headVal != prevHead)
             p.add(myHead, prevHead, headVal);
@@ -401,16 +415,28 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
             known[c.ref] = c.newValue;
         prevHead = headVal;
 
-        if (rebase && !start && joinable >= 0 && ops[joinable].prefix == p.prefix) {
+        // Every entry of a rebase in progress is part of it: its own steps, and what the user runs
+        // at a stop (commit --amend, a commit resolving conflicts).
+        if (start) {
+            inRebase = true;
+            joinable = -1; // a new rebase: its own operation
+        } else if (rebase && endsWith(action, ")")) {
+            inRebase = true; // a step of a rebase whose start this pass did not see ("rebase: fast-forward" has no parentheses: it only joins a rebase already open)
+        }
+        if (inRebase && joinable >= 0) {
             for (const auto& c : p.changes)
                 ops[joinable].add(c.ref, c.oldValue, c.newValue);
             ops[joinable].entries.push_back(e);
+            ops[joinable].finished = end;
         } else {
+            p.rebase = inRebase;
             ops.push_back(std::move(p));
-            joinable = static_cast<int>(ops.size()) - 1;
+            joinable = inRebase ? static_cast<int>(ops.size()) - 1 : -1;
         }
-        if (!rebase || end)
+        if (end) {
+            inRebase = false;
             joinable = -1;
+        }
     }
     // The derivation must end where HEAD actually is: the last operation that moved HEAD says so.
     const auto actual = current.find(myHead);
@@ -423,11 +449,12 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
                 break;
             }
         }
-    // Drop what changed nothing (stash's "reset: moving to HEAD", a rebase that ended where it started).
+    // Drop what changed nothing (stash's "reset: moving to HEAD", a rebase that ended where it
+    // started). A rebase sequence stays: run() may have to finish the group it belongs to.
     std::vector<Pending> kept;
     for (auto& p : ops) {
         std::erase_if(p.changes, [](const journal::RefChange& c) { return c.oldValue == c.newValue; });
-        if (!p.changes.empty())
+        if (!p.changes.empty() || p.rebase)
             kept.push_back(std::move(p));
     }
     return kept;
@@ -728,15 +755,96 @@ Result run(git_repository* repo, std::string* error)
         }
     }
 
-    // One operation per plain git command found in HEAD's reflog since the cursor.
+    // The newest journal change of every ref: an operation made from reflog entries that the
+    // journal has recorded already (a cursor left behind by an unlocked update, or by a crash
+    // between the append and the cursor) is not written twice.
+    std::map<std::string, journal::RefChange> newest;
+    for (const auto& op : ops)
+        for (const auto& r : op.refs)
+            newest[r.ref] = r;
+    auto journaled = [&](const std::vector<journal::RefChange>& cs) {
+        return !cs.empty() && std::all_of(cs.begin(), cs.end(), [&](const journal::RefChange& c) {
+            const auto it = newest.find(c.ref);
+            return it != newest.end() && it->second.oldValue == c.oldValue && it->second.newValue == c.newValue;
+        });
+    };
+    auto noteFirst = [&](const std::string& id) {
+        if (state.journal.empty()) { // the first operation of a new journal
+            state.journal = id;
+            identityChanged = true;
+        }
+    };
+    const char* workdir = git_repository_workdir(repo);
+
+    // One operation per plain git command found in HEAD's reflog since the cursor; a rebase, from
+    // its start to its finish, is one operation over however many passes it takes (an open one
+    // stays open, as ggui's does).
     const std::optional<Cursor> cursor = readCursor(state, myHead);
     bool cursorChanged = false;
     {
         const std::vector<Entry> entries = entriesSince(*headLog, cursor);
-        std::vector<Pending> headOps = deriveOps(entries, known, current, myHead, zero);
+        // Does the pass continue a rebase an earlier pass opened? Yes while it is in progress; a
+        // finished one only when the pass has its finish or abort (and no newer start before it):
+        // a group without such evidence was quit, or its entries expired.
+        const auto group = native::openGroup(repo);
+        bool rebaseOpen = false;
+        if (group) {
+            rebaseOpen = group->active;
+            for (const auto& e : entries) {
+                const std::string action = actionPart(e.msg);
+                if (!isRebaseAction(action))
+                    continue;
+                if (endsWith(action, " (start)"))
+                    break;
+                if (endsWith(action, " (finish)") || endsWith(action, " (abort)")) {
+                    rebaseOpen = true;
+                    break;
+                }
+            }
+        }
+        std::vector<Pending> headOps = deriveOps(entries, known, current, myHead, zero, rebaseOpen);
         std::vector<Pending> branchOps = deriveBranchOps(repo, headOps, known, current, zero);
         const std::vector<Pending> derived = mergeOps(std::move(headOps), std::move(branchOps));
+        const bool rebasing = !native::rebaseIdentity(repo).empty();
         for (const auto& p : derived) {
+            const bool dup = journaled(p.changes); // (a finish is still carried out for its group)
+            std::string err;
+            auto fail = [&] {
+                if (error)
+                    *error = err;
+                return result; // the cursor stays: the entries are consumed again next time
+            };
+            // The group this sequence belongs to: the open one while its rebase runs, or a finished
+            // one when this pass saw its finish. Any other remembered group is stale (the rebase
+            // was quit, or a newer one started): it ends here, without evidence of more.
+            auto open = p.rebase ? native::openGroup(repo) : std::nullopt;
+            if (open && !(open->active || (p.finished && !p.started))) {
+                native::closeFinishedGroup(repo, t);
+                open.reset();
+            }
+            if (open) {
+                if (!p.changes.empty() && !dup) {
+                    if (!t.appendRefs(open->op, p.changes, &err))
+                        return fail();
+                    for (const auto& c : p.changes)
+                        newest[c.ref] = c;
+                    ++result.appended;
+                }
+                if (p.finished) {
+                    // A rebase ggui started, finished in a terminal: the index at its end joins the
+                    // one ggui recorded at its start (plain git's own has none).
+                    if (open->src != "git" && workdir)
+                        t.appendIndex(open->op, journal::IndexChange{wt, "", indexTree(workdir), true}, &err);
+                    native::finishGroup(repo, t, true);
+                    ++result.appended; // (the op list changed: it ended)
+                }
+                continue;
+            }
+            if (dup)
+                continue;
+            const bool opens = p.rebase && !p.finished && rebasing;
+            if (p.changes.empty() && !opens)
+                continue;
             journal::Operation op;
             op.id = journal::Journal::newOperationId();
             op.src = "git";
@@ -744,19 +852,20 @@ Result run(git_repository* repo, std::string* error)
             op.cmd = p.cmd;
             op.wt = wt;
             op.time = p.time;
-            std::string err;
-            const bool ok = t.begin(op, &err) && t.appendRefs(op.id, p.changes, &err) && t.end(op.id, true, &err);
-            if (!ok) {
-                if (error)
-                    *error = err;
-                return result; // the cursor stays: the entries are consumed again next time
-            }
+            if (!t.begin(op, &err) || !t.appendRefs(op.id, p.changes, &err))
+                return fail();
+            if (opens)
+                native::rememberGroup(repo, t, op.id, "git"); // stays open until the rebase ends
+            else if (!t.end(op.id, true, &err))
+                return fail();
+            for (const auto& c : p.changes)
+                newest[c.ref] = c;
             ++result.appended;
-            if (state.journal.empty()) {
-                state.journal = op.id;
-                identityChanged = true;
-            }
+            noteFirst(op.id);
         }
+        // A remembered operation whose rebase is gone, with no reflog entry to say so (git rebase
+        // --quit, an expired log): ends now.
+        native::closeFinishedGroup(repo, t);
         cursorChanged = setCursor(state, myHead, *headLog);
     }
 
