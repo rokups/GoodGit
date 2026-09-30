@@ -166,7 +166,7 @@ GG_TEST("visual", "text shares a baseline across widgets on one line")
         ctx->Yield(2);
         ctx->ItemClick("//Settings/##settings_tabs/General");
         ctx->ItemInputValue("//Settings/##settings_tabs/General/UI scale##scale", scale);
-        for (const char* tab : {"General", "Git", "Hooks"}) {
+        for (const char* tab : {"General", "Git"}) {
             ctx->Yield(2);
             ctx->ItemClick((std::string("//Settings/##settings_tabs/") + tab).c_str());
             expectBaselines(ctx, (at + tab).c_str(), ok);

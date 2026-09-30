@@ -526,40 +526,4 @@ void Session::popStash()
         m_actions->stashApply(0, true, false);
 }
 
-void Session::maybePromptHooks()
-{
-    if (m_hooksPromptChecked || !m_hooksStatus || m_hooksStatus->installed)
-        return;
-    m_hooksPromptChecked = true;
-    auto& settings = m_app.settings();
-    const std::string key = m_path.string();
-    const HooksAnswer answer = settings.repo(key).hooks;
-    if (!settings.data().askHooksOnOpen || answer == HooksAnswer::Never || answer == HooksAnswer::Installed)
-        return;
-    Form f;
-    f.title = "Install ggui hooks?";
-    f.message = "Install ggui hooks (Undo for all git operations, block pushing conflicts)?\n\n"
-                "They chain to any hooks you already have and can be removed at any time "
-                "(Settings > Hooks, or git gg hooks uninstall).";
-    f.buttons.push_back({"Install", [this, key](Form&) {
-                             m_app.settings().repo(key).hooks = HooksAnswer::Installed;
-                             m_app.settings().save();
-                             m_actions->installHooks([this](const core::MutationFinishedEvent& e) {
-                                 if (e.outcome != core::Outcome::Ok)
-                                     m_app.showError("Install hooks", e.message);
-                                 requestHooksStatus();
-                                 m_engine->readOperations();
-                             });
-                         }});
-    f.buttons.push_back({"Not now", [this, key](Form&) {
-                             m_app.settings().repo(key).hooks = HooksAnswer::NotNow;
-                             m_app.settings().save();
-                         }});
-    f.buttons.push_back({"Never", [this, key](Form&) {
-                             m_app.settings().repo(key).hooks = HooksAnswer::Never;
-                             m_app.settings().save();
-                         }});
-    m_app.dialogs().open(std::move(f));
-}
-
 } // namespace ggui

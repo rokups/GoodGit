@@ -848,7 +848,7 @@ GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not
         R"({"uiScale": 9, "theme": "light", "recent": [1, "/nowhere", null], "repos": {"/r": {"hooks": "not-now"},
             "/s": {"hooks": "never"}, "/t": {"hooks": "installed", "ignoreOldGgRefs": true}},
             "panels": {"History": true, "Diff": "yes"}, "diff": {"sideBySide": true, "context": 500, "whitespace": 9},
-            "nothingStaged": "stage-selected", "window": {"x": 10, "y": 20, "w": 800, "h": 600, "maximized": true}})");
+            "nothingStaged": "stage-selected", "askHooksOnOpen": true, "window": {"x": 10, "y": 20, "w": 800, "h": 600, "maximized": true}})");
     GG_CHECK(mixed.find("scale=3.00 theme=light recent=1") != std::string::npos);
     const std::string types = start("types", R"({"recent": 5, "repos": [], "panels": 1, "diff": "x", "window": 2,
         "nothingStaged": "stage-all"})");

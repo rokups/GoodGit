@@ -88,8 +88,8 @@ static std::string plantLegacyRefs(Scenario& s, const fs::path& repo)
 GG_TEST("setup", "old gg refs: deleted silently on open, not journaled, nothing kept")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    // Managed hooks installed: their reference-transaction hook must not journal the deletion either.
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    // The reconciler has its baseline before the refs appear: deleting them is no change to it.
+    GG_REQUIRE(s.gitgg(repo, {"op", "log"}).ok());
     const std::string branch = plantLegacyRefs(s, repo);
     GG_REQUIRE(ggRefs(s, repo).size() == 2);
     const std::string tip = s.revParse(repo, branch);
@@ -108,8 +108,8 @@ GG_TEST("setup", "old gg refs: deleted silently on open, not journaled, nothing 
 GG_TEST("setup", "old gg refs: git gg deletes them silently too")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    // Managed hooks installed: their reference-transaction hook must not journal the deletion either.
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    // The reconciler has its baseline before the refs appear: deleting them is no change to it.
+    GG_REQUIRE(s.gitgg(repo, {"op", "log"}).ok());
     const std::string branch = plantLegacyRefs(s, repo);
     GG_REQUIRE(ggRefs(s, repo).size() == 2);
     const std::string tip = s.revParse(repo, branch);

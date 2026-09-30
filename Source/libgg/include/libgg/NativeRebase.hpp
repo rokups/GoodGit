@@ -7,7 +7,7 @@
 //
 // Journal grouping (U1 §4): a whole native rebase, from `rebase (start)` to `rebase (finish)`, is
 // one journal operation. The operation that saw the rebase start is remembered per worktree with
-// the rebase's identity; later ggui mutations and the managed hooks (for a continuation in a
+// the rebase's identity; later ggui mutations and the reconciler (for a continuation in a
 // terminal) join it while that rebase is in progress, and it is ended when the rebase is gone.
 //
 // Everything lives in $GIT_COMMON_DIR/gg/rebase/<worktree>/ and is disposable: deleting it only
@@ -41,7 +41,7 @@ std::filesystem::path stateDir(git_repository* repo);
 std::string groupOperation(git_repository* repo);
 // The remembered operation of this worktree's rebase, whether or not that rebase is still in
 // progress (`active`: its identity matches; a finished one is closed by finishGroup or
-// closeFinishedGroup). `src` is the opener's: "git" for one the reconciler (or the hooks) opened.
+// closeFinishedGroup). `src` is the opener's: "git" for one the reconciler (or the managed hooks of older versions) opened.
 struct GroupInfo {
     std::string op;
     std::string src;

@@ -51,42 +51,6 @@ fs::path addBareRemote(Scenario& s, const fs::path& repo, const std::string& nam
 
 } // namespace
 
-GG_TEST("ui", "Settings ▸ Hooks: the ask-on-open checkbox turns the first-open prompt on and off")
-{
-    const fs::path first = s.fixture(Recipe::Linear, "first");
-    const fs::path second = s.fixture(Recipe::Linear, "second");
-    const char* box = "//Settings/##settings_tabs/Hooks/Ask to install the ggui hooks when opening a repository##ask_hooks";
-    GG_REQUIRE(!s.app.settings().data().askHooksOnOpen); // the test preferences start with it off
-    ctx->MenuClick("//##MainMenuBar/Repository/Settings...");
-    ctx->Yield(2);
-    ctx->ItemClick("//Settings/##settings_tabs/Hooks");
-    ctx->ItemCheck(box);
-    ctx->Yield(2);
-    GG_CHECK(s.app.settings().data().askHooksOnOpen);
-    GG_CHECK(settingsFile(s).find("\"askHooksOnOpen\": true") != std::string::npos);
-    // On: opening a repository without the hooks asks.
-    GG_REQUIRE(s.openRepository(first));
-    GG_REQUIRE(s.dialogOpen("Install ggui hooks?"));
-    s.dialogButton("Install ggui hooks?", "Not now");
-    s.settle();
-    // Not now installs nothing: no config-defined hooks, no wrapper scripts.
-    GG_CHECK(s.gitMayFail(first, {"config", "--get-regexp", "^hook\\."}).out.empty());
-    GG_CHECK(!fs::exists(first / ".git" / "hooks" / "reference-transaction"));
-    // Off: the next repository opens without the prompt.
-    ctx->ItemUncheck(box);
-    ctx->Yield(2);
-    GG_CHECK(!s.app.settings().data().askHooksOnOpen);
-    GG_CHECK(settingsFile(s).find("\"askHooksOnOpen\": false") != std::string::npos);
-    ctx->WindowClose("//Settings");
-    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
-    ctx->Yield(3);
-    GG_REQUIRE(s.openRepository(second));
-    GG_REQUIRE(s.waitUntil([&] { return s.session()->hooksStatus().has_value(); }));
-    s.settle();
-    ctx->Yield(5);
-    GG_CHECK(s.app.dialogs().current() == nullptr);
-}
-
 GG_TEST("ui", "History: Ctrl-click drops a commit from the selection")
 {
     const fs::path repo = s.fixture(Recipe::Merges);

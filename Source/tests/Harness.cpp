@@ -188,13 +188,11 @@ bool Scenario::gitTransparent(const fs::path& repo, std::string* why)
         for (const auto& e : fs::directory_iterator(ggDir, ec)) {
             const std::string name = e.path().filename().string();
             const bool dir = e.is_directory();
-            // journal (+ .lock): undo history. cache/: disposable (conflict scan). hooks/: the managed-hook
-            // runner (H1). rebase/: journal grouping of a native rebase in progress. edit/: Edit commit
-            // sessions (§4.3). symref-*: a hook's note between the prepared and committed
-            // reference-transaction calls.
-            const bool ok = (!dir && (name == "journal" || name == "journal.lock" || name == "reconcile.json"
-                    || name.rfind("symref-", 0) == 0))
-                || (dir && (name == "cache" || name == "hooks" || name == "rebase" || name == "edit"));
+            // journal (+ .lock): undo history. reconcile.json: the reconciler's baseline and cursors.
+            // cache/: disposable (conflict scan). rebase/: journal grouping of a native rebase in
+            // progress. edit/: Edit commit sessions (§4.3).
+            const bool ok = (!dir && (name == "journal" || name == "journal.lock" || name == "reconcile.json"))
+                || (dir && (name == "cache" || name == "rebase" || name == "edit"));
             if (!ok)
                 problems += "\n  unexpected entry in " + ggDir.generic_string() + ": " + name;
         }

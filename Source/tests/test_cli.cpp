@@ -208,15 +208,13 @@ GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the
     // Contradictory insert options.
     GG_CHECK_EQ(s.gitgg(repo, {"new", "--before", "HEAD~1", "HEAD"}).exitCode, 129);
     GG_CHECK_EQ(s.gitgg(repo, {"new", "--after", "HEAD~1", "--detach"}).exitCode, 129);
-    // Hooks outside a repository.
-    GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "install"}).exitCode, 128);
+    // Uninstalling the legacy hooks needs a repository.
     GG_CHECK_EQ(s.gitgg(s.root(), {"hooks", "uninstall"}).exitCode, 128);
-    // The git-gg binary started by its path, with neither git-gg nor ggui on PATH: the hooks
-    // status warns, and git gg ui cannot start a ggui that is not there (GG_GGUI names a missing
-    // one; the real ggui next to git-gg would be found and started).
+    // The git-gg binary started by its path, with neither git-gg nor ggui on PATH: git gg ui cannot
+    // start a ggui that is not there (GG_GGUI names a missing one; the real ggui next to git-gg
+    // would be found and started).
     const fs::path gitgg = gg::findInPath("git-gg");
     GG_REQUIRE(!gitgg.empty());
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
     const fs::path gitDir = gg::findInPath("git").parent_path();
     auto bare = [&](std::vector<std::string> args) {
         gg::RunRequest req;
@@ -227,12 +225,9 @@ GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the
         req.env.emplace_back("GG_GGUI", (s.root() / "no-such-ggui").string());
         return gg::run(req);
     };
-    r = bare({"hooks", "status"});
-    GG_CHECK(r.out.find("git-gg is not on PATH") != std::string::npos);
     r = bare({"ui"});
     GG_CHECK_EQ(r.exitCode, 128);
     GG_CHECK(r.err.find("cannot start ggui") != std::string::npos);
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "uninstall"}).ok());
     // git-gg as GIT_ASKPASS (git runs it with the prompt) when no ggui answers: no answer (exit 1).
     for (const char* endpoint : {"no-port-here", "1:token"}) {
         gg::RunRequest req;
@@ -242,6 +237,36 @@ GG_TEST("cli", "git gg edge cases: nothing to undo or redo, local changes in the
         req.env.emplace_back("GG_ASKPASS_ENDPOINT", endpoint);
         GG_CHECK_EQ(gg::run(req).exitCode, 1);
     }
+}
+
+GG_TEST("cli", "git gg hook <name> exits 0 silently (what stale hooks of older versions call)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const auto& args : std::vector<std::vector<std::string>>{{"hook", "reference-transaction", "prepared"},
+             {"hook", "post-checkout", "0000", "1111", "1"}, {"hook", "pre-push", "origin", "url"}, {"hook", "no-such-hook"}, {"hook", "--weird", "--x=1"}, {"hook", "-h"}}) {
+        const auto r = s.gitgg(repo, args);
+        GG_CHECK_EQ(r.exitCode, 0);
+        GG_CHECK(r.out.empty() && r.err.empty());
+    }
+    // Also outside a repository: it never looks at one.
+    GG_CHECK_EQ(s.gitgg(s.root(), {"hook", "post-commit"}).exitCode, 0);
+}
+
+GG_TEST("cli", "git gg hooks install and status only print that the managed hooks were removed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string configBefore = s.read(repo / ".git", "config");
+    for (const char* action : {"install", "status"}) {
+        const auto r = s.gitgg(repo, {"hooks", action});
+        GG_CHECK_EQ(r.exitCode, 0);
+        GG_CHECK_STR_EQ(r.out, "managed hooks were removed; Undo covers plain git without them\n");
+    }
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
+    GG_CHECK(!fs::exists(repo / ".git" / "gg" / "hooks"));
+    // Uninstall with nothing installed says so.
+    const auto r = s.gitgg(repo, {"hooks", "uninstall"});
+    GG_CHECK_EQ(r.exitCode, 0);
+    GG_CHECK(r.out.find("nothing to do") != std::string::npos);
 }
 
 } // namespace ggtest

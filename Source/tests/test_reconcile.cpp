@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 namespace ggtest {
@@ -74,7 +75,6 @@ GG_TEST("reconcile", "plain git changes without hooks are journaled and Undo res
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
-    GG_CHECK(!s.session()->hooksInstalled());
     const std::string start = refState(s, repo);
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "x"});
     const std::string committed = refState(s, repo);
@@ -232,19 +232,185 @@ GG_TEST("reconcile", "Undo of a symbolic ref that is not HEAD restores that ref 
     GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), head);
 }
 
-GG_TEST("reconcile", "managed hooks installed: the reconciler stays out")
+// ---- the managed hooks of older versions: uninstalled silently on open ----------------------------------
+
+namespace {
+
+const std::vector<std::string> kLegacyHooks{"reference-transaction", "post-checkout", "post-merge", "post-rewrite",
+    "post-commit", "pre-push", "pre-commit"};
+
+// What the old installer wrote, byte for byte: the runner, and either hook.ggui-<name> config entries
+// or wrapper scripts over the hooks (the user's own one moved to <name>.gg-previous).
+void installLegacyHooks(Scenario& s, const fs::path& repo, bool config, fs::path hooksDir = {})
+{
+    if (hooksDir.empty())
+        hooksDir = repo / ".git" / "hooks";
+    const fs::path runner = repo / ".git" / "gg" / "hooks" / "run";
+    s.write(runner.parent_path(), "run", R"(#!/bin/sh
+# ggui managed hooks runner (installed by "git gg hooks install", removed by uninstall).
+# Does nothing when git-gg is not installed, so plain git never breaks because of ggui.
+name="$1"
+shift
+if command -v git-gg >/dev/null 2>&1; then
+    exec git-gg hook "$name" "$@"
+fi
+if [ "$name" = "pre-push" ]; then
+    echo "ggui hooks: git-gg not found on PATH; skipping the first-class conflict check" >&2
+fi
+exit 0
+)");
+    fs::permissions(runner, fs::perms::owner_all);
+    const std::string quoted = "'" + runner.generic_string() + "'";
+    for (const auto& name : kLegacyHooks) {
+        if (config) {
+            s.git(repo, {"config", "--local", "hook.ggui-" + name + ".command", quoted + " " + name});
+            s.git(repo, {"config", "--local", "hook.ggui-" + name + ".event", name});
+            continue;
+        }
+        const fs::path hook = hooksDir / name;
+        if (fs::exists(hook))
+            fs::rename(hook, hooksDir / (name + ".gg-previous"));
+        s.write(hooksDir, name,
+            "#!/bin/sh\n# ggui managed hook: runs the ggui hooks runner, then the previous hook (if any).\n"
+            "# \"git gg hooks uninstall\" restores the previous hook.\n"
+            "input=$(cat; printf x)\n"
+            "input=${input%x}\n"
+            "status=0\n"
+            "printf '%s' \"$input\" | "
+                + quoted + " " + name
+                + " \"$@\" || status=$?\n"
+                  "prev=\"$0.gg-previous\"\n"
+                  "if [ -x \"$prev\" ]; then\n"
+                  "    printf '%s' \"$input\" | \"$prev\" \"$@\" || status=$?\n"
+                  "fi\n"
+                  "exit $status\n");
+        fs::permissions(hook, fs::perms::owner_all);
+    }
+}
+
+// Every file in .git/hooks with its bytes.
+std::map<std::string, std::string> hookFiles(Scenario& s, const fs::path& dir)
+{
+    std::map<std::string, std::string> files;
+    for (const auto& e : fs::directory_iterator(dir))
+        if (e.is_regular_file())
+            files[e.path().filename().string()] = s.read(dir, e.path().filename().string());
+    return files;
+}
+
+bool legacyGone(Scenario& s, const fs::path& repo)
+{
+    return s.gitMayFail(repo, {"config", "--get-regexp", "^hook\\."}).out.empty()
+        && !fs::exists(repo / ".git" / "gg" / "hooks");
+}
+
+} // namespace
+
+GG_TEST("reconcile", "legacy managed hooks (config mode) are uninstalled silently on open, then plain git is journaled")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    const std::string configBefore = s.read(repo / ".git", "config");
+    installLegacyHooks(s, repo, true);
+    GG_REQUIRE(!legacyGone(s, repo));
     GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return legacyGone(s, repo); }));
     s.settle();
-    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "hooked"});
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "after the migration"});
     GG_CHECK(s.waitUntil([&] { return panelOps(s, "git") == 1; }));
-    s.settle();
-    ctx->Yield(20);
     s.settle();
     GG_CHECK_EQ(countOps(repo, "git"), 1u);
     GG_CHECK_EQ(countOps(repo, "git", "external changes"), 0u);
+}
+
+GG_TEST("reconcile", "legacy managed hooks (wrapper scripts) are uninstalled on open, the user's hook restored byte-exact")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo / ".git" / "hooks", "pre-push", "#!/bin/sh\n# the user's own hook\necho 'pushing' >&2\nexit 0\n");
+    fs::permissions(repo / ".git" / "hooks" / "pre-push", fs::perms::owner_all);
+    const auto before = hookFiles(s, repo / ".git" / "hooks");
+    installLegacyHooks(s, repo, false);
+    GG_REQUIRE(hookFiles(s, repo / ".git" / "hooks") != before);
+    GG_REQUIRE(fs::exists(repo / ".git" / "hooks" / "pre-push.gg-previous"));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return legacyGone(s, repo) && hookFiles(s, repo / ".git" / "hooks") == before; }));
+    s.settle();
+    GG_CHECK(hookFiles(s, repo / ".git" / "hooks") == before);
+    const auto perms = fs::status(repo / ".git" / "hooks" / "pre-push").permissions();
+    GG_CHECK((perms & fs::perms::owner_exec) != fs::perms::none);
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "after the migration"});
+    GG_CHECK(s.waitUntil([&] { return panelOps(s, "git") == 1; }));
+    s.settle();
+    GG_CHECK_EQ(countOps(repo, "git"), 1u);
+}
+
+GG_TEST("reconcile", "legacy wrapper scripts under a relative core.hooksPath are uninstalled on open, byte-exact")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path dir = repo / ".githooks";
+    s.git(repo, {"config", "core.hooksPath", ".githooks"});
+    s.write(dir, "pre-push", "#!/bin/sh\n# the user's own hook\nexit 0\n");
+    fs::permissions(dir / "pre-push", fs::perms::owner_all);
+    const std::string configBefore = s.read(repo / ".git", "config");
+    const auto before = hookFiles(s, dir);
+    installLegacyHooks(s, repo, false, dir);
+    GG_REQUIRE(hookFiles(s, dir) != before);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return legacyGone(s, repo) && hookFiles(s, dir) == before; }));
+    s.settle();
+    GG_CHECK(hookFiles(s, dir) == before);
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore); // core.hooksPath stays
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
+GG_TEST("reconcile", "legacy config-mode hooks are uninstalled when ggui opens a linked worktree")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path wt = s.root() / "linked";
+    s.git(repo, {"worktree", "add", "-q", "-b", "linked", wt.string()});
+    s.track(wt);
+    const std::string configBefore = s.read(repo / ".git", "config");
+    installLegacyHooks(s, repo, true);
+    GG_REQUIRE(!legacyGone(s, repo));
+    GG_REQUIRE(s.openRepository(wt));
+    GG_CHECK(s.waitUntil([&] { return legacyGone(s, repo); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
+GG_TEST("reconcile", "legacy managed hooks are uninstalled silently by git gg too")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string configBefore = s.read(repo / ".git", "config");
+    s.write(repo / ".git" / "hooks", "pre-push", "#!/bin/sh\n# the user's own hook\nexit 0\n");
+    fs::permissions(repo / ".git" / "hooks" / "pre-push", fs::perms::owner_all);
+    const auto before = hookFiles(s, repo / ".git" / "hooks");
+    installLegacyHooks(s, repo, false);
+    installLegacyHooks(s, repo, true); // a stale install of both kinds
+    const auto r = s.gitgg(repo, {"op", "log"});
+    GG_REQUIRE(r.ok());
+    GG_CHECK(r.err.empty());
+    GG_CHECK(legacyGone(s, repo));
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
+    GG_CHECK(hookFiles(s, repo / ".git" / "hooks") == before);
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "after the migration"});
+    GG_REQUIRE(s.gitgg(repo, {"op", "log"}).ok());
+    GG_CHECK_EQ(countOps(repo, "git"), 1u);
+}
+
+GG_TEST("reconcile", "git gg hooks uninstall removes a legacy install and says so")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string configBefore = s.read(repo / ".git", "config");
+    installLegacyHooks(s, repo, true);
+    const auto r = s.gitgg(repo, {"hooks", "uninstall"});
+    GG_CHECK(r.ok());
+    GG_CHECK(r.out.find("Removed") != std::string::npos);
+    GG_CHECK(legacyGone(s, repo));
+    GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
 }
 
 GG_TEST("reconcile", "another worktree's HEAD is never treated as deleted or created")

@@ -238,10 +238,6 @@ public:
     void undo(bool redo);
     void restore(const std::string& operationId);
 
-    // ---- hooks and old gg data -------------------------------------------------------------
-    void installHooks(Callback done = {});
-    void uninstallHooks(Callback done = {});
-
     // External tools (not journaled).
     void openInEditor(const std::string& path);
     void externalDiff(const std::string& path, const std::vector<std::string>& revs);

@@ -94,27 +94,6 @@ void AsyncIo::loop()
 
 namespace {
 
-const char* hooksName(HooksAnswer a)
-{
-    switch (a) {
-    case HooksAnswer::Installed: return "installed";
-    case HooksAnswer::NotNow: return "not-now";
-    case HooksAnswer::Never: return "never";
-    default: return "unasked";
-    }
-}
-
-HooksAnswer hooksFrom(const std::string& s)
-{
-    if (s == "installed")
-        return HooksAnswer::Installed;
-    if (s == "not-now")
-        return HooksAnswer::NotNow;
-    if (s == "never")
-        return HooksAnswer::Never;
-    return HooksAnswer::Unasked;
-}
-
 std::string readAll(const fs::path& p)
 {
     std::ifstream f(p, std::ios::binary);
@@ -149,10 +128,6 @@ nlohmann::json toJson(const SettingsData& d)
     j["theme"] = d.theme == Theme::Light ? "light" : "dark";
     j["recent"] = d.recent;
     j["recentOrder"] = d.recentOrder == RecentOrder::Alphabetical ? "alphabetical" : "recent";
-    nlohmann::json repos = nlohmann::json::object();
-    for (const auto& [path, prefs] : d.repos)
-        repos[path] = {{"hooks", hooksName(prefs.hooks)}};
-    j["repos"] = repos;
     j["panels"] = d.panels;
     j["diff"] = {{"sideBySide", d.diffSideBySide}, {"context", d.diffContext}, {"whitespace", d.diffWhitespace}};
     j["historyShowStashes"] = d.historyShowStashes;
@@ -160,7 +135,6 @@ nlohmann::json toJson(const SettingsData& d)
         : d.nothingStaged == NothingStaged::StageSelected                 ? "stage-selected"
                                                                           : "ask";
     j["expandStagesOnCheckout"] = d.expandStagesOnCheckout;
-    j["askHooksOnOpen"] = d.askHooksOnOpen;
     j["expandConflictStages"] = d.expandConflictStages;
     j["window"] = {{"x", d.windowX}, {"y", d.windowY}, {"w", d.windowW}, {"h", d.windowH}, {"maximized", d.windowMaximized}};
     return j;
@@ -180,12 +154,6 @@ SettingsData fromJson(const nlohmann::json& j)
     d.recent = uniqueRepoPaths(d.recent);
     d.recentOrder = j.value("recentOrder", std::string("recent")) == "alphabetical" ? RecentOrder::Alphabetical
                                                                                     : RecentOrder::MostRecent;
-    if (j.contains("repos") && j["repos"].is_object())
-        for (auto it = j["repos"].begin(); it != j["repos"].end(); ++it) {
-            RepoPrefs p;
-            p.hooks = hooksFrom(it.value().value("hooks", std::string("unasked")));
-            d.repos[it.key()] = p;
-        }
     if (j.contains("panels") && j["panels"].is_object())
         for (auto it = j["panels"].begin(); it != j["panels"].end(); ++it)
             if (it.value().is_boolean())
@@ -201,7 +169,6 @@ SettingsData fromJson(const nlohmann::json& j)
         : ns == "stage-selected"        ? NothingStaged::StageSelected
                                         : NothingStaged::Ask;
     d.expandStagesOnCheckout = j.value("expandStagesOnCheckout", false);
-    d.askHooksOnOpen = j.value("askHooksOnOpen", true);
     d.expandConflictStages = j.value("expandConflictStages", false);
     if (j.contains("window") && j["window"].is_object()) {
         const auto& w = j["window"];

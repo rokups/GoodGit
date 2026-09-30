@@ -59,7 +59,7 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Git GUI with first-class conflicts and un
 set(CPACK_PACKAGE_DESCRIPTION
     "ggui is a desktop Git client with an undo journal, first-class (in-file) conflicts,\n"
     "in-memory history editing and an interactive rebase editor. It ships git-gg, the\n"
-    "`git gg` subcommand (undo, redo, managed hooks, sequence editor).")
+    "`git gg` subcommand (undo, redo, sequence editor).")
 string(REPLACE ";" "" CPACK_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_RESOURCE_FILE_LICENSE ${PROJECT_SOURCE_DIR}/LICENSE)

@@ -7,7 +7,6 @@
 
 #include <libgg/Conflicts.hpp>
 #include <libgg/GitRunner.hpp>
-#include <libgg/Hooks.hpp>
 #include <libgg/Journal.hpp>
 #include <libgg/Legacy.hpp>
 #include <libgg/Operation.hpp>
@@ -34,7 +33,6 @@ constexpr int kSlotDetails = 40;
 constexpr int kSlotMessages = 41;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
-constexpr int kSlotHooks = 5;
 constexpr int kSlotCommitWarnings = 7;
 constexpr int kSlotReconcile = 6;
 constexpr int kSlotRebasePreview = 1;
@@ -186,14 +184,15 @@ RequestId Engine::open()
         simulateLatency(job.token);
         job.worker.resetRepo();
         git_repository* repo = job.repo();
-        // Leftover refs/gg/* of the old gg: deleted silently, not journaled (spec C3).
+        // What older versions left (managed git hooks, refs/gg/*): removed silently, not journaled.
         {
-            std::string error;
-            int deleted = 0;
-            if (gg::removeLegacyGgRefs(repo, &error, &deleted))
-                spdlog::info("removed {} leftover refs/gg/* refs of the old gg", deleted);
-            else if (!error.empty())
-                spdlog::warn("could not remove leftover refs/gg/* refs: {}", error);
+            const gg::LegacyMigration migration = gg::migrateLegacy(repo);
+            if (migration.hooksRemoved)
+                spdlog::info("uninstalled the managed git hooks of an older version");
+            if (migration.refsDeleted > 0)
+                spdlog::info("removed {} leftover refs/gg/* refs of the old gg", migration.refsDeleted);
+            if (!migration.error.empty())
+                spdlog::warn("{}", migration.error);
         }
         SnapshotPtr snap = readSnapshot(repo, ++m_generation, job.token);
         gg::throwIfCancelled(job.token);
@@ -520,7 +519,6 @@ RequestId Engine::readOperations()
         OperationsEvent ev;
         ev.request = job.id;
         ev.operations = journal.read(&ev.error, &ev.skipped);
-        ev.hooksInstalled = gg::reconcile::hooksInstalled(repo);
         emit(std::move(ev));
     });
 }
@@ -635,16 +633,6 @@ RequestId Engine::readRemoteTags(std::vector<std::string> remotes)
                 emit(std::move(ev));
             }
         });
-}
-
-RequestId Engine::readHooksStatus()
-{
-    return submit(Queue::Snapshot, "Reading hook status", kSlotHooks, true, [this](Job& job) {
-        git_repository* repo = job.repo();
-        const std::filesystem::path dir = git_repository_workdir(repo) ? std::filesystem::path(git_repository_workdir(repo))
-                                                                        : std::filesystem::path(git_repository_path(repo));
-        emit(HooksEvent{job.id, gg::hooks::status(dir)});
-    });
 }
 
 RequestId Engine::readCommitWarnings()

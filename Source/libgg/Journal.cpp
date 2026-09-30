@@ -383,7 +383,7 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
         }
         // Unknown record types are ignored (minor additions stay compatible).
     }
-    // Operations opened by hooks for plain git commands close when that git process is gone
+    // Operations opened for plain git commands (by the managed hooks of older versions) close when that git process is gone
     // (or after 10 minutes). One that spans a native rebase stays open until its end record.
     const std::int64_t now = nowMs();
     for (auto& op : ops) {
@@ -413,7 +413,7 @@ bool Journal::hasOpenOperation(const std::string& id, size_t bytes) const
     const std::string key = "\"op\":\"" + id + "\"";
     // Any record of the operation means it was begun: its begin, or a later record when the begin
     // is further back (git before 2.51 fetches with one ref transaction per ref, so a big fetch
-    // writes more than the tail). A process keeps its operation even after a post-* hook ended it.
+    // writes more than the tail). A process keeps its operation even after a post-* hook of an older version ended it.
     return tail.find(key) != std::string::npos;
 }
 

@@ -222,8 +222,6 @@ void isolateEnvironment(const fs::path& dir)
     fs::create_directories(home / ".config" / "git");
     fs::create_directories(dir / "prefs");
     writeGlobalGitConfig(home);
-    // Scenarios start without the first-open hooks prompt; hook scenarios turn it on.
-    std::ofstream(dir / "prefs" / "settings.json") << "{\"askHooksOnOpen\": false}\n";
     ggui::setEnv("HOME", home.string());
     ggui::setEnv("USERPROFILE", home.string());
     ggui::setEnv("XDG_CONFIG_HOME", (home / ".config").string());
@@ -245,10 +243,7 @@ void isolateEnvironment(const fs::path& dir)
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
     ggui::unsetEnv("GGUI_TEST_PICK_CANCEL");
     ggui::unsetEnv("GIT_SSH_COMMAND");
-    ggui::unsetEnv("GG_HOOKS_MODE");
     ggui::unsetEnv("GG_GGUI");
-    ggui::unsetEnv("GG_DEBUG_PROCESS");
-    ggui::unsetEnv("GG_HOOK_SHELL");
     ggui::setEnv("EDITOR", "true");
     gg::git2::resetConfigSearchPaths();
 }

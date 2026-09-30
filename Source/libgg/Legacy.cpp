@@ -2,8 +2,9 @@
 
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
+#include "libgg/HooksLegacy.hpp"
 
-#include <optional>
+#include <exception>
 #include <vector>
 
 namespace gg {
@@ -37,8 +38,6 @@ bool removeLegacyGgRefs(git_repository* repo, std::string* error, int* deleted)
     request.args = {"git", "update-ref", "--no-deref", "--stdin"};
     request.cwd = workdir ? workdir : git_repository_path(repo);
     request.input = std::move(input);
-    request.env.emplace_back("GG_OPERATION", std::nullopt); // never joins a journaled operation
-    request.env.emplace_back("GG_NO_JOURNAL", "1");          // nor makes managed hooks open one
     const RunResult result = run(request);
     if (!result.ok()) {
         if (error)
@@ -48,6 +47,27 @@ bool removeLegacyGgRefs(git_repository* repo, std::string* error, int* deleted)
     if (deleted)
         *deleted = static_cast<int>(names.size());
     return true;
+}
+
+LegacyMigration migrateLegacy(git_repository* repo)
+{
+    LegacyMigration result;
+    // The hooks first: a stale install would otherwise see the ref deletion.
+    try {
+        if (hooks::installed(repo)) {
+            std::string error;
+            if (hooks::uninstall(repo, error))
+                result.hooksRemoved = true;
+            else
+                result.error = "could not uninstall the managed git hooks: " + error;
+        }
+    } catch (const std::exception& e) {
+        result.error = std::string("could not uninstall the managed git hooks: ") + e.what();
+    }
+    std::string error;
+    if (!removeLegacyGgRefs(repo, &error, &result.refsDeleted) && !error.empty() && result.error.empty())
+        result.error = "could not remove leftover refs/gg/* refs: " + error;
+    return result;
 }
 
 } // namespace gg

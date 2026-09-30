@@ -123,13 +123,10 @@ public:
     const ConflictList* conflictsOf(const core::Oid& id) const;
     const std::unordered_map<core::Oid, ConflictList, core::OidHash>& conflicts() const { return m_conflicts; }
     const std::vector<gg::journal::Operation>& operations() const { return m_operations; }
-    bool hooksInstalled() const { return m_hooksInstalled; }
     // The Edit commit session (§4.3), read with each snapshot; a stale one (HEAD no longer
     // detached, or its branch gone) is cleared.
     const std::optional<gg::edit::Session>& editSession() const { return m_editSession; }
     void stopEditing();
-    const std::optional<gg::hooks::Status>& hooksStatus() const { return m_hooksStatus; }
-    void requestHooksStatus();
     // What committing the staged files would make or leave conflicted (read off the UI thread on every
     // status change and when the commit dialog opens); never blocks.
     const std::vector<gg::outgoing::StagedWarning>& commitWarnings() const { return m_commitWarnings; }
@@ -201,7 +198,6 @@ public:
     std::string newCommitBranch(const core::Oid& at) const;
     void pushCurrent();
     void popStash();
-    void maybePromptHooks();
 
     HistoryPanel& history() { return *m_history; }
     ChangesPanel& changes() { return *m_changes; }
@@ -233,10 +229,7 @@ private:
     bool m_stashRewordPending = false;
     std::unordered_map<core::Oid, ConflictList, core::OidHash> m_conflicts;
     std::vector<gg::journal::Operation> m_operations;
-    bool m_hooksInstalled = false;
     std::optional<gg::edit::Session> m_editSession;
-    std::optional<gg::hooks::Status> m_hooksStatus;
-    bool m_hooksPromptChecked = false;
     std::vector<gg::outgoing::StagedWarning> m_commitWarnings;
     std::map<std::string, std::map<std::string, std::string>> m_config;
     std::map<std::string, RemoteTags> m_remoteTags;

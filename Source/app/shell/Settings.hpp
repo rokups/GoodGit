@@ -46,20 +46,14 @@ private:
 };
 
 enum class Theme { Dark, Light };
-enum class HooksAnswer { Unasked, Installed, NotNow, Never };
 enum class NothingStaged { Ask, StageAll, StageSelected };
 enum class RecentOrder { MostRecent, Alphabetical }; // order of the Recent lists (storage stays by recency)
-
-struct RepoPrefs {
-    HooksAnswer hooks = HooksAnswer::Unasked;
-};
 
 struct SettingsData {
     float uiScale = 1.0f;          // 0.5 – 3.0
     Theme theme = Theme::Dark;
     std::vector<std::string> recent; // most recent first, unique (normalised paths)
     RecentOrder recentOrder = RecentOrder::MostRecent;
-    std::map<std::string, RepoPrefs> repos;
     std::map<std::string, bool> panels; // window name → visible
     // Diff panel
     bool diffSideBySide = false;
@@ -67,7 +61,6 @@ struct SettingsData {
     int diffWhitespace = 0;
     bool historyShowStashes = true;
     NothingStaged nothingStaged = NothingStaged::Ask;
-    bool askHooksOnOpen = true;    // first-open prompt for the managed hooks (H1)
     bool expandConflictStages = false; // §4.10: index stages 1–3 for two-sided first-class conflicts on checkout
     bool expandStagesOnCheckout = false;
     // Main window placement (custom imgui.ini handler)
@@ -95,7 +88,6 @@ public:
 
     void addRecent(const std::string& path);
     void forgetRecent(const std::string& path);
-    RepoPrefs& repo(const std::string& path) { return m_data.repos[path]; }
 
 private:
     AsyncIo& m_io;

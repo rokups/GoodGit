@@ -77,7 +77,7 @@ GG_MANUAL_TEST("gallery", "welcome, settings tabs")
     shot(s, "welcome");
     s.app.openSettings();
     ctx->Yield(2);
-    for (const char* tab : {"General", "Git", "Hooks"}) {
+    for (const char* tab : {"General", "Git"}) {
         ctx->ItemClick((std::string("//Settings/##settings_tabs/") + tab).c_str());
         shot(s, std::string("settings-") + tab);
     }
@@ -306,7 +306,7 @@ GG_MANUAL_TEST("gallery", "light theme and 150 percent")
     setLook(s, "Light", 100);
     ctx->Yield(3);
     shot(s, "settings-light-General");
-    for (const char* tab : {"Git", "Hooks"}) {
+    for (const char* tab : {"Git"}) {
         ctx->ItemClick((std::string("//Settings/##settings_tabs/") + tab).c_str());
         shot(s, std::string("settings-light-") + tab);
     }

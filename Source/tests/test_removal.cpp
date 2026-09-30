@@ -49,9 +49,7 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     s.git(repo, {"switch", "-q", "side"});
     s.commitFile(repo, "shared.txt", "side\n", "Side edits shared");
     s.git(repo, {"switch", "-q", "main"});
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
     GG_REQUIRE(s.openRepository(repo));
-    GG_CHECK(s.waitUntil([&] { return s.session()->hooksInstalled(); }));
 
     // ggui: in-memory rebase whose text conflict becomes first-class (it lives in the file only).
     const std::string before = s.head(repo);
@@ -93,7 +91,7 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     GG_CHECK(s.waitUntil([&] { return subjectOf(s, repo, "HEAD~1") == "Reworded by ggui"; }));
     s.settle();
 
-    // git gg and plain git (journaled by the managed hooks).
+    // git gg and plain git (journaled by the reconciler).
     GG_REQUIRE(s.gitgg(repo, {"new", "-m", "From git gg"}).ok());
     GG_REQUIRE(s.gitgg(repo, {"undo"}).ok());
     GG_REQUIRE(s.gitgg(repo, {"redo"}).ok());
@@ -111,13 +109,13 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
             ctx->LogError("unexpected ref %s", ref.c_str());
         GG_CHECK(gitOwn);
     }
-    // .git/gg: the journal, the conflict-scan cache and the managed-hook runner, nothing else.
+    // .git/gg: the journal, the conflict-scan cache and the reconciler state, nothing else.
     std::set<std::string> entries;
     for (const auto& e : fs::directory_iterator(repo / ".git" / "gg"))
         entries.insert(e.path().filename().string());
     GG_CHECK(entries.count("journal") == 1);
     for (const auto& name : entries) {
-        const bool allowed = name == "journal" || name == "cache" || name == "hooks" || name == "reconcile.json";
+        const bool allowed = name == "journal" || name == "cache" || name == "reconcile.json";
         if (!allowed)
             ctx->LogError("unexpected entry .git/gg/%s", name.c_str());
         GG_CHECK(allowed);
@@ -130,7 +128,6 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     const std::string statusBefore = s.statusPorcelain(repo);
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "uninstall"}).ok());
     removeAll(repo / ".git" / "gg");
     GG_REQUIRE(s.openRepository(repo));
     s.settle();

@@ -66,7 +66,7 @@ int sameChangeIndex(const std::string& v)
 }
 
 // sequence.editor that makes plain `git rebase -i` open ggui's todo editor. git-gg must be
-// on PATH for git (like the managed hooks).
+// on PATH for git (Settings adds it to the login PATH, for `git gg` in a terminal).
 constexpr const char* kGguiSequenceEditor = "git gg sequence-editor";
 // Where turning the option on keeps a sequence.editor it replaced (same scope), for turning it off.
 constexpr const char* kPreviousSequenceEditor = "gg.previousSequenceEditor";
@@ -443,48 +443,6 @@ void App::drawSettingsWindow()
             ImGui::EndTabItem();
         } else {
             m_configLoaded = false; // read again when the tab is shown (plain git may have changed it)
-        }
-        if (ImGui::BeginTabItem("Hooks")) {
-            ImGui::Checkbox("Ask to install the ggui hooks when opening a repository##ask_hooks", &d.askHooksOnOpen);
-            if (ImGui::IsItemDeactivatedAfterEdit())
-                m_settings.save();
-            ImGui::Separator();
-            if (!s) {
-                ImGui::TextDisabled("Open a repository to manage its hooks.");
-            } else {
-                const auto& st = s->hooksStatus();
-                if (!st) {
-                    ImGui::TextDisabled("Reading hook status...");
-                } else {
-                    ImGui::Text("Status: %s", st->installed ? (st->mode == gg::hooks::Mode::Config ? "installed (config-defined hooks)"
-                                                                                                  : "installed (wrapper scripts)")
-                            : st->partial ? "partially installed"
-                                          : "not installed");
-                    if (!st->gitGgFound)
-                        ImGui::TextDisabled("git-gg is not on PATH: the hooks do nothing for plain git.");
-                }
-                ImGui::TextWrapped("With the hooks, Undo and the Operations panel also cover plain git commands, and "
-                                   "plain git push refuses commits with first-class conflicts. Existing hooks keep running.");
-                const bool free = s->actions().busy().empty();
-                ImGui::BeginDisabled(!free);
-                if (button(ICON_MS_DOWNLOAD, "Install hooks##install_hooks"))
-                    s->actions().installHooks([s](const core::MutationFinishedEvent& e) {
-                        if (e.outcome != core::Outcome::Ok)
-                            s->app().showError("Install hooks", e.message);
-                        s->requestHooksStatus();
-                        s->engine().readOperations();
-                    });
-                ImGui::SameLine();
-                if (button(ICON_MS_DELETE, "Remove hooks##remove_hooks"))
-                    s->actions().uninstallHooks([s](const core::MutationFinishedEvent& e) {
-                        if (e.outcome != core::Outcome::Ok)
-                            s->app().showError("Remove hooks", e.message);
-                        s->requestHooksStatus();
-                        s->engine().readOperations();
-                    });
-                ImGui::EndDisabled();
-            }
-            ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }

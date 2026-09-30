@@ -92,8 +92,6 @@ EnvMap buildEnvironment(const RunRequest& request)
             env["SSH_ASKPASS_REQUIRE"] = "force";
             env["GG_ASKPASS_ENDPOINT"] = askpassEndpoint();
         }
-        if (!t_operation.empty())
-            env["GG_OPERATION"] = t_operation;
     }
     for (const auto& [key, value] : request.env) {
         if (value)

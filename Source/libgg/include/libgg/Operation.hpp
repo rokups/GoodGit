@@ -1,7 +1,7 @@
 // Recording one operation in the undo journal (product spec §5 U1), shared by ggui's mutation
 // pipeline and git-gg: reads refs (and optionally the index tree) before and after, writes the
-// journal records and exports GG_OPERATION to child git processes so managed hooks join the
-// operation instead of creating duplicates (loop guard).
+// journal records, and moves the reconciler's reflog cursor past them so the reconciler does not
+// record the same changes again.
 #pragma once
 
 #include "libgg/Git2.hpp"
@@ -32,7 +32,7 @@ public:
 
     // For undo/redo operations.
     void setUndoes(std::string id, bool redo);
-    // Writes the begin record and exports GG_OPERATION. Recording problems never fail the
+    // Writes the begin record. Recording problems never fail the
     // operation itself (the journal is history only). While a native rebase is in progress the
     // recorder joins that rebase's operation instead (NativeRebase.hpp); an operation that starts
     // a rebase stays open until the rebase is finished.

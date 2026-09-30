@@ -611,19 +611,6 @@ std::string lumpLabel(git_repository* repo, const std::vector<journal::RefChange
 
 } // namespace
 
-bool hooksInstalled(git_repository* repo)
-{
-    gg::git2::Config cfg = gg::git2::repositoryConfig(repo);
-    if (gg::git2::configString(cfg.get(), "hook.ggui-reference-transaction.command").has_value())
-        return true;
-    const fs::path common = git_repository_commondir(repo);
-    fs::path hooksDir = common / "hooks";
-    if (auto p = gg::git2::configString(cfg.get(), "core.hooksPath"))
-        hooksDir = fs::path(*p);
-    std::error_code ec;
-    return fs::exists(hooksDir / "reference-transaction.gg-previous", ec) || fs::exists(common / "gg" / "hooks" / "run", ec);
-}
-
 std::string reflogActionWord(const std::string& message)
 {
     return firstWord(actionPart(message));
@@ -656,10 +643,6 @@ bool advanceCursor(git_repository* repo, std::string* error)
 Result run(git_repository* repo, std::string* error)
 {
     Result result;
-    if (hooksInstalled(repo)) {
-        result.skipped = true;
-        return result;
-    }
     const fs::path common = git_repository_commondir(repo);
     journal::Journal j{common};
     journal::Journal::Transaction t(j);

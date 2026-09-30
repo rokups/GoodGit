@@ -15,7 +15,6 @@
 
 #include <libgg/Cancel.hpp>
 #include <libgg/GitRunner.hpp>
-#include <libgg/Hooks.hpp>
 #include <libgg/Outgoing.hpp>
 #include <libgg/Journal.hpp>
 #include <libgg/Todo.hpp>
@@ -133,7 +132,6 @@ struct OperationsEvent {
     std::vector<gg::journal::Operation> operations; // journal order
     size_t skipped = 0;
     std::string error;
-    bool hooksInstalled = false;
 };
 
 struct CommitConflicts {
@@ -161,11 +159,6 @@ struct ConfigEvent {
     std::map<std::string, std::map<std::string, std::string>> values;
 };
 
-struct HooksEvent {
-    RequestId request = 0;
-    gg::hooks::Status status;
-};
-
 // The staged files a commit would make (or leave) conflicted (gg::outgoing::stagedConflictWarnings).
 struct CommitWarningsEvent {
     RequestId request = 0;
@@ -179,7 +172,7 @@ struct RebasePreviewEvent {
 
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, CommitMessagesEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
-    MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, HooksEvent, RebasePreviewEvent,
+    MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, RebasePreviewEvent,
     RemoteTagsEvent, CommitWarningsEvent>;
 
 class Engine;
@@ -290,7 +283,6 @@ public:
     // The tags on each remote, one RemoteTagsEvent per remote. Never asks for credentials (a remote
     // that needs them reports an error); on its own queue so a slow remote holds up nothing else.
     RequestId readRemoteTags(std::vector<std::string> remotes);
-    RequestId readHooksStatus();
     // The warnings the commit dialog shows for what is staged (CommitWarningsEvent; a newer
     // request replaces an older one).
     RequestId readCommitWarnings();

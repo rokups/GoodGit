@@ -33,7 +33,7 @@ struct RunRequest {
     CancelToken cancel = CancelToken::none();
     std::function<void(const GitProgress&)> onProgress; // called on the calling thread
     bool cLocale = true;                  // LC_ALL=C (parsed output)
-    bool gitEnvironment = true;           // GIT_TERMINAL_PROMPT=0, askpass, GG_OPERATION
+    bool gitEnvironment = true;           // GIT_TERMINAL_PROMPT=0, askpass
 };
 
 struct RunResult {
@@ -67,7 +67,7 @@ void setAskpassProgram(std::string program, std::string endpoint = {});
 std::string askpassProgram();
 std::string askpassEndpoint();
 
-// The journal operation open on this thread; exported as GG_OPERATION to child git.
+// The journal operation open on this thread (thread-local; not passed to child processes).
 void setCurrentOperation(std::string id);
 std::string currentOperation();
 

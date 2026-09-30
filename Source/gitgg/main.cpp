@@ -1,11 +1,11 @@
 // git-gg: the `git gg` subcommand (product spec §6). Deliberately minimal and fast to start:
-// hooks run it on every ref update, so there is no repository scan beyond what a command needs.
+// there is no repository scan beyond what a command needs.
 //
 //   git gg new [-m MSG] [--detach] [PARENT...]
 //   git gg undo | redo | op log
 //   git gg conflicts [REV]           exit 1 when REV has first-class conflicts
-//   git gg hooks install|uninstall|status
-//   git gg hook <name> [ARGS...]     entry point for the managed hooks
+//   git gg hooks uninstall           removes managed hooks left by older versions
+//   git gg hook <name> [ARGS...]     does nothing: what stale hooks of older versions still call
 //   git gg ui [PATH]
 //   git gg sequence-editor FILE      sequence.editor for plain git rebase -i (ggui's todo editor), and
 //                                    internal GIT_SEQUENCE_EDITOR / GIT_EDITOR of ggui's git rebase -i
@@ -25,7 +25,7 @@
 #include <libgg/Conflicts.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
-#include <libgg/Hooks.hpp>
+#include <libgg/HooksLegacy.hpp>
 #include <libgg/Journal.hpp>
 #include <libgg/Launch.hpp>
 #include <libgg/Legacy.hpp>
@@ -39,6 +39,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <iostream>
@@ -65,14 +66,16 @@ const std::map<std::string, std::string>& helpTexts()
                 "    --before <commit>     insert the new commit before <commit> (descendants rebased)\n"
                 "    --after <commit>      insert it after <commit> (descendants rebased)\n"},
         {"undo", "usage: git gg undo\n\nUndoes the last operation recorded in the undo journal (ggui, git gg, or plain\n"
-                 "git when the managed hooks are installed). Refs and the index are restored; the working\n"
+                 "git). Refs and the index are restored; the working\n"
                  "tree only when nothing would be lost.\n"},
         {"redo", "usage: git gg redo\n\nRedoes the last undone operation (an undo of the undo).\n"},
         {"op", "usage: git gg op log\n\nLists the operations in the undo journal, newest first.\n"},
         {"conflicts", "usage: git gg conflicts [<rev>]\n\nLists files with first-class conflicts in <rev> (default HEAD).\n"
                       "Exit status 1 when there are any.\n"},
-        {"hooks", "usage: git gg hooks (install | uninstall | status)\n\nManages the chained ggui hooks of this repository.\n"},
-        {"hook", "usage: git gg hook <hook-name> [<args>...]\n\nEntry point called by the managed hooks; not for interactive use.\n"},
+        {"hooks", "usage: git gg hooks uninstall\n\nRemoves the managed hooks that older versions installed in this repository\n"
+                  "(ggui and git gg also do this whenever they open a repository). The managed hooks no longer\n"
+                  "exist: Undo covers plain git without them.\n"},
+        {"hook", "usage: git gg hook <hook-name> [<args>...]\n\nDoes nothing and exits 0. Hooks installed by older versions still call it.\n"},
         {"ui", "usage: git gg ui [<path>]\n\nStarts ggui on the repository.\n"},
         {"sequence-editor", "usage: git gg sequence-editor <file>\n\n"
                             "As sequence.editor (git config sequence.editor \"git gg sequence-editor\", or ggui's Settings):\n"
@@ -96,7 +99,7 @@ const char* kOverview =
     "    redo        redo the last undone operation\n"
     "    op log      list the operations in the undo journal\n"
     "    conflicts   list first-class conflicts in a commit (exit 1 when any)\n"
-    "    hooks       install, uninstall or show the managed hooks\n"
+    "    hooks       uninstall the managed hooks of older versions\n"
     "    ui          start ggui on the repository\n"
     "    sequence-editor  ggui's todo editor as sequence.editor for git rebase -i\n"
     "    help        show help for a command: git gg help <command>\n\n"
@@ -108,15 +111,16 @@ int fatal(const std::string& message)
     return kFatal;
 }
 
-gg::git2::Repository openHere()
+gg::git2::Repository openHere(bool migrate = true)
 {
     gg::git2::initLibrary();
     git_repository* raw = nullptr;
     if (git_repository_open_ext(&raw, ".", GIT_REPOSITORY_OPEN_FROM_ENV, nullptr) != 0)
         throw std::runtime_error("not a git repository (or any of the parent directories)");
     gg::git2::Repository repo(raw);
-    // Leftover refs/gg/* of the old gg: deleted silently, not journaled (spec C3).
-    gg::removeLegacyGgRefs(repo.get());
+    // Managed hooks and refs/gg/* left by older versions: removed silently.
+    if (migrate)
+        gg::migrateLegacy(repo.get());
     return repo;
 }
 
@@ -231,31 +235,20 @@ int cmdConflicts(const std::string& rev)
 
 int cmdHooks(const std::string& action)
 {
-    const fs::path here = fs::current_path();
+    if (action != "uninstall") {
+        std::cout << "managed hooks were removed; Undo covers plain git without them\n";
+        return 0;
+    }
+    auto repo = openHere(false);
+    if (!gg::hooks::installed(repo.get())) {
+        std::cout << "no managed hooks installed; nothing to do\n";
+        return 0;
+    }
     std::string error;
-    if (action == "install") {
-        if (!gg::hooks::install(here, error))
-            return fatal(error);
-        const auto s = gg::hooks::status(here);
-        std::cout << "Installed the ggui hooks (" << (s.mode == gg::hooks::Mode::Config ? "config-defined" : "wrapper scripts")
-                  << ").\n";
-        return 0;
-    }
-    if (action == "uninstall") {
-        if (!gg::hooks::uninstall(here, error))
-            return fatal(error);
-        std::cout << "Removed the ggui hooks.\n";
-        return 0;
-    }
-    const auto s = gg::hooks::status(here);
-    std::cout << (s.installed ? "installed" : s.partial ? "partially installed" : "not installed");
-    if (s.installed || s.partial)
-        std::cout << " (" << (s.mode == gg::hooks::Mode::Config ? "config-defined" : "wrapper scripts in " + s.hooksDir.string())
-                  << ")";
-    std::cout << "\n";
-    if (!s.gitGgFound)
-        std::cout << "warning: git-gg is not on PATH; the hooks do nothing\n";
-    return s.installed ? 0 : 1;
+    if (!gg::hooks::uninstall(repo.get(), error))
+        return fatal(error);
+    std::cout << "Removed the managed hooks of older versions.\n";
+    return 0;
 }
 
 int cmdUi(const std::string& path)
@@ -283,6 +276,10 @@ int main(int argc, char** argv)
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stderr), _O_BINARY);
 #endif
+    // `git gg hook ...` is what stale hooks of older versions still call: nothing to do, whatever the
+    // arguments, and never a failure or output for the git command that runs it.
+    if (argc >= 2 && std::strcmp(argv[1], "hook") == 0)
+        return 0;
     // Askpass mode: git runs $GIT_ASKPASS with the prompt as the only argument. A command name
     // ("undo", "help", ...) run from a terminal inside ggui is never a prompt.
     static const std::set<std::string> kCommands{"new", "undo", "redo", "op", "conflicts", "hooks", "hook", "ui",
@@ -317,7 +314,7 @@ int main(int argc, char** argv)
     std::string rev;
     conflictsCmd->add_option("rev", rev, "Revision (default HEAD)");
 
-    auto* hooksCmd = app.add_subcommand("hooks", "Manage the ggui hooks");
+    auto* hooksCmd = app.add_subcommand("hooks", "Uninstall the managed hooks of older versions");
     std::string hooksAction;
     hooksCmd->add_option("action", hooksAction, "install, uninstall or status")
         ->required()
@@ -326,7 +323,7 @@ int main(int argc, char** argv)
     auto* hookCmd = app.add_subcommand("hook", "Hook entry point (internal)");
     std::string hookName;
     std::vector<std::string> hookArgs;
-    hookCmd->add_option("name", hookName)->required();
+    hookCmd->add_option("name", hookName);
     hookCmd->add_option("args", hookArgs);
     hookCmd->allow_extras();
 
@@ -389,11 +386,8 @@ int main(int argc, char** argv)
             return cmdConflicts(rev);
         if (*hooksCmd)
             return cmdHooks(hooksAction);
-        if (*hookCmd) {
-            for (const auto& extra : hookCmd->remaining())
-                hookArgs.push_back(extra);
-            return gg::hooks::runHook(hookName, hookArgs, std::cin, std::cout, std::cerr);
-        }
+        if (*hookCmd)
+            return 0; // a stale hook of an older version: nothing to do, never fail the git command
         if (*uiCmd)
             return cmdUi(uiPath);
         if (*seqCmd)

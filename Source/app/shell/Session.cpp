@@ -83,7 +83,6 @@ void Session::handle(core::Event& event)
                 onSnapshot(e.snapshot, true);
                 m_engine->refreshStatus();
                 m_engine->readOperations();
-                requestHooksStatus();
             } else if constexpr (std::is_same_v<T, core::SnapshotEvent>) {
                 if (m_opened)
                     onSnapshot(e.snapshot, false);
@@ -147,7 +146,6 @@ void Session::handle(core::Event& event)
                 m_actions->onFinished(e);
             } else if constexpr (std::is_same_v<T, core::OperationsEvent>) {
                 m_operations = std::move(e.operations);
-                m_hooksInstalled = e.hooksInstalled;
                 // Once per problem: the watcher and a refresh may both read the same journal.
                 if (!e.error.empty() && e.error != m_journalError)
                     m_app.showError("Undo journal", e.error);
@@ -169,10 +167,6 @@ void Session::handle(core::Event& event)
                 m_config = std::move(e.values);
             } else if constexpr (std::is_same_v<T, core::CommitWarningsEvent>) {
                 m_commitWarnings = std::move(e.warnings);
-            } else if constexpr (std::is_same_v<T, core::HooksEvent>) {
-                m_hooksStatus = e.status;
-                m_hooksInstalled = e.status.installed;
-                maybePromptHooks();
             } else if constexpr (std::is_same_v<T, core::RebasePreviewEvent>) {
                 m_rebase->onPreview(e);
             }
@@ -280,8 +274,6 @@ const ConflictList* Session::conflictsOf(const core::Oid& id) const
     auto it = m_conflicts.find(id);
     return it == m_conflicts.end() ? nullptr : &it->second;
 }
-
-void Session::requestHooksStatus() { m_engine->readHooksStatus(); }
 
 void Session::requestRemoteTagsIfStale()
 {

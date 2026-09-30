@@ -542,10 +542,9 @@ GG_TEST("worktrees", "per-worktree journal: a worktree change is undone only fro
     GG_CHECK(s.waitUntil([&] { return shown(s, "scratch") != nullptr; }));
 }
 
-GG_TEST("worktrees", "with the managed hooks: Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone")
+GG_TEST("worktrees", "Add is one operation Undo reverts; a plain git worktree add in a terminal does not move the main worktree's HEAD, and Undo leaves its branch alone")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Worktrees");
     const fs::path hooked = s.root() / "hooked";
@@ -556,7 +555,7 @@ GG_TEST("worktrees", "with the managed hooks: Add is one operation Undo reverts;
     GG_REQUIRE(s.waitUntil([&] { return registered(s, repo, hooked).has_value(); }));
     s.settle();
     s.track(hooked);
-    // The hooks joined ggui's operation: the new branch, and no HEAD change for the main worktree.
+    // The new branch joined ggui's operation, and no HEAD change for the main worktree.
     const auto& ops = s.session()->operations();
     GG_REQUIRE(!ops.empty());
     GG_CHECK_STR_EQ(ops.back().label, "add worktree hooked");
@@ -568,11 +567,12 @@ GG_TEST("worktrees", "with the managed hooks: Add is one operation Undo reverts;
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/main");
 
-    // The same from a terminal: the hooks see the new branch; the new worktree's HEAD is not the
-    // main worktree's.
+    // The same from a terminal: the reconciler sees the new branch; the new worktree's HEAD is not
+    // the main worktree's.
     const fs::path term = s.root() / "term";
     s.git(repo, {"worktree", "add", "-q", "-b", "term", term.string()});
     s.track(term);
+    GG_REQUIRE(s.waitUntil([&] { return s.read(repo, ".git/gg/journal").find("\"refs/heads/term\"") != std::string::npos; }));
     const std::string journal = s.read(repo, ".git/gg/journal");
     GG_CHECK(journal.find("\"refs/heads/term\"") != std::string::npos);
     GG_CHECK(journal.find("\"HEAD\",\"ref:refs/heads/main\",\"ref:refs/heads/term\"") == std::string::npos);

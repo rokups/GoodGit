@@ -17,7 +17,7 @@ namespace gg::reconcile {
 struct Result {
     size_t appended = 0;   // operations written
     bool deferred = false; // another process has an operation open; it will record its own changes
-    bool skipped = false;  // nothing done: managed hooks journal plain git, or the journal lock is busy
+    bool skipped = false;  // nothing done: the journal lock is busy or unreadable
 };
 
 // One reconcile pass. Safe to call from any thread, never while this thread holds a Journal::Transaction.
@@ -33,9 +33,5 @@ bool advanceCursor(git_repository* repo, std::string* error = nullptr);
 // "pull --rebase origin (start): x" -> "pull". What Undo uses to tell commands that update the
 // working tree from the ones that do not.
 std::string reflogActionWord(const std::string& message);
-
-// Cheap check: are the managed reference-transaction hooks installed? While they are, plain git
-// is journaled by them and `run` does nothing.
-bool hooksInstalled(git_repository* repo);
 
 } // namespace gg::reconcile

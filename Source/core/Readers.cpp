@@ -709,7 +709,7 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
     // Edited files: their content on disk decides. A file whose HEAD version was conflicted but
     // whose edit is no longer conflicted may have broken the region instead of resolving it
     // (deleted a "=======" / "|||||||" line, leaving "<<<<<<<"/">>>>>>>" behind as plain text):
-    // record that on its ordinary Modified entry so Changes and the hooks can warn about it.
+    // record that on its ordinary Modified entry so Changes and the commit warning can warn about it.
     std::map<std::string, std::vector<size_t>> broken;
     for (const auto& path : changed) {
         if (native.count(path))

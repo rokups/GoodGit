@@ -48,7 +48,7 @@ bool updatesWorktree(const std::string& cmd)
     return false;
 }
 
-// Whether a plain git operation updated the working tree. The hooks of the old gg recorded the
+// Whether a plain git operation updated the working tree. The managed hooks of older ggui versions recorded the
 // command line (ids "git-<pid>-<start>"); the reconciler records the reflog message ("checkout:
 // moving from a to b"), and its action word says: commit never carries, the others do (the
 // clean-tree check then decides, which also covers the reset modes).
@@ -75,7 +75,7 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         std::string ignored;
         reconcile::run(repo, &ignored);
     }
-    // A native rebase finished where the hooks could not see it: its operation ends now.
+    // A native rebase that finished or was quit while the reconcile pass above was deferred: its operation ends now.
     native::closeFinishedGroup(repo, journal);
     std::string readError;
     auto ops = journal.read(&readError);

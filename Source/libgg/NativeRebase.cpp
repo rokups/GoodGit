@@ -51,7 +51,7 @@ std::optional<Group> readGroup(const fs::path& dir)
     const auto lines = splitLines(*text);
     if (lines.empty() || lines[0].empty())
         return std::nullopt;
-    // The third line is the opener's src; older state files (hooks: ids "git-<pid>-<start>") have none.
+    // The third line is the opener's src; older state files (managed hooks of older versions: ids "git-<pid>-<start>") have none.
     std::string src = lines.size() > 2 ? lines[2] : std::string();
     if (src.empty())
         src = lines[0].rfind("git-", 0) == 0 ? "git" : "ggui";
@@ -67,7 +67,7 @@ void removeState(const fs::path& dir)
 }
 
 // Older git (2.36 at least) puts HEAD back on the rebased branch (finish, abort) without a ref
-// transaction, so the hooks never see it. When the rebase's operation recorded HEAD and HEAD is
+// transaction, so nothing reports it. When the rebase's operation recorded HEAD and HEAD is
 // not where the journal last saw it, the move is recorded before the operation ends. Only when the
 // finish was seen (post-rewrite, or ggui's own step): a rebase found finished later may have moved
 // refs outside the journal, and Undo must refuse it.

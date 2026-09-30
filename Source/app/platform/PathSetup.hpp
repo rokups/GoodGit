@@ -1,5 +1,5 @@
-// "Add GoodGit to PATH": puts the ggui executable directory (it holds git-gg, which the repository
-// hooks need) on the login PATH through a systemd user environment.d file. Linux with systemd only.
+// "Add GoodGit to PATH": puts the ggui executable directory (it holds git-gg, for `git gg` in a
+// terminal) on the login PATH through a systemd user environment.d file. Linux with systemd only.
 //
 // The state is read from disk, not stored: the setting is on iff the managed file exists and its
 // PATH entry is this directory. Every function takes the config home and the availability, so

@@ -100,7 +100,7 @@ void OperationRecorder::begin()
         if (const auto group = native::openGroup(m_repo); group && group->active) {
             m_op.id = group->op;
             m_resumed = true;
-            // A plain git rebase's operation (opened by the reconciler, or by the old hooks) has no
+            // A plain git rebase's operation (opened by the reconciler, or by the managed hooks of older versions) has no
             // index: one taken in the middle says nothing about its start. ggui's has the start's;
             // this adds the latest.
             if (group->src == "git")

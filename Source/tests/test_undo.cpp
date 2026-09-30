@@ -71,8 +71,7 @@ GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists
     s.showPanel("Operations");
     GG_CHECK(s.textShown("//Operations", "git-gg"));
     GG_CHECK(s.textShown("//Operations", "ggui"));
-    // Without managed hooks plain git is covered too (the reconciler), so the panel needs no caveat.
-    GG_CHECK(!s.session()->hooksInstalled());
+    // Plain git is covered too (the reconciler), so the panel needs no caveat.
     GG_CHECK(!s.textShown("//Operations", "Undo covers ggui and git gg only"));
     // Restore (undo) the command-line operation from its row.
     const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + cliOp + "/###row";

@@ -7,7 +7,6 @@
 #include <libgg/Conflicts.hpp>
 #include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
-#include <libgg/Hooks.hpp>
 #include <libgg/Outgoing.hpp>
 #include <libgg/Markers.hpp>
 #include <libgg/NewCommit.hpp>
@@ -1295,30 +1294,6 @@ void Actions::restore(const std::string& operationId)
             ctx.info = r.label;
         },
         {}, false, false);
-}
-
-// ---- hooks and old gg data ---------------------------------------------------------------------------
-
-void Actions::installHooks(Callback done)
-{
-    run("install ggui hooks",
-        [](MutationContext& ctx) {
-            std::string error;
-            if (!gg::hooks::install(ctx.cwd(), error))
-                throw MutationError{Outcome::Failed, error, error};
-        },
-        std::move(done), false, false);
-}
-
-void Actions::uninstallHooks(Callback done)
-{
-    run("remove ggui hooks",
-        [](MutationContext& ctx) {
-            std::string error;
-            if (!gg::hooks::uninstall(ctx.cwd(), error))
-                throw MutationError{Outcome::Failed, error, error};
-        },
-        std::move(done), false, false);
 }
 
 // ---- external tools -----------------------------------------------------------------------------------
