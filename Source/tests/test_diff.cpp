@@ -115,9 +115,9 @@ GG_TEST("diff", "unified view, context lines, expandable context")
     GG_CHECK_EQ(f->additions, 2);
     GG_CHECK_EQ(f->deletions, 2);
     GG_CHECK(s.itemExists((body(s) + "/###hunk_0").c_str()));
-    // The gap before the first hunk reveals only upwards from it.
-    GG_CHECK(s.itemExists((body(s) + "/###expand_up_0").c_str()));
-    GG_CHECK(!s.itemExists((body(s) + "/###expand_down_0").c_str()));
+    // The gap before the first hunk reveals only the lines right above it.
+    GG_CHECK(s.itemExists((body(s) + "/###expand_down_0").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###expand_up_0").c_str()));
     // Context 1: shorter hunks.
     ctx->ItemInputValue("//Diff/Context##diff_context", 1);
     GG_CHECK(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 2 && file(s)->hunks[0].lines.size() == 4; }));
@@ -125,7 +125,7 @@ GG_TEST("diff", "unified view, context lines, expandable context")
     GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->hunks[0].lines.size() == 8; }));
     // The views are rebuilt from the new diff on the next frames: let the rows settle first.
     s.settle();
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###expand_down_1").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###expand_up_1").c_str()); }));
     ctx->Yield(2);
     // Gap 1 lies between the two hunks (lines 9-31): each half reveals 10 lines on its side,
     // Shift+click the rest.
@@ -138,23 +138,23 @@ GG_TEST("diff", "unified view, context lines, expandable context")
         return false;
     };
     GG_CHECK(!shows(9) && !shows(31));
-    ctx->ItemClick((body(s) + "/###expand_down_1").c_str());
+    ctx->ItemClick((body(s) + "/###expand_up_1").c_str());
     GG_CHECK_EQ(s.session()->diff().gapShown(1).top, 10);
     GG_CHECK_EQ(s.session()->diff().gapShown(1).bottom, 0);
     ctx->Yield(2);
     GG_CHECK(shows(9) && shows(18) && !shows(19) && !shows(31));
-    ctx->ItemClick((body(s) + "/###expand_up_1").c_str());
+    ctx->ItemClick((body(s) + "/###expand_down_1").c_str());
     GG_CHECK_EQ(s.session()->diff().gapShown(1).top, 10);
     GG_CHECK_EQ(s.session()->diff().gapShown(1).bottom, 10);
     ctx->Yield(2);
     // Lines 22-31 now sit right above the second hunk (the list runs past the panel's bottom).
     GG_CHECK(shows(22) && !shows(21) && !shows(19));
     ctx->KeyDown(ImGuiMod_Shift);
-    ctx->ItemClick((body(s) + "/###expand_up_1").c_str());
+    ctx->ItemClick((body(s) + "/###expand_down_1").c_str());
     ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK(s.session()->diff().gapShown(1).all);
-    GG_CHECK(!s.itemExists((body(s) + "/###expand_up_1").c_str()));
     GG_CHECK(!s.itemExists((body(s) + "/###expand_down_1").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###expand_up_1").c_str()));
 }
 
 GG_TEST("diff", "side-by-side view with syntax highlighting")
@@ -178,7 +178,7 @@ GG_TEST("diff", "side-by-side view with syntax highlighting")
         for (const auto& line : lines)
             GG_CHECK(line.find("@@") == std::string::npos);
     }
-    GG_CHECK(s.itemExists((s.child(body(s).c_str(), "##sbs_left") + "/###expand_up_0").c_str()));
+    GG_CHECK(s.itemExists((s.child(body(s).c_str(), "##sbs_left") + "/###expand_down_0").c_str()));
     s.comboSelect("//Diff/##diff_view", "Unified");
     ctx->Yield(2);
     GG_CHECK(!s.app.settings().data().diffSideBySide);

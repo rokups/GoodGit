@@ -698,12 +698,12 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
                     ImGui::SetTooltip("%s", tip);
             };
             if (!first)
-                expand(ICON_MS_KEYBOARD_ARROW_DOWN, "expand_down_", "Show 10 more lines below the hunk above (Shift+click: all)",
+                expand(ICON_MS_KEYBOARD_ARROW_UP, "expand_up_", "Show 10 more lines below the hunk above (Shift+click: all)",
                     &GapShown::top);
             if (!first && !last)
                 ImGui::SameLine();
             if (!last)
-                expand(ICON_MS_KEYBOARD_ARROW_UP, "expand_up_", "Show 10 more lines above the hunk below (Shift+click: all)",
+                expand(ICON_MS_KEYBOARD_ARROW_DOWN, "expand_down_", "Show 10 more lines above the hunk below (Shift+click: all)",
                     &GapShown::bottom);
             ImGui::PopStyleVar();
         }
