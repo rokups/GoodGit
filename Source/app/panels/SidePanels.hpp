@@ -19,7 +19,6 @@ public:
 private:
     void branchMenu(const core::BranchInfo& b);
     void remoteBranchMenu(const core::RemoteBranchInfo& r);
-    void remoteHeadMenu(const core::RemoteHeadInfo& h);
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_filter;

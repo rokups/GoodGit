@@ -305,24 +305,6 @@ void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
     ImGui::EndPopup();
 }
 
-void BranchesPanel::remoteHeadMenu(const core::RemoteHeadInfo& h)
-{
-    if (!ImGui::BeginPopupContextItem(("##rhead_menu_" + rowId(h.name)).c_str()))
-        return;
-    auto& actions = m_session.actions();
-    const bool free = actions.busy().empty();
-    if (menuItem(ICON_MS_MY_LOCATION, "Reveal target", nullptr, false, !h.target.isNull()))
-        m_session.revealCommit(h.target);
-    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-        ImGui::SetClipboardText(h.name.c_str());
-    ImGui::Separator();
-    if (menuItem(ICON_MS_SYNC, "Update from remote", nullptr, false, free))
-        actions.setRemoteHead(h.remote, false);
-    if (menuItem(ICON_MS_DELETE, "Remove", nullptr, false, free))
-        actions.setRemoteHead(h.remote, true);
-    ImGui::EndPopup();
-}
-
 void BranchesPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Branches, open)) {
@@ -401,13 +383,6 @@ void BranchesPanel::draw(bool* open)
         if (containsNoCase(r.name, m_filter))
             byRemote[r.remote].push_back({i, r.name.substr(std::min(r.name.size(), r.remote.size() + 1))});
     }
-    // <remote>/HEAD rows sit first in their remote, as an alias of the default branch.
-    std::map<std::string, const core::RemoteHeadInfo*> headOf;
-    for (const auto& h : m_snapshot->remoteHeads)
-        if (containsNoCase(h.name, m_filter) || containsNoCase(h.symref, m_filter)) {
-            headOf[h.remote] = &h;
-            byRemote[h.remote]; // the remote's node exists even when it has no other branch
-        }
     for (const auto& [remote, list] : byRemote) {
         ImGui::PushID(("remote_group_" + remote).c_str());
         const core::RemoteInfo* info = nullptr;
@@ -434,36 +409,6 @@ void BranchesPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         if (nodeOpen) {
-            if (const auto it = headOf.find(remote); it != headOf.end()) {
-                const core::RemoteHeadInfo& h = *it->second;
-                ImGui::PushOverrideID(windowId);
-                ImGui::PushID(("remote_group_" + remote).c_str());
-                ImGui::PushID(remote.c_str());
-                ImGui::PushID(rowId("rhead_" + h.name).c_str());
-                // Aligned with the branch rows, which start with an eye icon.
-                ImGui::Dummy(ImVec2(ImGui::CalcTextSize(ICON_MS_VISIBILITY).x, ImGui::GetTextLineHeight()));
-                ImGui::SameLine();
-                ImGui::PushStyleColor(ImGuiCol_Text, p.remoteText);
-                plainText((h.name.substr(std::min(h.name.size(), remote.size() + 1)) + "###" + rowId("rhead_" + h.name)).c_str());
-                ImGui::PopStyleColor();
-                const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
-                remoteHeadMenu(h);
-                if (!h.symref.empty()) {
-                    ImGui::SameLine(0, 0);
-                    // Under the remote's node, the target drops the "<remote>/" prefix too.
-                    const std::string prefix = remote + "/";
-                    const std::string target = h.symref.rfind(prefix, 0) == 0 ? h.symref.substr(prefix.size()) : h.symref;
-                    ImGui::TextDisabled("  \xe2\x86\x92 %s", target.c_str());
-                    if (h.dangling && (hovered || ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)))
-                        ImGui::SetTooltip("%s points to a branch that no longer exists.", h.name.c_str());
-                }
-                if (hovered && !h.dangling)
-                    ImGui::SetTooltip("Default branch of %s", remote.c_str());
-                ImGui::PopID();
-                ImGui::PopID();
-                ImGui::PopID();
-                ImGui::PopID();
-            }
             drawTree(buildTree(list), "remote:" + remote + "/", filtering, [&](size_t index, const std::string& shortName) {
                 const auto& r = m_snapshot->remoteBranches[index];
                 const std::string full = "refs/remotes/" + r.name;

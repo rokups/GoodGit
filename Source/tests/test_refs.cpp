@@ -341,18 +341,16 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     GG_CHECK(!refExists(s, repo, "refs/remotes/origin/topic"));
 }
 
-GG_TEST("refs", "branches: <remote>/HEAD is an alias of the default branch with its own menu, never a branch")
+GG_TEST("refs", "branches: <remote>/HEAD is not listed; the snapshot keeps it apart from the branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"remote", "set-head", "origin", "-a"});
     GG_REQUIRE(refExists(s, repo, "refs/remotes/origin/HEAD"));
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
-    const std::string row = "//Branches/remote_group_origin/origin/rhead_origin:HEAD/###rhead_origin:HEAD";
-    const std::string mainRow = "//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main";
-    GG_REQUIRE(s.itemExists(row.c_str()));
-    GG_CHECK(s.itemExists(mainRow.c_str()));
+    GG_CHECK(s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main"));
     GG_CHECK(!s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:HEAD/###rbranch_origin:HEAD"));
+    GG_CHECK(!s.itemExists("//Branches/remote_group_origin/origin/rhead_origin:HEAD/###rhead_origin:HEAD"));
     // The snapshot keeps it apart from the branches and knows its target.
     const auto& snap = *s.session()->snapshot();
     GG_CHECK(std::none_of(snap.remoteBranches.begin(), snap.remoteBranches.end(),
@@ -365,37 +363,14 @@ GG_TEST("refs", "branches: <remote>/HEAD is an alias of the default branch with 
     GG_REQUIRE(tip);
     GG_CHECK(std::none_of(tip->refs.begin(), tip->refs.end(), [](const auto& b) { return b.name == "origin/HEAD"; }));
     GG_CHECK(std::any_of(tip->refs.begin(), tip->refs.end(), [](const auto& b) { return b.name == "origin/main"; }));
-
-    // Menu: alias items only.
-    ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
-    for (const char* item : {"Update from remote", "Remove", "Copy name", "Reveal target"})
-        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
-    for (const char* item : {"Delete on remote...", "Check out", "Create local branch...", "Merge into HEAD...", "Rebase HEAD onto branch"})
-        GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
-
-    // Remove deletes the ref, Update restores it.
-    s.contextMenu(row.c_str(), "Remove");
-    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/HEAD"); }));
-    GG_CHECK(s.waitUntil([&] { return !s.itemExists(row.c_str()); }));
-    GG_CHECK(s.itemExists(mainRow.c_str()));
-    // Dangling: the target branch is gone. The row still shows (target dimmed, warning tooltip).
+    // Dangling: the target branch is gone; still not listed.
     s.git(repo, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
-    GG_REQUIRE(s.itemExists(row.c_str()));
     GG_REQUIRE(s.session()->snapshot()->remoteHeads.size() == 1);
     GG_CHECK(s.session()->snapshot()->remoteHeads[0].dangling);
-    GG_CHECK_STR_EQ(s.session()->snapshot()->remoteHeads[0].symref, "origin/gone");
     GG_CHECK(!s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:HEAD/###rbranch_origin:HEAD"));
-    // Update from remote re-reads the remote's default branch.
-    s.contextMenu(row.c_str(), "Update from remote");
-    GG_CHECK(s.waitUntil([&] { return gg::trim(s.gitMayFail(repo, {"symbolic-ref", "refs/remotes/origin/HEAD"}).out) == "refs/remotes/origin/main"; }, 10.0f));
-    GG_CHECK(s.waitUntil([&] {
-        const auto& h = s.session()->snapshot()->remoteHeads;
-        return h.size() == 1 && !h[0].dangling && h[0].symref == "origin/main";
-    }));
+    s.git(repo, {"remote", "set-head", "origin", "-d"}); // the after-test fsck rejects a dangling symref
 }
 
 GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote")
