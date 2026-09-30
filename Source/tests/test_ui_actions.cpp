@@ -366,36 +366,6 @@ GG_TEST("ui", "View menu: every panel hides and shows again; the choice is saved
     }
 }
 
-GG_TEST("ui", "old gg data: Not now asks again next time; an unchecked commit is not kept")
-{
-    const fs::path repo = s.fixture(Recipe::Linear);
-    const std::string tree = s.gitOut(repo, {"rev-parse", "HEAD^{tree}"});
-    const std::string kept = s.gitOut(repo, {"commit-tree", tree, "-p", "HEAD~1", "-m", "Kept"});
-    const std::string dropped = s.gitOut(repo, {"commit-tree", tree, "-p", "HEAD~2", "-m", "Dropped"});
-    s.git(repo, {"update-ref", "refs/gg/heads/kept", kept});
-    s.git(repo, {"update-ref", "refs/gg/heads/dropped", dropped});
-    auto ggRefs = [&] { return s.gitOut(repo, {"for-each-ref", "--format=%(refname)", "refs/gg/"}); };
-    GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.dialogOpen("Old gg data found"));
-    s.dialogButton("Old gg data found", "Not now");
-    s.settle();
-    GG_CHECK(!ggRefs().empty());
-    GG_CHECK(!s.app.settings().repo(repo.string()).ignoreOldGgRefs);
-    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
-    ctx->Yield(3);
-    GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.dialogOpen("Old gg data found"));
-    const std::string shortDropped = dropped.substr(0, 10);
-    s.dialogCheck("Old gg data found", ("keep_" + shortDropped).c_str(), ("Keep " + shortDropped + " Dropped").c_str(),
-        false);
-    s.dialogButton("Old gg data found", "Clean up");
-    GG_CHECK(s.waitUntil([&] { return ggRefs().empty(); }));
-    s.settle();
-    GG_CHECK_STR_EQ(s.revParse(repo, "gg-backup/" + kept.substr(0, 10)), kept);
-    GG_CHECK(!refExists(s, repo, "refs/heads/gg-backup/" + shortDropped));
-    GG_CHECK(s.gitOut(repo, {"for-each-ref", "--contains", dropped, "--format=%(refname)"}).empty());
-}
-
 GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

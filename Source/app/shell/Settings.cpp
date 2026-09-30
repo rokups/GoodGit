@@ -151,7 +151,7 @@ nlohmann::json toJson(const SettingsData& d)
     j["recentOrder"] = d.recentOrder == RecentOrder::Alphabetical ? "alphabetical" : "recent";
     nlohmann::json repos = nlohmann::json::object();
     for (const auto& [path, prefs] : d.repos)
-        repos[path] = {{"hooks", hooksName(prefs.hooks)}, {"ignoreOldGgRefs", prefs.ignoreOldGgRefs}};
+        repos[path] = {{"hooks", hooksName(prefs.hooks)}};
     j["repos"] = repos;
     j["panels"] = d.panels;
     j["diff"] = {{"sideBySide", d.diffSideBySide}, {"context", d.diffContext}, {"whitespace", d.diffWhitespace}};
@@ -184,7 +184,6 @@ SettingsData fromJson(const nlohmann::json& j)
         for (auto it = j["repos"].begin(); it != j["repos"].end(); ++it) {
             RepoPrefs p;
             p.hooks = hooksFrom(it.value().value("hooks", std::string("unasked")));
-            p.ignoreOldGgRefs = it.value().value("ignoreOldGgRefs", false);
             d.repos[it.key()] = p;
         }
     if (j.contains("panels") && j["panels"].is_object())

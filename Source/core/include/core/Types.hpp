@@ -159,7 +159,6 @@ struct Snapshot {
     std::vector<RemoteInfo> remotes;
     std::vector<WorktreeInfo> worktrees;
     std::vector<StashInfo> stashes;
-    std::vector<std::string> oldGgRefs; // leftover refs/gg/* (C3)
 
     const BranchInfo* currentBranch() const;
     const BranchInfo* findBranch(const std::string& name) const;

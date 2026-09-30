@@ -200,7 +200,6 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
             select(Selection{SelKind::WorkingTree, {}, -1});
         else if (!m_snapshot->head.isNull())
             select(Selection{SelKind::Commit, m_snapshot->head, -1});
-        maybePromptOldGgRefs();
     } else if (m_selection.kind == SelKind::Stash) {
         bool found = false;
         for (const auto& s : m_snapshot->stashes)

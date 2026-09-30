@@ -125,7 +125,6 @@ index stages on checkout"). **D** max-new-file-size.
 - "git not found / too old" (blocking modal `Git required`): shows the found version and the
   minimum 2.36; buttons *Retry*, *Quit*.
 - Managed hooks (`Install ggui hooks?`): Install / Not now / Never for this repository.
-- Old gg refs (`Old gg data found`): list + Clean up / Ignore.
 
 ### 1.8 Default dock layout (K + N)
 ```

@@ -337,13 +337,9 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
                 tag.target = toOid(*target);
             }
             snap->tags.push_back(std::move(tag));
-        } else if (name.rfind("refs/gg/", 0) == 0) {
-            snap->oldGgRefs.push_back(name);
         }
         return true;
     });
-    // Symbolic refs under refs/gg are also leftovers.
-    std::sort(snap->oldGgRefs.begin(), snap->oldGgRefs.end());
 
     for (const auto& [full, oid] : localBranches) {
         gg::throwIfCancelled(cancel);

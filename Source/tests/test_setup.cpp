@@ -1,4 +1,4 @@
-// Initialize, git presence/version prompt, old gg refs cleanup (§4.1, §5 C3).
+// Initialize, git presence/version prompt, old gg refs deleted on open (§4.1, §5 C3).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
@@ -7,15 +7,11 @@
 #include "util/Env.hpp"
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/Journal.hpp>
 
 namespace ggtest {
 
 namespace {
-
-bool refExists(Scenario& s, const fs::path& repo, const std::string& ref)
-{
-    return s.gitMayFail(repo, {"rev-parse", "--verify", "-q", ref}).ok();
-}
 
 std::vector<std::string> ggRefs(Scenario& s, const fs::path& repo)
 {
@@ -80,58 +76,48 @@ GG_TEST("setup", "git missing or too old: a blocking prompt with Retry")
     s.settle();
 }
 
-GG_TEST("setup", "old gg refs: listed, kept as branches, deleted at once, undoable, ignorable")
+// Leftovers of the old gg: a direct ref and a symbolic one, planted with plain git.
+static std::string plantLegacyRefs(Scenario& s, const fs::path& repo)
+{
+    const std::string branch = gg::trim(s.gitOut(repo, {"symbolic-ref", "HEAD"}));
+    s.git(repo, {"update-ref", "refs/gg/op/x", "HEAD"});
+    s.git(repo, {"symbolic-ref", "refs/gg/head", branch});
+    return branch;
+}
+
+GG_TEST("setup", "old gg refs: deleted silently on open, not journaled, nothing kept")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    // Two commits only refs/gg keeps alive (tips of two lines), plus a ref on a reachable commit.
-    const std::string tree = s.gitOut(repo, {"rev-parse", "HEAD^{tree}"});
-    const std::string lost1 = s.gitOut(repo, {"commit-tree", tree, "-p", "HEAD~1", "-m", "Lost one"});
-    const std::string lost2 = s.gitOut(repo, {"commit-tree", tree, "-p", "HEAD~2", "-m", "Lost two"});
-    s.git(repo, {"update-ref", "refs/gg/heads/a", lost1});
-    s.git(repo, {"update-ref", "refs/gg/heads/b", lost2});
-    s.git(repo, {"update-ref", "refs/gg/op/reachable", "HEAD"});
-    // Under refs/gg/cache too: the journal records it like any other ref, so Undo restores it.
-    s.git(repo, {"update-ref", "refs/gg/cache/heads", "HEAD"});
-    const std::string before = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"});
-    GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.dialogOpen("Old gg data found"));
-    const ggui::Form* f = s.app.dialogs().current();
-    GG_CHECK(f->message.find("4 refs under refs/gg/") != std::string::npos);
-    // Only the two lost commits are listed (the reachable one is not).
-    int listed = 0;
-    for (const auto& field : f->fields)
-        listed += field.id.rfind("keep_", 0) == 0 ? 1 : 0;
-    GG_CHECK_EQ(listed, 2);
-    // lost1 under a name of our choice, lost2 under the default backup name.
-    s.dialogText("Old gg data found", ("branch_" + lost1.substr(0, 10)).c_str(), "rescued");
-    s.dialogButton("Old gg data found", "Clean up");
-    GG_CHECK(s.waitUntil([&] { return ggRefs(s, repo).empty(); }));
-    s.settle();
-    GG_CHECK_STR_EQ(s.revParse(repo, "rescued"), lost1);
-    GG_CHECK_STR_EQ(s.revParse(repo, "gg-backup/" + lost2.substr(0, 10)), lost2);
-    // All refs went in one update-ref --stdin.
-    size_t updates = 0;
-    for (const auto& e : gg::commandLog())
-        updates += (e.args.size() > 2 && e.args[1] == "update-ref" && e.args[2] == "--stdin") ? 1 : 0;
-    GG_CHECK(updates >= 1);
-    // Undo brings every refs/gg ref back and removes the branches.
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
-    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"}) == before; }));
-    s.settle();
-    GG_CHECK(!refExists(s, repo, "refs/heads/rescued"));
-    // Ignore: remembered for this repository.
-    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
-    ctx->Yield(3);
-    GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.dialogOpen("Old gg data found"));
-    s.dialogButton("Old gg data found", "Ignore");
-    GG_CHECK(s.app.settings().repo(repo.string()).ignoreOldGgRefs);
-    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
-    ctx->Yield(3);
+    // Managed hooks installed: their reference-transaction hook must not journal the deletion either.
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    const std::string branch = plantLegacyRefs(s, repo);
+    GG_REQUIRE(ggRefs(s, repo).size() == 2);
+    const std::string tip = s.revParse(repo, branch);
+    const size_t opsBefore = gg::journal::Journal{repo / ".git"}.read(nullptr).size();
+    const std::string refsBefore = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"});
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
+    GG_CHECK(ggRefs(s, repo).empty());
+    GG_CHECK_STR_EQ(s.revParse(repo, branch), tip);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"}), refsBefore);
     GG_CHECK(s.app.dialogs().current() == nullptr);
-    GG_CHECK_EQ(ggRefs(s, repo).size(), static_cast<size_t>(4));
+    GG_CHECK_EQ(gg::journal::Journal{repo / ".git"}.read(nullptr).size(), opsBefore);
+    GG_CHECK(s.gitOut(repo, {"for-each-ref", "--format=%(refname)"}).find("gg-backup") == std::string::npos);
+}
+
+GG_TEST("setup", "old gg refs: git gg deletes them silently too")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    // Managed hooks installed: their reference-transaction hook must not journal the deletion either.
+    GG_REQUIRE(s.gitgg(repo, {"hooks", "install"}).ok());
+    const std::string branch = plantLegacyRefs(s, repo);
+    GG_REQUIRE(ggRefs(s, repo).size() == 2);
+    const std::string tip = s.revParse(repo, branch);
+    const size_t opsBefore = gg::journal::Journal{repo / ".git"}.read(nullptr).size();
+    GG_REQUIRE(s.gitgg(repo, {"op", "log"}).ok());
+    GG_CHECK(ggRefs(s, repo).empty());
+    GG_CHECK_STR_EQ(s.revParse(repo, branch), tip);
+    GG_CHECK_EQ(gg::journal::Journal{repo / ".git"}.read(nullptr).size(), opsBefore);
 }
 
 } // namespace ggtest

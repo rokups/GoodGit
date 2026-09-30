@@ -1320,20 +1320,6 @@ void Actions::uninstallHooks(Callback done)
         std::move(done), false, false);
 }
 
-void Actions::cleanUpOldGgRefs(const std::vector<std::pair<std::string, std::string>>& keepBranches)
-{
-    const auto snap = m_session.snapshot();
-    const auto refs = snap->oldGgRefs;
-    run("clean up old gg data", [refs, keepBranches](MutationContext& ctx) {
-        for (const auto& [branch, commit] : keepBranches)
-            ctx.git({"branch", branch, commit});
-        std::string input;
-        for (const auto& r : refs)
-            input += "delete " + r + "\n";
-        ctx.git({"update-ref", "--stdin"}, input);
-    });
-}
-
 // ---- external tools -----------------------------------------------------------------------------------
 
 void Actions::openInEditor(const std::string& path)

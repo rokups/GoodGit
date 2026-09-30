@@ -24,7 +24,7 @@ scripts and code comments cite them.
   managed `pre-push` hook for plain git.
 - **Undo** restores refs and the index. It updates the working tree only when nothing is
   lost; otherwise it refuses or offers to stash first (U1).
-- Leftover `refs/gg/*` from the old gg: **offer a one-time cleanup** (C3).
+- Leftover `refs/gg/*` from the old gg: **deleted automatically and silently** on open, in ggui and git-gg (C3).
 - Platforms for the first release: **Linux and Windows**. macOS comes later.
 - **Tests are complete integration tests only, run through Dear ImGui Test Engine in the
   real `ggui` binary.** There are no unit tests and no GoogleTest. The goals are **every
@@ -185,8 +185,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   recent list (Delete key forgets an entry), progress and cancel while opening.
   Update the tagline to Git wording.
 - **K** Auto-open argv[1], otherwise the most recent repository that still exists.
-- **N** On open, show one-time prompts where relevant: install managed hooks (H1), clean
-  up old gg refs (C3), and "git not found / too old" (G2), which is blocking.
+- **N** On open, show one-time prompts where relevant: install managed hooks (H1) and
+  "git not found / too old" (G2), which is blocking. Old gg refs (C3) get no prompt.
 - **K** Main menu:
   - **Repository:** Open… (Ctrl+O), Initialize…, Clone…, Recent ▸ (filterable; shows
     branch, upstream and ahead/behind), Open working directory, Copy path, Close repository
@@ -729,7 +729,7 @@ user wants to adjust more.
 | G1 | Filter drivers (LFS etc.) | **Not needed.** Checkout, add and staging go through `git`, which runs the filters. In-memory rewrites work on stored (clean) blobs, and conflicts in filtered files must be resolved immediately (K1) |
 | G2 (confirmed) | Git access | Hybrid: libgit2 for reads and in-memory rewrites; `git` CLI for every mutation plain git has; ref moves after a rewrite go through one `git update-ref --stdin`. Minimum **git 2.36** (for `git hook run`), checked on startup with a clear error |
 | P1 (confirmed) | Push with conflicts | Always refused by ggui; refused by the managed `pre-push` hook for plain git |
-| C3 (confirmed) | Leftover `refs/gg/*` from the old gg | On open, detect them and offer a one-time cleanup. Commits kept alive only by those refs are listed first, with the option to create a branch for each or keep them via a `refs/stash`-style backup branch. After confirmation, the refs are deleted with `git update-ref --stdin`, which is undoable through the journal. "Ignore" is remembered per repository |
+| C3 (confirmed) | Leftover `refs/gg/*` from the old gg | On open (ggui and git-gg), delete them automatically and silently with one `git update-ref --no-deref --stdin`, with no prompt, no backup branches and no setting. The deletion is not journaled (the journal never records `refs/gg/*`), so it cannot be undone. Nothing is kept |
 | X1 (confirmed) | Platforms | First release: **Linux and Windows** (MinGW-static and MSVC presets). macOS later: it needs the SDL_GPU MSL/Metal path, signing and a preset |
 | I1 | CLI name | Ship the executable as `git-gg` so Git's subcommand lookup finds it as `git gg` |
 

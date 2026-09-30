@@ -51,16 +51,6 @@ bool Scenario::gitAtLeast(int major, int minor, const char* skipWhy)
 
 gg::RunResult Scenario::gitMayFail(const fs::path& cwd, std::vector<std::string> args, std::string input)
 {
-    // Old gg refs a test creates on purpose (C3 fixtures) are not ggui's writes.
-    auto plant = [&](const std::string& word) {
-        if (word.rfind("refs/gg/", 0) == 0 && word.size() > 8)
-            m_plantedGgRefs.insert(word);
-    };
-    for (const auto& a : args)
-        plant(a);
-    std::istringstream words(input);
-    for (std::string word; words >> word;)
-        plant(word);
     gg::RunRequest r;
     r.args.reserve(args.size() + 1);
     r.args.emplace_back("git");
@@ -187,7 +177,7 @@ bool Scenario::gitTransparent(const fs::path& repo, std::string* why)
     if (!common.ok())
         return true; // not a repository any more (fsck reports it)
     for (const auto& ref : gg::splitLines(gitMayFail(repo, {"for-each-ref", "--format=%(refname)", "refs/gg"}).out))
-        if (!ref.empty() && !m_plantedGgRefs.count(ref))
+        if (!ref.empty())
             problems += "\n  ref written under refs/gg/: " + ref;
     const fs::path ggDir = fs::path(gg::trim(common.out)) / "gg";
     std::error_code ec;

@@ -195,7 +195,6 @@ public:
     void pushCurrent();
     void popStash();
     void maybePromptHooks();
-    void maybePromptOldGgRefs();
 
     HistoryPanel& history() { return *m_history; }
     ChangesPanel& changes() { return *m_changes; }
@@ -231,7 +230,6 @@ private:
     std::optional<gg::edit::Session> m_editSession;
     std::optional<gg::hooks::Status> m_hooksStatus;
     bool m_hooksPromptChecked = false;
-    bool m_ggRefsPromptChecked = false;
     std::map<std::string, std::map<std::string, std::string>> m_config;
     std::map<std::string, RemoteTags> m_remoteTags;
     std::string m_journalError; // the undo journal's problem last reported ("" = none)

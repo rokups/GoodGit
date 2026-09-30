@@ -52,7 +52,6 @@ enum class RecentOrder { MostRecent, Alphabetical }; // order of the Recent list
 
 struct RepoPrefs {
     HooksAnswer hooks = HooksAnswer::Unasked;
-    bool ignoreOldGgRefs = false;
 };
 
 struct SettingsData {

@@ -241,7 +241,6 @@ public:
     // ---- hooks and old gg data -------------------------------------------------------------
     void installHooks(Callback done = {});
     void uninstallHooks(Callback done = {});
-    void cleanUpOldGgRefs(const std::vector<std::pair<std::string, std::string>>& keepBranches);
 
     // External tools (not journaled).
     void openInEditor(const std::string& path);

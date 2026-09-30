@@ -28,6 +28,7 @@
 #include <libgg/Hooks.hpp>
 #include <libgg/Journal.hpp>
 #include <libgg/Launch.hpp>
+#include <libgg/Legacy.hpp>
 #include <libgg/NewCommit.hpp>
 #include <libgg/Operation.hpp>
 #include <libgg/Rewrite.hpp>
@@ -112,7 +113,10 @@ gg::git2::Repository openHere()
     git_repository* raw = nullptr;
     if (git_repository_open_ext(&raw, ".", GIT_REPOSITORY_OPEN_FROM_ENV, nullptr) != 0)
         throw std::runtime_error("not a git repository (or any of the parent directories)");
-    return gg::git2::Repository(raw);
+    gg::git2::Repository repo(raw);
+    // Leftover refs/gg/* of the old gg: deleted silently, not journaled (spec C3).
+    gg::removeLegacyGgRefs(repo.get());
+    return repo;
 }
 
 std::string timeText(std::int64_t ms)

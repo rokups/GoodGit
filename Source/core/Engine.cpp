@@ -9,6 +9,7 @@
 #include <libgg/GitRunner.hpp>
 #include <libgg/Hooks.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/Legacy.hpp>
 #include <libgg/Operation.hpp>
 
 #include <spdlog/spdlog.h>
@@ -182,6 +183,15 @@ RequestId Engine::open()
         simulateLatency(job.token);
         job.worker.resetRepo();
         git_repository* repo = job.repo();
+        // Leftover refs/gg/* of the old gg: deleted silently, not journaled (spec C3).
+        {
+            std::string error;
+            int deleted = 0;
+            if (gg::removeLegacyGgRefs(repo, &error, &deleted))
+                spdlog::info("removed {} leftover refs/gg/* refs of the old gg", deleted);
+            else if (!error.empty())
+                spdlog::warn("could not remove leftover refs/gg/* refs: {}", error);
+        }
         SnapshotPtr snap = readSnapshot(repo, ++m_generation, job.token);
         gg::throwIfCancelled(job.token);
         if (m_options.watch && !m_watcher) {
