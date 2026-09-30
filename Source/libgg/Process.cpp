@@ -226,6 +226,21 @@ ProcessInfo parentProcess()
     return info;
 }
 
+ProcessInfo selfProcess()
+{
+    ProcessInfo info;
+#ifdef _WIN32
+    info.pid = GetCurrentProcessId();
+    FILETIME created, exited, kernel, user;
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+        info.start = (static_cast<std::uint64_t>(created.dwHighDateTime) << 32) | created.dwLowDateTime;
+#else
+    info.pid = getpid();
+    info.start = startTime(info.pid);
+#endif
+    return info;
+}
+
 bool processAlive(long long pid, std::uint64_t start)
 {
 #ifdef _WIN32

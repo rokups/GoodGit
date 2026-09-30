@@ -5,6 +5,11 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include "libgg/Journal.hpp"
+#include "libgg/Process.hpp"
+
+#include <nlohmann/json.hpp>
+
 #include <chrono>
 #include <fstream>
 
@@ -363,6 +368,77 @@ GG_TEST("undo", "journal variants: foreign, torn and future records are skipped;
     ctx->KeyPress(ImGuiKey_F5);
     GG_CHECK(s.waitUntil([&] { return s.session()->operations().empty(); }));
     GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
+GG_TEST("undo", "journal: begin records carry the writer's pid and start time")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    gg::journal::Operation op;
+    op.id = gg::journal::Journal::newOperationId();
+    op.src = "ggui";
+    op.label = "pid test";
+    op.wt = "main";
+    GG_REQUIRE(journal.begin(op));
+    GG_REQUIRE(journal.end(op.id, true));
+    const gg::ProcessInfo self = gg::selfProcess();
+    GG_CHECK(self.pid > 0 && self.start != 0);
+    GG_CHECK(gg::processAlive(self.pid, self.start));
+
+    // The raw begin line.
+    std::ifstream in(journal.path());
+    std::string line;
+    nlohmann::json begin;
+    while (std::getline(in, line)) {
+        const auto j = nlohmann::json::parse(line, nullptr, false);
+        if (j.is_object() && j.value("t", std::string()) == "begin")
+            begin = j;
+    }
+    GG_REQUIRE(begin.is_object());
+    GG_CHECK(begin.value("pid", static_cast<std::int64_t>(0)) == self.pid);
+    GG_CHECK(begin.value("pstart", static_cast<std::uint64_t>(0)) != 0);
+    GG_CHECK(begin.value("pstart", static_cast<std::uint64_t>(0)) == self.start);
+
+    // And read() exposes them.
+    const auto ops = journal.read();
+    GG_REQUIRE(ops.size() == 1u);
+    GG_CHECK(ops[0].pid == self.pid);
+    GG_CHECK(ops[0].pstart == self.start);
+}
+
+GG_TEST("undo", "journal: a transaction appends several records under one lock")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    const fs::path lock = repo / ".git" / "gg" / "journal.lock";
+    const std::string id = gg::journal::Journal::newOperationId();
+    {
+        gg::journal::Journal::Transaction tx(journal);
+        GG_REQUIRE(tx.locked());
+        GG_CHECK(fs::exists(lock));
+        gg::journal::Operation op;
+        op.id = id;
+        op.src = "ggui";
+        op.label = "transaction";
+        op.wt = "main";
+        GG_CHECK(tx.begin(op));
+        GG_CHECK(tx.appendRefs(id, {{"refs/heads/x", std::string(40, '0'), std::string(40, 'a')}}));
+        // Reading does not take the lock, so it works while the transaction holds it.
+        GG_CHECK(tx.read().size() == 1u);
+        GG_CHECK(journal.read().size() == 1u);
+        // A plain append from elsewhere finds the journal busy.
+        std::string error;
+        GG_CHECK(!journal.appendRefs(id, {{"refs/heads/y", std::string(40, '0'), std::string(40, 'b')}}, &error));
+        GG_CHECK(error.find("journal busy") != std::string::npos);
+        GG_CHECK(tx.end(id, true));
+    }
+    GG_CHECK(!fs::exists(lock));
+    const auto ops = journal.read();
+    GG_REQUIRE(ops.size() == 1u);
+    GG_CHECK(ops[0].id == id && ops[0].ended && ops[0].ok);
+    GG_CHECK(ops[0].refs.size() == 1u && ops[0].refs[0].ref == "refs/heads/x");
+    // The lock is free again for plain appends.
+    GG_CHECK(journal.appendRefs(id, {{"refs/heads/z", std::string(40, '0'), std::string(40, 'c')}}));
 }
 
 GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main worktree's HEAD is left to it")

@@ -189,7 +189,8 @@ bool Scenario::gitTransparent(const fs::path& repo, std::string* why)
             // runner (H1). rebase/: journal grouping of a native rebase in progress. edit/: Edit commit
             // sessions (§4.3). symref-*: a hook's note between the prepared and committed
             // reference-transaction calls.
-            const bool ok = (!dir && (name == "journal" || name == "journal.lock" || name.rfind("symref-", 0) == 0))
+            const bool ok = (!dir && (name == "journal" || name == "journal.lock" || name == "reconcile.json"
+                    || name.rfind("symref-", 0) == 0))
                 || (dir && (name == "cache" || name == "hooks" || name == "rebase" || name == "edit"));
             if (!ok)
                 problems += "\n  unexpected entry in " + ggDir.generic_string() + ": " + name;

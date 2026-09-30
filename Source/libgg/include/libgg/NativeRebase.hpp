@@ -22,7 +22,7 @@
 struct git_repository;
 
 namespace gg::journal {
-class Journal;
+class Writer;
 }
 
 namespace gg::native {
@@ -41,12 +41,12 @@ std::filesystem::path stateDir(git_repository* repo);
 std::string groupOperation(git_repository* repo);
 // Remembers `op` as the operation of the rebase in progress and marks it in the journal (it stays
 // open while the rebase is stopped).
-void rememberGroup(git_repository* repo, journal::Journal& journal, const std::string& op);
+void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op);
 // A remembered operation whose rebase is no longer in progress (finished or aborted, maybe in a
 // terminal) gets its end record; the state directory is removed.
-void closeFinishedGroup(git_repository* repo, journal::Journal& journal);
+void closeFinishedGroup(git_repository* repo, journal::Writer& journal);
 // Ends and forgets the remembered operation (the rebase just finished).
-void finishGroup(git_repository* repo, journal::Journal& journal, bool ok = true);
+void finishGroup(git_repository* repo, journal::Writer& journal, bool ok = true);
 
 // ---- Prepared todo and messages ---------------------------------------------------------------
 

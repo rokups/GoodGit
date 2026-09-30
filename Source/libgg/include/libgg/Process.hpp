@@ -14,6 +14,8 @@ struct ProcessInfo {
 
 // The parent of the current process (for a hook: the git command that runs it).
 ProcessInfo parentProcess();
+// The current process (pid and start time; no command line).
+ProcessInfo selfProcess();
 bool processAlive(long long pid, std::uint64_t start);
 
 } // namespace gg

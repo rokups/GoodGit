@@ -91,8 +91,10 @@ void Watcher::changed(const fs::path& path)
         if (startsWith(rel, "objects/") || startsWith(rel, "logs/") || startsWith(rel, "hooks/")
             || startsWith(rel, "gg/cache") || (rel.size() > 5 && rel.compare(rel.size() - 5, 5, ".lock") == 0))
             return true; // ignored
-        if (startsWith(rel, "gg/journal")) {
+        if (rel == "gg/journal") {
             e.journal = true;
+        } else if (rel == "gg" || startsWith(rel, "gg/")) {
+            return true; // ggui's own files (rebase/, cache, reconcile.json, ...) are no repository change
         } else if (rel == "index" || (startsWith(rel, "worktrees/") && rel.find("/index") != std::string::npos)) {
             e.index = true;
         } else if (rel == "config") {

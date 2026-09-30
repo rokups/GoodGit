@@ -66,7 +66,7 @@ void removeState(const fs::path& dir)
 // not where the journal last saw it, the move is recorded before the operation ends. Only when the
 // finish was seen (post-rewrite, or ggui's own step): a rebase found finished later may have moved
 // refs outside the journal, and Undo must refuse it.
-void recordHeadNow(git_repository* repo, journal::Journal& journal, const std::string& op)
+void recordHeadNow(git_repository* repo, journal::Writer& journal, const std::string& op)
 {
     std::string now;
     git_reference* head = nullptr;
@@ -120,7 +120,7 @@ std::string groupOperation(git_repository* repo)
     return !identity.empty() && identity == group->identity ? group->op : std::string();
 }
 
-void rememberGroup(git_repository* repo, journal::Journal& journal, const std::string& op)
+void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op)
 {
     const fs::path dir = stateDir(repo);
     std::error_code ec;
@@ -129,7 +129,7 @@ void rememberGroup(git_repository* repo, journal::Journal& journal, const std::s
         journal.markRebase(op);
 }
 
-void closeFinishedGroup(git_repository* repo, journal::Journal& journal)
+void closeFinishedGroup(git_repository* repo, journal::Writer& journal)
 {
     const fs::path dir = stateDir(repo);
     const auto group = readGroup(dir);
@@ -142,7 +142,7 @@ void closeFinishedGroup(git_repository* repo, journal::Journal& journal)
     removeState(dir);
 }
 
-void finishGroup(git_repository* repo, journal::Journal& journal, bool ok)
+void finishGroup(git_repository* repo, journal::Writer& journal, bool ok)
 {
     const fs::path dir = stateDir(repo);
     if (const auto group = readGroup(dir)) {

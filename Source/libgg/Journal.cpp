@@ -116,20 +116,16 @@ std::string Journal::newOperationId()
     return std::to_string(nowMs()) + "-" + buf;
 }
 
-bool Journal::appendLine(const std::string& line, std::string* error)
+namespace {
+
+// Appends `line` to the journal file; the caller holds the lock.
+bool writeLocked(const fs::path& path, const std::string& line, std::string* error)
 {
     std::error_code ec;
-    fs::create_directories(m_dir, ec);
-    Lock lock(m_dir / "journal.lock");
-    if (!lock.locked()) {
-        if (error)
-            *error = "journal busy (" + (m_dir / "journal.lock").string() + " exists)";
-        return false;
-    }
-    const bool fresh = !fs::exists(m_path, ec) || fs::file_size(m_path, ec) == 0;
+    const bool fresh = !fs::exists(path, ec) || fs::file_size(path, ec) == 0;
     bool needNewline = false;
     if (!fresh) {
-        std::ifstream in(m_path, std::ios::binary);
+        std::ifstream in(path, std::ios::binary);
         in.seekg(-1, std::ios::end);
         char last = '\n';
         in.get(last);
@@ -141,21 +137,76 @@ bool Journal::appendLine(const std::string& line, std::string* error)
     if (needNewline)
         text += "\n"; // a torn line never merges with a new record
     text += line + "\n";
-    std::ofstream out(m_path, std::ios::binary | std::ios::app);
+    std::ofstream out(path, std::ios::binary | std::ios::app);
     out.write(text.data(), static_cast<std::streamsize>(text.size()));
     out.flush();
     if (!out) {
         if (error)
-            *error = "cannot write " + m_path.string();
+            *error = "cannot write " + path.string();
         return false;
     }
     return true;
 }
 
-bool Journal::begin(const Operation& op, std::string* error)
+std::string busyMessage(const fs::path& dir)
+{
+    return "journal busy (" + (dir / "journal.lock").string() + " exists)";
+}
+
+} // namespace
+
+bool Journal::appendLine(const std::string& line, std::string* error)
+{
+    std::error_code ec;
+    fs::create_directories(m_dir, ec);
+    Lock lock(m_dir / "journal.lock");
+    if (!lock.locked()) {
+        if (error)
+            *error = busyMessage(m_dir);
+        return false;
+    }
+    return writeLocked(m_path, line, error);
+}
+
+struct Journal::Transaction::Held {
+    explicit Held(const fs::path& lockPath) : lock(lockPath) { }
+    Lock lock;
+};
+
+Journal::Transaction::Transaction(const Journal& journal) : m_journal(journal)
+{
+    std::error_code ec;
+    fs::create_directories(journal.m_dir, ec);
+    m_held = std::make_unique<Held>(journal.m_dir / "journal.lock");
+}
+
+Journal::Transaction::~Transaction() = default;
+
+bool Journal::Transaction::locked() const { return m_held && m_held->lock.locked(); }
+
+std::vector<Operation> Journal::Transaction::read(std::string* error, size_t* skipped) const
+{
+    return m_journal.read(error, skipped); // reading never takes the lock
+}
+
+bool Journal::Transaction::appendLine(const std::string& line, std::string* error)
+{
+    if (!locked()) {
+        if (error)
+            *error = busyMessage(m_journal.m_dir);
+        return false;
+    }
+    return writeLocked(m_journal.m_path, line, error);
+}
+
+bool Writer::begin(const Operation& op, std::string* error)
 {
     json j{{"v", 1}, {"t", "begin"}, {"op", op.id}, {"src", op.src}, {"label", op.label},
         {"time", op.time ? op.time : nowMs()}, {"wt", op.wt}};
+    // The writer: lets a later reader tell an operation whose process is gone from a live one.
+    const ProcessInfo self = selfProcess();
+    j["pid"] = op.pid ? op.pid : static_cast<std::int64_t>(self.pid);
+    j["pstart"] = op.pid ? op.pstart : self.start;
     if (!op.undoes.empty())
         j["undoes"] = op.undoes;
     if (op.redo)
@@ -165,7 +216,7 @@ bool Journal::begin(const Operation& op, std::string* error)
     return appendLine(j.dump(), error);
 }
 
-bool Journal::appendRefs(const std::string& id, const std::vector<RefChange>& changes, std::string* error)
+bool Writer::appendRefs(const std::string& id, const std::vector<RefChange>& changes, std::string* error)
 {
     if (changes.empty())
         return true;
@@ -175,7 +226,7 @@ bool Journal::appendRefs(const std::string& id, const std::vector<RefChange>& ch
     return appendLine(json{{"v", 1}, {"t", "refs"}, {"op", id}, {"u", u}}.dump(), error);
 }
 
-bool Journal::appendIndex(const std::string& id, const IndexChange& c, std::string* error)
+bool Writer::appendIndex(const std::string& id, const IndexChange& c, std::string* error)
 {
     json j{{"v", 1}, {"t", "index"}, {"op", id}, {"wt", c.wt}, {"before", c.before}, {"after", c.after}};
     if (c.worktree)
@@ -183,7 +234,7 @@ bool Journal::appendIndex(const std::string& id, const IndexChange& c, std::stri
     return appendLine(j.dump(), error);
 }
 
-bool Journal::appendWorktree(const std::string& id, const WorktreeChange& c, std::string* error)
+bool Writer::appendWorktree(const std::string& id, const WorktreeChange& c, std::string* error)
 {
     json j{{"v", 1}, {"t", "worktree"}, {"op", id}, {"do", c.action}, {"path", c.path}};
     if (!c.head.empty())
@@ -207,7 +258,7 @@ WorktreeChange inverse(const WorktreeChange& c)
     return r;
 }
 
-bool Journal::appendRewrites(const std::string& id, const std::vector<std::pair<std::string, std::string>>& map,
+bool Writer::appendRewrites(const std::string& id, const std::vector<std::pair<std::string, std::string>>& map,
     std::string* error)
 {
     if (map.empty())
@@ -218,12 +269,12 @@ bool Journal::appendRewrites(const std::string& id, const std::vector<std::pair<
     return appendLine(json{{"v", 1}, {"t", "map"}, {"op", id}, {"m", m}}.dump(), error);
 }
 
-bool Journal::markRebase(const std::string& id, std::string* error)
+bool Writer::markRebase(const std::string& id, std::string* error)
 {
     return appendLine(json{{"v", 1}, {"t", "rebase"}, {"op", id}}.dump(), error);
 }
 
-bool Journal::end(const std::string& id, bool ok, std::string* error)
+bool Writer::end(const std::string& id, bool ok, std::string* error)
 {
     json j{{"v", 1}, {"t", "end"}, {"op", id}};
     if (!ok)
@@ -282,6 +333,8 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
             op.undoes = j.value("undoes", std::string());
             op.redo = j.value("redo", false);
             op.time = j.value("time", static_cast<std::int64_t>(0));
+            op.pid = j.value("pid", static_cast<std::int64_t>(0));
+            op.pstart = j.value("pstart", static_cast<std::uint64_t>(0));
             op.order = ops.size();
             byId[id] = ops.size();
             ops.push_back(std::move(op));

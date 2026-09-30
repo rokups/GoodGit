@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -53,6 +54,8 @@ struct Operation {
     std::string undoes;    // for undo/redo operations
     bool redo = false;
     std::int64_t time = 0;
+    std::int64_t pid = 0;               // the writer's process id (begin record; 0 = not recorded)
+    std::uint64_t pstart = 0;           // and its start time (gg::ProcessInfo::start; 0 = unknown)
     bool ended = false;
     bool ok = true;
     bool spansRebase = false;           // a native rebase: open until its end record (NativeRebase.hpp)
@@ -74,14 +77,13 @@ struct Operation {
     bool isRedo() const { return !undoes.empty() && redo; }
 };
 
-class Journal {
+// The append API of the journal. Every call appends one record and returns false (with a reason)
+// when it cannot be written. Journal locks per call, Journal::Transaction holds the lock for its
+// whole lifetime; code that only appends takes a Writer& and works with both.
+class Writer {
 public:
-    explicit Journal(std::filesystem::path commonDir);
+    virtual ~Writer() = default;
 
-    const std::filesystem::path& path() const { return m_path; }
-    static std::string newOperationId();
-
-    // Appends one record; returns false (with a reason) when the lock cannot be taken.
     bool begin(const Operation& op, std::string* error = nullptr);
     bool appendRefs(const std::string& id, const std::vector<RefChange>& changes, std::string* error = nullptr);
     bool appendIndex(const std::string& id, const IndexChange& change, std::string* error = nullptr);
@@ -93,15 +95,54 @@ public:
     // record, even when the git process that began it is gone.
     bool markRebase(const std::string& id, std::string* error = nullptr);
 
+    // All operations in journal order (reading never takes the lock). See Journal::read.
+    virtual std::vector<Operation> read(std::string* error = nullptr, size_t* skipped = nullptr) const = 0;
+
+protected:
+    // Appends one JSON line (without the newline).
+    virtual bool appendLine(const std::string& line, std::string* error) = 0;
+};
+
+class Journal : public Writer {
+public:
+    explicit Journal(std::filesystem::path commonDir);
+
+    const std::filesystem::path& path() const { return m_path; }
+    const std::filesystem::path& dir() const { return m_dir; }
+    static std::string newOperationId();
+
+    // The Writer calls (begin, appendRefs, ...) each take the lock for that one record.
+
+    // A held journal lock: several records written under one lock. Reading stays possible. A plain
+    // Journal call from elsewhere fails with "journal busy" while a Transaction is alive.
+    class Transaction : public Writer {
+    public:
+        explicit Transaction(const Journal& journal);
+        ~Transaction() override;
+        Transaction(const Transaction&) = delete;
+        Transaction& operator=(const Transaction&) = delete;
+
+        bool locked() const;
+        std::vector<Operation> read(std::string* error = nullptr, size_t* skipped = nullptr) const override;
+
+    protected:
+        bool appendLine(const std::string& line, std::string* error) override;
+
+    private:
+        struct Held;
+        const Journal& m_journal;
+        std::unique_ptr<Held> m_held;
+    };
+
     // All operations in journal order. Corrupt or torn lines are skipped; `skipped` counts them.
     // A journal written by a newer major version yields an error and no operations.
-    std::vector<Operation> read(std::string* error = nullptr, size_t* skipped = nullptr) const;
+    std::vector<Operation> read(std::string* error = nullptr, size_t* skipped = nullptr) const override;
 
     // Tail search: does the last `bytes` of the file hold a record of operation `id` (so it was begun)?
     bool hasOpenOperation(const std::string& id, size_t bytes = 64 * 1024) const;
 
 private:
-    bool appendLine(const std::string& line, std::string* error);
+    bool appendLine(const std::string& line, std::string* error) override;
 
     std::filesystem::path m_dir;
     std::filesystem::path m_path;

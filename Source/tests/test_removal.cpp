@@ -117,7 +117,7 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
         entries.insert(e.path().filename().string());
     GG_CHECK(entries.count("journal") == 1);
     for (const auto& name : entries) {
-        const bool allowed = name == "journal" || name == "cache" || name == "hooks";
+        const bool allowed = name == "journal" || name == "cache" || name == "hooks" || name == "reconcile.json";
         if (!allowed)
             ctx->LogError("unexpected entry .git/gg/%s", name.c_str());
         GG_CHECK(allowed);
