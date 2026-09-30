@@ -1,6 +1,7 @@
 // Worktree dialogs (docs/spec/ui-spec.md §8 Worktrees, §9; product spec §4.7).
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/RevResolve.hpp"
 #include "shell/Session.hpp"
 
 #include <libgg/GitRunner.hpp>
@@ -68,7 +69,7 @@ void Session::showAddWorktreeDialog(int mode, const std::string& preset)
     pick.filterable = true;
     pick.visible = [](const Form& form) { return form.choice("checkout") == 1; };
     f.add(pick);
-    Field start{Field::Text, "start", "Start at", mode == 2 && !preset.empty() ? preset : std::string("HEAD")};
+    Field start = commitField(*this, "start", "Start at (branch, tag or commit)", mode == 2 && !preset.empty() ? preset : std::string("HEAD"));
     start.visible = [](const Form& form) { return form.choice("checkout") != 1; };
     f.add(start);
     f.add(Field{Field::Check, "force", "Force, even if the branch is checked out elsewhere (--force)"});

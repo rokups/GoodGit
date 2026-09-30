@@ -4,6 +4,7 @@
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/RevResolve.hpp"
 #include "shell/Session.hpp"
 
 #include <libgg/Git2.hpp>
@@ -24,8 +25,6 @@ std::vector<std::string> remoteNames(const core::SnapshotPtr& snap)
         names.push_back(r.name);
     return names;
 }
-
-std::string shortName(const std::string& s) { return s.size() > 10 ? s.substr(0, 10) : s; }
 
 } // namespace
 
@@ -149,12 +148,13 @@ void Session::showCreateBranchDialog(const std::string& at)
     Form f;
     f.title = "Create branch";
     f.add(Field{Field::Text, "name", "Name"});
-    f.add(Field{Field::Info, "at", "", "At " + shortName(at)});
+    f.add(commitField(*this, "at", "At (branch, tag or commit)", at));
     Field checkout{Field::Check, "checkout", "Check out after creating"};
     checkout.checked = true;
     f.add(checkout);
-    f.buttons.push_back({"Create", [this, at](Form& form) { m_actions->createBranch(gg::trim(form.text("name")), at, form.checked("checkout")); },
-        [](const Form& form) { return nonEmpty(form, "name"); }});
+    f.buttons.push_back({"Create",
+        [this](Form& form) { m_actions->createBranch(gg::trim(form.text("name")), gg::trim(form.text("at")), form.checked("checkout")); },
+        [](const Form& form) { return nonEmpty(form, "name") && nonEmpty(form, "at"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -166,17 +166,17 @@ void Session::showCreateTagDialog(const std::string& at)
     Form f;
     f.title = "Create tag";
     f.add(Field{Field::Text, "name", "Name"});
-    f.add(Field{Field::Info, "at", "", "At " + shortName(at)});
+    f.add(commitField(*this, "at", "At (branch, tag or commit)", at));
     f.add(Field{Field::Check, "annotated", "Annotated (with a message)"});
     f.add(Field{Field::Multiline, "message", "Message (annotated tags)"});
     f.buttons.push_back({"Create",
-        [this, at](Form& form) {
+        [this](Form& form) {
             std::string message = form.checked("annotated") ? form.text("message") : std::string();
             if (form.checked("annotated") && gg::trim(message).empty())
                 message = gg::trim(form.text("name"));
-            m_actions->createTag(gg::trim(form.text("name")), at, message);
+            m_actions->createTag(gg::trim(form.text("name")), gg::trim(form.text("at")), message);
         },
-        [](const Form& form) { return nonEmpty(form, "name"); }});
+        [](const Form& form) { return nonEmpty(form, "name") && nonEmpty(form, "at"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -322,6 +322,15 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
     f.message = "Delete " + where + " '" + branch + "'?";
     if (mode > 0 && remotes.empty())
         f.message += "\n\nNo remote branch with that name was found.";
+    {
+        // The commit that goes away: the local branch's tip, or (remote only) its upstream's.
+        const auto* b = m_snapshot->findBranch(branch);
+        const bool upstreamOk = b && !b->upstream.empty() && !b->upstreamGone;
+        f.add(commitInfo(*this, mode == 1 ? "Remote branch" : "Branch", mode == 1 && upstreamOk ? b->upstream : branch));
+        // `git branch -d` refuses unless the tip is merged into its upstream (else HEAD).
+        if (mode != 1)
+            f.add(commitInfo(*this, "Must be merged into (unless -D)", upstreamOk ? b->upstream : std::string("HEAD")));
+    }
     if (mode != 1)
         f.add(Field{Field::Check, "force", "Delete even if not merged (-D)"});
     f.buttons.push_back({"Delete", [this, branch, remotes, mode](Form& form) {
@@ -338,11 +347,14 @@ void Session::showMoveBranchDialog(const std::string& branch, const std::string&
         elsewhere = b->worktree;
     Form f;
     f.title = "Move branch";
-    f.message = "Move '" + branch + "' to " + shortName(to) + "?";
+    f.message = "Point the branch at another commit.";
     if (!elsewhere.empty())
         f.message += "\n\nWarning: '" + branch + "' is checked out in worktree '" + elsewhere
             + "'. Its working tree and index will not follow the branch.";
-    f.buttons.push_back({"Move", [this, branch, to](Form&) { m_actions->moveBranch(branch, to); }});
+    f.add(commitInfo(*this, "Branch", branch));
+    f.add(commitField(*this, "to", "Move to (branch, tag or commit)", to));
+    f.buttons.push_back({"Move", [this, branch](Form& form) { m_actions->moveBranch(branch, gg::trim(form.text("to"))); },
+        [](const Form& form) { return nonEmpty(form, "to"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

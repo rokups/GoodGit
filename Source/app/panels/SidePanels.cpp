@@ -4,6 +4,7 @@
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/RevResolve.hpp"
 #include "shell/Theme.hpp"
 #include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
@@ -228,7 +229,8 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         f.title = "Reconcile";
         f.message = b.upstream.empty() ? b.name + " has no upstream: name the branch to reconcile with."
                                        : b.name + " and " + b.upstream + " have diverged.";
-        f.add(Field{Field::Text, "with", "With", b.upstream});
+        f.add(commitInfo(m_session, "HEAD (" + b.name + ")", b.target));
+        f.add(commitField(m_session, "with", "Reconcile with (branch, tag or commit)", b.upstream));
         Field how{Field::Combo, "how", "How"};
         how.options = {"Rebase my commits onto it", "Merge it in"};
         f.add(how);

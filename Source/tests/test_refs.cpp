@@ -188,6 +188,66 @@ GG_TEST("refs", "move a branch; warning for a branch checked out elsewhere")
     fs::remove(repo / "untracked-note.txt");
 }
 
+GG_TEST("refs", "Move branch names the branch and its tip, prefills the destination commit with a live preview, and moves to what the field says")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    s.git(repo, {"branch", "mover", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string target = s.revParse(repo, "HEAD~1");
+    auto subjectOf = [&](const std::string& rev) { return gg::trim(s.gitOut(repo, {"log", "-1", "--format=%s", rev})); };
+    auto form = [&]() -> const ggui::Form* { return s.app.dialogs().current(); };
+    s.contextMenu(("//History/**/###row_" + target).c_str(), "Move branch/mover");
+    GG_REQUIRE(s.dialogOpen("Move branch"));
+    GG_REQUIRE(form() && form()->field("to"));
+    // The source: the branch and its current tip; the destination: the clicked commit, previewed.
+    GG_CHECK(form()->fields.front().kind == ggui::Field::Info);
+    GG_CHECK(form()->fields.front().text.find("Branch: mover") == 0);
+    GG_CHECK(form()->fields.front().text.find(subjectOf("mover")) != std::string::npos);
+    GG_CHECK_STR_EQ(form()->text("to"), target);
+    GG_CHECK(s.waitUntil([&] { return form()->field("to")->preview.line().find(subjectOf(target)) != std::string::npos; }, 3.0f));
+    // Retyping the destination updates the preview, and Move goes where the field says.
+    s.dialogText("Move branch", "to", "HEAD");
+    GG_CHECK(s.waitUntil([&] { return form()->field("to")->preview.line().find(subjectOf("HEAD")) != std::string::npos; }, 3.0f));
+    s.dialogText("Move branch", "to", "no-such-ref");
+    GG_CHECK(s.waitUntil([&] { return form()->field("to")->preview.warning; }, 3.0f));
+    s.dialogText("Move branch", "to", "HEAD");
+    s.dialogButton("Move branch", "Move");
+    const std::string head = s.revParse(repo, "HEAD");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "mover") == head; }));
+    s.settle();
+}
+
+GG_TEST("refs", "Create branch and Delete branch name their commits: the start commit is an input prefilled with the clicked one")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string older = s.revParse(repo, "HEAD~2");
+    auto subjectOf = [&](const std::string& rev) { return gg::trim(s.gitOut(repo, {"log", "-1", "--format=%s", rev})); };
+    auto form = [&]() -> const ggui::Form* { return s.app.dialogs().current(); };
+    s.contextMenu(("//History/**/###row_" + older).c_str(), "Create branch...");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    GG_REQUIRE(form() && form()->field("at"));
+    GG_CHECK_STR_EQ(form()->text("at"), older);
+    GG_CHECK(s.waitUntil([&] { return form()->field("at")->preview.line().find(subjectOf(older)) != std::string::npos; }, 3.0f));
+    // The typed start commit is used, not the clicked one.
+    s.dialogText("Create branch", "at", "HEAD~1");
+    s.dialogText("Create branch", "name", "at-field");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
+    s.dialogButton("Create branch", "Create");
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/at-field"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "at-field"), s.revParse(repo, "HEAD~1"));
+    // Delete branch: the branch's tip is named, and what a safe delete checks it against.
+    s.contextMenu(branchRow("at-field").c_str(), "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_REQUIRE(form() && form()->fields.size() >= 2);
+    GG_CHECK(form()->fields[0].text.find("Branch: at-field") == 0);
+    GG_CHECK(form()->fields[0].text.find(subjectOf("at-field")) != std::string::npos);
+    GG_CHECK(form()->fields[1].text.find("Must be merged into (unless -D): HEAD") == 0);
+    s.dialogButton("Delete branch", "Cancel");
+    s.settle();
+}
+
 GG_TEST("refs", "Move branch is disabled on a row where every branch already points")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

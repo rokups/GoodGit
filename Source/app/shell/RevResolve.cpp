@@ -82,6 +82,40 @@ const core::HistoryRow* resolveBase(const core::Snapshot& snap, const std::vecto
     return nullptr;
 }
 
+// The commit a bare ref name (HEAD, branch, remote branch, tag) or a full id names, loaded or not.
+core::Oid refTarget(const core::Snapshot& snap, std::string name)
+{
+    if (name.empty())
+        return {};
+    if (name == "HEAD" || name == "@")
+        return snap.headUnborn ? core::Oid{} : snap.head;
+    const size_t fullLen = snap.head.isNull() ? 40 : snap.head.size * 2u;
+    if (name.size() == fullLen && isHex(name))
+        return core::Oid::fromHex(name);
+    if (name.compare(0, 5, "refs/") == 0)
+        name.erase(0, 5);
+    const bool heads = name.rfind("heads/", 0) == 0, tags = name.rfind("tags/", 0) == 0, remotes = name.rfind("remotes/", 0) == 0;
+    if (heads)
+        name.erase(0, 6);
+    else if (tags)
+        name.erase(0, 5);
+    else if (remotes)
+        name.erase(0, 8);
+    if (!tags && !remotes)
+        for (const auto& b : snap.branches)
+            if (b.name == name)
+                return b.target;
+    if (!heads && !tags)
+        for (const auto& b : snap.remoteBranches)
+            if (b.name == name)
+                return b.target;
+    if (!heads && !remotes)
+        for (const auto& t : snap.tags)
+            if (t.name == name)
+                return t.target;
+    return {};
+}
+
 } // namespace
 
 const core::HistoryRow* resolveRev(const core::Snapshot& snap, const std::vector<core::HistoryRow>& rows,
@@ -175,6 +209,10 @@ Field commitField(Session& session, const std::string& id, const std::string& la
             p.found = true;
             p.shortId = row->shortId;
             p.subject = row->subject;
+        } else if (const auto snap = s->snapshot(); snap && !refTarget(*snap, trimmed).isNull()) {
+            // A ref or id that is not among the loaded rows (filtered or truncated History).
+            p.shortId = s->shortId(refTarget(*snap, trimmed));
+            p.message = p.shortId + " (not in loaded history)";
         } else {
             p.message = "Not found in loaded history";
             p.warning = true;
@@ -195,7 +233,12 @@ Field commitInfo(Session& session, const std::string& label, const std::string& 
 {
     Field f{Field::Info, "info_" + label};
     const core::HistoryRow* row = resolveRev(session, rev);
-    f.text = label + ": " + (row && row->shortId != rev ? rev + "  " + commitLine(*row, 80) : row ? commitLine(*row, 80) : rev);
+    std::string what = rev;
+    if (row)
+        what = row->shortId != rev ? rev + "  " + commitLine(*row, 80) : commitLine(*row, 80);
+    else if (const auto snap = session.snapshot(); snap && !refTarget(*snap, rev).isNull())
+        what = rev + "  " + session.shortId(refTarget(*snap, rev)) + " (not in loaded history)";
+    f.text = label + ": " + what;
     return f;
 }
 
