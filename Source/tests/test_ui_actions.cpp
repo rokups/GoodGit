@@ -87,7 +87,7 @@ GG_TEST("ui", "Settings ▸ Hooks: the ask-on-open checkbox turns the first-open
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
-GG_TEST("ui", "History: Ctrl-click drops a commit from the selection; New merge commit from the row menu")
+GG_TEST("ui", "History: Ctrl-click drops a commit from the selection")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string main = s.head(repo);
@@ -108,12 +108,9 @@ GG_TEST("ui", "History: Ctrl-click drops a commit from the selection; New merge 
     ctx->KeyUp(ImGuiMod_Ctrl);
     GG_REQUIRE(history.extraSelection().size() == 1);
     GG_CHECK(history.extraSelection().front().hex() == topic);
-    s.contextMenu(rowRef(main).c_str(), "New merge commit");
-    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main^1") == main; }));
-    s.settle();
-    GG_CHECK_STR_EQ(s.revParse(repo, "main^2"), topic);
-    GG_CHECK(!refExists(s, repo, "main^3"));
-    GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
+    // A plain click on a row collapses the selection to that row.
+    ctx->ItemClick(rowRef(main).c_str());
+    GG_CHECK(history.extraSelection().empty());
 }
 
 GG_TEST("ui", "Push without an upstream opens Push to (Branches); remote, upstream and force with lease")

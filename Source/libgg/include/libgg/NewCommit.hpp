@@ -14,6 +14,8 @@ struct NewCommitOptions {
     std::vector<std::string> parents; // revisions; empty = HEAD (none for an unborn HEAD)
     std::string message;
     bool detach = false;              // leave branches alone; HEAD detaches at the new commit
+    std::string branch;               // local branch at the first parent to advance and switch to
+                                      // (empty = HEAD's branch, when the first parent is HEAD)
 };
 
 struct NewCommitResult {
@@ -25,6 +27,7 @@ struct NewCommitResult {
 
 // Creates the commit and moves HEAD:
 //  * HEAD attached, first parent == HEAD, not --detach → the branch advances (HEAD follows);
+//  * `branch` set (another branch at the first parent) → it advances and HEAD switches to it;
 //  * otherwise HEAD detaches at the new commit (git switch --detach, which refuses to
 //    overwrite local changes).
 NewCommitResult newCommit(git_repository* repo, const NewCommitOptions& options);

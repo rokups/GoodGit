@@ -671,13 +671,6 @@ void Actions::simplifyParents(const core::Oid& commit)
     });
 }
 
-void Actions::insertCommit(const core::Oid& at, bool before, const std::string& message)
-{
-    const std::string id = at.hex();
-    rewrite(std::string("new commit ") + (before ? "before " : "after ") + id.substr(0, 10),
-        [id, before, message](git_repository* repo) { return rw::insertPlan(repo, id, before, message); });
-}
-
 void Actions::mergeIntoHead(const std::string& branch, const std::string& message)
 {
     std::string msg = message.empty() ? "Merge branch '" + branch + "'\n" : message;

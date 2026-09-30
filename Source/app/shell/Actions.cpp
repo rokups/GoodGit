@@ -522,10 +522,11 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
         {}, true, false);
 }
 
-void Actions::newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message)
+void Actions::newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message, const std::string& branch)
 {
-    run(detach ? "new detached commit" : "new commit", [parents, detach, message](MutationContext& ctx) {
+    run(detach ? "new detached commit" : "new commit", [parents, detach, message, branch](MutationContext& ctx) {
         gg::NewCommitOptions opts;
+        opts.branch = branch;
         opts.parents = parents;
         opts.detach = detach;
         opts.message = message;

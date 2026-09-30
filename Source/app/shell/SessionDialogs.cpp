@@ -427,12 +427,31 @@ void Session::showDeleteFilesDialog(std::vector<std::string> paths)
     m_app.dialogs().open(std::move(f));
 }
 
-void Session::newCommitOn(const std::vector<core::Oid>& parents, bool detach)
+std::string Session::newCommitBranch(const core::Oid& at) const
+{
+    if (m_snapshot->headUnborn)
+        return at.isNull() ? m_snapshot->headBranch : std::string();
+    const core::Oid where = at.isNull() ? m_snapshot->head : at;
+    if (where == m_snapshot->head && !m_snapshot->headDetached && !m_snapshot->headBranch.empty())
+        return m_snapshot->headBranch;
+    const core::BranchInfo* only = nullptr;
+    int count = 0;
+    for (const auto& b : m_snapshot->branches)
+        if (b.target == where) {
+            only = &b;
+            ++count;
+        }
+    return count == 1 && only->worktree.empty() ? only->name : std::string();
+}
+
+void Session::newCommitOn(const core::Oid& parent, bool detach)
 {
     std::vector<std::string> specs;
-    for (const auto& p : parents)
-        specs.push_back(p.hex());
-    m_actions->newCommit(specs, detach);
+    if (!parent.isNull())
+        specs.push_back(parent.hex());
+    const std::string branch = detach ? std::string() : newCommitBranch(parent);
+    const bool unborn = m_snapshot->headUnborn;
+    m_actions->newCommit(specs, detach || (branch.empty() && !unborn), {}, branch);
 }
 
 void Session::pushCurrent()

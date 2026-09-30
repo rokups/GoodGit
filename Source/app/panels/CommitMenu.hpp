@@ -11,6 +11,19 @@ namespace ggui {
 
 class Session;
 
+// The commits selected in History (the primary one plus Ctrl-clicked ones), newest first.
+// `contiguous`: each commit is the first parent of the one listed before it (no gaps).
+struct SelectionShape {
+    std::vector<core::Oid> ids;
+    bool contiguous = false;
+    size_t count() const { return ids.size(); }
+    bool single() const { return ids.size() == 1; }
+    bool range() const { return ids.size() > 1 && contiguous; } // two or more adjacent commits
+};
+SelectionShape selectionShape(Session& session);
+// Tooltip for a menu item that just drew, shown while it is disabled (`disabled`) and hovered.
+void disabledHint(bool disabled, const char* why);
+
 // Menu items for `row` (inside an open menu or popup).
 void drawCommitEditItems(Session& session, const core::HistoryRow& row);
 // Keyboard shortcuts for the selected commit (History panel focused).

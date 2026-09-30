@@ -524,28 +524,41 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         return;
     // The table runs with zero vertical item spacing; the menu uses the regular one.
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
-    if (m_session.selection().id != row.id)
+    // A click on a row outside the selection selects just that row; on a selected row it keeps the selection.
+    if (m_session.selection().kind != SelKind::Commit || (m_session.selection().id != row.id
+            && std::find(m_extra.begin(), m_extra.end(), row.id) == m_extra.end())) {
+        m_extra.clear();
         m_session.selectCommit(row.id);
+    }
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
+    const SelectionShape sel = selectionShape(m_session);
     const std::string hex = row.id.hex();
+    const bool single = sel.single();
     std::vector<std::string> branchesHere;
     for (const auto& b : m_snapshot->branches)
         if (b.target == row.id)
             branchesHere.push_back(b.name);
-    std::vector<core::Oid> parents{row.id};
-    for (const auto& e : m_extra)
-        if (e != row.id)
-            parents.push_back(e);
+    // "New" advances a branch (HEAD's, or the only one here); elsewhere only "New detached" exists.
     // Holding Alt swaps "New" for "New detached" (the same variants as the N / Alt+N hotkeys).
-    const bool mergeNew = parents.size() > 1;
-    if (ImGui::GetIO().KeyAlt) {
-        if (menuItem(ICON_MS_ADD_CIRCLE, mergeNew ? "New detached merge commit" : "New detached", "Alt+N", false, free))
-            m_session.newCommitOn(parents, true);
-    } else if (menuItem(ICON_MS_ADD, mergeNew ? "New merge commit" : "New", "N", false, free)) {
-        m_session.newCommitOn(parents, false);
+    const bool attach = !m_session.newCommitBranch(row.id).empty();
+    if (attach && !ImGui::GetIO().KeyAlt) {
+        if (menuItem(ICON_MS_ADD, "New", "N", false, free && single))
+            m_session.newCommitOn(row.id, false);
+    } else {
+        if (menuItem(ICON_MS_ADD_CIRCLE, "New detached", attach ? "Alt+N" : "N", false, free && single))
+            m_session.newCommitOn(row.id, true);
+        if (!attach)
+            disabledHint(true, "Only a branch's tip (HEAD's branch, or a commit with exactly one branch) can get a new attached commit; here it is detached.");
     }
-    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free)) {
+    if (!single)
+        disabledHint(true, "Needs a single selected commit.");
+    // Items acting on the row: disabled unless it is the only selected commit.
+    auto needOne = [&] {
+        if (!single)
+            disabledHint(true, "Needs a single selected commit.");
+    };
+    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free && single)) {
         for (const auto& b : branchesHere)
             if (menuItem(ICON_MS_SWAP_HORIZ, b.c_str()))
                 actions.checkout(b, false);
@@ -555,22 +568,29 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
             actions.checkout(hex, true);
         ImGui::EndMenu();
     }
-    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free))
+    needOne();
+    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free && single))
         m_session.showCreateBranchDialog(hex);
-    if (menuItem(ICON_MS_ADD, "Create tag...", nullptr, false, free))
+    needOne();
+    if (menuItem(ICON_MS_ADD, "Create tag...", nullptr, false, free && single))
         m_session.showCreateTagDialog(hex);
+    needOne();
     std::vector<std::string> movable;
     for (const auto& b : m_snapshot->branches)
         if (b.target != row.id)
             movable.push_back(b.name);
-    if (beginMenu(ICON_MS_DRIVE_FILE_MOVE, "Move branch", free && !movable.empty())) {
+    if (beginMenu(ICON_MS_DRIVE_FILE_MOVE, "Move branch", free && single && !movable.empty())) {
         for (const auto& name : movable)
             if (menuItem(ICON_MS_DRIVE_FILE_MOVE, name.c_str()))
                 m_session.showMoveBranchDialog(name, hex);
         ImGui::EndMenu();
     }
+    if (!single)
+        disabledHint(true, "Needs a single selected commit.");
+    else
+        disabledHint(movable.empty(), "No other branch to move here.");
     ImGui::Separator();
-    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy")) {
+    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy", single)) {
         copyIdMenuItem("ID", row.shortId, hex);
         if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
             std::string text = hex + " " + row.subject + "\nAuthor: " + row.author + " <" + row.authorEmail
@@ -579,15 +599,20 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         }
         ImGui::EndMenu();
     }
+    needOne();
     if (mergeToggle(row)) {
         ImGui::Separator();
-        if (menuItem(row.collapsed ? ICON_MS_UNFOLD_MORE : ICON_MS_UNFOLD_LESS, row.collapsed ? "Expand merged history" : "Collapse merged history"))
+        if (menuItem(row.collapsed ? ICON_MS_UNFOLD_MORE : ICON_MS_UNFOLD_LESS, row.collapsed ? "Expand merged history" : "Collapse merged history",
+                nullptr, false, single))
             toggleMerge(row.id);
+        needOne();
     }
     ImGui::Separator();
     drawCommitEditItems(m_session, row);
-    if (parents.size() > 1 && menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free))
-        openInteractiveRebaseSelection(m_session, parents);
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free && sel.range()))
+        openInteractiveRebaseSelection(m_session, sel.ids);
+    disabledHint(!sel.range(), sel.count() < 2 ? "Needs two or more adjacent commits selected (Ctrl-click to add)."
+                                               : "The selected commits are not adjacent (gaps between them).");
     ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
@@ -611,7 +636,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
     if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
         if (ImGui::GetIO().KeyCtrl && sel.kind == SelKind::Commit && sel.id != row.id) {
-            // Ctrl-click adds (or removes) further commits: New on several commits = merge.
+            // Ctrl-click adds (or removes) further commits.
             if (extra)
                 m_extra.erase(std::find(m_extra.begin(), m_extra.end(), row.id));
             else
@@ -825,12 +850,10 @@ void HistoryPanel::draw(bool* open)
         const bool free = m_session.actions().busy().empty();
         if (ImGui::IsKeyPressed(ImGuiKey_F7, false))
             selectConflicted(io.KeyShift ? -1 : +1);
-        if (sel.kind == SelKind::Commit && free && !io.KeyCtrl) {
-            if (ImGui::IsKeyPressed(ImGuiKey_N, false)) {
-                std::vector<core::Oid> parents{sel.id};
-                parents.insert(parents.end(), m_extra.begin(), m_extra.end());
-                m_session.newCommitOn(parents, io.KeyAlt);
-            }
+        // The commit keys act on a single selected commit.
+        if (sel.kind == SelKind::Commit && free && !io.KeyCtrl && m_extra.empty()) {
+            if (ImGui::IsKeyPressed(ImGuiKey_N, false))
+                m_session.newCommitOn(sel.id, io.KeyAlt);
             else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyAlt)
                 m_session.actions().editCommit(sel.id);
             else if (const auto* r = row(sel.id))

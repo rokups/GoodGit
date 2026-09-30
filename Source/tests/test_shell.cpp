@@ -771,7 +771,7 @@ GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a 
     GG_CHECK(r.err.find("SDL_CreateGPUDevice failed") != std::string::npos);
 }
 
-GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a merge from the selection, a detached rebase's progress")
+GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a detached rebase's progress")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -797,18 +797,6 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     // HEAD's full ID on hover.
     ctx->MouseMove("//##Toolbar/###tb_head");
     ctx->SleepNoSkip(1.0f, 0.1f);
-    // Two commits selected (Ctrl+click): New makes a merge of both.
-    const std::string a = s.head(repo), b = s.revParse(repo, "origin/main");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + b).c_str()); }));
-    ctx->ItemClick(("//History/**/###row_" + a).c_str());
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick(("//History/**/###row_" + b).c_str());
-    ctx->KeyUp(ImGuiMod_Ctrl);
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
-    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "HEAD^2"}).ok(); }));
-    s.settle();
-    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^1"), a);
-    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^2"), b);
     // A rebase of a detached HEAD, stopped: the progress view names it.
     s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
     const fs::path list = s.root() / "todo.txt";

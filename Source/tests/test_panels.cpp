@@ -245,6 +245,9 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     fs::remove(repo / ".git" / "hooks" / "pre-commit");
     s.showPanel("Operations");
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Operations", "(failed)"); }));
+    // Ctrl+N needs a commit a branch can advance from: HEAD's (origin/main, selected above, has no local branch).
+    s.session()->selectCommit(ggui::core::Oid::fromHex(s.head(repo)));
+    ctx->Yield(2);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty() && s.session()->operations().back().label == "new commit"; }));
     s.settle();

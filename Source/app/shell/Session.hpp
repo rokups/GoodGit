@@ -177,7 +177,12 @@ public:
     void showLockWorktreeDialog(const core::WorktreeInfo& w);
     void showPruneWorktreesDialog();
     void showRepairWorktreeDialog(const core::WorktreeInfo& w);
-    void newCommitOn(const std::vector<core::Oid>& parents, bool detach);
+    // New: an empty commit on `parent` (null = HEAD). Attached, the branch at `parent` advances (see
+    // newCommitBranch) and HEAD follows it; `detach`, or no such branch, leaves branches alone.
+    void newCommitOn(const core::Oid& parent, bool detach);
+    // The branch a non-detached New on `at` (null = HEAD) advances: HEAD's branch when `at` is HEAD,
+    // else the only local branch pointing at `at`. Empty when New there can only be detached.
+    std::string newCommitBranch(const core::Oid& at) const;
     void pushCurrent();
     void popStash();
     void maybePromptHooks();

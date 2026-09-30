@@ -277,15 +277,24 @@ GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (
     GG_CHECK(editor(s).selection() == (std::set<size_t>{0}));
     ctx->ItemClick(irWidget("ir_cancel").c_str());
 
-    // A selection (c2 and c4): from the oldest, both rows selected.
+    // A selection with a gap (c2 and c4): the item is disabled.
     ctx->ItemClick(historyRow(r.c[2]).c_str());
     ctx->KeyDown(ImGuiMod_Ctrl);
     ctx->ItemClick(historyRow(r.c[4]).c_str());
     ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->ItemClick(historyRow(r.c[2]).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Interactive rebase selection...").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // Adjacent commits (c2 and c3): from the oldest, both rows selected.
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(historyRow(r.c[3]).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
     s.contextMenu(historyRow(r.c[2]).c_str(), "Interactive rebase selection...");
     GG_REQUIRE(editorReady(s));
     GG_CHECK_STR_EQ(editor(s).context()->upstream, r.c[1]);
-    GG_CHECK(editor(s).selection() == (std::set<size_t>{0, 3}));
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{0, 1}));
     ctx->ItemClick(irWidget("ir_cancel").c_str());
 
     // Commit menu: asks for the base; an unknown one is an error.

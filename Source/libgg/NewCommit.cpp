@@ -87,7 +87,29 @@ NewCommitResult newCommit(git_repository* repo, const NewCommitOptions& options)
     }
     const bool onHead = parents.empty() ? unborn : toHex(*git_commit_id(parents.front().get())) == headCommit;
     RunResult r;
-    if (!options.detach && !headTarget.empty() && onHead) {
+    const std::string branchRef = options.branch.empty() ? std::string() : "refs/heads/" + options.branch;
+    if (!options.detach && !branchRef.empty() && branchRef != headTarget) {
+        // Another branch at the first parent: it advances, then HEAD follows it.
+        git_oid tip;
+        const bool have = !parents.empty() && git_reference_name_to_id(&tip, repo, branchRef.c_str()) == 0;
+        git_error_clear();
+        if (!have || toHex(tip) != toHex(*git_commit_id(parents.front().get()))) {
+            result.error = "branch '" + options.branch + "' is not at the first parent";
+            return result;
+        }
+        const std::string old = toHex(tip);
+        r = git(cwd, {"update-ref", "--create-reflog", "-m", "gg new", branchRef, result.commit, old});
+        if (r.ok()) {
+            r = bare ? git(cwd, {"symbolic-ref", "HEAD", branchRef}) : git(cwd, {"switch", "--quiet", options.branch});
+            if (!r.ok()) {
+                const std::string why = r.message();
+                git(cwd, {"update-ref", "-m", "gg new (undo)", branchRef, old, result.commit});
+                result.error = why;
+                return result;
+            }
+            result.movedBranch = branchRef;
+        }
+    } else if (!options.detach && !headTarget.empty() && onHead) {
         const std::string old = unborn ? std::string(hexSize(oidType(repo)), '0') : headCommit;
         r = git(cwd, {"update-ref", "--create-reflog", "-m", "gg new", headTarget, result.commit, old});
         result.movedBranch = headTarget;

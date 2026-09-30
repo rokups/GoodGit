@@ -74,22 +74,124 @@ GG_TEST("new", "new detached and new on another commit")
     GG_CHECK(s.statusPorcelain(repo).empty()); // the worktree followed the detached HEAD
 }
 
-GG_TEST("new", "several parents make a merge commit")
+namespace {
+
+// Right-clicks a row and reports whether the menu item `path` exists and is enabled; closes the menu.
+struct MenuProbe {
+    bool exists = false;
+    bool enabled = false;
+};
+
+MenuProbe probe(Scenario& s, ImGuiTestContext* ctx, const std::string& row, const char* item)
 {
-    const fs::path repo = s.fixture(Recipe::Merges);
-    const std::string main = s.head(repo);
-    const std::string topic = s.revParse(repo, "topic");
+    (void)s;
+    auto copyShown = [&] { return ctx->ItemInfo("//$FOCUSED/Copy", ImGuiTestOpFlags_NoError).ID != 0; };
+    ctx->ItemClick(rowRef(row).c_str(), ImGuiMouseButton_Right);
+    for (int i = 0; i < 60 && !copyShown(); ++i)
+        ctx->Yield(1);
+    ctx->Yield(2);
+    MenuProbe p;
+    const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + item).c_str(), ImGuiTestOpFlags_NoError);
+    p.exists = info.ID != 0;
+    p.enabled = p.exists && !(info.ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    for (int i = 0; i < 60 && copyShown(); ++i)
+        ctx->Yield(1);
+    ctx->Yield(2);
+    return p;
+}
+
+} // namespace
+
+GG_TEST("new", "New is offered on HEAD's branch or a commit with one branch; elsewhere only New detached")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string twoBranches = s.revParse(repo, "HEAD~1");
+    const std::string noBranch = s.revParse(repo, "HEAD~2");
+    const std::string oneBranch = s.revParse(repo, "HEAD~3");
+    s.git(repo, {"branch", "a", twoBranches});
+    s.git(repo, {"branch", "b", twoBranches});
+    s.git(repo, {"branch", "only", oneBranch});
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick(rowRef(main).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(oneBranch).c_str()); }));
+    // HEAD's commit (main checked out) and a commit with exactly one branch: New.
+    for (const std::string& id : {s.head(repo), oneBranch}) {
+        GG_CHECK(probe(s, ctx, id, "New").enabled);
+        GG_CHECK(!probe(s, ctx, id, "New detached").exists);
+    }
+    // Two branches, or none: New detached takes New's place.
+    for (const std::string& id : {twoBranches, noBranch}) {
+        GG_CHECK(!probe(s, ctx, id, "New").exists);
+        GG_CHECK(probe(s, ctx, id, "New detached").enabled);
+    }
+    // Holding Alt offers New detached where New is possible.
+    ctx->ItemClick(rowRef(oneBranch).c_str(), ImGuiMouseButton_Right);
+    ctx->KeyDown(ImGuiMod_Alt);
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//$FOCUSED/New detached") && !s.itemExists("//$FOCUSED/New"));
+    ctx->KeyUp(ImGuiMod_Alt);
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("new", "New on a commit with one other branch advances that branch and checks it out; with none it detaches")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string main = s.head(repo);
+    const std::string older = s.revParse(repo, "HEAD~3");
+    const std::string bare = s.revParse(repo, "HEAD~2");
+    s.git(repo, {"branch", "only", older});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(older).c_str()); }));
+    s.contextMenu(rowRef(older).c_str(), "New");
+    GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "only"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "only~1"), older);
+    GG_CHECK_STR_EQ(s.revParse(repo, "main"), main); // the other branch is untouched
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    // A commit without a branch: detached.
+    const std::string advanced = s.head(repo);
+    s.contextMenu(rowRef(bare).c_str(), "New detached");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != advanced; }));
+    s.settle();
+    GG_CHECK_STR_EQ(symbolicHead(s, repo), "(detached)");
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), bare);
+    GG_CHECK_STR_EQ(s.revParse(repo, "only"), advanced);
+}
+
+GG_TEST("new", "menu items follow the selection: single-commit items need one commit, ranges need adjacent ones")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string c0 = s.head(repo);
+    const std::string c1 = s.revParse(repo, "HEAD~1");
+    const std::string c2 = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c2).c_str()); }));
+    // One commit: its items are enabled, the range item is not.
+    ctx->ItemClick(rowRef(c0).c_str());
+    GG_CHECK(probe(s, ctx, c0, "Create tag...").enabled);
+    GG_CHECK(probe(s, ctx, c0, "Abandon").enabled);
+    GG_CHECK(!probe(s, ctx, c0, "Interactive rebase selection...").enabled);
+    // c0 and c2 (a gap at c1): single-commit items and the range item are disabled.
+    ctx->ItemClick(rowRef(c0).c_str());
     ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick(rowRef(topic).c_str());
+    ctx->ItemClick(rowRef(c2).c_str());
     ctx->KeyUp(ImGuiMod_Ctrl);
     GG_CHECK_EQ(s.session()->history().extraSelection().size(), static_cast<size_t>(1));
-    ctx->KeyPress(ImGuiKey_N);
-    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main^1") == main; }));
-    s.settle();
-    GG_CHECK_STR_EQ(s.revParse(repo, "main^2"), topic);
-    GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
+    for (const char* item : {"New detached", "Create tag...", "Abandon", "Duplicate", "Check out"})
+        GG_CHECK(!probe(s, ctx, c0, item).enabled);
+    GG_CHECK(!probe(s, ctx, c0, "Interactive rebase selection...").enabled);
+    // Right-clicking a selected row keeps the selection.
+    GG_CHECK_EQ(s.session()->history().extraSelection().size(), static_cast<size_t>(1));
+    // c1 and c2 are adjacent: the range item is enabled, single-commit items still are not.
+    ctx->ItemClick(rowRef(c1).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(c2).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(probe(s, ctx, c1, "Interactive rebase selection...").enabled);
+    GG_CHECK(!probe(s, ctx, c1, "Create tag...").enabled);
+    // A plain right-click on a row outside the selection selects just that row.
+    GG_CHECK(probe(s, ctx, c0, "Create tag...").enabled);
+    GG_CHECK(s.session()->history().extraSelection().empty());
 }
 
 GG_TEST("checkout", "switch to a branch, detach")

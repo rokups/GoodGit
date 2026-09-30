@@ -82,7 +82,9 @@ public:
     // Commits only the unstaged and untracked changes; the staged ones stay staged.
     void commitWorktree(const std::string& message, Callback done = {});
     void amend(const std::string& message, bool noVerify, bool messageOnly, Callback done = {});
-    void newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message = {});
+    // `branch`: advance that local branch (at the first parent) and switch to it.
+    void newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message = {},
+        const std::string& branch = {});
     // `edit`: Edit commit (the target detached, with an edit session to return from).
     void checkout(const std::string& target, bool detach, bool stashFirst = false, bool edit = false);
     void editCommit(const core::Oid& id);
@@ -161,7 +163,6 @@ public:
     // HEAD's own commits (not on `branch`) replayed onto it.
     void rebaseHeadOnto(const std::string& branch);
     void simplifyParents(const core::Oid& commit);
-    void insertCommit(const core::Oid& at, bool before, const std::string& message);
     void mergeIntoHead(const std::string& branch, const std::string& message);
     // Revert (`revert`) or cherry-pick the commit onto HEAD (a merge against its first parent,
     // `-m 1`). With `andCommit`: a new commit on HEAD built in memory (text conflicts first-class,

@@ -410,34 +410,6 @@ GG_TEST("edit", "the commit menu swaps items for their siblings while Shift is h
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
-GG_TEST("edit", "insert a new commit before or after one")
-{
-    const EditRepo r = makeRepo(s);
-    GG_REQUIRE(s.openRepository(r.path));
-    GG_REQUIRE(rowReady(s, r.c2));
-    s.contextMenu(rowRef(r.c2).c_str(), "New commit after", true);
-    GG_CHECK(changed(s, r.path, r.c4));
-    auto count = [&] { return std::stoi(s.gitOut(r.path, {"rev-list", "--count", "HEAD"})); };
-    GG_CHECK_EQ(count(), 5);
-    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2^"), r.c2);
-    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2^{tree}"), s.revParse(r.path, r.c2 + "^{tree}"));
-    // Every child of c2 now hangs on the new commit, side's too (like jj new --after).
-    GG_CHECK_STR_EQ(s.revParse(r.path, "side^"), s.revParse(r.path, "HEAD~2"));
-    const std::string tip = s.head(r.path);
-    GG_REQUIRE(rowReady(s, r.c1));
-    s.contextMenu(rowRef(r.c1).c_str(), "New commit before");
-    GG_CHECK(changed(s, r.path, tip));
-    GG_CHECK_EQ(count(), 6);
-    GG_CHECK(s.gitMayFail(r.path, {"rev-parse", "--verify", "-q", "HEAD~5^"}).out.empty()); // the new root
-    // After the tip: the branch advances onto it.
-    const std::string newTip = s.head(r.path);
-    GG_REQUIRE(rowReady(s, newTip));
-    s.contextMenu(rowRef(newTip).c_str(), "New commit after", true);
-    GG_CHECK(changed(s, r.path, newTip));
-    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), newTip);
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
-}
-
 GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a branch, reconcile")
 {
     const EditRepo r = makeRepo(s);
@@ -601,13 +573,11 @@ GG_TEST("edit", "no-op rewrites keep ids; the Commit menu carries the selected c
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c3));
     ctx->ItemClick(rowRef(r.c3).c_str());
-    ctx->KeyDown(ImGuiMod_Shift);
-    ctx->Yield(2);
-    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/New commit after");
-    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Duplicate");
     GG_CHECK(changed(s, r.path, r.c4));
-    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c3); // everything up to c3 kept its id
-    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~3"), r.c2);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.c2); // a detached copy of c3 on its parent
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);  // the branch and its commits kept their ids
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~1"), r.c3);
 }
 
 GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant destinations, nothing redundant, already merged")

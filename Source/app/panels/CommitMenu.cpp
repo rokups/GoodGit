@@ -15,6 +15,7 @@
 #include <IconsMaterialSymbols.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 namespace ggui {
@@ -86,31 +87,74 @@ std::string squashPrefill(Session& s, const core::HistoryRow& row)
 
 } // namespace
 
+SelectionShape selectionShape(Session& s)
+{
+    SelectionShape shape;
+    if (s.selection().kind != SelKind::Commit)
+        return shape;
+    shape.ids.push_back(s.selection().id);
+    for (const auto& e : s.history().extraSelection())
+        if (std::find(shape.ids.begin(), shape.ids.end(), e) == shape.ids.end())
+            shape.ids.push_back(e);
+    const auto& history = s.history();
+    auto position = [&](const core::Oid& id) {
+        const core::HistoryRow* r = history.row(id);
+        return r ? r - history.rows().data() : std::ptrdiff_t(-1);
+    };
+    std::sort(shape.ids.begin(), shape.ids.end(), [&](const core::Oid& a, const core::Oid& b) { return position(a) < position(b); });
+    shape.contiguous = true;
+    for (size_t i = 0; i + 1 < shape.ids.size(); ++i) {
+        const core::HistoryRow* r = history.row(shape.ids[i]);
+        if (!r || r->parents.empty() || r->parents.front() != shape.ids[i + 1])
+            shape.contiguous = false;
+    }
+    return shape;
+}
+
+void disabledHint(bool disabled, const char* why)
+{
+    if (disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("%s", why);
+}
+
 void drawCommitEditItems(Session& session, const core::HistoryRow& row)
 {
-    const bool ok = free(session);
+    const bool free = ::ggui::free(session);
+    const SelectionShape sel = selectionShape(session);
     const Other other = otherCommit(session, row);
     const bool merge = row.parents.size() > 1;
     const bool root = row.parents.empty();
     // Holding Shift swaps an item for its sibling (the same variants as the Shift+key hotkeys).
     const bool shift = ImGui::GetIO().KeyShift;
-    if (menuItem(ICON_MS_EDIT, "Edit commit", "E", false, ok))
+    // An item acting on one commit: disabled unless exactly one commit is selected (and `enabled`).
+    // `why` explains a disabled `enabled`. `withOther`: a second selected commit is allowed (the
+    // item's dialog takes it as the other commit).
+    auto one = [&](const char* icon, const char* label, const char* shortcut, bool enabled = true, const char* why = nullptr,
+                   bool withOther = false) {
+        const bool shapeOk = sel.single() || (withOther && sel.count() == 2);
+        const bool hit = menuItem(icon, label, shortcut, false, free && shapeOk && enabled);
+        if (!shapeOk)
+            disabledHint(true, withOther ? "Needs one selected commit, or two (the second is the other commit)."
+                                         : "Needs a single selected commit.");
+        else if (why)
+            disabledHint(!enabled, why);
+        return hit;
+    };
+    if (one(ICON_MS_EDIT, "Edit commit", "E"))
         session.actions().editCommit(row.id);
     ImGui::Separator();
-    if (menuItem(ICON_MS_ADD, shift ? "New commit after" : "New commit before", nullptr, false, ok))
-        session.actions().insertCommit(row.id, !shift, {});
-    ImGui::Separator();
-    if (menuItem(ICON_MS_CONTROL_POINT_DUPLICATE, shift ? "Duplicate branch" : "Duplicate", shift ? "Shift+D" : "D", false, ok))
+    if (one(ICON_MS_CONTROL_POINT_DUPLICATE, shift ? "Duplicate branch" : "Duplicate", shift ? "Shift+D" : "D"))
         session.actions().duplicate(row.id, shift);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, false, ok))
+    if (one(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, true, nullptr, true))
         showRebaseDialog(session, row.id, other.ref);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I", false, ok))
+    if (one(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I"))
         openInteractiveRebase(session, row.id);
     // HEAD and this commit (plan §4.3 "Merge into @"): also in Branches.
     const auto snap = session.snapshot();
     const bool isHead = snap->head == row.id; // null when unborn
     const bool headCommit = !snap->headUnborn;
-    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, ok && headCommit && !isHead))
+    if (one(ICON_MS_MERGE, "Merge into HEAD...", nullptr, headCommit && !isHead,
+            headCommit ? "This commit is HEAD." : "HEAD has no commit yet."))
         showMergeDialog(session, session.shortId(row.id), true);
     // Revert / cherry-pick onto HEAD (plan §4.3). A merge commit's change is taken against its
     // first parent (-m 1). Picking an ancestor of HEAD other than HEAD is refused on the worker.
@@ -119,13 +163,15 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
             : isHead                            ? "This commit is HEAD: its change is already there."
                                                 : "";
         auto item = [&](const char* icon, const char* label, bool enabled, const char* what, bool revert, bool commit) {
-            if (menuItem(icon, label, nullptr, false, ok && enabled))
+            if (menuItem(icon, label, nullptr, false, free && sel.single() && enabled))
                 session.actions().revertOrPick(row.id, revert, commit);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
                 std::string tip = what;
                 if (merge)
                     tip += "\nA merge commit: its change against its first parent (-m 1).";
-                if (!enabled)
+                if (!sel.single())
+                    tip += "\nNeeds a single selected commit.";
+                else if (!enabled)
                     tip += "\n" + (revert ? std::string("HEAD has no commit yet.") : blocked);
                 ImGui::SetTooltip("%s", tip.c_str());
             }
@@ -145,22 +191,23 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
                 false);
     }
     if (shift) {
-        if (menuItem(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S", false, ok))
+        if (one(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S"))
             session.actions().squashDescendants(row.id);
-    } else if (menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, ok && !merge && !root)) {
+    } else if (one(ICON_MS_JOIN_INNER, "Squash...", "S", !merge && !root,
+                   merge ? "A merge commit cannot be squashed." : "A root commit has no parent to squash into.", true)) {
         showSquashDialog(session, row.id, squashPrefill(session, row));
     }
-    if (menuItem(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", false, ok && !merge))
+    if (one(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", !merge, "A merge commit cannot be split."))
         showSplitDialog(session, row.id);
-    if (menuItem(ICON_MS_RESTORE, "Restore from...", nullptr, false, ok))
+    if (one(ICON_MS_RESTORE, "Restore from...", nullptr, true, nullptr, true))
         showRestoreDialog(session, row.id, other.ref);
-    if (menuItem(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, false, ok && merge))
+    if (one(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, merge, "Only a merge commit has parents to simplify."))
         session.actions().simplifyParents(row.id);
     ImGui::Separator();
     if (shift) {
-        if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A", false, ok))
+        if (one(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A"))
             showAbandonBranchDialog(session, row.id);
-    } else if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon", "A", false, ok)) {
+    } else if (one(ICON_MS_DELETE_FOREVER, "Abandon", "A")) {
         session.actions().abandon(row.id, false);
     }
 }

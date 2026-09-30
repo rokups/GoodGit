@@ -21,25 +21,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
+constexpr const char* kNewDetachedOnly =
+    "New needs a commit that is HEAD's branch tip or has exactly one branch; here it can only be detached.";
+
 // Commit that toolbar/menu commit actions apply to: the selected commit, else HEAD.
 core::Oid targetCommit(Session& s)
 {
     if (s.selection().kind == SelKind::Commit)
         return s.selection().id;
     return s.snapshot()->head;
-}
-
-// Parents for New: the selection plus Ctrl-clicked commits (several = merge commit).
-std::vector<core::Oid> newParents(Session& s)
-{
-    const core::Oid at = targetCommit(s);
-    std::vector<core::Oid> parents;
-    if (!at.isNull())
-        parents.push_back(at);
-    if (s.selection().kind == SelKind::Commit)
-        for (const auto& e : s.history().extraSelection())
-            parents.push_back(e);
-    return parents;
 }
 
 bool headSelected(Session& s)
@@ -122,8 +112,8 @@ void App::handleShortcuts()
         s.nextChangedFile(+1);
     else if (Shortcut(ImGuiMod_Shift | ImGuiKey_F6, global))
         s.nextChangedFile(-1);
-    else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, global) && free)
-        s.newCommitOn(newParents(s), false);
+    else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, global) && free && !s.newCommitBranch(targetCommit(s)).empty())
+        s.newCommitOn(targetCommit(s), false);
     else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, global) && free)
         s.actions().undo(false);
     else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, global) && free)
@@ -199,10 +189,13 @@ void App::drawMenuBar()
     }
     if (ImGui::BeginMenu("Commit")) {
         const core::Oid at = s ? targetCommit(*s) : core::Oid{};
-        if (menuItem(ICON_MS_ADD, "New commit", "Ctrl+N", false, free))
-            s->newCommitOn(newParents(*s), false);
+        const bool attach = s && !s->newCommitBranch(at).empty();
+        if (menuItem(ICON_MS_ADD, "New commit", "Ctrl+N", false, free && attach))
+            s->newCommitOn(at, false);
+        if (!attach && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%s", kNewDetachedOnly);
         if (menuItem(ICON_MS_ADD_CIRCLE, "New detached commit", nullptr, false, free && !at.isNull()))
-            s->newCommitOn(newParents(*s), true);
+            s->newCommitOn(at, true);
         if (menuItem(ICON_MS_CHECK, "Commit...", nullptr, false, free && !s->snapshot()->bare))
             s->showCommitDialog(false);
         if (menuItem(ICON_MS_EDIT_NOTE, "Amend...", nullptr, false, free && !s->snapshot()->headUnborn))
@@ -263,8 +256,9 @@ void App::drawRepositoryButtons()
     auto tip = [&](const char* normal) { return busy.empty() ? normal : busy.c_str(); };
 
     // New / Commit-Amend / Undo / Redo
-    if (iconButton(ICON_MS_ADD, "##tb_new", tip("New commit on the selection (Ctrl+N)"), free))
-        s->newCommitOn(newParents(*s), false);
+    const bool attach = s && !s->newCommitBranch(targetCommit(*s)).empty();
+    if (iconButton(ICON_MS_ADD, "##tb_new", tip(attach ? "New commit on the selection (Ctrl+N)" : kNewDetachedOnly), free && attach))
+        s->newCommitOn(targetCommit(*s), false);
     ImGui::SameLine();
     const bool amend = s && headSelected(*s);
     const std::string commitLabel = std::string(ICON_MS_CHECK) + (amend ? " Amend" : " Commit");
