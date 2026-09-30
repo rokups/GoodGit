@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -107,15 +108,15 @@ struct Entry {
     bool operator==(const Entry& o) const { return oldId == o.oldId && newId == o.newId && time == o.time && msg == o.msg; }
 };
 
-// This worktree's HEAD reflog (libgit2 reads a linked worktree's own logs/HEAD: HEAD is a
-// per-worktree ref). Index 0 is the newest entry.
+// A reflog; by default this worktree's HEAD one (libgit2 reads a linked worktree's own logs/HEAD:
+// HEAD is a per-worktree ref). Index 0 is the newest entry. A missing reflog has no entries.
 struct HeadLog {
     gg::git2::Reflog log;
     size_t count = 0;
-    explicit HeadLog(git_repository* repo)
+    explicit HeadLog(git_repository* repo, const char* name = "HEAD")
     {
         git_reflog* raw = nullptr;
-        if (git_reflog_read(&raw, repo, "HEAD") == 0) {
+        if (git_reflog_read(&raw, repo, name) == 0) {
             log.reset(raw);
             count = git_reflog_entrycount(raw);
         } else {
@@ -248,10 +249,23 @@ std::string firstWord(const std::string& s)
     return s.substr(b, s.find(' ', b) - b);
 }
 
-std::string labelFor(const std::string& msg)
+// `branch` is the short name of the branch whose own reflog the message comes from (else empty).
+std::string labelFor(const std::string& msg, const std::string& branch = {})
 {
     const std::string action = actionPart(msg);
     const std::string word = firstWord(action);
+    if (startsWith(msg, "update by push"))
+        return "git push";
+    if (startsWith(msg, "WIP on ") || startsWith(msg, "On "))
+        return "git stash"; // refs/stash
+    if (startsWith(msg, "Branch: renamed"))
+        return "git branch -m";
+    if (startsWith(msg, "Branch: copied"))
+        return "git branch -c";
+    if (startsWith(msg, "branch: Created from"))
+        return branch.empty() ? "git branch" : "git branch " + branch;
+    if (startsWith(msg, "branch: Reset to"))
+        return branch.empty() ? "git branch -f" : "git branch -f " + branch;
     if (isRebaseAction(action))
         return "git rebase";
     if (word == "checkout") {
@@ -276,6 +290,7 @@ struct Pending {
     std::string cmd, label, prefix; // prefix: the rebase a joined entry must belong to
     std::int64_t time = 0;          // ms
     std::vector<journal::RefChange> changes;
+    std::vector<Entry> entries; // the HEAD entries this operation was made from (branch steps that match one join it)
     void add(const std::string& ref, const std::string& oldValue, const std::string& newValue)
     {
         for (auto& c : changes)
@@ -286,6 +301,39 @@ struct Pending {
         changes.push_back(journal::RefChange{ref, oldValue, newValue});
     }
 };
+
+// "Branch: renamed refs/heads/a to refs/heads/b" in b's reflog (the log of a is carried over,
+// so the entry's old and new are equal and the history before it is a's). `git branch -c a b`
+// copies the log the same way and appends "Branch: copied refs/heads/a to refs/heads/b". On the
+// checked-out branch git also writes the rename to HEAD's reflog, as X -> 0 then 0 -> X.
+bool isRenameMsg(const std::string& msg) { return startsWith(msg, "Branch: renamed "); }
+
+bool isRenameInto(const std::string& msg, const std::string& ref)
+{
+    return isRenameMsg(msg) && endsWith(msg, " to " + ref);
+}
+
+bool isCopyInto(const std::string& msg, const std::string& ref)
+{
+    return startsWith(msg, "Branch: copied ") && endsWith(msg, " to " + ref);
+}
+
+// The source ref of a rename or copy message ("refs/heads/a"), else empty.
+std::string renameSource(const std::string& msg)
+{
+    const size_t skip = startsWith(msg, "Branch: copied ") ? 15 : 16;
+    const size_t to = msg.rfind(" to ");
+    return (!isRenameMsg(msg) && !startsWith(msg, "Branch: copied ")) || to == std::string::npos || to < skip
+        ? std::string()
+        : msg.substr(skip, to - skip);
+}
+
+// The target ref of a rename or copy message.
+std::string renameTarget(const std::string& msg)
+{
+    const size_t to = msg.rfind(" to ");
+    return renameSource(msg).empty() || to == std::string::npos ? std::string() : msg.substr(to + 4);
+}
 
 // Turns the consumed entries into operations (see the plan: "HEAD value derivation"). `known`
 // follows the walk: what the journal would say after each operation.
@@ -325,6 +373,11 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
         } else if (abort) {
             sym = symAtStart; // "rebase (abort): updating HEAD" (older git) does not say where HEAD goes back to
         }
+        // Renaming the checked-out branch: HEAD follows it (the entries X -> 0 and 0 -> X carry no
+        // change of the branch itself; the branch's own reflog and deriveBranchOps have that).
+        const bool renameEntry = isRenameMsg(e.msg);
+        if (renameEntry && !sym.empty() && sym == renameSource(e.msg))
+            sym = renameTarget(e.msg);
         const std::string headVal = sym.empty() ? e.newId : "ref:" + sym;
 
         Pending p;
@@ -332,6 +385,7 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
         p.label = labelFor(e.msg);
         p.time = e.time * 1000;
         p.prefix = rebase ? rebasePrefix(action) : std::string();
+        p.entries.push_back(e);
         if (headVal != prevHead)
             p.add(myHead, prevHead, headVal);
         if (!sym.empty()) {
@@ -340,7 +394,7 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
                 p.add(sym, zero, e.newId); // checkout -b / switch -c created the branch
             else if (rebase && (ret != std::string::npos || abort))
                 p.add(sym, known.count(sym) ? known[sym] : zero, e.newId); // back on the (rebased) branch
-            else if (!checkout && !start)
+            else if (!checkout && !start && !renameEntry)
                 p.add(sym, e.oldId, e.newId);
         }
         for (const auto& c : p.changes)
@@ -350,6 +404,7 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
         if (rebase && !start && joinable >= 0 && ops[joinable].prefix == p.prefix) {
             for (const auto& c : p.changes)
                 ops[joinable].add(c.ref, c.oldValue, c.newValue);
+            ops[joinable].entries.push_back(e);
         } else {
             ops.push_back(std::move(p));
             joinable = static_cast<int>(ops.size()) - 1;
@@ -376,6 +431,155 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
             kept.push_back(std::move(p));
     }
     return kept;
+}
+
+// ---- branch reflogs ---------------------------------------------------------------------------
+
+constexpr size_t kMaxChain = 1000; // a longer chain is not worth reading: the lump stands for it
+
+bool isBranchRef(const std::string& ref) { return startsWith(ref, "refs/heads/") || ref == "refs/stash"; }
+
+// The reflog entries (oldest first) that take `ref` from `knownValue` to `actual`: the log is walked
+// newest to oldest while it is chain-consistent (each entry's new is the younger one's old, the
+// newest's new is the ref's value now) until an entry starts at knownValue. nullopt: the chain
+// does not reach it (expired, deleted, rewritten by stash drop, too long).
+std::optional<std::vector<Entry>> chainSteps(
+    git_repository* repo, const std::string& ref, const std::string& knownValue, const std::string& actual)
+{
+    if (startsWith(actual, "ref:") || startsWith(knownValue, "ref:"))
+        return std::nullopt;
+    const HeadLog log(repo, ref.c_str());
+    std::vector<Entry> steps;
+    std::string expected = actual;
+    for (size_t i = 0; i < log.count && i < kMaxChain; ++i) {
+        Entry e = log.at(i);
+        if (e.newId != expected)
+            return std::nullopt;
+        // (checked before "reached": a rename over a ref with the same value still starts here)
+        if (isRenameInto(e.msg, ref) || isCopyInto(e.msg, ref)) {
+            e.oldId = knownValue; // the ref was created (or replaced) by the rename or copy
+            steps.push_back(std::move(e));
+            std::reverse(steps.begin(), steps.end());
+            return steps;
+        }
+        const bool reached = e.oldId == knownValue;
+        expected = e.oldId;
+        steps.push_back(std::move(e));
+        if (reached) {
+            std::reverse(steps.begin(), steps.end());
+            return steps;
+        }
+    }
+    return std::nullopt;
+}
+
+// Operations for the branches (refs/heads/*, refs/stash) that still differ from `known` after the
+// HEAD-derived ops: one per reflog step (see chainSteps), or joined into the HEAD-derived op that
+// is the same command (same old, new and message; a rename step by its message alone, since its
+// HEAD entries carry the zero id). `known` is updated for the refs handled here; a
+// ref whose chain does not reach its known value (and every deletion) stays for the lump.
+std::vector<Pending> deriveBranchOps(git_repository* repo, std::vector<Pending>& headOps,
+    std::map<std::string, std::string>& known, const std::map<std::string, std::string>& current, const std::string& zero)
+{
+    std::vector<Pending> out;
+    std::vector<std::string> drifted;
+    for (const auto& [ref, value] : known) {
+        if (!isBranchRef(ref))
+            continue;
+        const auto it = current.find(ref);
+        if (it != current.end() && it->second != value)
+            drifted.push_back(ref); // (a deleted branch has no reflog: the lump)
+    }
+    for (const std::string& ref : drifted) {
+        const std::string& actual = current.at(ref);
+        const auto steps = chainSteps(repo, ref, known[ref], actual);
+        if (!steps)
+            continue;
+        const std::string name = startsWith(ref, "refs/heads/") ? ref.substr(11) : std::string();
+        for (const Entry& e : *steps) {
+            if (e.oldId == e.newId)
+                continue;
+            // The same command: a rename by its message (HEAD's entries of it have other old/new
+            // values), anything else by (old, new, msg).
+            const bool rename = isRenameInto(e.msg, ref);
+            auto joined = std::find_if(headOps.begin(), headOps.end(), [&](const Pending& p) {
+                return std::any_of(p.entries.begin(), p.entries.end(), [&](const Entry& h) {
+                    return rename ? h.msg == e.msg : h.oldId == e.oldId && h.newId == e.newId && h.msg == e.msg;
+                });
+            });
+            Pending fresh;
+            Pending* p = &fresh;
+            if (joined != headOps.end())
+                p = &*joined;
+            else {
+                fresh.cmd = e.msg;
+                fresh.label = labelFor(e.msg, name);
+                fresh.time = e.time * 1000;
+            }
+            p->add(ref, e.oldId, e.newId);
+            if (rename) {
+                // One operation: a deleted, b created.
+                const std::string source = renameSource(e.msg);
+                const auto src = known.find(source);
+                if (!source.empty() && source != ref && src != known.end() && src->second != zero && !current.count(source)) {
+                    p->add(source, src->second, zero);
+                    src->second = zero;
+                }
+            }
+            if (joined != headOps.end())
+                continue;
+            out.push_back(std::move(fresh));
+        }
+        known[ref] = actual;
+    }
+    std::stable_sort(out.begin(), out.end(), [](const Pending& a, const Pending& b) { return a.time < b.time; });
+    return out;
+}
+
+// HEAD-derived and branch operations in one list: by time, HEAD order kept, HEAD first within one
+// second (timestamps have a 1 s granularity). A branch operation never comes before a HEAD
+// operation that changed one of its refs, whatever the clocks say.
+std::vector<Pending> mergeOps(std::vector<Pending> headOps, std::vector<Pending> branchOps)
+{
+    std::vector<Pending> merged;
+    size_t h = 0;
+    for (auto& b : branchOps) {
+        size_t minIdx = 0;
+        for (size_t i = h; i < headOps.size(); ++i)
+            for (const auto& c : b.changes)
+                if (std::any_of(headOps[i].changes.begin(), headOps[i].changes.end(),
+                        [&](const journal::RefChange& r) { return r.ref == c.ref; }))
+                    minIdx = i + 1;
+        while (h < headOps.size() && (headOps[h].time <= b.time || h < minIdx))
+            merged.push_back(std::move(headOps[h++]));
+        merged.push_back(std::move(b));
+    }
+    while (h < headOps.size())
+        merged.push_back(std::move(headOps[h++]));
+    return merged;
+}
+
+// The label of the lump: what a remote-tracking ref's own reflog says about the change (a fetch, a
+// push, a pull), else "external changes". At most three reflogs are read, however many refs changed.
+std::string lumpLabel(git_repository* repo, const std::vector<journal::RefChange>& changes)
+{
+    const std::string zero = zeroId(repo);
+    int tried = 0;
+    for (const auto& c : changes) {
+        if (!startsWith(c.ref, "refs/remotes/") || startsWith(c.newValue, "ref:") || c.newValue == zero)
+            continue;
+        if (++tried > 3)
+            break;
+        const HeadLog log(repo, c.ref.c_str());
+        if (log.count == 0)
+            continue;
+        const Entry e = log.at(0);
+        if (e.newId != c.newValue) // the log does not explain the value the ref has now
+            continue;
+        if (startsWith(e.msg, "fetch") || startsWith(e.msg, "update by push") || startsWith(e.msg, "pull"))
+            return labelFor(e.msg);
+    }
+    return "external changes";
 }
 
 } // namespace
@@ -529,7 +733,9 @@ Result run(git_repository* repo, std::string* error)
     bool cursorChanged = false;
     {
         const std::vector<Entry> entries = entriesSince(*headLog, cursor);
-        const std::vector<Pending> derived = deriveOps(entries, known, current, myHead, zero);
+        std::vector<Pending> headOps = deriveOps(entries, known, current, myHead, zero);
+        std::vector<Pending> branchOps = deriveBranchOps(repo, headOps, known, current, zero);
+        const std::vector<Pending> derived = mergeOps(std::move(headOps), std::move(branchOps));
         for (const auto& p : derived) {
             journal::Operation op;
             op.id = journal::Journal::newOperationId();
@@ -566,7 +772,7 @@ Result run(git_repository* repo, std::string* error)
         journal::Operation op;
         op.id = journal::Journal::newOperationId();
         op.src = "git";
-        op.label = "external changes";
+        op.label = lumpLabel(repo, changes);
         op.wt = wt;
         op.time = now;
         std::string err;

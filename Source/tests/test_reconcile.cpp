@@ -8,6 +8,7 @@
 
 #include <libgg/Journal.hpp>
 
+#include <chrono>
 #include <fstream>
 
 namespace ggtest {
@@ -353,9 +354,10 @@ GG_TEST("reconcile", "stash push leaves no HEAD operation")
     GG_CHECK(s.waitUntil([&] { return !gitOps(repo).empty(); }));
     s.settle();
     ctx->Yield(10);
-    // "reset: moving to HEAD" in HEAD's reflog changes nothing; the stash ref has no HEAD reflog
-    // coverage and is journaled as external changes (Inc 4 labels it).
+    // "reset: moving to HEAD" in HEAD's reflog changes nothing; the stash ref's own reflog says what
+    // happened.
     for (const auto& op : gitOps(repo)) {
+        GG_CHECK_STR_EQ(op.label, "git stash");
         GG_CHECK(refChange(op, "HEAD") == nullptr);
         GG_CHECK(refChange(op, "refs/heads/main") == nullptr);
         GG_CHECK(refChange(op, "refs/stash") != nullptr);
@@ -509,6 +511,271 @@ GG_TEST("reconcile", "Undo refuses a plain git operation while a rebase is in pr
     GG_CHECK_EQ(journalOps(repo).size(), before); // no undo operation was written
     GG_CHECK(fs::exists(repo / ".git" / "rebase-merge"));
     s.git(repo, {"rebase", "--abort"});
+}
+
+GG_TEST("reconcile", "git branch -f on another branch is its own op")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"branch", "x", "main~1"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    GG_CHECK_STR_EQ(gitOps(repo).back().label, "git branch x");
+    const std::string created = refState(s, repo);
+    const std::string head = s.head(repo);
+    s.git(repo, {"branch", "-f", "x", "main"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 2; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 2);
+    GG_CHECK_STR_EQ(ops.back().label, "git branch -f x");
+    GG_CHECK(refChange(ops.back(), "refs/heads/x") != nullptr);
+    GG_CHECK(refChange(ops.back(), "HEAD") == nullptr);
+    GG_CHECK(refChange(ops.back(), "refs/heads/main") == nullptr);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == created; }));
+    GG_CHECK_STR_EQ(s.head(repo), head);
+}
+
+GG_TEST("reconcile", "git branch x then git branch -D y: creation is its own op, deletion goes to the lump")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"branch", "y", "main~1"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    s.git(repo, {"branch", "x"});
+    s.git(repo, {"branch", "-D", "y"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 3; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 3);
+    GG_CHECK_STR_EQ(ops[1].label, "git branch x");
+    GG_CHECK(refChange(ops[1], "refs/heads/x") != nullptr);
+    GG_CHECK(refChange(ops[1], "refs/heads/y") == nullptr);
+    GG_CHECK_STR_EQ(ops[2].label, "external changes");
+    GG_CHECK(refChange(ops[2], "refs/heads/y") != nullptr);
+    GG_CHECK(refChange(ops[2], "refs/heads/x") == nullptr);
+    for (int i = 0; i < 2; ++i) {
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+        s.settle();
+    }
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+}
+
+GG_TEST("reconcile", "git branch -m a b is one op, undo renames back")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"branch", "a", "main~1"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    s.git(repo, {"branch", "-m", "a", "b"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 2; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 2);
+    GG_CHECK_STR_EQ(ops.back().label, "git branch -m");
+    GG_CHECK(refChange(ops.back(), "refs/heads/a") != nullptr);
+    GG_CHECK(refChange(ops.back(), "refs/heads/b") != nullptr);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/b"}).ok());
+    GG_CHECK(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/a"}).ok());
+}
+
+GG_TEST("reconcile", "git stash with ggui open is one git stash op; Undo restores refs/stash")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    s.write(repo, "f1.txt", "changed for the stash\n");
+    s.git(repo, {"stash", "push", "-q"});
+    GG_CHECK(s.waitUntil([&] { return !gitOps(repo).empty(); }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK_STR_EQ(ops.front().label, "git stash");
+    GG_CHECK(refChange(ops.front(), "refs/stash") != nullptr);
+    GG_CHECK(refChange(ops.front(), "HEAD") == nullptr);
+    GG_CHECK(refChange(ops.front(), "refs/heads/main") == nullptr);
+    const std::string head = s.head(repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+    GG_CHECK_STR_EQ(s.head(repo), head);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "list"}), "");
+}
+
+GG_TEST("reconcile", "stash drop is journaled as one op from the snapshot")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.write(repo, "f1.txt", "first stash\n");
+    s.git(repo, {"stash", "push", "-q"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    s.write(repo, "f1.txt", "second stash\n");
+    s.git(repo, {"stash", "push", "-q"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 2; }));
+    s.settle();
+    const std::string stashed = refState(s, repo);
+    s.git(repo, {"stash", "drop", "-q"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 3; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 3);
+    GG_CHECK_STR_EQ(ops.back().label, "external changes"); // the log was rewritten: no chain
+    GG_CHECK(refChange(ops.back(), "refs/stash") != nullptr);
+    size_t changed = 0;
+    for (const auto& r : ops.back().refs)
+        changed += r.oldValue != r.newValue ? 1 : 0;
+    GG_CHECK_EQ(changed, 1u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == stashed; }));
+}
+
+GG_TEST("reconcile", "a tag created and a branch reset in one pass while closed: two ops (branch -f, lump with the tag)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"branch", "x", "main~1"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    s.git(repo, {"tag", "t"});
+    s.git(repo, {"branch", "-f", "x", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 3; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 3);
+    GG_CHECK_STR_EQ(ops[1].label, "git branch -f x");
+    GG_CHECK(refChange(ops[1], "refs/heads/x") != nullptr);
+    GG_CHECK(refChange(ops[1], "refs/tags/t") == nullptr);
+    GG_CHECK_STR_EQ(ops[2].label, "external changes");
+    GG_CHECK(refChange(ops[2], "refs/tags/t") != nullptr);
+    for (int i = 0; i < 2; ++i) {
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+        s.settle();
+    }
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+}
+
+GG_TEST("reconcile", "fetch of thousands of refs is one op and reconcile stays fast")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path origin = s.root() / (repo.filename().string() + "-origin.git");
+    const std::string tip = s.gitOut(origin, {"rev-parse", "main"});
+    GG_REQUIRE(s.gitgg(repo, {"op", "log"}).ok()); // the baseline
+    const int count = 3000;
+    std::string input;
+    for (int i = 0; i < count; ++i)
+        input += "create refs/heads/many/b" + std::to_string(i) + " " + tip + "\n";
+    GG_REQUIRE(s.git(origin, {"update-ref", "--stdin"}, input).ok());
+    s.git(repo, {"fetch", "-q", "origin"});
+    const auto start = std::chrono::steady_clock::now();
+    GG_REQUIRE(s.gitgg(repo, {"op", "log"}).ok()); // reconciles (process start-up included)
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    ctx->LogInfo("reconcile of a fetch of %d refs: %lld ms", count, static_cast<long long>(ms));
+    GG_CHECK(ms < timeBudgetMs(2000));
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK_STR_EQ(ops.back().label, "git fetch");
+    GG_CHECK(ops.back().refs.size() >= static_cast<size_t>(count));
+}
+
+GG_TEST("reconcile", "renaming the checked-out branch with ggui closed is one op, undo puts HEAD back on the old name")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    s.git(repo, {"branch", "-m", "main", "renamed"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return !gitOps(repo).empty(); }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK_STR_EQ(ops.front().label, "git branch -m");
+    const auto* head = refChange(ops.front(), "HEAD");
+    GG_REQUIRE(head != nullptr);
+    GG_CHECK_STR_EQ(head->oldValue, "ref:refs/heads/main");
+    GG_CHECK_STR_EQ(head->newValue, "ref:refs/heads/renamed");
+    GG_CHECK(refChange(ops.front(), "refs/heads/main") != nullptr);
+    GG_CHECK(refChange(ops.front(), "refs/heads/renamed") != nullptr);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+}
+
+GG_TEST("reconcile", "renaming the checked-out branch with ggui open is one op")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    s.git(repo, {"branch", "-m", "main", "renamed"});
+    GG_CHECK(s.waitUntil([&] {
+        const auto ops = gitOps(repo);
+        return !ops.empty() && refChange(ops.back(), "refs/heads/renamed") != nullptr;
+    }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK_STR_EQ(ops.front().label, "git branch -m");
+    GG_CHECK(refChange(ops.front(), "HEAD") != nullptr);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+}
+
+GG_TEST("reconcile", "git branch -c copies the reflog: one op creating the copy, undo deletes only it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    s.git(repo, {"branch", "-c", "main", "copy"});
+    GG_CHECK(s.waitUntil([&] { return !gitOps(repo).empty(); }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK_STR_EQ(ops.front().label, "git branch -c");
+    size_t changed = 0;
+    for (const auto& r : ops.front().refs)
+        changed += r.oldValue != r.newValue ? 1 : 0;
+    GG_CHECK_EQ(changed, 1u);
+    GG_CHECK(refChange(ops.front(), "refs/heads/copy") != nullptr);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+    GG_CHECK(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/main"}).ok());
 }
 
 } // namespace ggtest
