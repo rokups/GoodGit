@@ -254,15 +254,15 @@ GG_TEST("history", "merges start collapsed; expand and collapse merged history")
     s.git(repo, {"branch", "-D", "feature"});
     GG_REQUIRE(s.openRepository(repo));
     const std::string merge = s.revParse(repo, "main");
-    // Collapsed by default: the merged side (feature~1, feature) is hidden. The merge bubble
+    // Collapsed by default: the merged side (feature~1, feature) is hidden. The merge icon
     // toggles it.
     GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
     GG_CHECK(findRow(s, merge)->collapsed);
     GG_CHECK(findRow(s, f1) == nullptr);
     GG_CHECK(s.waitUntil([&] { return findRow(s, merge)->collapsedCount == 2; }));
-    ctx->ItemClick(("//History/**/" + merge + "/###merge_toggle").c_str());
+    ctx->ItemClick(("//History/**/" + merge + "/##merge_icon").c_str());
     GG_CHECK(s.waitUntil([&] { return findRow(s, f1) != nullptr && !findRow(s, merge)->collapsed; }));
-    ctx->ItemClick(("//History/**/" + merge + "/###merge_toggle").c_str());
+    ctx->ItemClick(("//History/**/" + merge + "/##merge_icon").c_str());
     GG_CHECK(s.waitUntil([&] { return findRow(s, f1) == nullptr && findRow(s, merge) && findRow(s, merge)->collapsed; }));
     // Same through the context menu.
     s.contextMenu(rowRef(merge).c_str(), "Expand merged history");
@@ -283,7 +283,12 @@ GG_TEST("history", "a merge offers collapse only when collapsing hides commits")
     GG_CHECK(!findRow(s, merge)->collapsed);
     GG_CHECK(!findRow(s, merge)->collapsible);
     GG_CHECK(findRow(s, f1) != nullptr && findRow(s, f2) != nullptr);
-    GG_CHECK(!s.itemExists(("//History/**/" + merge + "/###merge_toggle").c_str()));
+    // The icon still marks the merge, but toggles nothing; ordinary commits have none.
+    GG_CHECK(s.itemExists(("//History/**/" + merge + "/##merge_icon").c_str()));
+    GG_CHECK(!s.itemExists(("//History/**/" + f2 + "/##merge_icon").c_str()));
+    ctx->ItemClick(("//History/**/" + merge + "/##merge_icon").c_str());
+    ctx->Yield(2);
+    GG_CHECK(!findRow(s, merge)->collapsed && findRow(s, f1) != nullptr);
     ctx->ItemClick(rowRef(merge).c_str(), ImGuiMouseButton_Right);
     GG_CHECK(!s.itemExists("//$FOCUSED/Collapse merged history"));
     GG_CHECK(!s.itemExists("//$FOCUSED/Expand merged history"));
@@ -303,7 +308,7 @@ GG_TEST("history", "a merge offers collapse only when collapsing hides commits")
     GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
     GG_CHECK(findRow(s, f1) != nullptr && findRow(s, f2) != nullptr);
     GG_CHECK(findRow(s, merge)->collapsedCount == 0);
-    GG_CHECK(!s.itemExists(("//History/**/" + merge + "/###merge_toggle").c_str()));
+    GG_CHECK(s.itemExists(("//History/**/" + merge + "/##merge_icon").c_str()));
     ctx->ItemClick(rowRef(merge).c_str(), ImGuiMouseButton_Right);
     GG_CHECK(!s.itemExists("//$FOCUSED/Expand merged history"));
     ctx->KeyPress(ImGuiKey_Escape);
@@ -324,11 +329,11 @@ GG_TEST("history", "expanding or collapsing a merge keeps the whole list in view
     GG_REQUIRE(!merge.empty());
     // Bring the merge into view (setup; the toggle below is clicked like a user).
     s.session()->revealCommit(ggui::core::Oid::fromHex(merge));
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/" + merge + "/###merge_toggle").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/" + merge + "/##merge_icon").c_str()); }));
     for (const char* step : {"expand", "collapse"}) {
         const size_t before = history.rows().size();
         GG_REQUIRE(before > 200); // more than the walk's first batch
-        ctx->ItemClick(("//History/**/" + merge + "/###merge_toggle").c_str());
+        ctx->ItemClick(("//History/**/" + merge + "/##merge_icon").c_str());
         // Every frame until the reload ends shows at least as many rows as before (or the new list).
         size_t fewest = before;
         for (int frame = 0; frame < 2000 && (frame < 3 || history.loading()); ++frame) {

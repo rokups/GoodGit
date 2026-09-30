@@ -605,7 +605,7 @@ bool Scenario::expandMerge(const std::string& mergeHex)
         return false;
     if (!history.row(id)->collapsed)
         return true;
-    ctx->ItemClick(("//History/**/" + mergeHex + "/###merge_toggle").c_str());
+    ctx->ItemClick(("//History/**/" + mergeHex + "/##merge_icon").c_str());
     return waitUntil([&] { return history.row(id) && !history.row(id)->collapsed && !history.loading(); });
 }
 

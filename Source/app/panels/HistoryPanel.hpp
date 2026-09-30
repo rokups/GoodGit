@@ -45,6 +45,7 @@ public:
     void setRefsVisible(const std::vector<std::string>& fullNames, bool visible);
 
     void toggleMerge(const core::Oid& id);
+    void drawMergeIcon(const core::HistoryRow& row);
     // A merge row offers Collapse/Expand only when collapsing hides commits.
     bool mergeToggle(const core::HistoryRow& row) const
     {

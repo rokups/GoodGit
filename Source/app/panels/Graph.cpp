@@ -6,10 +6,6 @@
 
 namespace ggui::graph {
 
-namespace {
-ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
-} // namespace
-
 float inset(float laneWidth)
 {
     const float rowHeight = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
@@ -22,7 +18,7 @@ float laneX(float cellX, int lane, float laneWidth)
     return cellX + inset(laneWidth) + laneWidth * (static_cast<float>(lane) + 0.5f);
 }
 
-void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head, bool mergeToggle)
+void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float top = origin.y - ImGui::GetStyle().CellPadding.y;
@@ -45,24 +41,9 @@ void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImV
     const ImU32 col = row.conflicted ? p.conflict : p.lanes[row.color % 8];
     const float r = dotRadius(rowHeight);
     if (row.parents.size() > 1) {
-        // Merge: hollow ring; a collapsed one trails a fading "⋯" to its right (hidden history).
-        const float hit = mergeHitHalf(rowHeight);
-        const bool hovered = mergeToggle && ImGui::IsMouseHoveringRect(ImVec2(c.x - hit, c.y - hit), ImVec2(c.x + hit, c.y + hit));
+        // Merge: hollow ring. (Collapsed or not is shown by the icon in the description.)
         dl->AddCircleFilled(c, r, ImGui::GetColorU32(ImGuiCol_WindowBg));
-        if (hovered)
-            dl->AddCircleFilled(c, r, withAlpha(col, 110));
         dl->AddCircle(c, r, col, 0, thickness);
-        if (mergeToggle && row.collapsed) {
-            // Three dots right of the ring, spaced by their own size so they read as an ellipsis.
-            const float dr = std::max(1.5f, thickness * 0.8f);
-            const float first = r + thickness * 0.5f + dr * 2.2f;
-            const float spacing = dr * 3.2f;
-            static constexpr int alphas[3] = {255, 190, 130};
-            for (int i = 0; i < 3; ++i) {
-                const float dx = first + spacing * static_cast<float>(i);
-                dl->AddCircleFilled(ImVec2(c.x + dx, c.y), dr, withAlpha(col, alphas[i]));
-            }
-        }
     } else {
         dl->AddCircleFilled(c, r, col);
     }

@@ -632,6 +632,44 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     ImGui::EndPopup();
 }
 
+// Merge commits carry an icon before the subject: bright while the merged history is collapsed, dim
+// once expanded; clicking it toggles that (where collapsing hides anything). Stashes are merge-shaped
+// but already marked by their badge. The item is a button over the row's Selectable, so a click on
+// it does not change the selection.
+void HistoryPanel::drawMergeIcon(const core::HistoryRow& row)
+{
+    if (row.parents.size() < 2)
+        return;
+    for (const auto& ref : row.refs)
+        if (ref.kind == core::RefKind::Stash)
+            return;
+    const bool toggle = mergeToggle(row);
+    const Palette& p = theme().palette();
+    const ImVec2 size = ImGui::CalcTextSize(ICON_MS_CALL_MERGE);
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("##merge_icon", size);
+    const bool hovered = ImGui::IsItemHovered();
+    if (ImGui::IsItemClicked() && toggle)
+        toggleMerge(row.id);
+    ImU32 color = row.collapsed ? ImGui::GetColorU32(ImGuiCol_Text, 0.75f)
+                                : (p.dim & ~IM_COL32_A_MASK) | (static_cast<ImU32>(150) << IM_COL32_A_SHIFT);
+    if (hovered)
+        color = ImGui::GetColorU32(ImGuiCol_Text);
+    ImGui::GetWindowDrawList()->AddText(pos, color, ICON_MS_CALL_MERGE);
+    if (hovered && toggle)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (hovered && !m_scrolling) {
+        const size_t n = row.parents.size();
+        if (!toggle)
+            ImGui::SetTooltip("Merge commit \xE2\x80\x94 %d parents", static_cast<int>(n));
+        else if (row.collapsed)
+            ImGui::SetTooltip("Merge commit \xE2\x80\x94 %d parents; merged history collapsed (click to expand)", static_cast<int>(n));
+        else
+            ImGui::SetTooltip("Merge commit \xE2\x80\x94 %d parents; merged history expanded (click to collapse)", static_cast<int>(n));
+    }
+    ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
+}
+
 void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWidth)
 {
     const Palette& p = theme().palette();
@@ -672,20 +710,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     dragAndDrop(row);
     drawRowMenu(row);
     if (m_graphShown)
-        graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head, mergeToggle(row));
-    if (m_graphShown && mergeToggle(row)) {
-        const float r = graph::mergeHitHalf(rowHeight);
-        const ImVec2 c(laneX(cellStart.x, row.lane, laneWidth),
-            cellStart.y - ImGui::GetStyle().CellPadding.y + rowHeight * 0.5f);
-        ImGui::SetCursorScreenPos(ImVec2(c.x - r, c.y - r));
-        if (ImGui::InvisibleButton("###merge_toggle", ImVec2(r * 2, r * 2)))
-            toggleMerge(row.id);
-        if (ImGui::IsItemHovered())
-            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        if (!m_scrolling && ImGui::IsItemHovered())
-            ImGui::SetTooltip(row.collapsed ? "Expand merged history (%d commits hidden)" : "Collapse merged history",
-                row.collapsedCount);
-    }
+        graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head);
 
     if (m_graphShown)
         ImGui::TableSetColumnIndex(1);
@@ -720,6 +745,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
             m_badgeRects[row.id].emplace_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()), ref.name);
     }
     ImGui::SameLine();
+    drawMergeIcon(row);
     ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
     if (row.conflicted)
         textColor = p.conflict;
