@@ -36,6 +36,14 @@ void copyId(const std::string& shortId, const std::string& fullId);
 // first letter capitalised), with the stable ID "###<prefix>ID". Returns true when clicked (after
 // copying).
 bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::string& fullId, bool enabled = true);
+// Alt+Space on the keyboard-focused item (the keyboard equivalent of the right click that opens its
+// context menu). Call right after the item. The chord is a routed shortcut owned by the item, so
+// Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing
+// while text is being typed.
+bool contextMenuKeyPressed();
+// ImGui::BeginPopupContextItem that also opens the popup on Alt+Space while the last item has
+// keyboard focus (at the item, not at the mouse). Same arguments and return value.
+bool beginContextMenu(const char* strId = nullptr, ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonRight);
 // Indeterminate spinner of the given radius.
 void spinner(const char* id, float radius);
 // Opens a directory or file with the desktop's default handler (off the UI thread).

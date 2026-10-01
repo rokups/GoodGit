@@ -227,7 +227,7 @@ void InfoPanel::draw(bool* open)
         label("Author");
         const std::string author = d.authorName + " <" + d.authorEmail + ">";
         plainText((author + "###author").c_str());
-        if (ImGui::BeginPopupContextItem("##author_menu", ImGuiPopupFlags_MouseButtonRight)) {
+        if (beginContextMenu("##author_menu", ImGuiPopupFlags_MouseButtonRight)) {
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(d.authorName.c_str());
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy email"))

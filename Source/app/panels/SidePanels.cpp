@@ -192,7 +192,7 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
 
 void BranchesPanel::branchMenu(const core::BranchInfo& b)
 {
-    if (!ImGui::BeginPopupContextItem(("##branch_menu_" + rowId(b.name)).c_str()))
+    if (!beginContextMenu(("##branch_menu_" + rowId(b.name)).c_str()))
         return;
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
@@ -276,7 +276,7 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
 
 void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
 {
-    if (!ImGui::BeginPopupContextItem(("##rbranch_menu_" + rowId(r.name)).c_str()))
+    if (!beginContextMenu(("##rbranch_menu_" + rowId(r.name)).c_str()))
         return;
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
@@ -396,7 +396,7 @@ void BranchesPanel::draw(bool* open)
             nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
         }
         // The remote has the Remotes panel's menu, plus History visibility of its branches.
-        if (info && ImGui::BeginPopupContextItem("##remote_menu")) {
+        if (info && beginContextMenu("##remote_menu")) {
             remoteMenuItems(m_session, *info);
             ImGui::Separator();
             std::vector<std::string> refs;
@@ -499,7 +499,7 @@ void TagsPanel::draw(bool* open)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty())
             ImGui::SetTooltip("%s", t.message.c_str());
-        if (ImGui::BeginPopupContextItem(("##tag_menu_" + rowId(t.name)).c_str())) {
+        if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
             if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
                 m_session.revealCommit(t.target);
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
@@ -535,7 +535,7 @@ void TagsPanel::draw(bool* open)
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             ImGui::SetTooltip("Only on %s: fetch to get it here", where.c_str());
-        if (ImGui::BeginPopupContextItem("##rtag_menu")) {
+        if (beginContextMenu("##rtag_menu")) {
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(name.c_str());
             ImGui::Separator();
@@ -594,7 +594,7 @@ void WorktreesPanel::draw(bool* open)
                                   "was moved";
             ImGui::SetTooltip("%s", tip.c_str());
         }
-        if (ImGui::BeginPopupContextItem("##worktree_menu")) {
+        if (beginContextMenu("##worktree_menu")) {
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(w.name.c_str());
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
@@ -681,7 +681,7 @@ void RemotesPanel::draw(bool* open)
                 tip += "\nPrunes on fetch";
             ImGui::SetTooltip("%s", tip.c_str());
         }
-        if (ImGui::BeginPopupContextItem("##remote_menu")) {
+        if (beginContextMenu("##remote_menu")) {
             remoteMenuItems(m_session, r);
             ImGui::EndPopup();
         }
@@ -740,7 +740,7 @@ void StashesPanel::draw(bool* open)
                 "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
                     + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
         // The menu belongs to the row (the last item before it must be the Selectable).
-        if (ImGui::BeginPopupContextItem("##stash_menu")) {
+        if (beginContextMenu("##stash_menu")) {
             if (menuItem(ICON_MS_UNARCHIVE, "Apply", nullptr, false, free))
                 actions.stashApply(s.index, false, false);
             if (menuItem(ICON_MS_UNARCHIVE, "Apply (restore index)", nullptr, false, free))
@@ -834,7 +834,7 @@ void ReflogPanel::draw(bool* open)
                 const std::string label = (e.oldId.isNull() ? std::string("0000000") : e.oldId.shortHex()) + " " ICON_MS_ARROW_RIGHT_ALT " "
                     + e.newId.shortHex() + "###reflog_" + std::to_string(i);
                 selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
-                if (ImGui::BeginPopupContextItem("##reflog_menu")) {
+                if (beginContextMenu("##reflog_menu")) {
                     copyIdMenuItem("Copy new ", m_session.shortId(e.newId), e.newId.hex());
                     copyIdMenuItem("Copy old ", m_session.shortId(e.oldId), e.oldId.hex(), !e.oldId.isNull());
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
@@ -898,7 +898,7 @@ void OperationsPanel::draw(bool* open)
                     ImGui::Text("%s: %s " ICON_MS_ARROW_RIGHT_ALT " %s", r.ref.c_str(), r.oldValue.substr(0, 10).c_str(), r.newValue.substr(0, 10).c_str());
                 ImGui::EndTooltip();
             }
-            if (ImGui::BeginPopupContextItem("##op_menu")) {
+            if (beginContextMenu("##op_menu")) {
                 if (menuItem(ICON_MS_RESTORE, "Restore (undo this operation)", nullptr, false, free && op.restorable()))
                     actions.restore(op.id);
                 if (menuItem(ICON_MS_CONTENT_COPY, "Copy operation ID"))

@@ -159,7 +159,7 @@ void App::drawWelcome()
             m_recentFocus = static_cast<int>(i);
         if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) || (path != currentKey && hoveredDeletePressed()))
             forget = path;
-        if (ImGui::BeginPopupContextItem("##recent_menu")) {
+        if (beginContextMenu("##recent_menu")) {
             if (menuItem(ICON_MS_REMOVE, "Forget"))
                 forget = path;
             ImGui::EndPopup();

@@ -411,4 +411,76 @@ GG_TEST("ui", "a stopped cherry-pick: Skip, and Commit with conflicts")
     GG_CHECK(text.find("<<<<<<<") != std::string::npos && text.find(">>>>>>>") != std::string::npos);
 }
 
+GG_TEST("ui", "Alt+Space opens the context menu of the keyboard-focused item without disturbing navigation")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_1/###row"); }));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    // Keyboard navigation only, with the mouse parked far from every item. The windows are never
+    // refocused between keys: a key leaking to ImGui (menu layer, activation) must show.
+    ctx->MouseMoveToPos(ImVec2(3, 3));
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    auto altSpace = [&](const std::string& ref, const char* menuItem) {
+        ctx->NavMoveTo(ref.c_str());
+        ctx->Yield(2);
+        const ImGuiTestItemInfo item = ctx->ItemInfo(ref.c_str());
+        ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+        ctx->Yield(3);
+        GG_CHECK(s.itemExists((std::string("//$FOCUSED/") + menuItem).c_str()));
+        // The popup opens at the focused item, not at the parked mouse.
+        GG_CHECK(g.OpenPopupStack.Size == 1);
+        if (g.OpenPopupStack.Size == 1) {
+            const ImVec2 at = g.OpenPopupStack[0].OpenPopupPos;
+            GG_CHECK(at.x >= item.RectFull.Min.x && at.x <= item.RectFull.Max.x);
+            GG_CHECK(at.y >= item.RectFull.Min.y && at.y <= item.RectFull.Max.y + 40.0f);
+        }
+        // Alt did not toggle the menu layer.
+        GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+        GG_CHECK(g.OpenPopupStack.Size == 0);
+        GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+    };
+    // Space alone activates a row as before; Alt+Space only opens the menu (the selection stays).
+    const auto before = s.session()->selection().kind;
+    altSpace("//Stashes/stash_1/###row", "Pop");
+    GG_CHECK(s.session()->selection().kind == before);
+    ctx->NavMoveTo("//Stashes/stash_1/###row");
+    ctx->KeyPress(ImGuiKey_Space);
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::Stash; }));
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    altSpace("//Stashes/stash_0/###row", "Pop");
+    // Branches, a History row and a Changes file row.
+    s.showPanel("Branches");
+    altSpace(branchRow("main"), "Copy name");
+    GG_REQUIRE(rowShown(s, head));
+    altSpace(rowRef(head), "Create branch...");
+    s.showPanel("Stashes");
+    ctx->ItemClick("//Stashes/stash_1/###row");
+    const std::string file = s.child("//Changes", "##files") + "/Working tree/b.txt/###file_b.txt";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(file.c_str()); }));
+    altSpace(file, "Apply this file");
+    // While text is typed the chord opens nothing (ImGui's own Alt handling is untouched there).
+    s.showPanel("Reflog");
+    ctx->ItemClick("//Reflog/##reflog_filter");
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->ItemClick("//Stashes/stash_1/###row");
+    ctx->Yield(2);
+    if (g.NavLayer != ImGuiNavLayer_Main) // the text case may have left the menu layer
+        ctx->KeyPress(ImGuiKey_Escape);
+    // Alt on its own still toggles the menu layer.
+    ctx->KeyPress(ImGuiKey_LeftAlt);
+    ctx->Yield(3);
+    GG_CHECK(g.NavLayer == ImGuiNavLayer_Menu);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+}
+
 } // namespace ggtest

@@ -484,7 +484,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     if (rowSelectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
         m_session.select(Selection{kind, {}, -1});
     ImGui::PopStyleColor();
-    if (kind == SelKind::WorkingTree && ImGui::BeginPopupContextItem("##wt_menu")) {
+    if (kind == SelKind::WorkingTree && beginContextMenu("##wt_menu")) {
         auto& actions = m_session.actions();
         const bool free = actions.busy().empty();
         const bool dirty = m_hasWorktreeChanges;
@@ -535,7 +535,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
 
 void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
 {
-    if (!ImGui::BeginPopupContextItem("##row_menu"))
+    if (!beginContextMenu("##row_menu"))
         return;
     // The table runs with zero vertical item spacing; the menu uses the regular one.
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);

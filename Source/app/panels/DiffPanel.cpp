@@ -700,7 +700,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         ImGui::InvisibleButton(id.c_str(), ImVec2(std::max(1.0f, w), height));
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
             selectRows(v, l.row, ImGui::GetIO().KeyShift);
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) || contextMenuKeyPressed()) {
             m_active = &v;
             const auto rows = selectedRows();
             if (std::find(rows.begin(), rows.end(), l.row) == rows.end())

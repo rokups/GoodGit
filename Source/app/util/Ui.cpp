@@ -245,4 +245,18 @@ void helpMarker(const char* text)
 
 std::string dateText(std::int64_t unixSeconds) { return core::formatTime(unixSeconds); }
 
+bool contextMenuKeyPressed()
+{
+    if (!ImGui::IsItemFocused() || ImGui::GetIO().WantTextInput)
+        return false;
+    return ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_Space, ImGuiInputFlags_RouteFocused, ImGui::GetItemID());
+}
+
+bool beginContextMenu(const char* strId, ImGuiPopupFlags flags)
+{
+    if (contextMenuKeyPressed())
+        ImGui::OpenPopup(strId ? ImGui::GetID(strId) : ImGui::GetItemID(), flags);
+    return ImGui::BeginPopupContextItem(strId, flags);
+}
+
 } // namespace ggui

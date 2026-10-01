@@ -93,7 +93,7 @@ std::string BlamePanel::blockText(int index, int* first, int* last) const
 
 void BlamePanel::drawLineMenu(int index)
 {
-    if (!ImGui::BeginPopupContextItem("##blame_menu"))
+    if (!beginContextMenu("##blame_menu"))
         return;
     const auto& line = m_blame->lines[static_cast<size_t>(index)];
     const bool committed = !line.commit.isNull();

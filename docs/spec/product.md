@@ -268,7 +268,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   message, ID, branch or tag. Reveal a commit (loads more history until found, cancellable).
   "Show more" for collapsed regions. Expand and collapse merge history. Unique shortest-prefix
   IDs.
-- **K** Keyboard: ↑/↓ navigation, N (new), Alt+N (new detached), E (edit
+- **K** Keyboard: ↑/↓ navigation, N (new), Alt+N (new detached), Alt+Space (the focused row's context menu; every context menu opens this way), E (edit
   commit; check out is in the context menu and the Branches window), D / Shift+D
   (duplicate commit / branch → cherry-pick), S / Shift+S / Alt+S (squash / with descendants /
   split), A / Shift+A (drop / drop branch). **N** I (interactive rebase from the selected

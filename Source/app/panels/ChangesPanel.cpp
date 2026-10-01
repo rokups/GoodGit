@@ -75,7 +75,7 @@ bool compareWithField(const char* id, std::string& text)
     apply = acceptCommitDrop(text) || apply;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         ImGui::SetTooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
-    if (ImGui::BeginPopupContextItem((std::string(id) + "_menu").c_str())) {
+    if (beginContextMenu((std::string(id) + "_menu").c_str())) {
         for (const char* choice : {"HEAD", "Work Tree"})
             if (menuItem(ICON_MS_COMPARE_ARROWS, choice)) {
                 text = choice;
@@ -420,7 +420,7 @@ ChangesPanel::DiscardPlan ChangesPanel::discardPlan(const std::vector<const File
 
 void ChangesPanel::drawFileMenu(const FileRow& row)
 {
-    if (!ImGui::BeginPopupContextItem("##file_menu"))
+    if (!beginContextMenu("##file_menu"))
         return;
     if (!m_selected.count(row.key())) {
         m_selected = {row.key()};
