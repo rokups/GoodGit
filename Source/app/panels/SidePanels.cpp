@@ -42,7 +42,11 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     ImGui::PushID(id.c_str());
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+    // The eye is for the mouse: the label is the row's one nav stop (menus attach to it), and Space on it
+    // toggles the visibility (below).
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
     events.toggle = ImGui::SmallButton(visible ? ICON_MS_VISIBILITY "###eye" : ICON_MS_VISIBILITY_OFF "###eye");
+    ImGui::PopItemFlag();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
@@ -57,6 +61,9 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         plainText(item.c_str());
     }
     ImGui::PopStyleColor();
+    // Space on the row toggles its visibility like a click on the eye (Ctrl+Space: only this one).
+    if (ImGui::IsItemFocused() && (ImGui::GetIO().KeyMods & ~ImGuiMod_Ctrl) == 0 && ImGui::IsKeyPressed(ImGuiKey_Space, false))
+        events.toggle = true;
     if (outlined) {
         ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
             ImGui::GetColorU32(ImGuiCol_Text), 2.0f, 0, 1.5f);
@@ -733,7 +740,8 @@ void StashesPanel::draw(bool* open)
         ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
         const std::string label = "stash@{" + std::to_string(s.index) + "} " + s.message;
         const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
-        if (selectable((label + "###row").c_str(), selected))
+        // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
+        if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             idTooltip(s.commit.hex(), m_session.shortId(s.commit).size(),
@@ -816,6 +824,7 @@ void ReflogPanel::draw(bool* open)
     ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter);
     acceptCommitDrop(m_filter);
     if (m_reflog) {
+        flattenNextTable(); // the entries are part of the panel's nav layer: the arrows walk them
         if (ImGui::BeginTable("##reflog_table", 3,
                 ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable)) {
             ImGui::TableSetupScrollFreeze(0, 1);
@@ -879,6 +888,7 @@ void OperationsPanel::draw(bool* open)
         actions.undo(true);
     ImGui::EndDisabled();
     const auto& ops = m_session.operations();
+    flattenNextTable(); // the rows are part of the panel's nav layer: the arrows walk them
     if (ImGui::BeginTable("##ops_table", 3, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Time");

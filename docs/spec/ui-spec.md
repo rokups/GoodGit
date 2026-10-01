@@ -400,7 +400,8 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
 
 ## 8. Side panels
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
-  (click toggles visibility in History, Ctrl-click = only this), current outlined. Context:
+  (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
+  Ctrl+Space = only this; the eye is mouse-only), current outlined. Context:
   Reveal · Copy name · Check out · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
   remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
@@ -413,7 +414,7 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
   the first match).
 - **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)
-  (visibility toggle). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
+  (visibility toggle, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
 - **Worktrees** `"Worktrees"` (M): header Add worktree… `###add_worktree` (disabled while HEAD
   is unborn); rows `worktree_<name>` (git's id, the directory name) with "(main)", "(bare)", a lock
   icon, "(missing)" (directory gone; dimmed), "(prunable)" (git worktree prune would remove it:

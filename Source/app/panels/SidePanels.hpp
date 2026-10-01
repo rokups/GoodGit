@@ -74,6 +74,7 @@ public:
     void draw(bool* open);
     void choose(const std::string& ref);
     const core::ReflogPtr& reflog() const { return m_reflog; }
+    const std::string& ref() const { return m_ref; }
 
 private:
     Session& m_session;
