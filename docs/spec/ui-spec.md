@@ -42,7 +42,8 @@ Auto-open (K): argv[1] if given, otherwise the most recent repository that still
 
 ### 1.3 Main menu
 **Repository** (K): Open… `Ctrl+O` · Initialize… · Clone… · Recent ▸ (filter field
-`##recent_filter`, entries show branch, upstream and ahead/behind) · Open working directory ·
+`##recent_filter`, entries show branch, upstream and ahead/behind; Delete forgets the hovered or
+focused entry other than the current repository) · Open working directory ·
 Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · Pull · Push · — ·
 Settings… · Quit `Ctrl+Q`.
 
@@ -94,6 +95,10 @@ is held: the menu item reads "… short ID", and "… full ID" while Shift is he
 Every item with a right-click context menu also opens it on `Alt+Space` while it has keyboard
 focus (the menu opens below the item's bottom-left corner; Space does not also activate it, and
 the Alt press does not switch to the menu bar; ignored while text is being typed).
+Tapping `Alt` on its own (pressed and released with no other key in between) puts the keyboard
+cursor on the main menu bar's first menu: Left/Right walk the menus, Down or Enter opens one;
+Escape (or `Alt` again) leaves the bar and returns focus to the window that had it. As a trade-off
+`Alt` no longer moves to a docked panel's tab bar (`Ctrl+Tab` still switches windows).
 
 ### 1.5 Errors and notifications (K)
 - Important errors (failed git commands, open/clone failures, hook failures, journal errors) open

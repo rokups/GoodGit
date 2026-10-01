@@ -129,6 +129,8 @@ private:
     void applyTheme();
     void handleShortcuts();
     void drawMenuBar();
+    void handleMenuBarKey();
+    void snapshotNavToggle();
     void drawRecentMenu();
     void drawToolbar();
     void drawRepositoryButtons();
@@ -180,6 +182,17 @@ private:
     int m_pendingOpens = 0;
     std::string m_welcomePath;
     std::string m_recentFilter;
+    // Alt tap -> main menu bar (see handleMenuBarKey): nav state at the end of the previous frame, and the
+    // window to hand focus back to once the menu bar is left.
+    struct NavSnapshot {
+        bool toggleLayer = false, idle = false;
+        std::uint32_t window = 0;
+        int layer = 0;
+    } m_navPrev;
+    std::uint32_t m_menuBarReturn = 0;
+    int m_menuActivated = 0;    // frames left to hand focus back after a menu item was activated
+    int m_menuPopups = 0;       // open popups last frame
+    bool m_altOtherKey = false; // a key was pressed while Alt was down
     std::string m_recordedRecent; // path of the open repository already moved to the front of Recent
     std::string m_errorTitle;
     std::string m_errorMessage;

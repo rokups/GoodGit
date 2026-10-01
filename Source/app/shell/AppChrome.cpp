@@ -121,6 +121,78 @@ void App::handleShortcuts()
         s.actions().undo(true);
 }
 
+// A clean Alt tap (ImGui's own toggle: no other key, text or modifier in between) normally switches the
+// focused window to its menu layer, which does nothing for a panel without a menu bar. Then the main menu
+// bar takes the focus on its menu layer; leaving it (Escape or Alt again) hands focus back.
+void App::handleMenuBarKey()
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImGuiWindow* bar = ImGui::FindWindowByName("##MainMenuBar");
+    if (!bar)
+        return;
+    const bool popupsClosed = m_menuPopups > 0 && g.OpenPopupStack.Size == 0;
+    m_menuPopups = g.OpenPopupStack.Size;
+    if (m_menuBarReturn != 0 && g.OpenPopupStack.Size == 0) {
+        // Escape (or Alt) out of the bar's menu layer, or Escape out of its last menu (ImGui then focuses another window).
+        const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        bool left = g.NavWindow == bar ? g.NavLayer == ImGuiNavLayer_Main : escape;
+        // An item was activated: the menus closed and focus stayed on the bar or the dock host. An action that opened
+        // a dialog or focused another window itself keeps that.
+        // (The closed popup keeps the nav window for a frame, so this watches for a few frames.)
+        if (popupsClosed && !escape)
+            m_menuActivated = 3;
+        if (m_menuActivated > 0) {
+            --m_menuActivated;
+            if (m_dialogs.anyOpen() || !g.NavWindow || ((g.NavWindow->Flags & ImGuiWindowFlags_Popup) == 0 && g.NavWindow != bar && !g.NavWindow->DockNodeAsHost))
+                m_menuActivated = 0;
+            else if (g.NavWindow == bar || g.NavWindow->DockNodeAsHost)
+                left = true;
+        }
+        if (left)
+            if (ImGuiWindow* back = ImGui::FindWindowByID(m_menuBarReturn))
+                ImGui::FocusWindow(back);
+        if (left || (g.NavWindow != bar && m_menuActivated == 0)) {
+            m_menuBarReturn = 0;
+            m_menuActivated = 0;
+        }
+        if (left)
+            return;
+    }
+    // Alt+X, Alt+Space, Alt+arrows: ImGui's own cancel misses a key that arrives in the same frame as Alt.
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_ReservedForModCtrl && !m_altOtherKey; ++k)
+        if ((k < ImGuiKey_LeftCtrl || k > ImGuiKey_RightSuper) && ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), ImGuiInputFlags_None, ImGuiKeyOwner_Any))
+            m_altOtherKey = true;
+    const bool released = ImGui::IsKeyReleased(ImGuiKey_LeftAlt) || ImGui::IsKeyReleased(ImGuiKey_RightAlt);
+    const bool altDown = ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt);
+    const bool clean = !m_altOtherKey;
+    if (!altDown)
+        m_altOtherKey = false;
+    const bool tapped = clean && released && m_navPrev.toggleLayer && m_navPrev.idle && !g.IO.KeyCtrl && !g.IO.KeyShift && !g.IO.KeySuper;
+    if (!tapped || !g.NavWindow || g.NavWindow == bar || m_navPrev.layer != ImGuiNavLayer_Main || g.OpenPopupStack.Size > 0 || m_dialogs.anyOpen())
+        return;
+    // ImGui did nothing (the window has no menu layer) or moved to the dock host's tab bars: the menu bar is what Alt is for.
+    const bool unchanged = g.NavLayer == ImGuiNavLayer_Main && g.NavWindow->ID == m_navPrev.window;
+    const bool tabBars = g.NavLayer == ImGuiNavLayer_Menu && g.NavWindow->DockNodeAsHost != nullptr;
+    if (!unchanged && !tabBars)
+        return;
+    m_menuBarReturn = m_navPrev.window;
+    ImGui::FocusWindow(bar);
+    bar->NavLastIds[ImGuiNavLayer_Menu] = 0;
+    g.NavLayer = ImGuiNavLayer_Menu; // the first menu
+    ImGui::NavInitWindow(bar, true);
+    ImGui::SetNavCursorVisibleAfterMove();
+}
+
+// Called at the end of a frame: what the next frame's Alt release acts on.
+void App::snapshotNavToggle()
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    m_navPrev.toggleLayer = g.NavWindowingToggleLayer;
+    m_navPrev.idle = g.ActiveId == 0 || g.ActiveIdAllowOverlap;
+    m_navPrev.window = g.NavWindow ? g.NavWindow->ID : 0;
+    m_navPrev.layer = g.NavLayer;
+}
+
 void App::drawRecentMenu()
 {
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
@@ -144,7 +216,7 @@ void App::drawRecentMenu()
         const bool current = path == currentKey;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
             ImGui::SetTooltip(current ? "%s" : "%s\nDel removes", path.c_str());
-        if (!current && hoveredDeletePressed())
+        if (!current && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
             forget = path;
         ++shown;
     }

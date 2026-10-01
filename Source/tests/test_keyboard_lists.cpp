@@ -16,6 +16,15 @@ namespace {
 
 ImGuiID idOf(ImGuiTestContext* ctx, const std::string& ref) { return ctx->ItemInfo(ref.c_str(), ImGuiTestOpFlags_NoError).ID; }
 
+// Alt pressed and released with nothing in between.
+void altTap(ImGuiTestContext* ctx)
+{
+    ctx->KeyDown(ImGuiMod_Alt);
+    ctx->Yield(2);
+    ctx->KeyUp(ImGuiMod_Alt);
+    ctx->Yield(3);
+}
+
 void press(ImGuiTestContext* ctx, ImGuiKeyChord chord)
 {
     ctx->KeyPress(chord);
@@ -319,6 +328,89 @@ GG_TEST("keyboard", "welcome: recent repositories by arrows, Alt+Space menu, Del
     const std::string target = st.data().recent[1];
     press(ctx, ImGuiKey_Enter);
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), target); }));
+}
+
+GG_TEST("keyboard", "main menu bar: an Alt tap focuses it, Right/Down walk menus, Recent forgets by Delete, Escape returns focus")
+{
+    const fs::path a = s.fixture(Recipe::Linear, "m/a");
+    const fs::path b = s.fixture(Recipe::Linear, "m/b");
+    const fs::path c = s.fixture(Recipe::Linear, "m/c");
+    for (const auto& r : {a, b, c}) {
+        GG_REQUIRE(s.openRepository(r));
+        s.settle();
+    }
+    ggui::Settings& st = s.app.settings();
+    GG_REQUIRE(st.data().recent.size() >= 3);
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//History");
+    ctx->Yield(2);
+    ImGuiWindow* history = g.NavWindow;
+    GG_REQUIRE(history != nullptr);
+    ImGuiWindow* bar = ImGui::FindWindowByName("##MainMenuBar");
+    GG_REQUIRE(bar != nullptr);
+    // Alt+Space on the focused History row opens its menu and does not focus the menu bar.
+    GG_REQUIRE(navTo(ctx, "//History/**/###row_" + s.revParse(c, "HEAD~1")));
+    history = g.NavWindow; // the list's child window
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 1);
+    GG_CHECK(g.NavWindow != bar);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    GG_CHECK(g.NavWindow == history);
+    // A tap on Alt: the menu bar's first menu has the nav cursor.
+    altTap(ctx);
+    GG_REQUIRE(g.NavWindow == bar);
+    GG_CHECK(g.NavLayer == ImGuiNavLayer_Menu);
+    GG_CHECK(g.NavId == idOf(ctx, "//##MainMenuBar/**/Repository"));
+    press(ctx, ImGuiKey_RightArrow);
+    GG_CHECK(g.NavId == idOf(ctx, "//##MainMenuBar/**/Commit"));
+    press(ctx, ImGuiKey_LeftArrow);
+    GG_CHECK(g.NavId == idOf(ctx, "//##MainMenuBar/**/Repository"));
+    // Alt again leaves it, back to History.
+    altTap(ctx);
+    GG_CHECK(g.NavWindow == history);
+    altTap(ctx);
+    GG_REQUIRE(g.NavWindow == bar);
+    // Activating an item by Enter hands focus back too (Copy path is harmless).
+    press(ctx, ImGuiKey_DownArrow);
+    GG_REQUIRE(g.OpenPopupStack.Size == 1);
+    GG_REQUIRE(navTo(ctx, "//$FOCUSED/Copy path"));
+    press(ctx, ImGuiKey_Enter);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    GG_CHECK(g.NavWindow == history);
+    altTap(ctx);
+    GG_REQUIRE(g.NavWindow == bar);
+    // Down opens Repository, Recent opens by Right, Delete forgets an entry other than the current one.
+    press(ctx, ImGuiKey_DownArrow);
+    GG_REQUIRE(g.OpenPopupStack.Size == 1);
+    const std::string recent = "//$FOCUSED/Recent";
+    GG_REQUIRE(navTo(ctx, recent));
+    press(ctx, ImGuiKey_RightArrow);
+    GG_REQUIRE(g.OpenPopupStack.Size == 2);
+    const std::string current = s.session()->path().string();
+    int victim = -1, entries = 0;
+    for (size_t i = 0; i < st.data().recent.size(); ++i) {
+        if (idOf(ctx, "//$FOCUSED/###recent_menu_" + std::to_string(i)) != 0)
+            ++entries;
+        if (victim < 0 && !fs::equivalent(st.data().recent[i], current))
+            victim = int(i);
+    }
+    GG_REQUIRE(victim >= 0);
+    GG_REQUIRE(entries >= 3);
+    const std::string victimPath = st.data().recent[size_t(victim)];
+    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###recent_menu_" + std::to_string(victim)));
+    press(ctx, ImGuiKey_Delete);
+    GG_CHECK(s.waitUntil([&] { return std::ranges::find(st.data().recent, victimPath) == st.data().recent.end(); }));
+    GG_CHECK_EQ(st.data().recent.size(), size_t(2));
+    // Escape closes Recent, Repository, then returns focus to History.
+    for (int i = 0; i < 4 && g.NavWindow != history; ++i) {
+        press(ctx, ImGuiKey_Escape);
+    }
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    GG_CHECK(g.NavWindow == history);
 }
 
 GG_TEST("keyboard", "toolbar: the repository switcher opens by Enter, Down walks the entries, Delete forgets, Enter switches")

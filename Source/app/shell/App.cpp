@@ -488,6 +488,7 @@ void App::frame()
     pumpAskpass();
     pumpSequenceEditor();
     pumpClone();
+    handleMenuBarKey();
     handleShortcuts();
     drawMenuBar();
     drawToolbar();
@@ -501,6 +502,7 @@ void App::frame()
     drawToasts();
     saveIniIfNeeded();
     updateTitle();
+    snapshotNavToggle();
 }
 
 void App::updateTitle()
