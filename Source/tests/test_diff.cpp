@@ -715,6 +715,20 @@ GG_TEST("diff", "hunk navigation: buttons and Alt+Down / Alt+Up scroll to the ne
             key(ImGuiMod_Alt | ImGuiKey_UpArrow);
         GG_CHECK(diff.hunkTarget(false) < 0);
         GG_CHECK(atTop(0));
+        // Alt held across two presses: the chord keeps working (a hotkey must not make Alt read as released).
+        ctx->KeyDown(ImGuiMod_Alt);
+        ctx->KeyPress(ImGuiKey_DownArrow);
+        ctx->Yield(3);
+        GG_CHECK(atTop(1));
+        ctx->KeyPress(ImGuiKey_DownArrow);
+        ctx->Yield(3);
+        GG_CHECK(atTop(2));
+        ctx->KeyUp(ImGuiMod_Alt);
+        ctx->Yield(3);
+        GG_CHECK(ImGui::GetCurrentContext()->NavLayer == ImGuiNavLayer_Main);
+        key(ImGuiMod_Alt | ImGuiKey_UpArrow);
+        key(ImGuiMod_Alt | ImGuiKey_UpArrow);
+        GG_CHECK(atTop(0));
     }
     s.comboSelect("//Diff/##diff_view", "Unified");
 }

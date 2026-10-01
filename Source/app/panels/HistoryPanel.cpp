@@ -897,8 +897,11 @@ void HistoryPanel::draw(bool* open)
             squashSelection(m_session);
         // The commit keys act on a single selected commit.
         if (sel.kind == SelKind::Commit && free && !io.KeyCtrl && m_extra.empty()) {
-            if (ImGui::IsKeyPressed(ImGuiKey_N, false))
-                m_session.newCommitOn(sel.id, io.KeyAlt);
+            // Alt+N is a routed shortcut: releasing Alt does not toggle the menu layer.
+            if (hotkey(ImGuiMod_Alt | ImGuiKey_N, ImGuiInputFlags_RouteFocused))
+                m_session.newCommitOn(sel.id, true);
+            else if (ImGui::IsKeyPressed(ImGuiKey_N, false) && !io.KeyAlt)
+                m_session.newCommitOn(sel.id, false);
             else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyAlt)
                 m_session.actions().editCommit(sel.id);
             else if (const auto* r = row(sel.id))

@@ -104,6 +104,7 @@ private:
     std::set<std::string> m_selected;
     std::string m_current;
     std::string m_anchor;
+    bool m_navOnFileNow = false; // this frame: the nav cursor is on a file row
     std::string m_filter;
     std::string m_compareText;   // the "Compare with" field
     CompareTarget m_compare;     // applied: the whole commit is compared with it

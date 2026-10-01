@@ -41,6 +41,22 @@ bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::s
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing
 // while text is being typed.
 bool contextMenuKeyPressed();
+// An app hotkey: ImGui::Shortcut() (routed to the focused window by default) that, when it fires, also
+// locks the chord's key (not its modifiers) to its owner (`owner` 0 = the current focus scope, as Shortcut() does), so no
+// other reader (ImGui's nav, a widget, a raw ImGui::IsKeyPressed elsewhere) sees the press. The key is
+// locked for the frame, and until released when the chord has Alt (a held Alt+arrow must not leak).
+// Call it every frame the binding is live. Routing already keeps the nav away before the call.
+bool hotkey(ImGuiKeyChord chord, ImGuiInputFlags flags = ImGuiInputFlags_RouteFocused, ImGuiID owner = 0);
+// What made a Selectable (created with ImGuiSelectableFlags_SelectOnNav) report pressed. Call it right
+// after the Selectable returned true. NavMove: the nav cursor just moved onto the row (arrow, Page keys,
+// Home/End; Shift is held for a range, Ctrl never presses). NavActivate: Space/Enter on the cursor row
+// (Ctrl+Space toggles it). Mouse: a click (or anything else).
+enum class PressSource { Mouse, NavMove, NavActivate };
+PressSource pressSource();
+// The modifiers (ImGuiMod_*) that belonged to the press: for NavMove those held when the arrow was
+// pressed (the press is seen a frame later, when a quick Shift+Down may already be released), else the
+// current ones.
+ImGuiKeyChord pressMods();
 // Opens popup `id` with its top-left corner at the bottom-left corner of the last item (where a
 // keyboard-opened context menu appears).
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags = ImGuiPopupFlags_None);

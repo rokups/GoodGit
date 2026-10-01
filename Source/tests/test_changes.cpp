@@ -174,13 +174,178 @@ GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigatio
     GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(6));
     // Arrow keys move the current file and the Diff panel follows.
     ctx->ItemClick(fileRef(s, "Staged", "a.txt").c_str());
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    GG_CHECK(g.NavId != 0);
     ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2); // SelectOnNav presses the row the frame after the cursor lands on it
     GG_REQUIRE(changes.current() != nullptr);
     GG_CHECK_STR_EQ(changes.current()->path, "c.txt");
+    // Nav and selection are one cursor: the nav cursor is on the same row.
+    GG_CHECK(g.NavId == ctx->ItemInfo(fileRef(s, "Staged", "c.txt").c_str()).ID);
     GG_CHECK(s.waitUntil([&] { return s.session()->diff().file() && s.session()->diff().file()->path == "c.txt"; }));
     ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
     GG_REQUIRE(changes.current() != nullptr);
     GG_CHECK_STR_EQ(changes.current()->path, "a.txt");
+    GG_CHECK(g.NavId == ctx->ItemInfo(fileRef(s, "Staged", "a.txt").c_str()).ID && g.NavLayer == ImGuiNavLayer_Main);
+}
+
+GG_TEST("changes", "keyboard only: nav into the list, select by arrows, Shift range, Ctrl+Space, Alt+Space menu")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 7; }));
+    auto& changes = s.session()->changes();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto staged = [&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}); };
+    auto idOf = [&](const char* group, const char* path) { return ctx->ItemInfo(fileRef(s, group, path).c_str()).ID; };
+    const std::string before = staged();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Changes");
+    // Down until the cursor is on the first file row (it starts on a header / button above the list).
+    const ImGuiID first = idOf("Staged", "a.txt");
+    for (int i = 0; i < 40 && g.NavId != first; ++i) {
+        ctx->KeyPress(ImGuiKey_DownArrow);
+        ctx->Yield(2);
+    }
+    GG_REQUIRE(g.NavId == first);
+    GG_REQUIRE(changes.selectedKeys().size() == 1);
+    // Two more rows down: the selection follows the cursor.
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(1));
+    GG_REQUIRE(changes.current() != nullptr);
+    const ggui::FileRow* third = changes.current();
+    const ImGuiID thirdId = idOf(third->group == FileGroup::Staged ? "Staged" : "Unstaged", third->path.c_str());
+    GG_CHECK(g.NavId == thirdId);
+    GG_CHECK(changes.selectedKeys().count(third->key()) == 1);
+    // Alt+Space opens the cursor row's context menu.
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 1);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    // Shift+Up extends the selection from the anchor (third row) over the second.
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(2));
+    // Ctrl+Up moves the cursor (to the first row) without selecting; Ctrl+Space then adds that row.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(2));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Space);
+    ctx->Yield(2);
+    GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(3));
+    s.settle();
+    GG_CHECK_STR_EQ(staged(), before); // Ctrl+Space selects, it does not stage
+    // Plain Space on the 3-row selection acts on all of it (it does not collapse to the cursor row first).
+    ctx->KeyPress(ImGuiKey_Space);
+    GG_CHECK(s.waitUntil([&] { return staged().find("a.txt") == std::string::npos && staged().find("e.txt") == std::string::npos; }));
+}
+
+GG_TEST("changes", "Space toggles staging once; Alt+Space only opens the menu")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 7; }));
+    auto& changes = s.session()->changes();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto staged = [&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}); };
+    GG_CHECK(staged().find("b.txt") == std::string::npos);
+    ctx->ItemClick(fileRef(s, "Unstaged", "b.txt").c_str());
+    GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(1));
+    // Alt+Space is the context-menu chord: it stages nothing and activates nothing (no refocusing).
+    const ImGuiID nav = g.NavId;
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(staged().find("b.txt") == std::string::npos);
+    GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+    GG_CHECK_EQ(changes.selectedKeys().size(), static_cast<size_t>(1));
+    ctx->KeyPress(ImGuiKey_Escape); // closes the row menu it opened
+    ctx->Yield(2);
+    GG_CHECK(g.NavId == nav);
+    ctx->ItemClick(fileRef(s, "Unstaged", "b.txt").c_str());
+    ctx->KeyPress(ImGuiKey_Space);
+    GG_CHECK(s.waitUntil([&] { return staged().find("b.txt") != std::string::npos; }));
+    s.settle();
+    // Once: still staged (a second toggle would have unstaged it), nothing else was selected or staged.
+    GG_CHECK(staged().find("b.txt") != std::string::npos);
+    GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+    // Space on the staged file: unstaged, once.
+    ctx->ItemClick(fileRef(s, "Staged", "b.txt").c_str());
+    ctx->KeyPress(ImGuiKey_Space);
+    GG_CHECK(s.waitUntil([&] { return staged().find("b.txt") == std::string::npos; }));
+    s.settle();
+    GG_CHECK(staged().find("b.txt") == std::string::npos);
+    GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+}
+
+GG_TEST("changes", "keys act on the nav cursor: Ctrl+Up then Space toggles only the cursor row; headers stage and discard nothing")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 7; }));
+    auto& changes = s.session()->changes();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto staged = [&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}); };
+    auto idOf = [&](const char* group, const char* path) { return ctx->ItemInfo(fileRef(s, group, path).c_str()).ID; };
+    const std::string before = staged();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Changes");
+    const ImGuiID first = idOf("Staged", "a.txt");
+    for (int i = 0; i < 40 && g.NavId != first; ++i) {
+        ctx->KeyPress(ImGuiKey_DownArrow);
+        ctx->Yield(2);
+    }
+    GG_REQUIRE(g.NavId == first);
+    // Select down two rows, then Ctrl+Up: the cursor moves to the second row, the selection stays the third.
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    const std::string thirdKey = changes.current()->key();
+    GG_REQUIRE(changes.selectedKeys().size() == 1);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    const ggui::FileRow* cursor = changes.current();
+    GG_REQUIRE(cursor != nullptr);
+    GG_CHECK(g.NavId == idOf(cursor->group == FileGroup::Staged ? "Staged" : cursor->group == FileGroup::Unstaged ? "Unstaged" : "Untracked",
+                             cursor->path.c_str()));
+    const std::string cursorPath = cursor->path;
+    const bool cursorStaged = cursor->group == FileGroup::Staged;
+    GG_CHECK(cursor->key() != thirdKey);
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK(changes.current()->key() == cursor->key()); // the cursor row is current
+    GG_CHECK(changes.selectedKeys().count(thirdKey) == 1);
+    ctx->KeyPress(ImGuiKey_Space);
+    GG_CHECK(s.waitUntil([&] { return staged() != before; }));
+    s.settle();
+    // Only the cursor row toggled: the old selection (the third row) was not touched.
+    const std::string after = staged();
+    GG_CHECK_EQ(after.find(cursorPath) != std::string::npos, !cursorStaged);
+    auto lines = [](const std::string& t) { return std::count(t.begin(), t.end(), '\n'); };
+    GG_CHECK_EQ(lines(after), lines(before) + (cursorStaged ? -1 : 1));
+    // The cursor on the Staged header: Space and D change no file.
+    const std::string headerRef = s.child("//Changes", "##files") + "/Staged/###group";
+    const ImGuiID header = ctx->ItemInfo(headerRef.c_str()).ID;
+    for (int i = 0; i < 6 && g.NavId != header; ++i) {
+        ctx->KeyPress(ImGuiKey_UpArrow);
+        ctx->Yield(2);
+    }
+    GG_REQUIRE(g.NavId == header);
+    const std::string stagedNow = staged();
+    const size_t rowsNow = changes.rows().size();
+    ctx->KeyPress(ImGuiKey_Space);
+    ctx->Yield(3);
+    ctx->KeyPress(ImGuiKey_D);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(staged(), stagedNow);
+    GG_CHECK_EQ(changes.rows().size(), rowsNow); // nothing was discarded
+    ctx->KeyPress(ImGuiKey_Space); // Space toggled the header (collapsed); reopen it, the window state outlives the test
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists(fileRef(s, "Staged", "b.txt").c_str()) || s.itemExists(fileRef(s, "Staged", "a.txt").c_str()));
 }
 
 GG_TEST("changes", "file context menu: copy, patch, save patch, blame")

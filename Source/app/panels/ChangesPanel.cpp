@@ -11,6 +11,7 @@
 #include <IconsMaterialSymbols.h>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 #include <libgg/GitRunner.hpp>
@@ -752,9 +753,29 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     ImGui::PushStyleColor(ImGuiCol_Text, broken ? theme().palette().warning
                                                  : (row.firstClass || row.sides > 0 ? theme().palette().conflict : kindColor(row.kind)));
     const std::string id = label + "###file_" + row.path;
-    if (selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+    // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row presses it.
+    const bool pressed = selectable(id.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick | ImGuiSelectableFlags_SelectOnNav);
+    {
+        // The cursor row is always current (Ctrl+arrow moves the cursor without pressing the row), and the keys
+        // below act only while the cursor is on a file row (read from the previous frame).
+        const ImGuiContext& g = *ImGui::GetCurrentContext();
+        if (g.NavJustMovedToId == ImGui::GetItemID() && key != m_current)
+            setCurrent(key);
+        if (g.NavId == ImGui::GetItemID())
+            m_navOnFileNow = true;
+    }
+    if (pressed) {
         const ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        const PressSource source = pressSource();
+        const bool shift = (pressMods() & ImGuiMod_Shift) != 0;
+        if (source == PressSource::NavActivate && !io.KeyCtrl && !shift) {
+            // Space / Enter on the cursor row keeps the selection (the staging toggle acts on all of it).
+            if (!selected) {
+                m_selected = {key};
+                m_anchor = key;
+                setCurrent(key);
+            }
+        } else if (source == PressSource::Mouse && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             openFile(row);
         } else if (io.KeyCtrl) {
             if (selected)
@@ -763,7 +784,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
                 m_selected.insert(key);
             m_anchor = key;
             setCurrent(key);
-        } else if (io.KeyShift && !m_anchor.empty()) {
+        } else if (shift && !m_anchor.empty()) {
             const auto rows = visibleRows();
             int a = -1, b = -1;
             for (size_t i = 0; i < rows.size(); ++i) {
@@ -942,24 +963,28 @@ void ChangesPanel::draw(bool* open)
     }
     ImGui::Separator();
 
-    ImGui::BeginChild("##files", ImVec2(0, 0), ImGuiChildFlags_None);
+    // Nav-flattened: the rows are part of the panel's nav layer, so the arrows walk them.
+    ImGui::BeginChild("##files", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
     const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput;
+    const bool navOnFile = m_navOnFileNow || ImGui::GetCurrentContext()->NavId == 0; // last frame's cursor; 0 = mouse-only
+    m_navOnFileNow = false;
     if (focused) {
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-            moveCurrent(+1);
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-            moveCurrent(-1);
+        // Up / Down / Page / Home / End are ImGui's nav; the row Selectables (SelectOnNav) turn the cursor
+        // reaching a row into a selection.
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A)) {
             m_selected.clear();
             for (const FileRow* r : visibleRows())
                 m_selected.insert(r->key());
         }
+        // Plain Space / Enter keep activating the focused row through ImGui's nav as well; Alt+Space is the
+        // context-menu chord (a routed shortcut) and must not stage anything.
         if ((ImGui::IsKeyPressed(ImGuiKey_Space, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false))
+            && !ImGui::GetIO().KeyAlt && !ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeyShift && navOnFile
             && (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index)) {
             if (const FileRow* cur = current())
                 toggleStaging(actionRows(*cur));
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods && navOnFile
             && (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index)
             && m_session.actions().busy().empty()) {
             if (const FileRow* cur = current()) {
@@ -968,7 +993,7 @@ void ChangesPanel::draw(bool* open)
                     discard(plan);
             }
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods && m_selection.kind == SelKind::Commit
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods && navOnFile && m_selection.kind == SelKind::Commit
             && m_session.actions().busy().empty()) {
             // Discard from the commit: a rewrite (one Undo), published commits ask first.
             if (const FileRow* cur = current(); cur && cur->group == FileGroup::Commit) {

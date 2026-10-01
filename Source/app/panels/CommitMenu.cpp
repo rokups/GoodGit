@@ -226,12 +226,17 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
     const ImGuiIO& io = ImGui::GetIO();
     if (io.KeyCtrl)
         return;
+    // Alt+S is a routed shortcut: releasing Alt does not toggle the menu layer.
+    if (hotkey(ImGuiMod_Alt | ImGuiKey_S, ImGuiInputFlags_RouteFocused)) {
+        showSplitDialog(session, row.id);
+        return;
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_D, false))
         session.actions().duplicate(row.id, io.KeyShift);
     else if (ImGui::IsKeyPressed(ImGuiKey_I, false) && !io.KeyShift && !io.KeyAlt)
         openInteractiveRebase(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyAlt)
-        showSplitDialog(session, row.id);
+        return; // Alt+S never squashes
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyShift)
         session.actions().squashDescendants(row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false))

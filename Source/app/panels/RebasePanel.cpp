@@ -1502,19 +1502,15 @@ void RebasePanel::handleKeys()
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantTextInput || io.KeyCtrl)
         return;
-    if (io.KeyAlt) {
-        // Alt+arrow is ours: no menu layer toggle when Alt goes up.
-        const ImGuiID owner = ImGui::GetID("##ir_keys");
-        ImGui::SetKeyOwner(ImGuiKey_LeftAlt, owner);
-        ImGui::SetKeyOwner(ImGuiKey_RightAlt, owner);
-        // Up/down as displayed.
-        const int up = m_newestFirst ? +1 : -1;
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-            moveSelection(up);
-        else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-            moveSelection(-up);
+    // Alt+Up / Alt+Down (as displayed) reorder: routed shortcuts own their keys, so ImGui's nav cursor
+    // does not move and Alt going up does not toggle the menu layer.
+    const int up = m_newestFirst ? +1 : -1;
+    if (hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat))
+        moveSelection(up);
+    if (hotkey(ImGuiMod_Alt | ImGuiKey_DownArrow, ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat))
+        moveSelection(-up);
+    if (io.KeyAlt)
         return;
-    }
     struct Key {
         ImGuiKey key;
         Action action;

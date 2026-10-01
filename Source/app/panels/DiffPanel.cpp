@@ -1094,9 +1094,9 @@ void DiffPanel::draw(bool* open)
     // Alt+Down / Alt+Up: next / previous hunk. A routed shortcut owns its key, so ImGui neither
     // moves the navigation cursor on the arrow nor toggles the menu layer when Alt is released.
     if (!ImGui::GetIO().WantTextInput) {
-        if (ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_DownArrow, ImGuiInputFlags_RouteFocused))
+        if (hotkey(ImGuiMod_Alt | ImGuiKey_DownArrow, ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat))
             goToHunk(true);
-        if (ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_UpArrow, ImGuiInputFlags_RouteFocused))
+        if (hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat))
             goToHunk(false);
     }
     drawToolbar();

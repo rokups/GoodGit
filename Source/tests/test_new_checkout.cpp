@@ -57,6 +57,7 @@ GG_TEST("new", "new detached and new on another commit")
     GG_REQUIRE(s.openRepository(repo));
     ctx->ItemClick(rowRef(main).c_str());
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_N);
+    GG_CHECK(ImGui::GetCurrentContext()->NavLayer == ImGuiNavLayer_Main); // Alt did not toggle the menu layer
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != main; }));
     s.settle();
     GG_CHECK_STR_EQ(symbolicHead(s, repo), "(detached)");

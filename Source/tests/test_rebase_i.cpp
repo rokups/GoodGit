@@ -352,8 +352,14 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
 
     // Alt+Up twice, Alt+Down once (keyboard reorder).
     key(s, r.c[5], ImGuiMod_Alt | ImGuiKey_UpArrow);
+    // The chord is the editor's alone: ImGui's nav cursor stays on the row and Alt does not
+    // toggle the menu layer (no refocusing between presses).
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    const ImGuiID nav = g.NavId;
+    GG_CHECK(nav != 0);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
     GG_CHECK(rows(s) == (Rows{"pick c2", "pick c5", "pick c3", "pick c4"}));
+    GG_CHECK(g.NavId == nav && g.NavLayer == ImGuiNavLayer_Main);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow); // already first: nothing moves
     GG_CHECK(rows(s) == (Rows{"pick c5", "pick c2", "pick c3", "pick c4"}));
@@ -371,6 +377,18 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
     GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "pick c5", "pick c4"}));
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
     ctx->ItemUncheck(irWidget("ir_newest_first").c_str());
+    // Alt held across two presses: both reorder (the chord keeps working), Alt does not toggle the menu layer.
+    key(s, r.c[5], ImGuiMod_Alt | ImGuiKey_DownArrow); // already last: nothing moves
+    ctx->KeyDown(ImGuiMod_Alt);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->KeyUp(ImGuiMod_Alt);
+    ctx->Yield(3);
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c5", "pick c3", "pick c4"}));
+    GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_DownArrow);
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "pick c4", "pick c5"}));
 
     // Drag c2 onto c4 (below it: after), then c5 onto c3 (above it: before).
     ctx->ItemDragAndDrop(irRow(r.c[2]).c_str(), irRow(r.c[4]).c_str());

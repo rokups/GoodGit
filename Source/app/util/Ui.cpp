@@ -245,11 +245,40 @@ void helpMarker(const char* text)
 
 std::string dateText(std::int64_t unixSeconds) { return core::formatTime(unixSeconds); }
 
+bool hotkey(ImGuiKeyChord chord, ImGuiInputFlags flags, ImGuiID owner)
+{
+    const ImGuiID id = owner ? owner : ImGui::GetCurrentContext()->CurrentFocusScopeId;
+    if (!ImGui::Shortcut(chord, flags, id))
+        return false;
+    // Only the key is locked: locking a modifier would make io.KeyAlt / KeyMods read as released while
+    // it is held. Shortcut() already claimed the mods (so releasing Alt does not toggle the menu layer).
+    ImGui::SetKeyOwner((ImGuiKey)(chord & ~ImGuiMod_Mask_), id,
+        (chord & ImGuiMod_Alt) ? ImGuiInputFlags_LockUntilRelease : ImGuiInputFlags_LockThisFrame);
+    return true;
+}
+
 bool contextMenuKeyPressed()
 {
     if (!ImGui::IsItemFocused() || ImGui::GetIO().WantTextInput)
         return false;
-    return ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_Space, ImGuiInputFlags_RouteFocused, ImGui::GetItemID());
+    return hotkey(ImGuiMod_Alt | ImGuiKey_Space, ImGuiInputFlags_RouteFocused, ImGui::GetItemID());
+}
+
+PressSource pressSource()
+{
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    const ImGuiID id = ImGui::GetItemID();
+    if (g.NavJustMovedToId == id)
+        return PressSource::NavMove;
+    if (g.NavActivateId == id)
+        return PressSource::NavActivate;
+    return PressSource::Mouse;
+}
+
+ImGuiKeyChord pressMods()
+{
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    return g.NavJustMovedToId == ImGui::GetItemID() ? g.NavJustMovedToKeyMods : g.IO.KeyMods;
 }
 
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags)
