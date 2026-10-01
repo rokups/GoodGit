@@ -352,14 +352,14 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
 
     // Alt+Up twice, Alt+Down once (keyboard reorder).
     key(s, r.c[5], ImGuiMod_Alt | ImGuiKey_UpArrow);
-    // The chord is the editor's alone: ImGui's nav cursor stays on the row and Alt does not
-    // toggle the menu layer (no refocusing between presses).
+    // The chord is the editor's alone: ImGui's nav cursor stays on the moved row (its id follows the row)
+    // and Alt does not toggle the menu layer (no refocusing between presses).
     ImGuiContext& g = *ImGui::GetCurrentContext();
-    const ImGuiID nav = g.NavId;
-    GG_CHECK(nav != 0);
+    GG_CHECK(g.NavId == ctx->ItemInfo(irRow(r.c[5]).c_str()).ID && g.NavId != 0);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    ctx->Yield(2);
     GG_CHECK(rows(s) == (Rows{"pick c2", "pick c5", "pick c3", "pick c4"}));
-    GG_CHECK(g.NavId == nav && g.NavLayer == ImGuiNavLayer_Main);
+    GG_CHECK(g.NavId == ctx->ItemInfo(irRow(r.c[5]).c_str()).ID && g.NavLayer == ImGuiNavLayer_Main);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow); // already first: nothing moves
     GG_CHECK(rows(s) == (Rows{"pick c5", "pick c2", "pick c3", "pick c4"}));
@@ -492,6 +492,84 @@ GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main"}), "c3 add c\n\nc4 add d");
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), r.c[3]); // no --update-refs
     GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+GG_TEST("rebase-i", "keyboard only: nav into the list, select by arrows, Shift range, Alt+Down move, nav into the preview")
+{
+    const Repo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[3]));
+    ctx->ItemClick(historyRow(r.c[3]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_REQUIRE(previewReady(s) != nullptr);
+    GG_REQUIRE(rows(s) == (Rows{"pick c3", "update-ref refs/heads/part1", "pick c4", "pick c5"}));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto idOf = [&](const std::string& ref) { return ctx->ItemInfo(ref.c_str()).ID; };
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Interactive rebase");
+    auto down = [&](ImGuiKeyChord chord = ImGuiKey_DownArrow) {
+        ctx->KeyPress(chord);
+        ctx->Yield(2);
+    };
+    // Down until the cursor is on the first row (it starts on a button / checkbox above the list).
+    const ImGuiID first = idOf(irRow(r.c[3]));
+    GG_REQUIRE(first != 0);
+    for (int i = 0; i < 40 && g.NavId != first; ++i)
+        down();
+    GG_REQUIRE(g.NavId == first);
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{0}));
+    // The next row: the selection follows the cursor (the update-ref row).
+    down();
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{1}));
+    // Shift+Down extends from the anchor, Shift+Up shrinks it again.
+    down(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{1, 2}));
+    down(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{1}));
+    // Down onto c4 (row 2), then Alt+Down moves it below c5 and the cursor goes along with it.
+    down();
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{2}));
+    GG_CHECK(g.NavId == idOf(irRow(r.c[4])));
+    down(ImGuiMod_Alt | ImGuiKey_DownArrow);
+    GG_CHECK(rows(s) == (Rows{"pick c3", "update-ref refs/heads/part1", "pick c5", "pick c4"}));
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{3}));
+    GG_CHECK(g.NavId == idOf(irRow(r.c[4])));
+    down(ImGuiKey_UpArrow); // the cursor moves on from the moved row, not from where it was
+    GG_CHECK(editor(s).selection() == (std::set<size_t>{2}));
+    GG_CHECK(g.NavId == idOf(irRow(r.c[5])));
+    GG_REQUIRE(previewReady(s) != nullptr);
+    // Right from the list row on the selection moves the cursor into the result pane (on the selected result);
+    // Down / Up in it select the results' rows; Left goes back to the list.
+    const std::string pane = previewPane(s);
+    const auto& pv = *editor(s).preview();
+    const size_t top = pv.rows.size() - 1; // displayed first
+    auto previewRow = [&](size_t k) { return idOf(pane + "/**/###irp_row_" + std::to_string(k)); };
+    GG_REQUIRE(previewRow(top) != 0);
+    const std::set<size_t> selected = editor(s).selection();
+    // The first (displayed) result whose todo row is selected.
+    size_t at = pv.rows.size();
+    for (size_t k = pv.rows.size(); k-- > 0 && at == pv.rows.size();)
+        if (selected.count(pv.rows[k].todoRow))
+            at = k;
+    GG_REQUIRE(at < pv.rows.size() && at > 0);
+    down(ImGuiKey_RightArrow);
+    GG_CHECK(g.NavId == previewRow(at)); // the key is consumed: ImGui's own nav did not pick another item
+    GG_CHECK(editor(s).selection() == selected);
+    down(ImGuiKey_DownArrow); // the next result down the pane
+    GG_CHECK(g.NavId == previewRow(at - 1));
+    GG_CHECK(editor(s).selection().count(pv.rows[at - 1].todoRow) == 1);
+    // Left returns to the list row of the selection (not whichever list row is level with the result),
+    // and the selection stays.
+    const std::set<size_t> now = editor(s).selection();
+    GG_REQUIRE(!now.empty());
+    const auto& item = editor(s).todo().items[*now.begin()];
+    GG_REQUIRE(item.isCommit());
+    down(ImGuiKey_LeftArrow);
+    GG_CHECK(g.NavId == idOf(irRow(item.commit)));
+    GG_CHECK(editor(s).selection() == now);
+    GG_CHECK(g.NavWindow && std::string(g.NavWindow->Name).find("irp_table") == std::string::npos);
+    ctx->KeyPress(ImGuiKey_Escape);
 }
 
 GG_TEST("rebase-i", "messages: reword and squash editors, fixup -C, first row validation, one Undo")

@@ -281,6 +281,14 @@ ImGuiKeyChord pressMods()
     return g.NavJustMovedToId == ImGui::GetItemID() ? g.NavJustMovedToKeyMods : g.IO.KeyMods;
 }
 
+void flattenNextTable()
+{
+    // BeginTable reads the next-window data for its scroll child; ASSIGN the flags (OR would inherit stale ones).
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    g.NextWindowData.HasFlags |= ImGuiNextWindowDataFlags_HasChildFlags;
+    g.NextWindowData.ChildFlags = ImGuiChildFlags_NavFlattened;
+}
+
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags)
 {
     ImGui::OpenPopupEx(id, flags);

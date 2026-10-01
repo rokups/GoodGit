@@ -57,6 +57,9 @@ PressSource pressSource();
 // pressed (the press is seen a frame later, when a quick Shift+Down may already be released), else the
 // current ones.
 ImGuiKeyChord pressMods();
+// Call right before ImGui::BeginTable() of a ScrollY table: its scroll child becomes nav-flattened, so the
+// arrows reach its rows from the surrounding panel (a plain child is a separate nav layer).
+void flattenNextTable();
 // Opens popup `id` with its top-left corner at the bottom-left corner of the last item (where a
 // keyboard-opened context menu appears).
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags = ImGuiPopupFlags_None);

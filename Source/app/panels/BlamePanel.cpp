@@ -170,6 +170,7 @@ void BlamePanel::draw(bool* open)
     ImGui::PushFont(theme().monoFont(), 0.0f);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX | ImGuiTableFlags_RowBg
         | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
+    flattenNextTable(); // the rows are part of the panel's nav layer: the arrows walk them
     if (ImGui::BeginTable("##blame_table", 5, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Commit");
@@ -200,12 +201,21 @@ void BlamePanel::draw(bool* open)
                 const std::string label = (newBlock ? commitText : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
                 if (l.commit.isNull())
                     ImGui::PushStyleColor(ImGuiCol_Text, p.unstaged);
-                if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                    if (ImGui::GetIO().KeyShift && m_selFirst >= 0) {
-                        m_selFirst = std::min(m_selFirst, i);
-                        m_selLast = std::max(m_selLast, i);
+                // SelectOnNav: the nav cursor (arrows) and the selection are one thing.
+                if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_SelectOnNav)) {
+                    const bool shift = (pressMods() & ImGuiMod_Shift) != 0;
+                    if (pressSource() == PressSource::NavActivate && !shift) {
+                        // Space / Enter on the cursor row keeps the selection (the range stays).
+                        if (!selected)
+                            m_selFirst = m_selLast = m_selAnchor = i;
+                    } else if (shift && m_selFirst >= 0) {
+                        // The range runs from the anchor (the last plain press) to this line.
+                        const int anchor = m_selAnchor >= m_selFirst && m_selAnchor <= m_selLast ? m_selAnchor : m_selFirst;
+                        m_selFirst = std::min(anchor, i);
+                        m_selLast = std::max(anchor, i);
+                        m_selAnchor = anchor;
                     } else {
-                        m_selFirst = m_selLast = i;
+                        m_selFirst = m_selLast = m_selAnchor = i;
                     }
                 }
                 if (l.commit.isNull())

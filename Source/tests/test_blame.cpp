@@ -180,4 +180,50 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK(s.app.errorMessage().find("The file did not exist before this change") != std::string::npos);
 }
 
+GG_TEST("blame", "keyboard only: nav into the lines, select by arrows, Shift range, Alt+Space menu")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    blameFromChanges(s, "Unstaged", "tale.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    auto& blame = s.session()->blame();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto idOf = [&](int n) { return ctx->ItemInfo(lineRef(s, n).c_str()).ID; };
+    auto press = [&](ImGuiKeyChord chord) {
+        ctx->KeyPress(chord);
+        ctx->Yield(2);
+    };
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Blame");
+    // Down until the cursor is on the first line (it starts on a button above the table).
+    const ImGuiID first = idOf(1);
+    GG_REQUIRE(first != 0);
+    for (int i = 0; i < 40 && g.NavId != first; ++i)
+        press(ImGuiKey_DownArrow);
+    GG_REQUIRE(g.NavId == first);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 0);
+    // The selection follows the cursor.
+    press(ImGuiKey_DownArrow);
+    GG_CHECK(g.NavId == idOf(2));
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+    // Shift+Down extends the range, Shift+Up shrinks it.
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    press(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 2);
+    // Alt+Space opens the cursor line's context menu.
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 1);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+}
+
 } // namespace ggtest

@@ -565,6 +565,8 @@ void RebasePanel::moveSelection(int delta)
     std::set<size_t> moved;
     for (size_t row : rows)
         moved.insert(delta < 0 ? row - 1 : row + 1);
+    if (m_navRow && m_selection.count(*m_navRow))
+        m_wantNavRow = delta < 0 ? *m_navRow - 1 : *m_navRow + 1; // the cursor stays on its row
     m_selection = std::move(moved);
     m_anchor.reset();
 }
@@ -1056,8 +1058,11 @@ void RebasePanel::drawList()
     const float listWidth = std::max(ImGui::GetFontSize() * 10, avail - previewWidth - ImGui::GetStyle().ItemSpacing.x);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+    // Nav-flattened: the table's scroll child is part of the panel's nav layer, so the arrows walk the rows.
+    flattenNextTable();
     if (!ImGui::BeginTable("##ir_table", 5, flags, ImVec2(listWidth, 0)))
         return;
+    m_navRow.reset(); // set again by the row the nav cursor is on
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 7);
     ImGui::TableSetupColumn("ID");
@@ -1080,7 +1085,7 @@ void RebasePanel::drawList()
 
 void RebasePanel::drawPreview()
 {
-    ImGui::BeginChild("##ir_preview", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("##ir_preview", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     const Palette& p = theme().palette();
     const size_t n = m_session.shortIdLength();
     ImGui::TextUnformatted("Result");
@@ -1159,6 +1164,7 @@ void RebasePanel::drawPreview()
     }
 
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+    flattenNextTable();
     if (!ImGui::BeginTable("##irp_table", 2, flags)) {
         ImGui::EndChild();
         return;
@@ -1177,15 +1183,20 @@ void RebasePanel::drawPreview()
             ImGui::SameLine();
         }
     };
+    bool wantNav = m_wantPreviewNav;
+    m_wantPreviewNav = false;
+    const bool anySelected = std::any_of(pv.rows.begin(), pv.rows.end(), [&](const auto& r) { return m_selection.count(r.todoRow) > 0; });
     for (size_t k = pv.rows.size(); k-- > 0;) {
         const auto& row = pv.rows[k];
         ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
         ImGui::TableSetColumnIndex(0);
         ImGui::PushID(static_cast<int>(k));
         const ImVec2 cellStart = ImGui::GetCursorScreenPos();
-        // Clicking a result selects its rows in the list.
-        if (selectable(("###irp_row_" + std::to_string(k)).c_str(), m_selection.count(row.todoRow) > 0,
-                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+        // Clicking a result (or the nav cursor reaching it) selects its rows in the list.
+        const bool rowSelected = m_selection.count(row.todoRow) > 0;
+        if (selectable(("###irp_row_" + std::to_string(k)).c_str(), rowSelected,
+                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav)
+            && !(pressSource() == PressSource::NavActivate && rowSelected)) {
             m_selection.clear();
             for (size_t i = 0; i < m_state.todo.items.size(); ++i)
                 if ((m_state.todo.items[i].isCommit() || m_state.todo.items[i].action == Action::Merge)
@@ -1194,6 +1205,22 @@ void RebasePanel::drawPreview()
             if (row.merge)
                 m_selection.insert(row.todoRow);
             m_anchor = row.todoRow;
+        }
+        {
+            ImGuiContext& g = *ImGui::GetCurrentContext();
+            // hotkey(): the route owns the key, so ImGui's own nav (which may find a level list row) never sees it.
+            if (g.NavId == ImGui::GetItemID() && hotkey(ImGuiKey_LeftArrow, ImGuiInputFlags_RouteFocused, ImGui::GetItemID()))
+                m_wantNavRow = m_selection.empty() ? displayOrder().front() : *m_selection.begin();
+            // Right from the list: the cursor lands on the first selected result (else the first one).
+            if (wantNav && (rowSelected || (!anySelected && k + 1 == pv.rows.size()))) {
+                wantNav = false;
+                ImGuiWindow* window = ImGui::GetCurrentWindow();
+                if (g.NavWindow && g.NavWindow->RootWindowForNav == window->RootWindowForNav) {
+                    const bool visible = g.NavCursorVisible;
+                    ImGui::SetFocusID(ImGui::GetItemID(), window);
+                    g.NavCursorVisible = visible;
+                }
+            }
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string tip = row.unchanged ? "Unchanged: " + shortHex(row.id, n) : "New commit from";
@@ -1272,14 +1299,25 @@ void RebasePanel::drawPreview()
 
 void RebasePanel::clickRow(size_t row)
 {
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.KeyShift && m_anchor) {
+    // Call right after the row's Selectable (SelectOnNav: the nav cursor reaching a row presses it).
+    const PressSource source = pressSource();
+    const bool shift = (pressMods() & ImGuiMod_Shift) != 0;
+    const bool ctrl = ImGui::GetIO().KeyCtrl;
+    if (source == PressSource::NavActivate && !ctrl && !shift) {
+        // Space / Enter on the cursor row keeps the selection (it is already selected after a cursor move).
+        if (!m_selection.count(row)) {
+            m_selection = {row};
+            m_anchor = row;
+        }
+        return;
+    }
+    if (shift && m_anchor) {
         m_selection.clear();
         for (size_t i = std::min(row, *m_anchor); i <= std::max(row, *m_anchor); ++i)
             m_selection.insert(i);
         return;
     }
-    if (io.KeyCtrl) {
+    if (ctrl) {
         if (!m_selection.erase(row))
             m_selection.insert(row);
     } else {
@@ -1313,16 +1351,45 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32_BLACK_TRANS);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32_BLACK_TRANS);
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32_BLACK_TRANS);
+    // The selectable spans the whole row (as high as the action combo): ImGui's arrows pick the nearest item by
+    // its edges, so a text-high rect would lose Up / Down to the taller combos of the neighbouring rows.
+    const float pad = ImGui::GetStyle().FramePadding.y;
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - pad); // (Selectable() adds the text offset back)
+    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
     const bool clicked = ImGui::Selectable((idText + "###ir_" + key).c_str(), selected,
-        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
+        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav,
+        ImVec2(0.0f, ImGui::GetFrameHeight()));
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
+    if (clicked)
+        clickRow(row); // (reads the press source from the item just made)
+    {
+        ImGuiContext& g = *ImGui::GetCurrentContext();
+        if (g.NavId == ImGui::GetItemID()) {
+            m_navRow = row;
+            // Right goes to the result pane. ImGui's own scoring finds the pane's rows only when they happen to be
+            // level with the cursor's row, so the key is handled here; Left comes back the same way.
+            // (An exec row keeps Right for its command field.) The key is owned: ImGui's nav never sees it.
+            if (item.action != Action::Exec && hotkey(ImGuiKey_RightArrow, ImGuiInputFlags_RouteFocused, ImGui::GetItemID()))
+                m_wantPreviewNav = true;
+        }
+        if (m_wantNavRow == row) {
+            // Alt+Up / Alt+Down moved this row: the nav cursor goes with it (ids carry the row index).
+            m_wantNavRow.reset();
+            ImGuiWindow* window = ImGui::GetCurrentWindow();
+            if (g.NavWindow && g.NavWindow->RootWindow == window->RootWindow) {
+                const bool visible = g.NavCursorVisible;
+                ImGui::SetFocusID(ImGui::GetItemID(), window);
+                g.NavCursorVisible = visible;
+                m_navRow = row;
+            }
+        }
+    }
     const bool rowHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem);
     if (selected)
         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, rowHovered ? p.selectionHovered : p.selection);
     else if (rowHovered)
         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, ImGui::GetColorU32(ImGuiCol_HeaderHovered));
-    if (clicked)
-        clickRow(row);
     if (ImGui::BeginDragDropSource()) {
         const std::string payload = std::to_string(row);
         ImGui::SetDragDropPayload("GG_TODO_ROW", payload.data(), payload.size());

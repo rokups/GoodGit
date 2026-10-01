@@ -176,6 +176,9 @@ private:
     std::vector<State> m_redo;
     std::optional<State> m_textEditBefore; // state when a message or command field became active
     std::set<size_t> m_selection;
+    std::optional<size_t> m_navRow;     // the row the nav cursor is on (this frame), if any
+    bool m_wantPreviewNav = false;      // Right pressed on a list row: the cursor moves to the result pane
+    std::optional<size_t> m_wantNavRow; // the row the cursor moves to when it is drawn (after Alt+Up / Alt+Down)
     std::optional<size_t> m_anchor;   // Shift-click range start
     std::optional<std::pair<std::vector<size_t>, size_t>> m_pendingMove; // dropped rows, target
     gg::todo::Options m_options;

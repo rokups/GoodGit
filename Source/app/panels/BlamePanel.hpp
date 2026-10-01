@@ -36,6 +36,7 @@ private:
     core::BlamePtr m_blame;
     bool m_loading = false;
     std::string m_filter;
+    int m_selAnchor = -1; // the end of the range Shift extends from
     int m_selFirst = -1;
     int m_selLast = -1;
     int m_scrollTo = 0;
