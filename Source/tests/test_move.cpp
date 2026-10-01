@@ -61,6 +61,24 @@ void selectCommit(Scenario& s, const std::string& hex, size_t files)
     s.waitUntil([&] { return s.session()->changes().rows().size() == files; });
 }
 
+// Opens the context menu of `ref`, reports whether it lists `label`, and closes it again.
+bool menuHas(Scenario& s, const std::string& ref, const char* label)
+{
+    s.ctx->ItemClick(ref.c_str(), ImGuiMouseButton_Right);
+    s.ctx->Yield(2);
+    const bool has = s.itemExists((std::string("//$FOCUSED/") + label).c_str());
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    return has;
+}
+
+// The move-to-child/working-tree slot: HEAD has no child, so it offers the working tree instead.
+void checkMoveSlot(Scenario& s, const std::string& ref, bool head, const char* child, const char* workingTree)
+{
+    GG_CHECK(menuHas(s, ref, head ? workingTree : child));
+    GG_CHECK(!menuHas(s, ref, head ? child : workingTree));
+}
+
 bool moved(Scenario& s, const fs::path& repo, const std::string& from)
 {
     const bool ok = s.waitUntil([&] { return s.head(repo) != from; });
@@ -77,6 +95,7 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, revert
     GG_REQUIRE(s.openRepository(r.path));
     // c.txt to the parent: base now adds it, X no longer does; the tip is unchanged.
     selectCommit(s, r.x, 3);
+    checkMoveSlot(s, fileRef(s, "c.txt"), false, "Move to child", "Move to working tree"); // not HEAD
     s.contextMenu(fileRef(s, "c.txt").c_str(), "Move to parent");
     GG_CHECK(moved(s, r.path, r.y));
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~2"), "a.txt c.txt");
@@ -94,7 +113,8 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, revert
     // d.txt out of HEAD into the working tree: uncommitted, still on disk.
     const std::string tip = s.head(r.path);
     selectCommit(s, tip, 2);
-    s.contextMenu(fileRef(s, "d.txt").c_str(), "Move to the working tree");
+    checkMoveSlot(s, fileRef(s, "d.txt"), true, "Move to child", "Move to working tree"); // HEAD
+    s.contextMenu(fileRef(s, "d.txt").c_str(), "Move to working tree");
     GG_CHECK(moved(s, r.path, tip));
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD"), "b.txt");
     GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");
@@ -121,6 +141,8 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].hunks.size() == 2; }));
     // The second hunk (line 18) to the parent.
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_1").c_str()); }));
+    ctx->ItemClick((body(s) + "/###hunk_1").c_str());
+    checkMoveSlot(s, body(s) + "/###hunk_1", false, "Move line(s) to child", "Move line(s) to working tree"); // not HEAD
     ctx->ItemClick((body(s) + "/###hunk_1").c_str());
     s.contextMenu((body(s) + "/###hunk_1").c_str(), "Move line(s) to parent");
     GG_CHECK(moved(s, r.path, r.y));
@@ -156,6 +178,8 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     selectCommit(s, tip, 2);
     ctx->ItemClick(fileRef(s, "a.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
+    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    checkMoveSlot(s, body(s) + "/###hunk_0", true, "Move line(s) to child", "Move line(s) to working tree"); // HEAD
     ctx->ItemClick((body(s) + "/###hunk_0").c_str());
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to working tree");
     GG_CHECK(moved(s, r.path, tip));

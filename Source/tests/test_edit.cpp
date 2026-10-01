@@ -703,9 +703,12 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
         GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == files; }));
         s.contextMenu((s.child("//Changes", "##files") + "/" + path + "/###file_" + path).c_str(), item);
     };
-    // HEAD (c4) has no child to move changes to, nor descendants to squash.
-    fileMenu(r.c4, "c.txt", 2, "Move to child");
+    // A side branch's tip (s1) has no child to move changes to (HEAD, c4, offers "Move to working tree"
+    // instead); HEAD has no descendants to squash.
+    fileMenu(r.s1, "s.txt", 1, "Move to child");
     refused("the commit has no child on its line");
+    GG_REQUIRE(rowReady(s, r.c4));
+    ctx->ItemClick(rowRef(r.c4).c_str());
     ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_S);
     refused("the commit has no descendants");
     // The root commit has no parent to take changes.

@@ -337,7 +337,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
   - Drag a file between the Staged and Unstaged groups.
 - **K** File context menu: Open working-copy file, Open containing folder, Copy ▸
   (name / relative / absolute path), Resolve with merge tool, Mark resolved, Copy patch,
-  Save patch…, Blame file, External diff ▸ (vs @, vs parent), Revert, Move to parent/child,
+  Save patch…, Blame file, External diff ▸ (vs @, vs parent), Revert, Move to child (on the HEAD
+  commit, which has no child, "Move to working tree" takes its place; both use the up arrow) / Move to parent (down arrow),
   Delete file.
 - **M** Track → `git add` for untracked files. Untrack → `git rm --cached`, with an optional
   "add to .gitignore" (**N**).
@@ -352,8 +353,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
   highlighting. Binary, image and submodule placeholders. Mode-change line. "Compare only
   this file with @". Ctrl+C copies the selection: code lines only (no hunk rows or gap
   placeholders).
-- **K** Line/hunk context menu: Copy, Blame file, Move line(s)/hunk to parent / child /
-  active commit / working tree, Revert line/hunk.
+- **K** Line/hunk context menu: Copy, Blame file, Move line(s)/hunk to child (up arrow;
+  on the HEAD commit "working tree" replaces it, since HEAD has no child) / parent (down arrow) / active commit, Revert line/hunk.
 - **N** When viewing unstaged changes: **Stage line(s) / Stage hunk / Discard line(s) /
   Discard hunk**. When viewing staged changes: **Unstage line(s) / Unstage hunk**. Buttons
   appear in each hunk's row, as in gitfourchette. A hunk row shows only the function context,

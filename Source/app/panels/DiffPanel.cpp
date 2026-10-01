@@ -886,14 +886,16 @@ void DiffPanel::drawMenuItems()
         const bool can = free && !patch.empty();
         const core::Oid id = m_selection.id;
         auto& actions = m_session.actions();
-        if (menuItem(ICON_MS_ARROW_UPWARD, "Move line(s) to parent", nullptr, false, can))
-            actions.moveChanges(id, Actions::MoveTo::Parent, {}, patch);
-        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move line(s) to child", nullptr, false, can))
+        // HEAD has no child to take the lines: they go to the working tree instead.
+        if (id == m_session.snapshot()->head) {
+            if (menuItem(ICON_MS_ARROW_UPWARD, "Move line(s) to working tree", nullptr, false, can))
+                actions.moveChanges(id, Actions::MoveTo::WorkingTree, {}, patch);
+        } else if (menuItem(ICON_MS_ARROW_UPWARD, "Move line(s) to child", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Child, {}, patch);
+        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move line(s) to parent", nullptr, false, can))
+            actions.moveChanges(id, Actions::MoveTo::Parent, {}, patch);
         if (menuItem(ICON_MS_MY_LOCATION, "Move line(s) to active commit", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Active, {}, patch);
-        if (menuItem(ICON_MS_DRIVE_FILE_MOVE, "Move line(s) to working tree", nullptr, false, can))
-            actions.moveChanges(id, Actions::MoveTo::WorkingTree, {}, patch);
         if (menuItem(ICON_MS_UNDO, "Revert line(s)", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Revert, {}, patch);
     }

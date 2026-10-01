@@ -198,7 +198,8 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
 - File context menu: Open working-copy file · Open containing folder · Copy ▸ (Name, Relative
   path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Resolve with merge
   tool · Mark resolved · Patch ▸ (Copy, Save…) ·
-  Blame file · External diff ▸ (vs HEAD, vs parent) · Revert · Move to parent/child · Delete file.
+  Blame file · External diff ▸ (vs HEAD, vs parent) · Revert · Move to child (Move to working tree on the HEAD commit, which has no child) /
+  Move to parent · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Edit/Check out, Edit commit (E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Amend…, Describe (Save message), Edit author, Duplicate
@@ -379,7 +380,7 @@ the panel without touching the repository.
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.
 - Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) and hunk(s) (N) · Move line(s)/hunk to
-  parent/child/active commit/working tree (Phase 3) · Revert line/hunk (Phase 3).
+  child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Revert line/hunk (Phase 3).
 
 ## 7. Blame panel — window `"Blame"`
 Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5),

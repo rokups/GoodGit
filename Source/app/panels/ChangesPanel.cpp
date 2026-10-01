@@ -632,12 +632,14 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             paths.push_back(r->path);
         ImGui::Separator();
         const core::Oid id = m_selection.id;
-        if (menuItem(ICON_MS_ARROW_UPWARD, "Move to parent", nullptr, false, free))
-            actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
-        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to child", nullptr, false, free))
+        // HEAD has no child to take the changes: they go to the working tree instead.
+        if (id == m_session.snapshot()->head) {
+            if (menuItem(ICON_MS_ARROW_UPWARD, "Move to working tree", nullptr, false, free))
+                actions.moveChanges(id, Actions::MoveTo::WorkingTree, paths, {});
+        } else if (menuItem(ICON_MS_ARROW_UPWARD, "Move to child", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Child, paths, {});
-        if (menuItem(ICON_MS_DRIVE_FILE_MOVE, "Move to the working tree", nullptr, false, free))
-            actions.moveChanges(id, Actions::MoveTo::WorkingTree, paths, {});
+        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to parent", nullptr, false, free))
+            actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
         if (menuItem(ICON_MS_UNDO, "Revert", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Revert, paths, {});
     }
