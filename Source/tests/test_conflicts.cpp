@@ -623,9 +623,10 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()) || s.session()->status()->unstaged.size() == 1; }));
     s.git(repo, {"add", "conflict.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
-    ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    s.dialogButton("Amend", "Amend");
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogButton("Commit", "Amend");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != conflicted; }));
     s.settle();
     // The amended commit and main's descendant are both resolved now.

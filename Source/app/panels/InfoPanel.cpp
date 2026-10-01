@@ -212,7 +212,7 @@ void InfoPanel::draw(bool* open)
         if (cleanIndex)
             ImGui::TextDisabled("Amend mode: saving rewrites HEAD");
         else
-            ImGui::TextDisabled("Staged changes are not included (use Amend... to add them)");
+            ImGui::TextDisabled("Staged changes are not included (tick Amend in Commit... to add them)");
     }
 
     if (ImGui::BeginTable("##info_table", 2, ImGuiTableFlags_SizingFixedFit)) {

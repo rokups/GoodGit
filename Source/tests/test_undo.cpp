@@ -268,11 +268,12 @@ GG_TEST("undo", "every everyday mutation can be undone")
         s.dialogButton("Commit", "Commit");
     });
     check("amend message", [&] {
-        ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
-        s.dialogOpen("Amend");
-        s.dialogText("Amend", "message", "Amended");
-        s.dialogCheck("Amend", "message_only", "Change the message only (keep the index out)");
-        s.dialogButton("Amend", "Amend");
+        ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+        s.dialogOpen("Commit");
+        s.dialogCheck("Commit", "amend", "Amend");
+        s.dialogText("Commit", "message", "Amended");
+        s.dialogCheck("Commit", "message_only", "Change the message only (keep the index out)");
+        s.dialogButton("Commit", "Amend");
     });
     check("stash", [&] {
         ctx->ItemClick("//###Toolbar/###tb_stash");

@@ -460,9 +460,7 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
         const bool dirty = m_hasWorktreeChanges;
         const bool unborn = m_snapshot->headUnborn;
         if (menuItem(ICON_MS_CHECK, "Commit...", nullptr, false, free))
-            m_session.showCommitDialog(false);
-        if (menuItem(ICON_MS_EDIT_NOTE, "Amend into HEAD...", nullptr, false, free && !unborn))
-            m_session.showCommitDialog(true);
+            m_session.showCommitDialog();
         if (menuItem(ICON_MS_UNDO, "Discard changes...", nullptr, false, free && dirty && !unborn))
             m_session.showDiscardAllDialog();
         if (menuItem(ICON_MS_ADD, "Stash changes...", nullptr, false, free && dirty && !unborn))

@@ -84,7 +84,10 @@ public:
         Callback done = {});
     // Commits only the unstaged and untracked changes; the staged ones stay staged.
     void commitWorktree(const std::string& message, Callback done = {});
-    void amend(const std::string& message, bool noVerify, bool messageOnly, Callback done = {});
+    // Amends HEAD. Rewriting commits that are already on a remote asks first ("Rewrite published
+    // history?"); `declined` runs when that is cancelled.
+    void amend(const std::string& message, bool noVerify, bool messageOnly, Callback done = {},
+        std::function<void()> declined = {});
     // `branch`: advance that local branch (at the first parent) and switch to it.
     void newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message = {},
         const std::string& branch = {});
@@ -258,6 +261,7 @@ private:
 
     struct RewriteState;
     void rewritePrepare(const std::shared_ptr<RewriteState>& state);
+    void amendNow(const std::string& message, bool noVerify, bool messageOnly, Callback done);
     void rewriteDecide(const std::shared_ptr<RewriteState>& state);
     void rewriteApply(const std::shared_ptr<RewriteState>& state);
 

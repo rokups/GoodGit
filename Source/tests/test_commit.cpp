@@ -40,10 +40,17 @@ GG_TEST("commit", "commit the index from the toolbar; hooks run natively")
     // Only the index was committed: b.txt is still unstaged, e.txt (rename) is committed.
     GG_CHECK(s.gitOut(repo, {"diff", "--name-only"}).find("b.txt") != std::string::npos);
     GG_CHECK(s.gitOut(repo, {"ls-tree", "--name-only", "HEAD"}).find("e.txt") != std::string::npos);
-    // With HEAD selected the button becomes Amend.
+    // With HEAD selected the button stays Commit, and the Commit menu has no Amend item.
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     ctx->Yield(2);
-    GG_CHECK(s.itemText("//###Toolbar/###tb_commit").find("Amend") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_commit").find("Commit") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_commit").find("Amend") == std::string::npos);
+    ctx->MenuClick("//##MainMenuBar/Commit");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists("//$FOCUSED/Amend..."));
+    GG_CHECK(s.itemExists("//$FOCUSED/Commit..."));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
 }
 
 GG_TEST("commit", "nothing staged: stage all tracked or the selected files")
@@ -116,10 +123,11 @@ GG_TEST("commit", "default for nothing staged comes from Settings")
     // Amend with HEAD selected: the message field starts with HEAD's message.
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
-    ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("message"), "Default stage selected\n");
-    s.dialogButton("Amend", "Cancel");
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    GG_CHECK(s.waitUntil([&] { return s.app.dialogs().current()->text("message") == "Default stage selected\n"; }));
+    s.dialogButton("Commit", "Cancel");
 }
 
 GG_TEST("commit", "Change information: Commit on the Index commits the staged changes")
@@ -255,7 +263,7 @@ GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks")
     s.settle();
 }
 
-GG_TEST("commit", "amend content and message, message only, Amend into HEAD")
+GG_TEST("commit", "amend content and message, message only, Amend from the Working tree menu")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "f5.txt", "amended content\n");
@@ -263,35 +271,109 @@ GG_TEST("commit", "amend content and message, message only, Amend into HEAD")
     const std::string parent = s.revParse(repo, "HEAD~1");
     GG_REQUIRE(s.openRepository(repo));
     // Message only: the staged change stays staged.
-    ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    s.dialogText("Amend", "message", "Reworded only");
-    s.dialogCheck("Amend", "message_only", "Change the message only (keep the index out)");
-    s.dialogButton("Amend", "Amend");
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogText("Commit", "message", "Reworded only");
+    s.dialogCheck("Commit", "message_only", "Change the message only (keep the index out)");
+    s.dialogButton("Commit", "Amend");
     GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("Reworded only", 0) == 0; }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "f5.txt");
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), parent);
     // Amend with the index and a new message.
-    ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    s.dialogText("Amend", "message", "Amended with content");
-    s.dialogButton("Amend", "Amend");
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogText("Commit", "message", "Amended with content");
+    s.dialogButton("Commit", "Amend");
     GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("Amended with content", 0) == 0; }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f5.txt"}), "amended content");
-    // Amend into HEAD from the Working tree menu keeps the message (empty field).
+    // Amend from the Working tree menu keeps HEAD's message (the field starts with it).
     s.write(repo, "f4.txt", "more\n");
     s.git(repo, {"add", "f4.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
-    s.contextMenu("//History/**/###row_wt", "Amend into HEAD...");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    s.dialogButton("Amend", "Amend");
+    s.contextMenu("//History/**/###row_wt", "Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogButton("Commit", "Amend");
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"show", "HEAD:f4.txt"}) == "more"; }));
     s.settle();
     GG_CHECK(headMessage(s, repo).rfind("Amended with content", 0) == 0);
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), parent);
+}
+
+GG_TEST("commit", "Amend checkbox: toggling swaps the commit draft and HEAD's message without losing edits; HEAD need not be selected")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f6.txt", "six\n");
+    s.git(repo, {"add", "f6.txt"});
+    const std::string headMsg = headMessage(s, repo);
+    const std::string older = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.openRepository(repo));
+    // Select an older commit: the amend still targets HEAD.
+    ctx->ItemClick(("//History/**/###row_" + older).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    auto field = [&] { return s.app.dialogs().current()->text("message"); };
+    s.dialogText("Commit", "message", "my draft");
+    s.dialogCheck("Commit", "amend", "Amend");
+    GG_CHECK(s.waitUntil([&] { return field().rfind(headMsg, 0) == 0; }));
+    s.dialogText("Commit", "message", "edited amend text");
+    s.dialogCheck("Commit", "amend", "Amend", false);
+    GG_CHECK_STR_EQ(field(), "my draft");
+    s.dialogCheck("Commit", "amend", "Amend");
+    GG_CHECK_STR_EQ(field(), "edited amend text");
+    s.dialogButton("Commit", "Amend");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("edited amend text", 0) == 0; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), older);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f6.txt"}), "six");
+}
+
+GG_TEST("commit", "Amend of a published HEAD asks before rewriting published history; Cancel brings the dialog back")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"reset", "-q", "--hard", "origin/main"}); // HEAD is on the remote now
+    const std::string head = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogText("Commit", "message", "Reworded published");
+    s.dialogCheck("Commit", "message_only", "Change the message only (keep the index out)");
+    s.dialogButton("Commit", "Amend");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Cancel");
+    // Nothing changed, and the Commit dialog is back as it was.
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    GG_CHECK(s.app.dialogs().current()->checked("amend"));
+    GG_CHECK(s.app.dialogs().current()->checked("message_only"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("message"), "Reworded published");
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD"), head);
+    s.dialogButton("Commit", "Amend");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("Reworded published", 0) == 0; }));
+    s.settle();
+    GG_CHECK(s.revParse(repo, "HEAD") != head);
+}
+
+GG_TEST("commit", "Amend checkbox is disabled on an unborn HEAD")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    s.write(repo, "a.txt", "a\n");
+    s.git(repo, {"add", "a.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//Commit/Amend##amend").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_CHECK(!s.app.dialogs().current()->checked("amend"));
+    s.dialogButton("Commit", "Cancel");
 }
 
 GG_TEST("commit", "reword HEAD from Change information (amend mode)")

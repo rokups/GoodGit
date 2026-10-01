@@ -331,7 +331,7 @@ GG_TEST("ui", "View menu: every panel hides and shows again; the choice is saved
     }
 }
 
-GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend")
+GG_TEST("ui", "Commit dialog Amend; Skip hooks on Amend")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     writeHook(s, repo, "pre-commit", "echo 'pre-commit hook says no' >&2\nexit 1\n");
@@ -340,22 +340,23 @@ GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(rowShown(s, head));
     ctx->ItemClick(rowRef(head).c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.itemText("//###Toolbar/###tb_commit").find("Amend") != std::string::npos; }));
     // The hook refuses a plain amend.
     ctx->ItemClick("//###Toolbar/###tb_commit");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    s.dialogText("Amend", "message", "Amended past the hook");
-    s.dialogButton("Amend", "Amend");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogText("Commit", "message", "Amended past the hook");
+    s.dialogButton("Commit", "Amend");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("pre-commit hook says no") != std::string::npos);
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), head);
     // Skip hooks: git commit --amend --no-verify.
     ctx->ItemClick("//###Toolbar/###tb_commit");
-    GG_REQUIRE(s.dialogOpen("Amend"));
-    s.dialogText("Amend", "message", "Amended past the hook");
-    s.dialogCheck("Amend", "skip_hooks", "Skip hooks (--no-verify)");
-    s.dialogButton("Amend", "Amend");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogText("Commit", "message", "Amended past the hook");
+    s.dialogCheck("Commit", "skip_hooks", "Skip hooks (--no-verify)");
+    s.dialogButton("Commit", "Amend");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != head; }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s"}), "Amended past the hook");

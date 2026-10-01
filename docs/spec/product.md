@@ -193,11 +193,11 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
     branch, upstream and ahead/behind), Open working directory, Copy path, Close repository
     (Ctrl+W), Refresh (F5), **N** Fetch / Pull / Push (same behavior as the toolbar),
     Settings…, Quit.
-  - **Change** → rename to **Commit**: New commit (Ctrl+N), Commit…/Amend…, and the
+  - **Change** → rename to **Commit**: New commit (Ctrl+N), Commit… (its *Amend* checkbox amends HEAD), and the
     selected-commit actions (§4.3).
   - **Edit:** Undo (Ctrl+Z), Redo (Ctrl+Y), Apply patch….
   - **View:** toggle each panel, Previous/Next changed file (Shift+F6/F6), Reset layout.
-- **K** Toolbar: New, Commit/Amend (label follows the selection), Prev, Next, Undo, Redo,
+- **K** Toolbar: New, Commit, Prev, Next, Undo, Redo,
   Refresh, repository switcher combo, open-folder button, current branch or "detached",
   HEAD ID (click reveals it in History; context menu copies it), activity spinner with
   cancel, background-task tooltip, error popups for important errors and corner notifications
@@ -276,7 +276,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **K** Row context menu: New, New detached, Check out ▸ (branches at this commit), Create
   branch…, Move branch ▸, Delete branch ▸, Push, Push to…, Copy ▸ (ID, full description), plus
   the shared commit actions below.
-- **K** Working-tree context menu: Commit…, Amend into HEAD…, Discard changes….
+- **K** Working-tree context menu: Commit…, Discard changes….
   **N** Stash changes…, Stage all, Unstage all.
 - **K** Drag and drop:
   - commit → commit: Move before, Move after, Squash, Rebase (modifier keys pick the default;
@@ -300,7 +300,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Edit / Check out | **M** | `git switch` a branch or detach at a commit. Refuse if it would overwrite local changes; offer "stash and switch" (**N**) |
 | Edit commit (E) | **M** | Detach HEAD at any commit and save an edit session (the commit and the local branch to return to) in `.git/gg/edit/<worktree>`. A toolbar banner shows *Editing \<id\> of \<branch\>* with **Return to \<branch\>** and **Stop editing**. Amending it restacks its descendants and moves every branch ref that pointed at them, all or nothing: the restack is computed first, so an amend that cannot be restacked (a non-text conflict) is refused before the commit, and one that fails after it is rolled back. Text conflicts become first-class conflicts and are reported. A descendant merge keeps its parents and its own resolution, and the changes of every rewritten parent are carried into it (a clash with the merge's resolution becomes a first-class conflict). Amend and restack are one operation, undone in one step. The session follows the amended commit and is dropped when HEAD is no longer detached or the branch is gone |
 | Commit… | **M** | Commit the **index**. If nothing is staged, offer "commit all tracked changes" (`-a`) or "stage the selected files" |
-| Amend… | **M** | Amend HEAD with the index (message and/or content) |
+| Commit… with *Amend* ticked | **M** | Amend HEAD with the index (message and/or content). The checkbox is disabled on an unborn HEAD and while a merge, cherry-pick or revert is in progress. Ticking it fills the message field with HEAD's message (whatever is selected); the commit draft and the amend text are each kept while toggling, so nothing typed is lost. *Change the message only* keeps the index out. Amending commits already on a remote asks for confirmation like any history rewrite; Cancel reopens the dialog as it was |
 | Describe (Save message, Change information panel) | **M** | Reword any commit. Rebases descendants |
 | Edit author | **M** | Change the author of any commit |
 | Duplicate commit / branch | **M** | Cherry-pick one commit or a range onto its parent, making a detached copy |
@@ -550,7 +550,7 @@ commit is conflicted is a pure function of its tree.
   instead of a resolution (`gg::markers::brokenMarkers`). Same message style, same
   "Reveal", no override. The same check warns (never blocks) earlier, at commit time, for staged
   files the commit touches — both a broken region and a staged file that is itself still a
-  first-class conflict. ggui's Commit and Amend dialogs and the Info panel's Commit button (on
+  first-class conflict. ggui's Commit dialog (also when amending) and the Info panel's Commit button (on
   the Index) show the warning (`gg::outgoing::stagedConflictWarnings`, read off the UI thread and
   refreshed on every status change); it never blocks committing.
 

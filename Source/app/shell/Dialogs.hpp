@@ -43,6 +43,12 @@ struct Field {
     std::string filter;
     // Shown only while this returns true (empty: always); a hidden field keeps its value.
     std::function<bool(const Form&)> visible;
+    // Check: called after the user toggles it (the form may change other fields).
+    std::function<void(Form&)> onChange;
+    // Check: while this returns a non-empty reason the box is disabled and the reason is its tooltip.
+    std::function<std::string(const Form&)> disabledReason;
+    // The label of a Multiline field, when it follows the form's state (empty: `label`).
+    std::function<std::string(const Form&)> labelFn;
     // Commit: resolves the text to its preview (no git: the loaded history); redone when the text
     // changes. `preview` is what was last shown.
     std::function<CommitPreview(const std::string&)> resolve;
@@ -55,6 +61,8 @@ struct FormButton {
     std::string label;
     std::function<void(Form&)> action; // may be empty (Cancel)
     std::function<bool(const Form&)> enabled;
+    // The label, when it follows the form's state (empty: `label`).
+    std::function<std::string(const Form&)> labelFn;
     // Icon shown before the label; nullptr: chosen from the label's verb (Cancel, Delete, Push...).
     const char* icon = nullptr;
 };
@@ -68,6 +76,8 @@ struct Form {
     // Rows with a "Reveal" button (Push refused): text + commit id.
     std::vector<std::pair<std::string, std::string>> revealRows;
     std::function<void(const std::string&)> onReveal;
+    // Called every frame the dialog is drawn, before its fields (state that arrives later).
+    std::function<void(Form&)> onFrame;
 
     Field& add(Field f)
     {

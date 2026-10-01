@@ -48,7 +48,7 @@ Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · 
 Settings… · Quit `Ctrl+Q`.
 
 **Commit** (M, renamed from "Change"): New commit `Ctrl+N` · New detached commit · Commit… ·
-Amend… · — · the selected-commit actions of §4
+— · the selected-commit actions of §4
 (below) · Interactive rebase… (N, Phase 3: asks for the base in the `Interactive rebase onto` dialog,
 then opens the todo editor for HEAD, §4.13).
 
@@ -60,8 +60,8 @@ Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations) · Previous cha
 
 ### 1.4 Toolbar — window `"Toolbar###Toolbar"` (K + N)
 Left to right, each button has a tooltip with its shortcut:
-New `##tb_new` · Commit/Amend `##tb_commit` (label "Commit" when the working tree/index is
-selected, "Amend" when HEAD is selected) · Undo `##tb_undo` ·
+New `##tb_new` · Commit `##tb_commit` (always "Commit", whatever is selected; the dialog's
+*Amend* checkbox amends HEAD) · Undo `##tb_undo` ·
 Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` ·
 Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
@@ -171,7 +171,7 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
   several commits are selected with Ctrl-click: the list starts at the oldest selected commit and
   the selected commits start selected in the editor).
-- Working tree context menu: Commit… · Amend into HEAD… · Discard changes… · N: Stash changes… ·
+- Working tree context menu: Commit… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.
 - Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase; Shift = move
   before, Ctrl = squash, Alt = rebase, none = chooser popup `##drop_chooser`), branch
@@ -210,7 +210,7 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   Move to parent · Revert (commit files: index and working tree; Shift: Revert and commit, a new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
-New commit, Edit/Check out, Edit commit (E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Amend…, Describe (Save message), Edit author, Duplicate
+New commit, Edit/Check out, Edit commit (E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
 Abandon/Abandon branch, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
@@ -465,7 +465,7 @@ originating source · Reveal commit · Copy commit ID · Select change block · 
 ## 9. Dialogs
 Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dialog>` and
 `Cancel##<dialog>`:
-`Commit`, `Amend`, `Create branch`, `Rename branch`, `Delete branch`, `Move branch`,
+`Commit`, `Create branch`, `Rename branch`, `Delete branch`, `Move branch`,
 `Create tag`, `Add remote`, `Edit remote URL`, `Clone repository`, `Initialize repository`,
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
@@ -474,6 +474,12 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
 *Replace* / *Cancel*, §1.6), `Add worktree`, `Remove worktree`, `Remove worktree with changes`,
 `Lock worktree`, `Prune worktrees`, `Repair worktree` (Phase 4, §8 Worktrees), `Settings`.
+The `Commit` dialog has the message field `##message`, an *Amend* checkbox `##amend` (unchecked;
+disabled with a tooltip on an unborn HEAD or during a merge, cherry-pick or revert), *Skip hooks*
+`##skip_hooks` and, while Amend is ticked, *Change the message only* `##message_only`. Ticking
+Amend swaps the field to HEAD's message (whatever is selected) and the button to *Amend*; the
+typed commit message and the (edited) amend message are each kept across toggles. The
+conflict-marker warning shows in both modes (not with *message only*). Amending commits that are already on a remote (HEAD or a restacked descendant, also *message only*) asks `Rewrite published history` first; Cancel reopens the Commit dialog as it was.
 
 ## 10. States
 - **Busy:** conflicting actions disabled with reason tooltip; browsing stays enabled.

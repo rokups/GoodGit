@@ -341,7 +341,48 @@ fs::path editSessionFile(MutationContext& ctx)
 
 } // namespace
 
-void Actions::amend(const std::string& message, bool noVerify, bool messageOnly, Callback done)
+void Actions::amend(const std::string& message, bool noVerify, bool messageOnly, Callback done,
+    std::function<void()> declined)
+{
+    // Like every rewrite: what would be rewritten (HEAD and its descendants) and is already on a
+    // remote is found first (in memory, nothing written), and asked about.
+    auto published = std::make_shared<size_t>(0);
+    run(
+        std::string(messageOnly ? "reword HEAD" : "amend") + " (preparing)",
+        [published](MutationContext& ctx) {
+            const std::string head = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
+            gg::rewrite::Plan plan = gg::rewrite::replayPlan(ctx.repo(), {head});
+            for (auto& st : plan.steps)
+                if (st.source == head)
+                    st.message = "amend preflight\n"; // HEAD counts as rewritten
+            plan.keepHead = true;
+            gg::rewrite::Rewriter rewriter(ctx.cwd());
+            *published = rewriter.compute(plan).published.size();
+        },
+        [this, published, message, noVerify, messageOnly, done = std::move(done), declined = std::move(declined)](
+            const core::MutationFinishedEvent& e) mutable {
+            // A failed look goes on to the real amend, which reports its own error.
+            if (e.outcome != Outcome::Ok || *published == 0) {
+                amendNow(message, noVerify, messageOnly, std::move(done));
+                return;
+            }
+            Form f;
+            f.title = "Rewrite published history?";
+            f.message = std::to_string(*published) + " of the rewritten commits are already on a remote. "
+                                                     "Rewriting them makes your branch diverge from it.\n\nContinue?";
+            f.buttons.push_back({"Rewrite", [this, message, noVerify, messageOnly, done](Form&) {
+                                     amendNow(message, noVerify, messageOnly, done);
+                                 }});
+            f.buttons.push_back({"Cancel", [declined](Form&) {
+                                     if (declined)
+                                         declined();
+                                 }});
+            m_session.app().dialogs().open(std::move(f));
+        },
+        false, false, false);
+}
+
+void Actions::amendNow(const std::string& message, bool noVerify, bool messageOnly, Callback done)
 {
     const std::string label = messageOnly ? "reword HEAD" : "amend";
     if (!done)

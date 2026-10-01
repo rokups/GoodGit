@@ -104,9 +104,11 @@ bool editCommit(Scenario& s, const fs::path& repo, const std::string& id, const 
 
 void amendStaged(ImGuiTestContext* ctx, Scenario& s)
 {
-    ctx->MenuClick("//##MainMenuBar/Commit/Amend...");
-    if (s.dialogOpen("Amend"))
-        s.dialogButton("Amend", "Amend");
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    if (s.dialogOpen("Commit")) {
+        s.dialogCheck("Commit", "amend", "Amend");
+        s.dialogButton("Commit", "Amend");
+    }
 }
 
 

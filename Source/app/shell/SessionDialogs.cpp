@@ -53,20 +53,44 @@ std::string Session::commitWarningText() const
 }
 
 
-void Session::showCommitDialog(bool amend)
+// Why the commit dialog's Amend box cannot be ticked ("" when it can): git refuses --amend while
+// a merge, cherry-pick or revert is waiting for its commit, and an unborn HEAD has nothing to amend.
+static std::string amendBlockedReason(const core::Snapshot& snap)
+{
+    if (snap.headUnborn)
+        return "HEAD has no commit yet, so there is nothing to amend";
+    switch (snap.state) {
+    case core::RepoState::Merging: return "A merge is in progress: finish it (commit or abort) before amending";
+    case core::RepoState::CherryPicking: return "A cherry-pick is in progress: finish it (commit or abort) before amending";
+    case core::RepoState::Reverting: return "A revert is in progress: finish it (commit or abort) before amending";
+    default: return {};
+    }
+}
+
+void Session::showCommitDialog(const CommitDialogState* restore)
 {
     Form f;
-    f.title = amend ? "Amend" : "Commit";
-    const bool nothingStaged = !amend && m_status && m_status->staged.empty();
+    f.title = "Commit";
+    const bool nothingStaged = m_status && m_status->staged.empty();
+    // What is typed is never lost when Amend is toggled: each mode keeps its own text.
+    struct Texts {
+        std::string commit; // the commit message, while Amend is ticked
+        std::string amend;  // the amend message as edited, while Amend is not ticked
+        std::string head;   // HEAD's message, read off the UI thread
+        bool headLoaded = false;
+        bool filled = false; // `head` went into the field (once, and only into an empty field)
+    };
+    auto texts = std::make_shared<Texts>();
     Field msg;
     msg.kind = Field::Multiline;
     msg.id = "message";
-    msg.label = amend ? "Message (leave empty to keep the current message)" : "Message";
-    if (amend && m_info->details() && m_info->details()->id == m_snapshot->head)
-        msg.text = m_info->details()->message;
+    msg.label = "Message";
+    msg.labelFn = [](const Form& form) {
+        return form.checked("amend") ? std::string("Message (leave empty to keep the current message)") : std::string("Message");
+    };
     // The message waiting in MERGE_MSG (a merge, revert or cherry-pick), as git commit would
     // take it: without git's comment lines and trailing blank lines.
-    if (!amend && !m_snapshot->mergeMessage.empty()) {
+    if (!m_snapshot->mergeMessage.empty()) {
         for (const auto& line : gg::splitLines(m_snapshot->mergeMessage))
             if (line.rfind('#', 0) != 0)
                 msg.text += line + "\n";
@@ -74,6 +98,61 @@ void Session::showCommitDialog(bool amend)
             msg.text.pop_back();
     }
     f.add(msg);
+    // HEAD's message (whatever is selected) goes into the field as soon as it is read.
+    if (!m_snapshot->headUnborn) {
+        if (m_info->details() && m_info->details()->id == m_snapshot->head) {
+            texts->head = m_info->details()->message;
+            texts->headLoaded = true;
+        } else {
+            commitMessages({m_snapshot->head}, [texts](const std::vector<std::string>& messages) {
+                if (!messages.empty()) {
+                    texts->head = messages.front();
+                    texts->headLoaded = true;
+                }
+            });
+        }
+    }
+    auto fillHead = [texts](Form& form) {
+        if (!form.checked("amend") || !texts->headLoaded || texts->filled)
+            return;
+        texts->filled = true;
+        for (auto& field : form.fields)
+            if (field.id == "message" && field.text.empty())
+                field.text = texts->head;
+    };
+    f.onFrame = fillHead;
+    Field amendBox{Field::Check, "amend", "Amend"};
+    amendBox.disabledReason = [this](const Form&) { return amendBlockedReason(*m_snapshot); };
+    amendBox.onChange = [texts, fillHead](Form& form) {
+        Field* message = nullptr;
+        for (auto& field : form.fields)
+            if (field.id == "message")
+                message = &field;
+        if (!message)
+            return;
+        if (form.checked("amend")) {
+            texts->commit = message->text;
+            message->text = texts->amend;
+            fillHead(form);
+        } else {
+            texts->amend = message->text;
+            message->text = texts->commit;
+        }
+    };
+    Field skipHooks{Field::Check, "skip_hooks", "Skip hooks (--no-verify)"};
+    Field messageOnly{Field::Check, "message_only", "Change the message only (keep the index out)"};
+    messageOnly.visible = [](const Form& form) { return form.checked("amend"); };
+    if (restore) {
+        // Reopened as it was, Amend ticked with the edited amend text.
+        texts->commit = restore->commitText;
+        texts->amend = restore->amendText;
+        texts->filled = true;
+        f.fields.front().text = restore->amendText;
+        amendBox.checked = true;
+        skipHooks.checked = restore->skipHooks;
+        messageOnly.checked = restore->messageOnly;
+    }
+    f.add(std::move(amendBox));
     // Staged files that are (or would stay) first-class conflicts: a warning only, committing is
     // never blocked. Read off the UI thread; refreshed while the dialog is open (Session::handle).
     m_commitWarnings.clear();
@@ -82,11 +161,10 @@ void Session::showCommitDialog(bool amend)
     warning.kind = Field::Warning;
     warning.id = "conflict_warning";
     warning.live = [this] { return commitWarningText(); };
-    warning.visible = [](const Form& form) { return !form.checked("message_only"); };
+    warning.visible = [](const Form& form) { return !(form.checked("amend") && form.checked("message_only")); };
     f.add(std::move(warning));
-    f.add(Field{Field::Check, "skip_hooks", "Skip hooks (--no-verify)"});
-    if (amend)
-        f.add(Field{Field::Check, "message_only", "Change the message only (keep the index out)"});
+    f.add(std::move(skipHooks));
+    f.add(std::move(messageOnly));
     const NothingStaged pref = m_app.settings().data().nothingStaged;
     if (nothingStaged && pref == NothingStaged::Ask) {
         Field mode;
@@ -94,15 +172,19 @@ void Session::showCommitDialog(bool amend)
         mode.id = "nothing_staged";
         mode.label = "Nothing is staged";
         mode.options = {"Stage all tracked changes and commit (-a)", "Stage the selected files and commit"};
+        mode.visible = [](const Form& form) { return !form.checked("amend"); };
         f.add(mode);
     }
     const std::vector<std::string> selected = selectedPaths();
-    f.buttons.push_back({amend ? "Amend" : "Commit",
-        [this, amend, nothingStaged, pref, selected](Form& form) {
+    FormButton primary{"Commit",
+        [this, nothingStaged, pref, selected, texts](Form& form) {
             const std::string message = form.text("message");
             const bool noVerify = form.checked("skip_hooks");
-            if (amend) {
-                m_actions->amend(message, noVerify, form.checked("message_only"));
+            if (form.checked("amend")) {
+                const bool msgOnly = form.checked("message_only");
+                // Declined at the published-history question: the dialog comes back as it was.
+                const CommitDialogState state{texts->commit, message, noVerify, msgOnly};
+                m_actions->amend(message, noVerify, msgOnly, {}, [this, state] { showCommitDialog(&state); });
                 return;
             }
             CommitMode mode = CommitMode::Index;
@@ -114,7 +196,9 @@ void Session::showCommitDialog(bool amend)
             }
             m_actions->commit(message, noVerify, mode, selected);
         },
-        [amend](const Form& form) { return amend || nonEmpty(form, "message"); }});
+        [](const Form& form) { return form.checked("amend") || nonEmpty(form, "message"); }};
+    primary.labelFn = [](const Form& form) { return std::string(form.checked("amend") ? "Amend" : "Commit"); };
+    f.buttons.push_back(std::move(primary));
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

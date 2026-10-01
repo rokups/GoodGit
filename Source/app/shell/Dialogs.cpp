@@ -20,7 +20,7 @@ namespace ggui {
 namespace {
 
 // The icon for a dialog button, from its label's verb (the label, and so the ID, stays as is).
-const char* dialogButtonIcon(const FormButton& button)
+const char* dialogButtonIcon(const FormButton& button, const std::string& shownLabel)
 {
     if (button.icon)
         return button.icon;
@@ -56,7 +56,7 @@ const char* dialogButtonIcon(const FormButton& button)
         {"Copy message", ICON_MS_CONTENT_COPY},
     };
     for (const auto& [label, icon] : verbs)
-        if (button.label == label)
+        if (shownLabel == label)
             return icon;
     return nullptr;
 }
@@ -160,6 +160,8 @@ void Dialogs::draw()
         m_opened = false;
         return;
     }
+    if (form.onFrame)
+        form.onFrame(form);
     if (form.icon) {
         ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().errorText);
         ImGui::TextUnformatted(form.icon);
@@ -209,13 +211,20 @@ void Dialogs::draw()
                 drawCommitPreview(f);
             break;
         case Field::Multiline:
-            if (!f.label.empty())
-                ImGui::TextUnformatted(f.label.c_str());
+            if (const std::string label = f.labelFn ? f.labelFn(form) : f.label; !label.empty())
+                ImGui::TextUnformatted(label.c_str());
             ImGui::InputTextMultiline(id.c_str(), &f.text, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 8));
             break;
-        case Field::Check:
-            ImGui::Checkbox((f.label + id).c_str(), &f.checked);
+        case Field::Check: {
+            const std::string reason = f.disabledReason ? f.disabledReason(form) : std::string();
+            ImGui::BeginDisabled(!reason.empty());
+            if (ImGui::Checkbox((f.label + id).c_str(), &f.checked) && f.onChange)
+                f.onChange(form);
+            ImGui::EndDisabled();
+            if (!reason.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("%s", reason.c_str());
             break;
+        }
         case Field::Combo: {
             ImGui::SetNextItemWidth(std::max(ImGui::GetFontSize() * 12,
                 ImGui::GetContentRegionAvail().x - labelledWidth(0.0f, f.label.c_str())));
@@ -267,12 +276,13 @@ void Dialogs::draw()
     int clicked = -1;
     for (size_t b = 0; b < form.buttons.size(); ++b) {
         const FormButton& button = form.buttons[b];
+        const std::string label = button.labelFn ? button.labelFn(form) : button.label;
         const bool enabled = !button.enabled || button.enabled(form);
         if (b)
             ImGui::SameLine();
         ImGui::BeginDisabled(!enabled);
-        const char* icon = dialogButtonIcon(button);
-        if (icon ? ggui::button(icon, button.label.c_str()) : ImGui::Button(button.label.c_str()))
+        const char* icon = dialogButtonIcon(button, label);
+        if (icon ? ggui::button(icon, label.c_str()) : ImGui::Button(label.c_str()))
             clicked = static_cast<int>(b);
         ImGui::EndDisabled();
         // Enter on a single-line field activates the first (primary) button.

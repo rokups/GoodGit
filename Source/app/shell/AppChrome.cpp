@@ -33,11 +33,6 @@ core::Oid targetCommit(Session& s)
     return s.snapshot()->head;
 }
 
-bool headSelected(Session& s)
-{
-    return s.selection().kind == SelKind::Commit && s.selection().id == s.snapshot()->head;
-}
-
 bool textConflictsOnly(Session& s)
 {
     const auto st = s.status();
@@ -277,9 +272,7 @@ void App::drawMenuBar()
         if (menuItem(ICON_MS_ADD_CIRCLE, "New detached commit", nullptr, false, free && !at.isNull()))
             s->newCommitOn(at, true);
         if (menuItem(ICON_MS_CHECK, "Commit...", nullptr, false, free && !s->snapshot()->bare))
-            s->showCommitDialog(false);
-        if (menuItem(ICON_MS_EDIT_NOTE, "Amend...", nullptr, false, free && !s->snapshot()->headUnborn))
-            s->showCommitDialog(true);
+            s->showCommitDialog();
         // The selected commit's history editing actions.
         const core::HistoryRow* selected = s && s->selection().kind == SelKind::Commit ? s->history().row(s->selection().id) : nullptr;
         ImGui::Separator();
@@ -330,16 +323,14 @@ void App::drawRepositoryButtons()
     const bool free = s && busy.empty();
     auto tip = [&](const char* normal) { return busy.empty() ? normal : busy.c_str(); };
 
-    // New / Commit-Amend / Undo / Redo
+    // New / Commit / Undo / Redo
     const bool attach = s && !s->newCommitBranch(targetCommit(*s)).empty();
     if (iconButton(ICON_MS_ADD, "##tb_new", tip(attach ? "New commit on the selection (Ctrl+N)" : kNewDetachedOnly), free && attach))
         s->newCommitOn(targetCommit(*s), false);
     ImGui::SameLine();
-    const bool amend = s && headSelected(*s);
-    const std::string commitLabel = std::string(ICON_MS_CHECK) + (amend ? " Amend" : " Commit");
-    if (iconButton(commitLabel.c_str(), "##tb_commit", tip(amend ? "Amend HEAD" : "Commit the index"),
+    if (iconButton(ICON_MS_CHECK " Commit", "##tb_commit", tip("Commit the index (tick Amend to rewrite HEAD)"),
             free && !s->snapshot()->bare))
-        s->showCommitDialog(amend);
+        s->showCommitDialog();
     ImGui::SameLine();
     if (iconButton(ICON_MS_UNDO, "##tb_undo", tip("Undo (Ctrl+Z)"), free))
         s->actions().undo(false);

@@ -160,7 +160,15 @@ public:
     std::vector<std::string> selectedPaths() const;
 
     // ---- dialogs shared by panels, menus and the toolbar (SessionDialogs.cpp) ---------------
-    void showCommitDialog(bool amend);
+    // What the Commit dialog held, to reopen it as it was (an Amend declined at the published-history
+    // question).
+    struct CommitDialogState {
+        std::string commitText;
+        std::string amendText;
+        bool skipHooks = false;
+        bool messageOnly = false;
+    };
+    void showCommitDialog(const CommitDialogState* restore = nullptr);
     void showStashDialog(std::vector<std::string> paths = {});
     void showPushToDialog(const std::string& branch = {});
     void showCreateBranchDialog(const std::string& at, const std::string& name = {});
