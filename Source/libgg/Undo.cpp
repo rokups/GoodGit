@@ -116,11 +116,6 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         result.error = plan.error;
         return result;
     }
-    if (!plan.ok) {
-        result.error = plan.error;
-        return result;
-    }
-    result.target = plan.target->id;
     // Undo and redo are labelled after the original operation they act on, however many
     // undo/redo steps lie in between ("undo \"new commit\"", not "undo \"redo \"new commit\"\"").
     std::string what = plan.target->label;
@@ -130,25 +125,30 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         if (op)
             what = op->label;
     }
-    result.label = std::string(redo ? "redo" : "undo") + " \"" + what + "\"";
-    // A rebase in progress has an open operation (ggui's, or the reconciler's for a plain git
-    // rebase), which cannot be undone until its end; undoing what came before would pull refs out
-    // from under git. The same holds for rebase-apply/ (an apply-backend rebase, or git am), which
-    // is not grouped into an operation but still owns the refs.
     const std::string verb = redo ? "redo" : "undo";
+    result.label = verb + " \"" + what + "\"";
+    // A rebase in progress (either backend) has an open operation (ggui's, or the reconciler's for
+    // a plain git rebase), which cannot be undone until its end; undoing what came before would
+    // pull refs out from under git. The same holds for git am, which uses rebase-apply/ without
+    // being grouped into an operation (any rebase-apply/ left here is not a rebase). Checked
+    // before the plan's own error, which would only say that refs moved outside the journal.
     if (!native::rebaseIdentity(repo).empty()) {
         result.error = "Cannot " + verb + " \"" + what + "\": finish or abort the rebase first";
         return result;
     }
     {
-        const fs::path applyDir = fs::path(git_repository_path(repo)) / "rebase-apply";
         std::error_code ec;
-        if (fs::is_directory(applyDir, ec)) {
-            const bool am = fs::exists(applyDir / "applying", ec);
-            result.error = "Cannot " + verb + " \"" + what + "\": finish or abort " + (am ? "git am" : "the rebase") + " first";
+        if (fs::is_directory(fs::path(git_repository_path(repo)) / "rebase-apply", ec)) {
+            result.error = "Cannot " + verb + " \"" + what + "\": finish or abort git am first";
             return result;
         }
     }
+
+    if (!plan.ok) {
+        result.error = plan.error;
+        return result;
+    }
+    result.target = plan.target->id;
 
     // Plain git commands that updated the working tree (recorded without the
     // index): carry a clean index and working tree back along with HEAD, like a checkout would.

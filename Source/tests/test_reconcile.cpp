@@ -873,6 +873,9 @@ GG_TEST("reconcile", "Undo refuses a plain git operation while a rebase is in pr
     s.settle();
     ctx->Yield(10);
     // Not the open rebase, and not the commit before it either: git owns the refs until it ends.
+    GG_CHECK(s.app.dialogs().current() != nullptr);
+    if (s.app.dialogs().current())
+        GG_CHECK(s.app.dialogs().current()->message.find("finish or abort the rebase first") != std::string::npos);
     GG_CHECK(s.dismissError());
     GG_CHECK_STR_EQ(refState(s, repo), state);
     GG_CHECK_EQ(journalOps(repo).size(), before); // no undo operation was written
@@ -918,6 +921,77 @@ GG_TEST("reconcile", "Undo refuses while an apply-backend rebase (git rebase --a
     expectUndoRefused(s, ctx, repo, "finish or abort the rebase first");
     GG_CHECK(fs::is_directory(repo / ".git" / "rebase-apply"));
     s.git(repo, {"rebase", "--abort"});
+}
+
+// A feat branch and main both change c.txt, so rebasing feat onto main stops at a conflict.
+static void conflictingBranches(Scenario& s, const fs::path& repo)
+{
+    s.commitFile(repo, "c.txt", "a\nb\nc\n", "Base c");
+    s.git(repo, {"switch", "-q", "-c", "feat"});
+    s.commitFile(repo, "c.txt", "a\nfeat\nc\n", "Feat c");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "c.txt", "a\nmain\nc\n", "Main c");
+    s.git(repo, {"switch", "-q", "feat"});
+}
+
+GG_TEST("reconcile", "a plain git rebase --apply stopped at a conflict and continued is one operation; Undo restores the branch")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    conflictingBranches(s, repo);
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 3; }));
+    s.settle();
+    ctx->Yield(10);
+    const size_t opsBefore = gitOps(repo).size();
+    const std::string before = refState(s, repo);
+    GG_CHECK(!s.gitMayFail(repo, {"rebase", "--apply", "main"}).ok());
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-apply" / "rebasing"));
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() > opsBefore; }));
+    s.settle();
+    ctx->Yield(10);
+    GG_CHECK(!journalOps(repo).back().ended); // open while the rebase is stopped
+    std::ofstream(repo / "c.txt", std::ios::trunc) << "a\nresolved\nc\n";
+    s.git(repo, {"add", "c.txt"});
+    s.git(repo, {"rebase", "--continue"});
+    GG_REQUIRE(!fs::exists(repo / ".git" / "rebase-apply"));
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).back().ended; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == opsBefore + 1);
+    GG_CHECK_STR_EQ(ops.back().label, "git rebase");
+    GG_CHECK(refChange(ops.back(), "refs/heads/feat") != nullptr);
+    GG_CHECK(refChange(ops.back(), "HEAD") == nullptr); // back on the branch it started on
+    GG_CHECK(refState(s, repo) != before);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == before; }));
+}
+
+GG_TEST("reconcile", "a plain git rebase --apply stopped and aborted ends its group; there is nothing to undo from it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    conflictingBranches(s, repo);
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 3; }));
+    s.settle();
+    ctx->Yield(10);
+    const std::string start = refState(s, repo);
+    const size_t opsBefore = journalOps(repo).size();
+    GG_CHECK(!s.gitMayFail(repo, {"rebase", "--apply", "main"}).ok());
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-apply" / "rebasing"));
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == opsBefore + 1 && !journalOps(repo).back().ended; }));
+    s.git(repo, {"rebase", "--abort"});
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).back().ended; }));
+    s.settle();
+    ctx->Yield(10);
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == opsBefore + 1);
+    GG_CHECK(ops.back().ok);
+    GG_CHECK(!ops.back().restorable()); // HEAD and feat are where they were
+    GG_CHECK(!fs::exists(repo / ".git" / "gg" / "rebase"));
+    GG_CHECK_STR_EQ(refState(s, repo), start);
 }
 
 GG_TEST("reconcile", "Undo refuses while git am is stopped at a conflict")

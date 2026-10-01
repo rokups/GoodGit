@@ -180,12 +180,11 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
   passes are lumped into one operation. `checkout --detach <branch>` cannot be told from a checkout
   of the commit in the reflog. A chain longer than 1000 entries, or rewritten (`stash drop`),
   falls back to the lump. The reflog is read around the refs and a pass retries when the tip moved
-  between the reads. Reftable repositories are not supported (libgit2). An apply-backend rebase
-  (`rebase-apply/`, `git rebase --apply`, `git am`) is not grouped into one operation (Undo still refuses while it is in progress, §4.1). `git worktree add|remove|lock|unlock` are never
+  between the reads. Reftable repositories are not supported (libgit2). `git worktree add|remove|lock|unlock` are never
   recorded by the reconciler: only ggui and git-gg write `worktree` records.
 
 ### 4.1 Native rebases (several git commands, one operation)
-A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git commands
+A `git rebase` (either backend) that stops runs as several git commands
 (`git rebase -i`, `git rebase --continue`, …). From `rebase (start)` to `rebase (finish)` or
 `(abort)` it is **one** operation:
 - The HEAD reflog entries of a rebase are grouped by the reconciler: from `rebase … (start)` (also
@@ -195,7 +194,9 @@ A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git c
   ggui was closed.
 - While the rebase is in progress the operation is **open** (and cannot be undone) until its
   `end`. It is remembered in `$GIT_COMMON_DIR/gg/rebase/<W>/operation` with the rebase's identity
-  (`orig-head`, `onto` and `head-name` from `rebase-merge/`) and the `src` of the operation's
+  (`orig-head`, `onto` and `head-name` from `rebase-merge/`, or, for the apply backend
+  (`git rebase --apply`), from `rebase-apply/` when it holds the `rebasing` marker; `git am` has
+  `applying` instead and is not a rebase) and the `src` of the operation's
   opener, and a `rebase` record is appended. A rebase that ggui started (its Start step opens the
   operation) and that is finished in a terminal stays that one operation: the reconciler appends
   the rest of its ref changes and the final index tree.
@@ -206,9 +207,8 @@ A `git rebase` (merge backend, `rebase-merge/`) that stops runs as several git c
   itself). A remembered operation whose rebase is no longer in progress and that has no such entry
   (`git rebase --quit`, an expired reflog) gets its `end` the next time a pass runs or before Undo
   plans.
-- **Undo refuses while a rebase is in progress** in the worktree: a merge-backend one (`rebase-merge/`, git's
-  default) or `rebase-apply/` (an apply-backend rebase or `git am`; "finish or abort the rebase first", or
-  "... git am first"), for every operation, older ones included: undoing what came before would pull refs
+- **Undo refuses while a rebase is in progress** in the worktree: a rebase of either backend ("finish or abort the
+  rebase first") or `git am` (`rebase-apply/` without `rebasing`; "... git am first"), for every operation, older ones included: undoing what came before would pull refs
   out from under git.
 - Deleting `gg/rebase/` only splits the rebase into several operations.
 - When git detaches a symbolic HEAD (a rebase starting), HEAD is recorded as `ref:<branch>`, never

@@ -96,10 +96,15 @@ void recordHeadNow(git_repository* repo, journal::Writer& journal, const std::st
 
 std::string rebaseIdentity(const fs::path& gitDir)
 {
-    const fs::path dir = gitDir / "rebase-merge";
+    // The merge backend keeps its state in rebase-merge/; the apply backend (git rebase --apply)
+    // in rebase-apply/, where the "rebasing" marker tells it from git am ("applying").
+    fs::path dir = gitDir / "rebase-merge";
     std::error_code ec;
-    if (!fs::is_directory(dir, ec))
-        return {};
+    if (!fs::is_directory(dir, ec)) {
+        dir = gitDir / "rebase-apply";
+        if (!fs::is_directory(dir, ec) || !fs::exists(dir / "rebasing", ec))
+            return {};
+    }
     std::string out;
     for (const char* name : {"orig-head", "onto", "head-name"}) {
         if (!out.empty())
