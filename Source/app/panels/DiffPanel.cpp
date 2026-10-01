@@ -901,6 +901,10 @@ void DiffPanel::drawMenuItems()
         if (menuItem(ICON_MS_MY_LOCATION, "Move line(s) to active commit", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Active, {}, patch);
         ImGui::Separator();
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert line(s) and commit", nullptr, false, can && !m_session.snapshot()->headUnborn))
+            actions.revertChanges(id, {}, patch, true);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("A new commit on HEAD that undoes the selected lines of this change. Text conflicts become first-class conflicts.");
         if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
         const std::string hunkPatch = hunks.empty() ? std::string() : buildPatch(m_diff->files.front(), hunks, false);

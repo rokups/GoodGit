@@ -641,6 +641,10 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to parent", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
         ImGui::Separator();
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", nullptr, false, free && !m_session.snapshot()->headUnborn))
+            actions.revertChanges(id, paths, {}, true);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts.");
         if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
             actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

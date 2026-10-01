@@ -139,6 +139,8 @@ GG_TEST("revert-pick", "revert and cherry-pick without committing: index, workin
     GG_CHECK_STR_EQ(ggui::cherryPickMessage("Subject\n\nBody\n", id), once);
     GG_CHECK_STR_EQ(ggui::cherryPickMessage(once + "\n", id), once);
     GG_CHECK_STR_EQ(ggui::revertMessage("Subject\n\nBody\n", id), "Revert \"Subject\"\n\nThis reverts commit " + id + ".");
+    GG_CHECK_STR_EQ(ggui::revertPartMessage("Subject\n\nBody\n", id, "a.txt, b.txt"),
+        "Revert \"Subject\"\n\nThis reverts part of commit " + id + ": a.txt, b.txt.");
 }
 
 GG_TEST("revert-pick", "revert and commit, cherry-pick and commit: a new commit on HEAD, the author kept, one Undo")

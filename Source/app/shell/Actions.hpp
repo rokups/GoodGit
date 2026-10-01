@@ -38,6 +38,9 @@ enum class Side { Ours, Theirs };
 //   <message>\n\n(cherry picked from commit <id>)
 // Neither ends with a newline. A message that already has that line does not get it twice.
 std::string revertMessage(const std::string& message, const std::string& id);
+// The message of a revert of part of a commit: the same, with "This reverts part of commit <id>:
+// <what>." (<what> is the paths joined by ", " or "some lines of <path>").
+std::string revertPartMessage(const std::string& message, const std::string& id, const std::string& what);
 std::string cherryPickMessage(const std::string& message, const std::string& id);
 
 class Actions {
@@ -172,6 +175,11 @@ public:
     // `git revert/cherry-pick --no-commit` into the index and working tree (native conflicts
     // leave the Reverting/CherryPicking state), with the message waiting in MERGE_MSG.
     void revertOrPick(const core::Oid& commit, bool revert, bool andCommit);
+    // The inverse of the commit's change to `paths` or to the selected lines (`patch`, old -> new
+    // as the commit's diff has them) onto HEAD (against the commit's first parent). With
+    // `andCommit`: a new commit built in memory (text conflicts first-class, one Undo). Without:
+    // not available yet.
+    void revertChanges(const core::Oid& commit, const std::vector<std::string>& paths, const std::string& patch, bool andCommit);
     enum class MoveTo { Parent, Child, Active, WorkingTree, Discard };
     // Moves the commit's changes to selected files (`paths`) or selected lines (`patch`, old →
     // new as the commit's diff has them) to its parent, its child, the checked-out commit or

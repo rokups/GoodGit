@@ -199,7 +199,7 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Resolve with merge
   tool · Mark resolved · Patch ▸ (Copy, Save…) ·
   Blame file · External diff ▸ (vs HEAD, vs parent) · Move to child (Move to working tree on the HEAD commit, which has no child) /
-  Move to parent · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
+  Move to parent · Revert and commit (commit files: new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Edit/Check out, Edit commit (E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Amend…, Describe (Save message), Edit author, Duplicate
@@ -380,7 +380,7 @@ the panel without touching the repository.
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.
 - Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) and hunk(s) (N) · Move line(s)/hunk to
-  child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Discard line(s)/hunk(s) of a commit (rewrite).
+  child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Revert line(s) and commit (a commit's lines) · Discard line(s)/hunk(s) of a commit (rewrite).
 
 ## 7. Blame panel — window `"Blame"`
 Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5),

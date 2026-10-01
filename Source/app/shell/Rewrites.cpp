@@ -770,11 +770,77 @@ std::string pickOnto(git_repository* repo, const std::string& id, bool revert)
     return toHex(head);
 }
 
+// A commit's change to a selection of files (`paths`) or lines (`patch`, old -> new as the
+// commit's diff has them), measured against its FIRST parent.
+struct SelectionTrees {
+    std::string parent, parentTree, ownTree;
+    std::vector<std::string> paths;
+    std::string patch;
+    // The selection's change applied to a tree (forward) or taken out of one (backward).
+    std::string forward(git_repository* repo, const std::string& tree) const
+    {
+        return patch.empty() ? withFiles(repo, tree, ownTree) : rw::applyPatchToTree(repo, tree, rw::contentPatch(patch, true));
+    }
+    std::string backward(git_repository* repo, const std::string& tree) const
+    {
+        return patch.empty() ? withFiles(repo, tree, parentTree)
+                             : rw::applyPatchToTree(repo, tree, rw::reversePatch(rw::contentPatch(patch, false)));
+    }
+    // `tree` with the selected files taken from `fromTree` (removed where it lacks them).
+    std::string withFiles(git_repository* repo, const std::string& tree, const std::string& fromTree) const
+    {
+        using namespace gg::git2;
+        Tree target = lookupTree(repo, *fromHex(tree));
+        Tree source = lookupTree(repo, *fromHex(fromTree));
+        std::vector<git_tree_update> updates;
+        std::vector<TreeEntry> keep;
+        for (const auto& p : paths) {
+            git_tree_update u{};
+            u.path = p.c_str();
+            git_tree_entry* raw = nullptr;
+            if (git_tree_entry_bypath(&raw, source.get(), p.c_str()) == 0) {
+                keep.emplace_back(raw);
+                u.action = GIT_TREE_UPDATE_UPSERT;
+                u.id = *git_tree_entry_id(raw);
+                u.filemode = git_tree_entry_filemode(raw);
+            } else {
+                git_error_clear();
+                u.action = GIT_TREE_UPDATE_REMOVE;
+            }
+            updates.push_back(u);
+        }
+        git_oid out;
+        check(git_tree_create_updated(&out, repo, target.get(), updates.size(), updates.data()), "git_tree_create_updated");
+        return toHex(out);
+    }
+};
+
+SelectionTrees selectionTrees(git_repository* repo, const std::string& id, const std::vector<std::string>& paths,
+    const std::string& patch)
+{
+    using namespace gg::git2;
+    const auto parents = parentsOf(repo, id);
+    if (parents.empty())
+        refuse("the commit has no parent");
+    SelectionTrees t;
+    t.parent = parents.front();
+    t.parentTree = toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(t.parent)).get()));
+    t.ownTree = toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(id)).get()));
+    t.paths = paths;
+    t.patch = patch;
+    return t;
+}
+
 } // namespace
 
 std::string revertMessage(const std::string& message, const std::string& id)
 {
     return "Revert \"" + trimEnd(message.substr(0, message.find('\n'))) + "\"\n\nThis reverts commit " + id + ".";
+}
+
+std::string revertPartMessage(const std::string& message, const std::string& id, const std::string& what)
+{
+    return "Revert \"" + trimEnd(message.substr(0, message.find('\n'))) + "\"\n\nThis reverts part of commit " + id + ": " + what + ".";
 }
 
 std::string cherryPickMessage(const std::string& message, const std::string& id)
@@ -860,6 +926,53 @@ void Actions::revertOrPick(const core::Oid& commit, bool revert, bool commitIt)
             else
                 handleDefault(e);
         });
+}
+
+void Actions::revertChanges(const core::Oid& commit, const std::vector<std::string>& paths, const std::string& patch, bool andCommit)
+{
+    const std::string id = commit.hex();
+    const std::string what = patch.empty() ? std::to_string(paths.size()) + " file(s)" : std::string("lines");
+    const std::string label = "revert " + what + " of " + id.substr(0, 10);
+    if (!andCommit) {
+        // Not reachable from the UI yet (the index and working tree variant is a later step).
+        m_session.app().notify(App::Notice::Warning, label, "Reverting without a commit is not available yet.");
+        return;
+    }
+    // In memory, like revertOrPick: one new commit on HEAD, one ref update, one Undo.
+    rewrite(label, [id, paths, patch](git_repository* repo) {
+        const std::string head = pickOnto(repo, id, true);
+        const SelectionTrees trees = selectionTrees(repo, id, paths, patch);
+        const std::string without = trees.backward(repo, trees.ownTree);
+        std::string desc;
+        if (patch.empty()) {
+            for (const auto& p : paths)
+                desc += (desc.empty() ? "" : ", ") + p;
+        } else {
+            // "diff --git a/<old> b/<new>": the file as this commit has it.
+            const std::string first = patch.substr(0, patch.find('\n'));
+            const size_t sep = first.find(" b/");
+            desc = "some lines of " + (sep == std::string::npos ? std::string("a file") : first.substr(sep + 3));
+        }
+        rw::Step s;
+        s.source = id;
+        s.key = "pick";
+        s.revert = true;
+        s.revertTree = without;
+        s.forceNew = true;
+        s.mapSource = false;
+        s.sourceParents = false;
+        s.parents = {"=" + head};
+        s.message = revertPartMessage(messageOf(repo, id), id, desc) + "\n";
+        rw::Plan plan;
+        plan.steps.push_back(std::move(s));
+        plan.emptied = rw::Emptied::Ask;
+        plan.reflogMessage = "ggui: revert changes";
+        if (const std::string target = gg::git2::headTarget(repo); !target.empty())
+            plan.refsToSteps[target] = "pick";
+        else
+            plan.detachHeadAt = "pick";
+        return plan;
+    });
 }
 
 void Actions::reorder(const core::Oid& commit, const core::Oid& anchor, bool after, bool copy)
@@ -1014,42 +1127,12 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
             const auto parents = parentsOf(repo, id);
             if (parents.size() != 1)
                 refuse("moving changes needs a commit with exactly one parent");
-            const std::string parent = parents.front();
-            const std::string parentTree = toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(parent)).get()));
-            const std::string ownTree = toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(id)).get()));
-            // The selection's change applied to a tree (forward) or taken out of one (backward).
-            auto withFiles = [&](const std::string& tree, const std::string& fromTree) {
-                Tree target = lookupTree(repo, *fromHex(tree));
-                Tree source = lookupTree(repo, *fromHex(fromTree));
-                std::vector<git_tree_update> updates;
-                std::vector<TreeEntry> keep;
-                for (const auto& p : paths) {
-                    git_tree_update u{};
-                    u.path = p.c_str();
-                    git_tree_entry* raw = nullptr;
-                    if (git_tree_entry_bypath(&raw, source.get(), p.c_str()) == 0) {
-                        keep.emplace_back(raw);
-                        u.action = GIT_TREE_UPDATE_UPSERT;
-                        u.id = *git_tree_entry_id(raw);
-                        u.filemode = git_tree_entry_filemode(raw);
-                    } else {
-                        git_error_clear();
-                        u.action = GIT_TREE_UPDATE_REMOVE;
-                    }
-                    updates.push_back(u);
-                }
-                git_oid out;
-                check(git_tree_create_updated(&out, repo, target.get(), updates.size(), updates.data()), "git_tree_create_updated");
-                return toHex(out);
-            };
-            // Lines: the file is at its old path in the parent's tree, at its new one in this commit's.
-            auto forward = [&](const std::string& tree) {
-                return patch.empty() ? withFiles(tree, ownTree) : rw::applyPatchToTree(repo, tree, rw::contentPatch(patch, true));
-            };
-            auto backward = [&](const std::string& tree) {
-                return patch.empty() ? withFiles(tree, parentTree)
-                                     : rw::applyPatchToTree(repo, tree, rw::reversePatch(rw::contentPatch(patch, false)));
-            };
+            const SelectionTrees sel = selectionTrees(repo, id, paths, patch);
+            const std::string& parent = sel.parent;
+            const std::string& parentTree = sel.parentTree;
+            const std::string& ownTree = sel.ownTree;
+            auto forward = [&](const std::string& tree) { return sel.forward(repo, tree); };
+            auto backward = [&](const std::string& tree) { return sel.backward(repo, tree); };
             rw::Plan plan;
             plan.reflogMessage = "ggui: move changes";
             auto treeOf = [&](const std::string& c) { return toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(c)).get())); };

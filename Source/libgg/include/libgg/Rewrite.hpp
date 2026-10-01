@@ -74,6 +74,9 @@ struct Step {
     // on the new parents (`onlyPaths` is not used). The commit gets the current user as author
     // (not the source's).
     bool revert = false;
+    // Revert only: side B is this tree instead of the source's first parent's (a revert of part
+    // of the source's change: the source with that part taken out).
+    std::optional<std::string> revertTree;
 };
 
 enum class Choice { Ours, Theirs, Base, File, Delete };

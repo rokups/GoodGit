@@ -742,8 +742,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     oursCommit = o->second;
                 if (step.revert) {
                     // The source's tree is the base and its parent's the change (git revert): side B
-                    // is the parent's content, labelled by the parent; the base by the source.
-                    p.tree = m->mergeTrees(srcTree, newBaseTree, oldBaseTree, key, baseCommit.empty() ? step.source : baseCommit,
+                    // is the parent's content (or `revertTree`: the source's tree with only part of its
+                    // change taken back), labelled by the parent; the base by the source.
+                    p.tree = m->mergeTrees(srcTree, newBaseTree, step.revertTree ? *step.revertTree : oldBaseTree, key, baseCommit.empty() ? step.source : baseCommit,
                         plan, result, oursCommit, step.source);
                 } else {
                     std::string change = srcTree;
