@@ -275,7 +275,7 @@ public:
     static fs::path writeTool(const fs::path& dir, const std::string& name, const std::string& script);
     // Opens the combo `combo` (any ref, "**/" wildcards allowed) and clicks `item` in it.
     void comboSelect(const char* combo, const char* item);
-    // Opens the context menu of `ref` and clicks `path` in it ("Copy/ID" for submenus).
+    // Opens the context menu of `ref` and clicks `path` in it ("Copy/###ID" for submenus).
     void contextMenu(const char* ref, const char* path, bool shift = false); // shift: held while choosing
     std::string itemLabel(const char* ref);
     // Text of the clipboard.

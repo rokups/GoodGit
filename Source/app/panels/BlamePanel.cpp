@@ -104,7 +104,7 @@ void BlamePanel::drawLineMenu(int index)
     ImGui::Separator();
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
-    copyIdMenuItem("Copy commit ID", m_session.shortId(line.commit), line.commit.hex(), committed);
+    copyIdMenuItem("Copy commit ", m_session.shortId(line.commit), line.commit.hex(), committed);
     ImGui::Separator();
     if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
         blockText(index, &m_selFirst, &m_selLast);

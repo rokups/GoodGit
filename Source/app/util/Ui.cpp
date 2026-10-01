@@ -9,6 +9,7 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <thread>
 
@@ -186,9 +187,14 @@ void copyId(const std::string& shortId, const std::string& fullId)
     ImGui::SetClipboardText((ImGui::GetIO().KeyShift ? fullId : shortId).c_str());
 }
 
-bool copyIdMenuItem(const char* label, const std::string& shortId, const std::string& fullId, bool enabled)
+bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::string& fullId, bool enabled)
 {
-    if (!menuItem(ICON_MS_CONTENT_COPY, label, kCopyIdHint, false, enabled))
+    // The label follows Shift ("Short ID" / "Full ID"); the ID after ### stays the same.
+    const bool full = ImGui::GetIO().KeyShift;
+    std::string label = std::string(prefix) + (full ? "full ID" : "short ID");
+    label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
+    label += std::string("###") + prefix + "ID";
+    if (!menuItem(ICON_MS_CONTENT_COPY, label.c_str(), nullptr, false, enabled))
         return false;
     copyId(shortId, fullId);
     return true;

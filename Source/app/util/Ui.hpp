@@ -32,9 +32,10 @@ void idText(const std::string& hex, size_t shortLen, const char* id = nullptr);
 void idTooltip(const std::string& hex, size_t shortLen, const std::string& rest);
 // "Copy ID" copies the short ID, or the full ID while Shift is held.
 void copyId(const std::string& shortId, const std::string& fullId);
-// A "Copy ID"-style menu item that says so; returns true when clicked (after copying).
-bool copyIdMenuItem(const char* label, const std::string& shortId, const std::string& fullId, bool enabled = true);
-inline constexpr const char* kCopyIdHint = "Shift: full ID";
+// A "Copy ID"-style menu item: "<prefix>short ID", or "<prefix>full ID" while Shift is held (the
+// first letter capitalised), with the stable ID "###<prefix>ID". Returns true when clicked (after
+// copying).
+bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::string& fullId, bool enabled = true);
 // Indeterminate spinner of the given radius.
 void spinner(const char* id, float radius);
 // Opens a directory or file with the desktop's default handler (off the UI thread).

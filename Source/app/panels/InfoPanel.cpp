@@ -275,7 +275,7 @@ void InfoPanel::draw(bool* open)
         if (ImGui::SmallButton(ICON_MS_CONTENT_COPY "###commit_id"))
             copyId(shortId, d.id.hex());
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Copy the short ID (%s)", kCopyIdHint);
+            ImGui::SetTooltip(ImGui::GetIO().KeyShift ? "Copy the full ID" : "Copy the short ID");
         if (const ConflictList* conflicts = m_session.conflictsOf(d.id)) {
             label("Conflicts");
             for (size_t i = 0; i < conflicts->size(); ++i) {

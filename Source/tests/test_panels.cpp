@@ -186,9 +186,9 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     // Column headers use Git words (no "Change" column: a row is a ref moving between commits).
     GG_CHECK(s.textShown("//Reflog", "Commits"));
     const std::string table = "//Reflog/##reflog_table";
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID");
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "###Copy new ID");
     GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", headLines[0]}));
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID");
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "###Copy old ID");
     GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", "HEAD@{1}"}));
     s.contextMenu((table + "/r0/###reflog_0").c_str(), "Reveal old commit");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD@{1}"); }));

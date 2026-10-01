@@ -371,11 +371,16 @@ GG_TEST("history", "copy ID and full description; tooltip ID")
     GG_REQUIRE(s.openRepository(repo));
     const std::string id = s.revParse(repo, "HEAD~2");
     const std::string shortId = s.gitOut(repo, {"rev-parse", "--short", id});
-    s.contextMenu(rowRef(id).c_str(), "Copy/ID");
+    s.contextMenu(rowRef(id).c_str(), "Copy/###ID");
     GG_CHECK_STR_EQ(s.clipboard(), shortId);
+    // The item reads "Short ID", and "Full ID" while Shift is held (no hint in the shortcut column).
     ctx->ItemClick(rowRef(id).c_str(), ImGuiMouseButton_Right);
+    ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Copy");
+    GG_CHECK(s.itemLabel("//$FOCUSED/###ID").find("Short ID###") != std::string::npos);
     ctx->KeyDown(ImGuiMod_Shift);
-    ctx->MenuClick("//$FOCUSED/Copy/ID");
+    ctx->Yield(2);
+    GG_CHECK(s.itemLabel("//$FOCUSED/###ID").find("Full ID###") != std::string::npos);
+    ctx->ItemClick("//$FOCUSED/###ID");
     ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK_STR_EQ(s.clipboard(), id);
     // The row tooltip starts with the full ID, its short prefix undimmed.

@@ -834,8 +834,8 @@ void ReflogPanel::draw(bool* open)
                     + e.newId.shortHex() + "###reflog_" + std::to_string(i);
                 selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
                 if (ImGui::BeginPopupContextItem("##reflog_menu")) {
-                    copyIdMenuItem("Copy new ID", m_session.shortId(e.newId), e.newId.hex());
-                    copyIdMenuItem("Copy old ID", m_session.shortId(e.oldId), e.oldId.hex(), !e.oldId.isNull());
+                    copyIdMenuItem("Copy new ", m_session.shortId(e.newId), e.newId.hex());
+                    copyIdMenuItem("Copy old ", m_session.shortId(e.oldId), e.oldId.hex(), !e.oldId.isNull());
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
                         m_session.revealCommit(e.newId);
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal old commit", nullptr, false, !e.oldId.isNull()))

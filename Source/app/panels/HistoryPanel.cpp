@@ -606,7 +606,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         disabledHint(movable.empty(), "No other branch to move here.");
     ImGui::Separator();
     if (beginMenu(ICON_MS_CONTENT_COPY, "Copy", single)) {
-        copyIdMenuItem("ID", row.shortId, hex);
+        copyIdMenuItem("", row.shortId, hex);
         if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
             std::string text = hex + " " + row.subject + "\nAuthor: " + row.author + " <" + row.authorEmail
                 + ">\nDate: " + core::formatTime(row.time, true);

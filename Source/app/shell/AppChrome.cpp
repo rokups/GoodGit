@@ -567,7 +567,7 @@ void App::drawToolbar()
                 ImGui::EndTooltip();
             }
             if (ImGui::BeginPopupContextItem("##tb_head_menu")) {
-                copyIdMenuItem("Copy ID", headText, snap.head.hex());
+                copyIdMenuItem("Copy ", headText, snap.head.hex());
                 ImGui::EndPopup();
             }
         }

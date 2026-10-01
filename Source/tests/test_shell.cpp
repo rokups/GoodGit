@@ -587,11 +587,11 @@ GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID")
     GG_CHECK(!s.itemDrawsBackground("//##Toolbar/###tb_head") && !s.itemDrawsBackground("//##Toolbar/###tb_branch"));
     // Right-click still offers Copy ID: short by default, full with Shift.
     ctx->ItemClick("//##Toolbar/###tb_head", ImGuiMouseButton_Right);
-    ctx->MenuClick("//$FOCUSED/Copy ID");
+    ctx->MenuClick("//$FOCUSED/###Copy ID");
     GG_CHECK_STR_EQ(s.clipboard(), shortHead);
     ctx->ItemClick("//##Toolbar/###tb_head", ImGuiMouseButton_Right);
     ctx->KeyDown(ImGuiMod_Shift);
-    ctx->MenuClick("//$FOCUSED/Copy ID");
+    ctx->MenuClick("//$FOCUSED/###Copy ID");
     ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK_STR_EQ(s.clipboard(), s.head(repo));
 }

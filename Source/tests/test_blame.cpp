@@ -153,7 +153,7 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK(s.waitUntil([&] { return blameShows(s, "story.txt", r.c2); }));
     GG_CHECK_STR_EQ(line(s, 5)->text, "L5");
     // Reveal and copy the commit of line 3.
-    s.contextMenu(lineRef(s, 3).c_str(), "Copy commit ID");
+    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID");
     GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(r.path, {"rev-parse", "--short", r.c2}));
     s.contextMenu(lineRef(s, 3).c_str(), "Reveal commit");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == r.c2; }));

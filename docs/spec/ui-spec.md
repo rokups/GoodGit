@@ -90,7 +90,7 @@ Mutation buttons are disabled (with a tooltip "Not available yet" until their ph
 General rules: items whose click does nothing are plain text (no hover or
 click highlight; a context menu may still attach). Full commit IDs show the short prefix in the
 text colour and the rest dimmed. Every "Copy ID" copies the short ID, or the full ID while Shift
-is held (the menu item says "Shift: full ID").
+is held: the menu item reads "… short ID", and "… full ID" while Shift is held (no shortcut hint).
 
 ### 1.5 Errors and notifications (K)
 - Important errors (failed git commands, open/clone failures, hook failures, journal errors) open
