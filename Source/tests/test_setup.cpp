@@ -6,6 +6,7 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
 #include <libgg/Journal.hpp>
 
@@ -263,12 +264,12 @@ GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui")
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
     auto badge = [&](const char* id) { return s.itemText((std::string("//###Toolbar/###") + id).c_str()); };
-    GG_CHECK(badge("tb_pull").find("\xe2\x86\x93" "1") != std::string::npos);
-    GG_CHECK(badge("tb_push").find("\xe2\x86\x91" "1") != std::string::npos);
+    GG_CHECK(badge("tb_pull").find(ICON_MS_ARROW_DOWNWARD_ALT "1") != std::string::npos);
+    GG_CHECK(badge("tb_push").find(ICON_MS_ARROW_UPWARD_ALT "1") != std::string::npos);
     s.git(repo, {"pull", "-q", "--rebase", "origin", "main"});
-    GG_CHECK(s.waitUntil([&] { return badge("tb_pull").find("\xe2\x86\x93") == std::string::npos; }));
+    GG_CHECK(s.waitUntil([&] { return badge("tb_pull").find(ICON_MS_ARROW_DOWNWARD_ALT) == std::string::npos; }));
     s.git(repo, {"push", "-q", "origin", "main"});
-    GG_CHECK(s.waitUntil([&] { return badge("tb_push").find("\xe2\x86\x91") == std::string::npos; }));
+    GG_CHECK(s.waitUntil([&] { return badge("tb_push").find(ICON_MS_ARROW_UPWARD_ALT) == std::string::npos; }));
 }
 
 GG_TEST("setup", "git versions ggui reads: newer major, vendor suffix, no number; a typed path with a trailing slash; copying a notice")

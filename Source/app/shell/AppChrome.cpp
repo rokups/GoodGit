@@ -10,6 +10,7 @@
 #include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <algorithm>
 #include <imgui_internal.h>
@@ -305,7 +306,7 @@ void App::drawRepositoryButtons()
     std::string pullReason;
     const bool canPull = s && s->pullAvailable(&pullReason);
     const int incoming = s ? s->incoming() : 0;
-    const std::string pullLabel = std::string(ICON_MS_ARROW_DOWNWARD) + " Pull" + (incoming ? " \xe2\x86\x93" + std::to_string(incoming) : "");
+    const std::string pullLabel = std::string(ICON_MS_ARROW_DOWNWARD) + " Pull" + (incoming ? " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(incoming) : "");
     if (iconButton(pullLabel.c_str(), "##tb_pull", !busy.empty() ? busy.c_str() : canPull ? "Pull from the upstream" : pullReason.c_str(),
             free && canPull))
         s->actions().pull(PullMode::Config);
@@ -324,7 +325,7 @@ void App::drawRepositoryButtons()
     ImGui::SameLine();
     const bool canPush = s && !s->snapshot()->headDetached && !s->snapshot()->headUnborn && hasRemotes;
     const int outgoing = s ? s->outgoing() : 0;
-    const std::string pushLabel = std::string(ICON_MS_UPLOAD) + " Push" + (outgoing ? " \xe2\x86\x91" + std::to_string(outgoing) : "");
+    const std::string pushLabel = std::string(ICON_MS_UPLOAD) + " Push" + (outgoing ? " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(outgoing) : "");
     if (iconButton(pushLabel.c_str(), "##tb_push", tip("Push the current branch"), free && canPush))
         s->pushCurrent();
     ImGui::SameLine(0, 1);

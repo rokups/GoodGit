@@ -84,11 +84,11 @@ std::string summaryText(const core::RepoSummary& s)
         return "missing";
     std::string text = s.detached ? std::string("detached") : s.branch;
     if (!s.upstream.empty()) {
-        text += " \xe2\x86\x92 " + s.upstream;
+        text += " " ICON_MS_ARROW_RIGHT_ALT " " + s.upstream;
         if (s.ahead)
-            text += " \xe2\x86\x91" + std::to_string(s.ahead);
+            text += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(s.ahead);
         if (s.behind)
-            text += " \xe2\x86\x93" + std::to_string(s.behind);
+            text += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(s.behind);
     }
     return text;
 }

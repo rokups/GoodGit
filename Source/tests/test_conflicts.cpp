@@ -9,6 +9,7 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <libgg/Conflicts.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/Markers.hpp>
@@ -57,7 +58,7 @@ GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message,
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "f.txt").c_str()); }));
     ctx->ItemClick(fileRef(s, "Conflicted", "f.txt").c_str());
     s.showPanel("Diff");
-    s.comboSelect("//Diff/##conflict_view", "Base \xe2\x86\x92 ours");
+    s.comboSelect("//Diff/##conflict_view", "Base " ICON_MS_ARROW_RIGHT_ALT " ours");
     GG_CHECK(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
         return d && d->query.kind == ggui::core::DiffKind::Stages && d->query.stageA == 1 && d->query.stageB == 2;
@@ -602,7 +603,7 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     ctx->ItemClick(wtFile(s, "conflict.txt").c_str());
     s.showPanel("Diff");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Diff/##term_view"); }));
-    s.comboSelect("//Diff/##term_view", "Base \xe2\x86\x92 side 1");
+    s.comboSelect("//Diff/##term_view", "Base " ICON_MS_ARROW_RIGHT_ALT " side 1");
     GG_CHECK(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
         return d && d->query.kind == ggui::core::DiffKind::Term && !d->files.empty() && !d->files[0].hunks.empty()

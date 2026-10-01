@@ -6,6 +6,7 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <algorithm>
 
 namespace ggtest {
@@ -433,7 +434,7 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
         showFile(s, images, path);
         GG_REQUIRE(file(s) != nullptr);
         GG_CHECK_STR_EQ(file(s)->newImage, expected);
-        GG_CHECK(s.textShown("//Diff", std::string("(none) \xe2\x86\x92 ") + (*expected ? expected : "?")));
+        GG_CHECK(s.textShown("//Diff", std::string("(none) <icon> ") /* the arrow is an icon glyph, drawn text shows it as <icon> */ + (*expected ? expected : "?")));
     }
 
     // The last line ends with a lone CR and no newline: shown without the CR, marked "\".
@@ -495,7 +496,7 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
     GG_REQUIRE(s.waitUntil([&] { return s.session()->conflictsOf(ggui::core::Oid::fromHex(commit)) != nullptr; }));
     showFile(s, commit, "conflict.txt");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Diff/##term_view"); }));
-    s.comboSelect("//Diff/##term_view", "Base \xe2\x86\x92 side 1");
+    s.comboSelect("//Diff/##term_view", "Base " ICON_MS_ARROW_RIGHT_ALT " side 1");
     GG_CHECK(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
         return d && d->query.kind == ggui::core::DiffKind::Term && d->query.a.hex() == commit;
@@ -506,7 +507,7 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wt.c_str()); }));
     ctx->ItemClick(wt.c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Diff/##term_view"); }));
-    s.comboSelect("//Diff/##term_view", "Base \xe2\x86\x92 side 2");
+    s.comboSelect("//Diff/##term_view", "Base " ICON_MS_ARROW_RIGHT_ALT " side 2");
     GG_CHECK(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
         return d && d->query.kind == ggui::core::DiffKind::Term && d->query.a.isNull() && d->query.stageB == 1;

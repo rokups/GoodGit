@@ -74,7 +74,7 @@ std::string imageText(const core::DiffFile& f)
             return std::string("(none)");
         return (dims.empty() ? std::string("?") : dims) + " (" + std::to_string(size) + " bytes)";
     };
-    return one(f.oldImage, f.oldSize) + " \xe2\x86\x92 " + one(f.newImage, f.newSize);
+    return one(f.oldImage, f.oldSize) + " " ICON_MS_ARROW_RIGHT_ALT " " + one(f.newImage, f.newSize);
 }
 
 std::string modeText(std::uint32_t mode)
@@ -766,7 +766,7 @@ void DiffPanel::drawToolbar()
         // First-class conflict: the raw markers, or what one side changed against the base.
         std::vector<std::string> terms{"Raw markers"};
         for (int k = 1; k <= sides; ++k)
-            terms.push_back("Base \xe2\x86\x92 side " + std::to_string(k));
+            terms.push_back("Base " ICON_MS_ARROW_RIGHT_ALT " side " + std::to_string(k));
         float termWidth = comboWidth({terms[0].c_str()});
         for (const std::string& t : terms)
             termWidth = std::max(termWidth, comboWidth({t.c_str()}));
@@ -782,7 +782,7 @@ void DiffPanel::drawToolbar()
         }
     }
     if (m_file && m_file->group == FileGroup::Conflicted && !m_file->firstClass) {
-        const char* stageViews[] = {"Working tree", "Base \xe2\x86\x92 ours", "Base \xe2\x86\x92 theirs", "Ours \xe2\x86\x92 theirs"};
+        const char* stageViews[] = {"Working tree", "Base " ICON_MS_ARROW_RIGHT_ALT " ours", "Base " ICON_MS_ARROW_RIGHT_ALT " theirs", "Ours " ICON_MS_ARROW_RIGHT_ALT " theirs"};
         const float stageWidth = comboWidth({stageViews[0], stageViews[1], stageViews[2], stageViews[3]});
         sameLineIfFits(stageWidth);
         ImGui::SetNextItemWidth(stageWidth);
@@ -816,19 +816,19 @@ void DiffPanel::drawPlaceholder(const core::DiffFile& f)
     auto info = [](const std::string& text, const char* id) { plainText((text + "###" + id).c_str()); };
     if (f.oldMode && f.newMode && f.oldMode != f.newMode) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.hunkHeader);
-        info("Mode changed " + modeText(f.oldMode) + " \xe2\x86\x92 " + modeText(f.newMode), "diff_mode");
+        info("Mode changed " + modeText(f.oldMode) + " " ICON_MS_ARROW_RIGHT_ALT " " + modeText(f.newMode), "diff_mode");
         ImGui::PopStyleColor();
     }
     if (f.submodule) {
         info(std::string(ICON_MS_ACCOUNT_TREE " Submodule ") + f.path() + ": "
-                + (f.oldId.isNull() ? std::string("(none)") : f.oldId.shortHex(10)) + " \xe2\x86\x92 "
+                + (f.oldId.isNull() ? std::string("(none)") : f.oldId.shortHex(10)) + " " ICON_MS_ARROW_RIGHT_ALT " "
                 + (f.newId.isNull() ? std::string("(none)") : f.newId.shortHex(10)),
             "diff_submodule");
     } else if (f.binary && f.image) {
         info(std::string(ICON_MS_DATASET " Image ") + f.path() + ": " + imageText(f), "diff_image");
     } else if (f.binary) {
         info(std::string(ICON_MS_DESCRIPTION " Binary file ") + f.path() + ": " + std::to_string(f.oldSize)
-                + " \xe2\x86\x92 " + std::to_string(f.newSize) + " bytes",
+                + " " ICON_MS_ARROW_RIGHT_ALT " " + std::to_string(f.newSize) + " bytes",
             "diff_binary");
     }
     if (f.truncated) {
@@ -971,7 +971,7 @@ void DiffPanel::draw(bool* open)
     }
     drawToolbar();
     if (m_file) {
-        std::string title = m_file->oldPath.empty() ? m_file->path : m_file->oldPath + " \xe2\x86\x92 " + m_file->path;
+        std::string title = m_file->oldPath.empty() ? m_file->path : m_file->oldPath + " " ICON_MS_ARROW_RIGHT_ALT " " + m_file->path;
         if (m_selection.kind == SelKind::Stash)
             title += "  [" + std::string(groupName(m_file->group)) + " part]";
         ImGui::TextUnformatted(title.c_str());

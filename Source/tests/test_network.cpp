@@ -9,6 +9,7 @@
 
 #include "util/Env.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
 
 namespace ggtest {
@@ -141,8 +142,8 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     const std::string localMain = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
     // Badges: 1 ahead, 1 behind.
-    GG_CHECK(s.itemText("//###Toolbar/###tb_pull").find("\xe2\x86\x93" "1") != std::string::npos);
-    GG_CHECK(s.itemText("//###Toolbar/###tb_push").find("\xe2\x86\x91" "1") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_pull").find(ICON_MS_ARROW_DOWNWARD_ALT "1") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_push").find(ICON_MS_ARROW_UPWARD_ALT "1") != std::string::npos);
 
     popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch tags");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/tags/old-tag"}).ok(); }));
@@ -153,7 +154,7 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), localMain); // no automatic fast-forward / merge
-    GG_CHECK(s.waitUntil([&] { return s.itemText("//###Toolbar/###tb_pull").find("\xe2\x86\x93" "2") != std::string::npos; }));
+    GG_CHECK(s.waitUntil([&] { return s.itemText("//###Toolbar/###tb_pull").find(ICON_MS_ARROW_DOWNWARD_ALT "2") != std::string::npos; }));
 
     // A branch only on "second": fetch that remote from the dropdown.
     s.git(second, {"branch", "only-second", "main~1"});

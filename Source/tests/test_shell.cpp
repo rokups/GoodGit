@@ -8,6 +8,7 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
 
 #include <SDL3/SDL_events.h>
@@ -304,7 +305,7 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
     GG_CHECK(names[1].base == remote.filename().string());
     GG_CHECK_STR_EQ(s.app.recentRowText(0), names[0].text() + "  \xe2\x80\x94  main");
     GG_CHECK_STR_EQ(s.app.recentRowText(1),
-        names[1].text() + "  \xe2\x80\x94  main \xe2\x86\x92 origin/main \xe2\x86\x91" "1 \xe2\x86\x93" "1");
+        names[1].text() + "  \xe2\x80\x94  main " ICON_MS_ARROW_RIGHT_ALT " origin/main " ICON_MS_ARROW_UPWARD_ALT "1 " ICON_MS_ARROW_DOWNWARD_ALT "1");
 
     // Click a recent entry.
     ctx->ItemClick("//Welcome/recent_1/###row");
@@ -939,8 +940,8 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
     GG_REQUIRE(s.waitIdle());
-    GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main \xe2\x86\x92 origin/main") != std::string::npos; }));
-    GG_CHECK(s.app.recentRowText(0).find("\xe2\x86\x91") == std::string::npos); // no ahead/behind without the ref
+    GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main " ICON_MS_ARROW_RIGHT_ALT " origin/main") != std::string::npos; }));
+    GG_CHECK(s.app.recentRowText(0).find(ICON_MS_ARROW_UPWARD_ALT) == std::string::npos); // no ahead/behind without the ref
     GG_CHECK(s.app.recentRowText(1).rfind(notRepo.filename().string(), 0) != std::string::npos);
     GG_CHECK(s.app.recentRowText(2).find("  \xe2\x80\x94  main") != std::string::npos);
     fs::rename(s.path("was-a-repo.git"), notRepo / ".git");

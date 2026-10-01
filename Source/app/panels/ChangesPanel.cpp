@@ -725,7 +725,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     const bool selected = m_selected.count(key) != 0;
     std::string label = kindIcon(row.kind) + "  ";
     if (!row.oldPath.empty())
-        label += row.oldPath + " \xe2\x86\x92 " + row.path;
+        label += row.oldPath + " " ICON_MS_ARROW_RIGHT_ALT " " + row.path;
     else
         label += row.path;
     if (row.intentToAdd)

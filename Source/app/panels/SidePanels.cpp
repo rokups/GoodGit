@@ -9,6 +9,7 @@
 #include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
+#include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
@@ -351,13 +352,13 @@ void BranchesPanel::draw(bool* open)
         const auto& b = m_snapshot->branches[index];
         std::string label = shortName;
         if (!b.upstream.empty()) {
-            label += "  \xe2\x86\x92 " + b.upstream;
+            label += "  " ICON_MS_ARROW_RIGHT_ALT " " + b.upstream;
             if (b.upstreamGone)
                 label += " (gone)";
             if (b.ahead)
-                label += " \xe2\x86\x91" + std::to_string(b.ahead);
+                label += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(b.ahead);
             if (b.behind)
-                label += " \xe2\x86\x93" + std::to_string(b.behind);
+                label += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(b.behind);
         }
         if (!b.worktree.empty())
             label += "  [" + b.worktree + "]";
@@ -830,7 +831,7 @@ void ReflogPanel::draw(bool* open)
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(("r" + std::to_string(i)).c_str());
-                const std::string label = (e.oldId.isNull() ? std::string("0000000") : e.oldId.shortHex()) + " \xe2\x86\x92 "
+                const std::string label = (e.oldId.isNull() ? std::string("0000000") : e.oldId.shortHex()) + " " ICON_MS_ARROW_RIGHT_ALT " "
                     + e.newId.shortHex() + "###reflog_" + std::to_string(i);
                 selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
                 if (ImGui::BeginPopupContextItem("##reflog_menu")) {
@@ -894,7 +895,7 @@ void OperationsPanel::draw(bool* open)
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty()) {
                 ImGui::BeginTooltip();
                 for (const auto& r : op.refs)
-                    ImGui::Text("%s: %s \xe2\x86\x92 %s", r.ref.c_str(), r.oldValue.substr(0, 10).c_str(), r.newValue.substr(0, 10).c_str());
+                    ImGui::Text("%s: %s " ICON_MS_ARROW_RIGHT_ALT " %s", r.ref.c_str(), r.oldValue.substr(0, 10).c_str(), r.newValue.substr(0, 10).c_str());
                 ImGui::EndTooltip();
             }
             if (ImGui::BeginPopupContextItem("##op_menu")) {
