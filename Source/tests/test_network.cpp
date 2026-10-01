@@ -141,29 +141,29 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     const std::string localMain = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
     // Badges: 1 ahead, 1 behind.
-    GG_CHECK(s.itemText("//##Toolbar/###tb_pull").find("\xe2\x86\x93" "1") != std::string::npos);
-    GG_CHECK(s.itemText("//##Toolbar/###tb_push").find("\xe2\x86\x91" "1") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_pull").find("\xe2\x86\x93" "1") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_push").find("\xe2\x86\x91" "1") != std::string::npos);
 
-    popupItem(s, "//##Toolbar/###tb_fetch_menu", "Fetch tags");
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch tags");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/tags/old-tag"}).ok(); }));
     s.settle();
 
     remoteCommit(s, repo, "r2.txt", "two\n");
-    ctx->ItemClick("//##Toolbar/###tb_fetch");
+    ctx->ItemClick("//###Toolbar/###tb_fetch");
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), localMain); // no automatic fast-forward / merge
-    GG_CHECK(s.waitUntil([&] { return s.itemText("//##Toolbar/###tb_pull").find("\xe2\x86\x93" "2") != std::string::npos; }));
+    GG_CHECK(s.waitUntil([&] { return s.itemText("//###Toolbar/###tb_pull").find("\xe2\x86\x93" "2") != std::string::npos; }));
 
     // A branch only on "second": fetch that remote from the dropdown.
     s.git(second, {"branch", "only-second", "main~1"});
-    popupItem(s, "//##Toolbar/###tb_fetch_menu", "Fetch second");
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "second/only-second"}).ok(); }));
     s.settle();
 
     // Prune: the branch disappears on the remote.
     s.git(second, {"branch", "-D", "only-second"});
-    popupItem(s, "//##Toolbar/###tb_fetch_menu", "Fetch and prune");
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch and prune");
     GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "second/only-second"}).ok(); }));
     s.settle();
 
@@ -197,7 +197,7 @@ GG_TEST("network", "fetch from an unreachable remote reports the failure")
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"remote", "add", "dead", "git://127.0.0.1:1/nothing.git"});
     GG_REQUIRE(s.openRepository(repo));
-    popupItem(s, "//##Toolbar/###tb_fetch_menu", "Fetch dead");
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch dead");
     GG_CHECK(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
     GG_CHECK(s.dismissError());
     s.settle();
@@ -210,14 +210,14 @@ GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panel
     s.git(repo, {"config", "pull.rebase", "true"});
     GG_REQUIRE(s.openRepository(repo));
     auto linearOnOrigin = [&] { return rev(s, repo, "HEAD~1") == rev(s, repo, "origin/main"); };
-    ctx->ItemClick("//##Toolbar/###tb_pull");
+    ctx->ItemClick("//###Toolbar/###tb_pull");
     GG_CHECK(s.waitUntil(linearOnOrigin));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"log", "-1", "--format=%p"}).find(' ') == std::string::npos); // rebased, no merge
 
     remoteCommit(s, repo, "m.txt", "merge me\n");
     s.git(repo, {"fetch", "-q", "origin"});
-    popupItem(s, "//##Toolbar/###tb_pull_menu", "Pull (merge)");
+    popupItem(s, "//###Toolbar/###tb_pull_menu", "Pull (merge)");
     GG_CHECK(s.waitUntil([&] { return rev(s, repo, "HEAD^2") == rev(s, repo, "origin/main"); }));
     s.settle();
 
@@ -225,7 +225,7 @@ GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panel
     s.git(repo, {"fetch", "-q", "origin"});
     s.git(repo, {"config", "pull.rebase", "false"});
     s.commitFile(repo, "local2.txt", "l2\n", "Local two");
-    popupItem(s, "//##Toolbar/###tb_pull_menu", "Pull (rebase)");
+    popupItem(s, "//###Toolbar/###tb_pull_menu", "Pull (rebase)");
     // The local commits (both of them) are replayed on origin/main: no merges on top of it.
     GG_CHECK(s.waitUntil([&] {
         return s.gitMayFail(repo, {"merge-base", "--is-ancestor", "origin/main", "HEAD"}).ok()
@@ -238,7 +238,7 @@ GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panel
     s.git(repo, {"push", "-q", "origin", "main"});
     remoteCommit(s, repo, "ff1.txt", "ff\n");
     s.git(repo, {"fetch", "-q", "origin"});
-    popupItem(s, "//##Toolbar/###tb_pull_menu", "Pull (fast-forward only)");
+    popupItem(s, "//###Toolbar/###tb_pull_menu", "Pull (fast-forward only)");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == s.revParse(repo, "origin/main"); }));
     s.settle();
     remoteCommit(s, repo, "ff2.txt", "ff\n");
@@ -265,17 +265,17 @@ GG_TEST("network", "pull disabled when detached or without upstream; Stash and p
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
     s.git(repo, {"switch", "-q", "--detach"});
-    GG_CHECK(s.waitUntil([&] { return disabled(s, "//##Toolbar/###tb_pull"); }));
+    GG_CHECK(s.waitUntil([&] { return disabled(s, "//###Toolbar/###tb_pull"); }));
     std::string reason;
     GG_CHECK(!s.session()->pullAvailable(&reason));
     GG_CHECK(reason.find("detached") != std::string::npos);
     s.git(repo, {"switch", "-q", "-c", "no-upstream"});
     GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "no-upstream"; }));
-    GG_CHECK(disabled(s, "//##Toolbar/###tb_pull"));
+    GG_CHECK(disabled(s, "//###Toolbar/###tb_pull"));
     GG_CHECK(!s.session()->pullAvailable(&reason));
     GG_CHECK(reason.find("upstream") != std::string::npos);
     s.git(repo, {"switch", "-q", "main"});
-    GG_CHECK(s.waitUntil([&] { return !disabled(s, "//##Toolbar/###tb_pull"); }));
+    GG_CHECK(s.waitUntil([&] { return !disabled(s, "//###Toolbar/###tb_pull"); }));
 
     // Incoming change to o1.txt, local uncommitted edit of o1.txt.
     remoteCommit(s, repo, "o1.txt", "remote edit\n");
@@ -283,7 +283,7 @@ GG_TEST("network", "pull disabled when detached or without upstream; Stash and p
     s.write(repo, "local-only.txt", "local uncommitted\n");
     s.write(repo, "o1.txt", "local uncommitted\n");
     s.git(repo, {"config", "pull.rebase", "false"});
-    ctx->ItemClick("//##Toolbar/###tb_pull");
+    ctx->ItemClick("//###Toolbar/###tb_pull");
     GG_REQUIRE(s.dialogOpen("Stash and pull"));
     s.dialogButton("Stash and pull", "Stash and pull");
     GG_CHECK(s.waitUntil([&] { return rev(s, repo, "HEAD^2") == rev(s, repo, "origin/main"); }));
@@ -297,7 +297,7 @@ GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefi
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"pull", "-q", "--rebase", "origin", "main"});
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", s.head(repo)); }));
     s.settle();
     s.commitFile(repo, "p2.txt", "2\n", "Push two");
@@ -316,7 +316,7 @@ GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefi
     // No upstream: toolbar Push opens Push to with --set-upstream checked.
     s.git(repo, {"switch", "-q", "-c", "topic"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "topic"; }));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push to"));
     GG_CHECK(s.app.dialogs().current()->checked("set_upstream"));
     s.dialogButton("Push to", "Push");
@@ -325,7 +325,7 @@ GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefi
     GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "--abbrev-ref", "topic@{upstream}"}), "origin/topic");
 
     // Push to... from the dropdown and Branches, under other remote branch names.
-    popupItem(s, "//##Toolbar/###tb_push_menu", "Push to...");
+    popupItem(s, "//###Toolbar/###tb_push_menu", "Push to...");
     GG_REQUIRE(s.dialogOpen("Push to"));
     s.dialogText("Push to", "branch", "renamed-a");
     s.dialogButton("Push to", "Push");
@@ -348,7 +348,7 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push rejected"));
     s.dialogButton("Push rejected", "Pull then push");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", s.head(repo)); }));
@@ -360,7 +360,7 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
     s.git(repo, {"fetch", "-q", "origin"});
     s.commitFile(repo, "mine.txt", "mine\n", "Mine");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->outgoing() == 1 && s.session()->incoming() == 1; }));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push rejected"));
     s.dialogButton("Push rejected", "Force with lease...");
     GG_REQUIRE(s.dialogOpen("Force push"));
@@ -372,14 +372,14 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
     s.git(repo, {"commit", "-q", "--amend", "-m", "Mine, amended"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->outgoing() == 1 && s.session()->incoming() == 1; }));
     s.settle();
-    popupItem(s, "//##Toolbar/###tb_push_menu", "Force with lease...");
+    popupItem(s, "//###Toolbar/###tb_push_menu", "Force with lease...");
     GG_REQUIRE(s.dialogOpen("Force push"));
     s.dialogButton("Force push", "Force push");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", s.head(repo)); }));
     s.settle();
 
     s.git(repo, {"tag", "v1"});
-    popupItem(s, "//##Toolbar/###tb_push_menu", "Push tags");
+    popupItem(s, "//###Toolbar/###tb_push_menu", "Push tags");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "refs/tags/v1", s.head(repo)); }));
     s.settle();
 }
@@ -396,7 +396,7 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
     s.git(repo, {"branch", "--set-upstream-to=origin/main", "main"});
     const std::string conflicted = s.revParse(repo, "main~1");
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push refused"));
     const ggui::Form* f = s.app.dialogs().current();
     GG_REQUIRE(f != nullptr);
@@ -429,7 +429,7 @@ GG_TEST("network", "push is refused when outgoing commits left broken conflict m
     s.git(repo, {"add", "conflict.txt"});
     s.git(repo, {"commit", "-q", "-m", "Break the region"});
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push refused"));
     const ggui::Form* f = s.app.dialogs().current();
     GG_REQUIRE(f != nullptr);
@@ -479,12 +479,12 @@ GG_TEST("network", "remote actions are disabled while a mutation runs; browsing 
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
     gg::setSlowGitLatency(std::chrono::milliseconds(1500));
-    ctx->ItemClick("//##Toolbar/###tb_fetch");
+    ctx->ItemClick("//###Toolbar/###tb_fetch");
     const bool busy = s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 5.0f);
     GG_CHECK(busy);
     ctx->Yield(2);
-    GG_CHECK(disabled(s, "//##Toolbar/###tb_fetch"));
-    GG_CHECK(disabled(s, "//##Toolbar/###tb_push"));
+    GG_CHECK(disabled(s, "//###Toolbar/###tb_fetch"));
+    GG_CHECK(disabled(s, "//###Toolbar/###tb_push"));
     GG_CHECK(!s.session()->activities().empty());
     // Browsing: selecting another commit still works.
     const std::string older = s.revParse(repo, "HEAD~1");
@@ -493,7 +493,7 @@ GG_TEST("network", "remote actions are disabled while a mutation runs; browsing 
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
     GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }));
     s.settle();
-    GG_CHECK(!disabled(s, "//##Toolbar/###tb_fetch"));
+    GG_CHECK(!disabled(s, "//###Toolbar/###tb_fetch"));
 }
 
 GG_TEST("network", "clone over git://: the server's progress shows its phase, not \"remote\"")

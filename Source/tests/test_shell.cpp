@@ -34,7 +34,7 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu")
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.session() && s.session()->opened());
-    GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_branch"), "main");
+    GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_branch"), "main");
     // Default dock layout: Branches|Tags, Remotes|Stashes|Worktrees, History, Changes,
     // Change information, Diff (Blame, Reflog and Operations join it when shown; hidden at first).
     ctx->Yield(3);
@@ -237,7 +237,7 @@ GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Dele
     // Most recent first: c, b, a.
     auto comboItem = [&](size_t i) { return std::string("//$FOCUSED/###switch_") + std::to_string(i); };
     auto y = [&](size_t i) { return ctx->ItemInfo(comboItem(i).c_str()).RectFull.Min.y; };
-    ctx->ItemClick("//##Toolbar/##tb_repo");
+    ctx->ItemClick("//###Toolbar/##tb_repo");
     ctx->Yield(2);
     GG_CHECK(s.itemLabel(comboItem(0).c_str()).find("alpha") == 0);
     GG_CHECK(s.itemLabel(comboItem(1).c_str()).find("right/proj") == 0);
@@ -249,7 +249,7 @@ GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Dele
 
     // Alphabetical: alpha, left/proj, right/proj (storage indices 0, 2, 1).
     st.data().recentOrder = ggui::RecentOrder::Alphabetical;
-    ctx->ItemClick("//##Toolbar/##tb_repo");
+    ctx->ItemClick("//###Toolbar/##tb_repo");
     ctx->Yield(2);
     GG_CHECK(y(0) < y(2) && y(2) < y(1));
     // Delete on the current repository (alpha) does nothing.
@@ -312,7 +312,7 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
     s.waitIdle();
 
     // Toolbar switcher: back to the other repository.
-    s.comboSelect("//##Toolbar/##tb_repo", "###switch_1");
+    s.comboSelect("//###Toolbar/##tb_repo", "###switch_1");
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && s.session()->path() == linear; }));
     s.waitIdle();
 
@@ -389,7 +389,7 @@ GG_TEST("shell", "repository kinds: bare, unborn, linked worktree, SHA-256, deta
     const fs::path unborn = s.fixture(Recipe::Unborn);
     GG_REQUIRE(s.openRepository(unborn));
     GG_CHECK(s.session()->snapshot()->headUnborn);
-    GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_branch"), "main");
+    GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_branch"), "main");
     GG_CHECK(s.session()->history().rows().empty());
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->untracked.size() == 1; }));
 
@@ -397,7 +397,7 @@ GG_TEST("shell", "repository kinds: bare, unborn, linked worktree, SHA-256, deta
     const fs::path wt1 = s.root() / (wts.filename().string() + "-wt1");
     GG_REQUIRE(s.openRepository(wt1));
     GG_CHECK_STR_EQ(s.session()->snapshot()->worktreeId, wt1.filename().string());
-    GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_branch"), "wt1");
+    GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_branch"), "wt1");
 
     const fs::path sha = s.fixture(Recipe::Sha256);
     GG_REQUIRE(s.openRepository(sha));
@@ -408,7 +408,7 @@ GG_TEST("shell", "repository kinds: bare, unborn, linked worktree, SHA-256, deta
     const fs::path linear = s.fixture(Recipe::Linear);
     s.git(linear, {"switch", "-q", "--detach", "HEAD~1"});
     GG_REQUIRE(s.openRepository(linear));
-    GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_branch"), "detached");
+    GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_branch"), "detached");
 }
 
 GG_TEST("shell", "repository state badge")
@@ -419,7 +419,7 @@ GG_TEST("shell", "repository state badge")
     for (const auto& [recipe, badge] : cases) {
         const fs::path repo = s.fixture(recipe);
         GG_REQUIRE(s.openRepository(repo));
-        const std::string text = s.itemText("//##Toolbar/###tb_state");
+        const std::string text = s.itemText("//###Toolbar/###tb_state");
         if (text.rfind(badge, 0) != 0)
             ctx->LogError("%s: badge '%s', expected '%s'", recipeName(recipe), text.c_str(), badge);
         GG_CHECK(text.rfind(badge, 0) == 0);
@@ -435,7 +435,7 @@ GG_TEST("shell", "repository state badge")
     GG_CHECK(s.session()->snapshot()->state == ggui::core::RepoState::Rebasing);
     const fs::path clean = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(clean));
-    GG_CHECK(!s.itemExists("//##Toolbar/###tb_state"));
+    GG_CHECK(!s.itemExists("//###Toolbar/###tb_state"));
 }
 
 GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settings, quit")
@@ -454,7 +454,7 @@ GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settin
     ctx->KeyPress(ImGuiKey_F5);
     GG_CHECK(s.waitUntil([&] { return generation() > g; }));
     g = generation();
-    ctx->ItemClick("//##Toolbar/###tb_refresh");
+    ctx->ItemClick("//###Toolbar/###tb_refresh");
     GG_CHECK(s.waitUntil([&] { return generation() > g; }));
 
     ctx->MenuClick("//##MainMenuBar/Repository/Open working directory");
@@ -463,7 +463,7 @@ GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settin
     }));
     // The toolbar folder button opens it too.
     s.write(opened.parent_path(), opened.filename().string(), "");
-    ctx->ItemClick("//##Toolbar/###tb_open");
+    ctx->ItemClick("//###Toolbar/###tb_open");
     GG_CHECK(s.waitUntil([&] {
         return s.read(opened.parent_path(), opened.filename().string()).find(repo.string()) != std::string::npos;
     }));
@@ -575,21 +575,24 @@ GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID")
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     const std::string shortHead = s.gitOut(repo, {"rev-parse", "--short", "HEAD"});
-    GG_CHECK_STR_EQ(s.itemText("//##Toolbar/###tb_head"), shortHead);
+    GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_head"), shortHead);
     // Plain text: clicking it neither selects anything nor highlights it.
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
-    ctx->ItemClick("//##Toolbar/###tb_head");
-    ctx->ItemClick("//##Toolbar/###tb_branch");
+    ctx->ItemClick("//###Toolbar/###tb_head");
+    ctx->ItemClick("//###Toolbar/###tb_branch");
     ctx->Yield(3);
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
     GG_CHECK(ImGui::GetActiveID() == 0);
-    ctx->MouseMove("//##Toolbar/###tb_head");
-    GG_CHECK(!s.itemDrawsBackground("//##Toolbar/###tb_head") && !s.itemDrawsBackground("//##Toolbar/###tb_branch"));
+    ctx->MouseMove("//###Toolbar/###tb_head");
+    GG_CHECK(!s.itemDrawsBackground("//###Toolbar/###tb_head") && !s.itemDrawsBackground("//###Toolbar/###tb_branch"));
+    // The window navigator (Ctrl+Tab) lists the toolbar by its title, not "(Untitled)".
+    ImGuiWindow* toolbar = ctx->GetWindowByRef("//###Toolbar");
+    GG_CHECK(toolbar && ImGui::FindRenderedTextEnd(toolbar->Name) != toolbar->Name);
     // Right-click still offers Copy ID: short by default, full with Shift.
-    ctx->ItemClick("//##Toolbar/###tb_head", ImGuiMouseButton_Right);
+    ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
     ctx->MenuClick("//$FOCUSED/###Copy ID");
     GG_CHECK_STR_EQ(s.clipboard(), shortHead);
-    ctx->ItemClick("//##Toolbar/###tb_head", ImGuiMouseButton_Right);
+    ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
     ctx->KeyDown(ImGuiMod_Shift);
     ctx->MenuClick("//$FOCUSED/###Copy ID");
     ctx->KeyUp(ImGuiMod_Shift);
@@ -603,16 +606,16 @@ GG_TEST("shell", "activity spinner, task tooltip and Cancel")
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
     gg::setSlowGitLatency(std::chrono::milliseconds(10000));
     ctx->KeyPress(ImGuiKey_F6); // selects a file: the diff request is now slow
-    GG_CHECK(s.waitUntil([&] { return s.itemExists("//##Toolbar/##tb_activity"); }, 5.0f));
-    ctx->MouseMove("//##Toolbar/##tb_activity");
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//###Toolbar/##tb_activity"); }, 5.0f));
+    ctx->MouseMove("//###Toolbar/##tb_activity");
     ctx->Yield(3);
     ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_CHECK(tip != nullptr && tip->Active);
     GG_CHECK(!s.session()->activities().empty());
-    ctx->ItemClick("//##Toolbar/Cancel##tb_cancel");
+    ctx->ItemClick("//###Toolbar/Cancel##tb_cancel");
     GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, 5.0f));
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
-    GG_CHECK(s.waitUntil([&] { return !s.itemExists("//##Toolbar/##tb_activity"); }, 5.0f));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists("//###Toolbar/##tb_activity"); }, 5.0f));
 }
 
 GG_TEST("shell", "unusual repository states: sequences between commits, detached rebase, odd remotes, tags, stash and worktrees")
@@ -658,7 +661,7 @@ GG_TEST("shell", "unusual repository states: sequences between commits, detached
     GG_CHECK(!s.gitMayFail(repo, {"rebase", "main"}).ok());
     GG_CHECK(s.waitUntil([&] { return snap()->state == ggui::core::RepoState::RebasingInteractive; }));
     GG_CHECK_STR_EQ(snap()->stateOnto, "detached HEAD");
-    GG_CHECK(s.itemText("//##Toolbar/###tb_state").rfind("REBASING", 0) == 0);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_state").rfind("REBASING", 0) == 0);
     s.git(repo, {"rebase", "--abort"});
     s.git(repo, {"switch", "-q", "main"});
 
@@ -745,7 +748,7 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     const std::string head = s.head(repo);
     const std::string refsBefore = s.gitOut(repo, {"for-each-ref"});
 
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.dialogText("Commit", "message", "Waits for the hook");
     s.dialogButton("Commit", "Commit");
@@ -879,13 +882,13 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
     // Force with lease against the upstream asks first; Push tags goes to the upstream's remote.
-    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//###Toolbar/###tb_push_menu");
     ctx->ItemClick("//$FOCUSED/Force with lease...");
     GG_REQUIRE(s.dialogOpen("Force push"));
     GG_CHECK(s.app.dialogs().current()->message.find("(--force-with-lease)") != std::string::npos);
     s.dialogButton("Force push", "Cancel");
     s.git(repo, {"tag", "pushed-tag"});
-    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//###Toolbar/###tb_push_menu");
     ctx->ItemClick("//$FOCUSED/Push tags");
     const fs::path remote = fs::path(s.gitOut(repo, {"remote", "get-url", "origin"}).substr(7));
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(remote, {"rev-parse", "-q", "--verify", "refs/tags/pushed-tag"}).ok(); }));
@@ -893,12 +896,12 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     // Without an upstream, Force with lease is a Push to.
     s.git(repo, {"switch", "-q", "-c", "local-only"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "local-only"; }));
-    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//###Toolbar/###tb_push_menu");
     ctx->ItemClick("//$FOCUSED/Force with lease...");
     GG_REQUIRE(s.dialogOpen("Push to"));
     s.dialogButton("Push to", "Cancel");
     // HEAD's full ID on hover.
-    ctx->MouseMove("//##Toolbar/###tb_head");
+    ctx->MouseMove("//###Toolbar/###tb_head");
     ctx->SleepNoSkip(1.0f, 0.1f);
     // A rebase of a detached HEAD, stopped: the progress view names it.
     s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
@@ -907,8 +910,8 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     ggui::setEnv("GIT_SEQUENCE_EDITOR", "cp '" + list.generic_string() + "'");
     s.git(repo, {"rebase", "-q", "-i", "HEAD~1"});
     ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//##Toolbar/Progress##tb_rebase_progress"); }));
-    ctx->ItemClick("//##Toolbar/Progress##tb_rebase_progress");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Progress##tb_rebase_progress"); }));
+    ctx->ItemClick("//###Toolbar/Progress##tb_rebase_progress");
     ctx->Yield(2);
     GG_CHECK(s.textShown("//$FOCUSED", "Rebasing detached"));
     ctx->KeyPress(ImGuiKey_Escape);

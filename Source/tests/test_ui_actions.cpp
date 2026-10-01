@@ -131,7 +131,7 @@ GG_TEST("ui", "toolbar Push options ▸ Force with lease overwrites the upstream
     const std::string remoteOnly = s.revParse(repo, "origin/main");
     const std::string local = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_push_menu");
+    ctx->ItemClick("//###Toolbar/###tb_push_menu");
     ctx->ItemClick("//$FOCUSED/Force with lease...");
     GG_REQUIRE(s.dialogOpen("Force push"));
     s.dialogButton("Force push", "Force push");
@@ -175,12 +175,12 @@ GG_TEST("ui", "Redo that would overwrite local changes offers Stash and redo")
     s.contextMenu(branchRow("other").c_str(), "Check out");
     GG_REQUIRE(s.waitUntil([&] { return symbolicHead(s, repo) == "other"; }));
     s.settle();
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_REQUIRE(s.waitUntil([&] { return symbolicHead(s, repo) == "main"; }));
     s.settle();
     // Redo switches to other again, which would overwrite this edit.
     s.write(repo, "f1.txt", "edited before the redo\n");
-    ctx->ItemClick("//##Toolbar/###tb_redo");
+    ctx->ItemClick("//###Toolbar/###tb_redo");
     GG_REQUIRE(s.dialogOpen("Undo would lose changes"));
     s.dialogButton("Undo would lose changes", "Stash and redo");
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "other"; }));
@@ -339,9 +339,9 @@ GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(rowShown(s, head));
     ctx->ItemClick(rowRef(head).c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.itemText("//##Toolbar/###tb_commit").find("Amend") != std::string::npos; }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemText("//###Toolbar/###tb_commit").find("Amend") != std::string::npos; }));
     // The hook refuses a plain amend.
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Amend"));
     s.dialogText("Amend", "message", "Amended past the hook");
     s.dialogButton("Amend", "Amend");
@@ -350,7 +350,7 @@ GG_TEST("ui", "toolbar Amend with HEAD selected; Skip hooks on Amend")
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), head);
     // Skip hooks: git commit --amend --no-verify.
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Amend"));
     s.dialogText("Amend", "message", "Amended past the hook");
     s.dialogCheck("Amend", "skip_hooks", "Skip hooks (--no-verify)");
@@ -390,8 +390,8 @@ GG_TEST("ui", "a stopped cherry-pick: Skip, and Commit with conflicts")
     GG_REQUIRE(picking(skipped));
     const std::string head = s.head(skipped);
     GG_REQUIRE(s.openRepository(skipped));
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//##Toolbar/Skip##tb_skip"); }));
-    ctx->ItemClick("//##Toolbar/Skip##tb_skip");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Skip##tb_skip"); }));
+    ctx->ItemClick("//###Toolbar/Skip##tb_skip");
     GG_CHECK(s.waitUntil([&] { return !picking(skipped); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(skipped), head);
@@ -401,8 +401,8 @@ GG_TEST("ui", "a stopped cherry-pick: Skip, and Commit with conflicts")
     const fs::path committed = s.fixture(Recipe::MidCherryPick, "commit");
     const std::string before = s.head(committed);
     GG_REQUIRE(s.openRepository(committed));
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//##Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
-    ctx->ItemClick("//##Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
     GG_CHECK(s.waitUntil([&] { return !picking(committed); }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(committed, "HEAD~1"), before);

@@ -84,7 +84,7 @@ GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local cha
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("Nothing to undo") != std::string::npos);
     // Nothing to redo: nothing was undone, or something new came after the undo.
@@ -121,7 +121,7 @@ GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local cha
     const std::string beforePlain = repoState(s, repo);
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "Plain git"});
     GG_CHECK(repoState(s, repo) != beforePlain);
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(undone(s, repo, beforePlain));
     GG_CHECK(s.app.dialogs().current() == nullptr);
     GG_CHECK(opsFrom(s, "git") >= 1);
@@ -137,7 +137,7 @@ GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local cha
     GG_REQUIRE(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "other"; }));
     s.settle();
     s.write(repo, "f1.txt", "edited after the checkout\n");
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_REQUIRE(s.dialogOpen("Undo would lose changes"));
     s.dialogButton("Undo would lose changes", "Stash and undo");
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "main"; }));
@@ -262,7 +262,7 @@ GG_TEST("undo", "every everyday mutation can be undone")
     check("stage", [&] { s.contextMenu((s.child("//Changes", "##files") + "/Untracked/f.txt/###file_f.txt").c_str(), "Stage"); });
     s.git(repo, {"add", "f.txt"});
     check("commit", [&] {
-        ctx->ItemClick("//##Toolbar/###tb_commit");
+        ctx->ItemClick("//###Toolbar/###tb_commit");
         s.dialogOpen("Commit");
         s.dialogText("Commit", "message", "Undo me");
         s.dialogButton("Commit", "Commit");
@@ -275,7 +275,7 @@ GG_TEST("undo", "every everyday mutation can be undone")
         s.dialogButton("Amend", "Amend");
     });
     check("stash", [&] {
-        ctx->ItemClick("//##Toolbar/###tb_stash");
+        ctx->ItemClick("//###Toolbar/###tb_stash");
         s.dialogOpen("Stash changes");
         s.dialogButton("Stash changes", "Stash");
     });
@@ -283,7 +283,7 @@ GG_TEST("undo", "every everyday mutation can be undone")
     s.git(other, {"pull", "-q", "--no-rebase", "origin", "main"});
     s.commitFile(other, "fetched.txt", "x\n", "To fetch");
     s.git(other, {"push", "-q", "origin", "main"});
-    check("fetch", [&] { ctx->ItemClick("//##Toolbar/###tb_fetch"); });
+    check("fetch", [&] { ctx->ItemClick("//###Toolbar/###tb_fetch"); });
     check("move HEAD to parent", [&] { ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent"); });
 }
 
@@ -535,7 +535,7 @@ GG_TEST("undo", "failed operations are passed over by Undo and Redo")
         s.write(repo, "f1.txt", "staged\n");
         s.git(repo, {"add", "f1.txt"});
         GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
-        ctx->ItemClick("//##Toolbar/###tb_commit");
+        ctx->ItemClick("//###Toolbar/###tb_commit");
         GG_REQUIRE(s.dialogOpen("Commit"));
         s.dialogText("Commit", "message", "Refused");
         s.dialogButton("Commit", "Commit");

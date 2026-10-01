@@ -51,12 +51,12 @@ Repo makeRepo(Scenario& s)
 std::string historyRow(const std::string& hex) { return "//History/**/###row_" + hex; }
 std::string irRow(const std::string& hex) { return "//Interactive rebase/**/###ir_" + hex; }
 std::string irWidget(const char* id) { return std::string("//Interactive rebase/###") + id; }
-const char* kContinue = "//##Toolbar/Continue##tb_continue";
-const char* kAbort = "//##Toolbar/Abort##tb_abort";
-const char* kAmendContinue = "//##Toolbar/Amend and continue##tb_amend_continue";
-const char* kEditTodo = "//##Toolbar/Edit remaining todo##tb_edit_todo";
-const char* kProgress = "//##Toolbar/Progress##tb_rebase_progress";
-const char* kCommitConflicts = "//##Toolbar/Commit with conflicts##tb_commit_conflicts";
+const char* kContinue = "//###Toolbar/Continue##tb_continue";
+const char* kAbort = "//###Toolbar/Abort##tb_abort";
+const char* kAmendContinue = "//###Toolbar/Amend and continue##tb_amend_continue";
+const char* kEditTodo = "//###Toolbar/Edit remaining todo##tb_edit_todo";
+const char* kProgress = "//###Toolbar/Progress##tb_rebase_progress";
+const char* kCommitConflicts = "//###Toolbar/Commit with conflicts##tb_commit_conflicts";
 
 ggui::RebasePanel& editor(Scenario& s) { return s.session()->rebase(); }
 
@@ -258,7 +258,7 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     // Stop 1: edit c2. The progress view: nothing done yet, stopped at edit c2, the rest to come.
     GG_REQUIRE(stoppedAt(s, "edit"));
     GG_CHECK(toastWith(s, "Interactive rebase stopped"));
-    GG_CHECK(s.itemText("//##Toolbar/###tb_state").rfind("REBASING", 0) == 0);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_state").rfind("REBASING", 0) == 0);
     {
         const auto snap = s.session()->snapshot();
         GG_CHECK_STR_EQ(snap->rebase->done.back().commit, r.c[2]);
@@ -309,7 +309,7 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i)"), 1u);
     GG_CHECK_EQ(countWith(ops, "--continue"), 0u);
     GG_CHECK_EQ(countWith(ops, "amend and continue"), 0u);
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), r.c[3]);
@@ -475,7 +475,7 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     GG_CHECK_EQ(countWith(ops, "[git] "), 1u);
     GG_CHECK_EQ(countWith(ops, "git rebase"), 1u);
     GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), r.c[3]);
@@ -509,7 +509,7 @@ GG_TEST("rebase-native", "plain git rebase -i started as a test step, edited in 
     }
     GG_CHECK(!fs::exists(r.path / ".git" / "gg" / "rebase"));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") == r.c[5]; }));
     s.settle();
     GG_CHECK_EQ(countWith(operations(s, r.path), "[git] "), 1u); // no "git rebase" from the terminal's part
@@ -605,7 +605,7 @@ GG_TEST("rebase-native", "git rebase -i refusals and options: moved branch, git 
     GG_CHECK_STR_EQ(s.session()->snapshot()->rebase->done.back().commit, c2);
     auto lines = progress(s);
     GG_CHECK(contains(lines, "Continue to go on (or Skip this commit)."));
-    ctx->ItemClick("//##Toolbar/Skip##tb_skip");
+    ctx->ItemClick("//###Toolbar/Skip##tb_skip");
     GG_REQUIRE(stoppedAt(s, "break"));
     lines = progress(s);
     GG_CHECK(contains(lines, "(nothing: Continue finishes the rebase)"));
@@ -674,7 +674,7 @@ GG_TEST("rebase-native", "conflicted input: git rebase -i stops at edit on a com
 
     // One operation: one Undo restores the original commits.
     GG_CHECK_EQ(countWith(operations(s, path), "interactive rebase (git rebase -i)"), 1u);
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.revParse(path, "main") == tip; }));
     s.settle();
     GG_CHECK(!fs::exists(path / "e.txt"));
@@ -717,7 +717,7 @@ GG_TEST("rebase-native", "failure paths: pre-rebase veto leaves no rebase; a cor
     const auto ops = operations(s, r.path);
     GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i)"), 2u);
     GG_CHECK_EQ(countWith(ops, "interactive rebase (git rebase -i) (failed)"), 1u);
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return s.refs(r.path) == refsBefore; }));
     s.settle();
     GG_CHECK(s.statusPorcelain(r.path).empty());

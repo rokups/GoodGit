@@ -155,16 +155,16 @@ GG_MANUAL_TEST("gallery", "toolbar dropdowns and tooltip")
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     for (const char* n : {"fetch", "pull", "push"}) {
-        const std::string b = std::string("//##Toolbar/###tb_") + n + "_menu";
+        const std::string b = std::string("//###Toolbar/###tb_") + n + "_menu";
         ctx->ItemClick(b.c_str());
         ctx->Yield(3);
         shot(s, std::string("toolbar-") + n + "-menu");
         closePopups(s);
     }
-    ctx->MouseMove("//##Toolbar/###tb_commit");
+    ctx->MouseMove("//###Toolbar/###tb_commit");
     ctx->SleepNoSkip(1.2f, 0.1f);
     shot(s, "tooltip-toolbar-commit");
-    ctx->MouseMove("//##Toolbar/###tb_push");
+    ctx->MouseMove("//###Toolbar/###tb_push");
     ctx->SleepNoSkip(1.2f, 0.1f);
     shot(s, "tooltip-toolbar-push");
 }
@@ -187,8 +187,8 @@ GG_MANUAL_TEST("gallery", "dialogs")
         if (s.itemExists((std::string("//") + title + "/Cancel").c_str()))
             s.dialogButton(title, "Cancel");
     };
-    dialog("Commit", "dialog-commit", [&] { ctx->ItemClick("//##Toolbar/###tb_commit"); });
-    dialog("Stash changes", "dialog-stash", [&] { ctx->ItemClick("//##Toolbar/###tb_stash"); });
+    dialog("Commit", "dialog-commit", [&] { ctx->ItemClick("//###Toolbar/###tb_commit"); });
+    dialog("Stash changes", "dialog-stash", [&] { ctx->ItemClick("//###Toolbar/###tb_stash"); });
     s.showPanel("Branches");
     dialog("Create branch", "dialog-create-branch", [&] { ctx->ItemClick("//Branches/###create_branch"); });
     s.showPanel("Tags");
@@ -208,7 +208,7 @@ GG_MANUAL_TEST("gallery", "push dialog")
     GG_REQUIRE(s.openRepository(repo));
     s.git(repo, {"switch", "-q", "-c", "topic"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "topic"; }));
-    ctx->ItemClick("//##Toolbar/###tb_push");
+    ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push to"));
     shot(s, "dialog-push");
 }
@@ -322,7 +322,7 @@ GG_MANUAL_TEST("gallery", "light theme and 150 percent")
     ctx->Yield(3);
     shot(s, "menu-light-Repository");
     closePopups(s);
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     if (s.dialogOpen("Commit"))
         shot(s, "dialog-light-commit");
 }

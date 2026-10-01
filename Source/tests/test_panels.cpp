@@ -275,7 +275,7 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\necho no >&2\nexit 1\n");
     fs::permissions(repo / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
     s.git(repo, {"add", "dirty.txt"});
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.dialogText("Commit", "message", "Refused");
     s.dialogButton("Commit", "Commit");

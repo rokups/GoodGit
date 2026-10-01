@@ -180,7 +180,7 @@ GG_TEST("visual", "text shares a baseline across widgets on one line")
             s.showPanel(panel);
             expectBaselines(ctx, (at + panel).c_str(), ok);
         }
-        ctx->ItemClick("//##Toolbar/###tb_commit");
+        ctx->ItemClick("//###Toolbar/###tb_commit");
         GG_REQUIRE(s.dialogOpen("Commit"));
         expectBaselines(ctx, (at + "commit dialog").c_str(), ok);
         s.dialogButton("Commit", "Cancel");
@@ -189,7 +189,7 @@ GG_TEST("visual", "text shares a baseline across widgets on one line")
     // Mid-merge: the state badge and its buttons share the toolbar's baseline.
     const fs::path merge = s.fixture(Recipe::MidMerge);
     GG_REQUIRE(s.openRepository(merge));
-    GG_REQUIRE(s.itemExists("//##Toolbar/###tb_state"));
+    GG_REQUIRE(s.itemExists("//###Toolbar/###tb_state"));
     expectBaselines(ctx, "mid-merge", ok);
     GG_CHECK(ok);
 }

@@ -23,7 +23,7 @@ rename is a spec change. Window names are fixed (`"History"`, `"Changes"` …); 
 
 ### 1.1 Main window
 - Title: `ggui` when no repository is open; `<repo name> — ggui` otherwise.
-- Top to bottom: main menu bar, toolbar (window `"##Toolbar"`), (no error banner: see 1.5),
+- Top to bottom: main menu bar, toolbar (window `"Toolbar###Toolbar"`, titled "Toolbar" in the window navigator), (no error banner: see 1.5),
   dock space (`"##DockSpace"`).
 - Repository-state badge and prompts appear in the toolbar row.
 
@@ -57,7 +57,7 @@ then opens the todo editor for HEAD, §4.13).
 Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations) · Previous changed file
 `Shift+F6` · Next changed file `F6` · Reset layout.
 
-### 1.4 Toolbar — window `"##Toolbar"` (K + N)
+### 1.4 Toolbar — window `"Toolbar###Toolbar"` (K + N)
 Left to right, each button has a tooltip with its shortcut:
 New `##tb_new` · Commit/Amend `##tb_commit` (label "Commit" when the working tree/index is
 selected, "Amend" when HEAD is selected) · Undo `##tb_undo` ·

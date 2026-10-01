@@ -18,7 +18,7 @@ GG_TEST("harness", "smoke: welcome screen")
     // The tagline speaks Git, not "changes".
     ImGuiWindow* w = ctx->GetWindowByRef("//Welcome");
     GG_REQUIRE(w != nullptr);
-    GG_CHECK(s.itemExists("//##Toolbar/###tb_open"));
+    GG_CHECK(s.itemExists("//###Toolbar/###tb_open"));
     // Every main menu opens without a repository; what needs one is disabled.
     for (const char* menu : {"Repository", "Commit", "Edit", "View"}) {
         ctx->MenuClick((std::string("//##MainMenuBar/") + menu).c_str());

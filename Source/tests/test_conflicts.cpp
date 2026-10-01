@@ -53,7 +53,7 @@ GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message,
     const std::string theirs = s.revParse(repo, "theirs");
     GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(s.itemText("//History/**/###row_wt").find("conflicts") != std::string::npos);
-    GG_CHECK(s.itemExists("//##Toolbar/###tb_state"));
+    GG_CHECK(s.itemExists("//###Toolbar/###tb_state"));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "f.txt").c_str()); }));
     ctx->ItemClick(fileRef(s, "Conflicted", "f.txt").c_str());
     s.showPanel("Diff");
@@ -74,7 +74,7 @@ GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message,
     ctx->ItemClick("//Change information/Save message##save_merge_message");
     GG_CHECK(s.waitUntil([&] { return s.read(repo / ".git", "MERGE_MSG").rfind("Merged by the test", 0) == 0; }));
     s.settle();
-    ctx->ItemClick("//##Toolbar/Continue##tb_continue");
+    ctx->ItemClick("//###Toolbar/Continue##tb_continue");
     GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^2"), theirs);
@@ -86,7 +86,7 @@ GG_TEST("conflicts", "native: abort a merge, skip a rebase step")
     const fs::path merge = s.fixture(Recipe::MidMerge);
     const std::string head = s.head(merge);
     GG_REQUIRE(s.openRepository(merge));
-    ctx->ItemClick("//##Toolbar/Abort##tb_abort");
+    ctx->ItemClick("//###Toolbar/Abort##tb_abort");
     GG_CHECK(s.waitUntil([&] { return !inProgress(s, merge); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(merge), head);
@@ -94,8 +94,8 @@ GG_TEST("conflicts", "native: abort a merge, skip a rebase step")
 
     const fs::path rebase = s.fixture(Recipe::MidRebase);
     GG_REQUIRE(s.openRepository(rebase));
-    GG_REQUIRE(s.itemExists("//##Toolbar/Skip##tb_skip"));
-    ctx->ItemClick("//##Toolbar/Skip##tb_skip");
+    GG_REQUIRE(s.itemExists("//###Toolbar/Skip##tb_skip"));
+    ctx->ItemClick("//###Toolbar/Skip##tb_skip");
     GG_CHECK(s.waitUntil([&] { return !inProgress(s, rebase); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(rebase), s.revParse(rebase, "theirs")); // the only commit was skipped
@@ -110,7 +110,7 @@ GG_TEST("conflicts", "native: resolve by editing, mark resolved, continue")
     s.contextMenu(fileRef(s, "Conflicted", "f.txt").c_str(), "Mark resolved");
     GG_CHECK(s.waitUntil([&] { return !unmerged(s, repo); }));
     s.settle();
-    ctx->ItemClick("//##Toolbar/Continue##tb_continue");
+    ctx->ItemClick("//###Toolbar/Continue##tb_continue");
     GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "a\nboth\nc");
@@ -137,8 +137,8 @@ GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered f
     const fs::path repo = s.fixture(Recipe::MidMerge);
     const std::string theirs = s.revParse(repo, "theirs");
     GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//##Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
-    ctx->ItemClick("//##Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
     GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^2"), theirs);
@@ -168,8 +168,8 @@ GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered f
     GG_REQUIRE(s.openRepository(bin));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "b.bin").c_str()); }));
     ctx->Yield(3);
-    GG_CHECK(!s.itemExists("//##Toolbar/Commit with conflicts##tb_commit_conflicts"));
-    GG_CHECK(s.itemExists("//##Toolbar/Continue##tb_continue"));
+    GG_CHECK(!s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"));
+    GG_CHECK(s.itemExists("//###Toolbar/Continue##tb_continue"));
     GG_CHECK(s.session()->status()->conflicted.front().binary);
 }
 
@@ -662,7 +662,7 @@ GG_TEST("conflicts", "first-class: take a side in one region; resolve in the edi
     s.settle();
     s.git(repo, {"add", "two.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.dialogText("Commit", "message", "Resolve two.txt");
     s.dialogButton("Commit", "Commit");
@@ -745,24 +745,24 @@ GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-
     };
     const fs::path revert = s.fixture(Recipe::MidRevert);
     GG_REQUIRE(s.openRepository(revert));
-    ctx->ItemClick("//##Toolbar/Abort##tb_abort");
+    ctx->ItemClick("//###Toolbar/Abort##tb_abort");
     GG_CHECK(clean(revert));
     GG_CHECK(!fs::exists(revert / ".git" / "REVERT_HEAD"));
     s.settle();
     const fs::path apply = s.fixture(Recipe::MidRebaseApply);
     GG_REQUIRE(s.openRepository(apply));
     GG_CHECK(s.session()->snapshot()->state == ggui::core::RepoState::Rebasing);
-    ctx->ItemClick("//##Toolbar/Abort##tb_abort");
+    ctx->ItemClick("//###Toolbar/Abort##tb_abort");
     GG_CHECK(clean(apply));
     GG_CHECK(!fs::exists(apply / ".git" / "rebase-apply"));
     s.settle();
     const fs::path bisect = s.fixture(Recipe::Bisecting);
     GG_REQUIRE(s.openRepository(bisect));
     const std::string before = s.head(bisect);
-    ctx->ItemClick("//##Toolbar/Skip##tb_skip");
+    ctx->ItemClick("//###Toolbar/Skip##tb_skip");
     GG_CHECK(s.waitUntil([&] { return s.head(bisect) != before; }));
     s.settle();
-    ctx->ItemClick("//##Toolbar/Reset##tb_abort");
+    ctx->ItemClick("//###Toolbar/Reset##tb_abort");
     GG_CHECK(clean(bisect));
     GG_CHECK(!fs::exists(bisect / ".git" / "BISECT_LOG"));
     s.settle();

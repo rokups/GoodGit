@@ -35,7 +35,7 @@ GG_TEST("new", "new commit on HEAD advances the branch (toolbar, menu, keys)")
         tip = s.head(repo);
         return ok && attached && empty;
     };
-    ctx->ItemClick("//##Toolbar/###tb_new");
+    ctx->ItemClick("//###Toolbar/###tb_new");
     GG_CHECK(advanced());
     ctx->MenuClick("//##MainMenuBar/Commit/New commit");
     GG_CHECK(advanced());
@@ -238,7 +238,7 @@ GG_TEST("checkout", "move HEAD to parent and child")
     const std::string p2 = s.revParse(repo, "HEAD~2");
     GG_REQUIRE(s.openRepository(repo));
     // The toolbar has no Previous / Next buttons (the Commit menu has the actions).
-    GG_CHECK(!s.itemExists("//##Toolbar/###tb_prev") && !s.itemExists("//##Toolbar/###tb_next"));
+    GG_CHECK(!s.itemExists("//###Toolbar/###tb_prev") && !s.itemExists("//###Toolbar/###tb_next"));
     ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent");
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, p1); }));
     s.settle();

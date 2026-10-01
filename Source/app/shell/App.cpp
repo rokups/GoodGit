@@ -584,7 +584,7 @@ void App::drawToasts()
 void App::drawDockHost()
 {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGuiWindow* toolbar = ImGui::FindWindowByName("##Toolbar");
+    ImGuiWindow* toolbar = ImGui::FindWindowByName("Toolbar###Toolbar");
     const float top = toolbar ? toolbar->Pos.y + toolbar->Size.y : vp->WorkPos.y;
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, top));
     ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y - top));

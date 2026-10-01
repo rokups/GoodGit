@@ -53,7 +53,7 @@ GG_TEST("stash", "create: message, untracked, keep index, staged only, selected 
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 3; }));
     // Toolbar: everything including untracked files, with a message.
-    ctx->ItemClick("//##Toolbar/###tb_stash");
+    ctx->ItemClick("//###Toolbar/###tb_stash");
     GG_REQUIRE(s.dialogOpen("Stash changes"));
     s.dialogText("Stash changes", "message", "all of it");
     s.dialogCheck("Stash changes", "untracked", "Include untracked files");
@@ -62,7 +62,7 @@ GG_TEST("stash", "create: message, untracked, keep index, staged only, selected 
     s.settle();
     GG_CHECK(s.gitOut(repo, {"stash", "list"}).find("all of it") != std::string::npos);
     // Pop from the toolbar brings everything back (the index as well only with --index: f1 unstaged).
-    ctx->ItemClick("//##Toolbar/###tb_pop");
+    ctx->ItemClick("//###Toolbar/###tb_pop");
     GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 0; }));
     s.settle();
     GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "f1 staged\n");
@@ -85,7 +85,7 @@ GG_TEST("stash", "create: message, untracked, keep index, staged only, selected 
     cleanUp(s, repo);
     dirty(s, repo);
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 3; }));
-    ctx->ItemClick("//##Toolbar/###tb_stash");
+    ctx->ItemClick("//###Toolbar/###tb_stash");
     GG_REQUIRE(s.dialogOpen("Stash changes"));
     s.dialogCheck("Stash changes", "staged_only", "Staged changes only (--staged)");
     s.dialogButton("Stash changes", "Stash");
@@ -99,7 +99,7 @@ GG_TEST("stash", "create: message, untracked, keep index, staged only, selected 
     dirty(s, repo);
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 3; }));
     ctx->ItemClick(fileRef(s, "Unstaged", "f2.txt").c_str());
-    ctx->ItemClick("//##Toolbar/###tb_stash");
+    ctx->ItemClick("//###Toolbar/###tb_stash");
     GG_REQUIRE(s.dialogOpen("Stash changes"));
     s.dialogCheck("Stash changes", "selected_only", "Selected files only");
     s.dialogButton("Stash changes", "Stash");
@@ -203,11 +203,11 @@ GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo,
     s.dialogButton("Drop stash", "Drop");
     GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 0; }));
     s.settle();
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 1; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(repo, "stash@{0}"), kept);
-    ctx->ItemClick("//##Toolbar/###tb_redo");
+    ctx->ItemClick("//###Toolbar/###tb_redo");
     GG_CHECK(s.waitUntil([&] { return stashCount(s, repo) == 0; }));
     s.settle();
 

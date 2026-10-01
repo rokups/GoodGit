@@ -461,9 +461,9 @@ bool finished(Scenario& s, const fs::path& repo)
     return ok;
 }
 
-const char* kAbort = "//##Toolbar/Abort##tb_abort";
-const char* kProgress = "//##Toolbar/Progress##tb_rebase_progress";
-const char* kCommitConflicts = "//##Toolbar/Commit with conflicts##tb_commit_conflicts";
+const char* kAbort = "//###Toolbar/Abort##tb_abort";
+const char* kProgress = "//###Toolbar/Progress##tb_rebase_progress";
+const char* kCommitConflicts = "//###Toolbar/Commit with conflicts##tb_commit_conflicts";
 
 } // namespace
 

@@ -262,7 +262,7 @@ GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
-    auto badge = [&](const char* id) { return s.itemText((std::string("//##Toolbar/###") + id).c_str()); };
+    auto badge = [&](const char* id) { return s.itemText((std::string("//###Toolbar/###") + id).c_str()); };
     GG_CHECK(badge("tb_pull").find("\xe2\x86\x93" "1") != std::string::npos);
     GG_CHECK(badge("tb_push").find("\xe2\x86\x91" "1") != std::string::npos);
     s.git(repo, {"pull", "-q", "--rebase", "origin", "main"});

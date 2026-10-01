@@ -85,7 +85,7 @@ ggui::core::RepoState state(Scenario& s) { return s.session()->snapshot()->state
 std::string commitDialogMessage(Scenario& s)
 {
     s.ctx->ItemClick("//History/**/###row_wt");
-    s.ctx->ItemClick("//##Toolbar/###tb_commit");
+    s.ctx->ItemClick("//###Toolbar/###tb_commit");
     if (!s.dialogOpen("Commit"))
         return "<no dialog>";
     return s.app.dialogs().current()->text("message");
@@ -260,8 +260,8 @@ GG_TEST("revert-pick", "conflicts: and commit lands first-class conflicts; witho
         GG_CHECK(s.gitOut(r.path, {"status"}).find(revert ? "reverting" : "cherry-picking") != std::string::npos);
         GG_CHECK_STR_EQ(s.read(r.path / ".git", "MERGE_MSG"),
             (revert ? revertMsg(s, r.path, id) : pickMsg(s, r.path, id)) + "\n");
-        GG_CHECK(s.itemExists("//##Toolbar/Abort##tb_abort"));
-        ctx->ItemClick("//##Toolbar/Abort##tb_abort");
+        GG_CHECK(s.itemExists("//###Toolbar/Abort##tb_abort"));
+        ctx->ItemClick("//###Toolbar/Abort##tb_abort");
         GG_CHECK(s.waitUntil([&] { return state(s) == ggui::core::RepoState::None; }));
         s.settle();
         GG_CHECK_STR_EQ(s.head(r.path), c5);

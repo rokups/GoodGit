@@ -92,8 +92,8 @@ private:
 
 std::string irRow(const std::string& key) { return "//Interactive rebase/**/###ir_" + key; }
 std::string irWidget(const char* id) { return std::string("//Interactive rebase/###") + id; }
-const char* kAbort = "//##Toolbar/Abort##tb_abort";
-const char* kContinue = "//##Toolbar/Continue##tb_continue";
+const char* kAbort = "//###Toolbar/Abort##tb_abort";
+const char* kContinue = "//###Toolbar/Continue##tb_continue";
 const char* kSettingsTabs = "//Settings/##settings_tabs/Git/##config_scope/";
 const char* kOption = "Use ggui's todo editor for git rebase -i##sequence_editor";
 

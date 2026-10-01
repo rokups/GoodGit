@@ -29,8 +29,8 @@ GG_TEST("commit", "commit the index from the toolbar; hooks run natively")
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     writeHook(s, repo, "commit-msg", "printf '\\nHook-Trailer: yes\\n' >> \"$1\"\n");
     GG_REQUIRE(s.openRepository(repo));
-    GG_CHECK(s.itemText("//##Toolbar/###tb_commit").find("Commit") != std::string::npos);
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    GG_CHECK(s.itemText("//###Toolbar/###tb_commit").find("Commit") != std::string::npos);
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.dialogText("Commit", "message", "Commit staged work");
     s.dialogButton("Commit", "Commit");
@@ -43,7 +43,7 @@ GG_TEST("commit", "commit the index from the toolbar; hooks run natively")
     // With HEAD selected the button becomes Amend.
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     ctx->Yield(2);
-    GG_CHECK(s.itemText("//##Toolbar/###tb_commit").find("Amend") != std::string::npos);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_commit").find("Amend") != std::string::npos);
 }
 
 GG_TEST("commit", "nothing staged: stage all tracked or the selected files")
@@ -238,7 +238,7 @@ GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks")
     writeHook(s, repo, "pre-commit", "echo 'pre-commit hook says no' >&2\nexit 1\n");
     const std::string before = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.dialogText("Commit", "message", "Blocked");
     s.dialogButton("Commit", "Commit");
@@ -246,7 +246,7 @@ GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks")
     GG_CHECK(s.dismissError());
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), before);
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.dialogText("Commit", "message", "Not blocked");
     s.dialogCheck("Commit", "skip_hooks", "Skip hooks (--no-verify)");
@@ -318,7 +318,7 @@ GG_TEST("commit", "commit dialog warns about a staged first-class conflict and s
     s.git(repo, {"add", "new_conflict.txt"});
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     GG_CHECK(s.waitUntil([&] { return !s.session()->commitWarnings().empty(); }));
     ctx->Yield(2);
@@ -334,7 +334,7 @@ GG_TEST("commit", "commit dialog warns about a staged first-class conflict and s
     s.write(repo, "unrelated.txt", "hello\n");
     s.git(repo, {"add", "unrelated.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     s.settle();
     ctx->Yield(2);
@@ -352,7 +352,7 @@ GG_TEST("commit", "commit dialog warns about broken conflict markers and still c
     s.git(repo, {"add", "conflict.txt"});
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     GG_CHECK(s.waitUntil([&] { return !s.session()->commitWarnings().empty(); }));
     ctx->Yield(2);
@@ -370,7 +370,7 @@ GG_TEST("commit", "commit dialog warning follows the index while the dialog is o
     s.write(repo, "new_conflict.txt", "top\n<<<<<<< side 1\nx=1\n||||||| base\nx=0\n=======\nx=2\n>>>>>>> side 2\nbottom\n");
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() != nullptr; }));
-    ctx->ItemClick("//##Toolbar/###tb_commit");
+    ctx->ItemClick("//###Toolbar/###tb_commit");
     GG_REQUIRE(s.dialogOpen("Commit"));
     ctx->Yield(2);
     GG_CHECK(!s.textShown("//Commit", "first-class conflict"));

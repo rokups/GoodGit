@@ -65,12 +65,12 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     s.write(repo, "shared.txt", "resolved\n");
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
-    ctx->ItemClick("//##Toolbar/###tb_stash");
+    ctx->ItemClick("//###Toolbar/###tb_stash");
     GG_REQUIRE(s.dialogOpen("Stash changes"));
     s.dialogButton("Stash changes", "Stash");
     GG_CHECK(s.waitUntil([&] { return s.statusPorcelain(repo).empty(); }));
     s.settle();
-    ctx->ItemClick("//##Toolbar/###tb_pop");
+    ctx->ItemClick("//###Toolbar/###tb_pop");
     GG_CHECK(s.waitUntil([&] { return !s.statusPorcelain(repo).empty(); }));
     s.settle();
     s.git(repo, {"checkout", "-q", "--", "shared.txt"});

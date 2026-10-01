@@ -1187,8 +1187,8 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
     // Cancelled from the toolbar: the preview says so and the list stays editable.
     gg::setSlowGitLatency(std::chrono::milliseconds(3000));
     key(s, c[3], ImGuiKey_D);
-    GG_CHECK(s.waitUntil([&] { return s.itemExists("//##Toolbar/Cancel##tb_cancel"); }, 10.0f));
-    ctx->ItemClick("//##Toolbar/Cancel##tb_cancel");
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//###Toolbar/Cancel##tb_cancel"); }, 10.0f));
+    ctx->ItemClick("//###Toolbar/Cancel##tb_cancel");
     GG_CHECK(s.waitUntil([&] { return !editor(s).previewPending(); }));
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
     GG_CHECK(previewShows(s, "The preview was cancelled."));
@@ -1826,7 +1826,7 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
     s.git(copy2, {"rebase", "--abort"});
 
     // One Undo brings the conflicted history back.
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_REQUIRE(s.waitUntil([&] { return s.refs(path) == refsBefore; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(path, "main:a.txt"), conflictBlob);
@@ -1891,7 +1891,7 @@ GG_TEST("rebase-i", "failure paths: pre-rebase veto, a hook refusing the ref tra
     GG_REQUIRE(start(s));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
     GG_CHECK(!fs::exists(r.path / "d.txt"));
-    ctx->ItemClick("//##Toolbar/###tb_undo");
+    ctx->ItemClick("//###Toolbar/###tb_undo");
     GG_REQUIRE(s.waitUntil([&] { return s.refs(r.path) == refsBefore; }));
     s.settle();
     GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");

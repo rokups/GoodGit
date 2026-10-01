@@ -511,7 +511,8 @@ void App::drawToolbar()
         | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBringToFrontOnFocus;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::Begin("##Toolbar", nullptr, flags);
+    // Named for the window navigator (Ctrl+Tab); "###" keeps the ID free of the title.
+    ImGui::Begin("Toolbar###Toolbar", nullptr, flags);
     ImGui::PopStyleVar(2);
     const bool open = m_session && m_session->opened();
 

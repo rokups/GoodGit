@@ -180,7 +180,7 @@ GG_TEST("edit-in-place", "edit a mid-stack commit: descendants and branches rest
     GG_REQUIRE(editCommit(s, p, r.b, "main"));
     GG_CHECK(detached(s, p));
     GG_CHECK_EQ(s.session()->editSession()->descendants, 2);
-    GG_CHECK(s.waitUntil([&] { return s.itemExists("//##Toolbar/###tb_edit"); }));
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//###Toolbar/###tb_edit"); }));
 
     s.write(p, "b.txt", "b amended\n");
     s.git(p, {"add", "b.txt"});
@@ -197,13 +197,13 @@ GG_TEST("edit-in-place", "edit a mid-stack commit: descendants and branches rest
     GG_CHECK_STR_EQ(s.gitOut(p, {"log", "-1", "--format=%s", "main"}), "c add c");
     GG_CHECK(editing(s, nb, "main"));
 
-    ctx->ItemClick("//##Toolbar/Return to main##tb_edit_return");
+    ctx->ItemClick("//###Toolbar/Return to main##tb_edit_return");
     GG_CHECK(s.waitUntil([&] { return !detached(s, p) && !s.session()->editSession(); }));
     s.settle();
     GG_CHECK_STR_EQ(gg::trim(s.gitOut(p, {"symbolic-ref", "HEAD"})), "refs/heads/main");
     GG_CHECK_STR_EQ(s.head(p), s.revParse(p, "main"));
     GG_CHECK(noSessionFile(p));
-    GG_CHECK(!s.itemExists("//##Toolbar/###tb_edit"));
+    GG_CHECK(!s.itemExists("//###Toolbar/###tb_edit"));
 }
 
 GG_TEST("edit-in-place", "a conflicting descendant restacks with a first-class conflict")
@@ -306,7 +306,7 @@ GG_TEST("edit-in-place", "the session is cleared when HEAD is no longer detached
     GG_CHECK(noSessionFile(p));
     // Stop editing drops a live session and keeps HEAD where it is.
     GG_REQUIRE(editCommit(s, p, r.d, "feat"));
-    ctx->ItemClick("//##Toolbar/Stop editing##tb_edit_stop");
+    ctx->ItemClick("//###Toolbar/Stop editing##tb_edit_stop");
     GG_CHECK(s.waitUntil([&] { return !s.session()->editSession(); }));
     GG_CHECK(noSessionFile(p));
     GG_CHECK_STR_EQ(s.head(p), r.d);

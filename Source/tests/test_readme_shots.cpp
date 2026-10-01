@@ -193,7 +193,7 @@ GG_MANUAL_TEST("readme", "screenshots of the imgui repository for the README")
             const auto& d = s.session()->diff().diff();
             return d && !d->files.empty();
         }));
-        ctx->MouseMove("//##Toolbar");
+        ctx->MouseMove("//###Toolbar");
         ctx->Yield(5);
     };
 
@@ -220,7 +220,7 @@ GG_MANUAL_TEST("readme", "screenshots of the imgui repository for the README")
     GG_REQUIRE(s.waitUntil([&] { return s.session()->rebase().isOpen() && s.session()->rebase().context() != nullptr; }));
     s.comboSelect(("//Interactive rebase/**/###ir_action_" + t.rebaseSquash).c_str(), "fixup");
     s.settle();
-    ctx->MouseMove("//##Toolbar");
+    ctx->MouseMove("//###Toolbar");
     ctx->Yield(5);
     shot(s, "readme-rebase");
     ctx->ItemClick("//Interactive rebase/###ir_cancel");
@@ -235,7 +235,7 @@ GG_MANUAL_TEST("readme", "screenshots of the imgui repository for the README")
     ctx->MouseMoveToPos(ImVec2(origin.x + 870, origin.y + 400));
     ctx->MouseUp(0);
     s.settle();
-    ctx->MouseMove("//##Toolbar");
+    ctx->MouseMove("//###Toolbar");
     ctx->Yield(5);
     shot(s, "readme-diff-sbs");
 }
