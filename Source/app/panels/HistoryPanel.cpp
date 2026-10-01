@@ -319,38 +319,6 @@ std::vector<int> HistoryPanel::visibleIndexes() const
     return out;
 }
 
-void HistoryPanel::moveSelection(int delta)
-{
-    m_extra.clear();
-    // Order: Working tree, Index (if staged), commits.
-    std::vector<Selection> order;
-    if (!m_snapshot->bare) {
-        order.push_back(Selection{SelKind::WorkingTree, {}, -1});
-        if (m_hasStaged)
-            order.push_back(Selection{SelKind::Index, {}, -1});
-    }
-    const Selection& cur = m_session.selection();
-    int pos = -1;
-    for (size_t i = 0; i < order.size(); ++i)
-        if (order[i].kind == cur.kind)
-            pos = static_cast<int>(i);
-    const int base = static_cast<int>(order.size());
-    if (cur.kind == SelKind::Commit) {
-        for (size_t i = 0; i < m_visible.size(); ++i)
-            if (m_rows[static_cast<size_t>(m_visible[i])].id == cur.id)
-                pos = base + static_cast<int>(i);
-    }
-    const int total = base + static_cast<int>(m_visible.size());
-    if (total == 0)
-        return;
-    int next = pos < 0 ? 0 : std::clamp(pos + delta, 0, total - 1);
-    if (next < base)
-        m_session.select(order[static_cast<size_t>(next)]);
-    else
-        m_session.selectCommit(m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(next - base)])].id);
-    m_scrollToSelection = true;
-}
-
 void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
 {
     // Source: the commit, or a branch when the drag starts on its badge.
@@ -481,7 +449,9 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     const bool selected = sel.kind == kind;
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
     const std::string sid = std::string(label) + "###" + id;
-    if (rowSelectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+    // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
+    if (rowSelectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav)
+        && !(pressSource() == PressSource::NavActivate && selected))
         m_session.select(Selection{kind, {}, -1});
     ImGui::PopStyleColor();
     if (kind == SelKind::WorkingTree && beginContextMenu("##wt_menu")) {
@@ -687,9 +657,18 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     m_rowTops.emplace_back(index, cellStart.y);
     const std::string label = row.shortId + " " + row.subject + "###row_" + row.id.hex();
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
-    if (rowSelectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
-        if (ImGui::GetIO().KeyCtrl && sel.kind == SelKind::Commit && sel.id != row.id) {
-            // Ctrl-click adds (or removes) further commits.
+    // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
+    if (rowSelectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav)) {
+        const bool ctrl = ImGui::GetIO().KeyCtrl;
+        const PressSource source = pressSource();
+        if (source == PressSource::NavActivate && !ctrl) {
+            // Space / Enter on the cursor row keeps the selection (it is already selected after a cursor move).
+            if (!selected) {
+                m_extra.clear();
+                m_session.selectCommit(row.id);
+            }
+        } else if (ctrl && sel.kind == SelKind::Commit && sel.id != row.id) {
+            // Ctrl-click / Ctrl+Space add (or remove) further commits.
             if (extra)
                 m_extra.erase(std::find(m_extra.begin(), m_extra.end(), row.id));
             else
@@ -703,6 +682,23 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     if (selected && m_scrollToSelection) {
         ImGui::SetScrollHereY(0.4f);
         m_scrollToSelection = false;
+        // The selection was changed from outside (F7, reveal): the nav cursor goes with it, so the next
+        // arrow moves relative to the new selection. Nav focus is taken only where the panel already has it
+        // (not from a text field); elsewhere it is where focus resumes. The cursor's visibility is left alone.
+        ImGuiContext& g = *ImGui::GetCurrentContext();
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        // SetNavID stores the rect in g.NavWindow, which may be the root or another child (cursor on a header).
+        if (g.NavWindow && g.NavWindow->RootWindow == window->RootWindow && !g.IO.WantTextInput)
+            ImGui::SetNavID(ImGui::GetItemID(), ImGuiNavLayer_Main, g.CurrentFocusScopeId,
+                ImGui::WindowRectAbsToRel(g.NavWindow, g.LastItemData.NavRect));
+        window->NavLastIds[ImGuiNavLayer_Main] = ImGui::GetItemID();
+        window->NavRectRel[ImGuiNavLayer_Main] = ImGui::WindowRectAbsToRel(window, g.LastItemData.NavRect);
+        // Focusing the panel window (a reveal does) restores the root window's last id, not the scroll child's.
+        ImGuiWindow* root = window->RootWindow;
+        if (root != window) {
+            root->NavLastIds[ImGuiNavLayer_Main] = ImGui::GetItemID();
+            root->NavRectRel[ImGuiNavLayer_Main] = ImGui::WindowRectAbsToRel(root, g.LastItemData.NavRect);
+        }
     }
     if (!m_scrolling && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         idTooltip(row.id.hex(), row.shortId.size(),
@@ -798,6 +794,8 @@ void HistoryPanel::restoreScrollAnchor(int virtualRows, float pitch)
         } else if (!m_loading) {
             m_restoreAnchor = false; // gone: leave the scroll where it is
         }
+    } else if (m_restoreAnchor && !m_loading) {
+        m_restoreAnchor = false; // nothing was in view to anchor on: start capturing from here
     }
     if (m_wantScroll)
         ImGui::SetNextWindowScroll(ImVec2(-1.0f, *m_wantScroll));
@@ -882,10 +880,8 @@ void HistoryPanel::draw(bool* open)
 
     // Keyboard while the panel is focused (§4.2 keys).
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-            moveSelection(+1);
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-            moveSelection(-1);
+        // Up / Down / Page / Home / End are ImGui's nav; the row Selectables (SelectOnNav) turn the cursor
+        // reaching a row into the selection.
         const ImGuiIO& io = ImGui::GetIO();
         const Selection& sel = m_session.selection();
         const bool free = m_session.actions().busy().empty();
@@ -895,7 +891,8 @@ void HistoryPanel::draw(bool* open)
         if (sel.kind == SelKind::Commit && free && !m_extra.empty() && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt
             && ImGui::IsKeyPressed(ImGuiKey_S, false))
             squashSelection(m_session);
-        // The commit keys act on a single selected commit.
+        // The commit keys act on a single selected commit: the selection, not the nav cursor (after Ctrl+arrow
+        // the cursor may be elsewhere).
         if (sel.kind == SelKind::Commit && free && !io.KeyCtrl && m_extra.empty()) {
             // Alt+N is a routed shortcut: releasing Alt does not toggle the menu layer.
             if (hotkey(ImGuiMod_Alt | ImGuiKey_N, ImGuiInputFlags_RouteFocused))
@@ -920,6 +917,10 @@ void HistoryPanel::draw(bool* open)
     const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
     const int virtualRows = !m_snapshot->bare ? (m_hasStaged ? 2 : 1) : 0;
     restoreScrollAnchor(virtualRows, pitch);
+    // Nav-flattened: the table's scroll child is part of the panel's nav layer, so the arrows walk the rows.
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    g.NextWindowData.HasFlags |= ImGuiNextWindowDataFlags_HasChildFlags;
+    g.NextWindowData.ChildFlags = ImGuiChildFlags_NavFlattened;
     if (ImGui::BeginTable(m_graphShown ? "##hist_table" : "##hist_table_filtered", m_graphShown ? 4 : 3, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         if (m_graphShown)

@@ -351,17 +351,29 @@ GG_TEST("history", "keyboard navigation")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto navOn = [&](const std::string& hex) { return g.NavId == ctx->ItemInfo(rowRef(hex).c_str()).ID; };
     ctx->ItemClick("//History/**/###row_wt");
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
     ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2); // SelectOnNav presses the row the frame after the cursor lands on it
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.head(repo));
+    // The nav cursor and the selection are one thing.
+    GG_CHECK(navOn(s.head(repo)));
     ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.revParse(repo, "HEAD~1"));
+    GG_CHECK(navOn(s.revParse(repo, "HEAD~1")));
     ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.head(repo));
+    GG_CHECK(navOn(s.head(repo)));
     ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
+    GG_CHECK(g.NavId == ctx->ItemInfo("//History/**/###row_wt").ID);
     ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
 }
 
@@ -413,6 +425,96 @@ float rowTop(Scenario& s, const std::string& hex)
 }
 
 } // namespace
+
+GG_TEST("history", "keyboard only: nav into the list, select by arrows, Alt+Space menu, Ctrl+Space, Page/End")
+{
+    const fs::path repo = tallRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading() && history.rows().size() > 150; }));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//History");
+    // Down until the cursor is on the Working tree row (it starts on a header / widget above the list).
+    const ImGuiID wt = ctx->ItemInfo("//History/**/###row_wt").ID;
+    for (int i = 0; i < 40 && g.NavId != wt; ++i) {
+        ctx->KeyPress(ImGuiKey_DownArrow);
+        ctx->Yield(2);
+    }
+    GG_REQUIRE(g.NavId == wt);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
+    // Two more rows down: HEAD, then HEAD~1; the selection follows the cursor.
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    const std::string second = s.revParse(repo, "HEAD~1");
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), second);
+    GG_CHECK(g.NavId == ctx->ItemInfo(rowRef(second).c_str()).ID);
+    // Alt+Space opens the cursor row's context menu.
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 1);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), second);
+    // Ctrl+Down moves the cursor without selecting; Ctrl+Space then adds that row.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), second);
+    GG_CHECK(history.extraSelection().empty());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Space);
+    ctx->Yield(2);
+    GG_REQUIRE(history.extraSelection().size() == 1);
+    GG_CHECK_STR_EQ(history.extraSelection()[0].hex(), s.revParse(repo, "HEAD~2"));
+    // Plain Space on the cursor row keeps the multi-selection.
+    ctx->KeyPress(ImGuiKey_Space);
+    ctx->Yield(2);
+    GG_CHECK_EQ(history.extraSelection().size(), static_cast<size_t>(1));
+    // A plain move collapses it to the cursor row.
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK(history.extraSelection().empty());
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.revParse(repo, "HEAD~3"));
+    // End jumps the cursor (and the selection) to the last loaded row, past the clipper's range.
+    ctx->KeyPress(ImGuiKey_End);
+    ctx->Yield(5);
+    GG_REQUIRE(s.session()->selection().kind == ggui::SelKind::Commit);
+    const ggui::core::HistoryRow* last = nullptr;
+    for (const auto& r : history.rows())
+        last = &r;
+    GG_REQUIRE(last != nullptr);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), last->id.hex());
+    GG_CHECK(g.NavId == ctx->ItemInfo(rowRef(last->id.hex()).c_str()).ID);
+}
+
+GG_TEST("history", "keyboard: a programmatic selection moves the nav cursor, so the next arrow is relative to it")
+{
+    const fs::path repo = tallRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading() && history.rows().size() > 150; }));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//History");
+    const ImGuiID wt = ctx->ItemInfo("//History/**/###row_wt").ID;
+    for (int i = 0; i < 40 && g.NavId != wt; ++i) {
+        ctx->KeyPress(ImGuiKey_DownArrow);
+        ctx->Yield(2);
+    }
+    GG_REQUIRE(g.NavId == wt);
+    // Reveal a commit far below (what Branches / a pending reveal / F7 do): selection and cursor go there.
+    const std::string far = s.revParse(repo, "HEAD~100");
+    s.session()->revealCommit(ggui::core::Oid::fromHex(far));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().id.hex() == far && s.itemExists(rowRef(far).c_str()); }));
+    ctx->Yield(3);
+    GG_CHECK(g.NavId == ctx->ItemInfo(rowRef(far).c_str()).ID);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    const std::string next = s.revParse(repo, "HEAD~101");
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), next);
+    GG_CHECK(g.NavId == ctx->ItemInfo(rowRef(next).c_str()).ID);
+}
 
 GG_TEST("history", "scroll position stays anchored on the rows in view")
 {

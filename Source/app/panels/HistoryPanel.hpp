@@ -78,7 +78,6 @@ private:
     void drawRow(const core::HistoryRow& row, int index, float laneWidth);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);
-    void moveSelection(int delta);
 
     Session& m_session;
     core::SnapshotPtr m_snapshot;
