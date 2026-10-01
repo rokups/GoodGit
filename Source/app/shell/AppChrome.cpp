@@ -534,7 +534,7 @@ void App::drawToolbar()
                 post([this, path] { openRepository(path); });
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
                 ImGui::SetTooltip(selected ? "%s" : "%s\nDel removes", path.c_str());
-            if (!selected && hoveredDeletePressed())
+            if (!selected && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
                 forget = path;
         }
         if (!forget.empty())

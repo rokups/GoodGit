@@ -157,7 +157,7 @@ void App::drawWelcome()
             ImGui::SetTooltip("%s\nDel removes", path.c_str());
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);
-        if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) || (path != currentKey && hoveredDeletePressed()))
+        if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) || (path != currentKey && hoveredDeletePressed()))
             forget = path;
         if (beginContextMenu("##recent_menu")) {
             if (menuItem(ICON_MS_REMOVE, "Forget"))

@@ -95,6 +95,7 @@ public:
 private:
     std::vector<Form> m_queue;
     bool m_opened = false;
+    int m_popupDepth = 0; // open popups at the end of the last frame the dialog was drawn
     bool m_focusFirst = false;
 };
 

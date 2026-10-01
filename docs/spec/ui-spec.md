@@ -35,7 +35,7 @@ rename is a spec change. Window names are fixed (`"History"`, `"Changes"` …); 
 | Button *Initialize repository…* | `Initialize repository...` | folder picker, `git init`, opens it (Phase 2) |
 | Button *Clone repository…* | `Clone repository...` | opens the Clone dialog (Phase 2) |
 | Path field + *Open* | `##welcome_path`, `Open` | opens a typed path (keyboard path for tests and users without a picker) |
-| Recent list | `##recent` rows `recent_<n>` | click opens; Delete key forgets the focused entry; each row shows path, current branch, upstream and ↑n/↓n |
+| Recent list | `##recent` rows `recent_<n>` | click or Enter opens; Delete key forgets the focused entry (the keyboard cursor is the nav cursor; Alt+Space: Forget); each row shows path, current branch, upstream and ↑n/↓n |
 | Opening progress | `##opening` + `Cancel##open` | spinner, phase text, Cancel |
 
 Auto-open (K): argv[1] if given, otherwise the most recent repository that still exists.
@@ -64,7 +64,7 @@ selected, "Amend" when HEAD is selected) · Undo `##tb_undo` ·
 Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` ·
 Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
-recent repositories) · folder `##tb_open` (opens the working directory in the file manager) ·
+recent repositories; Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
 current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
 (plain text, short ID; tooltip with the full ID; right-click: Copy ID) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,

@@ -9,6 +9,7 @@
 
 #include <IconsMaterialSymbols.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 #include <algorithm>
@@ -278,7 +279,13 @@ void Dialogs::draw()
         if (b == 0 && enabled && enterPressed)
             clicked = 0;
     }
-    if (clicked < 0 && ImGui::IsKeyPressed(ImGuiKey_Escape))
+    // Escape belongs to a combo or menu above the dialog: one that is still open (a filter field takes
+    // the first Escape for itself) or that this very key press closed. Only then is it Cancel.
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    const int depth = g.OpenPopupStack.Size;
+    const bool popupAbove = depth > g.BeginPopupStack.Size || depth < m_popupDepth;
+    m_popupDepth = depth;
+    if (clicked < 0 && !popupAbove && ImGui::IsKeyPressed(ImGuiKey_Escape))
         clicked = static_cast<int>(form.buttons.size()) - 1; // last button = Cancel
     if (clicked >= 0 || !keepOpen) {
         std::function<void(Form&)> action;
@@ -287,6 +294,7 @@ void Dialogs::draw()
         Form done = std::move(form);
         m_queue.erase(m_queue.begin());
         m_opened = false;
+        m_popupDepth = 0;
         ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
         if (action)
