@@ -586,7 +586,7 @@ Undo, and in `git gg op log`. Format and rules: `docs/spec/undo-journal.md` §4.
   from start to finish. Fetches, pushes, tags and deletions are one operation per change pass.
 - Undo carries the working tree back for checkout, rebase, merge, pull, cherry-pick, revert, am
   and reset when it is clean. A commit never carries.
-- Undo refuses while a rebase (merge backend, git's default) is in progress: finish or abort it
+- Undo refuses while any rebase or `git am` is in progress: finish or abort it
   first.
 - **Limits:** steps on refs without a reflog (tags, deleted branches) made between two passes
   are one operation. `checkout --detach <branch>` looks like a checkout of a commit. Reftable
@@ -685,8 +685,8 @@ Undo, and in `git gg op log`. Format and rules: `docs/spec/undo-journal.md` §4.
      `git rebase --continue`, and ggui follows along.
    - Undo: the whole native rebase, from `rebase (start)` to `rebase (finish)`, becomes one
      journal operation. That holds when ggui started it and for plain git rebases (the
-     reconciler groups them from HEAD's reflog; undo-journal §4.1). Undo refuses while a rebase
-     (merge backend) is in progress.
+     reconciler groups them from HEAD's reflog; undo-journal §4.1). Undo refuses while any rebase
+     or `git am` is in progress.
 
 **Plain `git rebase -i` started outside ggui**
 - It is detected from `.git/rebase-merge/`. ggui shows the done, current and remaining

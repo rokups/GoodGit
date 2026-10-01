@@ -880,6 +880,65 @@ GG_TEST("reconcile", "Undo refuses a plain git operation while a rebase is in pr
     s.git(repo, {"rebase", "--abort"});
 }
 
+// Ctrl+Z while git owns the refs through rebase-apply/: refused with `message`, nothing changes.
+static void expectUndoRefused(Scenario& s, ImGuiTestContext* ctx, const fs::path& repo, const std::string& message)
+{
+    s.settle();
+    const std::string state = refState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    s.settle();
+    ctx->Yield(10);
+    GG_CHECK(s.app.dialogs().current() != nullptr);
+    if (s.app.dialogs().current())
+        GG_CHECK(s.app.dialogs().current()->message.find(message) != std::string::npos);
+    GG_CHECK(s.dismissError());
+    GG_CHECK_STR_EQ(refState(s, repo), state);
+    // The reconciler may journal the plain git steps before Undo plans; no undo operation is written.
+    for (const auto& op : journalOps(repo))
+        GG_CHECK(op.undoes.empty());
+}
+
+GG_TEST("reconcile", "Undo refuses while an apply-backend rebase (git rebase --apply) is stopped at a conflict")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.commitFile(repo, "c.txt", "a\nb\nc\n", "Base c");
+    s.git(repo, {"switch", "-q", "-c", "side"});
+    s.commitFile(repo, "c.txt", "a\nside\nc\n", "Side c");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "c.txt", "a\nmain\nc\n", "Main c");
+    s.git(repo, {"switch", "-q", "side"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 3; }));
+    s.settle();
+    GG_CHECK(!s.gitMayFail(repo, {"rebase", "--apply", "main"}).ok());
+    GG_REQUIRE(fs::is_directory(repo / ".git" / "rebase-apply"));
+    GG_CHECK(!fs::exists(repo / ".git" / "rebase-apply" / "applying"));
+    GG_CHECK(!fs::exists(repo / ".git" / "rebase-merge"));
+    expectUndoRefused(s, ctx, repo, "finish or abort the rebase first");
+    GG_CHECK(fs::is_directory(repo / ".git" / "rebase-apply"));
+    s.git(repo, {"rebase", "--abort"});
+}
+
+GG_TEST("reconcile", "Undo refuses while git am is stopped at a conflict")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.commitFile(repo, "c.txt", "a\nb\nc\n", "Base c");
+    s.commitFile(repo, "c.txt", "a\npatched\nc\n", "Patched c");
+    const std::string patch = s.gitOut(repo, {"format-patch", "-1", "--stdout"});
+    s.git(repo, {"reset", "-q", "--hard", "HEAD~1"});
+    s.commitFile(repo, "c.txt", "a\nother\nc\n", "Other c");
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() >= 3; }));
+    s.settle();
+    GG_CHECK(!s.gitMayFail(repo, {"am"}, patch).ok());
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-apply" / "applying"));
+    expectUndoRefused(s, ctx, repo, "finish or abort git am first");
+    GG_CHECK(fs::is_directory(repo / ".git" / "rebase-apply"));
+    s.git(repo, {"am", "--abort"});
+}
+
 GG_TEST("reconcile", "git branch -f on another branch is its own op")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

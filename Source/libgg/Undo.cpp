@@ -133,10 +133,21 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     result.label = std::string(redo ? "redo" : "undo") + " \"" + what + "\"";
     // A rebase in progress has an open operation (ggui's, or the reconciler's for a plain git
     // rebase), which cannot be undone until its end; undoing what came before would pull refs out
-    // from under git.
+    // from under git. The same holds for rebase-apply/ (an apply-backend rebase, or git am), which
+    // is not grouped into an operation but still owns the refs.
+    const std::string verb = redo ? "redo" : "undo";
     if (!native::rebaseIdentity(repo).empty()) {
-        result.error = "Cannot " + std::string(redo ? "redo" : "undo") + " \"" + what + "\": finish or abort the rebase first";
+        result.error = "Cannot " + verb + " \"" + what + "\": finish or abort the rebase first";
         return result;
+    }
+    {
+        const fs::path applyDir = fs::path(git_repository_path(repo)) / "rebase-apply";
+        std::error_code ec;
+        if (fs::is_directory(applyDir, ec)) {
+            const bool am = fs::exists(applyDir / "applying", ec);
+            result.error = "Cannot " + verb + " \"" + what + "\": finish or abort " + (am ? "git am" : "the rebase") + " first";
+            return result;
+        }
     }
 
     // Plain git commands that updated the working tree (recorded without the
