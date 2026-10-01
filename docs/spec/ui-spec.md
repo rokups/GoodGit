@@ -99,6 +99,8 @@ Tapping `Alt` on its own (pressed and released with no other key in between) put
 cursor on the main menu bar's first menu: Left/Right walk the menus, Down or Enter opens one;
 Escape (or `Alt` again) leaves the bar and returns focus to the window that had it. As a trade-off
 `Alt` no longer moves to a docked panel's tab bar (`Ctrl+Tab` still switches windows).
+Controls above a list (buttons, filter fields, combos) stay visible: only the list scrolls, never
+the whole window (keyboard navigation still crosses between the controls and the list).
 
 ### 1.5 Errors and notifications (K)
 - Important errors (failed git commands, open/clone failures, hook failures, journal errors) open

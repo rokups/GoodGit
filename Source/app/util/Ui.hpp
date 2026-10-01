@@ -60,6 +60,11 @@ ImGuiKeyChord pressMods();
 // Call right before ImGui::BeginTable() of a ScrollY table: its scroll child becomes nav-flattened, so the
 // arrows reach its rows from the surrounding panel (a plain child is a separate nav layer).
 void flattenNextTable();
+// A window's scrolling list under controls that stay put (buttons, a filter field): only the list scrolls.
+// A nav-flattened child ("##list") filling the rest of the window, whose widgets keep the IDs they would
+// have directly in the window (`width` 0 = the window's). Pair with endList().
+void beginList(float width = 0.0f);
+void endList();
 // Opens popup `id` with its top-left corner at the bottom-left corner of the last item (where a
 // keyboard-opened context menu appears).
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags = ImGuiPopupFlags_None);

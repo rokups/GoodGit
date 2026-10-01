@@ -350,6 +350,8 @@ void BranchesPanel::draw(bool* open)
     const bool filtering = !m_filter.empty();
     // Rows keep IDs directly under the window ("branch_<name>") whatever group they sit in.
     const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
+    // Only the list scrolls: the controls above stay put.
+    beginList();
 
     std::vector<std::pair<size_t, std::string>> locals;
     for (size_t i = 0; i < m_snapshot->branches.size(); ++i)
@@ -437,6 +439,7 @@ void BranchesPanel::draw(bool* open)
         }
         ImGui::PopID();
     }
+    endList();
     ImGui::End();
 }
 
@@ -458,6 +461,8 @@ void TagsPanel::draw(bool* open)
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    // Only the list scrolls: the controls above stay put.
+    beginList();
     auto& history = m_session.history();
     // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
     m_session.requestRemoteTagsIfStale();
@@ -551,6 +556,7 @@ void TagsPanel::draw(bool* open)
         }
         ImGui::PopID();
     }
+    endList();
     ImGui::End();
 }
 
@@ -571,6 +577,8 @@ void WorktreesPanel::draw(bool* open)
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip(snap->headUnborn ? "Add worktree... (HEAD has no commit yet)" : "Add worktree...");
+    // Only the list scrolls: the controls above stay put.
+    beginList();
     for (const auto& w : snap->worktrees) {
         std::string label = w.name;
         if (w.isMain)
@@ -647,6 +655,7 @@ void WorktreesPanel::draw(bool* open)
         }
         ImGui::PopID();
     }
+    endList();
     ImGui::End();
 }
 
@@ -670,6 +679,8 @@ void RemotesPanel::draw(bool* open)
     if (button(ICON_MS_DOWNLOAD, "Fetch all##fetch_all") && !snap->remotes.empty())
         actions.fetch("", false, false);
     ImGui::EndDisabled();
+    // Only the list scrolls: the controls above stay put.
+    beginList();
     for (const auto& r : snap->remotes) {
         ImGui::PushID(("remote_" + r.name).c_str());
         // "name@host" with the "@host" (and the prune note) dimmed; a local remote shows just its name.
@@ -696,6 +707,7 @@ void RemotesPanel::draw(bool* open)
     }
     if (snap->remotes.empty())
         ImGui::TextDisabled("No remotes");
+    endList();
     ImGui::End();
 }
 
@@ -736,6 +748,8 @@ void StashesPanel::draw(bool* open)
     if (button(ICON_MS_DELETE_SWEEP, "Clear all...##clear_stashes"))
         m_session.showClearStashesDialog();
     ImGui::EndDisabled();
+    // Only the list scrolls: the controls above stay put.
+    beginList();
     for (const auto& s : m_snapshot->stashes) {
         ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
         const std::string label = "stash@{" + std::to_string(s.index) + "} " + s.message;
@@ -770,6 +784,7 @@ void StashesPanel::draw(bool* open)
     }
     if (m_snapshot->stashes.empty())
         ImGui::TextDisabled("No stashes");
+    endList();
     ImGui::End();
 }
 

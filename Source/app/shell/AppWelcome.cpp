@@ -140,6 +140,8 @@ void App::drawWelcome()
 
     ImGui::Dummy(ImVec2(0, ImGui::GetFontSize()));
     ImGui::SeparatorText("Recent repositories");
+    // Only the list scrolls: everything above stays put.
+    beginList(width);
     const auto& recent = m_settings.data().recent;
     if (recent.empty())
         ImGui::TextDisabled("No recent repositories");
@@ -170,6 +172,7 @@ void App::drawWelcome()
         m_settings.forgetRecent(forget);
         m_recentFocus = -1;
     }
+    endList();
     ImGui::EndGroup();
     ImGui::End();
 }

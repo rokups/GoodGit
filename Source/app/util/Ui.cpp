@@ -289,6 +289,19 @@ void flattenNextTable()
     g.NextWindowData.ChildFlags = ImGuiChildFlags_NavFlattened;
 }
 
+void beginList(float width)
+{
+    const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
+    ImGui::BeginChild("##list", ImVec2(width, 0), ImGuiChildFlags_NavFlattened);
+    ImGui::PushOverrideID(windowId);
+}
+
+void endList()
+{
+    ImGui::PopID();
+    ImGui::EndChild();
+}
+
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags)
 {
     ImGui::OpenPopupEx(id, flags);
