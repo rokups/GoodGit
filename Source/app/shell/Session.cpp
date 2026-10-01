@@ -310,26 +310,6 @@ size_t Session::shortIdLength() const
     return rows.empty() ? 7 : rows.front().shortId.size();
 }
 
-core::Oid Session::headChild() const
-{
-    if (m_snapshot->head.isNull())
-        return {};
-    core::Oid child;
-    for (const auto& row : m_history->rows()) {
-        for (const auto& p : row.parents)
-            if (p == m_snapshot->head) {
-                // Prefer a child that is a local branch tip.
-                const bool tip = std::any_of(row.refs.begin(), row.refs.end(),
-                    [](const core::RefBadge& b) { return b.kind == core::RefKind::LocalBranch; });
-                if (child.isNull() || tip)
-                    child = row.id;
-                if (tip)
-                    return child;
-            }
-    }
-    return child;
-}
-
 bool Session::pullAvailable(std::string* reason) const
 {
     auto fail = [&](const char* why) {

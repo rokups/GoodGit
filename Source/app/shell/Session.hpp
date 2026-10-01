@@ -152,8 +152,6 @@ public:
     std::string shortId(const core::Oid& id) const;
     // Length of History's abbreviations (git's grows with the repository).
     size_t shortIdLength() const;
-    // HEAD's child in History (for "Move HEAD to child"), null when none is loaded.
-    core::Oid headChild() const;
     // Pull: available with an upstream on an attached HEAD; `reason` explains otherwise.
     bool pullAvailable(std::string* reason) const;
     int incoming() const;

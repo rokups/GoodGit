@@ -556,12 +556,12 @@ GG_TEST("conflicts", "checking out a conflicted commit: clean status by default,
     s.settle();
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
     GG_CHECK(s.statusPorcelain(repo).empty());
-    // Moving HEAD to the child (the conflicted commit) expands too; to the parent collapses.
-    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to child");
+    // Checking out the child (the conflicted commit) expands too; the parent collapses.
+    s.contextMenu(("//History/**/###row_" + conflictedCommit).c_str(), "Check out/Detached HEAD");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == conflictedCommit; }));
     s.settle();
     GG_CHECK_EQ(gg::splitLines(s.gitOut(repo, {"ls-files", "-u", "--", "conflict.txt"})).size(), 3u);
-    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent");
+    s.contextMenu(("//History/**/###row_" + s.revParse(repo, "main~2")).c_str(), "Check out/Detached HEAD");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == s.revParse(repo, "main~2"); }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());

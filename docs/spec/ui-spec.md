@@ -47,7 +47,7 @@ Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · 
 Settings… · Quit `Ctrl+Q`.
 
 **Commit** (M, renamed from "Change"): New commit `Ctrl+N` · New detached commit · Commit… ·
-Amend… · Move HEAD to parent · Move HEAD to child · — · the selected-commit actions of §4
+Amend… · — · the selected-commit actions of §4
 (below) · Interactive rebase… (N, Phase 3: asks for the base in the `Interactive rebase onto` dialog,
 then opens the todo editor for HEAD, §4.13).
 
@@ -203,7 +203,7 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Edit/Check out, Edit commit (E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Amend…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
-Abandon/Abandon branch, Simplify parents, Move HEAD to previous/next, Reorder, Move
+Abandon/Abandon branch, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it

@@ -1,4 +1,4 @@
-// New commit, check out / switch, Move HEAD (§4.3).
+// New commit, check out / switch (§4.3).
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
@@ -228,31 +228,6 @@ GG_TEST("checkout", "local changes block a switch: Stash and switch")
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "older"; }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"stash", "list"}).find("before switching to older") != std::string::npos);
-}
-
-GG_TEST("checkout", "move HEAD to parent and child")
-{
-    const fs::path repo = s.fixture(Recipe::Linear);
-    const std::string main = s.head(repo);
-    const std::string p1 = s.revParse(repo, "HEAD~1");
-    const std::string p2 = s.revParse(repo, "HEAD~2");
-    GG_REQUIRE(s.openRepository(repo));
-    // The toolbar has no Previous / Next buttons (the Commit menu has the actions).
-    GG_CHECK(!s.itemExists("//###Toolbar/###tb_prev") && !s.itemExists("//###Toolbar/###tb_next"));
-    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent");
-    GG_CHECK(s.waitUntil([&] { return headIs(s, repo, p1); }));
-    s.settle();
-    GG_CHECK_STR_EQ(symbolicHead(s, repo), "(detached)");
-    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent");
-    GG_CHECK(s.waitUntil([&] { return headIs(s, repo, p2); }));
-    s.settle();
-    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to child");
-    GG_CHECK(s.waitUntil([&] { return headIs(s, repo, p1); }));
-    s.settle();
-    // The child that is a branch tip switches to the branch again.
-    ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to child");
-    GG_CHECK(s.waitUntil([&] { return headIs(s, repo, main) && symbolicHead(s, repo) == "main"; }));
-    s.settle();
 }
 
 } // namespace ggtest

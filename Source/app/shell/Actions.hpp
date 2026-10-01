@@ -88,7 +88,6 @@ public:
     // `edit`: Edit commit (the target detached, with an edit session to return from).
     void checkout(const std::string& target, bool detach, bool stashFirst = false, bool edit = false);
     void editCommit(const core::Oid& id);
-    void moveHead(bool toChild, const core::Oid& child = {});
 
     // ---- branches, tags, remotes (§4.7) ---------------------------------------------------
     void createBranch(const std::string& name, const std::string& at, bool checkoutAfter);

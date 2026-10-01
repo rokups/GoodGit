@@ -284,7 +284,9 @@ GG_TEST("undo", "every everyday mutation can be undone")
     s.commitFile(other, "fetched.txt", "x\n", "To fetch");
     s.git(other, {"push", "-q", "origin", "main"});
     check("fetch", [&] { ctx->ItemClick("//###Toolbar/###tb_fetch"); });
-    check("move HEAD to parent", [&] { ctx->MenuClick("//##MainMenuBar/Commit/Move HEAD to parent"); });
+    check("detached checkout of the parent", [&] {
+        s.contextMenu(("//History/**/###row_" + s.revParse(repo, "HEAD~1")).c_str(), "Check out/Detached HEAD");
+    });
 }
 
 GG_TEST("undo", "journal variants: foreign, torn and future records are skipped; busy and stale locks; a newer format is refused")

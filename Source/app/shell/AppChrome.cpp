@@ -208,11 +208,6 @@ void App::drawMenuBar()
             s->showCommitDialog(false);
         if (menuItem(ICON_MS_EDIT_NOTE, "Amend...", nullptr, false, free && !s->snapshot()->headUnborn))
             s->showCommitDialog(true);
-        ImGui::Separator();
-        if (menuItem(ICON_MS_ARROW_UPWARD, "Move HEAD to parent", nullptr, false, free && !s->snapshot()->headUnborn))
-            s->actions().moveHead(false);
-        if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move HEAD to child", nullptr, false, free && !s->headChild().isNull()))
-            s->actions().moveHead(true, s->headChild());
         // The selected commit's history editing actions.
         const core::HistoryRow* selected = s && s->selection().kind == SelKind::Commit ? s->history().row(s->selection().id) : nullptr;
         ImGui::Separator();

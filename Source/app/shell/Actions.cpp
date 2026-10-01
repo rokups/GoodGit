@@ -652,27 +652,6 @@ void Actions::editCommit(const core::Oid& id)
     checkout(id.hex(), true, false, true);
 }
 
-void Actions::moveHead(bool toChild, const core::Oid& child)
-{
-    // (Offered only when HEAD has a commit, and for toChild a child.)
-    const std::string target = toChild ? child.hex() : m_session.snapshot()->head.hex() + "^";
-    // A branch tip becomes a branch switch; anything else detaches.
-    const bool expand = m_session.app().settings().data().expandConflictStages;
-    run(toChild ? "move HEAD to child" : "move HEAD to parent", [target, expand](MutationContext& ctx) {
-        collapseConflictStages(ctx);
-        const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", target + "^{commit}"}).out);
-        const std::string branches = ctx.git({"for-each-ref", "--points-at", id, "--format=%(refname:short)", "refs/heads/"}).out;
-        const auto names = gg::splitLines(branches);
-        if (!names.empty())
-            ctx.git({"switch", "-q", names.front()});
-        else
-            ctx.git({"switch", "-q", "--detach", id});
-        if (expand)
-            expandConflictStages(ctx);
-        ctx.worktreeFollowsIndex = true;
-    });
-}
-
 // ---- branches, tags, remotes -----------------------------------------------------------------------
 
 void Actions::createBranch(const std::string& name, const std::string& at, bool checkoutAfter)

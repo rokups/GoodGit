@@ -193,8 +193,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
     branch, upstream and ahead/behind), Open working directory, Copy path, Close repository
     (Ctrl+W), Refresh (F5), **N** Fetch / Pull / Push (same behavior as the toolbar),
     Settings…, Quit.
-  - **Change** → rename to **Commit**: New commit (Ctrl+N), Commit…/Amend…, Move HEAD to
-    parent/child, and the selected-commit actions (§4.3).
+  - **Change** → rename to **Commit**: New commit (Ctrl+N), Commit…/Amend…, and the
+    selected-commit actions (§4.3).
   - **Edit:** Undo (Ctrl+Z), Redo (Ctrl+Y), Apply patch….
   - **View:** toggle each panel, Previous/Next changed file (Shift+F6/F6), Reset layout.
 - **K** Toolbar: New, Commit/Amend (label follows the selection), Prev, Next, Undo, Redo,
