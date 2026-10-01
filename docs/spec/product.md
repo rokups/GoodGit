@@ -337,9 +337,11 @@ the History panel list newly conflicted commits. See §5, decision R1.
   - Drag a file between the Staged and Unstaged groups.
 - **K** File context menu: Open working-copy file, Open containing folder, Copy ▸
   (name / relative / absolute path), Resolve with merge tool, Mark resolved, Copy patch,
-  Save patch…, Blame file, External diff ▸ (vs @, vs parent), Revert, Move to child (on the HEAD
+  Save patch…, Blame file, External diff ▸ (vs @, vs parent), Move to child (on the HEAD
   commit, which has no child, "Move to working tree" takes its place; both use the up arrow) / Move to parent (down arrow),
-  Delete file.
+  Discard (**D**; commit files: rewrites the commit so it no longer changes the files, descendants
+  rebased, one Undo; published commits ask "Rewrite published history?" first; no other confirmation
+  since Undo restores it; discarding every change may leave an empty commit), Delete file.
 - **M** Track → `git add` for untracked files. Untrack → `git rm --cached`, with an optional
   "add to .gitignore" (**N**).
 - **K** Change information: editable message with *Save message*, author (copy name/email,
@@ -354,7 +356,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   this file with @". Ctrl+C copies the selection: code lines only (no hunk rows or gap
   placeholders).
 - **K** Line/hunk context menu: Copy, Blame file, Move line(s)/hunk to child (up arrow;
-  on the HEAD commit "working tree" replaces it, since HEAD has no child) / parent (down arrow) / active commit, Revert line/hunk.
+  on the HEAD commit "working tree" replaces it, since HEAD has no child) / parent (down arrow) / active commit, Discard line(s)/hunk(s) (a commit rewrite like Discard on files; the hunk row button "Discard hunk" does the same).
 - **N** When viewing unstaged changes: **Stage line(s) / Stage hunk / Discard line(s) /
   Discard hunk**. When viewing staged changes: **Unstage line(s) / Unstage hunk**. Buttons
   appear in each hunk's row, as in gitfourchette. A hunk row shows only the function context,

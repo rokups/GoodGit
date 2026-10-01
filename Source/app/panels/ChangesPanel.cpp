@@ -640,8 +640,11 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             actions.moveChanges(id, Actions::MoveTo::Child, paths, {});
         if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to parent", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
-        if (menuItem(ICON_MS_UNDO, "Revert", nullptr, false, free))
-            actions.moveChanges(id, Actions::MoveTo::Revert, paths, {});
+        ImGui::Separator();
+        if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
+            actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Rewrites the commit so it no longer makes this change (its descendants are rebased). Undo restores it.");
     }
     if (m_selection.kind == SelKind::Stash && row.group != FileGroup::StashIndex) {
         if (menuItem(ICON_MS_CONTENT_PASTE, "Apply this file", nullptr, false, free))
@@ -954,6 +957,16 @@ void ChangesPanel::draw(bool* open)
                 const DiscardPlan plan = discardPlan(actionRows(*cur));
                 if (plan.enabled())
                     discard(plan);
+            }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods && m_selection.kind == SelKind::Commit
+            && m_session.actions().busy().empty()) {
+            // Discard from the commit: a rewrite (one Undo), published commits ask first.
+            if (const FileRow* cur = current(); cur && cur->group == FileGroup::Commit) {
+                std::vector<std::string> paths;
+                for (const FileRow* r : actionRows(*cur))
+                    paths.push_back(r->path);
+                m_session.actions().moveChanges(m_selection.id, Actions::MoveTo::Discard, paths, {});
             }
         }
     }

@@ -649,7 +649,8 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
     case EditorLine::Hunk: {
         const StagingMode mode = stagingMode(); // hunk rows are in the unified view only
         const float button = ImGui::GetFontSize() * 1.3f;
-        const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged ? 1 : 0;
+        const bool commitMode = m_selection.kind == SelKind::Commit && m_diff->query.kind == core::DiffKind::Commit;
+        const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged || commitMode ? 1 : 0;
         handle("###hunk_" + std::to_string(l.hunk), width - button * static_cast<float>(count));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
         ImGui::BeginDisabled(!free);
@@ -670,6 +671,9 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         } else if (mode == StagingMode::Staged) {
             if (iconButton(ICON_MS_REMOVE, "unstage_hunk_" + n, "Unstage hunk"))
                 applyLines(hunkLines(f, l.hunk), StagingAction::Unstage);
+        } else if (commitMode) {
+            if (iconButton(ICON_MS_UNDO, "discard_hunk_" + n, "Discard hunk"))
+                m_session.actions().moveChanges(m_selection.id, Actions::MoveTo::Discard, {}, buildPatch(f, hunkLines(f, l.hunk), false));
         }
         ImGui::EndDisabled();
         ImGui::PopStyleVar();
@@ -896,8 +900,12 @@ void DiffPanel::drawMenuItems()
             actions.moveChanges(id, Actions::MoveTo::Parent, {}, patch);
         if (menuItem(ICON_MS_MY_LOCATION, "Move line(s) to active commit", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Active, {}, patch);
-        if (menuItem(ICON_MS_UNDO, "Revert line(s)", nullptr, false, can))
-            actions.moveChanges(id, Actions::MoveTo::Revert, {}, patch);
+        ImGui::Separator();
+        if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, can))
+            actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
+        const std::string hunkPatch = hunks.empty() ? std::string() : buildPatch(m_diff->files.front(), hunks, false);
+        if (menuItem(ICON_MS_UNDO, "Discard hunk(s)", nullptr, false, free && !hunkPatch.empty()))
+            actions.moveChanges(id, Actions::MoveTo::Discard, {}, hunkPatch);
     }
 }
 

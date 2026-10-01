@@ -172,10 +172,11 @@ public:
     // `git revert/cherry-pick --no-commit` into the index and working tree (native conflicts
     // leave the Reverting/CherryPicking state), with the message waiting in MERGE_MSG.
     void revertOrPick(const core::Oid& commit, bool revert, bool andCommit);
-    enum class MoveTo { Parent, Child, Active, WorkingTree, Revert };
+    enum class MoveTo { Parent, Child, Active, WorkingTree, Discard };
     // Moves the commit's changes to selected files (`paths`) or selected lines (`patch`, old →
     // new as the commit's diff has them) to its parent, its child, the checked-out commit or
-    // the working tree ("uncommit"); Revert takes them out of the commit.
+    // the working tree ("uncommit"); Discard rewrites the commit so it no longer
+    // makes them (its descendants are rebased; published commits ask first).
     void moveChanges(const core::Oid& commit, MoveTo to, const std::vector<std::string>& paths, const std::string& patch);
     // Working tree files folded into `commit` (its descendants rebased; the files stay as they
     // are on disk).

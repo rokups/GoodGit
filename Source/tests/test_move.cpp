@@ -88,7 +88,7 @@ bool moved(Scenario& s, const fs::path& repo, const std::string& from)
 
 } // namespace
 
-GG_TEST("move", "files: to the parent, to the child, to the working tree, revert")
+GG_TEST("move", "files: to the parent, to the child, to the working tree, discard")
 {
     const MoveRepo r = makeRepo(s);
     const std::string tree = s.revParse(r.path, "HEAD^{tree}");
@@ -119,13 +119,13 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, revert
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD"), "b.txt");
     GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");
     GG_CHECK(s.statusPorcelain(r.path).find("? d.txt") != std::string::npos); // untracked (porcelain v2)
-    // Revert a.txt's change in the middle commit: gone from history (and the working tree).
+    // Discard a.txt's change in the middle commit: gone from history (and the working tree).
     fs::remove(r.path / "d.txt");
     const std::string mid = s.revParse(r.path, "HEAD~1");
-    const std::string beforeRevert = s.head(r.path);
+    const std::string beforeDiscard = s.head(r.path);
     selectCommit(s, mid, 1);
-    s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert");
-    GG_CHECK(moved(s, r.path, beforeRevert));
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "Discard");
+    GG_CHECK(moved(s, r.path, beforeDiscard));
     GG_CHECK(s.read(r.path, "a.txt").find("LINE") == std::string::npos);
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
@@ -163,13 +163,13 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~1"), "b.txt c.txt");
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD"), "a.txt d.txt");
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), tree);
-    // Revert that line in HEAD, then (after Undo) move it to the working tree instead.
+    // Discard that line in HEAD, then (after Undo) move it to the working tree instead.
     const std::string tip = s.head(r.path);
     selectCommit(s, tip, 2);
     ctx->ItemClick(fileRef(s, "a.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
     ctx->ItemClick((body(s) + "/###hunk_0").c_str());
-    s.contextMenu((body(s) + "/###hunk_0").c_str(), "Revert line(s)");
+    s.contextMenu((body(s) + "/###hunk_0").c_str(), "Discard line(s)");
     GG_CHECK(moved(s, r.path, tip));
     GG_CHECK(s.read(r.path, "a.txt").find("LINE 2") == std::string::npos);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
@@ -189,7 +189,7 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     // And to the child: HEAD~1 (X) has no line changes left; nothing selectable is fine.
 }
 
-GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode change: revert them in a commit")
+GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode change: discard them from a commit")
 {
     const fs::path repo = s.fixture(Recipe::Empty);
     s.write(repo, "crlf.txt", "one\r\ntwo\r\nthree\r\n");
@@ -226,7 +226,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
         }));
         GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
         ctx->ItemClick((body(s) + "/###hunk_0").c_str());
-        s.contextMenu((body(s) + "/###hunk_0").c_str(), "Revert line(s)");
+        s.contextMenu((body(s) + "/###hunk_0").c_str(), "Discard line(s)");
         const bool ok = moved(s, repo, y);
         if (!ok)
             ctx->LogError("reverting the lines of %s changed nothing", path.c_str());
@@ -280,6 +280,61 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     GG_REQUIRE(moved(s, repo, tip2));
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1:crlf.txt"), s.revParse(repo, base + ":crlf.txt"));
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
+}
+
+GG_TEST("move", "discard from a published commit asks first: Cancel keeps it, Rewrite applies it")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string published = s.revParse(repo, "origin/main~1"); // adds o3.txt, on the remote
+    const std::string tip = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, published, 1);
+    s.contextMenu(fileRef(s, "o3.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), tip);
+    s.contextMenu(fileRef(s, "o3.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_REQUIRE(moved(s, repo, tip));
+    GG_CHECK(!s.gitMayFail(repo, {"cat-file", "-e", "HEAD~1:o3.txt"}).ok());
+    GG_CHECK_STR_EQ(s.read(repo, "local-only.txt"), "l\n"); // the descendant is kept
+    GG_CHECK(s.fsck(repo));
+}
+
+GG_TEST("move", "discard: the D key on a commit's file rewrites it without a dialog; Undo restores it")
+{
+    const MoveRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.x, 3);
+    ctx->ItemClick(fileRef(s, "c.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(moved(s, r.path, r.y));
+    GG_CHECK(!s.dialogOpen("Rewrite published history?"));
+    GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~1"), "a.txt b.txt");
+    GG_CHECK(!s.gitMayFail(r.path, {"cat-file", "-e", "HEAD:c.txt"}).ok());
+    GG_CHECK(s.fsck(r.path));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(r.path) == r.y; }));
+    s.settle();
+    GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~1"), "a.txt b.txt c.txt");
+}
+
+GG_TEST("move", "discard: a hunk's button in commit mode rewrites the commit without that hunk")
+{
+    const MoveRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.x, 3);
+    ctx->ItemClick(fileRef(s, "a.txt").c_str());
+    s.showPanel("Diff");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###discard_hunk_0").c_str()); }));
+    ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    GG_REQUIRE(moved(s, r.path, r.y));
+    const std::string a = s.gitOut(r.path, {"show", "HEAD~1:a.txt"});
+    GG_CHECK(a.find("LINE 2\n") == std::string::npos); // the first hunk is gone
+    GG_CHECK(a.find("LINE 18\n") != std::string::npos); // the second stays
+    GG_CHECK(s.fsck(r.path));
 }
 
 } // namespace ggtest

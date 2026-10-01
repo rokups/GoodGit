@@ -796,7 +796,7 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     menu(files + "/" + first + "/###file_" + first, "Move to parent");
     ctx->ItemClick((files + "/" + first + "/###file_" + first).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
-    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Revert line(s)");
+    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Discard line(s)");
     menu("//Change information/**/###author", "Edit author...");
     ctx->MenuAction(ImGuiTestAction_Hover, "//##MainMenuBar/Commit/Commit...");
     GG_CHECK((ctx->ItemInfo("//$FOCUSED/Commit...").ItemFlags & ImGuiItemFlags_Disabled) != 0);

@@ -1005,10 +1005,10 @@ namespace ggui {
 void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<std::string>& paths, const std::string& patch)
 {
     const std::string id = commit.hex();
-    static const char* names[] = {"to parent", "to child", "to the active commit", "to the working tree", "revert"};
+    static const char* names[] = {"to parent", "to child", "to the active commit", "to the working tree", "discard"};
     const std::string what = patch.empty() ? std::to_string(paths.size()) + " file(s)" : std::string("lines");
-    rewrite((to == MoveTo::Revert ? "revert " + what + " of " : "move " + what + " of ") + id.substr(0, 10) + " "
-            + (to == MoveTo::Revert ? "" : names[static_cast<int>(to)]),
+    rewrite((to == MoveTo::Discard ? "discard " + what + " of " : "move " + what + " of ") + id.substr(0, 10) + " "
+            + (to == MoveTo::Discard ? "" : names[static_cast<int>(to)]),
         [id, to, paths, patch](git_repository* repo) {
             using namespace gg::git2;
             const auto parents = parentsOf(repo, id);
@@ -1094,9 +1094,9 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
                 break;
             }
             case MoveTo::WorkingTree:
-            case MoveTo::Revert: {
+            case MoveTo::Discard: {
                 plan = rw::replayPlan(repo, {id});
-                plan.reflogMessage = to == MoveTo::Revert ? "ggui: revert changes" : "ggui: uncommit changes";
+                plan.reflogMessage = to == MoveTo::Discard ? "ggui: discard changes" : "ggui: uncommit changes";
                 const std::string without = backward(ownTree);
                 for (auto& st : plan.steps)
                     if (st.source == id)
