@@ -711,7 +711,7 @@ void StashesPanel::draw(bool* open)
                 popIndex = s.index;
     const bool hasStashes = !m_snapshot->stashes.empty();
     ImGui::BeginDisabled(!free || !status || status->empty());
-    if (button(ICON_MS_ADD, "Push##stash_push"))
+    if (button(ICON_MS_INVENTORY_2, "Push##stash_push"))
         m_session.showStashDialog();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))

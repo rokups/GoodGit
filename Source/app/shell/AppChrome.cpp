@@ -363,7 +363,7 @@ void App::drawRepositoryButtons()
     if (iconButton(ICON_MS_INVENTORY_2, "##tb_stash", tip("Stash changes..."), free && dirty))
         s->showStashDialog();
     ImGui::SameLine();
-    if (iconButton(ICON_MS_UNARCHIVE, "##tb_pop", tip("Pop the latest stash"), free && !s->snapshot()->stashes.empty()))
+    if (iconButton(ICON_MS_OUTBOX, "##tb_pop", tip("Pop the latest stash"), free && !s->snapshot()->stashes.empty()))
         s->popStash();
 }
 
