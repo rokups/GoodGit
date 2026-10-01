@@ -554,6 +554,10 @@ GG_TEST("keyboard", "dialogs: combos open by Enter, rows by Down, the filter pic
     ctx->Yield(2);
     ctx->ItemClick("//Settings/##settings_tabs/Git");
     const std::string tab = "//Settings/##settings_tabs/Git/##config_scope/User/";
+    // (The scope tab an earlier test of the run left selected stays selected.)
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Settings/##settings_tabs/Git/##config_scope/User"); }));
+    ctx->ItemClick("//Settings/##settings_tabs/Git/##config_scope/User");
+    ctx->Yield(2);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "Pull method##pull_method").c_str()); }));
     GG_REQUIRE(navTo(ctx, tab + "Pull method##pull_method"));
     press(ctx, ImGuiKey_Enter);
