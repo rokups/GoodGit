@@ -319,6 +319,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Revert | **N** | `git revert --no-commit`: the inverse of the commit into the index and working tree. The message `Revert "<subject>"` + `This reverts commit <id>.` waits in MERGE_MSG, and the Commit dialog starts with it. Conflicts stop natively (Reverting: Continue/Abort). Refused with staged changes, which Abort would drop |
 | Revert and commit | **N** | A new commit on HEAD that undoes the commit, built in memory like Merge into @: text conflicts become first-class conflicts, one ref update advances the branch (or the detached HEAD), one Undo. Local changes in the way refuse it, as for the other HEAD-moving rewrites |
 | Revert and commit (files / lines) | **N** | From a commit's file or line/hunk context menu in the Changes or Diff panel: a new commit on HEAD that undoes the commit's change to just those files or lines (against its first parent), built in memory like Revert and commit, with one Undo. Message `Revert "<subject>"` + `This reverts part of commit <id>: <paths>.` (or `some lines of <path>`). Text conflicts become first-class conflicts. Disabled while HEAD is unborn or an operation is running |
+| Revert (files / lines) | **N** | The same menus without Shift: **Revert** / **Revert line(s)** undo the commit's change to just those files or lines in the index and working tree (Shift turns them into the "and commit" items; a whole commit's menu lists both items instead). The inverse is a patch (`git diff-tree --binary --full-index` from the commit's tree to the same without the selection) applied with `git apply --index --3way`; MERGE_MSG gets the `This reverts part of commit` message, and conflicts stop as in git's revert (REVERT_HEAD: Reverting, Continue/Abort). Refused with staged changes, or when a touched file has unstaged changes. One Undo. `git apply` cannot 3-way an added or deleted file's conflict (it fails to apply instead): "Revert and commit" handles those as first-class conflicts |
 | Cherry-pick | **N** | `git cherry-pick --no-commit`: the commit's change into the index and working tree, with the message plus `(cherry picked from commit <id>)` (added once) in MERGE_MSG. A conflict leaves the CherryPicking state (ggui writes CHERRY_PICK_HEAD, which `--no-commit` does not) so Continue/Abort work. Disabled for HEAD, refused for an ancestor of HEAD and with staged changes |
 | Cherry-pick and commit | **N** | A copy of the commit on HEAD built in memory, as Revert and commit, keeping the original author (as git does). A merge commit's change is always taken against its first parent (`-m 1`), for all four actions |
 
@@ -340,7 +341,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   (name / relative / absolute path), Resolve with merge tool, Mark resolved, Copy patch,
   Save patch…, Blame file, External diff ▸ (vs @, vs parent), Move to child (on the HEAD
   commit, which has no child, "Move to working tree" takes its place; both use the up arrow) / Move to parent (down arrow),
-  Revert and commit (commit files: a new commit on HEAD undoing the change to the selected files), Discard (**D**; commit files: rewrites the commit so it no longer changes the files, descendants
+  Revert (commit files: undo the change to the selected files in the index and working tree; Shift: Revert and commit, a new commit on HEAD), Discard (**D**; commit files: rewrites the commit so it no longer changes the files, descendants
   rebased, one Undo; published commits ask "Rewrite published history?" first; no other confirmation
   since Undo restores it; discarding every change may leave an empty commit), Delete file.
 - **M** Track → `git add` for untracked files. Untrack → `git rm --cached`, with an optional
@@ -357,7 +358,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   this file with @". Ctrl+C copies the selection: code lines only (no hunk rows or gap
   placeholders).
 - **K** Line/hunk context menu: Copy, Blame file, Move line(s)/hunk to child (up arrow;
-  on the HEAD commit "working tree" replaces it, since HEAD has no child) / parent (down arrow) / active commit, Revert line(s) and commit (a new commit on HEAD undoing the selected lines), Discard line(s)/hunk(s) (a commit rewrite like Discard on files; the hunk row button "Discard hunk" does the same).
+  on the HEAD commit "working tree" replaces it, since HEAD has no child) / parent (down arrow) / active commit, Revert line(s) (into the index and working tree; Shift: Revert line(s) and commit, a new commit on HEAD), Discard line(s)/hunk(s) (a commit rewrite like Discard on files; the hunk row button "Discard hunk" does the same).
 - **N** When viewing unstaged changes: **Stage line(s) / Stage hunk / Discard line(s) /
   Discard hunk**. When viewing staged changes: **Unstage line(s) / Unstage hunk**. Buttons
   appear in each hunk's row, as in gitfourchette. A hunk row shows only the function context,

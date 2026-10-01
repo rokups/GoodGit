@@ -815,6 +815,21 @@ struct SelectionTrees {
     }
 };
 
+// What a selection reverts, for the message: the files, or the file the lines are in.
+std::string revertWhat(const std::vector<std::string>& paths, const std::string& patch)
+{
+    if (patch.empty()) {
+        std::string desc;
+        for (const auto& p : paths)
+            desc += (desc.empty() ? "" : ", ") + p;
+        return desc;
+    }
+    // "diff --git a/<old> b/<new>": the file as this commit has it.
+    const std::string first = patch.substr(0, patch.find('\n'));
+    const size_t sep = first.find(" b/");
+    return "some lines of " + (sep == std::string::npos ? std::string("a file") : first.substr(sep + 3));
+}
+
 SelectionTrees selectionTrees(git_repository* repo, const std::string& id, const std::vector<std::string>& paths,
     const std::string& patch)
 {
@@ -934,8 +949,68 @@ void Actions::revertChanges(const core::Oid& commit, const std::vector<std::stri
     const std::string what = patch.empty() ? std::to_string(paths.size()) + " file(s)" : std::string("lines");
     const std::string label = "revert " + what + " of " + id.substr(0, 10);
     if (!andCommit) {
-        // Not reachable from the UI yet (the index and working tree variant is a later step).
-        m_session.app().notify(App::Notice::Warning, label, "Reverting without a commit is not available yet.");
+        // The inverse as a patch (from the commit's tree to the same without the selection) applied
+        // to the index and working tree; conflicts leave the Reverting state, as git revert does.
+        run(label + " (no commit)",
+            [id, paths, patch](MutationContext& ctx) {
+                git_repository* repo = ctx.repo();
+                pickOnto(repo, id, true);
+                const SelectionTrees trees = selectionTrees(repo, id, paths, patch);
+                const std::string without = trees.backward(repo, trees.ownTree);
+                // Abort (git reset --merge) would drop staged changes along with the revert's.
+                if (!ctx.gitMayFail({"diff", "--cached", "--quiet"}).ok())
+                    refuse("the index has staged changes: commit, stash or unstage them first");
+                std::vector<std::string> touched;
+                {
+                    const std::string out = ctx.git({"diff-tree", "-r", "-z", "--name-only", "--no-renames", trees.ownTree, without}).out;
+                    size_t at = 0;
+                    while (at < out.size()) {
+                        const size_t end = out.find('\0', at);
+                        touched.push_back(out.substr(at, end == std::string::npos ? std::string::npos : end - at));
+                        if (end == std::string::npos)
+                            break;
+                        at = end + 1;
+                    }
+                }
+                if (touched.empty())
+                    refuse("the commit makes no such change");
+                std::vector<std::string> check{"diff", "--quiet", "--"};
+                for (const auto& t : touched)
+                    check.push_back(":(literal)" + t);
+                if (!ctx.gitMayFail(check).ok()) {
+                    // The first file with local changes, for the message.
+                    std::string which = touched.front();
+                    for (const auto& t : touched)
+                        if (!ctx.gitMayFail({"diff", "--quiet", "--", ":(literal)" + t}).ok()) {
+                            which = t;
+                            break;
+                        }
+                    refuse(which + " has local changes: commit, stash or discard them first");
+                }
+                const std::string inverse = ctx.git({"diff-tree", "-r", "-p", "--binary", "--full-index", "--no-renames", trees.ownTree, without}).out;
+                ctx.worktreeFollowsIndex = true;
+                const auto r = ctx.gitMayFail({"apply", "--index", "--3way", "--whitespace=nowarn", "-"}, inverse);
+                const bool conflicts = !gg::trim(ctx.gitMayFail({"ls-files", "-u"}).out).empty();
+                if (!r.ok() && !conflicts) {
+                    const std::string all = r.err + r.out;
+                    throw MutationError{core::classifyFailure(all), r.message(), all};
+                }
+                // The pending message (git commit and --continue take it from MERGE_MSG).
+                {
+                    std::ofstream out(std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG", std::ios::binary | std::ios::trunc);
+                    out << revertPartMessage(messageOf(repo, id), id, revertWhat(paths, patch)) << "\n";
+                }
+                if (!conflicts)
+                    return;
+                ctx.git({"update-ref", "REVERT_HEAD", id});
+                ctx.info = "The revert has conflicts: resolve them, then Continue (or commit), or Abort.";
+            },
+            [this, label](const core::MutationFinishedEvent& e) {
+                if (e.outcome == Outcome::Ok && !e.message.empty())
+                    m_session.app().notify(App::Notice::Warning, label, e.message);
+                else
+                    handleDefault(e);
+            });
         return;
     }
     // In memory, like revertOrPick: one new commit on HEAD, one ref update, one Undo.
@@ -943,16 +1018,7 @@ void Actions::revertChanges(const core::Oid& commit, const std::vector<std::stri
         const std::string head = pickOnto(repo, id, true);
         const SelectionTrees trees = selectionTrees(repo, id, paths, patch);
         const std::string without = trees.backward(repo, trees.ownTree);
-        std::string desc;
-        if (patch.empty()) {
-            for (const auto& p : paths)
-                desc += (desc.empty() ? "" : ", ") + p;
-        } else {
-            // "diff --git a/<old> b/<new>": the file as this commit has it.
-            const std::string first = patch.substr(0, patch.find('\n'));
-            const size_t sep = first.find(" b/");
-            desc = "some lines of " + (sep == std::string::npos ? std::string("a file") : first.substr(sep + 3));
-        }
+        const std::string desc = revertWhat(paths, patch);
         rw::Step s;
         s.source = id;
         s.key = "pick";

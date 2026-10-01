@@ -641,10 +641,15 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to parent", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
         ImGui::Separator();
-        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", nullptr, false, free && !m_session.snapshot()->headUnborn))
-            actions.revertChanges(id, paths, {}, true);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts.");
+        // Shift toggles: Revert (index and working tree) / Revert and commit (a new commit on HEAD).
+        const bool shift = ImGui::GetIO().KeyShift;
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, shift ? "Revert and commit" : "Revert", nullptr, false,
+                free && !m_session.snapshot()->headUnborn))
+            actions.revertChanges(id, paths, {}, shift);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%s", shift ? "A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts."
+                                          : "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
+                                            "added or deleted files may not apply (Shift: Revert and commit handles them).");
         if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
             actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
