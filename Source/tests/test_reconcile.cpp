@@ -337,8 +337,11 @@ GG_TEST("reconcile", "legacy managed hooks (wrapper scripts) are uninstalled on 
     GG_CHECK(s.waitUntil([&] { return legacyGone(s, repo) && hookFiles(s, repo / ".git" / "hooks") == before; }));
     s.settle();
     GG_CHECK(hookFiles(s, repo / ".git" / "hooks") == before);
+#ifndef _WIN32
+    // Windows has no executable bit: libstdc++ reports one only for .exe/.bat/.cmd/.com names.
     const auto perms = fs::status(repo / ".git" / "hooks" / "pre-push").permissions();
     GG_CHECK((perms & fs::perms::owner_exec) != fs::perms::none);
+#endif
     GG_CHECK(s.app.dialogs().current() == nullptr);
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "after the migration"});
     GG_CHECK(s.waitUntil([&] { return panelOps(s, "git") == 1; }));
