@@ -365,7 +365,14 @@ the panel without touching the repository.
 
 ## 6. Diff panel — window `"Diff"`
 - Toolbar: view `##diff_view` (Unified / Side by side), whitespace `##diff_ws` (Normal / Ignore
-  changes / Ignore all), context lines `##diff_context`, *Compare with HEAD* `##diff_vs_head`
+  changes / Ignore all), context lines `##diff_context` with `-`/`+`, hunk navigation
+  `##diff_prev_hunk` / `##diff_next_hunk` (icon buttons "Previous hunk (Alt+Up)" / "Next hunk
+  (Alt+Down)", also bound to `Alt+Up` / `Alt+Down` while the Diff window is focused and no text
+  field is active; they scroll the previous / next hunk to the top of the view, in unified
+  (the hunk header row) and side by side (the hunk's first code line, both sides together),
+  relative to the hunk last navigated to while it is still on screen (the last hunks cannot
+  reach the top) or else the first visible line; they stop at the first / last hunk, where the
+  button is disabled), *Compare with HEAD* `##diff_vs_head`
   (this file of a commit or stash; on the same row), for stashes a part selector `##stash_part` (Working tree / Index /
   Untracked).
 - Body: hunks with headers; per hunk buttons (N) `Stage hunk`, `Discard hunk`, `Unstage hunk`; in a commit's diff `Discard hunk` (rewrites the commit without that hunk).

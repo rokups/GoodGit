@@ -648,4 +648,75 @@ GG_TEST("diff", "side by side across files: switching, a binary file, Shift+clic
     GG_CHECK(s.itemText("//Diff/###diff_submodule").find("(none)") != std::string::npos);
 }
 
+GG_TEST("diff", "hunk navigation: buttons and Alt+Down / Alt+Up scroll to the next and previous hunk in both views")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "hunknav");
+    s.write(repo, "nav.cpp", numbered(400));
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Base"});
+    std::string changed;
+    for (int i = 1; i <= 400; ++i)
+        changed += (i % 80 == 40) ? "int line" + std::to_string(i) + " = 1; // changed\n" : "int line" + std::to_string(i) + " = 0;\n";
+    s.write(repo, "nav.cpp", changed); // 5 hunks: lines 40, 120, 200, 280, 360
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Change"});
+    GG_REQUIRE(s.openRepository(repo));
+    showFile(s, s.head(repo), "nav.cpp");
+    GG_REQUIRE(file(s) != nullptr);
+    GG_REQUIRE(file(s)->hunks.size() == 5);
+    auto& diff = s.session()->diff();
+    ctx->ItemInputValue("//Diff/Context##diff_context", 12);
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 5 && file(s)->hunks[0].lines.size() == 26; }));
+    ctx->WindowFocus("//Diff");
+    auto key = [&](ImGuiKeyChord chord) {
+        ctx->KeyPress(chord);
+        ctx->Yield(3);
+    };
+    for (bool sideBySide : {false, true}) {
+        s.comboSelect("//Diff/##diff_view", sideBySide ? "Side by side" : "Unified");
+        s.settle();
+        GG_REQUIRE(s.waitUntil([&] { return diff.hunkLine(4) > 0; }));
+        ctx->Yield(3);
+        for (int i = 0; i < 6; ++i) // back before the first hunk, wherever the view was left
+            key(ImGuiMod_Alt | ImGuiKey_UpArrow);
+        // Every hunk lies below the previous one, so the top line follows them one by one.
+        auto atTop = [&](int h) { return diff.topLine() >= diff.hunkLine(h) - 1 && diff.topLine() <= diff.hunkLine(h); };
+        if (diff.topLine() < diff.hunkLine(0)) { // the unified view starts above the first hunk's header
+            ctx->ItemClick("//Diff/##diff_next_hunk");
+            ctx->Yield(3);
+        }
+        GG_CHECK_EQ(diff.topLine(), diff.hunkLine(0));
+        ctx->ItemClick("//Diff/##diff_next_hunk");
+        ctx->Yield(3);
+        GG_CHECK(atTop(1));
+        key(ImGuiMod_Alt | ImGuiKey_DownArrow);
+        GG_CHECK(atTop(2));
+        {
+            // The key is the panel's: ImGui neither toggled its menu layer nor lost the Diff window.
+            ImGuiContext& g = *ImGui::GetCurrentContext();
+            GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
+            GG_CHECK(g.NavWindow && g.NavWindow->RootWindow->Name == std::string("Diff"));
+        }
+        key(ImGuiMod_Alt | ImGuiKey_UpArrow);
+        GG_CHECK(atTop(1));
+        ctx->ItemClick("//Diff/##diff_prev_hunk");
+        ctx->Yield(3);
+        GG_CHECK(atTop(0));
+        // Past the last hunk nothing moves (the last hunks may not reach the top: the view ends);
+        // back at the first, Previous stops too.
+        for (int i = 0; i < 4; ++i)
+            key(ImGuiMod_Alt | ImGuiKey_DownArrow);
+        GG_CHECK(diff.topLine() >= diff.hunkLine(3));
+        const int last = diff.topLine();
+        key(ImGuiMod_Alt | ImGuiKey_DownArrow);
+        GG_CHECK_EQ(diff.topLine(), last);
+        GG_CHECK(diff.hunkTarget(true) < 0);
+        for (int i = 0; i < 5; ++i)
+            key(ImGuiMod_Alt | ImGuiKey_UpArrow);
+        GG_CHECK(diff.hunkTarget(false) < 0);
+        GG_CHECK(atTop(0));
+    }
+    s.comboSelect("//Diff/##diff_view", "Unified");
+}
+
 } // namespace ggtest

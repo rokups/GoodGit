@@ -51,6 +51,15 @@ public:
     const std::optional<FileRow>& file() const { return m_file; }
     std::string languageName() const;
     std::string selectedText() const;
+    // Hunk navigation (toolbar buttons, Alt+Down / Alt+Up): scroll the next / previous hunk (in
+    // side by side its first code line) to the top. "Current" is the hunk last navigated to while
+    // it is still on screen (the last hunks cannot reach the top), otherwise the first visible
+    // line. Stops at the ends. `hunkTarget` is the editor line to go to, or -1 at the end.
+    int hunkTarget(bool next) const;
+    void goToHunk(bool next);
+    // Tests: the first visible line of the shown view and the line where hunk `h` starts there.
+    int topLine() const;
+    int hunkLine(int h) const;
     // Lines revealed in a context gap: from its top (below the hunk above) and from its bottom
     // (above the hunk below); `all` reveals the whole gap.
     struct GapShown {
@@ -111,6 +120,9 @@ private:
     void selectRows(View& v, int row, bool extend);
     std::vector<int> selectedRows() const;
     View& primaryView();
+    const View& primaryView() const;
+    bool sideBySideShown() const;
+    std::vector<int> hunkStarts() const;
 
     Session& m_session;
     Selection m_selection;
@@ -133,6 +145,8 @@ private:
     int m_anchorRow = -1;
     bool m_viewsDirty = true;
     bool m_resetScroll = true;
+    int m_navLine = -1;         // editor line of the last hunk navigation ...
+    bool m_navSideBySide = false; // ... in this view mode
     float m_syncedScroll = 0.0f;
     int m_paletteTheme = -1;
     int m_conflictView = 0; // native conflicts: 0 working tree, 1 base→ours, 2 base→theirs, 3 ours→theirs

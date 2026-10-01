@@ -349,6 +349,85 @@ std::string DiffPanel::selectedText() const
     return out;
 }
 
+bool DiffPanel::sideBySideShown() const
+{
+    if (!m_diff || m_diff->files.empty() || !m_session.app().settings().data().diffSideBySide)
+        return false;
+    const core::DiffFile& f = m_diff->files.front();
+    return !f.binary && !f.submodule && f.oldText && f.newText;
+}
+
+std::vector<int> DiffPanel::hunkStarts() const
+{
+    // Per hunk: its first editor line (the header row in unified; the first code line, on either
+    // side, in side by side).
+    std::vector<int> starts(m_diff && !m_diff->files.empty() ? m_diff->files.front().hunks.size() : 0, -1);
+    auto scan = [&](const View& v) {
+        for (size_t i = 0; i < v.lines.size(); ++i) {
+            const EditorLine& l = v.lines[i];
+            if ((l.kind != EditorLine::Hunk && l.kind != EditorLine::Line) || l.hunk < 0 || l.hunk >= static_cast<int>(starts.size()))
+                continue;
+            int& s = starts[static_cast<size_t>(l.hunk)];
+            if (s < 0 || static_cast<int>(i) < s)
+                s = static_cast<int>(i);
+        }
+    };
+    if (sideBySideShown()) {
+        scan(m_left);
+        scan(m_right);
+    } else {
+        scan(m_unified);
+    }
+    return starts;
+}
+
+int DiffPanel::hunkTarget(bool next) const
+{
+    if (m_viewsDirty || !m_unified.editor || !m_left.editor)
+        return -1;
+    const View& v = primaryView();
+    const int first = v.editor->GetFirstVisibleLine();
+    const int last = v.editor->GetLastVisibleLine();
+    const bool navValid = m_navSideBySide == sideBySideShown() && m_navLine >= first && m_navLine <= last;
+    const int pos = navValid ? m_navLine : first;
+    int target = -1;
+    for (int start : hunkStarts()) {
+        if (start < 0)
+            continue;
+        if (next && start > pos && (target < 0 || start < target))
+            target = start;
+        else if (!next && start < pos && start > target)
+            target = start;
+    }
+    return target;
+}
+
+void DiffPanel::goToHunk(bool next)
+{
+    const int target = hunkTarget(next);
+    if (target < 0)
+        return;
+    m_navLine = target;
+    m_navSideBySide = sideBySideShown();
+    if (sideBySideShown()) {
+        m_left.editor->ScrollToLine(target, TextEditor::Scroll::alignTop);
+        m_right.editor->ScrollToLine(target, TextEditor::Scroll::alignTop);
+    } else {
+        m_unified.editor->ScrollToLine(target, TextEditor::Scroll::alignTop);
+    }
+}
+
+int DiffPanel::topLine() const
+{
+    return m_viewsDirty || !m_left.editor ? -1 : (sideBySideShown() ? m_left : m_unified).editor->GetFirstVisibleLine();
+}
+
+int DiffPanel::hunkLine(int h) const
+{
+    const auto starts = hunkStarts();
+    return h >= 0 && h < static_cast<int>(starts.size()) ? starts[static_cast<size_t>(h)] : -1;
+}
+
 void DiffPanel::renderEditor(View& v, const char* id, float width)
 {
     // The editor copies its own selection on Ctrl+C / Ctrl+Insert: replace that with the code only.
@@ -371,6 +450,11 @@ void DiffPanel::renderEditor(View& v, const char* id, float width)
 DiffPanel::View& DiffPanel::primaryView()
 {
     return m_session.app().settings().data().diffSideBySide ? m_left : m_unified;
+}
+
+const DiffPanel::View& DiffPanel::primaryView() const
+{
+    return sideBySideShown() ? m_left : m_unified;
 }
 
 void DiffPanel::setupView(View& v, Side side)
@@ -446,6 +530,7 @@ void DiffPanel::finishView(View& v, const std::string& text)
 void DiffPanel::buildViews()
 {
     m_viewsDirty = false;
+    m_navLine = -1;
     const core::DiffFile& f = m_diff->files.front();
     auto palette = theme().theme() == Theme::Light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
     palette[static_cast<size_t>(TextEditor::Color::whitespace)] = theme().palette().dim; // hunk rows, dimmed
@@ -766,6 +851,21 @@ void DiffPanel::drawToolbar()
         settings.save();
         request();
     }
+    // Hunk navigation: scrolls the next / previous hunk to the top (Alt+Down / Alt+Up).
+    sameLineIfFits(square * 2 + style.ItemInnerSpacing.x);
+    ImGui::BeginDisabled(hunkTarget(false) < 0);
+    if (iconButton(ICON_MS_KEYBOARD_ARROW_UP, "##diff_prev_hunk", ImVec2(square, square)))
+        goToHunk(false);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Previous hunk (Alt+Up)");
+    ImGui::SameLine(0, style.ItemInnerSpacing.x);
+    ImGui::BeginDisabled(hunkTarget(true) < 0);
+    if (iconButton(ICON_MS_KEYBOARD_ARROW_DOWN, "##diff_next_hunk", ImVec2(square, square)))
+        goToHunk(true);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Next hunk (Alt+Down)");
     if (const int sides = termSides(); sides > 0) {
         // First-class conflict: the raw markers, or what one side changed against the base.
         std::vector<std::string> terms{"Raw markers"};
@@ -920,6 +1020,7 @@ void DiffPanel::drawUnified()
 {
     if (m_resetScroll) {
         m_unified.editor->ScrollToLine(0, TextEditor::Scroll::alignTop);
+        m_navLine = -1;
         m_resetScroll = false;
     }
     ImGui::PushFont(theme().monoFont(), 0.0f);
@@ -985,6 +1086,14 @@ void DiffPanel::draw(bool* open)
     if (!ImGui::Begin(panel::Diff, open)) {
         ImGui::End();
         return;
+    }
+    // Alt+Down / Alt+Up: next / previous hunk. A routed shortcut owns its key, so ImGui neither
+    // moves the navigation cursor on the arrow nor toggles the menu layer when Alt is released.
+    if (!ImGui::GetIO().WantTextInput) {
+        if (ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_DownArrow, ImGuiInputFlags_RouteFocused))
+            goToHunk(true);
+        if (ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_UpArrow, ImGuiInputFlags_RouteFocused))
+            goToHunk(false);
     }
     drawToolbar();
     if (m_file) {

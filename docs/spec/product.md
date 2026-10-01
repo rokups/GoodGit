@@ -355,7 +355,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
 - **K** Unified and Side-by-side views. Whitespace mode (normal / ignore changes / ignore
   all). Context-line count. Expandable context (Shift reveals the whole section). Syntax
   highlighting. Binary, image and submodule placeholders. Mode-change line. "Compare only
-  this file with @". Ctrl+C copies the selection: code lines only (no hunk rows or gap
+  this file with @". Hunk navigation: Previous/Next hunk buttons and Alt+Up/Alt+Down scroll the
+  neighbouring hunk to the top (both views). Ctrl+C copies the selection: code lines only (no hunk rows or gap
   placeholders).
 - **K** Line/hunk context menu: Copy, Blame file, Move line(s)/hunk to child (up arrow;
   on the HEAD commit "working tree" replaces it, since HEAD has no child) / parent (down arrow) / active commit, Revert line(s) (into the index and working tree; Shift: Revert line(s) and commit, a new commit on HEAD), Discard line(s)/hunk(s) (a commit rewrite like Discard on files; the hunk row button "Discard hunk" does the same).
