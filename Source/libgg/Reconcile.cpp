@@ -233,7 +233,31 @@ bool isRebaseAction(const std::string& action)
 {
     // ("rebase: fast-forward" is a step of a rebase too, when the picks fast-forward: it joins the
     // rebase in progress, and is an operation of its own outside one.)
-    return action == "rebase" || (endsWith(action, ")") && (startsWith(action, "rebase") || startsWith(action, "pull")));
+    return action == "rebase" || action == "rebase finished"
+        || (endsWith(action, ")") && (startsWith(action, "rebase") || startsWith(action, "pull")));
+}
+
+// The apply backend of older git (2.36) writes no "(start)" / "(finish)" / "(abort)": the start is
+// "rebase: checkout <onto>", the picks "rebase: <subject>", the finish "rebase finished: returning
+// to refs/heads/<branch>" and the abort "rebase: updating HEAD" (--skip writes nothing).
+// "checkout ..." is a start only outside a rebase (inside one it is a pick whose subject begins so).
+// (Every git writes "rebase: checkout <branch>" for git rebase <upstream> <branch> when the branch
+// is up to date: a start that nothing ends, so what follows it in the same pass joins it.)
+bool legacyStart(const std::string& msg) { return startsWith(msg, "rebase: checkout "); }
+
+// "rebase: updating HEAD" is an abort unless the rebase goes on after it (then it is a pick with
+// that subject): the next rebase entry of the pass is a start, or there is none and no rebase is
+// in progress now.
+bool legacyAbort(const std::vector<Entry>& entries, size_t i, bool rebasing)
+{
+    if (entries[i].msg != "rebase: updating HEAD")
+        return false;
+    for (size_t j = i + 1; j < entries.size(); ++j) {
+        const std::string action = actionPart(entries[j].msg);
+        if (isRebaseAction(action))
+            return endsWith(action, " (start)") || legacyStart(entries[j].msg);
+    }
+    return !rebasing;
 }
 
 // The action without its "(step)": the key that groups the entries of one rebase.
@@ -348,7 +372,7 @@ std::string renameTarget(const std::string& msg)
 // part of it.
 std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::string, std::string>& known,
     const std::map<std::string, std::string>& current, const std::string& myHead, const std::string& zero,
-    bool rebaseOpen)
+    bool rebaseOpen, bool rebasing)
 {
     std::vector<Pending> ops;
     const std::string kHead = known.count(myHead) ? known[myHead] : std::string();
@@ -361,12 +385,13 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
     int joinable = -1; // index of an unfinished rebase's operation
     bool inRebase = rebaseOpen; // between a rebase's (start) and its (finish) or (abort)
     std::string symAtStart; // the branch HEAD was on when the rebase in this pass started
-    for (const auto& e : entries) {
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const Entry& e = entries[i];
         const std::string action = actionPart(e.msg);
         const bool rebase = isRebaseAction(action);
-        const bool start = rebase && endsWith(action, " (start)");
-        const bool abort = rebase && endsWith(action, " (abort)");
-        const bool end = rebase && (endsWith(action, " (finish)") || abort);
+        const bool start = rebase && (endsWith(action, " (start)") || (!inRebase && legacyStart(e.msg)));
+        const bool abort = rebase && (endsWith(action, " (abort)") || legacyAbort(entries, i, rebasing));
+        const bool end = rebase && (endsWith(action, " (finish)") || action == "rebase finished" || abort);
         const bool checkout = action == "checkout";
         const std::string returning = "returning to refs/heads/";
         const size_t ret = e.msg.find(returning);
@@ -420,7 +445,7 @@ std::vector<Pending> deriveOps(const std::vector<Entry>& entries, std::map<std::
         if (start) {
             inRebase = true;
             joinable = -1; // a new rebase: its own operation
-        } else if (rebase && endsWith(action, ")")) {
+        } else if (rebase && (endsWith(action, ")") || end)) {
             inRebase = true; // a step of a rebase whose start this pass did not see ("rebase: fast-forward" has no parentheses: it only joins a rebase already open)
         }
         if (inRebase && joinable >= 0) {
@@ -770,25 +795,26 @@ Result run(git_repository* repo, std::string* error)
         // finished one only when the pass has its finish or abort (and no newer start before it):
         // a group without such evidence was quit, or its entries expired.
         const auto group = native::openGroup(repo);
+        const bool rebasing = !native::rebaseIdentity(repo).empty();
         bool rebaseOpen = false;
         if (group) {
             rebaseOpen = group->active;
-            for (const auto& e : entries) {
-                const std::string action = actionPart(e.msg);
+            for (size_t i = 0; i < entries.size(); ++i) {
+                const std::string action = actionPart(entries[i].msg);
                 if (!isRebaseAction(action))
                     continue;
-                if (endsWith(action, " (start)"))
+                if (endsWith(action, " (start)") || legacyStart(entries[i].msg))
                     break;
-                if (endsWith(action, " (finish)") || endsWith(action, " (abort)")) {
+                if (endsWith(action, " (finish)") || endsWith(action, " (abort)") || action == "rebase finished"
+                    || legacyAbort(entries, i, rebasing)) {
                     rebaseOpen = true;
                     break;
                 }
             }
         }
-        std::vector<Pending> headOps = deriveOps(entries, known, current, myHead, zero, rebaseOpen);
+        std::vector<Pending> headOps = deriveOps(entries, known, current, myHead, zero, rebaseOpen, rebasing);
         std::vector<Pending> branchOps = deriveBranchOps(repo, headOps, known, current, zero);
         const std::vector<Pending> derived = mergeOps(std::move(headOps), std::move(branchOps));
-        const bool rebasing = !native::rebaseIdentity(repo).empty();
         for (const auto& p : derived) {
             const bool dup = journaled(p.changes); // (a finish is still carried out for its group)
             std::string err;

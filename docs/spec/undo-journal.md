@@ -192,6 +192,10 @@ A `git rebase` (either backend) that stops runs as several git commands
   between (`commit --amend` at an edit stop, the commit that resolves a conflict), however many
   passes it takes. A plain rebase is one operation from start to finish, also when it ran while
   ggui was closed.
+  The apply backend of older git writes `rebase: checkout <onto>`, `rebase finished: …` and
+  `rebase: updating HEAD` instead; these are recognised as the start, the finish and the abort.
+  (`git rebase <upstream> <branch>` with an up-to-date branch writes only `rebase: checkout
+  <branch>`, with any git: a start without an end, which the entries after it in the same pass join.)
 - While the rebase is in progress the operation is **open** (and cannot be undone) until its
   `end`. It is remembered in `$GIT_COMMON_DIR/gg/rebase/<W>/operation` with the rebase's identity
   (`orig-head`, `onto` and `head-name` from `rebase-merge/`, or, for the apply backend
