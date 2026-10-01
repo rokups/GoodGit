@@ -7,6 +7,7 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
+#include <cmath>
 
 namespace ggtest {
 
@@ -430,12 +431,13 @@ GG_TEST("ui", "Alt+Space opens the context menu of the keyboard-focused item wit
         ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
         ctx->Yield(3);
         GG_CHECK(s.itemExists((std::string("//$FOCUSED/") + menuItem).c_str()));
-        // The popup opens at the focused item, not at the parked mouse.
+        // The popup opens below the focused item's bottom-left corner, not at the parked mouse.
         GG_CHECK(g.OpenPopupStack.Size == 1);
         if (g.OpenPopupStack.Size == 1) {
             const ImVec2 at = g.OpenPopupStack[0].OpenPopupPos;
-            GG_CHECK(at.x >= item.RectFull.Min.x && at.x <= item.RectFull.Max.x);
-            GG_CHECK(at.y >= item.RectFull.Min.y && at.y <= item.RectFull.Max.y + 40.0f);
+            GG_CHECK(std::fabs(at.x - item.RectFull.Min.x) <= 1.0f && std::fabs(at.y - item.RectFull.Max.y) <= 1.0f);
+            const ImGuiWindow* popup = g.OpenPopupStack[0].Window;
+            GG_CHECK(popup && std::fabs(popup->Pos.x - at.x) <= 1.0f && std::fabs(popup->Pos.y - at.y) <= 1.0f);
         }
         // Alt did not toggle the menu layer.
         GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);

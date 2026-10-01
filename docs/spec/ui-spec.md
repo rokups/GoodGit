@@ -92,8 +92,8 @@ click highlight; a context menu may still attach). Full commit IDs show the shor
 text colour and the rest dimmed. Every "Copy ID" copies the short ID, or the full ID while Shift
 is held: the menu item reads "… short ID", and "… full ID" while Shift is held (no shortcut hint).
 Every item with a right-click context menu also opens it on `Alt+Space` while it has keyboard
-focus (the menu appears at the item; Space does not also activate it, and the Alt press does not
-switch to the menu bar; ignored while text is being typed).
+focus (the menu opens below the item's bottom-left corner; Space does not also activate it, and
+the Alt press does not switch to the menu bar; ignored while text is being typed).
 
 ### 1.5 Errors and notifications (K)
 - Important errors (failed git commands, open/clone failures, hook failures, journal errors) open

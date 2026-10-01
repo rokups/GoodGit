@@ -252,10 +252,18 @@ bool contextMenuKeyPressed()
     return ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_Space, ImGuiInputFlags_RouteFocused, ImGui::GetItemID());
 }
 
+void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags)
+{
+    ImGui::OpenPopupEx(id, flags);
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (!g.OpenPopupStack.empty() && g.OpenPopupStack.back().PopupId == id)
+        g.OpenPopupStack.back().OpenPopupPos = ImVec2(g.LastItemData.Rect.Min.x, g.LastItemData.Rect.Max.y);
+}
+
 bool beginContextMenu(const char* strId, ImGuiPopupFlags flags)
 {
     if (contextMenuKeyPressed())
-        ImGui::OpenPopup(strId ? ImGui::GetID(strId) : ImGui::GetItemID(), flags);
+        openPopupBelowItem(strId ? ImGui::GetID(strId) : ImGui::GetItemID(), flags);
     return ImGui::BeginPopupContextItem(strId, flags);
 }
 

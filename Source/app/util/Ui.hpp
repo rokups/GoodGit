@@ -41,8 +41,12 @@ bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::s
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing
 // while text is being typed.
 bool contextMenuKeyPressed();
+// Opens popup `id` with its top-left corner at the bottom-left corner of the last item (where a
+// keyboard-opened context menu appears).
+void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags = ImGuiPopupFlags_None);
 // ImGui::BeginPopupContextItem that also opens the popup on Alt+Space while the last item has
-// keyboard focus (at the item, not at the mouse). Same arguments and return value.
+// keyboard focus (below the item's bottom-left corner, not at the mouse). Same arguments and
+// return value.
 bool beginContextMenu(const char* strId = nullptr, ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonRight);
 // Indeterminate spinner of the given radius.
 void spinner(const char* id, float radius);
