@@ -249,7 +249,9 @@ std::string normalizeRepoPath(const std::string& path)
     if (ec)
         p = fs::path(path).lexically_normal();
     std::string out = p.string();
-    while (out.size() > 1 && (out.back() == '/' || out.back() == '\\'))
+    // A root keeps its separator: "D:" would be the drive's current directory, not its root.
+    const size_t root = std::max<size_t>(p.root_path().string().size(), 1);
+    while (out.size() > root && (out.back() == '/' || out.back() == '\\'))
         out.pop_back();
     return out;
 }

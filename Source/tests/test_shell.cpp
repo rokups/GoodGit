@@ -190,14 +190,16 @@ GG_TEST("shell", "recent repositories: unique short display names")
 GG_TEST("shell", "recent repositories: paths are normalised and unique, display order follows the setting")
 {
     using namespace ggui;
-    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b/"), "/a/b");
-    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b//"), "/a/b");
-    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b"), "/a/b");
-    GG_CHECK_STR_EQ(normalizeRepoPath("/"), "/");
+    // Stored paths are native and absolute: on Windows "/a/b" is "<drive>:\\a\\b".
+    const auto native = [](const char* p) { return fs::absolute(p).make_preferred().string(); };
+    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b/"), native("/a/b"));
+    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b//"), native("/a/b"));
+    GG_CHECK_STR_EQ(normalizeRepoPath("/a/b"), native("/a/b"));
+    GG_CHECK_STR_EQ(normalizeRepoPath("/"), native("/"));
     const auto unique = uniqueRepoPaths({"/a/b/", "/c/d", "/a/b", "/c/d/"});
     GG_REQUIRE(unique.size() == 2);
-    GG_CHECK_STR_EQ(unique[0], "/a/b");
-    GG_CHECK_STR_EQ(unique[1], "/c/d");
+    GG_CHECK_STR_EQ(unique[0], native("/a/b"));
+    GG_CHECK_STR_EQ(unique[1], native("/c/d"));
     // addRecent: "/a/b/" and "/a/b" are one entry, moved to the front.
     Settings& st = s.app.settings();
     st.addRecent("/a/b/");
@@ -205,16 +207,16 @@ GG_TEST("shell", "recent repositories: paths are normalised and unique, display 
     st.addRecent("/a/b");
     const auto& recent = st.data().recent;
     GG_REQUIRE(recent.size() >= 2);
-    GG_CHECK_STR_EQ(recent[0], "/a/b");
-    GG_CHECK_STR_EQ(recent[1], "/x/y");
-    GG_CHECK_EQ(std::count(recent.begin(), recent.end(), std::string("/a/b")), 1);
+    GG_CHECK_STR_EQ(recent[0], native("/a/b"));
+    GG_CHECK_STR_EQ(recent[1], native("/x/y"));
+    GG_CHECK_EQ(std::count(recent.begin(), recent.end(), native("/a/b")), 1);
     st.forgetRecent("/a/b");
     st.forgetRecent("/x/y");
     // Loading a settings file with repeats keeps the most recent occurrence; the order persists.
     SettingsData d = fromJson(nlohmann::json::parse(
         R"({"recent":["/a/b/","/c/d","/a/b","/c/d/"],"recentOrder":"alphabetical"})"));
     GG_REQUIRE(d.recent.size() == 2);
-    GG_CHECK_STR_EQ(d.recent[0], "/a/b");
+    GG_CHECK_STR_EQ(d.recent[0], native("/a/b"));
     GG_CHECK(d.recentOrder == RecentOrder::Alphabetical);
     GG_CHECK_STR_EQ(toJson(d)["recentOrder"].get<std::string>(), "alphabetical");
     GG_CHECK(fromJson(toJson(SettingsData{})).recentOrder == RecentOrder::MostRecent);
