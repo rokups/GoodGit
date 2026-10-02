@@ -63,9 +63,11 @@ struct SettingsData {
     bool windowMaximized = false;
     // View state (imgui.ini [GGUIView]; kViewSettings in Settings.cpp lists what is stored)
     bool historyShowStashes = true;
+    bool historyConflictedOnly = false;
     bool diffSideBySide = false;
     int diffContext = 3;
     int diffWhitespace = 0;
+    bool rebaseNewestFirst = false; // interactive rebase editor: list shown newest commit first
 };
 
 class Settings {

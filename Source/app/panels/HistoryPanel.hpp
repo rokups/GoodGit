@@ -60,7 +60,7 @@ public:
     // Ids of the rows currently shown (after the filter), in order.
     std::vector<core::Oid> visibleIds() const;
     bool searchActive() const { return !m_appliedFilter.empty(); }
-    bool conflictedOnly() const { return m_conflictedOnly; }
+    bool conflictedOnly() const; // the "Conflicted only" filter (a view setting, kept in imgui.ini)
     // Selects the next (+1) / previous (-1) conflicted commit (F7 / Shift+F7).
     void selectConflicted(int direction);
     bool loading() const { return m_loading; }
@@ -108,7 +108,6 @@ private:
     core::RequestId m_searchRequest = 0;
     std::unordered_set<core::Oid, core::OidHash> m_matches;
 
-    bool m_conflictedOnly = false;
     std::vector<core::Oid> m_extra;
     std::optional<core::Oid> m_pendingReveal;
     bool m_scrollToSelection = false;

@@ -21,6 +21,8 @@ using graph::laneX;
 
 HistoryPanel::HistoryPanel(Session& session) : m_session(session) { }
 
+bool HistoryPanel::conflictedOnly() const { return m_session.app().settings().data().historyConflictedOnly; }
+
 core::HistoryScope HistoryPanel::buildScope() const
 {
     core::HistoryScope scope;
@@ -142,7 +144,7 @@ void HistoryPanel::onConflicts(const core::ConflictsEvent& event)
     for (const auto& c : event.commits)
         if (auto it = m_index.find(c.commit); it != m_index.end())
             m_rows[static_cast<size_t>(it->second)].conflicted = true;
-    if (m_conflictedOnly)
+    if (conflictedOnly())
         m_visibleDirty = true;
 }
 
@@ -301,7 +303,7 @@ std::vector<core::Oid> HistoryPanel::visibleIds() const
 std::vector<int> HistoryPanel::visibleIndexes() const
 {
     std::vector<int> out;
-    if (m_conflictedOnly) {
+    if (conflictedOnly()) {
         for (size_t i = 0; i < m_rows.size(); ++i)
             if (m_rows[i].conflicted && (m_appliedFilter.empty() || m_matches.count(m_rows[i].id)))
                 out.push_back(static_cast<int>(i));
@@ -850,8 +852,12 @@ void HistoryPanel::draw(bool* open)
             m_searchRequest = m_session.engine().searchHistory(m_appliedFilter);
     }
     sameLineIfFits(checkboxWidth("Conflicted only"));
-    if (ImGui::Checkbox("Conflicted only##hist_conflicted", &m_conflictedOnly))
+    bool only = conflictedOnly();
+    if (ImGui::Checkbox("Conflicted only##hist_conflicted", &only)) {
+        m_session.app().settings().data().historyConflictedOnly = only;
+        Settings::markViewDirty();
         m_visibleDirty = true;
+    }
     sameLineIfFits(checkboxWidth("Stashes"));
     bool showStashes = m_session.app().settings().data().historyShowStashes;
     if (ImGui::Checkbox("Stashes##hist_stashes", &showStashes)) {
@@ -911,7 +917,7 @@ void HistoryPanel::draw(bool* open)
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
     m_menuItemSpacing = ImGui::GetStyle().ItemSpacing;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(m_menuItemSpacing.x, 0));
-    m_graphShown = m_appliedFilter.empty() && !m_conflictedOnly;
+    m_graphShown = m_appliedFilter.empty() && !conflictedOnly();
     const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
     const int virtualRows = !m_snapshot->bare ? (m_hasStaged ? 2 : 1) : 0;
     restoreScrollAnchor(virtualRows, pitch);

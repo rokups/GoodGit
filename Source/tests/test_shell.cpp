@@ -558,11 +558,15 @@ GG_TEST("shell", "view settings persist across a restart")
     s.comboSelect("//Diff/##diff_view", "Side by side");
     s.comboSelect("//Diff/##diff_ws", "Whitespace: ignore all");
     ctx->ItemInputValue("//Diff/Context##diff_context", 5);
+    ctx->ItemCheck("//History/Conflicted only##hist_conflicted");
+    // The interactive rebase editor is not opened here: its "Newest first" is set as the checkbox does.
+    s.app.settings().data().rebaseNewestFirst = true;
+    ggui::Settings::markViewDirty();
     ctx->Yield(2);
     size_t n = 0;
     const char* raw = ImGui::SaveIniSettingsToMemory(&n);
     const std::string ini(raw, n);
-    for (const char* want : {"[GGUIView][History]", "Stashes=0", "[GGUIView][Diff]", "SideBySide=1", "Whitespace=2", "Context=5"})
+    for (const char* want : {"[GGUIView][History]", "Stashes=0", "ConflictedOnly=1", "[GGUIView][Diff]", "SideBySide=1", "Whitespace=2", "Context=5", "[GGUIView][Rebase]", "NewestFirst=1"})
         if (ini.find(want) == std::string::npos)
             ctx->LogError("imgui.ini lacks %s:\n%s", want, ini.c_str());
     // The imgui.ini write is requested by MarkIniSettingsDirty (WantSaveIniSettings): force it here.
@@ -578,10 +582,16 @@ GG_TEST("shell", "view settings persist across a restart")
     GG_CHECK(d.diffSideBySide);
     GG_CHECK_EQ(d.diffWhitespace, 2);
     GG_CHECK_EQ(d.diffContext, 5);
+    GG_CHECK(d.historyConflictedOnly);
+    GG_CHECK(d.rebaseNewestFirst);
     GG_REQUIRE(s.openRepository(repo));
     ctx->Yield(2);
     const ImGuiTestItemInfo stashes = ctx->ItemInfo("//History/Stashes##hist_stashes");
     GG_CHECK((stashes.StatusFlags & ImGuiItemStatusFlags_Checked) == 0);
+    const ImGuiTestItemInfo conflicted = ctx->ItemInfo("//History/Conflicted only##hist_conflicted");
+    GG_CHECK((conflicted.StatusFlags & ImGuiItemStatusFlags_Checked) != 0);
+    ctx->ItemUncheck("//History/Conflicted only##hist_conflicted");
+    GG_CHECK(!s.app.settings().data().historyConflictedOnly);
 }
 
 GG_TEST("shell", "the ini wins over settings.json, which is only a fallback")
@@ -598,9 +608,12 @@ GG_TEST("shell", "the ini wins over settings.json, which is only a fallback")
     GG_CHECK_EQ(s.app.settings().data().diffContext, 7);
     GG_CHECK(!s.app.settings().data().historyShowStashes);
     // With one, its values win; the rest still come from settings.json.
-    s.write(prefs, "imgui.ini", "[GGUIView][Diff]\nContext=9\n\n");
+    s.write(prefs, "imgui.ini",
+        "[GGUIView][Diff]\nContext=9\n\n[GGUIView][History]\nConflictedOnly=1\n\n[GGUIView][Rebase]\nNewestFirst=1\n\n");
     restart();
     GG_CHECK_EQ(s.app.settings().data().diffContext, 9);
+    GG_CHECK(s.app.settings().data().historyConflictedOnly);
+    GG_CHECK(s.app.settings().data().rebaseNewestFirst);
     GG_CHECK(s.app.settings().data().diffSideBySide);
     GG_CHECK(!s.app.settings().data().historyShowStashes);
     // Out-of-range values are clamped; unknown keys, sections and garbage are ignored.

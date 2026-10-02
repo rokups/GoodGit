@@ -121,6 +121,8 @@ std::map<std::string, std::string> groupSignatures(const todo::Todo& t)
 
 RebasePanel::RebasePanel(Session& session) : m_session(session) { }
 
+bool RebasePanel::newestFirst() const { return m_session.app().settings().data().rebaseNewestFirst; }
+
 RebasePanel::~RebasePanel()
 {
     // The repository closes while git waits for the list: git gets nothing (Cancel).
@@ -665,7 +667,7 @@ std::vector<size_t> RebasePanel::displayOrder() const
 {
     std::vector<size_t> out(m_state.todo.items.size());
     for (size_t i = 0; i < out.size(); ++i)
-        out[i] = m_newestFirst ? out.size() - 1 - i : i;
+        out[i] = newestFirst() ? out.size() - 1 - i : i;
     return out;
 }
 
@@ -1047,7 +1049,11 @@ void RebasePanel::drawTools()
         }
     }
     sameLineIfFits(checkboxWidth("Newest first"));
-    ImGui::Checkbox("Newest first###ir_newest_first", &m_newestFirst);
+    bool newest = newestFirst();
+    if (ImGui::Checkbox("Newest first###ir_newest_first", &newest)) {
+        m_session.app().settings().data().rebaseNewestFirst = newest;
+        Settings::markViewDirty();
+    }
 }
 
 void RebasePanel::drawList()
@@ -1571,7 +1577,7 @@ void RebasePanel::handleKeys()
         return;
     // Alt+Up / Alt+Down (as displayed) reorder: routed shortcuts own their keys, so ImGui's nav cursor
     // does not move and Alt going up does not toggle the menu layer.
-    const int up = m_newestFirst ? +1 : -1;
+    const int up = newestFirst() ? +1 : -1;
     if (hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat))
         moveSelection(up);
     if (hotkey(ImGuiMod_Alt | ImGuiKey_DownArrow, ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat))

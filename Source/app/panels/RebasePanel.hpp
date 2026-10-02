@@ -85,7 +85,7 @@ public:
     const gg::todo::Context* context() const { return m_state.context.get(); }
     const std::set<size_t>& selection() const { return m_selection; }
     const gg::todo::Options& options() const { return m_options; }
-    bool newestFirst() const { return m_newestFirst; }
+    bool newestFirst() const; // the "Newest first" checkbox (a view setting, kept in imgui.ini)
     const std::vector<gg::todo::Issue>& issues() const { return m_issues; }
     const gg::todo::EngineChoice& engine() const { return m_engine; }
     // Rows in display order (indexes into todo().items).
@@ -182,7 +182,6 @@ private:
     std::optional<size_t> m_anchor;   // Shift-click range start
     std::optional<std::pair<std::vector<size_t>, size_t>> m_pendingMove; // dropped rows, target
     gg::todo::Options m_options;
-    bool m_newestFirst = false;
     std::string m_onto;
     std::vector<gg::todo::Issue> m_issues;
     gg::todo::EngineChoice m_engine;
