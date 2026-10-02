@@ -14,6 +14,8 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <cmath>
+#include <unordered_set>
 
 namespace ggui {
 
@@ -21,16 +23,9 @@ namespace {
 
 const ImGuiID kMenuId = ImHashStr("##blame_menu");
 const char kNotCommitted[] = "Not committed";
-const size_t kAuthorColumns = 20; // longer author names are cut in the gutter
+const float kAuthorColumns = 20; // longer author names are cut in the gutter
 
 ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
-
-// Characters of a UTF-8 text.
-size_t columns(const std::string& text)
-{
-    const auto starts = [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; };
-    return static_cast<size_t>(std::count_if(text.begin(), text.end(), starts));
-}
 
 } // namespace
 
@@ -126,30 +121,25 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
     m_loading = false;
     m_blame = event.blame;
 
-    // The editor holds the whole file and highlights it by the file's language. The gutter is as wide as
-    // the ID, the longest author (up to kAuthorColumns) and the date need.
+    // The editor holds the whole file and highlights it by the file's language. A newline separates the
+    // lines: none follows the last one, so the editor has no empty line after it.
     std::string text;
-    size_t author = 0, date = 0;
-    bool uncommitted = false;
-    if (m_blame)
-        for (const auto& l : m_blame->lines) {
+    m_parity.clear();
+    if (m_blame) {
+        unsigned char parity = 1; // the first block is 0
+        for (size_t i = 0; i < m_blame->lines.size(); ++i) {
+            const auto& l = m_blame->lines[i];
+            if (i > 0)
+                text.push_back('\n');
             text += l.text;
-            text.push_back('\n');
-            if (l.commit.isNull()) {
-                uncommitted = true;
-            } else {
-                author = std::max(author, std::min(columns(l.author), kAuthorColumns));
-                date = std::max(date, core::formatTime(l.time).size());
-            }
+            if (i == 0 || m_blame->lines[i - 1].commit != l.commit)
+                parity ^= 1;
+            m_parity.push_back(parity);
         }
-    m_authorColumns = static_cast<int>(author);
-    size_t gutter = kShortIdLength + 2 + author + 2 + date + 1;
-    if (uncommitted)
-        gutter = std::max(gutter, sizeof(kNotCommitted));
+    }
+    m_gutterDirty = true; // the width needs the editor's font: it is made in draw()
     m_editor->SetLanguage(m_blame ? languageFor(m_blame->query.path) : nullptr);
     m_editor->SetText(text);
-    m_editor->SetLineDecorator(-static_cast<float>(gutter),
-        [this](TextEditor::Decorator& d) { drawGutter(d.line, d.width, d.height, d.glyphSize.x); });
     m_marksDirty = true;
     m_blameChanged = true;
     clearSelection(); // the lines of the previous blame are gone
@@ -192,6 +182,37 @@ std::string BlamePanel::blockText(int index, int* first, int* last) const
         text.push_back('\n');
     }
     return text;
+}
+
+void BlamePanel::updateGutter(float fontSize)
+{
+    m_gutterDirty = false;
+    m_gutterFont = fontSize;
+    const float glyph = ImGui::CalcTextSize("0").x; // the editor's monospace font is current
+    // The author column is as wide as the longest author present, up to kAuthorColumns glyphs.
+    float author = 0, date = 0;
+    bool uncommitted = false;
+    std::unordered_set<std::string> authors, dates;
+    if (m_blame)
+        for (const auto& l : m_blame->lines) {
+            if (l.commit.isNull()) {
+                uncommitted = true;
+            } else {
+                if (authors.insert(l.author).second)
+                    author = std::max(author, ImGui::CalcTextSize(l.author.c_str()).x);
+                const std::string when = core::formatTime(l.time);
+                if (dates.insert(when).second)
+                    date = std::max(date, ImGui::CalcTextSize(when.c_str()).x);
+            }
+        }
+    m_authorWidth = std::min(author, kAuthorColumns * glyph);
+    m_gutterWidth = static_cast<float>(kShortIdLength + 2) * glyph + m_authorWidth + 2 * glyph + date + glyph;
+    if (uncommitted)
+        m_gutterWidth = std::max(m_gutterWidth, ImGui::CalcTextSize(kNotCommitted).x + glyph);
+    m_gutterWidth = std::ceil(m_gutterWidth);
+    // Positive: pixels.
+    m_editor->SetLineDecorator(m_gutterWidth,
+        [this](TextEditor::Decorator& d) { drawGutter(d.line, d.width, d.height, d.glyphSize.x); });
 }
 
 void BlamePanel::drawLineMenuItems(int index)
@@ -257,7 +278,7 @@ void BlamePanel::selectBlock(int index)
 {
     blockText(index, &m_selFirst, &m_selLast);
     m_selLine = index;
-    m_editor->SelectLines(m_selFirst, m_selLast);
+    m_editor->selectRows(m_selFirst, m_selLast);
     m_cursorSeen = cursorState();
 }
 
@@ -274,8 +295,7 @@ void BlamePanel::followEditor()
         return;
     const int count = static_cast<int>(m_blame->lines.size());
     // A selection ending at the start of a later line leaves that line out (a triple click, a press on a
-    // line number and Ctrl+A select up to there). The editor's last line, after the final newline, is
-    // not a blame line.
+    // line number and Ctrl+A select up to there).
     m_selFirst = std::min(now[0], count - 1);
     m_selLast = std::clamp(now[2] - (now[3] == 0 && now[2] > now[0] ? 1 : 0), m_selFirst, count - 1);
     // The line shown in Change information is the one the cursor (the moving end) is on.
@@ -310,6 +330,8 @@ void BlamePanel::applyFilter(bool scroll)
         m_matchPos = -1;
     else if (reset || m_matchPos < 0)
         m_matchPos = 0;
+    else
+        m_matchPos = std::min(m_matchPos, static_cast<int>(m_matches.size()) - 1);
     // The cursor stays (and with it the selection); the view moves only when the first match is outside it.
     if (scroll && !m_matches.empty()
         && (m_matches.front() < m_editor->GetFirstVisibleLine() || m_matches.front() > m_editor->GetLastVisibleLine()))
@@ -342,7 +364,7 @@ void BlamePanel::stepMatch(int direction, bool focusEditor)
 
 void BlamePanel::drawGutter(int index, float width, float height, float glyph)
 {
-    if (!m_blame || index >= static_cast<int>(m_blame->lines.size())) // the editor's last line, after the final newline
+    if (!m_blame || index >= static_cast<int>(m_blame->lines.size())) // the one line of an empty file
         return;
     const auto& l = m_blame->lines[static_cast<size_t>(index)];
     const Palette& p = theme().palette();
@@ -365,6 +387,7 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
         selectLine(index, ImGui::GetIO().KeyShift);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
         m_menuLine = index;
+        m_menuPending = 0;
         ImGui::OpenPopupEx(kMenuId);
     }
     // The tooltip is on the gutter only: over the code it would be in the way of selecting text.
@@ -377,6 +400,11 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
             tooltip("Not committed yet");
     }
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    // Every second change block has the alternate row background, and a block starts under a separator.
+    if (m_parity[static_cast<size_t>(index)])
+        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
+    if (newBlock && index > 0)
+        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + 1.0f), ImGui::GetColorU32(ImGuiCol_Separator));
     if (index >= m_selFirst && index <= m_selLast)
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), p.selection); // as a selected list row
     if (newBlock && !committed) {
@@ -385,10 +413,9 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
         // The ID is drawn split into its highlighted prefix and the dimmed rest.
         const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
         const float authorAt = static_cast<float>(kShortIdLength + 2) * glyph;
-        const float authorWidth = static_cast<float>(m_authorColumns) * glyph;
         drawDimRange(pos, id.c_str(), kIdPrefixLength, kShortIdLength);
-        dl->AddText(ImVec2(pos.x + authorAt, pos.y), text, fitText(l.author, authorWidth).c_str());
-        dl->AddText(ImVec2(pos.x + authorAt + authorWidth + 2 * glyph, pos.y), text, core::formatTime(l.time).c_str());
+        dl->AddText(ImVec2(pos.x + authorAt, pos.y), text, fitText(l.author, m_authorWidth).c_str());
+        dl->AddText(ImVec2(pos.x + authorAt + m_authorWidth + 2 * glyph, pos.y), text, core::formatTime(l.time).c_str());
     }
     ImGui::PopID();
 }
@@ -403,6 +430,7 @@ std::string BlamePanel::matchText() const
 int BlamePanel::cursorLine() const { return m_editor->GetMainCursorPosition().line; }
 bool BlamePanel::hasSelection() const { return m_editor->AnyCursorHasSelection(); }
 std::string BlamePanel::selectedText() const { return m_editor->mainSelectionText(); }
+int BlamePanel::editorLines() const { return m_editor->GetLineCount(); }
 std::string BlamePanel::languageName() const { return m_editor->GetLanguageName(); }
 
 void BlamePanel::publishInfoOverride(bool shown)
@@ -524,7 +552,6 @@ void BlamePanel::draw(bool* open)
     // by the gutter, which is drawn by the editor below).
     if (m_editorFocused && m_selFirst >= 0 && hotkey(ImGuiMod_Alt | ImGuiKey_Space)) {
         m_menuPending = 3; // frames the gutter of a line scrolled out of view has to be drawn
-        // After Ctrl+A the cursor is on the editor's last line, which is not a blame line.
         m_menuLine = std::min(cursorLine(), static_cast<int>(m_blame->lines.size()) - 1);
         if (m_menuLine < m_editor->GetFirstVisibleLine() || m_menuLine > m_editor->GetLastVisibleLine())
             m_editor->ScrollToLine(m_menuLine, TextEditor::Scroll::alignMiddle);
@@ -539,6 +566,8 @@ void BlamePanel::draw(bool* open)
     if (m_blame->truncated)
         ImGui::TextDisabled("Large file: only the first lines are blamed.");
     ImGui::PushFont(theme().monoFont(), 0.0f);
+    if (m_gutterDirty || ImGui::GetFontSize() != m_gutterFont)
+        updateGutter(ImGui::GetFontSize());
     m_editor->Render("##blame_editor", ImVec2(0, 0));
     m_editorFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::IsWindowFocused();
     if (m_menuPending > 0)

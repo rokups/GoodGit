@@ -106,6 +106,47 @@ GG_TEST("blame", "blame at a commit and on the working tree")
     GG_CHECK(s.textShown("//Blame", "story.txt at " + r.c2.substr(0, 7)));
 }
 
+GG_TEST("blame", "gutter: blocks and width")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    blameFromChanges(s, "Unstaged", "tale.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    auto& blame = s.session()->blame();
+    GG_REQUIRE(s.waitUntil([&] { return blame.gutterWidth() > 0; }));
+    // The blocks (uncommitted line 1, c1, c2, c1 again, c3) alternate; lines of one block share the parity.
+    for (int i = 0; i < 5; ++i)
+        GG_CHECK_EQ(blame.blockParity(i), i % 2);
+    GG_CHECK_EQ(blame.blockParity(5), -1);
+    // The file ends in a newline: the editor has no empty line after the last one.
+    GG_CHECK_EQ(blame.editorLines(), 5);
+    const float shortGutter = blame.gutterWidth();
+    // Authors longer than the cap make the gutter wider, up to the cap: 40 and 80 characters are cut alike.
+    const std::string longName = std::string(40, 'x'), longerName = std::string(80, 'x');
+    auto blameWide = [&](const std::string& file, const std::string& author, float& gutter) {
+        s.write(r.path, file, "A1\nA2\nA3\n");
+        s.git(r.path, {"add", file});
+        s.git(r.path, {"commit", "-q", "--author=" + author + " <x@example.com>", "-m", "Add " + file});
+        const std::string id = s.head(r.path);
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + id).c_str()); }));
+        s.ctx->ItemClick(("//History/**/###row_" + id).c_str());
+        GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+        blameFromChanges(s, nullptr, file);
+        GG_REQUIRE(s.waitUntil([&] { return blameShows(s, file, id); }));
+        GG_REQUIRE(s.waitUntil([&] { return blame.blockParity(2) == 0; }));
+        s.ctx->Yield(3);
+        GG_CHECK_EQ(blame.blockParity(1), 0); // one block
+        GG_CHECK_EQ(blame.editorLines(), 3);
+        gutter = blame.gutterWidth();
+    };
+    float longGutter = 0, longerGutter = 0;
+    blameWide("wide40.txt", longName, longGutter);
+    blameWide("wide80.txt", longerName, longerGutter);
+    GG_CHECK(longGutter > shortGutter);
+    GG_CHECK(std::abs(longerGutter - longGutter) < 1.0f);
+}
+
 GG_TEST("blame", "filter, history, tooltips")
 {
     const BlameRepo r = makeRepo(s);
@@ -200,7 +241,7 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     s.contextMenu(lineRef(s, 1).c_str(), "Select change block");
     GG_CHECK_EQ(s.session()->blame().selectionFirst(), 0);
     GG_CHECK_EQ(s.session()->blame().selectionLast(), 1);
-    GG_CHECK_STR_EQ(s.session()->blame().selectedText(), "L1\nL2\n");
+    GG_CHECK_STR_EQ(s.session()->blame().selectedText(), "L1\nL2");
     s.contextMenu(lineRef(s, 2).c_str(), "Copy change block");
     GG_CHECK_STR_EQ(s.clipboard(), "L1\nL2\n");
     // Nothing comes before the first commit, nor before the commit that added a file.
@@ -339,9 +380,9 @@ GG_TEST("blame", "keyboard only: Down into the code, select by arrows, Shift ran
     // The Esc that closed the menu did not clear the selection.
     GG_CHECK_EQ(blame.selectionFirst(), 1);
     GG_CHECK_EQ(blame.selectionLast(), 2);
-    // After Ctrl+A the cursor is on the editor's empty last line: the menu is the last blame line's.
+    // After Ctrl+A the cursor is on the last line: the menu is its.
     press(ImGuiMod_Ctrl | ImGuiKey_A);
-    GG_CHECK_EQ(blame.cursorLine(), 5);
+    GG_CHECK_EQ(blame.cursorLine(), 4);
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
     ctx->Yield(3);
     GG_CHECK(g.OpenPopupStack.Size == 1);

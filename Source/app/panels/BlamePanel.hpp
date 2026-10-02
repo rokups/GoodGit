@@ -42,11 +42,18 @@ public:
     int matchCount() const { return static_cast<int>(m_matches.size()); }
     // The match Enter / F3 stepped to last (0-based; the first one after a new filter), -1 without matches.
     int matchPos() const { return m_matchPos; }
+    // The gutter's width in pixels (0 until drawn) and the parity (0 or 1) of the change block of a line
+    // (0-based), -1 out of range: every second block has the alternate background.
+    float gutterWidth() const { return m_gutterWidth; }
+    int editorLines() const;
+    int blockParity(int line) const { return line >= 0 && line < static_cast<int>(m_parity.size()) ? m_parity[static_cast<size_t>(line)] : -1; }
 
 private:
     using CursorState = std::array<int, 6>; // the main cursor's selection and position
 
     void request();
+    // Measures the gutter with the editor's font (current) and gives it to the editor.
+    void updateGutter(float fontSize);
     void drawGutter(int index, float width, float height, float glyph);
     void drawLineMenuItems(int index);
     void drawTextMenu(int index);
@@ -75,7 +82,11 @@ private:
     std::unique_ptr<BlameEditor> m_editor; // holds the whole file: highlighting, selection and copying are its own
     int m_paletteTheme = -1;
     bool m_editorFocused = false; // the editor (the panel's only child window) or a menu over it had the keyboard last frame
-    int m_authorColumns = 0; // the width of the gutter's author column, in characters
+    std::vector<unsigned char> m_parity; // per line: 0 or 1, flips with every change block
+    float m_gutterWidth = 0;             // pixels
+    float m_authorWidth = 0;             // the gutter's author column, pixels
+    float m_gutterFont = 0;              // the font size the gutter was measured at
+    bool m_gutterDirty = false;          // a blame was loaded: the gutter is measured again
     std::string m_filter;
     std::string m_filterApplied; // the filter the markers were made for
     bool m_marksDirty = false;   // the text or the theme changed: the markers are made again

@@ -432,7 +432,10 @@ the panel without touching the repository.
 Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5),
 the code in a read-only text editor `##blame_editor` (syntax highlighted by the file's extension, line numbers,
 text selection and copy; Ctrl+X and Shift+Delete copy too) with a gutter per line `blame_line_<n>` (commit prefix,
-author and date on the first line of each change block; "Not committed" for uncommitted blocks). The filter marks
+author and date on the first line of each change block; "Not committed" for uncommitted blocks). Every second
+change block has the alternate row background in its gutter, and each block after the first starts under a 1 px
+separator line. The author column is as wide as the longest author present, up to 20 characters; a longer name
+is cut with an ellipsis. The gutter is measured again when a blame loads and when the font size changes. The filter marks
 the matching lines (text, author, ID, summary) and brings the first match into view; it hides nothing.
 Tooltip per line, on its gutter (full commit summary); context menu of a line, on its gutter, its line number or
 its code (there after Copy · Select all): Blame before this change · Show
