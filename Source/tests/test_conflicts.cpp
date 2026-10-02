@@ -225,6 +225,33 @@ GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change i
     ctx->ItemClick("//History/Conflicted only##hist_conflicted");
 }
 
+GG_TEST("conflicts", "Conflicted only is a view setting: it stays on, and applied, in the next repository")
+{
+    const fs::path repoA = s.fixture(Recipe::Conflicted2);
+    const fs::path repoB = s.fixture(Recipe::ConflictedN); // Base, then one conflicted commit
+    const std::string headB = s.head(repoB);
+    GG_REQUIRE(s.openRepository(repoA));
+    GG_REQUIRE(scanned(s, s.revParse(repoA, "HEAD~2")));
+    ctx->ItemCheck("//History/Conflicted only##hist_conflicted");
+    GG_CHECK(s.waitUntil([&] { return s.session()->history().visibleIds().size() == 2; }));
+    // A new repository (a new session and panel) keeps the toggle; nobody clicks it again.
+    GG_REQUIRE(s.openRepository(repoB));
+    auto& history = s.session()->history();
+    GG_CHECK(s.waitUntil([&] { return history.row(Oid::fromHex(headB)) != nullptr && conflicted(s, headB); }));
+    GG_REQUIRE(s.waitUntil([&] { return history.rows().size() == 2 && history.visibleIds().size() == 1; }));
+    GG_CHECK_STR_EQ(history.visibleIds().front().hex(), headB);
+    ctx->Yield(2);
+    GG_CHECK(!history.graphShown());
+    ImGuiTable* filtered = ImGui::TableFindByID(ctx->GetID("//History/##hist_table_filtered"));
+    GG_CHECK(filtered != nullptr && filtered->ColumnsCount == 3);
+    const ImGuiTestItemInfo toggle = ctx->ItemInfo("//History/Conflicted only##hist_conflicted");
+    GG_CHECK(toggle.ID != 0 && (toggle.StatusFlags & ImGuiItemStatusFlags_Checked) != 0);
+    ctx->ItemUncheck("//History/Conflicted only##hist_conflicted");
+    GG_CHECK(s.waitUntil([&] { return history.visibleIds().size() == 2; }));
+    ctx->Yield(2);
+    GG_CHECK(history.graphShown());
+}
+
 GG_TEST("conflicts", "a conflicted commit selected in History marks its files with the side count")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);

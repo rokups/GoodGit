@@ -153,7 +153,10 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
 
 ## 2. History panel — window `"History"`
 - Header row: filter field `##hist_filter` (message, ID, branch, tag), toggle *Conflicted only*
-  `##hist_conflicted` (N), toggle *Stashes* `##hist_stashes` (N), *Show more* when truncated.
+  `##hist_conflicted` (N; a view setting like *Stashes*, stored in imgui.ini as
+  `[GGUIView][History] ConflictedOnly`, so it stays on across repositories and restarts; in the next
+  repository the graph is hidden at once and the conflicted commits appear as the scan finds them),
+  toggle *Stashes* `##hist_stashes` (N), *Show more* when truncated.
 - Table `##hist_table`: columns Graph, Description (ID prefix, badges, subject), Author, Date.
   While a filter is active (text or *Conflicted only*) the graph column is hidden
   (`##hist_table_filtered`, three columns). The graph starts slightly inside its column so the
