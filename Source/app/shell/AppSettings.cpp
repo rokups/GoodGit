@@ -130,8 +130,8 @@ void App::drawGitConfigSettings(Session& s)
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Sets extensions.worktreeConfig: each worktree of this repository can then override\n"
-                          "settings in its own config (the Worktree tab). Off: one config for all worktrees.");
+        tooltip("Sets extensions.worktreeConfig: each worktree of this repository can then override "
+                "settings in its own config (the Worktree tab). Off: one config for all worktrees.");
     if (!ImGui::BeginTabBar("##config_scope"))
         return;
     for (size_t si = 0; si < std::size(kScopes); ++si) {
@@ -163,7 +163,7 @@ void App::drawGitConfigSettings(Session& s)
             const bool clicked = smallButton(ICON_MS_RESTART_ALT, (std::string("Inherit##") + id).c_str());
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("Clear this override and use %s from %s", lower.c_str(), from);
+                tooltip("Clear this override and use %s from %s", lower.c_str(), from);
             return clicked;
         };
         auto textOption = [&](const char* key) {
@@ -302,8 +302,8 @@ void App::drawGitConfigSettings(Session& s)
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Sets sequence.editor = %s: plain git rebase -i shows its list in ggui (this window, or a new\n"
-                              "one) and goes on with the list you save. Needs git-gg on PATH.",
+            tooltip("Sets sequence.editor = %s: plain git rebase -i shows its list in ggui (this window, or a new "
+                    "one) and goes on with the list you save. Needs git-gg on PATH.",
                 kGguiSequenceEditor);
         {
             // What git rebase -i uses in this repository (the highest scope that sets it).
@@ -339,12 +339,12 @@ void App::drawPathSetting()
     ImGui::EndDisabled();
     if (support != PathSetupSupport::Available) {
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", pathSetupUnavailableReason(support).c_str());
+            tooltip("%s", pathSetupUnavailableReason(support).c_str());
         return;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Puts %s, which holds git-gg, on your login PATH (systemd environment.d). "
-                          "Takes effect at next login.", dir.c_str());
+        tooltip("Puts %s, which holds git-gg, on your login PATH (systemd environment.d). "
+                "Takes effect at next login.", dir.c_str());
     }
     if (!m_pathSetup.present || m_pathSetup.enabled)
         return;
@@ -425,8 +425,8 @@ void App::drawSettingsWindow()
             if (ImGui::Checkbox("Expand to index stages on checkout##expand_stages", &d.expandConflictStages))
                 m_settings.save();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("Two-sided first-class conflicts also get index stages 1-3 (git mergetool works on them);\n"
-                                  "ggui collapses them again before switching away.");
+                tooltip("Two-sided first-class conflicts also get index stages 1-3 (git mergetool works on them); "
+                        "ggui collapses them again before switching away.");
             ImGui::Separator();
             if (!s) {
                 ImGui::TextDisabled("Open a repository to edit its git configuration.");

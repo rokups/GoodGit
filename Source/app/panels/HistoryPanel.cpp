@@ -631,11 +631,11 @@ void HistoryPanel::drawMergeIcon(const core::HistoryRow& row)
     if (hovered && !m_scrolling) {
         const size_t n = row.parents.size();
         if (!toggle)
-            ImGui::SetTooltip("Merge commit \xE2\x80\x94 %d parents", static_cast<int>(n));
+            tooltip("Merge commit \xE2\x80\x94 %d parents", static_cast<int>(n));
         else if (row.collapsed)
-            ImGui::SetTooltip("Merge commit \xE2\x80\x94 %d parents; merged history collapsed (click to expand)", static_cast<int>(n));
+            tooltip("Merge commit \xE2\x80\x94 %d parents; merged history collapsed (click to expand)", static_cast<int>(n));
         else
-            ImGui::SetTooltip("Merge commit \xE2\x80\x94 %d parents; merged history expanded (click to collapse)", static_cast<int>(n));
+            tooltip("Merge commit \xE2\x80\x94 %d parents; merged history expanded (click to collapse)", static_cast<int>(n));
     }
     ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
 }

@@ -156,7 +156,7 @@ void App::drawWelcome()
                 ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0)))
             post([this, path] { openRepository(path); });
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            ImGui::SetTooltip("%s\nDel removes", path.c_str());
+            tooltip("%s\nDel removes", path.c_str());
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);
         if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) || (path != currentKey && hoveredDeletePressed()))

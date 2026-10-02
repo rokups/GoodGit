@@ -207,8 +207,8 @@ void InfoPanel::draw(bool* open)
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("%s", index ? "Commit the staged changes (git commit)"
-                                          : "Commit only the unstaged and untracked changes; the staged changes stay staged");
+            tooltip("%s", index ? "Commit the staged changes (git commit)"
+                                : "Commit only the unstaged and untracked changes; the staged changes stay staged");
         if (index && !nothing) {
             const std::string warning = m_session.commitWarningText();
             if (!warning.empty()) {
@@ -281,7 +281,7 @@ void InfoPanel::draw(bool* open)
                                  : "Reword this commit; its descendants are rebased onto it";
         if (isHead && stagedPresent)
             tip += "\nStaged changes are not included (tick Amend in Commit... to add them)";
-        ImGui::SetTooltip("%s", tip.c_str());
+        tooltip("%s", tip.c_str());
     }
 
     if (ImGui::BeginTable("##info_table", 2, ImGuiTableFlags_SizingFixedFit)) {
@@ -344,7 +344,7 @@ void InfoPanel::draw(bool* open)
         if (ImGui::SmallButton(ICON_MS_CONTENT_COPY "###commit_id"))
             copyId(shortId, d.id.hex());
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip(ImGui::GetIO().KeyShift ? "Copy the full ID" : "Copy the short ID");
+            tooltip(ImGui::GetIO().KeyShift ? "Copy the full ID" : "Copy the short ID");
         if (const ConflictList* conflicts = m_session.conflictsOf(d.id)) {
             label("Conflicts");
             for (size_t i = 0; i < conflicts->size(); ++i) {

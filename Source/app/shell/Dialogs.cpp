@@ -204,7 +204,7 @@ void Dialogs::draw()
                 f.onChange(form);
             ImGui::EndDisabled();
             if (!reason.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("%s", reason.c_str());
+                tooltip("%s", reason.c_str());
             break;
         }
         case Field::Combo: {

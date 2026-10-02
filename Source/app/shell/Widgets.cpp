@@ -6,6 +6,7 @@
 #include "shell/Widgets.hpp"
 
 #include "shell/Theme.hpp"
+#include "util/Ui.hpp"
 
 #include <imgui_internal.h>
 
@@ -335,9 +336,7 @@ bool textElided(std::string_view text, const char* id, bool tooltip, float width
     }
     ImGui::RenderTextEllipsis(window->DrawList, bb.Min, bb.Max, bb.Max.x, begin, end, &size);
     if (cut && tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && ImGui::BeginTooltip()) {
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 40.0f);
-        ImGui::TextUnformatted(begin, end);
-        ImGui::PopTextWrapPos();
+        tooltipText(line);
         ImGui::EndTooltip();
     }
     return cut;

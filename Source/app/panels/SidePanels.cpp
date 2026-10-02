@@ -50,7 +50,7 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        ImGui::SetTooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
+        tooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
     const std::string item = label + "###" + id;
@@ -325,7 +325,7 @@ void BranchesPanel::draw(bool* open)
         m_session.showCreateBranchDialog(m_snapshot->head.hex());
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Create branch at HEAD...");
+        tooltip("Create branch at HEAD...");
     auto& history = m_session.history();
     // Show all / Hide all: every local and remote-tracking branch in History.
     std::vector<std::string> all;
@@ -337,12 +337,12 @@ void BranchesPanel::draw(bool* open)
     if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_branches"))
         history.setRefsVisible(all, true);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        ImGui::SetTooltip("Show all branches in History");
+        tooltip("Show all branches in History");
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_branches"))
         history.setRefsVisible(all, false);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        ImGui::SetTooltip("Hide all branches in History");
+        tooltip("Hide all branches in History");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter);
@@ -376,7 +376,7 @@ void BranchesPanel::draw(bool* open)
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
             b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true);
         if (shortName != b.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            ImGui::SetTooltip("%s", b.name.c_str());
+            tooltip("%s", b.name.c_str());
         if (events.toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         // Double-click checks the branch out.
@@ -457,7 +457,7 @@ void TagsPanel::draw(bool* open)
         m_session.showCreateTagDialog(m_snapshot->head.hex());
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Create tag at HEAD...");
+        tooltip("Create tag at HEAD...");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
@@ -510,10 +510,8 @@ void TagsPanel::draw(bool* open)
         if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tagText, false).toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && ImGui::BeginTooltip()) {
-            // The whole message (it can run to several paragraphs), wrapped.
-            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 40.0f);
-            ImGui::TextUnformatted(t.message.c_str());
-            ImGui::PopTextWrapPos();
+            // The message (it can run to several paragraphs), wrapped and cut after the line limit.
+            tooltipText(t.message);
             ImGui::EndTooltip();
         }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
@@ -551,7 +549,7 @@ void TagsPanel::draw(bool* open)
         plainText((name + "  (" + where + ")###" + id).c_str());
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            ImGui::SetTooltip("Only on %s: fetch to get it here", where.c_str());
+            tooltip("Only on %s: fetch to get it here", where.c_str());
         if (beginContextMenu("##rtag_menu")) {
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(name.c_str());
@@ -581,7 +579,7 @@ void WorktreesPanel::draw(bool* open)
         m_session.showAddWorktreeDialog();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip(snap->headUnborn ? "Add worktree... (HEAD has no commit yet)" : "Add worktree...");
+        tooltip(snap->headUnborn ? "Add worktree... (HEAD has no commit yet)" : "Add worktree...");
     // Only the list scrolls: the controls above stay put.
     beginList();
     for (const auto& w : snap->worktrees) {
@@ -612,7 +610,7 @@ void WorktreesPanel::draw(bool* open)
                 tip += w.locked ? "\nMissing: its directory is gone (kept while locked; Repair if it was moved)"
                                 : "\nMissing: its directory is gone. Prune removes its records; Repair reconnects it if it "
                                   "was moved";
-            ImGui::SetTooltip("%s", tip.c_str());
+            tooltip("%s", tip.c_str());
         }
         if (beginContextMenu("##worktree_menu")) {
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
@@ -679,7 +677,7 @@ void RemotesPanel::draw(bool* open)
     if (ImGui::Button(ICON_MS_ADD "###add_remote"))
         m_session.showAddRemoteDialog();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Add remote...");
+        tooltip("Add remote...");
     sameLineIfFits(buttonWidth(ICON_MS_DOWNLOAD, "Fetch all"));
     if (button(ICON_MS_DOWNLOAD, "Fetch all##fetch_all") && !snap->remotes.empty())
         actions.fetch("", false, false);
@@ -702,7 +700,7 @@ void RemotesPanel::draw(bool* open)
             std::string tip = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
             if (r.pruneOnFetch)
                 tip += "\nPrunes on fetch";
-            ImGui::SetTooltip("%s", tip.c_str());
+            tooltip("%s", tip.c_str());
         }
         if (beginContextMenu("##remote_menu")) {
             remoteMenuItems(m_session, r);
@@ -740,14 +738,14 @@ void StashesPanel::draw(bool* open)
         m_session.showStashDialog();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Stash the changes in the working tree...");
+        tooltip("Stash the changes in the working tree...");
     sameLineIfFits(buttonWidth(ICON_MS_OUTBOX, "Pop"));
     ImGui::BeginDisabled(!free || !hasStashes);
     if (button(ICON_MS_OUTBOX, "Pop##stash_pop"))
         actions.stashApply(popIndex, true, false);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Apply stash@{%d} and drop it", popIndex);
+        tooltip("Apply stash@{%d} and drop it", popIndex);
     sameLineIfFits(buttonWidth(ICON_MS_DELETE_SWEEP, "Clear all..."));
     ImGui::BeginDisabled(!free || m_snapshot->stashes.empty());
     if (button(ICON_MS_DELETE_SWEEP, "Clear all...##clear_stashes"))
@@ -932,7 +930,7 @@ void OperationsPanel::draw(bool* open)
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty()) {
                 ImGui::BeginTooltip();
                 for (const auto& r : op.refs)
-                    ImGui::Text("%s: %s " ICON_MS_ARROW_RIGHT_ALT " %s", r.ref.c_str(), r.oldValue.substr(0, 10).c_str(), r.newValue.substr(0, 10).c_str());
+                    tooltipText(r.ref + ": " + r.oldValue.substr(0, 10) + " " ICON_MS_ARROW_RIGHT_ALT " " + r.newValue.substr(0, 10));
                 ImGui::EndTooltip();
             }
             if (beginContextMenu("##op_menu")) {

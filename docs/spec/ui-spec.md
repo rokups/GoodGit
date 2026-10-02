@@ -17,6 +17,8 @@ Stable ImGui identifiers are part of this spec: tests address widgets by these p
 rename is a spec change. Window names are fixed (`"History"`, `"Changes"` …); widgets inside use
 `##id` suffixes where the visible label is dynamic.
 
+Tooltips wrap at about 40 font sizes and are cut with "…" after 10 lines.
+
 ---
 
 ## 1. Application shell

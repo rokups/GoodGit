@@ -731,7 +731,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         if (hl && hl->noNewline) {
             dl->AddText(ImVec2(pos.x + width - ImGui::CalcTextSize("\\").x, pos.y), p.dim, "\\");
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("No newline at end of file");
+                tooltip("No newline at end of file");
         }
         break;
     }
@@ -748,7 +748,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             // One text line tall, so the glyph keeps the editor line's baseline.
             const bool clicked = ImGui::Button((std::string(icon) + "###" + id).c_str(), ImVec2(button, ImGui::GetTextLineHeight()));
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                ImGui::SetTooltip("%s", tip);
+                tooltip("%s", tip);
             return clicked;
         };
         const std::string n = std::to_string(l.hunk);
@@ -788,7 +788,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
                     m_viewsDirty = true;
                 }
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s", tip);
+                    tooltip("%s", tip);
             };
             if (!first)
                 expand(ICON_MS_KEYBOARD_ARROW_UP, "expand_up_", "Show 10 more lines above (Shift+click: all)",
@@ -842,14 +842,14 @@ void DiffPanel::drawToolbar()
         contextChanged = true;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Fewer context lines (Ctrl+click: 5)");
+        tooltip("Fewer context lines (Ctrl+click: 5)");
     ImGui::SameLine(0, style.ItemInnerSpacing.x);
     if (iconButton(ICON_MS_ADD, "##diff_context_inc", ImVec2(square, square))) {
         d.diffContext += step;
         contextChanged = true;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("More context lines (Ctrl+click: 5)");
+        tooltip("More context lines (Ctrl+click: 5)");
     if (contextChanged) {
         d.diffContext = std::clamp(d.diffContext, 0, 100);
         Settings::markViewDirty();
@@ -862,14 +862,14 @@ void DiffPanel::drawToolbar()
         goToHunk(false);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Previous hunk (Alt+Up)");
+        tooltip("Previous hunk (Alt+Up)");
     ImGui::SameLine(0, style.ItemInnerSpacing.x);
     ImGui::BeginDisabled(hunkTarget(true) < 0);
     if (iconButton(ICON_MS_KEYBOARD_ARROW_DOWN, "##diff_next_hunk", ImVec2(square, square)))
         goToHunk(true);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("Next hunk (Alt+Down)");
+        tooltip("Next hunk (Alt+Down)");
     if (const int sides = termSides(); sides > 0) {
         // First-class conflict: the raw markers, or what one side changed against the base.
         std::vector<std::string> terms{"Raw markers"};
@@ -1010,8 +1010,8 @@ void DiffPanel::drawMenuItems()
                 can && !m_session.snapshot()->headUnborn))
             actions.revertChanges(id, {}, patch, shift);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("%s", shift ? "A new commit on HEAD that undoes the selected lines of this change. Text conflicts become first-class conflicts."
-                                          : "Undo the selected lines of this change in the index and working tree, without committing. Conflicts stop as in a revert.");
+            tooltip("%s", shift ? "A new commit on HEAD that undoes the selected lines of this change. Text conflicts become first-class conflicts."
+                                : "Undo the selected lines of this change in the index and working tree, without committing. Conflicts stop as in a revert.");
         if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
         const std::string hunkPatch = hunks.empty() ? std::string() : buildPatch(m_diff->files.front(), hunks, false);

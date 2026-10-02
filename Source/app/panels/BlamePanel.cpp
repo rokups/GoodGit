@@ -226,7 +226,7 @@ void BlamePanel::draw(bool* open)
                 }
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
                     if (l.commit.isNull())
-                        ImGui::SetTooltip("Not committed yet");
+                        tooltip("Not committed yet");
                     else
                         idTooltip(l.commit.hex(), m_session.shortId(l.commit).size(),
                             l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"

@@ -120,7 +120,7 @@ SelectionShape selectionShape(Session& s)
 void disabledHint(bool disabled, const char* why)
 {
     if (disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("%s", why);
+        tooltip("%s", why);
 }
 
 void drawEditCommitItem(Session& session, const core::HistoryRow& row)
@@ -184,7 +184,7 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
                     tip += "\nNeeds a single selected commit.";
                 else if (!enabled)
                     tip += "\n" + (revert ? std::string("HEAD has no commit yet.") : blocked);
-                ImGui::SetTooltip("%s", tip.c_str());
+                tooltip("%s", tip.c_str());
             }
         };
         if (shift)

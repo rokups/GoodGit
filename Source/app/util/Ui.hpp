@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <initializer_list>
 #include <string>
+#include <string_view>
 
 namespace ggui {
 
@@ -30,6 +31,11 @@ void plainText(const char* label);
 void idText(const std::string& hex, size_t shortLen, const char* id = nullptr);
 // A tooltip that starts with a full commit ID (drawn as idText) followed by more lines.
 void idTooltip(const std::string& hex, size_t shortLen, const std::string& rest);
+// Text inside an open tooltip: word-wrapped at 40 font sizes and cut with "…" after 10 lines
+// ('\n' in the text ends a line too). Every tooltip with text goes through this.
+void tooltipText(std::string_view text);
+// A tooltip (like SetTooltip) with the text wrapped and cut by tooltipText; the text may be any length.
+void tooltip(const char* fmt, ...) IM_FMTARGS(1);
 // "Copy ID" copies the short ID, or the full ID while Shift is held.
 void copyId(const std::string& shortId, const std::string& fullId);
 // A "Copy ID"-style menu item: "<prefix>short ID", or "<prefix>full ID" while Shift is held (the

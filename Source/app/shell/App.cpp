@@ -78,7 +78,7 @@ bool iconButton(const char* icon, const char* id, const char* tooltip, bool enab
     const bool clicked = ImGui::Button(label);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("%s", tooltip);
+        ggui::tooltip("%s", tooltip);
     return clicked;
 }
 

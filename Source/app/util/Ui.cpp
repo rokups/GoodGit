@@ -11,6 +11,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -98,7 +102,7 @@ void disabledMenuItem(const char* icon, const char* label, const char* reason, c
 {
     ImGui::MenuItemEx(label, icon, shortcut, false, false);
     if (reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("%s", reason);
+        tooltip("%s", reason);
 }
 
 void drawBadge(const char* label, ImU32 color, bool outlined)
@@ -173,13 +177,71 @@ void idText(const std::string& hex, size_t shortLen, const char* id)
     textItem(label.c_str(), label.c_str() + hex.size(), shortLen, id ? ImGui::GetID(label.c_str()) : 0);
 }
 
+// Tooltip text wraps at this many font sizes and is cut after this many wrapped lines.
+static float tooltipWrapWidth() { return ImGui::GetFontSize() * 40.0f; }
+static constexpr int kTooltipMaxLines = 10;
+
+void tooltipText(std::string_view text)
+{
+    if (text.empty())
+        return;
+    const float wrap = tooltipWrapWidth();
+    const char* const begin = text.data();
+    const char* const end = begin + text.size();
+    // Walk the lines the way ImGui's wrapped text rendering breaks them (the explicit '\n' ends a line too).
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize();
+    const char* line = begin;
+    const char* cut = nullptr;
+    for (int i = 0; i < kTooltipMaxLines && line < end; ++i) {
+        const char* eol = font->CalcWordWrapPosition(size, line, end, wrap);
+        const char* next = ImTextCalcWordWrapNextLineStart(eol, end);
+        if (i == kTooltipMaxLines - 1 && next < end) {
+            // The last line shown also holds the ellipsis: wrap it narrower so the ellipsis fits.
+            static const char* const ellipsis = "\xE2\x80\xA6";
+            eol = font->CalcWordWrapPosition(size, line, end, wrap - ImGui::CalcTextSize(ellipsis).x);
+            while (eol > line && ImCharIsBlankA(eol[-1]))
+                --eol;
+            cut = eol;
+        }
+        line = next;
+    }
+    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + wrap);
+    if (cut) {
+        const std::string shown = std::string(begin, cut) + "\xE2\x80\xA6";
+        ImGui::TextUnformatted(shown.c_str(), shown.c_str() + shown.size());
+    } else {
+        ImGui::TextUnformatted(begin, end);
+    }
+    ImGui::PopTextWrapPos();
+}
+
+void tooltip(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    va_list copy;
+    va_copy(copy, args);
+    const int n = std::vsnprintf(nullptr, 0, fmt, copy);
+    va_end(copy);
+    std::string text(n > 0 ? static_cast<size_t>(n) : 0, '\0');
+    if (n > 0)
+        std::vsnprintf(text.data(), text.size() + 1, fmt, args);
+    va_end(args);
+    // As SetTooltip does: a tooltip submitted earlier in the frame is replaced, not appended to.
+    if (!ImGui::BeginTooltipEx(ImGuiTooltipFlags_OverridePrevious, ImGuiWindowFlags_None))
+        return;
+    tooltipText(text);
+    ImGui::EndTooltip();
+}
+
 void idTooltip(const std::string& hex, size_t shortLen, const std::string& rest)
 {
     if (!ImGui::BeginTooltip())
         return;
     idText(hex, shortLen);
     if (!rest.empty())
-        ImGui::TextUnformatted(rest.c_str());
+        tooltipText(rest);
     ImGui::EndTooltip();
 }
 
@@ -241,7 +303,7 @@ void helpMarker(const char* text)
 {
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("%s", text);
+        tooltip("%s", text);
 }
 
 std::string dateText(std::int64_t unixSeconds) { return core::formatTime(unixSeconds); }

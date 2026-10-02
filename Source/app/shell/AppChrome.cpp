@@ -210,7 +210,7 @@ void App::drawRecentMenu()
             post([this, path] { openRepository(path); });
         const bool current = path == currentKey;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            ImGui::SetTooltip(current ? "%s" : "%s\nDel removes", path.c_str());
+            tooltip(current ? "%s" : "%s\nDel removes", path.c_str());
         if (!current && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
             forget = path;
         ++shown;
@@ -268,7 +268,7 @@ void App::drawMenuBar()
         if (menuItem(ICON_MS_ADD, "New commit", "Ctrl+N", false, free && attach))
             s->newCommitOn(at, false);
         if (!attach && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("%s", kNewDetachedOnly);
+            tooltip("%s", kNewDetachedOnly);
         if (menuItem(ICON_MS_ADD_CIRCLE, "New detached commit", nullptr, false, free && !at.isNull()))
             s->newCommitOn(at, true);
         if (menuItem(ICON_MS_CHECK, "Commit...", nullptr, false, free && !s->snapshot()->bare))
@@ -465,7 +465,7 @@ void App::drawStateBadge()
     // While git waits for the todo list (ggui as sequence.editor) the rebase has not started yet.
     const bool free = s.actions().busy().empty() && !editingForGit();
     if (editingForGit() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("git rebase -i waits for the list in the todo editor: Save or Cancel it first");
+        tooltip("git rebase -i waits for the list in the todo editor: Save or Cancel it first");
     ImGui::BeginDisabled(!free);
     const bool bisect = snap.state == core::RepoState::Bisecting;
     ImGui::SameLine();
@@ -485,7 +485,7 @@ void App::drawStateBadge()
         if (smallButton(ICON_MS_CHECK_CIRCLE, "Commit with conflicts##tb_commit_conflicts"))
             s.actions().commitWithConflicts();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Record the text conflicts as first-class conflicts in the commit and finish the %s",
+            tooltip("Record the text conflicts as first-class conflicts in the commit and finish the %s",
                 core::repoStateBadge(snap.state));
     }
     if (snap.rebase) {
@@ -495,7 +495,7 @@ void App::drawStateBadge()
             if (smallButton(ICON_MS_EDIT_NOTE, "Amend and continue##tb_amend_continue"))
                 s.actions().amendAndContinue();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                ImGui::SetTooltip("Amend HEAD with the staged changes (git commit --amend), then continue the rebase");
+                tooltip("Amend HEAD with the staged changes (git commit --amend), then continue the rebase");
         }
         ImGui::SameLine();
         if (smallButton(ICON_MS_LIST_ALT, "Edit remaining todo##tb_edit_todo")) {
@@ -598,7 +598,7 @@ void App::drawToolbar()
             if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), selected, 0, ImVec2(0, 0)) && !selected)
                 post([this, path] { openRepository(path); });
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                ImGui::SetTooltip(selected ? "%s" : "%s\nDel removes", path.c_str());
+                tooltip(selected ? "%s" : "%s\nDel removes", path.c_str());
             if (!selected && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
                 forget = path;
         }
@@ -654,9 +654,9 @@ void App::drawToolbar()
             ImGui::BeginTooltip();
             for (const auto& a : activities) {
                 if (a.percent >= 0)
-                    ImGui::Text("%s (%d%%)", a.label.c_str(), a.percent);
+                    tooltipText(a.label + " (" + std::to_string(a.percent) + "%)");
                 else
-                    ImGui::TextUnformatted(a.label.c_str());
+                    tooltipText(a.label);
             }
             ImGui::EndTooltip();
         }

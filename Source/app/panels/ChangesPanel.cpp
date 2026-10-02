@@ -75,7 +75,7 @@ bool compareWithField(const char* id, std::string& text)
     apply = apply || ImGui::IsItemDeactivatedAfterEdit();
     apply = acceptCommitDrop(text) || apply;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        ImGui::SetTooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
+        tooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
     if (beginContextMenu((std::string(id) + "_menu").c_str())) {
         for (const char* choice : {"HEAD", "Work Tree"})
             if (menuItem(ICON_MS_COMPARE_ARROWS, choice)) {
@@ -612,9 +612,9 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
                 actions.externalDiff(row.path, rev ? V{m_compare.rev, id + "^"} : V{id + "^"});
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
                 if (rev)
-                    ImGui::SetTooltip("Compare the file before this commit with %s", m_compare.rev.c_str());
+                    tooltip("Compare the file before this commit with %s", m_compare.rev.c_str());
                 else
-                    ImGui::SetTooltip("Compare the file before this commit with the working tree");
+                    tooltip("Compare the file before this commit with the working tree");
             }
         } else if (beginMenu(ICON_MS_OPEN_IN_NEW, "Compare", menuOn && canMenu)) {
             if (menuItem(ICON_MS_COMPARE_ARROWS, "Show diff", nullptr, false, hasShow && hasBefore))
@@ -648,13 +648,13 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
                 free && !m_session.snapshot()->headUnborn))
             actions.revertChanges(id, paths, {}, shift);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("%s", shift ? "A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts."
-                                          : "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
-                                            "added or deleted files may not apply (Shift: Revert and commit handles them).");
+            tooltip("%s", shift ? "A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts."
+                                : "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
+                                  "added or deleted files may not apply (Shift: Revert and commit handles them).");
         if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
             actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("Rewrites the commit so it no longer makes this change (its descendants are rebased). Undo restores it.");
+            tooltip("Rewrites the commit so it no longer makes this change (its descendants are rebased). Undo restores it.");
     }
     if (m_selection.kind == SelKind::Stash && row.group != FileGroup::StashIndex) {
         if (menuItem(ICON_MS_CONTENT_PASTE, "Apply this file", nullptr, false, free))
@@ -811,12 +811,12 @@ void ChangesPanel::drawFile(const FileRow& row, int)
             std::string lines;
             for (size_t i = 0; i < row.brokenMarkerLines.size(); ++i)
                 lines += (i ? ", " : "") + std::to_string(row.brokenMarkerLines[i]);
-            ImGui::SetTooltip(
+            tooltip(
                 "Conflict markers left at line %s: this edit broke a conflict region, so the file no longer "
                 "counts as conflicted. Fix the markers or remove them.",
                 lines.c_str());
         } else {
-            ImGui::SetTooltip("%s", row.path.c_str());
+            tooltip("%s", row.path.c_str());
         }
     }
     // Drag files between Staged and Unstaged, or onto a commit in History. The payload is the

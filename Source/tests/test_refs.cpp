@@ -373,6 +373,43 @@ GG_TEST("refs", "branches: <remote>/HEAD is not listed; the snapshot keeps it ap
     s.git(repo, {"remote", "set-head", "origin", "-d"}); // the after-test fsck rejects a dangling symref
 }
 
+GG_TEST("refs", "tags: a long annotated tag message is wrapped and cut after 10 lines in the tooltip; a short one is shown whole")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string longMessage, lastWord;
+    for (int i = 0; longMessage.size() < 3000; ++i) {
+        lastWord = "word" + std::to_string(i);
+        longMessage += lastWord + " ";
+    }
+    s.git(repo, {"tag", "-a", "long-tag", "-m", longMessage});
+    s.git(repo, {"tag", "-a", "short-tag", "-m", "A short message"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("long-tag").c_str()) && s.itemExists(tagRow("short-tag").c_str()); }));
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float fontSize = ImGui::GetFontSize();
+
+    ctx->MouseMove(tagRow("long-tag").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+    GG_REQUIRE(tip != nullptr && tip->Active);
+    // At most the wrap width (40 font sizes) plus padding; at most 10 lines plus padding, and all 10 are used.
+    GG_CHECK(tip->Size.x <= fontSize * 40.0f + style.WindowPadding.x * 2.0f + 1.0f);
+    GG_CHECK(tip->Size.y <= fontSize * 10.0f + style.WindowPadding.y * 2.0f + 1.0f);
+    GG_CHECK(tip->Size.y >= fontSize * 9.0f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "word0 word1 "));
+    GG_CHECK(s.textShown("//##Tooltip_00", "\xE2\x80\xA6"));
+    GG_CHECK(!s.textShown("//##Tooltip_00", lastWord));
+
+    ctx->MouseMove(tagRow("short-tag").c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    tip = ctx->GetWindowByRef("//##Tooltip_00");
+    GG_REQUIRE(tip != nullptr && tip->Active);
+    GG_CHECK(s.textShown("//##Tooltip_00", "A short message"));
+    GG_CHECK(!s.textShown("//##Tooltip_00", "\xE2\x80\xA6"));
+    GG_CHECK(tip->Size.y <= fontSize * 2.0f + style.WindowPadding.y * 2.0f + 1.0f);
+}
+
 GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
