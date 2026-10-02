@@ -429,37 +429,55 @@ the panel without touching the repository.
   child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Revert line(s) (a commit's lines, into the index and working tree; Shift: Revert line(s) and commit) · Discard line(s)/hunk(s) of a commit (rewrite).
 
 ## 7. Blame panel — window `"Blame"`
-Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5),
-the code in a read-only text editor `##blame_editor` (syntax highlighted by the file's extension, line numbers,
-text selection and copy; Ctrl+X and Shift+Delete copy too) with a gutter per line `blame_line_<n>` (commit prefix,
-author and date on the first line of each change block; "Not committed" for uncommitted blocks). Every second
-change block has the alternate row background in its gutter, and each block after the first starts under a 1 px
-separator line. The author column is as wide as the longest author present, up to the width of 20 digits; a longer name
-is cut with an ellipsis. The gutter is measured again when a blame loads and when the font or its size changes. The filter marks
-the matching lines (text, author, ID, summary) and brings the first match into view; it hides nothing.
-Tooltip per line, on its gutter (full commit summary); context menu of a line, on its gutter, its line number or
-its code (there after Copy · Select all): Blame before this change · Show
-originating source · Reveal commit · Copy commit ID · Select change block · Copy change block.
-Keys: Down in the window (outside a text field) moves the keyboard into the code, selecting the cursor line (line 1 of a fresh blame) when
-nothing is selected; from there the arrows, Shift+arrows and the editor's other keys apply, and the selection follows
-the cursor. Alt+Space (with the keyboard in the code and a line selected) opens the line menu for the cursor line, below its gutter. Ctrl+F
-focuses the filter (the editor's own find window is never opened). After the filter field the panel shows
-"n of m" (the current match and the count), "No matches" when nothing matches, nothing for an empty filter.
-Enter in the filter (it stays in the field, its text selected) and F3 / Shift+F3 anywhere in the window (they move the keyboard
-to the code) go to the next / previous match, wrapping: the cursor and the selection move to the match line,
-which is scrolled into view when it is not, and Change information shows its change. A new filter text puts
-the position on the first match without moving the cursor or selecting. Esc in the filter restores the text
-it had when the field was entered and leaves the field.
-A line is selected by a press on its gutter (Shift extends the range; dragging from the press selects the whole
-rows down or up to the row under the mouse) or by the cursor or a text selection made
-in the code; the cursor a blame opens with is not a selection. A selection that ends at the start of a later line
-does not include that line, except a selection of the whole text (Ctrl+A), which includes an empty last line.
-While the Blame window is visible and a line is selected, Change information shows the change of the line
-selected last (the one pressed last in a Shift range, the one the menu was opened on for *Select change block*;
-an uncommitted line gives the working tree form); the history selection, Changes and Diff do not change. Esc in
-the Blame window (when a line is selected) clears the selection; so do loading another blame and a blame result
-arriving. Without a selection, with the window closed, collapsed or hidden behind another tab, or while a blame loads,
-Change information follows the history selection again (§5).
+- **Toolbar:** Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5), the file and where it is blamed
+  ("tale.txt at 1a2b3c4", "at working tree"), "loading..." while a blame runs, and the filter `##blame_filter`.
+  "Large file: only the first lines are blamed." is shown above the code of a capped blame.
+- **Code:** the whole file in a read-only text editor `##blame_editor` with line numbers. The editor does the
+  syntax highlighting, chosen by the file name's extension (no highlighting for other files; the colours follow the
+  theme and change with it). Text can be selected with the mouse and keys and copied (Ctrl+C); typing, paste, Delete,
+  Backspace, Enter and Tab change nothing. Ctrl+X and Shift+Delete copy as well.
+- **Gutter:** one per line, `blame_line_<n>`, between the line numbers and the code: the commit ID (3 characters
+  highlighted, the rest dimmed), author and date on the first line of each change block; "Not committed" for an
+  uncommitted block. Every second change block has the alternate row background in its gutter, and each block
+  after the first starts under a 1 px separator line. The author column is as wide as the longest author present, up
+  to the width of 20 digits; a longer name is cut with an ellipsis. The gutter is measured again when a blame loads
+  and when the font or its size changes. The tooltip (full commit summary, author, date, original file and line)
+  is on the gutter only. The selected lines have the code's selection colour in the gutter too.
+- **Opening at a line:** *Show originating source* and *Blame before this change* open the blame with the cursor on the
+  corresponding line, scrolled to the middle of the code. That is not a selection: Down in the window selects it.
+- **Menus:** a right click on a line's gutter, on its line number or on its code, and Alt+Space (for the cursor line), open the
+  menu of that line. The code's menu has Copy (enabled with a selection) and Select all first, a separator and then the
+  line items; the other three have the line items only. Line items: Blame before this
+  change · Show originating source · Reveal commit · Copy commit ID (3, 7 or full ID) · Select change block · Copy
+  change block. The first four act on the line's commit and are disabled for an uncommitted line. A right click acts on the line
+  hit and does not move the cursor or change the selection (*Select change block* does select).
+- **Filter:** marks the lines matching it (text, author, ID, summary) and brings the first match into view when it is
+  outside the view; it hides nothing and does not move the cursor or select. The marks follow the theme. After the field
+  the panel shows "n of m" (the current match and the count), "No matches" when nothing matches, nothing for an empty
+  filter. Enter in the filter (it stays in the field, its text selected) and F3 / Shift+F3 anywhere in the window (they move the keyboard
+  to the code) go to the next / previous match, wrapping; the first step after a new filter or blame goes to the first
+  match (the last one for Shift+F3). The cursor and the selection move to the match line, which is scrolled to the middle of the code
+  when it is outside the view, and Change information shows its change. A new filter text puts the position on the first match without
+  moving the cursor or selecting. Esc in the filter restores the text it had when the field was entered and leaves the
+  field. Ctrl+F focuses the filter (the editor's own find window is never opened).
+- **Keys:** Down in the window (outside a text field) moves the keyboard into the code, selecting the cursor line
+  (line 1 of a fresh blame) when nothing is selected, without scrolling when it is in view; from there the arrows,
+  Shift+arrows and the editor's other keys apply, and the selection follows the cursor. Alt+Space (with the keyboard
+  in the code and a line selected) opens the line menu of the cursor line, below its gutter; when that line is out of
+  view it is scrolled into view first. Ctrl+A selects the whole text. Esc clears the selection (see below), the cursor and
+  the keyboard stay in the code; an Esc that closes a menu does not.
+- **Selection:** a line is selected by a press on its gutter (Shift extends the range from the line the selection
+  started on; dragging from the press selects the whole rows down or up to the row under the mouse, at most to the
+  first or last row in view), or by the cursor or a text selection made in the code (mouse, arrows, Ctrl+A, Select all);
+  the cursor a blame opens with is not a selection. A selection that ends at the start of a later line does not include
+  that line, except a selection of the whole text (Ctrl+A), which includes an empty last line.
+- **Change information:** while the Blame window is visible and a line is selected, it shows the change of the line
+  selected last (the one pressed last in a Shift range, the line at the moving end of a text selection (the one the cursor is on, or the line before it when the cursor is at
+  the start of a line), the one the menu was
+  opened on for *Select change block*; an uncommitted line gives the working tree form); the history selection,
+  Changes and Diff do not change. Esc in the Blame window (when a line is selected) clears the selection; so do
+  loading another blame and a blame result arriving. Without a selection, with the window closed, collapsed or hidden
+  behind another tab, or while a blame loads, Change information follows the history selection again (§5).
 
 ## 8. Side panels
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`

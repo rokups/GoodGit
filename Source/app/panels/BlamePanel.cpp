@@ -296,7 +296,8 @@ void BlamePanel::followGutterDrag()
     // does not run: this is the only writer.
     const int count = static_cast<int>(m_blame->lines.size());
     int line = static_cast<int>(std::floor((ImGui::GetMousePos().y - m_rowTop) / m_rowHeight));
-    line = std::clamp(line, m_editor->GetFirstVisibleLine(), m_editor->GetLastVisibleLine());
+    const int first = m_editor->GetFirstVisibleLine();
+    line = std::clamp(line, first, std::max(first, m_editor->GetLastVisibleLine()));
     line = std::clamp(line, 0, count - 1);
     selectRange(m_dragAnchor, line);
 }
@@ -438,7 +439,7 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     if (m_parity[static_cast<size_t>(index)])
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
     if (index >= m_selFirst && index <= m_selLast)
-        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), p.selection); // as a selected list row
+        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), m_editor->GetPalette().get(TextEditor::Color::selection)); // one bar with the code's selection
     if (newBlock && index > 0) {
         const float y = std::floor(pos.y);
         dl->AddRectFilled(ImVec2(pos.x, y), ImVec2(pos.x + size.x, y + 1.0f), ImGui::GetColorU32(ImGuiCol_Separator));
@@ -468,6 +469,10 @@ bool BlamePanel::hasSelection() const { return m_editor->AnyCursorHasSelection()
 std::string BlamePanel::selectedText() const { return m_editor->mainSelectionText(); }
 int BlamePanel::editorLines() const { return m_editor->GetLineCount(); }
 std::string BlamePanel::languageName() const { return m_editor->GetLanguageName(); }
+std::string BlamePanel::text() const { return m_editor->GetText(); }
+int BlamePanel::firstVisibleLine() const { return m_editor->GetFirstVisibleLine(); }
+int BlamePanel::lastVisibleLine() const { return m_editor->GetLastVisibleLine(); }
+bool BlamePanel::usesThemePalette() const { return m_editor->GetPalette() == editorPalette(); }
 
 void BlamePanel::publishInfoOverride(bool shown)
 {

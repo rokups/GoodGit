@@ -370,8 +370,15 @@ the History panel list newly conflicted commits. See §5, decision R1.
 ### 4.6 Blame panel
 - **K** Everything: working-tree blame (uncommitted lines marked), filter,
   back/forward history (mouse buttons), per-line tooltips, "Blame before this change",
-  originating source, reveal/copy commit, select or copy a change block, select and copy code (syntax
-  highlighted). The selected line's change is shown in Change information until Esc clears the selection.
+  originating source, reveal/copy commit, select or copy a change block. The gutter shows the commit, author and
+  date of each change block, with the blocks told apart by a separator and an alternating background.
+- **N** The code is the whole file in a read-only text editor, syntax highlighted by the file name's extension (the
+  editor's own highlighting, in the colours of the theme). Text can be selected and copied; it cannot be changed.
+- **N** The filter marks the matching lines instead of hiding the others, shows "n of m" and steps through the
+  matches (Enter in the filter, F3, Shift+F3, wrapping).
+- **N** A line is selected by a press on its gutter (Shift range, drag), by the cursor or by a text selection; Esc clears
+  the selection, and the selected line's change is shown in Change information meanwhile. The menu of a line opens on
+  its gutter, its line number or its code, and by Alt+Space; the keyboard reaches the code with Down.
 
 ### 4.7 Side panels
 - **K Branches:** Create branch, filter. Click toggles whether the branch is visible in

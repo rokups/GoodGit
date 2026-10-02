@@ -48,6 +48,12 @@ public:
     // (0-based), -1 out of range: every second block has the alternate background.
     float gutterWidth() const { return m_gutterWidth; }
     int editorLines() const;
+    // The whole text of the editor, the lines in view (0-based, the last may be partly shown) and whether its
+    // palette is the one of the current theme.
+    std::string text() const;
+    int firstVisibleLine() const;
+    int lastVisibleLine() const;
+    bool usesThemePalette() const;
     int blockParity(int line) const { return line >= 0 && line < static_cast<int>(m_parity.size()) ? m_parity[static_cast<size_t>(line)] : -1; }
 
 private:

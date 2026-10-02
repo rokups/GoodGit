@@ -297,6 +297,18 @@ GG_MANUAL_TEST("gallery", "interactive rebase and blame")
     ctx->Yield(3);
     shot(s, "blame-line-menu");
     closePopups(s);
+    // The light theme: the alternate gutter background, the separators, a selection and the filter marks.
+    ctx->ItemClick((s.child("//Blame", "##blame_editor") + "/###blame_line_8").c_str());
+    ctx->ItemClick("//Blame/##blame_filter");
+    ctx->KeyChars("line");
+    shot(s, "blame-selection");
+    setLook(s, "Light", 100);
+    ctx->WindowClose("//Settings");
+    s.settle();
+    shot(s, "blame-light");
+    setLook(s, "Dark", 100);
+    ctx->WindowClose("//Settings");
+    ctx->Yield(3);
 }
 
 GG_MANUAL_TEST("gallery", "light theme and 150 percent")

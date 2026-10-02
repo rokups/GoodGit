@@ -4,7 +4,9 @@
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "shell/Theme.hpp"
 #include "tests/Harness.hpp"
+#include "util/SyntaxHighlight.hpp"
 
 #include <libgg/GitRunner.hpp>
 
@@ -746,6 +748,398 @@ GG_TEST("blame", "Change information and the blame selection: Esc cases, Shift r
     GG_CHECK(!session.infoOverride());
     GG_CHECK_EQ(blame.selectionFirst(), -1);
     GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+}
+
+namespace {
+
+// code.cpp: c1 wrote its lines 1-2, c2 lines 3-4 (two blocks of two lines).
+struct CodeRepo {
+    fs::path path;
+    std::string c1, c2;
+};
+
+CodeRepo makeCodeRepo(Scenario& s)
+{
+    CodeRepo r;
+    r.path = s.fixture(Recipe::Empty, "blame-code");
+    s.commitFile(r.path, "code.cpp", "int first = 1;\nint second = 2;\n", "Write two lines");
+    r.c1 = s.head(r.path);
+    s.commitFile(r.path, "code.cpp", "int first = 1;\nint second = 2;\nint third = 3;\nint fourth = 4;\n", "Write two more");
+    r.c2 = s.head(r.path);
+    return r;
+}
+
+// Opens the blame of `path` at `commit` in the Blame window and waits until it is drawn.
+bool openBlame(Scenario& s, const std::string& path, const std::string& commit)
+{
+    s.session()->blameFile(path, ggui::core::Oid::fromHex(commit));
+    s.ctx->Yield(2);
+    s.showPanel("Blame");
+    if (!s.waitUntil([&] { return blameShows(s, path, commit); }))
+        return false;
+    s.ctx->Yield(3);
+    return true;
+}
+
+bool historyShows(Scenario& s, const std::string& commit)
+{
+    return s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + commit).c_str()); });
+}
+
+// The mouse position over a gutter row's code text, `dx` pixels right of the gutter, and over its line number.
+ImVec2 textPos(Scenario& s, int n, float dx)
+{
+    const ImRect r = s.ctx->ItemInfo(lineRef(s, n).c_str()).RectFull;
+    return ImVec2(r.Max.x + dx, r.GetCenter().y);
+}
+// The width of a glyph of the editor's monospace font.
+float glyphWidth()
+{
+    ImFontBaked* baked = ggui::theme().monoFont()->GetFontBaked(ImGui::GetStyle().FontSizeBase * ImGui::GetStyle().FontScaleMain);
+    return baked->GetCharAdvance('0');
+}
+ImVec2 numberPos(Scenario& s, int n)
+{
+    const ImRect r = s.ctx->ItemInfo(lineRef(s, n).c_str()).RectFull;
+    return ImVec2(r.Min.x - 1.5f * glyphWidth(), r.GetCenter().y);
+}
+
+// The text editor has its own click timer: a left press within the double click time of the previous one is a
+// double or triple click there. Every left press in these tests waits this out first.
+void waitOutDoubleClick(Scenario& s) { s.ctx->SleepNoSkip(2.0f * ImGui::GetIO().MouseDoubleClickTime, 0.1f); }
+
+// Drags with the left button from one position to another.
+void drag(Scenario& s, ImVec2 from, ImVec2 to)
+{
+    waitOutDoubleClick(s);
+    s.ctx->MouseMoveToPos(from);
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(to);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+}
+
+void rightClickAt(Scenario& s, ImVec2 pos)
+{
+    s.ctx->MouseMoveToPos(pos);
+    s.ctx->MouseClick(ImGuiMouseButton_Right);
+    s.ctx->Yield(3);
+}
+
+// Puts the theme back when a test ends, however it ends.
+struct ThemeGuard {
+    ggui::Theme theme = ggui::theme().theme();
+    float scale = ggui::theme().scale();
+    ~ThemeGuard() { ggui::theme().apply(theme, scale); }
+};
+
+} // namespace
+
+GG_TEST("blame", "text: a drag selects, Ctrl+C and Copy put it on the clipboard, Select all, the text cannot be changed")
+{
+    const CodeRepo r = makeCodeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(historyShows(s, r.c2));
+    GG_REQUIRE(openBlame(s, "code.cpp", r.c2));
+    auto& blame = s.session()->blame();
+    const std::string whole = "int first = 1;\nint second = 2;\nint third = 3;\nint fourth = 4;";
+    GG_CHECK_STR_EQ(blame.text(), whole);
+    GG_CHECK_STR_EQ(blame.languageName(), "C++");
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    // A drag over the code of one line, from its start past its end.
+    drag(s, textPos(s, 1, 10.0f), textPos(s, 1, 20.0f * glyphWidth()));
+    GG_CHECK(blame.hasSelection());
+    GG_CHECK_STR_EQ(blame.selectedText(), "int first = 1;");
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 0);
+    // A drag that ends inside a line selects the start of it only.
+    drag(s, textPos(s, 1, 10.0f), textPos(s, 1, 10.0f + 4.0f * glyphWidth()));
+    const std::string part = blame.selectedText();
+    GG_CHECK(!part.empty());
+    GG_CHECK(part.size() < std::string("int first = 1;").size());
+    GG_CHECK(std::string("int first = 1;").rfind(part, 0) == 0);
+    // Across two lines.
+    drag(s, textPos(s, 1, 10.0f), textPos(s, 2, 20.0f * glyphWidth()));
+    GG_CHECK_STR_EQ(blame.selectedText(), "int first = 1;\nint second = 2;");
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+    // Ctrl+C.
+    ImGui::SetClipboardText("x");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), "int first = 1;\nint second = 2;");
+    // The text menu's Copy does the same, and Select all selects the whole text.
+    ImGui::SetClipboardText("x");
+    rightClickAt(s, textPos(s, 2, 20.0f));
+    ctx->MenuClick("//$FOCUSED/Copy");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), "int first = 1;\nint second = 2;");
+    rightClickAt(s, textPos(s, 2, 20.0f));
+    ctx->MenuClick("//$FOCUSED/Select all");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(blame.selectedText(), whole);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    // The code cannot be edited: typing, paste, Delete, Backspace, Enter and Tab change nothing.
+    waitOutDoubleClick(s);
+    ctx->MouseMoveToPos(textPos(s, 3, 20.0f));
+    ctx->MouseClick(ImGuiMouseButton_Left);
+    ctx->Yield(2);
+    GG_REQUIRE(blame.cursorLine() == 2);
+    ImGui::SetClipboardText("pasted");
+    ctx->KeyChars("x");
+    for (ImGuiKeyChord key : {ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiKey_V), ImGuiKeyChord(ImGuiKey_Delete), ImGuiKeyChord(ImGuiKey_Backspace),
+             ImGuiKeyChord(ImGuiKey_Enter), ImGuiKeyChord(ImGuiKey_Tab)}) {
+        ctx->KeyPress(key);
+        ctx->Yield(2);
+    }
+    ctx->KeyChars("y");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(blame.text(), whole);
+    GG_CHECK_EQ(blame.editorLines(), 4);
+    GG_CHECK_EQ(blame.cursorLine(), 2);
+}
+
+GG_TEST("blame", "text menu and line number menu: the line items act on the line hit, the cursor stays")
+{
+    const CodeRepo r = makeCodeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(historyShows(s, r.c2));
+    GG_REQUIRE(openBlame(s, "code.cpp", r.c2));
+    auto& blame = s.session()->blame();
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->MouseMoveToPos(textPos(s, 1, 20.0f));
+    ctx->MouseClick(ImGuiMouseButton_Left);
+    ctx->Yield(2);
+    GG_REQUIRE(blame.cursorLine() == 0);
+    // The text menu on line 4 (the second line of c2's block): Copy and Select all, then the line items.
+    rightClickAt(s, textPos(s, 4, 20.0f));
+    GG_CHECK_EQ(blame.cursorLine(), 0);
+    for (const char* item : {"Copy", "Select all", "Blame before this change", "Show originating source", "Reveal commit",
+             "###Copy commit ID7", "Select change block", "Copy change block"})
+        GG_CHECK(s.itemExists((std::string("//$FOCUSED/") + item).c_str()));
+    ctx->MenuClick("//$FOCUSED/Select change block");
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    GG_CHECK_STR_EQ(blame.selectedText(), "int third = 3;\nint fourth = 4;");
+    // Copy change block on line 1 of c1's block, from the text menu; the selection and the cursor are not touched.
+    const int cursor = blame.cursorLine();
+    rightClickAt(s, textPos(s, 2, 20.0f));
+    GG_CHECK_EQ(blame.cursorLine(), cursor);
+    ctx->MenuClick("//$FOCUSED/Copy change block");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), "int first = 1;\nint second = 2;\n");
+    GG_CHECK_EQ(blame.cursorLine(), cursor);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    // The line number menu has the line items (no Copy / Select all): the commit of the line hit.
+    rightClickAt(s, numberPos(s, 1));
+    GG_REQUIRE(s.itemExists("//$FOCUSED/Copy change block")); // the menu is open
+    GG_CHECK(!s.itemExists("//$FOCUSED/Select all"));
+    GG_CHECK_EQ(blame.cursorLine(), cursor);
+    ctx->MenuClick("//$FOCUSED/###Copy commit ID7");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), r.c1.substr(0, 7));
+    rightClickAt(s, numberPos(s, 3));
+    ctx->MenuClick("//$FOCUSED/###Copy commit ID7");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 7));
+    GG_CHECK_EQ(blame.cursorLine(), cursor);
+    rightClickAt(s, numberPos(s, 2));
+    ctx->MenuClick("//$FOCUSED/Select change block");
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+}
+
+GG_TEST("blame", "the language follows the file name")
+{
+    const std::string repo = s.fixture(Recipe::Empty, "blame-lang");
+    s.commitFile(repo, "code.cpp", "int main() { return 0; }\n", "Add C++");
+    const std::string cpp = s.head(repo);
+    s.commitFile(repo, "tool.py", "def run():\n    return 1\n", "Add Python");
+    const std::string py = s.head(repo);
+    s.commitFile(repo, "notes.txt", "just words\n", "Add notes");
+    const std::string txt = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(historyShows(s, txt));
+    auto& blame = s.session()->blame();
+    GG_REQUIRE(openBlame(s, "code.cpp", cpp));
+    GG_CHECK_STR_EQ(blame.languageName(), "C++");
+    GG_REQUIRE(openBlame(s, "tool.py", py));
+    GG_CHECK_STR_EQ(blame.languageName(), "Python");
+    GG_REQUIRE(openBlame(s, "notes.txt", txt));
+    GG_CHECK_STR_EQ(blame.languageName(), "None");
+    GG_REQUIRE(openBlame(s, "code.cpp", txt));
+    GG_CHECK_STR_EQ(blame.languageName(), "C++");
+}
+
+GG_TEST("blame", "theme switch: the editor's palette, the filter marks and the gutter follow")
+{
+    const CodeRepo r = makeCodeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(historyShows(s, r.c2));
+    GG_REQUIRE(openBlame(s, "code.cpp", r.c2));
+    auto& blame = s.session()->blame();
+    ThemeGuard guard;
+    ggui::theme().apply(ggui::Theme::Dark, guard.scale);
+    ctx->Yield(3);
+    const auto dark = ggui::editorPalette();
+    GG_CHECK(blame.usesThemePalette());
+    // "int" is in all four lines; two steps put the position on the second match.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick("//Blame/##blame_filter");
+    ctx->KeyChars("int");
+    ctx->Yield(3);
+    GG_REQUIRE(blame.matchCount() == 4);
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    for (int i = 0; i < 2; ++i) {
+        ctx->KeyPress(ImGuiKey_F3);
+        ctx->Yield(2);
+    }
+    GG_CHECK_EQ(blame.matchPos(), 1);
+    GG_CHECK(s.textShown("//Blame", "2 of 4"));
+    ggui::theme().apply(ggui::Theme::Light, guard.scale);
+    ctx->Yield(4);
+    GG_CHECK(ggui::editorPalette() != dark);
+    GG_CHECK(blame.usesThemePalette());
+    GG_CHECK_EQ(blame.matchCount(), 4);
+    GG_CHECK_EQ(blame.matchPos(), 1);
+    GG_CHECK(s.textShown("//Blame", "2 of 4"));
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    for (int n = 1; n <= 4; ++n)
+        GG_CHECK(s.itemExists(lineRef(s, n).c_str()));
+    ggui::theme().apply(ggui::Theme::Dark, guard.scale);
+    ctx->Yield(4);
+    GG_CHECK(blame.usesThemePalette());
+    GG_CHECK(ggui::editorPalette() == dark);
+    GG_CHECK_EQ(blame.matchPos(), 1);
+}
+
+GG_TEST("blame", "a long file: open at a line, Down, Alt+Space and F3 bring lines into view, a drag past the edges")
+{
+    // 200 lines of long.txt in four commits: c1 wrote 1-100, c2 101-150, c3 151-200, c4 changed line 50.
+    const std::string repo = s.fixture(Recipe::Empty, "blame-long");
+    auto content = [](int count, bool edited) {
+        std::string text;
+        for (int i = 1; i <= count; ++i)
+            text += i == 50 && edited ? "row 50 edited\n" : i == 190 ? "row 190 marker\n" : "row " + std::to_string(i) + "\n";
+        return text;
+    };
+    s.commitFile(repo, "long.txt", content(100, false), "Write 100 rows");
+    s.commitFile(repo, "long.txt", content(150, false), "Write 50 more rows");
+    s.commitFile(repo, "long.txt", content(200, false), "Write the last 50 rows");
+    s.commitFile(repo, "long.txt", content(200, true), "Edit row 50");
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(historyShows(s, head));
+    auto& session = *s.session();
+    auto& blame = session.blame();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    // Opened at line 150 (as "Show originating source" does): the cursor is there, in view, nothing selected.
+    blame.open("long.txt", ggui::core::Oid::fromHex(head), false, 150);
+    ctx->Yield(2);
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    GG_CHECK_EQ(blame.editorLines(), 200);
+    GG_CHECK_EQ(blame.cursorLine(), 149);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_CHECK(blame.firstVisibleLine() > 0);
+    GG_CHECK(blame.firstVisibleLine() <= 149 && blame.lastVisibleLine() >= 149);
+    GG_CHECK(s.itemExists(lineRef(s, 150).c_str()));
+    GG_CHECK(!s.itemExists(lineRef(s, 1).c_str())); // out of view: not drawn
+    // Down from the toolbar selects that line and does not scroll.
+    const int first = blame.firstVisibleLine();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Blame");
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), 149);
+    GG_CHECK_EQ(blame.cursorLine(), 149);
+    GG_CHECK_EQ(blame.firstVisibleLine(), first);
+    // Scroll the cursor line out of view with the wheel (positive: up, negative: down).
+    auto scrollTo = [&](bool top) {
+        ctx->SetInputMode(ImGuiInputSource_Mouse);
+        ctx->MouseMoveToPos(textPos(s, blame.firstVisibleLine() + 3, 40.0f));
+        for (int i = 0; i < 30 && (top ? blame.firstVisibleLine() > 0 : blame.lastVisibleLine() < 199); ++i) {
+            ctx->MouseWheelY(top ? 20.0f : -20.0f);
+            ctx->Yield(2);
+        }
+        ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    };
+    // Down with the cursor line out of view scrolls it into view: the Blame window has the keyboard (not the
+    // editor), nothing is selected after Esc, then the cursor line is scrolled out.
+    ctx->WindowFocus("//Blame");
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_REQUIRE(blame.selectionFirst() == -1);
+    scrollTo(true);
+    GG_REQUIRE(blame.firstVisibleLine() == 0);
+    GG_REQUIRE(blame.lastVisibleLine() < 149);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(5);
+    GG_CHECK_EQ(blame.selectionFirst(), 149);
+    GG_CHECK(blame.firstVisibleLine() <= 149 && blame.lastVisibleLine() >= 149);
+    // Scrolled out again, Alt+Space brings the line back too.
+    scrollTo(true);
+    GG_REQUIRE(blame.firstVisibleLine() == 0);
+    GG_CHECK(blame.lastVisibleLine() < 149);
+    GG_CHECK(!s.itemExists(lineRef(s, 150).c_str()));
+    GG_CHECK_EQ(blame.cursorLine(), 149);
+    // Alt+Space brings the cursor line back into view and opens its menu.
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(5);
+    GG_CHECK(blame.firstVisibleLine() <= 149 && blame.lastVisibleLine() >= 149);
+    GG_CHECK(s.itemExists(lineRef(s, 150).c_str()));
+    GG_REQUIRE(g.OpenPopupStack.Size == 1);
+    GG_CHECK(g.OpenPopupStack[0].PopupId == ImHashStr("##blame_menu"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    GG_CHECK_EQ(blame.selectionFirst(), 149);
+    // The filter brings the match (line 190) into view; scrolled away again, F3 brings it back.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick("//Blame/##blame_filter");
+    ctx->KeyChars("marker");
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->Yield(4);
+    GG_REQUIRE(blame.matchCount() == 1);
+    GG_CHECK(blame.lastVisibleLine() >= 189);
+    GG_CHECK_EQ(blame.selectionFirst(), 149); // the filter does not select
+    scrollTo(true);
+    GG_REQUIRE(blame.firstVisibleLine() == 0);
+    GG_CHECK(!s.itemExists(lineRef(s, 190).c_str()));
+    ctx->KeyPress(ImGuiKey_F3);
+    ctx->Yield(5);
+    GG_CHECK_EQ(blame.matchPos(), 0);
+    GG_CHECK_EQ(blame.cursorLine(), 189);
+    GG_CHECK_EQ(blame.selectionFirst(), 189);
+    GG_CHECK(blame.firstVisibleLine() <= 189 && blame.lastVisibleLine() >= 189);
+    GG_CHECK(s.itemExists(lineRef(s, 190).c_str()));
+    // A drag from a visible row with the mouse held below / above the editor stops at the last / first row in view.
+    scrollTo(true);
+    GG_REQUIRE(blame.firstVisibleLine() == 0);
+    const int last = blame.lastVisibleLine();
+    GG_REQUIRE(last < 199);
+    const ImGuiWindow* editor = ctx->WindowInfo(s.child("//Blame", "##blame_editor").c_str()).Window;
+    GG_REQUIRE(editor != nullptr);
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    const ImVec2 press = ctx->ItemInfo(lineRef(s, 6).c_str()).RectFull.GetCenter();
+    ctx->MouseMoveToPos(press);
+    ctx->MouseDown(ImGuiMouseButton_Left);
+    ctx->MouseMoveToPos(ImVec2(press.x, editor->Rect().Max.y + 60.0f));
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), 5);
+    GG_CHECK_EQ(blame.selectionLast(), blame.lastVisibleLine());
+    GG_CHECK(blame.selectionLast() < 199);
+    ctx->MouseMoveToPos(ImVec2(press.x, editor->Rect().Min.y - 40.0f));
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), blame.firstVisibleLine());
+    GG_CHECK_EQ(blame.selectionLast(), 5);
+    ctx->MouseUp(ImGuiMouseButton_Left);
+    ctx->Yield(3);
 }
 
 } // namespace ggtest
