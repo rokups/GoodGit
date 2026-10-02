@@ -911,6 +911,7 @@ void ChangesPanel::draw(bool* open)
     const auto snap = m_session.snapshot();
     markConflicts();
     std::string title;
+    const char* note = m_scanning ? "scanning..." : m_loading ? "loading..." : nullptr;
     switch (m_selection.kind) {
     case SelKind::WorkingTree:
         // Git's zero ID stands for the working tree (as in `git diff --raw`).
@@ -921,8 +922,9 @@ void ChangesPanel::draw(bool* open)
         const auto* row = m_session.history().row(m_selection.id);
         title = m_session.shortId(m_selection.id);
         if (row) {
-            // The subject takes what the id and the "scanning..." note leave of the line.
-            const float room = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize((title + " scanning... ").c_str()).x;
+            // The subject takes what the id and the note (only while it is shown) leave of the line.
+            const float noteWidth = note ? ImGui::GetStyle().ItemSpacing.x + ImGui::CalcTextSize(note).x : 0.0f;
+            const float room = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize((title + " ").c_str()).x - noteWidth;
             title += " " + fitText(std::string(firstLine(row->subject)), std::max(room, ImGui::GetFontSize() * 6));
         }
         break;
@@ -931,9 +933,9 @@ void ChangesPanel::draw(bool* open)
     default: title = "Nothing selected"; break;
     }
     plainText((title + "###changes_title").c_str());
-    if (m_scanning || m_loading) {
+    if (note) {
         ImGui::SameLine();
-        ImGui::TextDisabled(m_scanning ? "scanning..." : "loading...");
+        ImGui::TextDisabled("%s", note);
     }
     // The filter and "Compare with" share the row; each is at least wide enough for its hint.
     const float pad = ImGui::GetStyle().FramePadding.x * 2.0f;
