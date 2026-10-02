@@ -61,24 +61,6 @@ const char* dialogButtonIcon(const FormButton& button, const std::string& shownL
     return nullptr;
 }
 
-// `text` cut to `width` pixels with an ellipsis.
-std::string fitText(const std::string& text, float width)
-{
-    if (ImGui::CalcTextSize(text.c_str()).x <= width)
-        return text;
-    const float room = width - ImGui::CalcTextSize("\xE2\x80\xA6").x;
-    size_t cut = 0;
-    while (cut < text.size()) {
-        size_t next = cut + 1;
-        while (next < text.size() && (static_cast<unsigned char>(text[next]) & 0xC0) == 0x80)
-            ++next;
-        if (ImGui::CalcTextSize(text.c_str(), text.c_str() + next).x > room)
-            break;
-        cut = next;
-    }
-    return text.substr(0, cut) + "\xE2\x80\xA6";
-}
-
 // The line under a commit input: the commit it names (id dimmed), or why there is none.
 void drawCommitPreview(Field& f)
 {
@@ -104,7 +86,7 @@ void drawCommitPreview(Field& f)
     }
     ImGui::TextDisabled("%s", p.shortId.c_str());
     ImGui::SameLine();
-    ImGui::TextUnformatted(fitText(p.subject, std::max(ImGui::GetContentRegionAvail().x, ImGui::GetFontSize() * 6)).c_str());
+    ImGui::TextUnformatted(fitText(std::string(firstLine(p.subject)), std::max(ImGui::GetContentRegionAvail().x, ImGui::GetFontSize() * 6)).c_str());
 }
 
 } // namespace

@@ -108,7 +108,10 @@ void InfoPanel::drawPendingCommitInfo(const core::StatusResult* status, const co
             m_session.revealCommit(parents[i]);
         if (const core::HistoryRow* row = m_session.history().row(parents[i])) {
             ImGui::SameLine();
-            ImGui::TextDisabled("%s", row->subject.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+            // The parents share the line: each subject gets its part of what is left.
+            textElided(row->subject, nullptr, true, ImGui::GetContentRegionAvail().x / static_cast<float>(parents.size() - i));
+            ImGui::PopStyleColor();
         }
         if (i + 1 < parents.size())
             ImGui::SameLine();

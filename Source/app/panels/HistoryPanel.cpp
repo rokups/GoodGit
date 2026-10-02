@@ -336,7 +336,7 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
         } else {
             const std::string hex = row.id.hex();
             ImGui::SetDragDropPayload("GG_COMMIT", hex.data(), hex.size());
-            ImGui::Text("%s %s", row.shortId.c_str(), row.subject.c_str());
+            ImGui::Text("%s %s", row.shortId.c_str(), fitText(std::string(firstLine(row.subject)), ImGui::GetFontSize() * 30).c_str());
         }
         ImGui::EndDragDropSource();
     }
@@ -755,7 +755,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     if (row.subject.empty())
         ImGui::TextDisabled("(no description)");
     else
-        ImGui::TextUnformatted(row.subject.c_str());
+        textElided(row.subject, ("###desc_" + row.id.hex()).c_str(), false); // (the row has its tooltip)
     ImGui::PopStyleColor();
 
     ImGui::TableSetColumnIndex(column(2));

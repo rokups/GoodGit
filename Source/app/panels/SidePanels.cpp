@@ -509,8 +509,13 @@ void TagsPanel::draw(bool* open)
         const std::string full = "refs/tags/" + t.name;
         if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tagText, false).toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
-        if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty())
-            ImGui::SetTooltip("%s", t.message.c_str());
+        if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && ImGui::BeginTooltip()) {
+            // The whole message (it can run to several paragraphs), wrapped.
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 40.0f);
+            ImGui::TextUnformatted(t.message.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
             if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
                 m_session.revealCommit(t.target);
@@ -752,7 +757,14 @@ void StashesPanel::draw(bool* open)
     beginList();
     for (const auto& s : m_snapshot->stashes) {
         ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
-        const std::string label = "stash@{" + std::to_string(s.index) + "} " + s.message;
+        // The message's first line, cut to leave the base and date after it (the ID after ### is unchanged);
+        // in a panel too narrow for both the message keeps a minimum and the trailing text is clipped.
+        const std::string prefix = "stash@{" + std::to_string(s.index) + "} ";
+        const std::string trailing = s.base.shortHex(7) + "  " + core::formatTime(s.time);
+        const float room = std::max(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(prefix.c_str()).x
+                - ImGui::CalcTextSize(trailing.c_str()).x - ImGui::GetStyle().ItemSpacing.x,
+            ImGui::GetFontSize() * 8);
+        const std::string label = prefix + fitText(std::string(firstLine(s.message)), room);
         const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
         // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
         if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav))
@@ -779,7 +791,7 @@ void StashesPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("%s  %s", s.base.shortHex(7).c_str(), core::formatTime(s.time).c_str());
+        ImGui::TextDisabled("%s", trailing.c_str());
         ImGui::PopID();
     }
     if (m_snapshot->stashes.empty())
@@ -874,7 +886,7 @@ void ReflogPanel::draw(bool* open)
                     ImGui::EndPopup();
                 }
                 ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(e.message.c_str());
+                textElided(e.message);
                 ImGui::TableSetColumnIndex(2);
                 ImGui::TextUnformatted(core::formatTime(e.time).c_str());
                 ImGui::PopID();

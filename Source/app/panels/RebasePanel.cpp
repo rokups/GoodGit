@@ -1157,7 +1157,10 @@ void RebasePanel::drawPreview()
     }
     for (size_t k = 0; k < pv.aside.size(); ++k) {
         const auto& a = pv.aside[k];
-        plainText((a.branch + ": " + shortHex(a.id, n) + " " + a.subject + ", before the squash###irp_aside_" + std::to_string(k)).c_str());
+        // The subject is cut to what the rest of the line leaves.
+        const std::string head = a.branch + ": " + shortHex(a.id, n) + " ", tail = ", before the squash";
+        const float room = std::max(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize((head + tail).c_str()).x, ImGui::GetFontSize() * 6);
+        plainText((head + fitText(std::string(firstLine(a.subject)), room) + tail + "###irp_aside_" + std::to_string(k)).c_str());
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Its update-ref row comes before squash/fixup rows: the branch keeps the commit as it was "
                               "then, and the squash/fixup amends a copy (as git rebase -i does).");
@@ -1283,7 +1286,7 @@ void RebasePanel::drawPreview()
         else if (row.unchanged)
             color = p.dim;
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        ImGui::TextUnformatted(row.subject.c_str());
+        textElided(row.subject);
         ImGui::PopStyleColor();
         ImGui::PopID();
     }
@@ -1399,7 +1402,8 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     if (ImGui::BeginDragDropSource()) {
         const std::string payload = std::to_string(row);
         ImGui::SetDragDropPayload("GG_TODO_ROW", payload.data(), payload.size());
-        ImGui::Text("%s %s", actionLabel(item).c_str(), hasInfo ? info->second.subject.c_str() : item.arg.c_str());
+        ImGui::Text("%s %s", actionLabel(item).c_str(),
+            fitText(std::string(firstLine(hasInfo ? info->second.subject : item.arg)), ImGui::GetFontSize() * 30).c_str());
         ImGui::EndDragDropSource();
     }
     if (ImGui::BeginDragDropTarget()) {
@@ -1467,7 +1471,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             }
     if (item.isCommit()) {
         ImGui::PushStyleColor(ImGuiCol_Text, item.action == Action::Drop ? p.dim : ImGui::GetColorU32(ImGuiCol_Text));
-        ImGui::TextUnformatted(info->second.subject.c_str());
+        textElided(info->second.subject, ("###ir_subject_" + std::to_string(row)).c_str());
         ImGui::PopStyleColor();
     } else if (item.action == Action::Label) {
         drawArgField(row, "ir_label_", "label name", ImGui::GetFontSize() * 10);
@@ -1475,18 +1479,21 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         drawArgField(row, "ir_reset_", "label", ImGui::GetFontSize() * 10);
         ImGui::SameLine();
         const std::string& to = m_state.todo.items[row].arg;
-        ImGui::TextDisabled("%s", to == "onto" ? "(the new base)"
-                : to == todo::kNewRoot            ? "(a new root commit)"
-                                                  : item.subject.c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        textElided(to == "onto" ? "(the new base)" : to == todo::kNewRoot ? "(a new root commit)" : item.subject);
+        ImGui::PopStyleColor();
     } else if (merge) {
         drawArgField(row, "ir_merge_", "labels to merge", ImGui::GetFontSize() * 10);
         ImGui::SameLine();
         const std::string& heads = m_state.todo.items[row].arg;
         const std::string plain = std::string("Merge ") + (heads.find(' ') != std::string::npos ? "branches" : "branch") + " '" + heads + "'";
-        if (item.fixup == FixupMessage::None || item.commit.empty()) // Git's message for a new merge
-            ImGui::TextDisabled("%s", item.subject.empty() ? plain.c_str() : item.subject.c_str());
-        else
-            ImGui::TextUnformatted(hasInfo ? info->second.subject.c_str() : item.subject.c_str());
+        if (item.fixup == FixupMessage::None || item.commit.empty()) { // Git's message for a new merge
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+            textElided(item.subject.empty() ? plain : item.subject);
+            ImGui::PopStyleColor();
+        } else {
+            textElided(hasInfo ? info->second.subject : item.subject);
+        }
     } else if (item.action == Action::Exec) {
         ImGui::SetNextItemWidth(-1);
         std::string command = item.arg;

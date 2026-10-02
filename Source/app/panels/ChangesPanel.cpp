@@ -919,7 +919,12 @@ void ChangesPanel::draw(bool* open)
     case SelKind::Index: title = "Index (staged)"; break;
     case SelKind::Commit: {
         const auto* row = m_session.history().row(m_selection.id);
-        title = m_session.shortId(m_selection.id) + (row ? " " + row->subject : std::string());
+        title = m_session.shortId(m_selection.id);
+        if (row) {
+            // The subject takes what the id and the "scanning..." note leave of the line.
+            const float room = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize((title + " scanning... ").c_str()).x;
+            title += " " + fitText(std::string(firstLine(row->subject)), std::max(room, ImGui::GetFontSize() * 6));
+        }
         break;
     }
     case SelKind::Stash: title = "stash@{" + std::to_string(m_selection.stashIndex) + "}"; break;

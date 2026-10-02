@@ -10,6 +10,7 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cctype>
 #include <string>
 
 namespace ggui {
@@ -280,6 +281,66 @@ bool acceptCommitDrop(std::string& text)
         }
     ImGui::EndDragDropTarget();
     return filled;
+}
+
+std::string_view firstLine(std::string_view text)
+{
+    text = text.substr(0, text.find_first_of("\r\n"));
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
+        text.remove_suffix(1);
+    return text;
+}
+
+std::string fitText(const std::string& text, float width)
+{
+    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+        return text;
+    const float room = width - ImGui::CalcTextSize("\xE2\x80\xA6").x;
+    size_t cut = 0;
+    while (cut < text.size()) {
+        size_t next = cut + 1;
+        while (next < text.size() && (static_cast<unsigned char>(text[next]) & 0xC0) == 0x80)
+            ++next;
+        if (ImGui::CalcTextSize(text.c_str(), text.c_str() + next).x > room)
+            break;
+        cut = next;
+    }
+    return text.substr(0, cut) + "\xE2\x80\xA6";
+}
+
+bool textElided(std::string_view text, const char* id, bool tooltip, float width)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+    const std::string_view line = firstLine(text);
+    const char* begin = line.empty() ? "" : line.data();
+    const char* end = begin + line.size();
+    const ImVec2 size = ImGui::CalcTextSize(begin, end);
+    const float room = std::max(width > 0 ? width : ImGui::GetContentRegionAvail().x, 1.0f);
+    const bool cut = size.x > room;
+    const ImVec2 itemSize(std::min(size.x, room), size.y);
+    const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
+    const ImRect bb(pos, ImVec2(pos.x + itemSize.x, pos.y + itemSize.y));
+    ImGui::ItemSize(itemSize, 0.0f);
+    const ImGuiID itemId = id ? ImGui::GetID(id) : 0;
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true); // (a registered ID would otherwise be a nav target)
+    const bool visible = ImGui::ItemAdd(bb, itemId);
+    ImGui::PopItemFlag();
+    if (!visible)
+        return cut;
+    if (itemId) {
+        [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext(); // used by the test-engine hook
+        IMGUI_TEST_ENGINE_ITEM_INFO(itemId, id, ImGuiItemStatusFlags_None);
+    }
+    ImGui::RenderTextEllipsis(window->DrawList, bb.Min, bb.Max, bb.Max.x, begin, end, &size);
+    if (cut && tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && ImGui::BeginTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 40.0f);
+        ImGui::TextUnformatted(begin, end);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    return cut;
 }
 
 } // namespace ggui
