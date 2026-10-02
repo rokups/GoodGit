@@ -151,6 +151,7 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
     m_editor->SetLineDecorator(-static_cast<float>(gutter),
         [this](TextEditor::Decorator& d) { drawGutter(d.line, d.width, d.height, d.glyphSize.x); });
     m_marksDirty = true;
+    m_blameChanged = true;
     clearSelection(); // the lines of the previous blame are gone
     const int count = m_blame ? static_cast<int>(m_blame->lines.size()) : 0;
     if (m_scrollTo > 0 && count > 0) {
@@ -283,10 +284,17 @@ void BlamePanel::followEditor()
 
 void BlamePanel::applyFilter(bool scroll)
 {
+    // The position starts again when the filter text or the blame changed, not for the markers alone (a theme).
+    const bool reset = m_filter != m_filterApplied || m_blameChanged;
     m_filterApplied = m_filter;
     m_marksDirty = false;
+    m_blameChanged = false;
     m_matches.clear();
     m_editor->ClearMarkers();
+    if (reset) {
+        m_matchPos = -1;
+        m_matchVisited = false;
+    }
     if (m_filter.empty())
         return;
     const ImU32 color = theme().palette().warning;
@@ -298,10 +306,38 @@ void BlamePanel::applyFilter(bool scroll)
         m_matches.push_back(static_cast<int>(i));
         m_editor->AddMarker(static_cast<int>(i), withAlpha(color, 0x60), withAlpha(color, 0x38), "", "");
     }
+    if (m_matches.empty())
+        m_matchPos = -1;
+    else if (reset || m_matchPos < 0)
+        m_matchPos = 0;
     // The cursor stays (and with it the selection); the view moves only when the first match is outside it.
     if (scroll && !m_matches.empty()
         && (m_matches.front() < m_editor->GetFirstVisibleLine() || m_matches.front() > m_editor->GetLastVisibleLine()))
         m_editor->ScrollToLine(m_matches.front(), TextEditor::Scroll::alignMiddle);
+}
+
+void BlamePanel::stepMatch(int direction, bool focusEditor)
+{
+    if (m_matches.empty() || !m_blame)
+        return;
+    const int count = static_cast<int>(m_matches.size());
+    // The first step lands on the first match (the last one going back): the position after a new filter
+    // is that match, not yet visited.
+    if (!m_matchVisited)
+        m_matchPos = direction > 0 ? 0 : count - 1;
+    else
+        m_matchPos = (m_matchPos + direction + count) % count;
+    m_matchVisited = true;
+    const int line = m_matches[static_cast<size_t>(m_matchPos)];
+    selectLine(line, false);
+    if (line < m_editor->GetFirstVisibleLine() || line > m_editor->GetLastVisibleLine())
+        m_editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
+    if (focusEditor) {
+        // The focused window changes, but the filter would stay the active item and keep the keys.
+        if (ImGui::GetActiveID() == ImGui::GetID("##blame_filter"))
+            ImGui::ClearActiveID();
+        m_editor->SetFocus();
+    }
 }
 
 void BlamePanel::drawGutter(int index, float width, float height, float glyph)
@@ -320,6 +356,11 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     const std::string id = committed ? l.commit.shortHex(kShortIdLength) : std::string(kNotCommitted);
     const std::string label = (newBlock ? id : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
     ImGui::InvisibleButton(label.c_str(), size);
+    if (m_menuPending > 0 && index == m_menuLine) {
+        // Alt+Space: the menu of the cursor line, below the bottom-left of its gutter.
+        m_menuPending = 0;
+        openPopupBelowItem(kMenuId);
+    }
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
         selectLine(index, ImGui::GetIO().KeyShift);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
@@ -350,6 +391,13 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
         dl->AddText(ImVec2(pos.x + authorAt + authorWidth + 2 * glyph, pos.y), text, core::formatTime(l.time).c_str());
     }
     ImGui::PopID();
+}
+
+std::string BlamePanel::matchText() const
+{
+    if (m_matches.empty())
+        return "No matches";
+    return std::to_string(m_matchPos + 1) + " of " + std::to_string(m_matches.size());
 }
 
 int BlamePanel::cursorLine() const { return m_editor->GetMainCursorPosition().line; }
@@ -413,20 +461,74 @@ void BlamePanel::draw(bool* open)
         ImGui::TextDisabled("loading...");
     }
     const float filterMin = ImGui::GetFontSize() * 8;
-    sameLineIfFits(filterMin);
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    // "n of m" after the field (the width is that of the text shown last frame).
+    const std::string count = m_blame && !m_filter.empty() ? matchText() : std::string();
+    const float countWidth = count.empty() ? 0.0f : ImGui::CalcTextSize(count.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
+    sameLineIfFits(filterMin + countWidth);
+    ImGui::SetNextItemWidth(-std::max(countWidth, FLT_MIN));
+    // Ctrl+F is the filter's: the editor would open its own find window (Ctrl+Shift+F and Ctrl+G only act on
+    // a text searched for there, so they do nothing here).
+    if (hotkey(ImGuiMod_Ctrl | ImGuiKey_F))
+        ImGui::SetKeyboardFocusHere();
+    // Enter keeps the field active, so it can be pressed again for the next match.
+    ImGuiIO& io = ImGui::GetIO();
+    const bool keepActive = io.ConfigInputTextEnterKeepActive;
+    io.ConfigInputTextEnterKeepActive = true;
+    const bool enter = ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter, ImGuiInputTextFlags_EnterReturnsTrue);
+    io.ConfigInputTextEnterKeepActive = keepActive;
     if (!m_blame) {
         ImGui::TextDisabled("Use \"Blame file\" on a file to see who changed each line.");
         ImGui::End();
         publishInfoOverride(false);
         return;
     }
+    if (m_paletteTheme != static_cast<int>(theme().theme())) {
+        m_paletteTheme = static_cast<int>(theme().theme());
+        m_editor->SetPalette(editorPalette());
+        m_marksDirty = true;
+    }
+    if (m_marksDirty || m_filter != m_filterApplied)
+        applyFilter(m_filter != m_filterApplied);
+    if (enter)
+        stepMatch(1, false);
+    if (!m_filter.empty()) {
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", matchText().c_str());
+    }
     // The panel's keys come before the editor is rendered: hotkey() locks its key for the frame, so the
     // editor, which reads the keys raw, does not act on it too.
     // Esc drops the selection (and with it the change shown in Change information).
     if (m_selFirst >= 0 && hotkey(ImGuiKey_Escape))
         clearSelection();
+    // F3 and Shift+F3 step through the matches, also from the filter field.
+    const ImGuiInputFlags stepFlags = ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat;
+    if (hotkey(ImGuiKey_F3, stepFlags))
+        stepMatch(1, true);
+    if (hotkey(ImGuiMod_Shift | ImGuiKey_F3, stepFlags))
+        stepMatch(-1, true);
+    // Down moves the keyboard from the panel's buttons into the code; without a selection the cursor
+    // line (the first of a fresh blame) is selected. The key is the panel's for that press, so the navigation does not move too. Then the
+    // arrows are the editor's.
+    if (!m_editorFocused && !m_blame->lines.empty() && ImGui::IsWindowFocused() && !ImGui::IsAnyItemActive()
+        && hotkey(ImGuiKey_DownArrow)) {
+        m_editor->SetFocus();
+        if (m_selFirst < 0) {
+            const int line = std::min(cursorLine(), static_cast<int>(m_blame->lines.size()) - 1);
+            selectLine(line, false);
+            if (line < m_editor->GetFirstVisibleLine() || line > m_editor->GetLastVisibleLine())
+                m_editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
+        }
+    }
+    // Alt+Space opens the menu of the cursor line, as a right click on its gutter does (the menu is opened
+    // by the gutter, which is drawn by the editor below).
+    if (m_editorFocused && m_selFirst >= 0 && hotkey(ImGuiMod_Alt | ImGuiKey_Space)) {
+        m_menuPending = 3; // frames the gutter of a line scrolled out of view has to be drawn
+        // After Ctrl+A the cursor is on the editor's last line, which is not a blame line.
+        m_menuLine = std::min(cursorLine(), static_cast<int>(m_blame->lines.size()) - 1);
+        if (m_menuLine < m_editor->GetFirstVisibleLine() || m_menuLine > m_editor->GetLastVisibleLine())
+            m_editor->ScrollToLine(m_menuLine, TextEditor::Scroll::alignMiddle);
+    }
     // The editor cuts on Ctrl+X and Shift+Delete even though it is read-only (lines would vanish and the
     // gutter would name the wrong changes): here a cut is a copy. Repeat keeps a held key locked on its
     // repeat frames too. Elsewhere in the panel the keys do nothing.
@@ -436,16 +538,11 @@ void BlamePanel::draw(bool* open)
         m_editor->Copy();
     if (m_blame->truncated)
         ImGui::TextDisabled("Large file: only the first lines are blamed.");
-    if (m_paletteTheme != static_cast<int>(theme().theme())) {
-        m_paletteTheme = static_cast<int>(theme().theme());
-        m_editor->SetPalette(editorPalette());
-        m_marksDirty = true;
-    }
-    if (m_marksDirty || m_filter != m_filterApplied)
-        applyFilter(m_filter != m_filterApplied);
     ImGui::PushFont(theme().monoFont(), 0.0f);
     m_editor->Render("##blame_editor", ImVec2(0, 0));
     m_editorFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::IsWindowFocused();
+    if (m_menuPending > 0)
+        --m_menuPending;
     followEditor();
     // The menu of a line's gutter (the editor opens its own over the code and the line numbers).
     if (ImGui::BeginPopupEx(kMenuId, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar

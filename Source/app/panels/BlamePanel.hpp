@@ -40,6 +40,8 @@ public:
     std::string selectedText() const;
     std::string languageName() const;
     int matchCount() const { return static_cast<int>(m_matches.size()); }
+    // The match Enter / F3 stepped to last (0-based; the first one after a new filter), -1 without matches.
+    int matchPos() const { return m_matchPos; }
 
 private:
     using CursorState = std::array<int, 6>; // the main cursor's selection and position
@@ -56,6 +58,10 @@ private:
     CursorState cursorState() const;
     // Marks the lines matching the filter; `scroll` brings the first one into view.
     void applyFilter(bool scroll);
+    // Moves to the next (`direction` 1) or previous match, wrapping: the line is selected and in view.
+    // `focusEditor` gives the editor the keyboard (F3), otherwise it stays where it is (Enter in the filter).
+    void stepMatch(int direction, bool focusEditor);
+    std::string matchText() const; // "n of m" or "No matches"
     // Change information follows the selected line while the panel is shown (`shown`).
     void publishInfoOverride(bool shown);
     std::string blockText(int index, int* first, int* last) const;
@@ -74,6 +80,10 @@ private:
     std::string m_filterApplied; // the filter the markers were made for
     bool m_marksDirty = false;   // the text or the theme changed: the markers are made again
     std::vector<int> m_matches;  // lines matching the filter
+    int m_matchPos = -1;         // the match stepped to last, in m_matches
+    bool m_blameChanged = false; // a blame was loaded: the match position starts again
+    bool m_matchVisited = false; // the cursor has been put on m_matchPos since the filter changed
+    int m_menuPending = 0;       // frames left to open the menu of the cursor line (Alt+Space)
     int m_selFirst = -1;
     int m_selLast = -1;
     int m_selLine = -1; // the line interacted with last: its change is shown in Change information

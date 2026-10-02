@@ -437,6 +437,16 @@ the matching lines (text, author, ID, summary) and brings the first match into v
 Tooltip per line, on its gutter (full commit summary); context menu of a line, on its gutter, its line number or
 its code (there after Copy · Select all): Blame before this change · Show
 originating source · Reveal commit · Copy commit ID · Select change block · Copy change block.
+Keys: Down in the window (outside a text field) moves the keyboard into the code, selecting the cursor line (line 1 of a fresh blame) when
+nothing is selected; from there the arrows, Shift+arrows and the editor's other keys apply, and the selection follows
+the cursor. Alt+Space (with the keyboard in the code and a line selected) opens the line menu for the cursor line, below its gutter. Ctrl+F
+focuses the filter (the editor's own find window is never opened). After the filter field the panel shows
+"n of m" (the current match and the count), "No matches" when nothing matches, nothing for an empty filter.
+Enter in the filter (it stays in the field, its text selected) and F3 / Shift+F3 anywhere in the window (they move the keyboard
+to the code) go to the next / previous match, wrapping: the cursor and the selection move to the match line,
+which is scrolled into view when it is not, and Change information shows its change. A new filter text puts
+the position on the first match without moving the cursor or selecting. Esc in the filter restores the text
+it had when the field was entered and leaves the field.
 A line is selected by a press on its gutter (Shift extends the range) or by the cursor or a text selection made
 in the code; the cursor a blame opens with is not a selection.
 While the Blame window is visible and a line is selected, Change information shows the change of the line

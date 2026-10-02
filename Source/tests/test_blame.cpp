@@ -125,7 +125,9 @@ GG_TEST("blame", "filter, history, tooltips")
     ctx->ItemInputValue("//Blame/##blame_filter", "L");
     ctx->Yield(2);
     GG_CHECK_EQ(s.session()->blame().matchCount(), 5);
-    GG_CHECK_EQ(s.session()->blame().selectionFirst(), -1);
+    // Typing selects nothing; the Enter that ends ItemInputValue() steps to the first match.
+    GG_CHECK_EQ(s.session()->blame().matchPos(), 0);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), 0);
     ctx->ItemInputValue("//Blame/##blame_filter", "");
     ctx->Yield(2);
     GG_CHECK_EQ(s.session()->blame().matchCount(), 0);
@@ -174,6 +176,14 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK(s.waitUntil([&] { return blameShows(s, "story.txt", r.c2); }));
     GG_CHECK_STR_EQ(line(s, 5)->text, "L5");
     GG_CHECK_EQ(s.session()->blame().cursorLine(), 4);
+    // Down from the panel's buttons, with nothing selected, selects the line the blame opened on.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Blame");
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), 4);
+    GG_CHECK_EQ(s.session()->blame().cursorLine(), 4);
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
     // Reveal and copy the commit of line 3.
     s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID3");
     GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 3));
@@ -278,6 +288,171 @@ GG_TEST("blame", "keyboard: the arrows move the selection from a pressed line, S
     GG_CHECK_EQ(blame.selectionFirst(), 1);
     GG_CHECK_EQ(blame.selectionLast(), 3);
     GG_CHECK_EQ(blame.cursorLine(), 1);
+}
+
+GG_TEST("blame", "keyboard only: Down into the code, select by arrows, Shift range, Alt+Space menu")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    blameFromChanges(s, "Unstaged", "tale.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    auto& blame = s.session()->blame();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto press = [&](ImGuiKeyChord chord) {
+        ctx->KeyPress(chord);
+        ctx->Yield(2);
+    };
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Blame");
+    // The cursor starts on the first line without selecting it; Down hands the keyboard to the code and
+    // selects that line.
+    int presses = 0;
+    for (; presses < 40 && blame.selectionFirst() != 0; ++presses)
+        press(ImGuiKey_DownArrow);
+    GG_REQUIRE(blame.selectionFirst() == 0);
+    GG_CHECK(presses <= 3);
+    GG_CHECK_EQ(blame.cursorLine(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 0);
+    // From there the arrows are the editor's: the selection follows the cursor.
+    press(ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.cursorLine(), 1);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+    // Shift+Down extends the range, Shift+Up shrinks it.
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    press(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 2);
+    // Alt+Space opens the cursor line's menu.
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_REQUIRE(g.OpenPopupStack.Size == 1);
+    GG_CHECK(g.OpenPopupStack[0].PopupId == ImHashStr("##blame_menu"));
+    GG_CHECK_EQ(blame.cursorLine(), 2);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+    // The Esc that closed the menu did not clear the selection.
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 2);
+    // After Ctrl+A the cursor is on the editor's empty last line: the menu is the last blame line's.
+    press(ImGuiMod_Ctrl | ImGuiKey_A);
+    GG_CHECK_EQ(blame.cursorLine(), 5);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 1);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(g.OpenPopupStack.Size == 0);
+}
+
+GG_TEST("blame", "Ctrl+F focuses the filter, not the editor's find window")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    blameFromChanges(s, "Unstaged", "tale.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick(lineRef(s, 2).c_str());
+    ctx->Yield(2);
+    GG_REQUIRE(s.session()->blame().selectionFirst() == 1);
+    const ImGuiID filter = ctx->ItemInfo("//Blame/##blame_filter").ID;
+    GG_REQUIRE(filter != 0);
+    GG_CHECK(g.ActiveId != filter);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_F);
+    ctx->Yield(3);
+    GG_CHECK(g.ActiveId == filter);
+    // The editor's find UI is a child window "find-replace" (ImGuiColorTextEdit, TextEditor.cpp).
+    bool find = false;
+    for (ImGuiWindow* w : g.Windows)
+        find = find || std::string(w->Name).find("find-replace") != std::string::npos;
+    GG_CHECK(!find);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), 1);
+    // The field takes the typing, with the selection kept.
+    ctx->KeyChars("edited");
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 1);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), 1);
+}
+
+GG_TEST("blame", "Enter in the filter, F3 and Shift+F3 step through the matches")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    blameFromChanges(s, "Unstaged", "tale.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    auto& session = *s.session();
+    auto& blame = session.blame();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto press = [&](ImGuiKeyChord chord) {
+        ctx->KeyPress(chord);
+        ctx->Yield(2);
+    };
+    // Nothing matches: "No matches", no stepping.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick("//Blame/##blame_filter");
+    ctx->KeyChars("zzz");
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.matchCount(), 0);
+    GG_CHECK_EQ(blame.matchPos(), -1);
+    GG_CHECK(s.textShown("//Blame", "No matches"));
+    press(ImGuiKey_Enter);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    // Five lines match "L" (the text of every line); the position is the first one, not visited yet.
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_A);
+    ctx->KeyChars("L");
+    ctx->Yield(2);
+    GG_REQUIRE(blame.matchCount() == 5);
+    GG_CHECK_EQ(blame.matchPos(), 0);
+    GG_CHECK(s.textShown("//Blame", "1 of 5"));
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    // Enter goes to the first match and stays in the filter, so it can be pressed again.
+    const ImGuiID filter = ctx->ItemInfo("//Blame/##blame_filter").ID;
+    press(ImGuiKey_Enter);
+    GG_CHECK_EQ(blame.matchPos(), 0);
+    GG_CHECK_EQ(blame.cursorLine(), 0);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK(session.infoOverride() && session.infoOverride()->kind == ggui::SelKind::WorkingTree);
+    GG_CHECK(g.ActiveId == filter);
+    press(ImGuiKey_Enter);
+    GG_CHECK_EQ(blame.matchPos(), 1);
+    GG_CHECK_EQ(blame.cursorLine(), 1);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+    GG_CHECK(g.ActiveId == filter);
+    GG_CHECK(s.textShown("//Blame", "2 of 5"));
+    // F3 and Shift+F3 step forward and back, and give the code the keyboard.
+    press(ImGuiKey_F3);
+    GG_CHECK_EQ(blame.matchPos(), 2);
+    GG_CHECK_EQ(blame.cursorLine(), 2);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK(session.infoOverride() && session.infoOverride()->id.hex() == r.c2);
+    GG_CHECK(g.ActiveId != filter);
+    press(ImGuiMod_Shift | ImGuiKey_F3);
+    GG_CHECK_EQ(blame.matchPos(), 1);
+    GG_CHECK_EQ(blame.cursorLine(), 1);
+    press(ImGuiMod_Shift | ImGuiKey_F3);
+    press(ImGuiMod_Shift | ImGuiKey_F3);
+    GG_CHECK_EQ(blame.matchPos(), 4); // wrapped
+    GG_CHECK_EQ(blame.cursorLine(), 4);
+    press(ImGuiKey_F3);
+    GG_CHECK_EQ(blame.matchPos(), 0); // wrapped
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    // A match is the selection: Esc clears it, F3 selects the next one again.
+    press(ImGuiKey_Escape);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    press(ImGuiKey_F3);
+    GG_CHECK_EQ(blame.matchPos(), 1);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    ctx->Yield(2);
+    GG_CHECK(s.textShown("//Blame", "2 of 5"));
 }
 
 GG_TEST("blame", "the selected line's change is shown in Change information; Esc and closing give it back")
