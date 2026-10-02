@@ -277,6 +277,8 @@ void App::drawMenuBar()
         const core::HistoryRow* selected = s && s->selection().kind == SelKind::Commit ? s->history().row(s->selection().id) : nullptr;
         ImGui::Separator();
         if (beginMenu(ICON_MS_LIST_ALT, "Selected commit", selected != nullptr)) {
+            drawEditCommitItem(*s, *selected);
+            ImGui::Separator();
             drawCommitEditItems(*s, *selected);
             ImGui::EndMenu();
         }

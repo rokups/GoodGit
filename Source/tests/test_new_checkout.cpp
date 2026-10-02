@@ -195,6 +195,40 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     GG_CHECK(s.session()->history().extraSelection().empty());
 }
 
+GG_TEST("checkout", "Check out lists the branches at the commit and is disabled without one; Edit commit follows it")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string tip = s.revParse(repo, "topic");
+    const std::string noBranch = s.revParse(repo, "feature~1");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(s.revParse(repo, "main")));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(noBranch).c_str()); }));
+    GG_REQUIRE(gg::splitLines(s.gitOut(repo, {"branch", "--points-at", noBranch})).empty());
+    GG_CHECK(!probe(s, ctx, noBranch, "Check out").enabled);
+    GG_CHECK(probe(s, ctx, tip, "Check out").enabled);
+    GG_CHECK(probe(s, ctx, noBranch, "Edit commit").enabled);
+    // Edit commit comes right after Check out, before Create branch.
+    ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_REQUIRE(s.itemExists("//$FOCUSED/Edit commit"));
+    const float checkOutY = ctx->ItemInfo("//$FOCUSED/Check out", ImGuiTestOpFlags_NoError).RectFull.Min.y;
+    const float editY = ctx->ItemInfo("//$FOCUSED/Edit commit", ImGuiTestOpFlags_NoError).RectFull.Min.y;
+    const float createY = ctx->ItemInfo("//$FOCUSED/Create branch...", ImGuiTestOpFlags_NoError).RectFull.Min.y;
+    GG_CHECK(checkOutY < editY && editY < createY);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+
+    // The submenu lists the branches only: no detached item.
+    ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Check out/topic");
+    GG_CHECK(s.itemExists("//Check out###Menu_00/topic"));
+    GG_CHECK(!s.itemExists("//Check out###Menu_00/Detached HEAD"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+}
+
 GG_TEST("checkout", "switch to a branch, detach")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
@@ -205,7 +239,7 @@ GG_TEST("checkout", "switch to a branch, detach")
     s.contextMenu(rowRef(topic).c_str(), "Check out/topic");
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "topic"; }));
     s.settle();
-    s.contextMenu(rowRef(featureParent).c_str(), "Check out/Detached HEAD");
+    s.contextMenu(rowRef(featureParent).c_str(), "Edit commit");
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, featureParent) && symbolicHead(s, repo) == "(detached)"; }));
     s.settle();
     s.contextMenu(rowRef(s.revParse(repo, "main")).c_str(), "Check out/main");

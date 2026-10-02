@@ -541,17 +541,17 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         if (!single)
             disabledHint(true, "Needs a single selected commit.");
     };
-    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free && single)) {
+    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free && single && !branchesHere.empty())) {
         for (const auto& b : branchesHere)
             if (menuItem(ICON_MS_SWAP_HORIZ, b.c_str()))
                 actions.checkout(b, false);
-        if (!branchesHere.empty())
-            ImGui::Separator();
-        if (menuItem(ICON_MS_SWAP_HORIZ, "Detached HEAD"))
-            actions.checkout(hex, true);
         ImGui::EndMenu();
     }
-    needOne();
+    if (!single)
+        disabledHint(true, "Needs a single selected commit.");
+    else
+        disabledHint(branchesHere.empty(), "No branch points at this commit.");
+    drawEditCommitItem(m_session, row);
     if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free && single))
         m_session.showCreateBranchDialog(hex);
     needOne();

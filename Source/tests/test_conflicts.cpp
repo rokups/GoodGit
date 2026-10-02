@@ -527,7 +527,7 @@ GG_TEST("conflicts", "checking out a conflicted commit: clean status by default,
     GG_REQUIRE(s.openRepository(repo));
     // Default: only the file content, index = HEAD, git status clean.
     GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(conflictedCommit)) != nullptr; }));
-    s.contextMenu(("//History/**/###row_" + conflictedCommit).c_str(), "Check out/Detached HEAD");
+    s.contextMenu(("//History/**/###row_" + conflictedCommit).c_str(), "Edit commit");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == conflictedCommit; }));
     s.settle();
     GG_CHECK(s.read(repo, "conflict.txt").find("<<<<<<<") != std::string::npos);
@@ -541,7 +541,7 @@ GG_TEST("conflicts", "checking out a conflicted commit: clean status by default,
     GG_CHECK(s.app.settings().data().expandConflictStages);
     ctx->WindowClose("//Settings");
     const std::string main = s.revParse(repo, "main");
-    s.contextMenu(("//History/**/###row_" + main).c_str(), "Check out/Detached HEAD");
+    s.contextMenu(("//History/**/###row_" + main).c_str(), "Edit commit");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == main; }));
     s.settle();
     const auto stages = gg::splitLines(s.gitOut(repo, {"ls-files", "-u", "--", "conflict.txt"}));
@@ -551,17 +551,17 @@ GG_TEST("conflicts", "checking out a conflicted commit: clean status by default,
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":2:conflict.txt"}), "top\nx=1\nbottom");
     GG_CHECK_STR_EQ(theirs, "top\nx=2\nbottom");
     // Switching away collapses them back first (git would refuse with an unmerged index).
-    s.contextMenu(("//History/**/###row_" + s.revParse(repo, "HEAD~2")).c_str(), "Check out/Detached HEAD");
+    s.contextMenu(("//History/**/###row_" + s.revParse(repo, "HEAD~2")).c_str(), "Edit commit");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == s.revParse(repo, "main~2"); }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());
     GG_CHECK(s.statusPorcelain(repo).empty());
     // Checking out the child (the conflicted commit) expands too; the parent collapses.
-    s.contextMenu(("//History/**/###row_" + conflictedCommit).c_str(), "Check out/Detached HEAD");
+    s.contextMenu(("//History/**/###row_" + conflictedCommit).c_str(), "Edit commit");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == conflictedCommit; }));
     s.settle();
     GG_CHECK_EQ(gg::splitLines(s.gitOut(repo, {"ls-files", "-u", "--", "conflict.txt"})).size(), 3u);
-    s.contextMenu(("//History/**/###row_" + s.revParse(repo, "main~2")).c_str(), "Check out/Detached HEAD");
+    s.contextMenu(("//History/**/###row_" + s.revParse(repo, "main~2")).c_str(), "Edit commit");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == s.revParse(repo, "main~2"); }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"ls-files", "-u"}).empty());

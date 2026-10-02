@@ -273,8 +273,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   (duplicate commit / branch → cherry-pick), S / Shift+S / Alt+S (squash / with descendants /
   split), A / Shift+A (drop / drop branch). **N** I (interactive rebase from the selected
   commit, §4.13).
-- **K** Row context menu: New, New detached, Check out ▸ (branches at this commit), Create
-  branch…, Move branch ▸, Delete branch ▸, Push, Push to…, Copy ▸ (ID, full description), plus
+- **K** Row context menu: New, New detached, Check out ▸ (branches at this commit), Edit commit,
+  Create branch…, Move branch ▸, Delete branch ▸, Push, Push to…, Copy ▸ (ID, full description), plus
   the shared commit actions below.
 - **K** Working-tree context menu: Commit…, Discard changes….
   **N** Stash changes…, Stage all, Unstage all.
@@ -297,7 +297,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Action | Status | Git-centric meaning |
 |---|---|---|
 | New commit | **M** | Empty commit on the selection (`git gg new`). Advances the branch when HEAD is attached. "New detached" leaves branches alone. More than one parent gives a merge commit. Insert before/after rebases the descendants onto it |
-| Edit / Check out | **M** | `git switch` a branch or detach at a commit. Refuse if it would overwrite local changes; offer "stash and switch" (**N**) |
+| Check out | **M** | `git switch` a branch (History lists the branches at the commit). Detaching at a commit is Edit commit, below. Refuse if it would overwrite local changes; offer "stash and switch" (**N**) |
 | Edit commit (E) | **M** | Detach HEAD at any commit and save an edit session (the commit and the local branch to return to) in `.git/gg/edit/<worktree>`. A toolbar banner shows *Editing \<id\> of \<branch\>* with **Return to \<branch\>** and **Stop editing**. Amending it restacks its descendants and moves every branch ref that pointed at them, all or nothing: the restack is computed first, so an amend that cannot be restacked (a non-text conflict) is refused before the commit, and one that fails after it is rolled back. Text conflicts become first-class conflicts and are reported. A descendant merge keeps its parents and its own resolution, and the changes of every rewritten parent are carried into it (a clash with the merge's resolution becomes a first-class conflict). Amend and restack are one operation, undone in one step. The session follows the amended commit and is dropped when HEAD is no longer detached or the branch is gone |
 | Commit… | **M** | Commit the **index**. If nothing is staged, offer "commit all tracked changes" (`-a`) or "stage the selected files" |
 | Commit… with *Amend* ticked | **M** | Amend HEAD with the index (message and/or content). The checkbox is disabled on an unborn HEAD and while a merge, cherry-pick or revert is in progress. Ticking it fills the message field with HEAD's message (whatever is selected); the commit draft and the amend text are each kept while toggling, so nothing typed is lost. *Change the message only* keeps the index out. Amending commits already on a remote asks for confirmation like any history rewrite; Cancel reopens the dialog as it was |

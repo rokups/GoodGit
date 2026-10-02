@@ -285,8 +285,8 @@ GG_TEST("undo", "every everyday mutation can be undone")
     s.commitFile(other, "fetched.txt", "x\n", "To fetch");
     s.git(other, {"push", "-q", "origin", "main"});
     check("fetch", [&] { ctx->ItemClick("//###Toolbar/###tb_fetch"); });
-    check("detached checkout of the parent", [&] {
-        s.contextMenu(("//History/**/###row_" + s.revParse(repo, "HEAD~1")).c_str(), "Check out/Detached HEAD");
+    check("edit commit (detaches at the parent)", [&] {
+        s.contextMenu(("//History/**/###row_" + s.revParse(repo, "HEAD~1")).c_str(), "Edit commit");
     });
 }
 

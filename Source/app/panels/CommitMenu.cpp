@@ -123,6 +123,15 @@ void disabledHint(bool disabled, const char* why)
         ImGui::SetTooltip("%s", why);
 }
 
+void drawEditCommitItem(Session& session, const core::HistoryRow& row)
+{
+    const bool single = selectionShape(session).single();
+    if (menuItem(ICON_MS_EDIT, "Edit commit", "E", false, ::ggui::free(session) && single))
+        session.actions().editCommit(row.id);
+    if (!single)
+        disabledHint(true, "Needs a single selected commit.");
+}
+
 void drawCommitEditItems(Session& session, const core::HistoryRow& row)
 {
     const bool free = ::ggui::free(session);
@@ -145,9 +154,6 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
             disabledHint(!enabled, why);
         return hit;
     };
-    if (one(ICON_MS_EDIT, "Edit commit", "E"))
-        session.actions().editCommit(row.id);
-    ImGui::Separator();
     if (one(ICON_MS_CONTROL_POINT_DUPLICATE, shift ? "Duplicate branch" : "Duplicate", shift ? "Shift+D" : "D"))
         session.actions().duplicate(row.id, shift);
     if (one(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, true, nullptr, true))

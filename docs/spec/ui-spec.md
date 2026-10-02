@@ -165,11 +165,11 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
 - Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
   stash (N). Published commits (reachable from a remote-tracking ref) use the normal text colour;
   unpublished commits are highlighted. Conflicted commits: conflict colour and ⚠ icon.
-- Keys: ↑/↓ select, `N` new, `Alt+N` new detached, `E` check out, `D`/`Shift+D` duplicate
+- Keys: ↑/↓ select, `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
   branch, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
-- Row context menu: New · New detached · Check out ▸ (branches at the commit, "Detached HEAD") ·
-  Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
+- Row context menu: New · New detached · Check out ▸ (branches at the commit; disabled when none) ·
+  Edit commit · Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
   description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
   several commits are selected with Ctrl-click: the list starts at the oldest selected commit and
   the selected commits start selected in the editor).
@@ -212,7 +212,7 @@ Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 %
   Move to parent · Revert (commit files: index and working tree; Shift: Revert and commit, a new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
-New commit, Edit/Check out, Edit commit (E; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
+New commit, Check out (a branch), Edit commit (E; detaches at the commit; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
 Abandon/Abandon branch, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
