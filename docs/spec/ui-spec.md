@@ -373,7 +373,9 @@ the panel without touching the repository.
   are not included).
   The message fields (`##message`, `##commit_message`, `##merge_message`) have a context menu with a checkable
   *Word wrap* option (popup `<field id>_menu`, e.g. `##message_menu`); it is persistent,
-  stored in imgui.ini (`[GGUIView][Info] WrapMessage`).
+  stored in imgui.ini (`[GGUIView][Info] WrapMessage`). A horizontal sizer below the message field
+  (`<field id>_sizer`, e.g. `##message_sizer`) resizes it by whole lines (2–40, double click resets to 6); the
+  height is shared by the fields and persistent (`[GGUIView][Info] MessageLines`).
 - Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
   differs (N); Date; published/lock state ("Published" / "Not published").
 - Commit ID (full, dimmed after the short prefix) with Copy `##commit_id`; Parents list

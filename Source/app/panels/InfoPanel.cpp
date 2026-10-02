@@ -14,25 +14,63 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <ctime>
 
 namespace ggui {
 
 namespace {
 
-// A message field of the panel: its context menu has "Word wrap", kept in the view settings.
+// A message field of the panel: its context menu has "Word wrap", and a sizer below it resizes it by whole
+// lines (shared by all the fields); both are kept in the view settings.
 void messageField(Session& session, const char* id, std::string* text, ImGuiInputTextFlags flags = ImGuiInputTextFlags_None)
 {
     bool wrap = session.app().settings().data().infoWrapMessage;
     if (wrap)
         flags |= ImGuiInputTextFlags_WordWrap;
-    ImGui::InputTextMultiline(id, text, ImVec2(-1, ImGui::GetTextLineHeight() * 6), flags);
+    int& lines = session.app().settings().data().infoMessageLines;
+    const float lineHeight = ImGui::GetTextLineHeight();
+    ImGui::InputTextMultiline(id, text, ImVec2(-1, lineHeight * static_cast<float>(lines)), flags);
     if (beginContextMenu((std::string(id) + "_menu").c_str())) {
         if (menuItem(nullptr, "Word wrap", nullptr, &wrap)) {
             session.app().settings().data().infoWrapMessage = wrap;
             Settings::markViewDirty();
         }
         ImGui::EndPopup();
+    }
+
+    // The sizer: snug under the field, a drag follows the mouse and snaps to whole lines.
+    const std::string sizerId = std::string(id) + "_sizer";
+    const ImGuiID stateId = ImGui::GetID(sizerId.c_str());
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y);
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+    ImGui::InvisibleButton(sizerId.c_str(), ImVec2(-1, std::max(4.0f, std::round(ImGui::GetFontSize() * 0.35f))));
+    ImGui::PopItemFlag();
+    const bool active = ImGui::IsItemActive();
+    const bool hot = active || ImGui::IsItemHovered();
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    int next = lines;
+    if (ImGui::IsItemActivated())
+        storage->SetInt(stateId, lines);
+    if (active) {
+        const float dragged = static_cast<float>(storage->GetInt(stateId, lines)) * lineHeight + ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).y;
+        next = static_cast<int>(std::round(dragged / lineHeight));
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        next = 6;
+        storage->SetInt(stateId, next); // the press that holds on does not drag from the old height
+    }
+    if (hot)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+    const ImVec2 lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
+    const float y = std::round((lo.y + hi.y) * 0.5f);
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(lo.x, y), ImVec2(hi.x, y),
+        ImGui::GetColorU32(active ? ImGuiCol_SeparatorActive : hot ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
+    next = std::clamp(next, 2, 40);
+    if (next != lines) {
+        lines = next;
+        Settings::markViewDirty();
     }
 }
 

@@ -596,4 +596,51 @@ GG_TEST("commit", "Change information: the message field's Word wrap option wrap
     GG_CHECK(s.app.settings().data().infoWrapMessage);
 }
 
+GG_TEST("commit", "Change information: the sizer below the message field resizes it by whole lines and persists")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + s.revParse(repo, "HEAD")).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message_sizer"); }));
+    const std::string field = "//Change information/##message";
+    const std::string sizer = "//Change information/##message_sizer";
+    const float lineHeight = ImGui::GetTextLineHeight();
+    auto height = [&] { return ctx->ItemInfo(field.c_str()).RectFull.GetHeight(); };
+    auto lines = [&] { return s.app.settings().data().infoMessageLines; };
+    GG_CHECK_EQ(lines(), 6);
+    const float before = height();
+
+    ctx->ItemDragWithDelta(sizer.c_str(), ImVec2(0, 4 * lineHeight));
+    ctx->Yield(2);
+    GG_CHECK_EQ(lines(), 10);
+    GG_CHECK(std::abs(height() - before - 4 * lineHeight) < 1.0f);
+    s.screenshot("gg12-info");
+
+    size_t n = 0;
+    const char* raw = ImGui::SaveIniSettingsToMemory(&n);
+    const std::string ini(raw, n);
+    const size_t section = ini.find("[GGUIView][Info]");
+    GG_REQUIRE(section != std::string::npos);
+    GG_CHECK(ini.find("MessageLines=10", section) != std::string::npos);
+    ImGui::GetIO().WantSaveIniSettings = true;
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitIdle());
+    s.app.resetForTest();
+    ctx->Yield(2);
+    GG_CHECK_EQ(lines(), 10);
+
+    GG_REQUIRE(s.openRepository(repo)); // the reset closed it
+    ctx->ItemClick(("//History/**/###row_" + s.revParse(repo, "HEAD")).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(sizer.c_str()); }));
+    GG_CHECK(std::abs(height() - before - 4 * lineHeight) < 1.0f);
+    ctx->ItemDragWithDelta(sizer.c_str(), ImVec2(0, -100 * lineHeight));
+    ctx->Yield(2);
+    GG_CHECK_EQ(lines(), 2);
+
+    ctx->ItemDoubleClick(sizer.c_str());
+    ctx->Yield(2);
+    GG_CHECK_EQ(lines(), 6);
+    GG_CHECK(std::abs(height() - before) < 1.0f);
+}
+
 } // namespace ggtest

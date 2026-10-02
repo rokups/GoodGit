@@ -68,6 +68,7 @@ struct SettingsData {
     int diffContext = 3;
     int diffWhitespace = 0;
     bool infoWrapMessage = false; // Change information: word-wrap the message fields
+    int infoMessageLines = 6; // Change information: height of the message fields, in text lines
     bool rebaseNewestFirst = false; // interactive rebase editor: list shown newest commit first
 };
 
