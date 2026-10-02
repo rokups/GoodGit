@@ -141,13 +141,18 @@ index stages on checkout"). **D** max-new-file-size.
 +----------------+----------------------------+---------------------------+
 | Branches | Tags|                            | Changes                   |
 |                |          History           +---------------------------+
-+----------------+                            | Change information        |
-| Worktrees |    |                            +---------------------------+
-| Remotes |      |                            | Diff | Blame | Reflog |   |
-| Stashes        |                            | Operations                |
+|                |                            | Change information        |
+|                |                            +---------------------------+
+|                |                            | Diff | Blame | Reflog |   |
++----------------+                            | Operations                |
+| Remotes |      |                            |                           |
+| Stashes |      |                            |                           |
+| Worktrees      |                            |                           |
 +----------------+----------------------------+---------------------------+
 ```
-Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 % of the right column.
+Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 % of the right column;
+Remotes/Stashes/Worktrees ≈ 15 % of the left column, at its bottom. The layout is built when
+imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is left as it is.
 
 ---
 

@@ -71,6 +71,12 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu")
     ImGuiWindow* left = ctx->GetWindowByRef("//Branches");
     GG_REQUIRE(history && changes && left);
     GG_CHECK(left->Pos.x < history->Pos.x && history->Pos.x < changes->Pos.x);
+    // Remotes|Stashes|Worktrees sit below Branches|Tags and take about 15 % of the left column.
+    ImGuiDockNode* remotes = dockOf(ctx, "//Remotes");
+    GG_REQUIRE(branches && remotes);
+    GG_CHECK(remotes->Pos.y > branches->Pos.y);
+    const float share = remotes->Size.y / (branches->Size.y + remotes->Size.y);
+    GG_CHECK(share > 0.12f && share < 0.18f);
 
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_CHECK(s.waitUntil([&] { return closed(s); }));

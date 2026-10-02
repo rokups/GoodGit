@@ -609,7 +609,7 @@ void App::drawDockHost()
         ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &left, &center);
         ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.40f, &right, &center);
         ImGuiID leftTop = 0, leftBottom = 0;
-        ImGui::DockBuilderSplitNode(left, ImGuiDir_Up, 0.5f, &leftTop, &leftBottom);
+        ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.15f, &leftBottom, &leftTop);
         ImGuiID rightTop = 0, rightBottom = 0;
         ImGui::DockBuilderSplitNode(right, ImGuiDir_Up, 0.45f, &rightTop, &rightBottom);
         ImGuiID changes = 0, info = 0;

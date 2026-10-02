@@ -437,8 +437,16 @@ GG_TEST("ui", "Alt+Space opens the context menu of the keyboard-focused item wit
         if (g.OpenPopupStack.Size == 1) {
             const ImVec2 at = g.OpenPopupStack[0].OpenPopupPos;
             GG_CHECK(std::fabs(at.x - item.RectFull.Min.x) <= 1.0f && std::fabs(at.y - item.RectFull.Max.y) <= 1.0f);
-            const ImGuiWindow* popup = g.OpenPopupStack[0].Window;
-            GG_CHECK(popup && std::fabs(popup->Pos.x - at.x) <= 1.0f && std::fabs(popup->Pos.y - at.y) <= 1.0f);
+            ImGuiWindow* popup = g.OpenPopupStack[0].Window;
+            GG_CHECK(popup && std::fabs(popup->Pos.x - at.x) <= 1.0f);
+            if (popup) {
+                // A row near the bottom of the screen leaves no room below it: the popup is moved up to fit.
+                const ImRect screen = ImGui::GetPopupAllowedExtentRect(popup);
+                if (at.y + popup->Size.y <= screen.Max.y)
+                    GG_CHECK(std::fabs(popup->Pos.y - at.y) <= 1.0f);
+                else
+                    GG_CHECK(popup->Pos.y >= screen.Min.y && popup->Pos.y + popup->Size.y <= screen.Max.y);
+            }
         }
         // Alt did not toggle the menu layer.
         GG_CHECK(g.NavLayer == ImGuiNavLayer_Main);
