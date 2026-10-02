@@ -430,9 +430,15 @@ the panel without touching the repository.
 
 ## 7. Blame panel — window `"Blame"`
 Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5),
-table of lines (commit prefix, author, date, text); uncommitted lines marked "Not committed";
-tooltip per line (full commit summary); context menu: Blame before this change · Show
+the code in a read-only text editor `##blame_editor` (syntax highlighted by the file's extension, line numbers,
+text selection and copy; Ctrl+X and Shift+Delete copy too) with a gutter per line `blame_line_<n>` (commit prefix,
+author and date on the first line of each change block; "Not committed" for uncommitted blocks). The filter marks
+the matching lines (text, author, ID, summary) and brings the first match into view; it hides nothing.
+Tooltip per line, on its gutter (full commit summary); context menu of a line, on its gutter, its line number or
+its code (there after Copy · Select all): Blame before this change · Show
 originating source · Reveal commit · Copy commit ID · Select change block · Copy change block.
+A line is selected by a press on its gutter (Shift extends the range) or by the cursor or a text selection made
+in the code; the cursor a blame opens with is not a selection.
 While the Blame window is visible and a line is selected, Change information shows the change of the line
 selected last (the one pressed last in a Shift range, the one the menu was opened on for *Select change block*;
 an uncommitted line gives the working tree form); the history selection, Changes and Diff do not change. Esc in

@@ -268,26 +268,32 @@ GG_MANUAL_TEST("gallery", "interactive rebase and blame")
     ctx->Yield(3);
 
     // Blame with content on a file with history and a working-tree edit.
-    s.commitFile(repo, "story.txt", "L1\nL2\nL3\nL4\nL5\n", "Write the story");
-    s.write(repo, "story.txt", "L1\nL2\nL3 edited\nL4\nL5\n");
-    s.git(repo, {"add", "story.txt"});
-    s.git(repo, {"commit", "-q", "--author=Other Author <other@example.com>", "-m", "Edit line 3"});
-    s.write(repo, "story.txt", "L1 uncommitted\nL2\nL3 edited\nL4\nL5\n");
+    // A source file, so the shots show the editor's syntax highlighting.
+    auto story = [](const char* text, const char* format) {
+        return std::string("#include <cstdio>\n\n// Tells the story.\nint main()\n{\n    const char* line = \"") + text
+            + "\";\n    std::printf(\"" + format + "\", line);\n    return 0;\n}\n";
+    };
+    s.commitFile(repo, "story.cpp", story("Once", "%s"), "Write the story");
+    s.write(repo, "story.cpp", story("Once upon a time", "%s"));
+    s.git(repo, {"add", "story.cpp"});
+    s.git(repo, {"commit", "-q", "--author=Other Author <other@example.com>", "-m", "Tell more of it"});
+    s.write(repo, "story.cpp", story("Once upon a time", "%s\\n"));
     ctx->Yield(10);
     ctx->ItemClick("//History/**/###row_wt");
     ctx->Yield(3);
-    const std::string file = "//Changes/**/###file_story.txt";
+    const std::string file = "//Changes/**/###file_story.cpp";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(file.c_str()); }));
     s.contextMenu(file.c_str(), "Blame file");
     s.showPanel("Blame");
     GG_REQUIRE(s.waitUntil([&] { return bool(s.session()->blame().blame()); }));
     s.settle();
     shot(s, "blame-panel");
-    ctx->MouseMove("//Blame/##blame_table/l3/###blame_line_3");
+    const std::string blameLine = s.child("//Blame", "##blame_editor") + "/###blame_line_3";
+    ctx->MouseMove(blameLine.c_str());
     ctx->SleepNoSkip(1.2f, 0.1f);
     shot(s, "blame-tooltip");
-    ctx->MouseMove("//Blame/##blame_table/l3/###blame_line_3");
-    ctx->ItemClick("//Blame/##blame_table/l3/###blame_line_3", ImGuiMouseButton_Right);
+    ctx->MouseMove(blameLine.c_str());
+    ctx->ItemClick(blameLine.c_str(), ImGuiMouseButton_Right);
     ctx->Yield(3);
     shot(s, "blame-line-menu");
     closePopups(s);

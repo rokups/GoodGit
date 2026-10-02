@@ -550,13 +550,7 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
         return b && b->query.path == "copy.txt" && !b->lines.empty();
     }));
     ctx->Yield(3);
-    {
-        // (Near the row's left edge: its middle is on a column border in this layout.)
-        const ImGuiTestItemInfo row = ctx->ItemInfo("//Blame/##blame_table/l1/###blame_line_1");
-        ctx->MouseMoveToPos(ImVec2(row.RectFull.Min.x + 10.0f, row.RectFull.GetCenter().y));
-        ctx->MouseClick(ImGuiMouseButton_Right);
-        ctx->MenuClick("//$FOCUSED/Blame before this change");
-    }
+    s.contextMenu((s.child("//Blame", "##blame_editor") + "/###blame_line_1").c_str(), "Blame before this change");
     GG_CHECK(s.waitUntil([&] {
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "source.txt";

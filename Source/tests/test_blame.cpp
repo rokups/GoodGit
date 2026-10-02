@@ -37,9 +37,9 @@ BlameRepo makeRepo(Scenario& s)
     return r;
 }
 
-// Items inside a table are hashed under the table's ID (not its scrolling child window).
-std::string table(Scenario&) { return "//Blame/##blame_table"; }
-std::string lineRef(Scenario& s, int n) { return table(s) + "/l" + std::to_string(n) + "/###blame_line_" + std::to_string(n); }
+// The gutter item of a line: it is in the editor's window. A line scrolled out of view has none (the
+// fixtures are short).
+std::string lineRef(Scenario& s, int n) { return s.child("//Blame", "##blame_editor") + "/###blame_line_" + std::to_string(n); }
 
 const ggui::core::BlameLine* line(Scenario& s, int n)
 {
@@ -81,6 +81,13 @@ GG_TEST("blame", "blame at a commit and on the working tree")
     GG_CHECK_STR_EQ(line(s, 5)->commit.hex(), r.c3);
     GG_CHECK_STR_EQ(line(s, 2)->commit.hex(), r.c1);
     GG_CHECK(s.itemText(lineRef(s, 1).c_str()).rfind("Not committed", 0) == 0);
+    GG_CHECK(s.textShown("//Blame", "Not committed"));
+    // The code is the whole file in the text editor, with its line numbers; a .txt file has no language.
+    GG_CHECK(s.textShown("//Blame", "L5 renamed"));
+    GG_CHECK_STR_EQ(s.session()->blame().languageName(), "None");
+    // The cursor the editor starts with is not a selection.
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), -1);
+    GG_CHECK(!s.session()->blame().hasSelection());
     // The header names the file and where it is blamed in words, never "@" (UI wording rule).
     GG_CHECK(s.textShown("//Blame", "tale.txt at working tree"));
     GG_CHECK(!s.textShown("//Blame", "@"));
@@ -106,12 +113,22 @@ GG_TEST("blame", "filter, history, tooltips")
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
     blameFromChanges(s, "Unstaged", "tale.txt");
     GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    // The filter marks the matching lines (text, author, ID, summary); no line is hidden.
     ctx->ItemInputValue("//Blame/##blame_filter", "edited");
     ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 1);
     GG_CHECK(s.itemExists(lineRef(s, 3).c_str()));
-    GG_CHECK(!s.itemExists(lineRef(s, 2).c_str()));
+    GG_CHECK(s.itemExists(lineRef(s, 2).c_str()));
+    ctx->ItemInputValue("//Blame/##blame_filter", "other author");
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 1);
+    ctx->ItemInputValue("//Blame/##blame_filter", "L");
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 5);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), -1);
     ctx->ItemInputValue("//Blame/##blame_filter", "");
     ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 0);
     // Tooltip with the commit summary.
     ctx->MouseMove(lineRef(s, 3).c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);
@@ -147,12 +164,16 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     s.contextMenu(lineRef(s, 2).c_str(), "Show originating source");
     GG_CHECK(s.waitUntil([&] { return blameShows(s, "story.txt", r.c1); }));
     GG_CHECK_EQ(s.session()->blame().query()->scrollToLine, 2);
+    // The cursor is on that line; it is not a selection.
+    GG_CHECK_EQ(s.session()->blame().cursorLine(), 1);
+    GG_CHECK_EQ(s.session()->blame().selectionFirst(), -1);
     ctx->ItemClick("//Blame/###blame_back");
     GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
     // Before line 5's change (in c3) is c2's version of story.txt.
     s.contextMenu(lineRef(s, 5).c_str(), "Blame before this change");
     GG_CHECK(s.waitUntil([&] { return blameShows(s, "story.txt", r.c2); }));
     GG_CHECK_STR_EQ(line(s, 5)->text, "L5");
+    GG_CHECK_EQ(s.session()->blame().cursorLine(), 4);
     // Reveal and copy the commit of line 3.
     s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID3");
     GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 3));
@@ -169,6 +190,7 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     s.contextMenu(lineRef(s, 1).c_str(), "Select change block");
     GG_CHECK_EQ(s.session()->blame().selectionFirst(), 0);
     GG_CHECK_EQ(s.session()->blame().selectionLast(), 1);
+    GG_CHECK_STR_EQ(s.session()->blame().selectedText(), "L1\nL2\n");
     s.contextMenu(lineRef(s, 2).c_str(), "Copy change block");
     GG_CHECK_STR_EQ(s.clipboard(), "L1\nL2\n");
     // Nothing comes before the first commit, nor before the commit that added a file.
@@ -187,7 +209,7 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK(s.app.errorMessage().find("The file did not exist before this change") != std::string::npos);
 }
 
-GG_TEST("blame", "keyboard only: nav into the lines, select by arrows, Shift range, Alt+Space menu")
+GG_TEST("blame", "keyboard: the arrows move the selection from a pressed line, Shift range, Esc of the line menu")
 {
     const BlameRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -196,24 +218,29 @@ GG_TEST("blame", "keyboard only: nav into the lines, select by arrows, Shift ran
     GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
     auto& blame = s.session()->blame();
     ImGuiContext& g = *ImGui::GetCurrentContext();
-    auto idOf = [&](int n) { return ctx->ItemInfo(lineRef(s, n).c_str()).ID; };
     auto press = [&](ImGuiKeyChord chord) {
         ctx->KeyPress(chord);
         ctx->Yield(2);
     };
-    ctx->SetInputMode(ImGuiInputSource_Keyboard);
-    ctx->WindowFocus("//Blame");
-    // Down until the cursor is on the first line (it starts on a button above the table).
-    const ImGuiID first = idOf(1);
-    GG_REQUIRE(first != 0);
-    for (int i = 0; i < 40 && g.NavId != first; ++i)
-        press(ImGuiKey_DownArrow);
-    GG_REQUIRE(g.NavId == first);
+    // A press on a line's gutter selects it and gives the editor the keyboard.
+    ctx->ItemClick(lineRef(s, 1).c_str());
+    ctx->Yield(2);
     GG_CHECK_EQ(blame.selectionFirst(), 0);
     GG_CHECK_EQ(blame.selectionLast(), 0);
+    GG_CHECK_EQ(blame.cursorLine(), 0);
+    GG_CHECK_STR_EQ(blame.selectedText(), "L1 uncommitted");
+    // The code cannot be changed: Ctrl+X and Shift+Delete copy the selection and delete nothing.
+    for (ImGuiKeyChord cut : {ImGuiMod_Ctrl | ImGuiKey_X, ImGuiMod_Shift | ImGuiKey_Delete}) {
+        ImGui::SetClipboardText("");
+        press(cut);
+        GG_CHECK_STR_EQ(s.clipboard(), "L1 uncommitted");
+        GG_CHECK_STR_EQ(blame.selectedText(), "L1 uncommitted");
+        GG_CHECK(s.textShown("//Blame", "L1 uncommitted"));
+        GG_CHECK_EQ(blame.selectionFirst(), 0);
+    }
     // The selection follows the cursor.
     press(ImGuiKey_DownArrow);
-    GG_CHECK(g.NavId == idOf(2));
+    GG_CHECK_EQ(blame.cursorLine(), 1);
     GG_CHECK_EQ(blame.selectionFirst(), 1);
     GG_CHECK_EQ(blame.selectionLast(), 1);
     // Shift+Down extends the range, Shift+Up shrinks it.
@@ -224,16 +251,33 @@ GG_TEST("blame", "keyboard only: nav into the lines, select by arrows, Shift ran
     press(ImGuiMod_Shift | ImGuiKey_UpArrow);
     GG_CHECK_EQ(blame.selectionFirst(), 1);
     GG_CHECK_EQ(blame.selectionLast(), 2);
-    // Alt+Space opens the cursor line's context menu.
-    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    // A line's menu opened by the mouse does not move the cursor ...
+    ctx->ItemClick(lineRef(s, 5).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(3);
     GG_CHECK(g.OpenPopupStack.Size == 1);
+    GG_CHECK_EQ(blame.cursorLine(), 2);
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
     GG_CHECK(g.OpenPopupStack.Size == 0);
-    // The Esc that closed the menu did not clear the selection.
+    // ... and the Esc that closed the menu did not clear the selection.
     GG_CHECK_EQ(blame.selectionFirst(), 1);
     GG_CHECK_EQ(blame.selectionLast(), 2);
+    // Esc clears the selection; the cursor and the keyboard stay in the editor.
+    press(ImGuiKey_Escape);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_CHECK(!blame.hasSelection());
+    GG_CHECK_EQ(blame.cursorLine(), 2);
+    press(ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.cursorLine(), 3);
+    GG_CHECK_EQ(blame.selectionFirst(), 3);
+    // Shift with a press on another line's gutter selects the lines between.
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(lineRef(s, 2).c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    GG_CHECK_EQ(blame.cursorLine(), 1);
 }
 
 GG_TEST("blame", "the selected line's change is shown in Change information; Esc and closing give it back")
@@ -324,7 +368,7 @@ GG_TEST("blame", "Change information and the blame selection: Esc cases, Shift r
     ctx->Yield(3);
     GG_CHECK(!session.infoOverride());
     GG_CHECK(infoShows(r.c1));
-    // Esc right after moving by the arrows (the nav window is the table, not the Blame window itself).
+    // Esc right after moving by the arrows (the keyboard is in the editor, not in the Blame window itself).
     ctx->ItemClick(lineRef(s, 3).c_str());
     GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
     ctx->SetInputMode(ImGuiInputSource_Keyboard);

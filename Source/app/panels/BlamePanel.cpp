@@ -2,19 +2,82 @@
 
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
+#include "util/SyntaxHighlight.hpp"
 #include "util/Ui.hpp"
 
 #include "shell/Widgets.hpp"
 
 #include <IconsMaterialSymbols.h>
+#include <TextEditor.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 #include <algorithm>
 
 namespace ggui {
 
-BlamePanel::BlamePanel(Session& session) : m_session(session) { }
+namespace {
+
+const ImGuiID kMenuId = ImHashStr("##blame_menu");
+const char kNotCommitted[] = "Not committed";
+const size_t kAuthorColumns = 20; // longer author names are cut in the gutter
+
+ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
+
+// Characters of a UTF-8 text.
+size_t columns(const std::string& text)
+{
+    const auto starts = [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; };
+    return static_cast<size_t>(std::count_if(text.begin(), text.end(), starts));
+}
+
+} // namespace
+
+// Read-only editor of the blamed file. Like the diff's editor it does not take the keyboard focus when
+// it first appears.
+class BlameEditor : public TextEditor {
+public:
+    BlameEditor() { focusOnEditor = false; }
+
+    // Selects the lines from `anchor` to `line` (up to the end of the last one) and leaves the cursor on
+    // `line`, so the arrows go on from the line pressed. Nothing scrolls: that line is on the screen.
+    void selectRows(int anchor, int line)
+    {
+        const int last = document.lineCount() - 1;
+        anchor = std::clamp(anchor, 0, last);
+        line = std::clamp(line, 0, last);
+        if (line >= anchor) {
+            moveTo(Coordinate(anchor, 0), false);
+            moveTo(document.getEndOfLine(Coordinate(line, 0)), true);
+        } else {
+            moveTo(document.getEndOfLine(Coordinate(anchor, 0)), false);
+            moveTo(Coordinate(line, 0), true);
+        }
+        ensureCursorIsVisible = false;
+    }
+
+    // The line the selection was started on: a Shift press extends from it.
+    int anchorLine() { return cursors.getMain().getInteractiveStart().line; }
+    // Ends the text selection where the cursor is, without scrolling to it.
+    void collapseSelection() { cursors.setCursor(cursors.getMain().getInteractiveEnd()); }
+    std::string mainSelectionText() const { return GetCursorText(cursors.getMainIndex()); }
+};
+
+BlamePanel::BlamePanel(Session& session) : m_session(session), m_editor(std::make_unique<BlameEditor>())
+{
+    m_editor->SetReadOnlyEnabled(true);
+    m_editor->SetShowLineNumbersEnabled(true);
+    m_editor->SetShowMatchingBrackets(false);
+    m_editor->SetShowScrollbarMiniMapEnabled(false);
+    m_editor->SetShowPanScrollIndicatorEnabled(false);
+    m_editor->SetShowWhitespacesEnabled(false);
+    // Right click does not move the cursor: the menus work on the line under the mouse.
+    m_editor->SetTextContextMenuCallback([this](int line, int) { drawTextMenu(line); });
+    m_editor->SetLineNumberContextMenuCallback([this](int line) { drawLineMenuItems(line); });
+}
+
+BlamePanel::~BlamePanel() = default;
 
 void BlamePanel::open(const std::string& path, const core::Oid& commit, bool before, int line)
 {
@@ -62,7 +125,44 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
         return;
     m_loading = false;
     m_blame = event.blame;
+
+    // The editor holds the whole file and highlights it by the file's language. The gutter is as wide as
+    // the ID, the longest author (up to kAuthorColumns) and the date need.
+    std::string text;
+    size_t author = 0, date = 0;
+    bool uncommitted = false;
+    if (m_blame)
+        for (const auto& l : m_blame->lines) {
+            text += l.text;
+            text.push_back('\n');
+            if (l.commit.isNull()) {
+                uncommitted = true;
+            } else {
+                author = std::max(author, std::min(columns(l.author), kAuthorColumns));
+                date = std::max(date, core::formatTime(l.time).size());
+            }
+        }
+    m_authorColumns = static_cast<int>(author);
+    size_t gutter = kShortIdLength + 2 + author + 2 + date + 1;
+    if (uncommitted)
+        gutter = std::max(gutter, sizeof(kNotCommitted));
+    m_editor->SetLanguage(m_blame ? languageFor(m_blame->query.path) : nullptr);
+    m_editor->SetText(text);
+    m_editor->SetLineDecorator(-static_cast<float>(gutter),
+        [this](TextEditor::Decorator& d) { drawGutter(d.line, d.width, d.height, d.glyphSize.x); });
+    m_marksDirty = true;
     clearSelection(); // the lines of the previous blame are gone
+    const int count = m_blame ? static_cast<int>(m_blame->lines.size()) : 0;
+    if (m_scrollTo > 0 && count > 0) {
+        // The line asked for: the cursor is put on it, which is not a selection.
+        const int line = std::min(m_scrollTo, count) - 1;
+        m_editor->SetCursor(line, 0);
+        m_editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
+        m_cursorSeen = cursorState();
+    }
+    m_scrollTo = 0;
+    if (!m_blame)
+        return;
 
     // "Blame before": remember the resolved parent so back/forward are exact.
     if (m_pos >= 0 && m_history[static_cast<size_t>(m_pos)].beforeCommit) {
@@ -93,9 +193,9 @@ std::string BlamePanel::blockText(int index, int* first, int* last) const
     return text;
 }
 
-void BlamePanel::drawLineMenu(int index)
+void BlamePanel::drawLineMenuItems(int index)
 {
-    if (!beginContextMenu("##blame_menu"))
+    if (!m_blame || index < 0 || index >= static_cast<int>(m_blame->lines.size()))
         return;
     const auto& line = m_blame->lines[static_cast<size_t>(index)];
     const bool committed = !line.commit.isNull();
@@ -108,14 +208,154 @@ void BlamePanel::drawLineMenu(int index)
         m_session.revealCommit(line.commit);
     copyIdMenuItems("Copy commit ", line.commit.hex(), committed);
     ImGui::Separator();
-    if (menuItem(ICON_MS_SELECT_ALL, "Select change block")) {
-        blockText(index, &m_selFirst, &m_selLast);
-        m_selLine = index;
-    }
+    if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
+        selectBlock(index);
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy change block"))
         ImGui::SetClipboardText(blockText(index, nullptr, nullptr).c_str());
-    ImGui::EndPopup();
 }
+
+void BlamePanel::drawTextMenu(int index)
+{
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy", "Ctrl+C", false, m_editor->AnyCursorHasSelection()))
+        m_editor->Copy();
+    if (menuItem(ICON_MS_SELECT_ALL, "Select all", "Ctrl+A"))
+        m_editor->SelectAll(); // followed as any selection made in the editor
+    if (!m_blame || index < 0 || index >= static_cast<int>(m_blame->lines.size()))
+        return;
+    ImGui::Separator();
+    drawLineMenuItems(index);
+}
+
+BlamePanel::CursorState BlamePanel::cursorState() const
+{
+    const auto sel = m_editor->GetMainCursorSelection();
+    const auto pos = m_editor->GetMainCursorPosition();
+    return {sel.start.line, sel.start.column, sel.end.line, sel.end.column, pos.line, pos.column};
+}
+
+void BlamePanel::clearSelection()
+{
+    m_selFirst = m_selLast = m_selLine = -1;
+    m_editor->collapseSelection();
+    m_cursorSeen = cursorState();
+}
+
+void BlamePanel::selectLine(int index, bool extend)
+{
+    const int count = static_cast<int>(m_blame->lines.size());
+    // The range runs from the line the selection was started on to this line.
+    const int anchor = extend && m_selFirst >= 0 ? std::min(m_editor->anchorLine(), count - 1) : index;
+    m_editor->selectRows(anchor, index);
+    m_selFirst = std::min(anchor, index);
+    m_selLast = std::max(anchor, index);
+    m_selLine = index;
+    m_cursorSeen = cursorState();
+}
+
+void BlamePanel::selectBlock(int index)
+{
+    blockText(index, &m_selFirst, &m_selLast);
+    m_selLine = index;
+    m_editor->SelectLines(m_selFirst, m_selLast);
+    m_cursorSeen = cursorState();
+}
+
+void BlamePanel::followEditor()
+{
+    // Only the user moves the cursor behind the panel's back (the mouse, the arrows, Ctrl+A ...): what the
+    // panel does itself is noted in m_cursorSeen. So this needs no focus test, which a click would fail
+    // (the editor takes the click a frame before it has the focus).
+    const CursorState now = cursorState();
+    if (now == m_cursorSeen)
+        return;
+    m_cursorSeen = now;
+    if (!m_blame || m_blame->lines.empty())
+        return;
+    const int count = static_cast<int>(m_blame->lines.size());
+    // A selection ending at the start of a later line leaves that line out (a triple click, a press on a
+    // line number and Ctrl+A select up to there). The editor's last line, after the final newline, is
+    // not a blame line.
+    m_selFirst = std::min(now[0], count - 1);
+    m_selLast = std::clamp(now[2] - (now[3] == 0 && now[2] > now[0] ? 1 : 0), m_selFirst, count - 1);
+    // The line shown in Change information is the one the cursor (the moving end) is on.
+    m_selLine = now[4] == now[2] && now[5] == now[3] ? m_selLast : m_selFirst;
+}
+
+void BlamePanel::applyFilter(bool scroll)
+{
+    m_filterApplied = m_filter;
+    m_marksDirty = false;
+    m_matches.clear();
+    m_editor->ClearMarkers();
+    if (m_filter.empty())
+        return;
+    const ImU32 color = theme().palette().warning;
+    for (size_t i = 0; i < m_blame->lines.size(); ++i) {
+        const auto& l = m_blame->lines[i];
+        if (!containsNoCase(l.text, m_filter) && !containsNoCase(l.author, m_filter) && !containsNoCase(l.commit.hex(), m_filter)
+            && !containsNoCase(l.summary, m_filter))
+            continue;
+        m_matches.push_back(static_cast<int>(i));
+        m_editor->AddMarker(static_cast<int>(i), withAlpha(color, 0x60), withAlpha(color, 0x38), "", "");
+    }
+    // The cursor stays (and with it the selection); the view moves only when the first match is outside it.
+    if (scroll && !m_matches.empty()
+        && (m_matches.front() < m_editor->GetFirstVisibleLine() || m_matches.front() > m_editor->GetLastVisibleLine()))
+        m_editor->ScrollToLine(m_matches.front(), TextEditor::Scroll::alignMiddle);
+}
+
+void BlamePanel::drawGutter(int index, float width, float height, float glyph)
+{
+    if (!m_blame || index >= static_cast<int>(m_blame->lines.size())) // the editor's last line, after the final newline
+        return;
+    const auto& l = m_blame->lines[static_cast<size_t>(index)];
+    const Palette& p = theme().palette();
+    const bool committed = !l.commit.isNull();
+    const bool newBlock = index == 0 || m_blame->lines[static_cast<size_t>(index - 1)].commit != l.commit;
+    // Stable IDs directly under the editor window ("###blame_line_4"), not under the editor's per-line ID.
+    // The first line of a block carries what it shows as its label.
+    ImGui::PushOverrideID(ImGui::GetCurrentWindow()->ID);
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 size(std::max(1.0f, width), height);
+    const std::string id = committed ? l.commit.shortHex(kShortIdLength) : std::string(kNotCommitted);
+    const std::string label = (newBlock ? id : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
+    ImGui::InvisibleButton(label.c_str(), size);
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        selectLine(index, ImGui::GetIO().KeyShift);
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        m_menuLine = index;
+        ImGui::OpenPopupEx(kMenuId);
+    }
+    // The tooltip is on the gutter only: over the code it would be in the way of selecting text.
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (committed)
+            idTooltip(l.commit.hex(),
+                l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"
+                    + std::to_string(l.origLine));
+        else
+            tooltip("Not committed yet");
+    }
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (index >= m_selFirst && index <= m_selLast)
+        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), p.selection); // as a selected list row
+    if (newBlock && !committed) {
+        dl->AddText(pos, p.unstaged, kNotCommitted);
+    } else if (newBlock) {
+        // The ID is drawn split into its highlighted prefix and the dimmed rest.
+        const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
+        const float authorAt = static_cast<float>(kShortIdLength + 2) * glyph;
+        const float authorWidth = static_cast<float>(m_authorColumns) * glyph;
+        drawDimRange(pos, id.c_str(), kIdPrefixLength, kShortIdLength);
+        dl->AddText(ImVec2(pos.x + authorAt, pos.y), text, fitText(l.author, authorWidth).c_str());
+        dl->AddText(ImVec2(pos.x + authorAt + authorWidth + 2 * glyph, pos.y), text, core::formatTime(l.time).c_str());
+    }
+    ImGui::PopID();
+}
+
+int BlamePanel::cursorLine() const { return m_editor->GetMainCursorPosition().line; }
+bool BlamePanel::hasSelection() const { return m_editor->AnyCursorHasSelection(); }
+std::string BlamePanel::selectedText() const { return m_editor->mainSelectionText(); }
+std::string BlamePanel::languageName() const { return m_editor->GetLanguageName(); }
 
 void BlamePanel::publishInfoOverride(bool shown)
 {
@@ -182,104 +422,36 @@ void BlamePanel::draw(bool* open)
         publishInfoOverride(false);
         return;
     }
+    // The panel's keys come before the editor is rendered: hotkey() locks its key for the frame, so the
+    // editor, which reads the keys raw, does not act on it too.
     // Esc drops the selection (and with it the change shown in Change information).
     if (m_selFirst >= 0 && hotkey(ImGuiKey_Escape))
         clearSelection();
+    // The editor cuts on Ctrl+X and Shift+Delete even though it is read-only (lines would vanish and the
+    // gutter would name the wrong changes): here a cut is a copy. Repeat keeps a held key locked on its
+    // repeat frames too. Elsewhere in the panel the keys do nothing.
+    const ImGuiInputFlags cutFlags = ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat;
+    const bool cut = hotkey(ImGuiMod_Ctrl | ImGuiKey_X, cutFlags);
+    if ((cut || hotkey(ImGuiMod_Shift | ImGuiKey_Delete, cutFlags)) && m_editorFocused)
+        m_editor->Copy();
     if (m_blame->truncated)
         ImGui::TextDisabled("Large file: only the first lines are blamed.");
-    const Palette& p = theme().palette();
-    std::vector<int> visible;
-    for (size_t i = 0; i < m_blame->lines.size(); ++i) {
-        const auto& l = m_blame->lines[i];
-        if (m_filter.empty() || containsNoCase(l.text, m_filter) || containsNoCase(l.author, m_filter)
-            || containsNoCase(l.commit.hex(), m_filter) || containsNoCase(l.summary, m_filter))
-            visible.push_back(static_cast<int>(i));
+    if (m_paletteTheme != static_cast<int>(theme().theme())) {
+        m_paletteTheme = static_cast<int>(theme().theme());
+        m_editor->SetPalette(editorPalette());
+        m_marksDirty = true;
     }
+    if (m_marksDirty || m_filter != m_filterApplied)
+        applyFilter(m_filter != m_filterApplied);
     ImGui::PushFont(theme().monoFont(), 0.0f);
-    const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX | ImGuiTableFlags_RowBg
-        | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
-    flattenNextTable(); // the rows are part of the panel's nav layer: the arrows walk them
-    if (ImGui::BeginTable("##blame_table", 5, flags)) {
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Commit");
-        ImGui::TableSetupColumn("Author");
-        ImGui::TableSetupColumn("Date");
-        ImGui::TableSetupColumn("Line");
-        ImGui::TableSetupColumn("Text", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(visible.size()));
-        int scrollIndex = -1;
-        if (m_scrollTo > 0)
-            for (size_t i = 0; i < visible.size(); ++i)
-                if (m_blame->lines[static_cast<size_t>(visible[i])].lineNo == m_scrollTo) {
-                    scrollIndex = static_cast<int>(i);
-                    clipper.IncludeItemByIndex(scrollIndex);
-                }
-        while (clipper.Step()) {
-            for (int vi = clipper.DisplayStart; vi < clipper.DisplayEnd; ++vi) {
-                const int i = visible[static_cast<size_t>(vi)];
-                const auto& l = m_blame->lines[static_cast<size_t>(i)];
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::PushID(("l" + std::to_string(l.lineNo)).c_str());
-                const bool selected = i >= m_selFirst && i <= m_selLast && m_selFirst >= 0;
-                const bool newBlock = i == 0 || m_blame->lines[static_cast<size_t>(i - 1)].commit != l.commit;
-                const std::string commitText = l.commit.isNull() ? std::string("Not committed") : l.commit.shortHex(kShortIdLength);
-                const std::string label = (newBlock ? commitText : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
-                if (l.commit.isNull())
-                    ImGui::PushStyleColor(ImGuiCol_Text, p.unstaged);
-                // SelectOnNav: the nav cursor (arrows) and the selection are one thing.
-                // A commit ID in the label is drawn split into its highlighted prefix and the dimmed rest.
-                const size_t dimFrom = newBlock && !l.commit.isNull() ? kIdPrefixLength : 0;
-                const size_t dimTo = newBlock && !l.commit.isNull() ? kShortIdLength : 0;
-                if (selectableDimRange(label.c_str(), dimFrom, dimTo, selected,
-                        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_SelectOnNav)) {
-                    const bool shift = (pressMods() & ImGuiMod_Shift) != 0;
-                    if (pressSource() == PressSource::NavActivate && !shift) {
-                        // Space / Enter on the cursor row keeps the selection (the range stays).
-                        if (!selected)
-                            m_selFirst = m_selLast = m_selAnchor = m_selLine = i;
-                    } else if (shift && m_selFirst >= 0) {
-                        // The range runs from the anchor (the last plain press) to this line.
-                        const int anchor = m_selAnchor >= m_selFirst && m_selAnchor <= m_selLast ? m_selAnchor : m_selFirst;
-                        m_selFirst = std::min(anchor, i);
-                        m_selLast = std::max(anchor, i);
-                        m_selAnchor = anchor;
-                        m_selLine = i;
-                    } else {
-                        m_selFirst = m_selLast = m_selAnchor = m_selLine = i;
-                    }
-                }
-                if (l.commit.isNull())
-                    ImGui::PopStyleColor();
-                if (vi == scrollIndex) {
-                    ImGui::SetScrollHereY(0.3f);
-                    m_scrollTo = 0;
-                }
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-                    if (l.commit.isNull())
-                        tooltip("Not committed yet");
-                    else
-                        idTooltip(l.commit.hex(),
-                            l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"
-                                + std::to_string(l.origLine));
-                }
-                drawLineMenu(i);
-                ImGui::TableSetColumnIndex(1);
-                if (newBlock && !l.commit.isNull())
-                    ImGui::TextUnformatted(l.author.c_str());
-                ImGui::TableSetColumnIndex(2);
-                if (newBlock && !l.commit.isNull())
-                    ImGui::TextUnformatted(core::formatTime(l.time).c_str());
-                ImGui::TableSetColumnIndex(3);
-                ImGui::TextDisabled("%d", l.lineNo);
-                ImGui::TableSetColumnIndex(4);
-                ImGui::TextUnformatted(l.text.c_str());
-                ImGui::PopID();
-            }
-        }
-        ImGui::EndTable();
+    m_editor->Render("##blame_editor", ImVec2(0, 0));
+    m_editorFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::IsWindowFocused();
+    followEditor();
+    // The menu of a line's gutter (the editor opens its own over the code and the line numbers).
+    if (ImGui::BeginPopupEx(kMenuId, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar
+                | ImGuiWindowFlags_NoSavedSettings)) {
+        drawLineMenuItems(m_menuLine);
+        ImGui::EndPopup();
     }
     ImGui::PopFont();
     ImGui::End();

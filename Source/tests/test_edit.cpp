@@ -975,11 +975,10 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     }));
     ctx->Yield(3);
     auto clickLine = [&](int n, ImGuiKeyChord mods) {
-        const ImGuiTestItemInfo row = ctx->ItemInfo(("//Blame/##blame_table/l" + std::to_string(n) + "/###blame_line_" + std::to_string(n)).c_str());
-        ctx->MouseMoveToPos(ImVec2(row.RectFull.Min.x + 10.0f, row.RectFull.GetCenter().y));
+        const std::string ref = s.child("//Blame", "##blame_editor") + "/###blame_line_" + std::to_string(n);
         if (mods)
             ctx->KeyDown(mods);
-        ctx->MouseClick(ImGuiMouseButton_Left);
+        ctx->ItemClick(ref.c_str());
         if (mods)
             ctx->KeyUp(mods);
         ctx->Yield(2);
