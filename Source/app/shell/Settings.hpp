@@ -67,6 +67,7 @@ struct SettingsData {
     bool diffSideBySide = false;
     int diffContext = 3;
     int diffWhitespace = 0;
+    bool infoWrapMessage = false; // Change information: word-wrap the message fields
     bool rebaseNewestFirst = false; // interactive rebase editor: list shown newest commit first
 };
 

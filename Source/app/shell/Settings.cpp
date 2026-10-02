@@ -205,6 +205,7 @@ const ViewSetting kViewSettings[] = {
     {"Diff", "SideBySide", &SettingsData::diffSideBySide, nullptr, 0, 1},
     {"Diff", "Whitespace", nullptr, &SettingsData::diffWhitespace, 0, 2},
     {"Diff", "Context", nullptr, &SettingsData::diffContext, 0, 100},
+    {"Info", "WrapMessage", &SettingsData::infoWrapMessage, nullptr, 0, 1},
     {"Rebase", "NewestFirst", &SettingsData::rebaseNewestFirst, nullptr, 0, 1},
 };
 

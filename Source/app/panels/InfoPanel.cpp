@@ -18,6 +18,26 @@
 
 namespace ggui {
 
+namespace {
+
+// A message field of the panel: its context menu has "Word wrap", kept in the view settings.
+void messageField(Session& session, const char* id, std::string* text, ImGuiInputTextFlags flags = ImGuiInputTextFlags_None)
+{
+    bool wrap = session.app().settings().data().infoWrapMessage;
+    if (wrap)
+        flags |= ImGuiInputTextFlags_WordWrap;
+    ImGui::InputTextMultiline(id, text, ImVec2(-1, ImGui::GetTextLineHeight() * 6), flags);
+    if (beginContextMenu((std::string(id) + "_menu").c_str())) {
+        if (menuItem(nullptr, "Word wrap", nullptr, &wrap)) {
+            session.app().settings().data().infoWrapMessage = wrap;
+            Settings::markViewDirty();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+} // namespace
+
 InfoPanel::InfoPanel(Session& session) : m_session(session) { }
 
 void InfoPanel::onSelection(const Selection& sel)
@@ -129,7 +149,7 @@ void InfoPanel::draw(bool* open)
     if (m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index) {
         const auto status = m_session.status();
         const bool index = m_selection.kind == SelKind::Index;
-        ImGui::InputTextMultiline("##commit_message", &m_commitMessage, ImVec2(-1, ImGui::GetTextLineHeight() * 6));
+        messageField(m_session, "##commit_message", &m_commitMessage);
         const bool nothing =
             !status || (index ? status->staged.empty() : status->unstaged.empty() && status->untracked.empty());
         ImGui::BeginDisabled(!m_session.actions().busy().empty() || nothing || gg::trim(m_commitMessage).empty());
@@ -169,7 +189,7 @@ void InfoPanel::draw(bool* open)
                 m_mergeMessage = snap->mergeMessage;
                 m_mergeMessageSource = snap->mergeMessage;
             }
-            ImGui::InputTextMultiline("##merge_message", &m_mergeMessage, ImVec2(-1, ImGui::GetTextLineHeight() * 6));
+            messageField(m_session, "##merge_message", &m_mergeMessage);
             ImGui::BeginDisabled(!m_session.actions().busy().empty() || m_mergeMessage == snap->mergeMessage);
             if (button(ICON_MS_SAVE, "Save message##save_merge_message"))
                 m_session.actions().saveMergeMessage(m_mergeMessage);
@@ -191,8 +211,7 @@ void InfoPanel::draw(bool* open)
     // memory with its descendants.
     const bool stash = m_selection.kind == SelKind::Stash;
     const bool editable = m_selection.kind == SelKind::Commit || stash;
-    ImGui::InputTextMultiline("##message", &m_message, ImVec2(-1, ImGui::GetTextLineHeight() * 6),
-        editable ? ImGuiInputTextFlags_None : ImGuiInputTextFlags_ReadOnly);
+    messageField(m_session, "##message", &m_message, editable ? ImGuiInputTextFlags_None : ImGuiInputTextFlags_ReadOnly);
     const bool free = m_session.actions().busy().empty();
     const auto status = m_session.status();
     const bool stagedPresent = status && !status->staged.empty();

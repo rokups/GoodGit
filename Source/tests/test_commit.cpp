@@ -4,6 +4,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <imgui_internal.h>
+
 namespace ggtest {
 
 namespace {
@@ -521,6 +523,44 @@ GG_TEST("commit", "Change information: Commit on the Index warns about a staged 
     GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "From the index"; }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "--name-only", "--format=", "HEAD"}), "new_conflict.txt");
+}
+
+GG_TEST("commit", "Change information: the message field's Word wrap option wraps long lines and persists")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + s.revParse(repo, "HEAD")).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    const std::string field = "//Change information/##message";
+    const std::string longLine(300, 'w'); // no spaces, no newline: wraps by character
+    auto lineCount = [&] {
+        const ImGuiInputTextState* state = ImGui::GetInputTextState(ctx->ItemInfo(field.c_str()).ID);
+        return state ? state->LineCount : 0;
+    };
+    GG_CHECK(!s.app.settings().data().infoWrapMessage);
+    s.setText(field, longLine);
+    ctx->Yield(2);
+    GG_CHECK_EQ(lineCount(), 1);
+
+    s.contextMenu(field.c_str(), "Word wrap");
+    ctx->Yield(2);
+    GG_CHECK(s.app.settings().data().infoWrapMessage);
+    s.setText(field, longLine);
+    ctx->Yield(2);
+    GG_CHECK(lineCount() > 1);
+
+    size_t n = 0;
+    const char* raw = ImGui::SaveIniSettingsToMemory(&n);
+    const std::string ini(raw, n);
+    const size_t section = ini.find("[GGUIView][Info]");
+    GG_REQUIRE(section != std::string::npos);
+    GG_CHECK(ini.find("WrapMessage=1", section) != std::string::npos);
+    ImGui::GetIO().WantSaveIniSettings = true;
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitIdle());
+    s.app.resetForTest();
+    ctx->Yield(2);
+    GG_CHECK(s.app.settings().data().infoWrapMessage);
 }
 
 } // namespace ggtest

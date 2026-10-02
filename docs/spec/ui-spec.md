@@ -368,6 +368,9 @@ the panel without touching the repository.
 - Message editor `##message` with *Save message* `###save_message`; for HEAD the button is red and reads *Amend HEAD*
   and asks for confirmation (a dialog titled `Amend HEAD`, buttons Amend / Cancel; it notes when staged changes
   are not included).
+  The message fields (`##message`, `##commit_message`, `##merge_message`) have a context menu with a checkable
+  *Word wrap* option (popup `<field id>_menu`, e.g. `##message_menu`); it is persistent,
+  stored in imgui.ini (`[GGUIView][Info] WrapMessage`).
 - Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
   differs (N); Date; published/lock state ("Published" / "Not published").
 - Commit ID (full, dimmed after the short prefix) with Copy `##commit_id`; Parents list
