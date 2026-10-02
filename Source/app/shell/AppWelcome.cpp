@@ -153,7 +153,7 @@ void App::drawWelcome()
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
         const std::string label = recentRowText(i) + "###row";
         if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), m_recentFocus == static_cast<int>(i),
-                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(width, 0)))
+                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0)))
             post([this, path] { openRepository(path); });
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
             ImGui::SetTooltip("%s\nDel removes", path.c_str());
