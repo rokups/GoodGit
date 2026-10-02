@@ -856,7 +856,7 @@ void HistoryPanel::draw(bool* open)
     bool showStashes = m_session.app().settings().data().historyShowStashes;
     if (ImGui::Checkbox("Stashes##hist_stashes", &showStashes)) {
         m_session.app().settings().data().historyShowStashes = showStashes;
-        m_session.app().settings().save();
+        Settings::markViewDirty();
     }
     if (!m_hidden.empty()) {
         sameLineIfFits(buttonWidth(ICON_MS_VISIBILITY, "Show all refs"));

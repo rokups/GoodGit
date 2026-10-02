@@ -549,6 +549,80 @@ GG_TEST("shell", "settings persist across restarts")
     GG_CHECK(text.find("scale=1.50 theme=light") != std::string::npos);
 }
 
+GG_TEST("shell", "view settings persist across a restart")
+{
+    // Stashes (History) and the Diff controls are stored in imgui.ini ([GGUIView]), not settings.json.
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemUncheck("//History/Stashes##hist_stashes");
+    s.comboSelect("//Diff/##diff_view", "Side by side");
+    s.comboSelect("//Diff/##diff_ws", "Whitespace: ignore all");
+    ctx->ItemInputValue("//Diff/Context##diff_context", 5);
+    ctx->Yield(2);
+    size_t n = 0;
+    const char* raw = ImGui::SaveIniSettingsToMemory(&n);
+    const std::string ini(raw, n);
+    for (const char* want : {"[GGUIView][History]", "Stashes=0", "[GGUIView][Diff]", "SideBySide=1", "Whitespace=2", "Context=5"})
+        if (ini.find(want) == std::string::npos)
+            ctx->LogError("imgui.ini lacks %s:\n%s", want, ini.c_str());
+    // The imgui.ini write is requested by MarkIniSettingsDirty (WantSaveIniSettings): force it here.
+    ImGui::GetIO().WantSaveIniSettings = true;
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.read(s.root() / "prefs", "imgui.ini").find("Whitespace=2") != std::string::npos);
+
+    s.app.resetForTest();
+    ctx->Yield(2);
+    const auto& d = s.app.settings().data();
+    GG_CHECK(!d.historyShowStashes);
+    GG_CHECK(d.diffSideBySide);
+    GG_CHECK_EQ(d.diffWhitespace, 2);
+    GG_CHECK_EQ(d.diffContext, 5);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->Yield(2);
+    const ImGuiTestItemInfo stashes = ctx->ItemInfo("//History/Stashes##hist_stashes");
+    GG_CHECK((stashes.StatusFlags & ImGuiItemStatusFlags_Checked) == 0);
+}
+
+GG_TEST("shell", "the ini wins over settings.json, which is only a fallback")
+{
+    const fs::path prefs = s.root() / "prefs";
+    auto restart = [&] {
+        s.app.resetForTest();
+        ctx->Yield(2);
+    };
+    // No imgui.ini: the values an earlier version kept in settings.json apply.
+    s.write(prefs, "settings.json", R"({"diff":{"sideBySide":true,"context":7},"historyShowStashes":false})");
+    restart();
+    GG_CHECK(s.app.settings().data().diffSideBySide);
+    GG_CHECK_EQ(s.app.settings().data().diffContext, 7);
+    GG_CHECK(!s.app.settings().data().historyShowStashes);
+    // With one, its values win; the rest still come from settings.json.
+    s.write(prefs, "imgui.ini", "[GGUIView][Diff]\nContext=9\n\n");
+    restart();
+    GG_CHECK_EQ(s.app.settings().data().diffContext, 9);
+    GG_CHECK(s.app.settings().data().diffSideBySide);
+    GG_CHECK(!s.app.settings().data().historyShowStashes);
+    // Out-of-range values are clamped; unknown keys, sections and garbage are ignored.
+    s.write(prefs, "imgui.ini",
+        "[GGUIView][Diff]\nContext=999\nWhitespace=-4\nBogus=1\nNoValue\nSideBySide=x\n\n"
+        "[GGUIView][Nowhere]\nContext=1\n\n");
+    restart();
+    GG_CHECK_EQ(s.app.settings().data().diffContext, 100);
+    GG_CHECK_EQ(s.app.settings().data().diffWhitespace, 0);
+    GG_CHECK(s.app.settings().data().diffSideBySide);
+    // The next settings.json save no longer holds them.
+    s.app.openSettings();
+    ctx->Yield(2);
+    s.comboSelect("//Settings/##settings_tabs/General/Theme##theme", "Light");
+    GG_REQUIRE(s.waitIdle());
+    const std::string saved = s.read(prefs, "settings.json");
+    GG_CHECK(saved.find("\"light\"") != std::string::npos);
+    GG_CHECK(saved.find("sideBySide") == std::string::npos);
+    GG_CHECK(saved.find("historyShowStashes") == std::string::npos);
+    GG_CHECK(saved.find("\"window\"") == std::string::npos);
+}
+
 GG_TEST("shell", "auto-open argv[1], else the most recent existing repository")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

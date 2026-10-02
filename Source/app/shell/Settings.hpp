@@ -55,17 +55,17 @@ struct SettingsData {
     std::vector<std::string> recent; // most recent first, unique (normalised paths)
     RecentOrder recentOrder = RecentOrder::MostRecent;
     std::map<std::string, bool> panels; // window name → visible
-    // Diff panel
-    bool diffSideBySide = false;
-    int diffContext = 3;
-    int diffWhitespace = 0;
-    bool historyShowStashes = true;
     NothingStaged nothingStaged = NothingStaged::Ask;
     bool expandConflictStages = false; // §4.10: index stages 1–3 for two-sided first-class conflicts on checkout
     bool expandStagesOnCheckout = false;
-    // Main window placement (custom imgui.ini handler)
+    // Main window placement (imgui.ini [GGUIWindow])
     int windowX = -1, windowY = -1, windowW = 0, windowH = 0;
     bool windowMaximized = false;
+    // View state (imgui.ini [GGUIView]; kViewSettings in Settings.cpp lists what is stored)
+    bool historyShowStashes = true;
+    bool diffSideBySide = false;
+    int diffContext = 3;
+    int diffWhitespace = 0;
 };
 
 class Settings {
@@ -82,6 +82,12 @@ public:
     void save();
     // Schedules an asynchronous save of the given imgui.ini text.
     void saveIni(std::string text);
+
+    // Registers the imgui.ini handler ("GGUIView") for the view state in SettingsData; the data
+    // must outlive the ImGui context (the App owns both).
+    void registerIniHandler();
+    // A view-state field changed: imgui.ini is written soon (settings.json is not involved).
+    static void markViewDirty();
 
     SettingsData& data() { return m_data; }
     const SettingsData& data() const { return m_data; }

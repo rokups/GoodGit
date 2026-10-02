@@ -95,6 +95,7 @@ App::App(Platform& platform, AppOptions options)
     handler.ReadLineFn = iniReadLine;
     handler.WriteAllFn = iniWriteAll;
     ImGui::AddSettingsHandler(&handler);
+    m_settings.registerIniHandler();
 
     theme().loadFonts();
     applyTheme();

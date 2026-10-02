@@ -4,10 +4,14 @@
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
+#include <imgui.h>
+#include <imgui_internal.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <set>
 #include <fstream>
@@ -129,14 +133,11 @@ nlohmann::json toJson(const SettingsData& d)
     j["recent"] = d.recent;
     j["recentOrder"] = d.recentOrder == RecentOrder::Alphabetical ? "alphabetical" : "recent";
     j["panels"] = d.panels;
-    j["diff"] = {{"sideBySide", d.diffSideBySide}, {"context", d.diffContext}, {"whitespace", d.diffWhitespace}};
-    j["historyShowStashes"] = d.historyShowStashes;
     j["nothingStaged"] = d.nothingStaged == NothingStaged::StageAll ? "stage-all"
         : d.nothingStaged == NothingStaged::StageSelected                 ? "stage-selected"
                                                                           : "ask";
     j["expandStagesOnCheckout"] = d.expandStagesOnCheckout;
     j["expandConflictStages"] = d.expandConflictStages;
-    j["window"] = {{"x", d.windowX}, {"y", d.windowY}, {"w", d.windowW}, {"h", d.windowH}, {"maximized", d.windowMaximized}};
     return j;
 }
 
@@ -158,6 +159,8 @@ SettingsData fromJson(const nlohmann::json& j)
         for (auto it = j["panels"].begin(); it != j["panels"].end(); ++it)
             if (it.value().is_boolean())
                 d.panels[it.key()] = it.value().get<bool>();
+    // The view state and the window placement now live in imgui.ini (applied after this); they are
+    // still read here for a settings.json written by an earlier version.
     if (j.contains("diff") && j["diff"].is_object()) {
         d.diffSideBySide = j["diff"].value("sideBySide", false);
         d.diffContext = std::clamp(j["diff"].value("context", 3), 0, 100);
@@ -181,9 +184,96 @@ SettingsData fromJson(const nlohmann::json& j)
     return d;
 }
 
+// ---- imgui.ini: view state ---------------------------------------------------------------------
+
+namespace {
+
+// One value of the view state stored in imgui.ini as [GGUIView][section] key=value. The section and
+// key names are the on-disk schema. Rows of one section must be adjacent (a section is written as
+// one block); exactly one of `b` / `i` is set; an int is clamped to [lo, hi] when read.
+struct ViewSetting {
+    const char* section;
+    const char* key;
+    bool SettingsData::* b;
+    int SettingsData::* i;
+    int lo, hi;
+};
+
+const ViewSetting kViewSettings[] = {
+    {"History", "Stashes", &SettingsData::historyShowStashes, nullptr, 0, 1},
+    {"Diff", "SideBySide", &SettingsData::diffSideBySide, nullptr, 0, 1},
+    {"Diff", "Whitespace", nullptr, &SettingsData::diffWhitespace, 0, 2},
+    {"Diff", "Context", nullptr, &SettingsData::diffContext, 0, 100},
+};
+
+void* viewReadOpen(ImGuiContext*, ImGuiSettingsHandler* handler, const char* name)
+{
+    for (const auto& v : kViewSettings)
+        if (std::strcmp(v.section, name) == 0)
+            return handler->UserData ? const_cast<char*>(v.section) : nullptr;
+    return nullptr;
+}
+
+void viewReadLine(ImGuiContext*, ImGuiSettingsHandler* handler, void* entry, const char* line)
+{
+    if (!entry || !handler->UserData)
+        return;
+    auto& d = *static_cast<SettingsData*>(handler->UserData);
+    const char* section = static_cast<const char*>(entry);
+    const char* eq = std::strchr(line, '=');
+    if (!eq)
+        return;
+    int value = 0;
+    if (std::sscanf(eq + 1, "%d", &value) != 1)
+        return;
+    const std::string key(line, eq);
+    for (const auto& v : kViewSettings) {
+        if (std::strcmp(v.section, section) != 0 || key != v.key)
+            continue;
+        if (v.b)
+            d.*(v.b) = value != 0;
+        else
+            d.*(v.i) = std::clamp(value, v.lo, v.hi);
+        return;
+    }
+}
+
+void viewWriteAll(ImGuiContext*, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf)
+{
+    const auto& d = *static_cast<const SettingsData*>(handler->UserData);
+    const char* section = nullptr;
+    for (const auto& v : kViewSettings) {
+        if (!section || std::strcmp(section, v.section) != 0) {
+            if (section)
+                buf->append("\n");
+            buf->appendf("[%s][%s]\n", handler->TypeName, v.section);
+            section = v.section;
+        }
+        buf->appendf("%s=%d\n", v.key, v.b ? (d.*(v.b) ? 1 : 0) : d.*(v.i));
+    }
+    if (section)
+        buf->append("\n");
+}
+
+} // namespace
+
 // ---- Settings ----------------------------------------------------------------------------------
 
 Settings::Settings(AsyncIo& io) : m_io(io) { }
+
+void Settings::registerIniHandler()
+{
+    ImGuiSettingsHandler handler;
+    handler.TypeName = "GGUIView";
+    handler.TypeHash = ImHashStr("GGUIView");
+    handler.ReadOpenFn = viewReadOpen;
+    handler.ReadLineFn = viewReadLine;
+    handler.WriteAllFn = viewWriteAll;
+    handler.UserData = &m_data;
+    ImGui::AddSettingsHandler(&handler);
+}
+
+void Settings::markViewDirty() { ImGui::MarkIniSettingsDirty(); }
 
 fs::path Settings::prefDir()
 {

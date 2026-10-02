@@ -819,14 +819,14 @@ void DiffPanel::drawToolbar()
     ImGui::SetNextItemWidth(comboWidth({views[0], views[1]}));
     if (ImGui::Combo("##diff_view", &view, views, 2)) {
         d.diffSideBySide = view == 1;
-        settings.save();
+        Settings::markViewDirty();
     }
     const char* ws[] = {"Whitespace: normal", "Whitespace: ignore changes", "Whitespace: ignore all"};
     const float wsWidth = comboWidth({ws[0], ws[1], ws[2]});
     sameLineIfFits(wsWidth);
     ImGui::SetNextItemWidth(wsWidth);
     if (ImGui::Combo("##diff_ws", &d.diffWhitespace, ws, 3)) {
-        settings.save();
+        Settings::markViewDirty();
         request();
     }
     // Context lines: a narrow number field (typing works) with its own icon -/+ (Ctrl: by 5).
@@ -852,7 +852,7 @@ void DiffPanel::drawToolbar()
         ImGui::SetTooltip("More context lines (Ctrl+click: 5)");
     if (contextChanged) {
         d.diffContext = std::clamp(d.diffContext, 0, 100);
-        settings.save();
+        Settings::markViewDirty();
         request();
     }
     // Hunk navigation: scrolls the next / previous hunk to the top (Alt+Down / Alt+Up).
