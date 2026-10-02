@@ -49,7 +49,7 @@ GG_TEST("history", "graph, rows, badges and short IDs")
         for (const auto& p : row.parents)
             GG_CHECK(!seen.count(p.hex()));
         seen.insert(row.id.hex());
-        GG_CHECK_STR_EQ(row.shortId, s.gitOut(repo, {"rev-parse", "--short", row.id.hex()}));
+        GG_CHECK_STR_EQ(row.shortId, row.id.hex().substr(0, 7));
         GG_CHECK_STR_EQ(row.subject, s.gitOut(repo, {"log", "-1", "--format=%s", row.id.hex()}));
         GG_CHECK_STR_EQ(row.author, "Test User");
         GG_CHECK_EQ(row.time, std::stoll(s.gitOut(repo, {"log", "-1", "--format=%at", row.id.hex()})));
@@ -382,23 +382,28 @@ GG_TEST("history", "copy ID and full description; tooltip ID")
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
     const std::string id = s.revParse(repo, "HEAD~2");
-    const std::string shortId = s.gitOut(repo, {"rev-parse", "--short", id});
-    s.contextMenu(rowRef(id).c_str(), "Copy/###ID");
-    GG_CHECK_STR_EQ(s.clipboard(), shortId);
-    // The item reads "Short ID", and "Full ID" while Shift is held (no hint in the shortcut column).
+    // The row shows the short ID: 3 characters in the text colour, the other 4 dimmed.
+    GG_CHECK(s.idShownDimmed("//History", id.substr(0, 7), 3));
+    // The menu has three items that state the ID itself; none depends on Shift.
     ctx->ItemClick(rowRef(id).c_str(), ImGuiMouseButton_Right);
     ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Copy");
-    GG_CHECK(s.itemLabel("//$FOCUSED/###ID").find("Short ID###") != std::string::npos);
+    GG_CHECK(s.itemLabel("//$FOCUSED/###ID3").find(id.substr(0, 3) + "###") != std::string::npos);
+    GG_CHECK(s.itemLabel("//$FOCUSED/###ID7").find(id.substr(0, 7) + "###") != std::string::npos);
+    GG_CHECK(s.itemLabel("//$FOCUSED/###IDfull").find("Full ID###") != std::string::npos);
     ctx->KeyDown(ImGuiMod_Shift);
     ctx->Yield(2);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###ID").find("Full ID###") != std::string::npos);
-    ctx->ItemClick("//$FOCUSED/###ID");
+    GG_CHECK(s.itemLabel("//$FOCUSED/###ID7").find(id.substr(0, 7) + "###") != std::string::npos);
     ctx->KeyUp(ImGuiMod_Shift);
+    ctx->ItemClick("//$FOCUSED/###ID3");
+    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 3));
+    s.contextMenu(rowRef(id).c_str(), "Copy/###ID7");
+    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 7));
+    s.contextMenu(rowRef(id).c_str(), "Copy/###IDfull");
     GG_CHECK_STR_EQ(s.clipboard(), id);
-    // The row tooltip starts with the full ID, its short prefix undimmed.
+    // The row tooltip starts with the full ID: 7 characters in the text colour, the rest dimmed.
     ctx->MouseMove(rowRef(id).c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);
-    GG_CHECK(s.idShownDimmed("//##Tooltip_00", id, shortId.size()));
+    GG_CHECK(s.idShownDimmed("//##Tooltip_00", id, 7));
     s.contextMenu(rowRef(id).c_str(), "Copy/Full description");
     const std::string desc = s.clipboard();
     GG_CHECK(desc.rfind(id + " Add f3", 0) == 0);

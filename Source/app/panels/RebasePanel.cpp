@@ -1356,6 +1356,9 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     // as high as its action combo, so the highlight is painted as the row background instead.
     ImGui::TableSetColumnIndex(1);
     ImGui::AlignTextToFramePadding();
+    // Where the Selectable below puts its text; the ID is drawn over it split into prefix and rest.
+    const ImGuiWindow* const rowWindow = ImGui::GetCurrentWindow();
+    const ImVec2 idPos(rowWindow->DC.CursorPos.x, rowWindow->DC.CursorPos.y + rowWindow->DC.CurrLineTextBaseOffset);
     const std::string idText = hasInfo ? shortHex(item.commit, n) : std::string();
     const bool selected = m_selection.count(row) > 0;
     ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32_BLACK_TRANS);
@@ -1366,9 +1369,14 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     const float pad = ImGui::GetStyle().FramePadding.y;
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - pad); // (Selectable() adds the text offset back)
     ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
-    const bool clicked = ImGui::Selectable((idText + "###ir_" + key).c_str(), selected,
+    const std::string idLabel = idText + "###ir_" + key;
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32_BLACK_TRANS);
+    const bool clicked = ImGui::Selectable(idLabel.c_str(), selected,
         ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav,
         ImVec2(0.0f, ImGui::GetFrameHeight()));
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemVisible())
+        drawDimRange(idPos, idLabel.c_str(), kIdPrefixLength, kShortIdLength);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
     if (clicked)
@@ -1420,7 +1428,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         ImGui::EndDragDropTarget();
     }
     if (hasInfo && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        idTooltip(item.commit, n,
+        idTooltip(item.commit,
             info->second.authorName + " <" + info->second.authorEmail + ">"
                 + (item.isCommit() ? "\n" + std::string(firstLine(info->second.subject)) : std::string()));
 

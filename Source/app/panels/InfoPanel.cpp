@@ -162,7 +162,8 @@ void InfoPanel::drawPendingCommitInfo(const core::StatusResult* status, const co
         ImGui::TextDisabled("(root commit)");
     for (size_t i = 0; i < parents.size(); ++i) {
         const std::string id = m_session.shortId(parents[i]) + "###parent_" + std::to_string(i);
-        if (selectable(id.c_str(), false, ImGuiSelectableFlags_None, ImGui::CalcTextSize(id.c_str(), nullptr, true)))
+        if (selectableDimRange(id.c_str(), kIdPrefixLength, kShortIdLength, false, ImGuiSelectableFlags_None,
+                ImGui::CalcTextSize(id.c_str(), nullptr, true)))
             m_session.revealCommit(parents[i]);
         if (const core::HistoryRow* row = m_session.history().row(parents[i])) {
             ImGui::SameLine();
@@ -338,13 +339,12 @@ void InfoPanel::draw(bool* open)
             ImGui::PopStyleColor();
         }
         label("Commit");
-        const std::string shortId = m_session.shortId(d.id);
-        idText(d.id.hex(), shortId.size(), "commit_id_text");
+        fullIdText(d.id.hex(), "commit_id_text", true);
         ImGui::SameLine();
         if (ImGui::SmallButton(ICON_MS_CONTENT_COPY "###commit_id"))
-            copyId(shortId, d.id.hex());
+            ImGui::SetClipboardText(d.id.shortHex(kShortIdLength).c_str());
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            tooltip(ImGui::GetIO().KeyShift ? "Copy the full ID" : "Copy the short ID");
+            tooltip("Copy the short ID");
         if (const ConflictList* conflicts = m_session.conflictsOf(d.id)) {
             label("Conflicts");
             for (size_t i = 0; i < conflicts->size(); ++i) {
@@ -360,8 +360,9 @@ void InfoPanel::draw(bool* open)
         if (d.parents.empty())
             ImGui::TextDisabled("(root commit)");
         for (size_t i = 0; i < d.parents.size(); ++i) {
-            const std::string id = d.parents[i].shortHex(10) + "###parent_" + std::to_string(i);
-            if (selectable(id.c_str(), false, ImGuiSelectableFlags_None, ImGui::CalcTextSize(id.c_str(), nullptr, true)))
+            const std::string id = d.parents[i].shortHex(kShortIdLength) + "###parent_" + std::to_string(i);
+            if (selectableDimRange(id.c_str(), kIdPrefixLength, kShortIdLength, false, ImGuiSelectableFlags_None,
+                    ImGui::CalcTextSize(id.c_str(), nullptr, true)))
                 m_session.revealCommit(d.parents[i]);
             if (i + 1 < d.parents.size())
                 ImGui::SameLine();

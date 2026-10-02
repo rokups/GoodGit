@@ -186,10 +186,20 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     // Column headers use Git words (no "Change" column: a row is a ref moving between commits).
     GG_CHECK(s.textShown("//Reflog", "Commits"));
     const std::string table = "//Reflog/##reflog_table";
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "###Copy new ID");
-    GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", headLines[0]}));
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "###Copy old ID");
-    GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(repo, {"rev-parse", "--short", "HEAD@{1}"}));
+    const std::string oldId = s.revParse(repo, "HEAD@{1}");
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID/###ID3");
+    GG_CHECK_STR_EQ(s.clipboard(), headLines[0].substr(0, 3));
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID/###ID7");
+    GG_CHECK_STR_EQ(s.clipboard(), headLines[0].substr(0, 7));
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID/###IDfull");
+    GG_CHECK_STR_EQ(s.clipboard(), headLines[0]);
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID/###ID7");
+    GG_CHECK_STR_EQ(s.clipboard(), oldId.substr(0, 7));
+    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID/###IDfull");
+    GG_CHECK_STR_EQ(s.clipboard(), oldId);
+    // Both IDs of a row are 7 characters: 3 highlighted, 4 dimmed.
+    GG_CHECK(s.idShownDimmed("//Reflog", headLines[0].substr(0, 7), 3));
+    GG_CHECK(s.idShownDimmed("//Reflog", oldId.substr(0, 7), 3));
     s.contextMenu((table + "/r0/###reflog_0").c_str(), "Reveal old commit");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD@{1}"); }));
     s.showPanel("Reflog");

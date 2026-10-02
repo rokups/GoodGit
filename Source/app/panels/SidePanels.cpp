@@ -594,10 +594,17 @@ void WorktreesPanel::draw(bool* open)
             label += " (missing)";
         if (w.prunable)
             label += " (prunable)";
-        label += "  " + (w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(8)) : w.branch);
+        label += "  ";
+        // A detached HEAD's ID is drawn split into its highlighted prefix and the dimmed rest.
+        size_t dimFrom = 0, dimTo = 0;
+        if (w.branch.empty() && !w.head.isNull()) {
+            dimFrom = label.size() + kIdPrefixLength;
+            dimTo = label.size() + kShortIdLength;
+        }
+        label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength)) : w.branch;
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
-        selectable((label + "###row").c_str(), w.isCurrent);
+        selectableDimRange((label + "###row").c_str(), dimFrom, dimTo, w.isCurrent);
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string tip = w.path.string();
@@ -758,7 +765,7 @@ void StashesPanel::draw(bool* open)
         // The message's first line, cut to leave the base and date after it (the ID after ### is unchanged);
         // in a panel too narrow for both the message keeps a minimum and the trailing text is clipped.
         const std::string prefix = "stash@{" + std::to_string(s.index) + "} ";
-        const std::string trailing = s.base.shortHex(7) + "  " + core::formatTime(s.time);
+        const std::string trailing = s.base.shortHex(kShortIdLength) + "  " + core::formatTime(s.time);
         const float room = std::max(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(prefix.c_str()).x
                 - ImGui::CalcTextSize(trailing.c_str()).x - ImGui::GetStyle().ItemSpacing.x,
             ImGui::GetFontSize() * 8);
@@ -768,7 +775,7 @@ void StashesPanel::draw(bool* open)
         if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            idTooltip(s.commit.hex(), m_session.shortId(s.commit).size(),
+            idTooltip(s.commit.hex(),
                 "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
                     + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
         // The menu belongs to the row (the last item before it must be the Selectable).
@@ -789,7 +796,9 @@ void StashesPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("%s", trailing.c_str());
+        shortIdText(s.base.hex());
+        ImGui::SameLine(0, 0);
+        ImGui::TextDisabled("  %s", core::formatTime(s.time).c_str());
         ImGui::PopID();
     }
     if (m_snapshot->stashes.empty())
@@ -865,12 +874,22 @@ void ReflogPanel::draw(bool* open)
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(("r" + std::to_string(i)).c_str());
-                const std::string label = (e.oldId.isNull() ? std::string("0000000") : e.oldId.shortHex()) + " " ICON_MS_ARROW_RIGHT_ALT " "
-                    + e.newId.shortHex() + "###reflog_" + std::to_string(i);
-                selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+                const std::string oldText = e.oldId.isNull() ? std::string(kShortIdLength, '0') : e.oldId.shortHex(kShortIdLength);
+                const std::string arrow = " " ICON_MS_ARROW_RIGHT_ALT " ";
+                const std::string label = oldText + arrow + e.newId.shortHex(kShortIdLength) + "###reflog_" + std::to_string(i);
+                const size_t newAt = oldText.size() + arrow.size();
+                selectableDimRanges(label.c_str(),
+                    {{kIdPrefixLength, kShortIdLength}, {newAt + kIdPrefixLength, newAt + kShortIdLength}}, false,
+                    ImGuiSelectableFlags_SpanAllColumns);
                 if (beginContextMenu("##reflog_menu")) {
-                    copyIdMenuItem("Copy new ", m_session.shortId(e.newId), e.newId.hex());
-                    copyIdMenuItem("Copy old ", m_session.shortId(e.oldId), e.oldId.hex(), !e.oldId.isNull());
+                    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy new ID")) {
+                        copyIdMenuItems("", e.newId.hex());
+                        ImGui::EndMenu();
+                    }
+                    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy old ID", !e.oldId.isNull())) {
+                        copyIdMenuItems("", e.oldId.hex());
+                        ImGui::EndMenu();
+                    }
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
                         m_session.revealCommit(e.newId);
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal old commit", nullptr, false, !e.oldId.isNull()))

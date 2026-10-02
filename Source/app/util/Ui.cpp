@@ -137,30 +137,56 @@ void drawBadge(const char* label, ImU32 color, bool outlined)
 
 namespace {
 
-void textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id)
+// Where a press landed on a clickable text item.
+enum class Hit { None, Lead, Rest };
+
+// Text with bytes from `dimFrom` on dimmed. With `clickable` the item takes clicks (hand cursor, no
+// highlight) and reports a press on the part before the split (Lead) or after it (Rest).
+Hit textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id, bool clickable = false)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems)
-        return;
+        return Hit::None;
     const ImVec2 size = ImGui::CalcTextSize(label, end);
     const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
     const ImRect bb(pos, ImVec2(pos.x + size.x, pos.y + size.y));
     ImGui::ItemSize(size, 0.0f);
     if (!ImGui::ItemAdd(bb, id))
-        return;
+        return Hit::None;
+    const char* split = label + std::min(dimFrom, static_cast<size_t>(end - label));
+    const float splitX = pos.x + ImGui::CalcTextSize(label, split).x;
+    Hit hit = Hit::None;
     if (id != 0) {
-        // Hover is tracked (tooltips, context menus, the test engine) but never drawn.
-        ImGui::ItemHoverable(bb, id, ImGuiItemFlags_None);
         [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext(); // used by the test-engine hook
+        if (clickable) {
+            bool hovered = false, held = false;
+            if (ImGui::ButtonBehavior(bb, id, &hovered, &held))
+                hit = hovered && ImGui::GetIO().MousePos.x < splitX ? Hit::Lead : Hit::Rest;
+            if (hovered)
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        } else {
+            // Hover is tracked (tooltips, context menus, the test engine) but never drawn.
+            ImGui::ItemHoverable(bb, id, ImGuiItemFlags_None);
+        }
         IMGUI_TEST_ENGINE_ITEM_INFO(id, label, ImGuiItemStatusFlags_None);
     }
     ImDrawList* dl = window->DrawList;
-    const char* split = label + std::min(dimFrom, static_cast<size_t>(end - label));
     dl->AddText(pos, ImGui::GetColorU32(ImGuiCol_Text), label, split);
-    if (split < end) {
-        const float x = ImGui::CalcTextSize(label, split).x;
-        dl->AddText(ImVec2(pos.x + x, pos.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), split, end);
-    }
+    if (split < end)
+        dl->AddText(ImVec2(splitX, pos.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), split, end);
+    return hit;
+}
+
+// The first `shownLen` characters of `hex`, split after `lead`. A click on the lead part copies its
+// first `lead` characters, a click on the rest copies all of `hex`.
+void idItem(const std::string& hex, size_t shownLen, size_t lead, const char* id, bool clickable)
+{
+    const std::string shown = hex.substr(0, shownLen);
+    const std::string label = id ? shown + "###" + id : shown;
+    const Hit hit = textItem(label.c_str(), label.c_str() + shown.size(), lead, id ? ImGui::GetID(label.c_str()) : 0,
+        clickable && id);
+    if (hit != Hit::None)
+        ImGui::SetClipboardText((hit == Hit::Lead ? hex.substr(0, lead) : hex).c_str());
 }
 
 } // namespace
@@ -171,10 +197,14 @@ void plainText(const char* label)
     textItem(label, end, std::string::npos, *end ? ImGui::GetID(label) : 0);
 }
 
-void idText(const std::string& hex, size_t shortLen, const char* id)
+void shortIdText(const std::string& hex, const char* id, bool clickable)
 {
-    const std::string label = id ? hex + "###" + id : hex;
-    textItem(label.c_str(), label.c_str() + hex.size(), shortLen, id ? ImGui::GetID(label.c_str()) : 0);
+    idItem(hex, kShortIdLength, kIdPrefixLength, id, clickable);
+}
+
+void fullIdText(const std::string& hex, const char* id, bool clickable)
+{
+    idItem(hex, std::string::npos, kShortIdLength, id, clickable);
 }
 
 // Tooltip text wraps at this many font sizes and is cut after this many wrapped lines.
@@ -235,32 +265,39 @@ void tooltip(const char* fmt, ...)
     ImGui::EndTooltip();
 }
 
-void idTooltip(const std::string& hex, size_t shortLen, const std::string& rest)
+void idTooltip(const std::string& hex, const std::string& rest)
 {
     if (!ImGui::BeginTooltip())
         return;
-    idText(hex, shortLen);
+    fullIdText(hex);
     if (!rest.empty())
         tooltipText(rest);
     ImGui::EndTooltip();
 }
 
-void copyId(const std::string& shortId, const std::string& fullId)
+bool copyIdMenuItems(const char* prefix, const std::string& hex, bool enabled)
 {
-    ImGui::SetClipboardText((ImGui::GetIO().KeyShift ? fullId : shortId).c_str());
-}
-
-bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::string& fullId, bool enabled)
-{
-    // The label follows Shift ("Short ID" / "Full ID"); the ID after ### stays the same.
-    const bool full = ImGui::GetIO().KeyShift;
-    std::string label = std::string(prefix) + (full ? "full ID" : "short ID");
-    label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
-    label += std::string("###") + prefix + "ID";
-    if (!menuItem(ICON_MS_CONTENT_COPY, label.c_str(), nullptr, false, enabled))
-        return false;
-    copyId(shortId, fullId);
-    return true;
+    struct Part {
+        std::string text;
+        std::string copied;
+        const char* key;
+    };
+    const std::string name = prefix;
+    std::string full = name + "full ID";
+    if (name.empty())
+        full[0] = 'F';
+    const Part parts[] = {
+        {name + hex.substr(0, kIdPrefixLength), hex.substr(0, kIdPrefixLength), "ID3"},
+        {name + hex.substr(0, kShortIdLength), hex.substr(0, kShortIdLength), "ID7"},
+        {full, hex, "IDfull"},
+    };
+    bool clicked = false;
+    for (const Part& part : parts)
+        if (menuItem(ICON_MS_CONTENT_COPY, (part.text + "###" + name + part.key).c_str(), nullptr, false, enabled)) {
+            ImGui::SetClipboardText(part.copied.c_str());
+            clicked = true;
+        }
+    return clicked;
 }
 
 void spinner(const char* id, float radius)

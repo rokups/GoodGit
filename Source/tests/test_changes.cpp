@@ -138,11 +138,11 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     s.contextMenu("//Changes/##compare_with", "Clear");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
     s.git(repo, {"checkout", "--", "f2.txt"});
-    GG_CHECK(s.itemText("//Changes/###changes_title").rfind(s.gitOut(repo, {"rev-parse", "--short", "HEAD~3"}) + " ", 0) == 0);
+    GG_CHECK(s.itemText("//Changes/###changes_title").rfind(s.revParse(repo, "HEAD~3").substr(0, 7) + " ", 0) == 0);
     // The working tree: the zero ID before "Working tree"; Compare with HEAD disabled, in both panels.
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::WorkingTree; }));
-    const std::string zeros(s.gitOut(repo, {"rev-parse", "--short", "HEAD"}).size(), '0');
+    const std::string zeros(7, '0');
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), zeros + " Working tree");
     GG_CHECK(ctx->ItemInfo("//Changes/##compare_with").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);
@@ -448,16 +448,17 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     ctx->ItemClick("//Change information/**/###author");
     ctx->Yield(2);
     GG_CHECK(ImGui::GetActiveID() == 0 && !s.itemDrawsBackground("//Change information/**/###author"));
-    // The full ID shows the short prefix normally and the rest dimmed; copy is short, Shift full.
-    const std::string shortHead = s.gitOut(repo, {"rev-parse", "--short", "HEAD"});
+    // The full ID shows its first 7 characters normally and the rest dimmed. The button copies the short
+    // ID; a click on the text copies the highlighted 7 characters, or the full ID from the dimmed part.
+    const std::string head = s.head(repo);
     ctx->ScrollToItemY("//Change information/**/###commit_id_text");
-    GG_CHECK(s.idShownDimmed("//Change information", s.head(repo), shortHead.size()));
+    GG_CHECK(s.idShownDimmed("//Change information", head, 7));
     ctx->ItemClick("//Change information/**/###commit_id");
-    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
-    ctx->KeyDown(ImGuiMod_Shift);
-    ctx->ItemClick("//Change information/**/###commit_id");
-    ctx->KeyUp(ImGuiMod_Shift);
-    GG_CHECK_STR_EQ(s.clipboard(), s.head(repo));
+    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 7));
+    s.clickIdText("//Change information/**/###commit_id_text", 7, false);
+    GG_CHECK_STR_EQ(s.clipboard(), head);
+    s.clickIdText("//Change information/**/###commit_id_text", 7, true);
+    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 7));
     GG_CHECK(info.details()->authorTime > 0);
     // Parents: the merge has two; clicking one reveals it.
     selectCommit(s, s.revParse(repo, "HEAD~1"));

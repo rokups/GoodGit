@@ -104,7 +104,7 @@ void BlamePanel::drawLineMenu(int index)
     ImGui::Separator();
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
-    copyIdMenuItem("Copy commit ", m_session.shortId(line.commit), line.commit.hex(), committed);
+    copyIdMenuItems("Copy commit ", line.commit.hex(), committed);
     ImGui::Separator();
     if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
         blockText(index, &m_selFirst, &m_selLast);
@@ -141,7 +141,12 @@ void BlamePanel::draw(bool* open)
         const auto& q = m_history[static_cast<size_t>(m_pos)];
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::Text("%s at %s", q.path.c_str(), q.commit.isNull() ? "working tree" : q.commit.shortHex(10).c_str());
+        ImGui::Text("%s at ", q.path.c_str());
+        ImGui::SameLine(0, 0);
+        if (q.commit.isNull())
+            ImGui::TextUnformatted("working tree");
+        else
+            shortIdText(q.commit.hex());
     }
     if (m_loading) {
         ImGui::SameLine();
@@ -197,12 +202,16 @@ void BlamePanel::draw(bool* open)
                 ImGui::PushID(("l" + std::to_string(l.lineNo)).c_str());
                 const bool selected = i >= m_selFirst && i <= m_selLast && m_selFirst >= 0;
                 const bool newBlock = i == 0 || m_blame->lines[static_cast<size_t>(i - 1)].commit != l.commit;
-                const std::string commitText = l.commit.isNull() ? std::string("Not committed") : l.commit.shortHex(8);
+                const std::string commitText = l.commit.isNull() ? std::string("Not committed") : l.commit.shortHex(kShortIdLength);
                 const std::string label = (newBlock ? commitText : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
                 if (l.commit.isNull())
                     ImGui::PushStyleColor(ImGuiCol_Text, p.unstaged);
                 // SelectOnNav: the nav cursor (arrows) and the selection are one thing.
-                if (selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_SelectOnNav)) {
+                // A commit ID in the label is drawn split into its highlighted prefix and the dimmed rest.
+                const size_t dimFrom = newBlock && !l.commit.isNull() ? kIdPrefixLength : 0;
+                const size_t dimTo = newBlock && !l.commit.isNull() ? kShortIdLength : 0;
+                if (selectableDimRange(label.c_str(), dimFrom, dimTo, selected,
+                        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_SelectOnNav)) {
                     const bool shift = (pressMods() & ImGuiMod_Shift) != 0;
                     if (pressSource() == PressSource::NavActivate && !shift) {
                         // Space / Enter on the cursor row keeps the selection (the range stays).
@@ -228,7 +237,7 @@ void BlamePanel::draw(bool* open)
                     if (l.commit.isNull())
                         tooltip("Not committed yet");
                     else
-                        idTooltip(l.commit.hex(), m_session.shortId(l.commit).size(),
+                        idTooltip(l.commit.hex(),
                             l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"
                                 + std::to_string(l.origLine));
                 }

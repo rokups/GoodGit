@@ -95,7 +95,7 @@ GG_TEST("blame", "blame at a commit and on the working tree")
     GG_CHECK_STR_EQ(line(s, 3)->author, "Other Author");
     GG_CHECK_STR_EQ(line(s, 3)->summary, "Edit line 3");
     GG_CHECK_STR_EQ(line(s, 1)->commit.hex(), r.c1);
-    GG_CHECK(s.textShown("//Blame", "story.txt at " + r.c2.substr(0, 10)));
+    GG_CHECK(s.textShown("//Blame", "story.txt at " + r.c2.substr(0, 7)));
 }
 
 GG_TEST("blame", "filter, history, tooltips")
@@ -116,7 +116,7 @@ GG_TEST("blame", "filter, history, tooltips")
     ctx->SleepNoSkip(1.0f, 0.1f);
     ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_CHECK(tip != nullptr && tip->Active);
-    GG_CHECK(s.idShownDimmed("//##Tooltip_00", r.c2, s.gitOut(r.path, {"rev-parse", "--short", r.c2}).size()));
+    GG_CHECK(s.idShownDimmed("//##Tooltip_00", r.c2, 7));
     // Blame before this change → a second entry; back/forward buttons and mouse buttons.
     // Line 3 was last changed in c2 (as story.txt): before that is c1's story.txt.
     s.contextMenu(lineRef(s, 3).c_str(), "Blame before this change");
@@ -153,8 +153,14 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK(s.waitUntil([&] { return blameShows(s, "story.txt", r.c2); }));
     GG_CHECK_STR_EQ(line(s, 5)->text, "L5");
     // Reveal and copy the commit of line 3.
-    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID");
-    GG_CHECK_STR_EQ(s.clipboard(), s.gitOut(r.path, {"rev-parse", "--short", r.c2}));
+    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID3");
+    GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 3));
+    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID7");
+    GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 7));
+    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit IDfull");
+    GG_CHECK_STR_EQ(s.clipboard(), r.c2);
+    // The commit column shows the 7-character ID, 3 highlighted and 4 dimmed (c1 is not the header's commit).
+    GG_CHECK(s.idShownDimmed("//Blame", r.c1.substr(0, 7), 3));
     s.contextMenu(lineRef(s, 3).c_str(), "Reveal commit");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == r.c2; }));
     // Blocks: lines 1–2 come from c1.

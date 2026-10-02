@@ -8,6 +8,7 @@
 #include "panels/RebasePanel.hpp"
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
+#include "util/Ui.hpp"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -299,15 +300,12 @@ void Session::requestConfig()
 
 std::string Session::shortId(const core::Oid& id) const
 {
-    if (const core::HistoryRow* row = m_history->row(id))
-        return row->shortId;
-    return id.shortHex(shortIdLength()); // not loaded
+    return id.shortHex(shortIdLength());
 }
 
 size_t Session::shortIdLength() const
 {
-    const auto& rows = m_history->rows();
-    return rows.empty() ? 7 : rows.front().shortId.size();
+    return kShortIdLength;
 }
 
 bool Session::pullAvailable(std::string* reason) const

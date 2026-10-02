@@ -170,13 +170,7 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         row.authorEmail = author->email;
         row.time = author->when.time;
         row.published = published;
-        {
-            Buf shortId;
-            if (git_object_short_id(&shortId.buf, reinterpret_cast<git_object*>(commit.get())) == 0)
-                row.shortId = shortId.str();
-            else
-                row.shortId = id.shortHex();
-        }
+        row.shortId = id.shortHex(kShortIdLength);
         if (auto it = st.badges.find(id); it != st.badges.end())
             row.refs = it->second;
         if (parents.size() > 1) {

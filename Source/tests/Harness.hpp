@@ -250,6 +250,8 @@ public:
     // Whether a filled shape (hover/selection highlight, button frame) is drawn behind an item.
     bool itemDrawsBackground(const char* ref);
     bool idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen);
+    // Left-clicks the ID text item `ref`: inside its first `leadChars` characters, or inside the rest of it.
+    void clickIdText(const char* ref, size_t leadChars, bool lead);
     // Waits for an error popup and closes it with OK; false if none appeared.
     bool dismissError(float seconds = 20.0f);
     // Brings a docked panel's tab to the front (e.g. "Tags" behind "Branches").

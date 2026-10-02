@@ -69,7 +69,7 @@ Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_pus
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
 recent repositories; Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
 current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
-(plain text, short ID; tooltip with the full ID; right-click: Copy ID) ·
+(short ID, clickable text; tooltip with the full ID; right-click: the three Copy ID items) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,
 BISECTING) with Continue / Skip / Abort (and *Commit with conflicts* for text-only conflicts) ·
 while a `git rebase -i` is stopped (from ggui or plain git, detected from `.git/rebase-merge/`):
@@ -91,9 +91,16 @@ Mutation buttons are disabled (with a tooltip "Not available yet" until their ph
 "Busy: <operation>" while a conflicting mutation runs).
 
 General rules: items whose click does nothing are plain text (no hover or
-click highlight; a context menu may still attach). Full commit IDs show the short prefix in the
-text colour and the rest dimmed. Every "Copy ID" copies the short ID, or the full ID while Shift
-is held: the menu item reads "… short ID", and "… full ID" while Shift is held (no shortcut hint).
+click highlight; a context menu may still attach). Commit IDs follow one rule wherever one is drawn on its own: in rows, in tooltips and as standalone
+text; IDs inside sentences, window titles and dialog previews are plain 7-character text. A short ID
+is always the first 7 characters and shows the first 3 in the text colour and the other 4 dimmed; a
+full ID shows its first 7 characters in the text colour and the rest dimmed. Every "Copy ID" offers
+three menu items that state the ID itself: `<prefix>a1b` (3 characters), `<prefix>a1b2c3d` (7
+characters) and `<prefix>full ID`; there is no Shift variant. ID text on its own (the toolbar HEAD
+and the Change information commit ID) is the exception to "plain text does nothing on click":
+clicking its highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and
+clicking the dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID
+copies the full ID. IDs inside rows and tooltips are not clickable.
 Every item with a right-click context menu also opens it on `Alt+Space` while it has keyboard
 focus (the menu opens below the item's bottom-left corner; Space does not also activate it, and
 the Alt press does not switch to the menu bar; ignored while text is being typed).
@@ -233,7 +240,8 @@ when HEAD does not; a commit on neither is refused. The *Squash* and *Rebase ont
 moved after the target as squash or fixup; the new base as *Onto*).
 *Merge into HEAD…* and *Rebase HEAD onto this* in the shared commit actions act on the selected commit
 (disabled on HEAD itself; Rebase needs an attached HEAD); a commit is merged with Git's default message
-"Merge commit '<short ID>'". Branches offers the same two for a branch (§8).
+"Merge commit '<full ID>'" (the dialogs' revision fields are prefilled with the full ID, which Git
+runs as typed). Branches offers the same two for a branch (§8).
 
 ## 4.x Interactive rebase todo editor — window `"Interactive rebase"` (N, Phase 3)
 Dockable; opens as a tab next to History while a todo is open and closes on Start (after success)
@@ -385,7 +393,8 @@ the panel without touching the repository.
   height is shared by the fields and persistent (`[GGUIView][Info] MessageLines`).
 - Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
   differs (N); Date; published/lock state ("Published" / "Not published").
-- Commit ID (full, dimmed after the short prefix) with Copy `##commit_id`; Parents list
+- Commit ID `###commit_id_text` (full, dimmed after the first 7 characters; clickable text, see the
+  general rules) with Copy `###commit_id` (copies the short ID); Parents list
   `parent_<n>` (click reveals).
 - N: conflicted files list with side counts.
 - D: aliases list.

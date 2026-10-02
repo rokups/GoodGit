@@ -179,7 +179,7 @@ void HistoryPanel::onReveal(const core::RevealEvent& event)
         m_session.selectCommit(event.id);
         m_scrollToSelection = true;
     } else {
-        m_session.app().notify(App::Notice::Warning, "Reveal", "Commit " + event.id.shortHex(10) + " is not in the current history scope");
+        m_session.app().notify(App::Notice::Warning, "Reveal", "Commit " + event.id.shortHex(kShortIdLength) + " is not in the current history scope");
     }
     m_pendingReveal.reset();
 }
@@ -576,7 +576,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         disabledHint(movable.empty(), "No other branch to move here.");
     ImGui::Separator();
     if (beginMenu(ICON_MS_CONTENT_COPY, "Copy", single)) {
-        copyIdMenuItem("", row.shortId, hex);
+        copyIdMenuItems("", hex);
         if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
             std::string text = hex + " " + row.subject + "\nAuthor: " + row.author + " <" + row.authorEmail
                 + ">\nDate: " + core::formatTime(row.time, true);
@@ -701,7 +701,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         }
     }
     if (!m_scrolling && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        idTooltip(row.id.hex(), row.shortId.size(),
+        idTooltip(row.id.hex(),
             row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true));
     dragAndDrop(row);
     drawRowMenu(row);
@@ -712,9 +712,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         ImGui::TableSetColumnIndex(1);
     else
         ImGui::SetCursorScreenPos(cellStart); // the row's Selectable shares the first column
-    ImGui::PushStyleColor(ImGuiCol_Text, p.dim);
-    ImGui::TextUnformatted(row.shortId.c_str());
-    ImGui::PopStyleColor();
+    shortIdText(row.id.hex());
     const bool showStashes = m_session.app().settings().data().historyShowStashes;
     for (const auto& ref : row.refs) {
         if (ref.kind == core::RefKind::Stash && !showStashes)

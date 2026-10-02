@@ -119,9 +119,8 @@ GG_TEST("edit", "Rebase dialog prefills their commit field from the other select
     ctx->KeyDown(ImGuiMod_Ctrl);
     ctx->ItemClick(rowRef(r.c1).c_str());
     ctx->KeyUp(ImGuiMod_Ctrl);
-    const std::string c1Short = s.session()->shortId(ggui::core::Oid::fromHex(r.c1));
     open(r.c3, "Rebase onto...", "Rebase onto");
-    GG_CHECK_STR_EQ(field("destination"), c1Short);
+    GG_CHECK_STR_EQ(field("destination"), r.c1);
     s.dialogButton("Rebase onto", "Cancel");
 }
 
@@ -144,7 +143,7 @@ GG_TEST("edit", "Restore from... lives in Changes: prefill, restoring one select
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
     s.contextMenu((files + "/a.txt/###file_a.txt").c_str(), "Restore from...");
     GG_REQUIRE(s.dialogOpen("Restore"));
-    GG_CHECK_STR_EQ(field("from"), s.session()->shortId(ggui::core::Oid::fromHex(r.c2)));
+    GG_CHECK_STR_EQ(field("from"), r.c2);
     s.dialogButton("Restore", "Cancel");
     // Working tree: HEAD is the prefill; only the selected file is restored (from c1).
     s.write(r.path, "a.txt", "edited a\n");
@@ -575,7 +574,7 @@ GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD
         // The commit to merge is an input prefilled with it, previewing its subject; HEAD is named too.
         const ggui::Form* f = s.session()->app().dialogs().current();
         GG_REQUIRE(f && f->field("rev"));
-        GG_CHECK_STR_EQ(f->text("rev"), shortS1);
+        GG_CHECK_STR_EQ(f->text("rev"), r.s1);
         GG_CHECK(s.waitUntil([&] { return f->field("rev")->preview.line() == shortS1 + " s1 add s"; }, 3.0f));
         GG_CHECK(f->fields.front().text.find("Into HEAD: ") == 0);
     }
@@ -583,7 +582,7 @@ GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^1"), r.c4);
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), r.s1);
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Merge commit '" + shortS1 + "'");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Merge commit '" + r.s1 + "'");
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
     GG_CHECK(!fs::exists(r.path / "t.txt") && fs::exists(r.path / "s.txt"));
     GG_CHECK(s.statusPorcelain(r.path).empty());

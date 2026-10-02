@@ -54,11 +54,11 @@ Other otherCommit(Session& s, const core::HistoryRow& row)
         picked.push_back(e);
     for (const auto& id : picked)
         if (id != row.id && !id.isNull())
-            return {id, s.shortId(id)};
+            return {id, id.hex()};
     const auto snap = s.snapshot();
     if (snap->headUnborn || snap->head.isNull() || snap->head == row.id)
         return {};
-    return {snap->head, snap->headDetached || snap->headBranch.empty() ? s.shortId(snap->head) : snap->headBranch};
+    return {snap->head, snap->headDetached || snap->headBranch.empty() ? snap->head.hex() : snap->headBranch};
 }
 
 // What Squash acts on: the commits to fold into one, newest first. One selected commit with a
@@ -166,7 +166,7 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     const bool headCommit = !snap->headUnborn;
     if (one(ICON_MS_MERGE, "Merge into HEAD...", nullptr, headCommit && !isHead,
             headCommit ? "This commit is HEAD." : "HEAD has no commit yet."))
-        showMergeDialog(session, session.shortId(row.id), true);
+        showMergeDialog(session, row.id.hex(), true);
     // Revert / cherry-pick onto HEAD (plan §4.3). A merge commit's change is taken against its
     // first parent (-m 1). Picking an ancestor of HEAD other than HEAD is refused on the worker.
     {

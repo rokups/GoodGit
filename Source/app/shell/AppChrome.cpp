@@ -620,16 +620,19 @@ void App::drawToolbar()
         plainText((branch + "###tb_branch").c_str());
         ImGui::SameLine();
         const std::string headText = snap.head.isNull() ? std::string("(no commit)") : m_session->shortId(snap.head);
-        plainText((headText + "###tb_head").c_str());
+        if (snap.head.isNull())
+            plainText((headText + "###tb_head").c_str());
+        else
+            shortIdText(snap.head.hex(), "tb_head", true);
         if (!snap.head.isNull()) {
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && ImGui::BeginTooltip()) {
                 ImGui::TextUnformatted("HEAD");
                 ImGui::SameLine();
-                idText(snap.head.hex(), headText.size());
+                fullIdText(snap.head.hex());
                 ImGui::EndTooltip();
             }
             if (beginContextMenu("##tb_head_menu")) {
-                copyIdMenuItem("Copy ", headText, snap.head.hex());
+                copyIdMenuItems("Copy ", snap.head.hex());
                 ImGui::EndPopup();
             }
         }

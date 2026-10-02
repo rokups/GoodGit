@@ -536,6 +536,16 @@ bool Scenario::idShownDimmed(const char* windowRef, const std::string& hex, size
     return false;
 }
 
+void Scenario::clickIdText(const char* ref, size_t leadChars, bool lead)
+{
+    const ImGuiTestItemInfo info = ctx->ItemInfo(ref);
+    const std::string text = itemText(ref);
+    const float leadWidth = ImGui::CalcTextSize(text.c_str(), text.c_str() + std::min(leadChars, text.size())).x;
+    const float x = info.RectFull.Min.x + (lead ? leadWidth * 0.5f : (leadWidth + info.RectFull.GetWidth()) * 0.5f);
+    ctx->MouseMoveToPos(ImVec2(x, info.RectFull.GetCenter().y));
+    ctx->MouseClick(ImGuiMouseButton_Left);
+}
+
 std::vector<std::string> Scenario::drawnText(const char* windowRef)
 {
     const auto glyphs = windowGlyphs(ctx, windowRef);

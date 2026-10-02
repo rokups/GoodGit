@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <span>
 #include <string>
 
 namespace ggui {
@@ -182,23 +183,34 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
 
 namespace {
 
-// Draws the visible part of `label` at `pos`: bytes [dimBegin, dimEnd) dimmed, the rest in Text.
-void drawDimRangeText(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd)
+// Draws the visible part of `label` at `pos`: the byte ranges (ascending, disjoint) dimmed, the rest in Text.
+void drawDimRangesText(ImVec2 pos, const char* label, std::span<const std::pair<size_t, size_t>> ranges)
 {
     const char* end = ImGui::FindRenderedTextEnd(label);
     const size_t total = static_cast<size_t>(end - label);
-    dimEnd = std::min(dimEnd, total);
-    dimBegin = std::min(dimBegin, dimEnd);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
     const ImU32 dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-    const char* parts[4] = {label, label + dimBegin, label + dimEnd, end};
-    for (int i = 0; i < 3; ++i) {
-        if (parts[i] == parts[i + 1])
-            continue;
-        dl->AddText(pos, i == 1 ? dim : text, parts[i], parts[i + 1]);
-        pos.x += ImGui::CalcTextSize(parts[i], parts[i + 1]).x;
+    size_t at = 0;
+    auto draw = [&](size_t to, ImU32 color) {
+        to = std::min(to, total);
+        if (to <= at)
+            return;
+        dl->AddText(pos, color, label + at, label + to);
+        pos.x += ImGui::CalcTextSize(label + at, label + to).x;
+        at = to;
+    };
+    for (const auto& [begin, finish] : ranges) {
+        draw(begin, text);
+        draw(finish, dim);
     }
+    draw(total, text);
+}
+
+void drawDimRangeText(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd)
+{
+    const std::pair<size_t, size_t> range(dimBegin, dimEnd);
+    drawDimRangesText(pos, label, std::span(&range, 1));
 }
 
 void drawDimPrefixText(ImVec2 pos, const char* label, size_t dimLen)
@@ -214,6 +226,11 @@ struct HiddenText {
 };
 
 } // namespace
+
+void drawDimRange(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd)
+{
+    drawDimRangeText(pos, label, dimBegin, dimEnd);
+}
 
 bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const char* shortcut)
 {
@@ -254,7 +271,8 @@ bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiS
     return pressed;
 }
 
-bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+bool selectableDimRanges(const char* label, std::initializer_list<std::pair<size_t, size_t>> ranges, bool selected,
+    ImGuiSelectableFlags flags, ImVec2 size)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     // Where Selectable() puts its text: the cursor (plus the baseline once), not the item rect, which reaches
@@ -266,8 +284,13 @@ bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool 
         pressed = selectable(label, selected, flags, size);
     }
     if (ImGui::IsItemVisible())
-        drawDimRangeText(pos, label, dimBegin, dimEnd);
+        drawDimRangesText(pos, label, std::span(ranges.begin(), ranges.size()));
     return pressed;
+}
+
+bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+{
+    return selectableDimRanges(label, {{dimBegin, dimEnd}}, selected, flags, size);
 }
 
 bool acceptCommitDrop(std::string& text)

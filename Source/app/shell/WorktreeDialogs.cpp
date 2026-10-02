@@ -3,6 +3,7 @@
 #include "shell/Dialogs.hpp"
 #include "shell/RevResolve.hpp"
 #include "shell/Session.hpp"
+#include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
 
@@ -18,7 +19,7 @@ std::string describeHead(const core::WorktreeInfo& w)
 {
     if (!w.branch.empty())
         return "branch " + w.branch;
-    return w.head.isNull() ? std::string("no commit") : "detached at " + w.head.shortHex(10);
+    return w.head.isNull() ? std::string("no commit") : "detached at " + w.head.shortHex(kShortIdLength);
 }
 
 // A free directory next to the main worktree: <main>-<suffix>, <main>-<suffix>-2, …

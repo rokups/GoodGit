@@ -679,7 +679,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             std::string prefill = "HEAD";
             if (m_selection.kind == SelKind::Commit) {
                 const core::HistoryRow* hr = m_session.history().row(m_selection.id);
-                prefill = hr && !hr->parents.empty() ? m_session.shortId(hr->parents.front()) : std::string();
+                prefill = hr && !hr->parents.empty() ? hr->parents.front().hex() : std::string();
                 if (m_compare.kind == CompareTarget::Rev)
                     prefill = m_compare.rev;
             }

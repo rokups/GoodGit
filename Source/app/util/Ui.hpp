@@ -26,22 +26,29 @@ void drawBadge(const char* label, ImU32 color, bool outlined = false);
 // Plain text registered as an item (tests find it; tooltips and context menus attach to it) with
 // no hover or click highlight: for text whose click does nothing. label may contain ##id.
 void plainText(const char* label);
-// A full commit ID: the first `shortLen` characters in the text colour, the rest dimmed.
-// Registered like plainText under `id` when given.
-void idText(const std::string& hex, size_t shortLen, const char* id = nullptr);
-// A tooltip that starts with a full commit ID (drawn as idText) followed by more lines.
-void idTooltip(const std::string& hex, size_t shortLen, const std::string& rest);
+// Commit ID rules: a short ID is always kShortIdLength characters; wherever an ID is drawn, its first
+// kIdPrefixLength characters (a short ID) or kShortIdLength characters (a full ID) are in the text
+// colour and the rest is dimmed.
+using core::kIdPrefixLength;
+using core::kShortIdLength;
+// A short commit ID: the first kShortIdLength characters of `hex`, split after kIdPrefixLength. Registered
+// like plainText under `id` when given. With `clickable` (needs an id) a click on the highlighted
+// prefix copies the prefix and a click on the dimmed rest copies the full `hex`; the hand cursor shows on hover.
+void shortIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
+// A full commit ID: split after kShortIdLength. Clickable like shortIdText (the prefix copies the short ID).
+void fullIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
+// A tooltip that starts with a full commit ID (drawn as fullIdText) followed by more lines.
+void idTooltip(const std::string& hex, const std::string& rest);
 // Text inside an open tooltip: word-wrapped at 40 font sizes and cut with "…" after 10 lines
 // ('\n' in the text ends a line too). Every tooltip with text goes through this.
 void tooltipText(std::string_view text);
 // A tooltip (like SetTooltip) with the text wrapped and cut by tooltipText; the text may be any length.
 void tooltip(const char* fmt, ...) IM_FMTARGS(1);
-// "Copy ID" copies the short ID, or the full ID while Shift is held.
-void copyId(const std::string& shortId, const std::string& fullId);
-// A "Copy ID"-style menu item: "<prefix>short ID", or "<prefix>full ID" while Shift is held (the
-// first letter capitalised), with the stable ID "###<prefix>ID". Returns true when clicked (after
-// copying).
-bool copyIdMenuItem(const char* prefix, const std::string& shortId, const std::string& fullId, bool enabled = true);
+// Three "copy ID" menu items that state the ID itself: "<prefix><first 3>", "<prefix><first 7>" and
+// "<prefix>full ID" (the first letter capitalised when the prefix is empty), with the stable IDs
+// "###<prefix>ID3", "###<prefix>ID7" and "###<prefix>IDfull". Returns true when one was clicked (after
+// copying that part of `hex`).
+bool copyIdMenuItems(const char* prefix, const std::string& hex, bool enabled = true);
 // Alt+Space on the keyboard-focused item (the keyboard equivalent of the right click that opens its
 // context menu). Call right after the item. The chord is a routed shortcut owned by the item, so
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing

@@ -257,6 +257,7 @@ GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (
     GG_CHECK(s.itemExists(irAction(r.c[4]).c_str()));
     GG_CHECK(s.itemExists("//Interactive rebase/**/###ir_badge_part1"));
     GG_CHECK(s.textShown("//Interactive rebase", "c4 add d"));
+    GG_CHECK(s.idShownDimmed("//Interactive rebase", r.c[4].substr(0, 7), 3));
     GG_CHECK(s.textShown("//Interactive rebase", s.gitOut(r.path, {"log", "-1", "--format=%an", r.c[4]})));
     GG_CHECK(s.textShown("//Interactive rebase", s.gitOut(r.path, {"log", "-1", "--format=%ad", "--date=format:%Y-%m-%d", r.c[4]})));
     GG_CHECK(s.textShown("//Interactive rebase", "Rebase 3 commit(s) of main onto " + s.session()->shortId(ggui::core::Oid::fromHex(r.c[2]))));

@@ -16,13 +16,17 @@ namespace ggui::core {
 
 // ---- Object IDs --------------------------------------------------------------------------------
 
+// A short ID is always this many hex characters; the first kIdPrefixLength of them are the highlighted prefix.
+inline constexpr size_t kShortIdLength = 7;
+inline constexpr size_t kIdPrefixLength = 3;
+
 struct Oid {
     std::array<std::uint8_t, 32> bytes{};
     std::uint8_t size = 0; // 20 (SHA-1), 32 (SHA-256), 0 = null
 
     bool isNull() const;
     std::string hex() const;
-    std::string shortHex(size_t n = 7) const { return hex().substr(0, n); }
+    std::string shortHex(size_t n = kShortIdLength) const { return hex().substr(0, n); }
     static Oid fromHex(std::string_view hex); // null Oid on error
     static Oid fromBytes(const unsigned char* raw, size_t size);
 

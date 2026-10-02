@@ -148,9 +148,9 @@ public:
     void requestRemoteTagsIfStale();
     void markRemoteTagsStale() { m_remoteTagsStale = true; }
 
-    // The short (unique) form of a commit ID, as History shows it.
+    // The short form of a commit ID (its first kShortIdLength characters), as History shows it.
     std::string shortId(const core::Oid& id) const;
-    // Length of History's abbreviations (git's grows with the repository).
+    // Length of the short IDs the UI shows (kShortIdLength).
     size_t shortIdLength() const;
     // Pull: available with an upstream on an attached HEAD; `reason` explains otherwise.
     bool pullAvailable(std::string* reason) const;

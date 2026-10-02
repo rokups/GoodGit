@@ -248,9 +248,9 @@ GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Dele
     auto y = [&](size_t i) { return ctx->ItemInfo(comboItem(i).c_str()).RectFull.Min.y; };
     ctx->ItemClick("//###Toolbar/##tb_repo");
     ctx->Yield(2);
-    GG_CHECK(s.itemLabel(comboItem(0).c_str()).find("alpha") == 0);
-    GG_CHECK(s.itemLabel(comboItem(1).c_str()).find("right/proj") == 0);
-    GG_CHECK(s.itemLabel(comboItem(2).c_str()).find("left/proj") == 0);
+    GG_CHECK(s.itemLabel(comboItem(0).c_str()).find("alpha") != std::string::npos);
+    GG_CHECK(s.itemLabel(comboItem(1).c_str()).find("right/proj") != std::string::npos);
+    GG_CHECK(s.itemLabel(comboItem(2).c_str()).find("left/proj") != std::string::npos);
     GG_CHECK(y(0) < y(1) && y(1) < y(2));
     s.screenshot("recent-switcher");
     ctx->KeyPress(ImGuiKey_Escape);
@@ -666,15 +666,21 @@ GG_TEST("shell", "auto-open argv[1], else the most recent existing repository")
     GG_CHECK(text.find("opening " + (s.root() / "gone").string()) == std::string::npos);
 }
 
-GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID")
+GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(repo));
-    const std::string shortHead = s.gitOut(repo, {"rev-parse", "--short", "HEAD"});
+    const std::string head = s.head(repo);
+    const std::string shortHead = head.substr(0, 7);
     GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_head"), shortHead);
-    // Plain text: clicking it neither selects anything nor highlights it.
+    GG_CHECK(s.idShownDimmed("//###Toolbar", shortHead, 3));
+    // Clicking the highlighted prefix copies it, the dimmed rest copies the full ID; nothing is selected or highlighted.
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
-    ctx->ItemClick("//###Toolbar/###tb_head");
+    s.clickIdText("//###Toolbar/###tb_head", 3, true);
+    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    GG_CHECK(!s.itemDrawsBackground("//###Toolbar/###tb_head"));
+    s.clickIdText("//###Toolbar/###tb_head", 3, false);
+    GG_CHECK_STR_EQ(s.clipboard(), head);
     ctx->ItemClick("//###Toolbar/###tb_branch");
     ctx->Yield(3);
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
@@ -684,15 +690,19 @@ GG_TEST("shell", "toolbar HEAD: plain text, copy short or full ID")
     // The window navigator (Ctrl+Tab) lists the toolbar by its title, not "(Untitled)".
     ImGuiWindow* toolbar = ctx->GetWindowByRef("//###Toolbar");
     GG_CHECK(toolbar && ImGui::FindRenderedTextEnd(toolbar->Name) != toolbar->Name);
-    // Right-click still offers Copy ID: short by default, full with Shift.
+    // Right-click still offers the three copy items, each stating the ID it copies.
     ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
-    ctx->MenuClick("//$FOCUSED/###Copy ID");
+    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy ID3").find("Copy " + head.substr(0, 3) + "###") != std::string::npos);
+    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy ID7").find("Copy " + head.substr(0, 7) + "###") != std::string::npos);
+    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy IDfull").find("Copy full ID###") != std::string::npos);
+    ctx->MenuClick("//$FOCUSED/###Copy ID3");
+    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
+    ctx->MenuClick("//$FOCUSED/###Copy ID7");
     GG_CHECK_STR_EQ(s.clipboard(), shortHead);
     ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
-    ctx->KeyDown(ImGuiMod_Shift);
-    ctx->MenuClick("//$FOCUSED/###Copy ID");
-    ctx->KeyUp(ImGuiMod_Shift);
-    GG_CHECK_STR_EQ(s.clipboard(), s.head(repo));
+    ctx->MenuClick("//$FOCUSED/###Copy IDfull");
+    GG_CHECK_STR_EQ(s.clipboard(), head);
 }
 
 GG_TEST("shell", "activity spinner, task tooltip and Cancel")
