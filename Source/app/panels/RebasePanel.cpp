@@ -1256,6 +1256,7 @@ void RebasePanel::drawPreview()
                     : m_options.emptied == gg::rewrite::Emptied::Ask
                     ? "\nBecomes empty: its changes are already in the base. Start asks whether to keep it."
                     : "\nBecomes empty: its changes are already in the base.";
+            tip += "\n" + std::string(firstLine(row.subject)); // (the subject's own tooltip would compete with this one)
             ImGui::SetTooltip("%s", tip.c_str());
         }
         const bool head = c.tipIsHead
@@ -1286,7 +1287,7 @@ void RebasePanel::drawPreview()
         else if (row.unchanged)
             color = p.dim;
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        textElided(row.subject);
+        textElided(row.subject, nullptr, false);
         ImGui::PopStyleColor();
         ImGui::PopID();
     }
@@ -1419,7 +1420,9 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         ImGui::EndDragDropTarget();
     }
     if (hasInfo && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        idTooltip(item.commit, n, info->second.authorName + " <" + info->second.authorEmail + ">");
+        idTooltip(item.commit, n,
+            info->second.authorName + " <" + info->second.authorEmail + ">"
+                + (item.isCommit() ? "\n" + std::string(firstLine(info->second.subject)) : std::string()));
 
     // Action.
     ImGui::TableSetColumnIndex(0);
@@ -1471,7 +1474,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             }
     if (item.isCommit()) {
         ImGui::PushStyleColor(ImGuiCol_Text, item.action == Action::Drop ? p.dim : ImGui::GetColorU32(ImGuiCol_Text));
-        textElided(info->second.subject, ("###ir_subject_" + std::to_string(row)).c_str());
+        textElided(info->second.subject, ("###ir_subject_" + std::to_string(row)).c_str(), false);
         ImGui::PopStyleColor();
     } else if (item.action == Action::Label) {
         drawArgField(row, "ir_label_", "label name", ImGui::GetFontSize() * 10);

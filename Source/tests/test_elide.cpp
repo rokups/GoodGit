@@ -136,11 +136,17 @@ GG_TEST("elide", "History shows the first line cut at the Description column; th
     };
     GG_CHECK(!trailingShown());
     // Wide enough for both: the message is cut so that the base and the date follow it, drawn whole.
-    ctx->MouseMoveToPos(ImVec2(288, 300));
+    // (The sash is the dock splitter just past the panel's right edge.)
+    ImGuiWindow* stashes = ctx->GetWindowByRef("//Stashes");
+    GG_REQUIRE(stashes != nullptr);
+    const float widthBefore = stashes->Size.x;
+    const ImVec2 grip(stashes->Pos.x + stashes->Size.x + 2.0f, stashes->Pos.y + stashes->Size.y * 0.5f);
+    ctx->MouseMoveToPos(grip);
     ctx->MouseDown(0);
-    ctx->MouseMoveToPos(ImVec2(700, 300));
+    ctx->MouseMoveToPos(ImVec2(grip.x + ImGui::GetFontSize() * 30.0f, grip.y));
     ctx->MouseUp(0);
     ctx->Yield(5);
+    GG_REQUIRE(stashes->Size.x > widthBefore);
     GG_CHECK(trailingShown());
 }
 

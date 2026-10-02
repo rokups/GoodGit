@@ -430,6 +430,39 @@ GG_TEST("commit", "Amend HEAD button: red, asks first; other commits keep Save m
     GG_CHECK(s.app.dialogs().current() == nullptr || s.app.dialogs().current()->title != "Amend HEAD");
 }
 
+GG_TEST("commit", "Amend HEAD dialog notes that staged changes are not included, only when there are some")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    s.setText("//Change information/##message", "Amended with a note");
+    // The dialog's text as drawn (drawnText leaves the spaces out).
+    const auto noteShown = [&] {
+        for (const auto& line : s.drawnText("//Amend HEAD"))
+            if (line.find("Stagedchangesarenotincluded") != std::string::npos)
+                return true;
+        return false;
+    };
+    const auto openAndCancel = [&](bool expectNote) {
+        ctx->ItemClick("//Change information/###save_message");
+        GG_REQUIRE(s.dialogOpen("Amend HEAD"));
+        ctx->Yield(2);
+        GG_CHECK(noteShown() == expectNote);
+        s.dialogButton("Amend HEAD", "Cancel");
+        s.settle();
+        GG_CHECK_STR_EQ(s.head(repo), head);
+    };
+    openAndCancel(false);
+    // A staged change: the dialog now says it is left out.
+    s.write(repo, "staged.txt", "staged\n");
+    s.git(repo, {"add", "staged.txt"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
+    openAndCancel(true);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "staged.txt");
+}
+
 GG_TEST("commit", "commit dialog warns about a staged first-class conflict and still commits")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
