@@ -142,6 +142,7 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
     m_editor->SetText(text);
     m_marksDirty = true;
     m_blameChanged = true;
+    m_dragging = false;
     clearSelection(); // the lines of the previous blame are gone
     const int count = m_blame ? static_cast<int>(m_blame->lines.size()) : 0;
     if (m_scrollTo > 0 && count > 0) {
@@ -188,6 +189,7 @@ void BlamePanel::updateGutter(float fontSize)
 {
     m_gutterDirty = false;
     m_gutterFont = fontSize;
+    m_gutterFace = ImGui::GetFont();
     const float glyph = ImGui::CalcTextSize("0").x; // the editor's monospace font is current
     // The author column is as wide as the longest author present, up to kAuthorColumns glyphs.
     float author = 0, date = 0;
@@ -266,12 +268,37 @@ void BlamePanel::selectLine(int index, bool extend)
 {
     const int count = static_cast<int>(m_blame->lines.size());
     // The range runs from the line the selection was started on to this line.
-    const int anchor = extend && m_selFirst >= 0 ? std::min(m_editor->anchorLine(), count - 1) : index;
+    m_dragAnchor = extend && m_selFirst >= 0 ? std::min(m_editor->anchorLine(), count - 1) : index;
+    selectRange(m_dragAnchor, index);
+}
+
+void BlamePanel::selectRange(int anchor, int index)
+{
     m_editor->selectRows(anchor, index);
     m_selFirst = std::min(anchor, index);
     m_selLast = std::max(anchor, index);
     m_selLine = index;
     m_cursorSeen = cursorState();
+}
+
+void BlamePanel::followGutterDrag()
+{
+    if (!m_dragging)
+        return;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        m_dragging = false;
+        return;
+    }
+    if (!m_blame || m_blame->lines.empty() || !ImGui::IsMouseDragging(ImGuiMouseButton_Left) || m_rowHeight <= 0)
+        return;
+    // Whole rows from the pressed one to the one under the mouse, at most to the first or last one in view.
+    // While the pressed row's button is active the editor's window is not hovered, so its own drag selection
+    // does not run: this is the only writer.
+    const int count = static_cast<int>(m_blame->lines.size());
+    int line = static_cast<int>(std::floor((ImGui::GetMousePos().y - m_rowTop) / m_rowHeight));
+    line = std::clamp(line, m_editor->GetFirstVisibleLine(), m_editor->GetLastVisibleLine());
+    line = std::clamp(line, 0, count - 1);
+    selectRange(m_dragAnchor, line);
 }
 
 void BlamePanel::selectBlock(int index)
@@ -294,10 +321,12 @@ void BlamePanel::followEditor()
     if (!m_blame || m_blame->lines.empty())
         return;
     const int count = static_cast<int>(m_blame->lines.size());
-    // A selection ending at the start of a later line leaves that line out (a triple click, a press on a
-    // line number and Ctrl+A select up to there).
+    // A selection ending at the start of a later line leaves that line out (a triple click and a press on a
+    // line number select up to there; Shift+Down onto an empty line looks the same). The exception is a
+    // selection of the whole text (Ctrl+A), which includes an empty last line.
+    const bool atEnd = now[0] == 0 && now[1] == 0 && now[2] == count - 1 && m_blame->lines[static_cast<size_t>(count - 1)].text.empty();
     m_selFirst = std::min(now[0], count - 1);
-    m_selLast = std::clamp(now[2] - (now[3] == 0 && now[2] > now[0] ? 1 : 0), m_selFirst, count - 1);
+    m_selLast = std::clamp(now[2] - (now[3] == 0 && now[2] > now[0] && !atEnd ? 1 : 0), m_selFirst, count - 1);
     // The line shown in Change information is the one the cursor (the moving end) is on.
     m_selLine = now[4] == now[2] && now[5] == now[3] ? m_selLast : m_selFirst;
 }
@@ -383,8 +412,13 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
         m_menuPending = 0;
         openPopupBelowItem(kMenuId);
     }
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+    // Where the rows are on the screen, for a drag over them.
+    m_rowTop = pos.y - static_cast<float>(index) * height;
+    m_rowHeight = height;
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
         selectLine(index, ImGui::GetIO().KeyShift);
+        m_dragging = true;
+    }
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
         m_menuLine = index;
         m_menuPending = 0;
@@ -403,10 +437,12 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     // Every second change block has the alternate row background, and a block starts under a separator.
     if (m_parity[static_cast<size_t>(index)])
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
-    if (newBlock && index > 0)
-        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + 1.0f), ImGui::GetColorU32(ImGuiCol_Separator));
     if (index >= m_selFirst && index <= m_selLast)
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), p.selection); // as a selected list row
+    if (newBlock && index > 0) {
+        const float y = std::floor(pos.y);
+        dl->AddRectFilled(ImVec2(pos.x, y), ImVec2(pos.x + size.x, y + 1.0f), ImGui::GetColorU32(ImGuiCol_Separator));
+    }
     if (newBlock && !committed) {
         dl->AddText(pos, p.unstaged, kNotCommitted);
     } else if (newBlock) {
@@ -451,6 +487,7 @@ void BlamePanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Blame, open)) {
         ImGui::End();
+        m_dragging = false;
         publishInfoOverride(false);
         return;
     }
@@ -566,10 +603,11 @@ void BlamePanel::draw(bool* open)
     if (m_blame->truncated)
         ImGui::TextDisabled("Large file: only the first lines are blamed.");
     ImGui::PushFont(theme().monoFont(), 0.0f);
-    if (m_gutterDirty || ImGui::GetFontSize() != m_gutterFont)
+    if (m_gutterDirty || ImGui::GetFontSize() != m_gutterFont || ImGui::GetFont() != m_gutterFace)
         updateGutter(ImGui::GetFontSize());
     m_editor->Render("##blame_editor", ImVec2(0, 0));
     m_editorFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::IsWindowFocused();
+    followGutterDrag();
     if (m_menuPending > 0)
         --m_menuPending;
     followEditor();

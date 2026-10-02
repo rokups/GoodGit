@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+struct ImFont;
+
 namespace ggui {
 
 class BlameEditor;
@@ -59,6 +61,10 @@ private:
     void drawTextMenu(int index);
     // A press on a line's gutter: selects the line, with `extend` the lines from the anchor to it.
     void selectLine(int index, bool extend);
+    // Selects whole rows from `anchor` to `index`, the cursor on `index`.
+    void selectRange(int anchor, int index);
+    // A drag that started on a gutter row selects the rows from it to the one under the mouse.
+    void followGutterDrag();
     void selectBlock(int index);
     // The selection follows a cursor or text selection changed in the editor by the user.
     void followEditor();
@@ -86,6 +92,7 @@ private:
     float m_gutterWidth = 0;             // pixels
     float m_authorWidth = 0;             // the gutter's author column, pixels
     float m_gutterFont = 0;              // the font size the gutter was measured at
+    ImFont* m_gutterFace = nullptr;      // and the font
     bool m_gutterDirty = false;          // a blame was loaded: the gutter is measured again
     std::string m_filter;
     std::string m_filterApplied; // the filter the markers were made for
@@ -97,6 +104,10 @@ private:
     int m_menuPending = 0;       // frames left to open the menu of the cursor line (Alt+Space)
     int m_selFirst = -1;
     int m_selLast = -1;
+    bool m_dragging = false; // the left button went down on a gutter row and is still down
+    int m_dragAnchor = 0;    // the row the selection of that press started from
+    float m_rowTop = 0;      // the screen y of line 0's row and the row height, as drawn last
+    float m_rowHeight = 0;
     int m_selLine = -1; // the line interacted with last: its change is shown in Change information
     CursorState m_cursorSeen{}; // the editor's cursor as the panel left it: a difference is the user's doing
     int m_menuLine = -1;        // the line of the gutter menu

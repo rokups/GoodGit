@@ -8,6 +8,8 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <cmath>
+
 namespace ggtest {
 
 namespace {
@@ -145,6 +147,115 @@ GG_TEST("blame", "gutter: blocks and width")
     blameWide("wide80.txt", longerName, longerGutter);
     GG_CHECK(longGutter > shortGutter);
     GG_CHECK(std::abs(longerGutter - longGutter) < 1.0f);
+}
+
+GG_TEST("blame", "selection: a selection ending at column 0, a drag over the gutter")
+{
+    // The last line of gaps.txt is empty, and so is line 2.
+    const std::string repo = s.fixture(Recipe::Empty, "blame-gaps");
+    s.commitFile(repo, "gaps.txt", "G1\n\nG3\n\n", "Write the gaps");
+    const std::string id = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + id).c_str()); }));
+    ctx->ItemClick(("//History/**/###row_" + id).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+    blameFromChanges(s, nullptr, "gaps.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "gaps.txt", id); }));
+    auto& blame = s.session()->blame();
+    GG_CHECK_EQ(blame.editorLines(), 4);
+    auto press = [&](ImGuiKeyChord chord) {
+        ctx->KeyPress(chord);
+        ctx->Yield(2);
+    };
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->WindowFocus("//Blame");
+    for (int presses = 0; presses < 40 && blame.selectionFirst() != 0; ++presses)
+        press(ImGuiKey_DownArrow);
+    GG_REQUIRE(blame.selectionFirst() == 0);
+    // Ctrl+A after Shift+Down presses selects the whole text: the empty last line is in.
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+    press(ImGuiMod_Ctrl | ImGuiKey_A);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    GG_CHECK_EQ(blame.cursorLine(), 3);
+    // From the top, Shift+Down onto the empty line 2 ends at its start: the line is not included, nor is
+    // line 3 at the start of the next step. The step after that is the whole text: the empty last line is.
+    press(ImGuiMod_Ctrl | ImGuiKey_Home);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 0);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionLast(), 1);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    // From "G3", Shift+Down ends at the start of the empty last line: not the whole text, so it is left out.
+    press(ImGuiMod_Ctrl | ImGuiKey_Home);
+    press(ImGuiKey_DownArrow);
+    press(ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    press(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK_EQ(blame.selectionLast(), 2);
+    // Ctrl+A selects the whole text: the empty last line is in.
+    press(ImGuiMod_Ctrl | ImGuiKey_A);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+}
+
+GG_TEST("blame", "dragging over the gutter selects whole rows")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    auto& session = *s.session();
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    ctx->Yield(2);
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    auto& blame = session.blame();
+    auto infoShows = [&](const std::string& hex) { return session.infoOverride() && session.infoOverride()->id.hex() == hex; };
+    // The test engine moves to an item that is not hovered (another is held) only by position.
+    auto rowCenter = [&](int n) { return ctx->ItemInfo(lineRef(s, n).c_str()).RectFull.GetCenter(); };
+    // Down: from line 2 to line 4, live while the button is held.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->MouseMove(lineRef(s, 2).c_str());
+    ctx->MouseDown(0);
+    ctx->MouseMoveToPos(rowCenter(4));
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    GG_CHECK(blame.hasSelection());
+    ctx->MouseMoveToPos(rowCenter(3));
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 2);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); })); // the line under the mouse (3) is c2's
+    ctx->MouseMoveToPos(rowCenter(4));
+    ctx->MouseUp(0);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 3);
+    // Up: from line 5 to line 3.
+    ctx->MouseMoveToPos(rowCenter(5));
+    ctx->MouseDown(0);
+    ctx->MouseMoveToPos(rowCenter(3));
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK_EQ(blame.selectionLast(), 4);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    ctx->MouseUp(0);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK_EQ(blame.selectionLast(), 4);
+    // Shift+press still extends from the anchor.
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(lineRef(s, 1).c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->Yield(2);
+    GG_CHECK_EQ(blame.selectionFirst(), 0);
+    GG_CHECK_EQ(blame.selectionLast(), 4);
 }
 
 GG_TEST("blame", "filter, history, tooltips")

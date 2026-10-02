@@ -434,8 +434,8 @@ the code in a read-only text editor `##blame_editor` (syntax highlighted by the 
 text selection and copy; Ctrl+X and Shift+Delete copy too) with a gutter per line `blame_line_<n>` (commit prefix,
 author and date on the first line of each change block; "Not committed" for uncommitted blocks). Every second
 change block has the alternate row background in its gutter, and each block after the first starts under a 1 px
-separator line. The author column is as wide as the longest author present, up to 20 characters; a longer name
-is cut with an ellipsis. The gutter is measured again when a blame loads and when the font size changes. The filter marks
+separator line. The author column is as wide as the longest author present, up to the width of 20 digits; a longer name
+is cut with an ellipsis. The gutter is measured again when a blame loads and when the font or its size changes. The filter marks
 the matching lines (text, author, ID, summary) and brings the first match into view; it hides nothing.
 Tooltip per line, on its gutter (full commit summary); context menu of a line, on its gutter, its line number or
 its code (there after Copy · Select all): Blame before this change · Show
@@ -450,8 +450,10 @@ to the code) go to the next / previous match, wrapping: the cursor and the selec
 which is scrolled into view when it is not, and Change information shows its change. A new filter text puts
 the position on the first match without moving the cursor or selecting. Esc in the filter restores the text
 it had when the field was entered and leaves the field.
-A line is selected by a press on its gutter (Shift extends the range) or by the cursor or a text selection made
-in the code; the cursor a blame opens with is not a selection.
+A line is selected by a press on its gutter (Shift extends the range; dragging from the press selects the whole
+rows down or up to the row under the mouse) or by the cursor or a text selection made
+in the code; the cursor a blame opens with is not a selection. A selection that ends at the start of a later line
+does not include that line, except a selection of the whole text (Ctrl+A), which includes an empty last line.
 While the Blame window is visible and a line is selected, Change information shows the change of the line
 selected last (the one pressed last in a Shift range, the one the menu was opened on for *Select change block*;
 an uncommitted line gives the working tree form); the history selection, Changes and Diff do not change. Esc in
