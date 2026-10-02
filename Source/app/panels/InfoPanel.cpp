@@ -191,28 +191,37 @@ void InfoPanel::draw(bool* open)
     ImGui::InputTextMultiline("##message", &m_message, ImVec2(-1, ImGui::GetTextLineHeight() * 6),
         editable ? ImGuiInputTextFlags_None : ImGuiInputTextFlags_ReadOnly);
     const bool free = m_session.actions().busy().empty();
+    const auto status = m_session.status();
+    const bool stagedPresent = status && !status->staged.empty();
     ImGui::BeginDisabled(!editable || !free || m_message == d.message || gg::trim(m_message).empty());
-    if (ImGui::Button(ICON_MS_SAVE " Save message###save_message")) {
-        if (stash)
+    // HEAD: a red "Amend HEAD" that asks first; anything else is saved straight away.
+    if (isHead ? dangerButton(ICON_MS_SAVE, "Amend HEAD###save_message")
+               : button(ICON_MS_SAVE, "Save message###save_message")) {
+        if (stash) {
             m_session.actions().stashReword(m_selection.stashIndex, d.id, m_message);
-        else if (isHead)
-            m_session.actions().amend(m_message, false, true);
-        else
+        } else if (isHead) {
+            Form f;
+            f.title = "Amend HEAD";
+            f.message = "This rewrites HEAD with the new message.";
+            if (stagedPresent)
+                f.message += "\n\nStaged changes are not included (tick Amend in Commit... to add them).";
+            Session* session = &m_session;
+            const std::string message = m_message;
+            f.buttons.push_back({"Amend", [session, message](Form&) { session->actions().amend(message, false, true); }});
+            f.buttons.push_back({"Cancel", {}});
+            m_session.app().dialogs().open(std::move(f));
+        } else {
             m_session.actions().reword(d.id, m_message);
+        }
     }
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-        ImGui::SetTooltip("%s", stash  ? "Change the stash message; its content and position stay"
-                                : isHead ? "Reword HEAD (git commit --amend --only)"
-                                         : "Reword this commit; its descendants are rebased onto it");
-    if (isHead) {
-        const auto status = m_session.status();
-        const bool cleanIndex = status && status->staged.empty();
-        ImGui::SameLine();
-        if (cleanIndex)
-            ImGui::TextDisabled("Amend mode: saving rewrites HEAD");
-        else
-            ImGui::TextDisabled("Staged changes are not included (tick Amend in Commit... to add them)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+        std::string tip = stash  ? "Change the stash message; its content and position stay"
+                        : isHead ? "Reword HEAD (git commit --amend --only)"
+                                 : "Reword this commit; its descendants are rebased onto it";
+        if (isHead && stagedPresent)
+            tip += "\nStaged changes are not included (tick Amend in Commit... to add them)";
+        ImGui::SetTooltip("%s", tip.c_str());
     }
 
     if (ImGui::BeginTable("##info_table", 2, ImGuiTableFlags_SizingFixedFit)) {

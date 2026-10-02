@@ -365,12 +365,14 @@ the panel without touching the repository.
   name).
 
 ## 5. Change information panel — window `"Change information"`
-- Message editor `##message` with *Save message* `##save_message` (HEAD only until Phase 3).
+- Message editor `##message` with *Save message* `###save_message`; for HEAD the button is red and reads *Amend HEAD*
+  and asks for confirmation (a dialog titled `Amend HEAD`, buttons Amend / Cancel; it notes when staged changes
+  are not included).
 - Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
   differs (N); Date; published/lock state ("Published" / "Not published").
 - Commit ID (full, dimmed after the short prefix) with Copy `##commit_id`; Parents list
   `parent_<n>` (click reveals).
-- N: conflicted files list with side counts. N: "Amend" mode for HEAD with a clean index.
+- N: conflicted files list with side counts.
 - D: aliases list.
 
 ## 6. Diff panel — window `"Diff"`
@@ -471,7 +473,8 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 `Create tag`, `Add remote`, `Edit remote URL`, `Clone repository`, `Initialize repository`,
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
-`Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
+`Credentials` (askpass), `Rewrite published history`, `Amend HEAD` (Change information, §5:
+*Amend* / *Cancel*), `Non-text conflicts` (pre-flight, Phase
 3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
 itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
 *Replace* / *Cancel*, §1.6), `Add worktree`, `Remove worktree`, `Remove worktree with changes`,

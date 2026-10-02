@@ -384,12 +384,48 @@ GG_TEST("commit", "reword HEAD from Change information (amend mode)")
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
     s.setText("//Change information/##message", "Better subject\n\nWith a body.");
     ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Amend HEAD"));
+    s.dialogButton("Amend HEAD", "Amend");
     GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Better subject\n\nWith a body."; }));
     s.settle();
     // An older commit cannot be reworded here yet (needs history editing): read-only.
     ctx->ItemClick(("//History/**/###row_" + s.revParse(repo, "HEAD~1")).c_str());
     ctx->Yield(3);
     GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled);
+}
+
+GG_TEST("commit", "Amend HEAD button: red, asks first; other commits keep Save message")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string head = s.head(repo);
+    const std::string older = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    GG_CHECK(s.itemLabel("//Change information/###save_message").find("Amend HEAD###") == 0);
+    s.setText("//Change information/##message", "Amended after asking");
+    // Cancel: nothing is rewritten.
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Amend HEAD"));
+    GG_CHECK(s.app.dialogs().current()->message.find("Staged changes are not included") == std::string::npos);
+    s.dialogButton("Amend HEAD", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), head);
+    // Amend: HEAD is rewritten with the new message.
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Amend HEAD"));
+    GG_CHECK_STR_EQ(s.head(repo), head); // the click alone changed nothing
+    s.dialogButton("Amend HEAD", "Amend");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Amended after asking"; }));
+    s.settle();
+    GG_CHECK(s.head(repo) != head);
+    // Not HEAD: plain label, no dialog.
+    ctx->ItemClick(("//History/**/###row_" + older).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemLabel("//Change information/###save_message").find("Save message###") == 0; }));
+    s.setText("//Change information/##message", "Reworded without asking");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"log", "-1", "--format=%B", "HEAD~2"}) == "Reworded without asking"; }));
+    GG_CHECK(s.app.dialogs().current() == nullptr || s.app.dialogs().current()->title != "Amend HEAD");
 }
 
 GG_TEST("commit", "commit dialog warns about a staged first-class conflict and still commits")
