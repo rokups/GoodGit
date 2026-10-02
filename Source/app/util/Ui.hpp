@@ -65,6 +65,11 @@ void flattenNextTable();
 // have directly in the window (`width` 0 = the window's). Pair with endList().
 void beginList(float width = 0.0f);
 void endList();
+// The list's child alone, named `name`, for a list whose IDs live under the child (the Changes files).
+// It spans the window edge to edge with the window's padding inside, so rows look as they would in the
+// window itself and their outlines and highlights are not clipped. Pair with endListChild().
+void beginListChild(const char* name, float width = 0.0f);
+void endListChild();
 // Opens popup `id` with its top-left corner at the bottom-left corner of the last item (where a
 // keyboard-opened context menu appears).
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags = ImGuiPopupFlags_None);

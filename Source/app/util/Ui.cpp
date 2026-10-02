@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cmath>
 #include <thread>
+#include <vector>
 
 namespace ggui {
 
@@ -289,17 +290,63 @@ void flattenNextTable()
     g.NextWindowData.ChildFlags = ImGuiChildFlags_NavFlattened;
 }
 
+namespace {
+struct OpenList {
+    ImVec2 maxPos; // the window's CursorMaxPos before the child
+    float overhang; // how far the child reaches below the content area
+};
+std::vector<OpenList> g_openLists;
+}
+
+void beginListChild(const char* name, float width)
+{
+    // The child spans the window edge to edge (the scrollbar sits at the edge) and carries the window's own
+    // horizontal padding, so its rows sit where they would directly in the window and what they draw past
+    // their rect (the current-branch outline, the selection highlight) is not clipped at the child's edge.
+    // Vertically it grows by a row's reach past its text (the larger half of the item spacing) and a pixel on
+    // both sides: the highlight and the outline of the first and last row.
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const float spacing = ImGui::GetStyle().ItemSpacing.y;
+    const ImVec2 pad(window->WindowPadding.x, spacing - std::trunc(spacing * 0.5f) + 1.0f);
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const ImVec2 size((width > 0.0f ? width : avail.x) + 2.0f * pad.x, std::max(avail.y + 2.0f * pad.y, 1.0f));
+    g_openLists.push_back({window->DC.CursorMaxPos, pad.y});
+    ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() - pad.x, ImGui::GetCursorPosY() - pad.y));
+    // No child background of its own: the rows sit on the window, as they did before the list was a child.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, pad);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    ImGui::BeginChild(name, size, ImGuiChildFlags_NavFlattened | ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+void endListChild()
+{
+    ImGui::EndChild();
+    // The child overhangs the content area by the padding: that must neither make the window scrollable nor
+    // leave the cursor (and so a group around the list) below the content. Its item rect, which an
+    // EndGroup() takes in, is the part inside the content area.
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    ImRect& item = ImGui::GetCurrentContext()->LastItemData.Rect;
+    item.ClipWith(window->WorkRect);
+    const OpenList open = g_openLists.back();
+    g_openLists.pop_back();
+    window->DC.CursorPos.y -= open.overhang;
+    window->DC.CursorMaxPos = ImVec2(std::max(open.maxPos.x, std::min(window->DC.CursorMaxPos.x, window->WorkRect.Max.x)),
+        std::max(open.maxPos.y, std::min(window->DC.CursorMaxPos.y, window->WorkRect.Max.y)));
+}
+
 void beginList(float width)
 {
     const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
-    ImGui::BeginChild("##list", ImVec2(width, 0), ImGuiChildFlags_NavFlattened);
+    beginListChild("##list", width);
     ImGui::PushOverrideID(windowId);
 }
 
 void endList()
 {
     ImGui::PopID();
-    ImGui::EndChild();
+    endListChild();
 }
 
 void openPopupBelowItem(ImGuiID id, ImGuiPopupFlags flags)

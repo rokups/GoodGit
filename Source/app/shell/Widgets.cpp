@@ -239,32 +239,32 @@ bool hoveredDeletePressed()
 bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
-    const float baseline = window->DC.CurrLineTextBaseOffset;
+    // Where Selectable() puts its text: the cursor (plus the baseline once), not the item rect, which reaches
+    // half the item spacing past it for the highlight.
+    const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
     bool pressed;
     {
         HiddenText hidden;
         pressed = selectable(label, selected, flags, size);
     }
-    if (ImGui::IsItemVisible()) {
-        const ImVec2 min = ImGui::GetItemRectMin();
-        drawDimPrefixText(ImVec2(min.x, min.y + baseline), label, dimLen);
-    }
+    if (ImGui::IsItemVisible())
+        drawDimPrefixText(pos, label, dimLen);
     return pressed;
 }
 
 bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
-    const float baseline = window->DC.CurrLineTextBaseOffset;
+    // Where Selectable() puts its text: the cursor (plus the baseline once), not the item rect, which reaches
+    // half the item spacing past it for the highlight.
+    const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
     bool pressed;
     {
         HiddenText hidden;
         pressed = selectable(label, selected, flags, size);
     }
-    if (ImGui::IsItemVisible()) {
-        const ImVec2 min = ImGui::GetItemRectMin();
-        drawDimRangeText(ImVec2(min.x, min.y + baseline), label, dimBegin, dimEnd);
-    }
+    if (ImGui::IsItemVisible())
+        drawDimRangeText(pos, label, dimBegin, dimEnd);
     return pressed;
 }
 

@@ -964,7 +964,7 @@ void ChangesPanel::draw(bool* open)
     ImGui::Separator();
 
     // Nav-flattened: the rows are part of the panel's nav layer, so the arrows walk them.
-    ImGui::BeginChild("##files", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+    beginListChild("##files");
     const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput;
     const bool navOnFile = m_navOnFileNow || ImGui::GetCurrentContext()->NavId == 0; // last frame's cursor; 0 = mouse-only
     m_navOnFileNow = false;
@@ -1028,7 +1028,7 @@ void ChangesPanel::draw(bool* open)
         if (m_rows.empty() && !m_loading && m_selection.kind == SelKind::Commit)
             ImGui::TextDisabled("No file changes");
     }
-    ImGui::EndChild();
+    endListChild();
     ImGui::End();
 }
 

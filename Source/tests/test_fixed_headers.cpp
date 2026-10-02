@@ -118,4 +118,41 @@ GG_TEST("fixed headers", "welcome: the buttons and the path field stay while the
     checkFixedHeader(s, "Welcome", "//Welcome/##welcome_path");
 }
 
+GG_TEST("fixed headers", "rows keep clear of the list's edge: outlines and highlights are not clipped")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    std::ofstream(repo / "stash.txt") << "x\n";
+    s.git(repo, {"stash", "push", "-q", "-u", "-m", "s0"});
+    GG_REQUIRE(s.openRepository(repo));
+    struct Case {
+        const char* window;
+        const char* header;
+        const char* row;
+    };
+    const Case cases[] = {
+        {"Branches", "//Branches/###create_branch", "//Branches/branch_main/###branch_main"}, // the current branch: outlined
+        {"Remotes", "//Remotes/###add_remote", "//Remotes/remote_origin/###row"},
+        {"Stashes", "//Stashes/Push##stash_push", "//Stashes/stash_0/###row"},
+    };
+    for (const Case& c : cases) {
+        s.showPanel(c.window);
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(c.row); }));
+        s.ctx->Yield(3);
+        ImGuiWindow* win = s.ctx->WindowInfo((std::string("//") + c.window).c_str()).Window;
+        ImGuiWindow* list = s.ctx->WindowInfo(s.child((std::string("//") + c.window).c_str(), "##list").c_str()).Window;
+        const ImRect header = s.ctx->ItemInfo(c.header).RectFull;
+        ImRect row = s.ctx->ItemInfo(c.row).RectFull;
+        // The list covers the window's width, the way the window's own content would: the controls above and
+        // the rows start at the same x (a row's rect reaches half the item spacing past its text).
+        GG_CHECK(list->Pos.x <= win->InnerRect.Min.x + 1.0f);
+        GG_CHECK(list->Pos.x + list->Size.x >= win->InnerRect.Max.x - 1.0f);
+        GG_CHECK(row.Min.x >= header.Min.x - ImGui::GetStyle().ItemSpacing.x * 0.5f - 1.0f);
+        // What a row draws past its text (the highlight, which its rect includes, and the outline a pixel
+        // beyond it) lies inside what the list shows.
+        row.Min.y -= 1.0f;
+        row.Max.y += 1.0f;
+        GG_CHECK(list->ClipRect.Contains(row));
+    }
+}
+
 } // namespace ggtest
