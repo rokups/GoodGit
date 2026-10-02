@@ -102,6 +102,12 @@ public:
     // Null until the first status arrives (panels draw before that).
     const core::StatusPtr& status() const { return m_status; }
     const Selection& selection() const { return m_selection; }
+    // Change information shows this instead of the history selection while it is set (the Blame panel's
+    // selected line); the selection itself, Changes and Diff stay as they are.
+    void setInfoOverride(const std::optional<Selection>& sel);
+    const std::optional<Selection>& infoOverride() const;
+    // Clears the Blame panel's line selection (which drops the override on its next frame).
+    void clearBlameSelection();
     void select(const Selection& sel);
     // While a stash message is being rewritten its commit id changes: the selected stash is kept
     // (not reset to the working tree when a snapshot arrives without it), then re-pointed at the

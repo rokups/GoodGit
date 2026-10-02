@@ -51,7 +51,7 @@ void BlamePanel::request()
     if (m_pos < 0)
         return;
     m_loading = true;
-    m_selFirst = m_selLast = -1;
+    clearSelection();
     m_scrollTo = m_history[static_cast<size_t>(m_pos)].scrollToLine;
     m_request = m_session.engine().blame(m_history[static_cast<size_t>(m_pos)]);
 }
@@ -62,6 +62,8 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
         return;
     m_loading = false;
     m_blame = event.blame;
+    clearSelection(); // the lines of the previous blame are gone
+
     // "Blame before": remember the resolved parent so back/forward are exact.
     if (m_pos >= 0 && m_history[static_cast<size_t>(m_pos)].beforeCommit) {
         m_history[static_cast<size_t>(m_pos)].commit = m_blame->query.commit;
@@ -106,17 +108,34 @@ void BlamePanel::drawLineMenu(int index)
         m_session.revealCommit(line.commit);
     copyIdMenuItems("Copy commit ", line.commit.hex(), committed);
     ImGui::Separator();
-    if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
+    if (menuItem(ICON_MS_SELECT_ALL, "Select change block")) {
         blockText(index, &m_selFirst, &m_selLast);
+        m_selLine = index;
+    }
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy change block"))
         ImGui::SetClipboardText(blockText(index, nullptr, nullptr).c_str());
     ImGui::EndPopup();
+}
+
+void BlamePanel::publishInfoOverride(bool shown)
+{
+    std::optional<Selection> want;
+    if (shown && m_blame && !m_loading && m_selFirst >= 0 && m_selLine >= 0
+        && m_selLine < static_cast<int>(m_blame->lines.size())) {
+        const core::Oid& commit = m_blame->lines[static_cast<size_t>(m_selLine)].commit;
+        want = commit.isNull() ? Selection{SelKind::WorkingTree, {}, -1} : Selection{SelKind::Commit, commit, -1};
+    }
+    if (want == m_published)
+        return;
+    m_published = want;
+    m_session.setInfoOverride(want);
 }
 
 void BlamePanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Blame, open)) {
         ImGui::End();
+        publishInfoOverride(false);
         return;
     }
     // Mouse back/forward buttons while hovering the panel.
@@ -160,8 +179,12 @@ void BlamePanel::draw(bool* open)
     if (!m_blame) {
         ImGui::TextDisabled("Use \"Blame file\" on a file to see who changed each line.");
         ImGui::End();
+        publishInfoOverride(false);
         return;
     }
+    // Esc drops the selection (and with it the change shown in Change information).
+    if (m_selFirst >= 0 && hotkey(ImGuiKey_Escape))
+        clearSelection();
     if (m_blame->truncated)
         ImGui::TextDisabled("Large file: only the first lines are blamed.");
     const Palette& p = theme().palette();
@@ -216,15 +239,16 @@ void BlamePanel::draw(bool* open)
                     if (pressSource() == PressSource::NavActivate && !shift) {
                         // Space / Enter on the cursor row keeps the selection (the range stays).
                         if (!selected)
-                            m_selFirst = m_selLast = m_selAnchor = i;
+                            m_selFirst = m_selLast = m_selAnchor = m_selLine = i;
                     } else if (shift && m_selFirst >= 0) {
                         // The range runs from the anchor (the last plain press) to this line.
                         const int anchor = m_selAnchor >= m_selFirst && m_selAnchor <= m_selLast ? m_selAnchor : m_selFirst;
                         m_selFirst = std::min(anchor, i);
                         m_selLast = std::max(anchor, i);
                         m_selAnchor = anchor;
+                        m_selLine = i;
                     } else {
-                        m_selFirst = m_selLast = m_selAnchor = i;
+                        m_selFirst = m_selLast = m_selAnchor = m_selLine = i;
                     }
                 }
                 if (l.commit.isNull())
@@ -259,6 +283,7 @@ void BlamePanel::draw(bool* open)
     }
     ImGui::PopFont();
     ImGui::End();
+    publishInfoOverride(true);
 }
 
 } // namespace ggui

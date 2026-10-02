@@ -80,6 +80,23 @@ InfoPanel::InfoPanel(Session& session) : m_session(session) { }
 
 void InfoPanel::onSelection(const Selection& sel)
 {
+    m_historySelection = sel;
+    if (!m_override)
+        show(sel);
+}
+
+void InfoPanel::setOverride(const std::optional<Selection>& sel)
+{
+    if (sel == m_override)
+        return;
+    m_override = sel;
+    const Selection& shown = m_override ? *m_override : m_historySelection;
+    if (!(shown == m_selection))
+        show(shown);
+}
+
+void InfoPanel::show(const Selection& sel)
+{
     m_selection = sel;
     m_details.reset();
     m_message.clear();
@@ -87,6 +104,15 @@ void InfoPanel::onSelection(const Selection& sel)
         m_session.requestConfig(); // the identity shown as the author; arrives asynchronously
     if (sel.kind == SelKind::Commit || sel.kind == SelKind::Stash)
         m_request = m_session.engine().commitDetails(sel.id);
+}
+
+// A parent clicked: History moves to it. While the Blame panel's line is shown instead, that selection ends
+// (the override drops when the Blame panel draws, later in the same frame) so the parent is what is shown.
+void InfoPanel::revealParent(const core::Oid& id)
+{
+    if (m_override)
+        m_session.clearBlameSelection();
+    m_session.revealCommit(id);
 }
 
 void InfoPanel::onDetails(const core::CommitDetailsEvent& event)
@@ -164,7 +190,7 @@ void InfoPanel::drawPendingCommitInfo(const core::StatusResult* status, const co
         const std::string id = m_session.shortId(parents[i]) + "###parent_" + std::to_string(i);
         if (selectableDimRange(id.c_str(), kIdPrefixLength, kShortIdLength, false, ImGuiSelectableFlags_None,
                 ImGui::CalcTextSize(id.c_str(), nullptr, true)))
-            m_session.revealCommit(parents[i]);
+            revealParent(parents[i]);
         if (const core::HistoryRow* row = m_session.history().row(parents[i])) {
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
@@ -363,7 +389,7 @@ void InfoPanel::draw(bool* open)
             const std::string id = d.parents[i].shortHex(kShortIdLength) + "###parent_" + std::to_string(i);
             if (selectableDimRange(id.c_str(), kIdPrefixLength, kShortIdLength, false, ImGuiSelectableFlags_None,
                     ImGui::CalcTextSize(id.c_str(), nullptr, true)))
-                m_session.revealCommit(d.parents[i]);
+                revealParent(d.parents[i]);
             if (i + 1 < d.parents.size())
                 ImGui::SameLine();
         }

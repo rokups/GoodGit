@@ -370,7 +370,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
 ### 4.6 Blame panel
 - **K** Everything: working-tree blame (uncommitted lines marked), filter,
   back/forward history (mouse buttons), per-line tooltips, "Blame before this change",
-  originating source, reveal/copy commit, select or copy a change block.
+  originating source, reveal/copy commit, select or copy a change block. The selected line's change is
+  shown in Change information until Esc clears the selection.
 
 ### 4.7 Side panels
 - **K Branches:** Create branch, filter. Click toggles whether the branch is visible in

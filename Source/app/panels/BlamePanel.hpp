@@ -5,6 +5,7 @@
 
 #include <core/Engine.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,9 @@ public:
     void forward();
     void onBlame(const core::BlameEvent& event);
     void draw(bool* open);
+    // Called instead of draw() while the panel is closed.
+    void hidden() { publishInfoOverride(false); }
+    void clearSelection() { m_selFirst = m_selLast = m_selAnchor = m_selLine = -1; }
     const core::BlamePtr& blame() const { return m_blame; }
     const core::BlameQuery* query() const { return m_pos >= 0 ? &m_history[static_cast<size_t>(m_pos)] : nullptr; }
     int selectionFirst() const { return m_selFirst; }
@@ -27,6 +31,8 @@ public:
 private:
     void request();
     void drawLineMenu(int index);
+    // Change information follows the selected line while the panel is shown (`shown`).
+    void publishInfoOverride(bool shown);
     std::string blockText(int index, int* first, int* last) const;
 
     Session& m_session;
@@ -39,6 +45,8 @@ private:
     int m_selAnchor = -1; // the end of the range Shift extends from
     int m_selFirst = -1;
     int m_selLast = -1;
+    int m_selLine = -1; // the line pressed last: its change is shown in Change information
+    std::optional<Selection> m_published; // what was given to Session::setInfoOverride()
     int m_scrollTo = 0;
 };
 

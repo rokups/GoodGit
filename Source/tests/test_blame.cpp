@@ -1,6 +1,7 @@
 // Blame panel (§4.6).
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
+#include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
@@ -230,6 +231,150 @@ GG_TEST("blame", "keyboard only: nav into the lines, select by arrows, Shift ran
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
     GG_CHECK(g.OpenPopupStack.Size == 0);
+    // The Esc that closed the menu did not clear the selection.
+    GG_CHECK_EQ(blame.selectionFirst(), 1);
+    GG_CHECK_EQ(blame.selectionLast(), 2);
+}
+
+GG_TEST("blame", "the selected line's change is shown in Change information; Esc and closing give it back")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + r.c1).c_str()); }));
+    auto& session = *s.session();
+    auto& info = session.info();
+    auto histRow = [&](const std::string& hex) { return "//History/**/###row_" + hex; };
+    auto infoShows = [&](const std::string& hex) { return info.details() && info.details()->id.hex() == hex; };
+    ctx->ItemClick(histRow(r.c1).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c1); }));
+    const ggui::Selection history = session.selection();
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    ctx->Yield(2); // the Blame window exists from the next frame
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    auto& blame = session.blame();
+    GG_CHECK(!session.infoOverride());
+    // A click on a line of another commit: its change is shown, the history selection is untouched.
+    ctx->ItemClick(lineRef(s, 3).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    GG_CHECK(session.infoOverride() && session.infoOverride()->id.hex() == r.c2);
+    GG_CHECK(session.selection() == history);
+    // The arrows move to a line of the next commit: it follows.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c3); }));
+    GG_CHECK_EQ(blame.selectionFirst(), 4);
+    GG_CHECK(session.selection() == history);
+    // A history selection made meanwhile does not change what is shown ...
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick(histRow(r.c2).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return session.selection().id.hex() == r.c2; }));
+    ctx->Yield(5);
+    GG_CHECK(infoShows(r.c3));
+    // ... and Esc in the Blame window clears the selection: Change information shows it.
+    ctx->WindowFocus("//Blame");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_CHECK(!session.infoOverride());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    // Selecting again, then closing the panel drops the override.
+    ctx->ItemClick(lineRef(s, 1).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c1); }));
+    ctx->ItemClick(lineRef(s, 5).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c3); }));
+    s.app.settings().data().panels["Blame"] = false;
+    ctx->Yield(3);
+    GG_CHECK(!session.infoOverride());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    // The working tree blame: an uncommitted line shows the working tree form.
+    session.blameFile("tale.txt", ggui::core::Oid());
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    ctx->ItemClick(lineRef(s, 1).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return session.infoOverride().has_value(); }));
+    GG_CHECK(info.selection().kind == ggui::SelKind::WorkingTree);
+    ctx->ItemClick(lineRef(s, 3).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    GG_CHECK(info.selection().kind == ggui::SelKind::Commit);
+}
+
+GG_TEST("blame", "Change information and the blame selection: Esc cases, Shift range, parent click, reload, filter")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + r.c1).c_str()); }));
+    auto& session = *s.session();
+    auto& info = session.info();
+    auto& blame = session.blame();
+    auto infoShows = [&](const std::string& hex) { return info.details() && info.details()->id.hex() == hex; };
+    ctx->ItemClick(("//History/**/###row_" + r.c1).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c1); }));
+    // The blame at c3: lines 1, 2, 4 are c1's, line 3 is c2's, line 5 is c3's.
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    ctx->Yield(2); // the Blame window exists from the next frame
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    // Esc without a selection: nothing changes.
+    ctx->WindowFocus("//Blame");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(!session.infoOverride());
+    GG_CHECK(infoShows(r.c1));
+    // Esc right after moving by the arrows (the nav window is the table, not the Blame window itself).
+    ctx->ItemClick(lineRef(s, 3).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c3); }));
+    GG_CHECK_EQ(blame.selectionFirst(), 4);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_CHECK(!session.infoOverride());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c1); }));
+    // A Shift range shows the line pressed last, not the anchor's.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick(lineRef(s, 3).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK_EQ(blame.selectionLast(), 4);
+    GG_CHECK(session.infoOverride() && session.infoOverride()->id.hex() == r.c3);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c3); }));
+    // Esc in the filter field does not clear the selection.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ItemClick("//Blame/##blame_filter");
+    ctx->KeyChars("L");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK(session.infoOverride().has_value());
+    ctx->ItemInputValue("//Blame/##blame_filter", "");
+    ctx->Yield(2);
+    // A parent clicked in Change information ends the blame selection and shows the parent.
+    ctx->ItemClick("//Change information/**/###parent_0");
+    ctx->Yield(3);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_CHECK(!session.infoOverride());
+    GG_CHECK_STR_EQ(session.selection().id.hex(), r.c2);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
+    // Another blame loaded with a line selected: the selection and the override are gone.
+    ctx->ItemClick(lineRef(s, 5).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c3); }));
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    ctx->Yield(3);
+    GG_CHECK(!session.infoOverride());
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c2); }));
 }
 
 } // namespace ggtest

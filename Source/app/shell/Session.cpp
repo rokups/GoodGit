@@ -241,6 +241,12 @@ void Session::select(const Selection& sel)
     m_diff->onSelection(m_selection);
 }
 
+void Session::setInfoOverride(const std::optional<Selection>& sel) { m_info->setOverride(sel); }
+
+const std::optional<Selection>& Session::infoOverride() const { return m_info->override(); }
+
+void Session::clearBlameSelection() { m_blame->clearSelection(); }
+
 void Session::selectCommit(const core::Oid& id) { select(Selection{SelKind::Commit, id, -1}); }
 
 void Session::revealCommit(const core::Oid& id)
@@ -374,6 +380,8 @@ void Session::draw()
     drawPanel(panel::Info, *m_info);
     drawPanel(panel::Diff, *m_diff);
     drawPanel(panel::Blame, *m_blame);
+    if (!*visible(panel::Blame))
+        m_blame->hidden();
     drawPanel(panel::Reflog, *m_reflog);
     drawPanel(panel::Operations, *m_operationsPanel);
     m_rebase->draw();

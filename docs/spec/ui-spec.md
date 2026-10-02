@@ -383,6 +383,9 @@ the panel without touching the repository.
   name).
 
 ## 5. Change information panel — window `"Change information"`
+- It follows the history selection, except while the Blame panel has a line selected: then it shows that line's
+  change (§7). A history selection made meanwhile is shown once the Blame selection is gone. Clicking a parent
+  ID reveals it in History and ends the Blame selection, so the parent is what is shown.
 - Message editor `##message` with *Save message* `###save_message`; for HEAD the button is red and reads *Amend HEAD*
   and asks for confirmation (a dialog titled `Amend HEAD`, buttons Amend / Cancel; it notes when staged changes
   are not included).
@@ -430,6 +433,12 @@ Filter `##blame_filter`, Back `##blame_back` / Forward `##blame_fwd` (also mouse
 table of lines (commit prefix, author, date, text); uncommitted lines marked "Not committed";
 tooltip per line (full commit summary); context menu: Blame before this change · Show
 originating source · Reveal commit · Copy commit ID · Select change block · Copy change block.
+While the Blame window is visible and a line is selected, Change information shows the change of the line
+selected last (the one pressed last in a Shift range, the one the menu was opened on for *Select change block*;
+an uncommitted line gives the working tree form); the history selection, Changes and Diff do not change. Esc in
+the Blame window (when a line is selected) clears the selection; so do loading another blame and a blame result
+arriving. Without a selection, with the window closed, collapsed or hidden behind another tab, or while a blame loads,
+Change information follows the history selection again (§5).
 
 ## 8. Side panels
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
