@@ -96,6 +96,34 @@ int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids);
 // the menu opened or is held while it is open. `what` names the ID in the label ("Copy old a1b2c3d", "Copy old full ID")
 // for a menu with a second item. Returns true when clicked (after copying).
 bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled = true, const char* what = nullptr);
+// X ranges [min, max) on screen of a drawn ID's whole text and of its highlighted prefix; ImVec2() = none.
+struct IdSlot {
+    ImVec2 text;
+    ImVec2 prefix;
+};
+struct IdOptions {
+    bool full = false;                  // the full ID (split after 7) instead of the short one (3 of 7)
+    const char* tooltipLabel = nullptr; // text shown in the tooltip with the full ID (e.g. "HEAD")
+    ImGuiHoveredFlags tooltipDelay = ImGuiHoveredFlags_DelayNormal;
+};
+// A standalone commit ID (an item of its own, `id` is its item ID): draws it, shows the tooltip with the full ID
+// (never while a list scrolls: beginTooltip()), copies on left click (the highlighted prefix copies that part, the
+// rest the full ID), and owns its context menu "##<id>_menu" whose only item is the ###copy_id item. Returns its slot.
+IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options = {});
+// The slot of an ID the caller draws itself as part of a selectable's label: `shown` is the ID text starting at
+// screen X `left`, `lead` the number of highlighted characters.
+IdSlot idSlotAt(float left, std::string_view shown, size_t lead);
+// The copy item(s) of a row's context menu; call inside the open menu. entries[0] is the row's own ID: a right
+// click elsewhere on the row or a menu opened from the keyboard offers it. A right click on the drawn text of
+// entry k offers only entry k (unnamed). Otherwise every further enabled entry is offered after the first as
+// "Copy <what> ..." under the ID "<what>/###copy_id".
+struct IdMenuEntry {
+    std::string hex;
+    IdSlot slot;
+    const char* what = nullptr;
+    bool enabled = true;
+};
+void idCopyMenuItems(std::initializer_list<IdMenuEntry> entries);
 // Alt+Space on the keyboard-focused item (the keyboard equivalent of the right click that opens its
 // context menu). Call right after the item. The chord is a routed shortcut owned by the item, so
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing

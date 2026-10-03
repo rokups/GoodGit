@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -411,7 +412,9 @@ void captureIdCopyClick(const ImVec2& prefixRange)
     g_idCopyOpen.target = -1;
 }
 
-int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids)
+namespace {
+
+int captureTargets(std::span<const IdCopyTarget> ids)
 {
     if (ImGui::IsWindowAppearing()) {
         captureIdCopyClick(ImVec2());
@@ -429,6 +432,13 @@ int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids)
     return g_idCopyOpen.target;
 }
 
+} // namespace
+
+int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids)
+{
+    return captureTargets(std::span<const IdCopyTarget>(ids.begin(), ids.size()));
+}
+
 bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled, const char* what)
 {
     // Shift counts when held as the menu opened or while it is open (a menu opened from the keyboard).
@@ -441,6 +451,64 @@ bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled, const cha
         return false;
     ImGui::SetClipboardText(choice.text.c_str());
     return true;
+}
+
+IdSlot idSlotAt(float left, std::string_view shown, size_t lead)
+{
+    const char* text = shown.data();
+    return {ImVec2(left, left + ImGui::CalcTextSize(text, text + shown.size()).x),
+        ImVec2(left, left + ImGui::CalcTextSize(text, text + std::min(lead, shown.size())).x)};
+}
+
+IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options)
+{
+    if (options.full)
+        fullIdText(hex, id, true);
+    else
+        shortIdText(hex, id, true);
+    const ImVec2 prefix = lastIdPrefixRange();
+    const IdSlot slot{ImVec2(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().x), prefix};
+    if (ImGui::IsItemHovered(options.tooltipDelay) && beginTooltip()) {
+        if (options.tooltipLabel) {
+            ImGui::TextUnformatted(options.tooltipLabel);
+            ImGui::SameLine();
+        }
+        fullIdText(hex);
+        ImGui::EndTooltip();
+    }
+    if (beginContextMenu((std::string("##") + id + "_menu").c_str())) {
+        captureIdCopyClick(prefix);
+        idCopyMenuItem(hex, options.full);
+        ImGui::EndPopup();
+    }
+    return slot;
+}
+
+void idCopyMenuItems(std::initializer_list<IdMenuEntry> entries)
+{
+    if (entries.size() == 0)
+        return;
+    // An ID that is not offered has no range of its own, so a click never lands on it.
+    std::vector<IdCopyTarget> targets;
+    for (const IdMenuEntry& e : entries)
+        targets.push_back(e.enabled ? IdCopyTarget{e.slot.text, e.slot.prefix} : IdCopyTarget{});
+    const int clicked = captureTargets(targets);
+    if (clicked >= 0) {
+        idCopyMenuItem((entries.begin() + clicked)->hex, false);
+        return;
+    }
+    idCopyMenuItem(entries.begin()->hex, false, entries.begin()->enabled);
+    int i = 0;
+    for (const IdMenuEntry& e : entries) {
+        if (i++ == 0 || !e.enabled)
+            continue;
+        if (e.what)
+            ImGui::PushID(e.what);
+        else
+            ImGui::PushID(i);
+        idCopyMenuItem(e.hex, false, true, e.what);
+        ImGui::PopID();
+    }
 }
 
 void spinner(const char* id, float radius)

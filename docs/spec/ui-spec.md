@@ -117,7 +117,8 @@ information's commit ID and parents). ID text on its own (the toolbar HEAD and t
 information commit ID) is the exception to "plain text does nothing on click": clicking its
 highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and clicking the
 dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID copies
-the full ID. IDs inside rows and tooltips are not clickable.
+the full ID. IDs inside rows and tooltips are not clickable. The toolbar HEAD, the Change
+information commit ID and each of its parents show a tooltip with the full ID on hover.
 Every item with a right-click context menu also opens it on `Alt+Space` while it has keyboard
 focus (the menu opens below the item's bottom-left corner; Space does not also activate it, and
 the Alt press does not switch to the menu bar; ignored while text is being typed).

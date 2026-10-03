@@ -623,21 +623,7 @@ void App::drawToolbar()
         if (snap.head.isNull())
             plainText((headText + "###tb_head").c_str());
         else
-            shortIdText(snap.head.hex(), "tb_head", true);
-        const ImVec2 headPrefixRange = lastIdPrefixRange();
-        if (!snap.head.isNull()) {
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && beginTooltip()) {
-                ImGui::TextUnformatted("HEAD");
-                ImGui::SameLine();
-                fullIdText(snap.head.hex());
-                ImGui::EndTooltip();
-            }
-            if (beginContextMenu("##tb_head_menu")) {
-                captureIdCopyClick(headPrefixRange);
-                idCopyMenuItem(snap.head.hex(), false);
-                ImGui::EndPopup();
-            }
-        }
+            commitId(snap.head.hex(), "tb_head", {.tooltipLabel = "HEAD", .tooltipDelay = ImGuiHoveredFlags_DelayShort});
         drawStateBadge();
         drawEditBanner();
     }

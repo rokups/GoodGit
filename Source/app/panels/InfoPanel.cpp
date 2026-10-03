@@ -365,13 +365,7 @@ void InfoPanel::draw(bool* open)
             ImGui::PopStyleColor();
         }
         label("Commit");
-        shortIdText(d.id.hex(), "commit_id_text", true);
-        const ImVec2 commitPrefixRange = lastIdPrefixRange();
-        if (beginContextMenu("##commit_id_menu")) {
-            captureIdCopyClick(commitPrefixRange);
-            idCopyMenuItem(d.id.hex(), false);
-            ImGui::EndPopup();
-        }
+        commitId(d.id.hex(), "commit_id_text");
         if (const ConflictList* conflicts = m_session.conflictsOf(d.id)) {
             label("Conflicts");
             for (size_t i = 0; i < conflicts->size(); ++i) {
@@ -390,15 +384,15 @@ void InfoPanel::draw(bool* open)
             const std::string shortId = d.parents[i].shortHex(kShortIdLength);
             const std::string id = shortId + "###parent_" + std::to_string(i);
             // The selectable's text starts at the cursor; the menu's copy item needs where the prefix is.
-            const float left = ImGui::GetCursorScreenPos().x;
-            const ImVec2 prefixRange(left, left + ImGui::CalcTextSize(shortId.c_str(), shortId.c_str() + kIdPrefixLength).x);
+            const IdSlot slot = idSlotAt(ImGui::GetCursorScreenPos().x, shortId, kIdPrefixLength);
             if (selectableDimRange(id.c_str(), kIdPrefixLength, kShortIdLength, false, ImGuiSelectableFlags_None,
                     ImGui::CalcTextSize(id.c_str(), nullptr, true)))
                 revealParent(d.parents[i]);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                idTooltip(d.parents[i].hex(), "");
             ImGui::PushID(static_cast<int>(i));
             if (beginContextMenu("##parent_menu")) {
-                captureIdCopyClick(prefixRange);
-                idCopyMenuItem(d.parents[i].hex(), false);
+                idCopyMenuItems({{d.parents[i].hex(), slot}});
                 ImGui::EndPopup();
             }
             ImGui::PopID();
