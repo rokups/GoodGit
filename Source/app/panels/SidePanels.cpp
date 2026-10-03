@@ -508,58 +508,44 @@ void TagsPanel::draw(bool* open)
     // Delete: one item for a tag only here; a submenu (Local, then each remote that has it) when a
     // remote has it too. A remote whose tags are still being read or could not be read is offered
     // with a note (the tag may be there).
-    struct DeleteRemotes {
-        std::vector<std::string> labels; // menu labels, the remote's name first
+    auto deleteItems = [&](const std::string& name, bool local) {
+        std::vector<std::string> remotes; // menu labels, the remote's name first
         std::vector<std::string> names;
-    };
-    auto deleteRemotes = [&](const std::string& name) {
-        DeleteRemotes out;
         for (const auto& r : m_snapshot->remotes) {
             auto it = remoteTags.find(r.name);
             if (it == remoteTags.end()) {
-                out.labels.push_back(r.name + " (checking...)");
-                out.names.push_back(r.name);
+                remotes.push_back(r.name + " (checking...)");
+                names.push_back(r.name);
             } else if (!it->second.ok) {
-                out.labels.push_back(r.name + " (not checked)");
-                out.names.push_back(r.name);
+                remotes.push_back(r.name + " (not checked)");
+                names.push_back(r.name);
             } else if (it->second.tags.count(name)) {
-                out.labels.push_back(r.name);
-                out.names.push_back(r.name);
+                remotes.push_back(r.name);
+                names.push_back(r.name);
             }
         }
-        return out;
-    };
-    // The entries of the Delete submenu (and of the row button's popup).
-    auto deleteEntries = [&](const std::string& name, bool local, const DeleteRemotes& remotes) {
-        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
-            actions.deleteTag(name);
-        ImGui::Separator();
-        for (size_t i = 0; i < remotes.labels.size(); ++i)
-            if (menuItem(ICON_MS_DELETE, remotes.labels[i].c_str()))
-                actions.deleteRemoteTag(remotes.names[i], name);
-    };
-    // Read only once a menu is open: this is per row, and only the open one needs it.
-    auto deleteItems = [&](const std::string& name, bool local) {
-        const DeleteRemotes remotes = deleteRemotes(name);
-        if (local && remotes.names.empty()) {
+        if (local && remotes.empty()) {
             if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
                 actions.deleteTag(name);
             return;
         }
         if (!beginMenu(ICON_MS_DELETE, "Delete", free))
             return;
-        deleteEntries(name, local, remotes);
+        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
+            actions.deleteTag(name);
+        ImGui::Separator();
+        for (size_t i = 0; i < remotes.size(); ++i)
+            if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
+                actions.deleteRemoteTag(names[i], name);
         ImGui::EndMenu();
     };
     for (const auto& t : m_snapshot->tags) {
         if (!containsNoCase(t.name, m_filter))
             continue;
         const std::string full = "refs/tags/" + t.name;
-        const std::string deletePopup = "##tag_delete_" + rowId(t.name);
-        // The hover buttons do what the menu's Reveal and Delete do (Delete asks which one in a popup).
+        // The hover button does what the menu's Reveal does.
         const RowAction acts[] = {
             {ICON_MS_MY_LOCATION, "act_reveal", "Reveal"},
-            {ICON_MS_DELETE, "act_delete", "Delete", free},
         };
         const RowEvents events = visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false,
             theme().palette().tagText, false, acts);
@@ -567,13 +553,6 @@ void TagsPanel::draw(bool* open)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         if (events.action == 0)
             m_session.revealCommit(t.target);
-        else if (events.action == 1) {
-            // A tag only here: no choice to make; else the popup asks which one.
-            if (deleteRemotes(t.name).names.empty())
-                actions.deleteTag(t.name);
-            else
-                ImGui::OpenPopup(deletePopup.c_str());
-        }
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && beginTooltip()) {
             // The message (it can run to several paragraphs), wrapped and cut after the line limit.
             tooltipText(t.message);
@@ -592,13 +571,6 @@ void TagsPanel::draw(bool* open)
                         actions.pushTag(r.name, t.name);
                 ImGui::EndMenu();
             }
-            ImGui::EndPopup();
-        }
-        // After the row's tooltip and menu, which belong to the row, not to the popup's last item.
-        if (ImGui::BeginPopup(deletePopup.c_str())) {
-            ImGui::BeginDisabled(!free);
-            deleteEntries(t.name, true, deleteRemotes(t.name));
-            ImGui::EndDisabled();
             ImGui::EndPopup();
         }
     }

@@ -578,7 +578,7 @@ GG_TEST("panels", "branches: a remote-tracking row's hover Check out creates the
     GG_CHECK_STR_EQ(side->upstream, "origin/side");
 }
 
-GG_TEST("panels", "tags: hover actions reveal a tag and delete a local-only tag")
+GG_TEST("panels", "tags: the hover action reveals a tag; there is no Delete button")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"tag", "v1.0", "HEAD~3"});
@@ -590,53 +590,13 @@ GG_TEST("panels", "tags: hover actions reveal a tag and delete a local-only tag"
     ctx->MouseMove("//Tags/##tag_filter");
     ctx->Yield(3);
     GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###act_reveal"));
-    GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###act_delete"));
     ctx->MouseMove(v1.c_str());
     ctx->Yield(3);
     GG_CHECK(s.itemExists("//Tags/tag_v1.0/###act_reveal"));
-    GG_CHECK(s.itemExists("//Tags/tag_v1.0/###act_delete"));
+    GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###act_delete"));
     GG_CHECK(!s.itemExists("//Tags/tag_v2.0/###act_reveal"));
     ctx->ItemClick("//Tags/tag_v1.0/###act_reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~3"); }));
-    ctx->MouseMove(v1.c_str());
-    ctx->Yield(3);
-    ctx->ItemClick("//Tags/tag_v1.0/###act_delete");
-    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/tags/v1.0"}).ok(); }));
-    GG_CHECK(s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/tags/v2.0"}).ok());
-}
-
-// A tag that is on a remote too: the Delete button asks which one, as the menu's submenu does.
-GG_TEST("panels", "tags: the Delete button of a tag that is also on a remote asks which one")
-{
-    const fs::path repo = s.fixture(Recipe::WithRemote);
-    s.git(repo, {"tag", "both", "HEAD~1"});
-    s.git(repo, {"push", "-q", "origin", "both"});
-    GG_REQUIRE(s.openRepository(repo));
-    s.showPanel("Tags");
-    const auto onOrigin = [&] {
-        return !s.gitOut(repo, {"ls-remote", "--tags", "origin", "refs/tags/both"}).empty();
-    };
-    const auto localTag = [&] { return s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/tags/both"}).ok(); };
-    GG_REQUIRE(onOrigin());
-    const std::string row = "//Tags/tag_both/###tag_both";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
-    GG_REQUIRE(s.waitUntil([&] {
-        const auto& tags = s.session()->remoteTags();
-        const auto it = tags.find("origin");
-        return it != tags.end() && it->second.ok && it->second.tags.count("both") != 0;
-    }));
-    ctx->MouseMove(row.c_str());
-    ctx->Yield(3);
-    ctx->ItemClick("//Tags/tag_both/###act_delete");
-    ctx->Yield(3);
-    // Nothing is deleted yet: the popup offers Local and origin.
-    GG_CHECK(localTag());
-    GG_CHECK(s.itemExists("//$FOCUSED/Local"));
-    GG_CHECK(s.itemExists("//$FOCUSED/origin"));
-    ctx->ItemClick("//$FOCUSED/Local");
-    GG_CHECK(s.waitUntil([&] { return !localTag(); }));
-    s.settle();
-    GG_CHECK(onOrigin());
 }
 
 } // namespace ggtest
