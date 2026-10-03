@@ -215,6 +215,10 @@ A `git rebase` (either backend) that stops runs as several git commands
   operation also when the rebase is no longer in progress (git writes the finish entry before it
   removes `rebase-merge/`: a pass that read the reflog just before it finds the rebase gone and
   no finish): the finish entry joins it in the next pass, which ends it, or ends it without one.
+  The rebase's own move of its branch (the branch's reflog entry `rebase (finish): refs/heads/<b>
+  onto …`) is written before HEAD's finish entry: a pass that sees it first puts it into that same
+  operation, when the branch ends where HEAD stands after the rebase's last step (another
+  worktree's rebase finishing is not part of it).
 - **Undo refuses while a rebase is in progress** in the worktree: a rebase of either backend ("finish or abort the
   rebase first") or `git am` (`rebase-apply/` without `rebasing`; "... git am first"), for every operation, older ones included: undoing what came before would pull refs
   out from under git.

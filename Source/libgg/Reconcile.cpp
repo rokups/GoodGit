@@ -12,6 +12,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
@@ -359,6 +360,15 @@ std::string renameSource(const std::string& msg)
         : msg.substr(skip, to - skip);
 }
 
+// "rebase (finish): refs/heads/feat onto <sha>" (also "rebase -i (finish): ..."): the entry git
+// writes to the rebased branch's own reflog.
+bool isRebaseFinishOf(const std::string& msg, const std::string& ref)
+{
+    const std::string action = actionPart(msg);
+    return isRebaseAction(action) && endsWith(action, " (finish)")
+        && startsWith(msg.substr(std::min(msg.size(), action.size() + 2)), ref + " onto ");
+}
+
 // The target ref of a rename or copy message.
 std::string renameTarget(const std::string& msg)
 {
@@ -560,6 +570,17 @@ std::vector<Pending> deriveBranchOps(git_repository* repo, std::vector<Pending>&
                     return rename ? h.msg == e.msg : h.oldId == e.oldId && h.newId == e.newId && h.msg == e.msg;
                 });
             });
+            // A rebase's own move of the branch: git writes it before HEAD's "(finish)" entry, so a
+            // pass in between sees the move and the rebase without its finish. One operation, when
+            // the branch ends where HEAD stands after the rebase's last step (not another
+            // worktree's rebase).
+            if (joined == headOps.end() && isRebaseFinishOf(e.msg, ref)) {
+                const auto open = std::find_if(headOps.rbegin(), headOps.rend(), [&](const Pending& h) {
+                    return h.rebase && !h.finished && !h.entries.empty() && h.entries.back().newId == e.newId;
+                });
+                if (open != headOps.rend())
+                    joined = std::prev(open.base());
+            }
             Pending fresh;
             Pending* p = &fresh;
             if (joined != headOps.end())

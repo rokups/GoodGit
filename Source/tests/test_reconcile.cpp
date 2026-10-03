@@ -741,6 +741,124 @@ GG_TEST("reconcile", "a plain rebase whose finish entry a pass reads only after 
     GG_CHECK(s.waitUntil([&] { return refState(s, repo) == before; }));
 }
 
+GG_TEST("reconcile", "a rebase whose branch moved before HEAD's finish entry is one operation")
+{
+    // The other order of the same race: git moves the branch (its reflog gets "rebase (finish):
+    // refs/heads/feat onto ...") before it writes the finish entry of HEAD's reflog. Staged by hand
+    // as above: pass 1 sees the moved branch and HEAD's log without the finish.
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"switch", "-q", "-c", "feat"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "f1"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "f2"});
+    s.git(repo, {"switch", "-q", "main"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "m1"});
+    s.git(repo, {"switch", "-q", "feat"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 6; }));
+    s.settle();
+    const std::string before = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+
+    const fs::path gitDir = repo / ".git";
+    const std::vector<std::string> names = {"logs/HEAD", "logs/refs/heads/feat", "refs/heads/feat", "HEAD"};
+    auto read = [&](const std::string& name) {
+        std::ifstream in(gitDir / name, std::ios::binary);
+        std::ostringstream text;
+        text << in.rdbuf();
+        return text.str();
+    };
+    auto write = [&](const std::string& name, const std::string& text) {
+        std::ofstream out(gitDir / name, std::ios::binary | std::ios::trunc);
+        out << text;
+    };
+    const std::string oldTip = read("refs/heads/feat");
+    std::map<std::string, std::string> finished;
+    s.git(repo, {"rebase", "-q", "main"});
+    for (const auto& name : names)
+        finished[name] = read(name);
+    const std::string tip = finished["refs/heads/feat"]; // the last replayed commit
+    std::string headLog = finished["logs/HEAD"];
+    const size_t lastLine = headLog.rfind('\n', headLog.size() - 2);
+    GG_REQUIRE(lastLine != std::string::npos);
+    GG_REQUIRE(headLog.find("rebase (finish)", lastLine) != std::string::npos);
+    headLog.resize(lastLine + 1); // HEAD's finish entry is not written yet
+
+    // The moment: the branch has moved (and its log has the finish), HEAD is detached on the last
+    // pick, its log ends there, and there is no rebase directory.
+    write("refs/heads/feat", finished["refs/heads/feat"]);
+    write("logs/refs/heads/feat", finished["logs/refs/heads/feat"]);
+    write("logs/HEAD", headLog);
+    write("HEAD", tip);
+    GG_REQUIRE(!fs::exists(gitDir / "rebase-merge"));
+    {
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        std::string error;
+        gg::reconcile::run(r.get(), &error);
+        GG_CHECK(error.empty());
+        const auto first = gitOps(repo);
+        GG_REQUIRE(first.size() == 7);
+        GG_CHECK_STR_EQ(first.back().label, "git rebase");
+        GG_CHECK(!first.back().ended); // the finish is still to come
+        const auto* moved = refChange(first.back(), "refs/heads/feat");
+        GG_REQUIRE(moved != nullptr);
+        GG_CHECK(moved->oldValue == oldTip.substr(0, oldTip.find('\n'))); // where the branch was before the rebase
+
+        // Then HEAD goes back on the branch, the finish entry is there.
+        for (const auto& name : {"HEAD", "logs/HEAD"})
+            write(name, finished[name]);
+        gg::reconcile::run(r.get(), &error);
+        GG_CHECK(error.empty());
+        const auto ops = gitOps(repo);
+        GG_REQUIRE(ops.size() == 7);
+        GG_CHECK_STR_EQ(ops.back().label, "git rebase");
+        GG_CHECK(ops.back().ended);
+        GG_CHECK(refChange(ops.back(), "refs/heads/feat") != nullptr);
+        GG_CHECK(refChange(ops.back(), "HEAD") == nullptr); // back on the branch it started on
+        GG_CHECK(!fs::exists(gitDir / "gg" / "rebase"));
+    }
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() == 7; }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == before; }));
+}
+
+GG_TEST("reconcile", "a rebase finished in another worktree is not part of the rebase stopped in this one")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"switch", "-q", "-c", "other"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "o1"});
+    s.git(repo, {"switch", "-q", "main"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "m1"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 4; }));
+    s.settle();
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+
+    // This worktree: a rebase stopped at an edit. A linked worktree: the rebase of "other" is done.
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    const fs::path linked = repo.parent_path() / "linked";
+    s.git(repo, {"worktree", "add", "-q", linked.string(), "other"});
+    s.git(linked, {"rebase", "-q", "main"});
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error);
+    GG_CHECK(error.empty());
+    const auto ops = gitOps(repo);
+    GG_REQUIRE(ops.size() == 6);
+    GG_CHECK_STR_EQ(ops[4].label, "git rebase"); // this worktree's rebase, still open
+    GG_CHECK(!ops[4].ended);
+    GG_CHECK(refChange(ops[4], "refs/heads/other") == nullptr);
+    GG_CHECK(refChange(ops[5], "refs/heads/other") != nullptr); // the other worktree's: its own operation
+}
+
 GG_TEST("reconcile", "a rebase started and aborted in a terminal, then a commit: the commit keeps its branch")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
