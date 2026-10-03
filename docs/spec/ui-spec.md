@@ -220,7 +220,8 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
 
 ## 3. Changes panel — window `"Changes"`
 - Header `###changes_title`: title of the selection ("0000000 Working tree" — the zero ID —,
-  "Index", short ID and commit subject, stash message), filter `##changes_filter`, toggle
+  "Index", short ID and commit subject, stash message; the ID follows the ID rule, its own item
+  `###changes_title_id`), filter `##changes_filter`, toggle
   *Compare with HEAD* `##compare_head` (enabled for commits only).
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
   renames shown `old → new`; files holding first-class conflicts are in the conflict colour with

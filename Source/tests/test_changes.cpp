@@ -138,14 +138,28 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     s.contextMenu("//Changes/##compare_with", "Clear");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
     s.git(repo, {"checkout", "--", "f2.txt"});
-    GG_CHECK(s.itemText("//Changes/###changes_title").rfind(s.revParse(repo, "HEAD~3").substr(0, 7) + " ", 0) == 0);
+    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title_id"), s.revParse(repo, "HEAD~3").substr(0, 7));
     // The working tree: the zero ID before "Working tree"; Compare with HEAD disabled, in both panels.
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::WorkingTree; }));
     const std::string zeros(7, '0');
-    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), zeros + " Working tree");
+    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title_id"), zeros);
+    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), "Working tree");
     GG_CHECK(ctx->ItemInfo("//Changes/##compare_with").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);
+}
+
+GG_TEST("changes", "the title shows the ID by the ID rule: 3 characters normal, the rest dimmed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, s.head(repo));
+    GG_CHECK(s.idShownDimmed("//Changes", s.head(repo).substr(0, 7), 3));
+    // The working tree's zero ID is drawn the same way.
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::WorkingTree; }));
+    ctx->Yield(2);
+    GG_CHECK(s.idShownDimmed("//Changes", std::string(7, '0'), 3));
 }
 
 GG_TEST("changes", "multi-select with Ctrl, Shift and Ctrl+A; keyboard navigation")

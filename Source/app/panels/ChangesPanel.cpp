@@ -914,26 +914,33 @@ void ChangesPanel::draw(bool* open)
     const auto snap = m_session.snapshot();
     markConflicts();
     std::string title;
+    std::string idText; // a short ID before the title, drawn by the ID rule
     const char* note = m_scanning ? "scanning..." : m_loading ? "loading..." : nullptr;
     switch (m_selection.kind) {
     case SelKind::WorkingTree:
         // Git's zero ID stands for the working tree (as in `git diff --raw`).
-        title = std::string(m_session.shortIdLength(), '0') + " Working tree";
+        idText = std::string(m_session.shortIdLength(), '0');
+        title = "Working tree";
         break;
     case SelKind::Index: title = "Index (staged)"; break;
     case SelKind::Commit: {
         const auto* row = m_session.history().row(m_selection.id);
-        title = m_session.shortId(m_selection.id);
+        idText = m_selection.id.hex();
         if (row) {
             // The subject takes what the id and the note (only while it is shown) leave of the line.
             const float noteWidth = note ? ImGui::GetStyle().ItemSpacing.x + ImGui::CalcTextSize(note).x : 0.0f;
-            const float room = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize((title + " ").c_str()).x - noteWidth;
-            title += " " + fitText(std::string(firstLine(row->subject)), std::max(room, ImGui::GetFontSize() * 6));
+            const float idWidth = ImGui::CalcTextSize(m_session.shortId(m_selection.id).c_str()).x + ImGui::CalcTextSize(" ").x;
+            const float room = ImGui::GetContentRegionAvail().x - idWidth - noteWidth;
+            title = fitText(std::string(firstLine(row->subject)), std::max(room, ImGui::GetFontSize() * 6));
         }
         break;
     }
     case SelKind::Stash: title = "stash@{" + std::to_string(m_selection.stashIndex) + "}"; break;
     default: title = "Nothing selected"; break;
+    }
+    if (!idText.empty()) {
+        shortIdText(idText, "changes_title_id");
+        ImGui::SameLine(0.0f, title.empty() ? 0.0f : ImGui::CalcTextSize(" ").x);
     }
     plainText((title + "###changes_title").c_str());
     if (note) {
