@@ -436,9 +436,11 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     }
     ImDrawList* dl = ImGui::GetWindowDrawList();
     // Every second change block has the alternate row background, and a block starts under a separator.
-    if (m_parity[static_cast<size_t>(index)])
+    // A selected line has only the selection colour, which may be translucent (the light theme).
+    const bool selected = index >= m_selFirst && index <= m_selLast;
+    if (m_parity[static_cast<size_t>(index)] && !selected)
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_TableRowBgAlt));
-    if (index >= m_selFirst && index <= m_selLast)
+    if (selected)
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), m_editor->GetPalette().get(TextEditor::Color::selection)); // one bar with the code's selection
     if (newBlock && index > 0) {
         const float y = std::floor(pos.y);

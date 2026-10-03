@@ -442,7 +442,8 @@ the panel without touching the repository.
   after the first starts under a 1 px separator line. The author column is as wide as the longest author present, up
   to the width of 20 digits; a longer name is cut with an ellipsis. The gutter is measured again when a blame loads
   and when the font or its size changes. The tooltip (full commit summary, author, date, original file and line)
-  is on the gutter only. The selected lines have the code's selection colour in the gutter too.
+  is on the gutter only. The selected lines have the code's selection colour in the gutter too, in place of
+  the alternate background.
 - **Opening at a line:** *Show originating source* and *Blame before this change* open the blame with the cursor on the
   corresponding line, scrolled to the middle of the code. That is not a selection: Down in the window selects it.
 - **Menus:** a right click on a line's gutter, on its line number or on its code, and Alt+Space (for the cursor line), open the
