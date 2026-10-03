@@ -103,7 +103,7 @@ private:
         std::vector<int> firstLine; // per row: first editor line (-1 = not in this view)
         std::vector<int> lastLine;
         Side side = Side::Unified;
-        bool focused = false; // the editor (or a window over it) had the keyboard last frame
+        bool focused = false; // the editor (or a window over it) had the keyboard last frame (the cut path)
     };
 
     void request();
@@ -111,6 +111,7 @@ private:
     void buildViews();
     void setupView(View& v, Side side);
     void finishView(View& v, const std::string& text);
+    std::string selectedText(View& v); // the code selected in `v`
     void renderEditor(View& v, const char* id, float width);
     void drawToolbar();
     void drawUnified();

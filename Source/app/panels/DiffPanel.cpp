@@ -410,34 +410,38 @@ int DiffPanel::hunkLine(int h) const
     return h >= 0 && h < static_cast<int>(starts.size()) ? starts[static_cast<size_t>(h)] : -1;
 }
 
+std::string DiffPanel::selectedText(View& v)
+{
+    View* saved = m_active;
+    m_active = &v;
+    std::string text = selectedText();
+    m_active = saved;
+    return text;
+}
+
 void DiffPanel::renderEditor(View& v, const char* id, float width)
 {
-    // The editor copies its own selection on Ctrl+C / Ctrl+Insert: replace that with the code only.
+    // The editor copies its own selection on Ctrl+C / Ctrl+Insert (its condition): replace that with
+    // the code only. It copied only if its own window has the keyboard (not its find box or a menu
+    // over it), whatever the clipboard held before.
     const ImGuiIO& io = ImGui::GetIO();
-    const bool copyKey = io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_C) || ImGui::IsKeyPressed(ImGuiKey_Insert));
+    const bool copyKey = io.KeyCtrl && !io.KeyShift && !io.KeyAlt
+        && (ImGui::IsKeyPressed(ImGuiKey_C) || ImGui::IsKeyPressed(ImGuiKey_Insert));
     const std::string before = copyKey ? std::string(ImGui::GetClipboardText() ? ImGui::GetClipboardText() : "") : std::string();
     v.editor->Render(id, ImVec2(width, 0));
-    if (copyKey) {
-        const char* now = ImGui::GetClipboardText();
-        if (now && before != now) {
-            View* saved = m_active;
-            m_active = &v;
-            const std::string text = selectedText();
-            m_active = saved;
-            ImGui::SetClipboardText((text.empty() ? before : text).c_str());
-        }
+    const ImGuiWindow* editorWindow = ImGui::GetCurrentWindow()->DC.ChildWindows.back();
+    const ImGuiWindow* nav = ImGui::GetCurrentContext()->NavWindow;
+    if (copyKey && nav == editorWindow) {
+        // Nothing selected: the editor copied the cursor line, leave the clipboard as it was.
+        const std::string text = selectedText(v);
+        ImGui::SetClipboardText((text.empty() ? before : text).c_str());
     }
     // A cut is a copy of the code (the editor is read-only, see draw()), into the focused editor's view.
     if (m_cutKey && v.focused) {
-        View* saved = m_active;
-        m_active = &v;
-        const std::string text = selectedText();
-        m_active = saved;
+        const std::string text = selectedText(v);
         if (!text.empty())
             ImGui::SetClipboardText(text.c_str());
     }
-    const ImGuiWindow* editorWindow = ImGui::GetCurrentWindow()->DC.ChildWindows.back();
-    const ImGuiWindow* nav = ImGui::GetCurrentContext()->NavWindow;
     while (nav && nav != editorWindow)
         nav = nav->ParentWindow;
     v.focused = nav != nullptr;

@@ -378,6 +378,23 @@ GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code")
     ImGui::SetClipboardText("");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
     GG_CHECK_STR_EQ(s.clipboard(), expected);
+    // The clipboard already holds what the editor itself copies (the placeholder and the hunk's
+    // function context included): Ctrl+C and Ctrl+Insert still leave only the code.
+    const std::string placeholder = "\xe2\x8b\xaf 23 unchanged lines";
+    GG_CHECK(s.textShown(body(s).c_str(), placeholder));
+    const std::string raw = "int line7 = 0;\nint line8 = 0;\n" + placeholder + "\nint line31 = 0;\nint line32 = 0;\nint line33 = 0;\n";
+    for (ImGuiKeyChord copy : {ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiKey_C), ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiKey_Insert)}) {
+        ImGui::SetClipboardText(raw.c_str());
+        ctx->KeyPress(copy);
+        GG_CHECK_STR_EQ(s.clipboard(), expected);
+    }
+    // Not the editor's copy chords (Ctrl+Shift+C, Ctrl+Shift+Insert, Ctrl+Alt+C): the clipboard stays.
+    for (ImGuiKeyChord other : {ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_C),
+             ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Insert), ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_C)}) {
+        ImGui::SetClipboardText("keep");
+        ctx->KeyPress(other);
+        GG_CHECK_STR_EQ(s.clipboard(), "keep");
+    }
     ImGui::SetClipboardText("");
     s.contextMenu((body(s) + "/###line_8").c_str(), "Copy");
     GG_CHECK_STR_EQ(s.clipboard(), expected);
@@ -387,6 +404,26 @@ GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code")
     GG_CHECK_STR_EQ(s.session()->diff().selectedText(), "");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
     GG_CHECK_STR_EQ(s.clipboard(), "keep");
+}
+
+GG_TEST("diff", "Ctrl+C in the editor's find box copies the find text, not the code selection")
+{
+    const DiffRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    showFile(s, r.change, "code.cpp");
+    ctx->ItemClick((body(s) + "/###line_4").c_str());
+    GG_CHECK(!s.session()->diff().selectedText().empty());
+    ImGui::SetClipboardText("keep");
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_F);
+    ctx->Yield(3);
+    // Matches nothing, so the code selection stays.
+    ctx->KeyCharsAppend("zzz");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_A);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), "zzz");
+    ctx->KeyPress(ImGuiKey_Escape);
 }
 
 GG_TEST("diff", "Ctrl+X and Shift+Delete copy the selection and delete nothing, in both views")
@@ -412,6 +449,7 @@ GG_TEST("diff", "Ctrl+X and Shift+Delete copy the selection and delete nothing, 
         ctx->Yield(2);
         const std::string selected = s.clipboard();
         GG_REQUIRE(selected.find('\n') != std::string::npos);
+        GG_CHECK(selected.find("unchanged lines") == std::string::npos && selected.find("\xe2\x8b\xaf") == std::string::npos);
         const auto before = s.drawnText(windowRef.c_str());
         for (ImGuiKeyChord cut : {ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiKey_X), ImGuiKeyChord(ImGuiMod_Shift | ImGuiKey_Delete)}) {
             ImGui::SetClipboardText("");
