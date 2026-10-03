@@ -326,6 +326,8 @@ GG_TEST("ui", "View menu: every panel hides and shows again; the choice is saved
             GG_CHECK_EQ(s.app.settings().data().panels.at(name), expected);
             GG_CHECK_EQ(shown(name), expected);
             const std::string saved = std::string("\"") + name + "\": " + (expected ? "true" : "false");
+            // The file is written on the I/O worker.
+            GG_REQUIRE(s.waitIdle());
             GG_CHECK(settingsFile(s).find(saved) != std::string::npos);
         }
     }
