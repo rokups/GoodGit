@@ -221,20 +221,28 @@ void HistoryPanel::showMore()
 void HistoryPanel::toggleRef(const std::string& fullName, bool only)
 {
     if (only) {
-        m_hidden.clear();
-        const auto& s = *m_snapshot;
-        for (const auto& b : s.branches)
-            m_hidden.insert("refs/heads/" + b.name);
-        for (const auto& r : s.remoteBranches)
-            m_hidden.insert("refs/remotes/" + r.name);
-        for (const auto& t : s.tags)
-            m_hidden.insert("refs/tags/" + t.name);
-        m_hidden.erase(fullName);
-    } else if (m_hidden.count(fullName)) {
-        m_hidden.erase(fullName);
-    } else {
-        m_hidden.insert(fullName);
+        showOnlyRefs({fullName});
+        return;
     }
+    if (m_hidden.count(fullName))
+        m_hidden.erase(fullName);
+    else
+        m_hidden.insert(fullName);
+    reload();
+}
+
+void HistoryPanel::showOnlyRefs(const std::vector<std::string>& fullNames)
+{
+    m_hidden.clear();
+    const auto& s = *m_snapshot;
+    for (const auto& b : s.branches)
+        m_hidden.insert("refs/heads/" + b.name);
+    for (const auto& r : s.remoteBranches)
+        m_hidden.insert("refs/remotes/" + r.name);
+    for (const auto& t : s.tags)
+        m_hidden.insert("refs/tags/" + t.name);
+    for (const auto& name : fullNames)
+        m_hidden.erase(name);
     reload();
 }
 

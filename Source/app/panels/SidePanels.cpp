@@ -15,6 +15,7 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <span>
 #include <string_view>
@@ -92,6 +93,7 @@ struct NameTree {
         size_t item = 0;             // leaf: index into the names
         std::vector<Entry> children; // group
         bool group = false;
+        size_t leaves = 1;           // the refs at or below this entry
     };
     std::vector<Entry> entries;
 };
@@ -113,13 +115,13 @@ std::vector<NameTree::Entry> buildTree(const std::vector<std::pair<size_t, std::
     for (const auto& [index, rest] : items) {
         const auto slash = rest.find('/');
         if (slash == std::string::npos)
-            out.push_back({rest, index, {}, false});
+            out.push_back({rest, index, {}, false, 1});
         else
             groups[rest.substr(0, slash)].push_back({index, rest});
     }
     for (auto& [first, members] : groups) {
         if (members.size() == 1) {
-            out.push_back({members.front().second, members.front().first, {}, false});
+            out.push_back({members.front().second, members.front().first, {}, false, 1});
             continue;
         }
         // The longest common prefix of whole segments, leaving each member a name below it.
@@ -138,24 +140,90 @@ std::vector<NameTree::Entry> buildTree(const std::vector<std::pair<size_t, std::
         std::vector<std::pair<size_t, std::string>> below;
         for (const auto& m : members)
             below.push_back({m.first, m.second.substr(prefix.size() + 1)});
-        out.push_back({prefix, 0, buildTree(below), true});
+        auto children = buildTree(below);
+        size_t leaves = 0;
+        for (const auto& c : children)
+            leaves += c.leaves;
+        out.push_back({prefix, 0, std::move(children), true, leaves});
     }
     std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.label < b.label; });
     return out;
 }
 
-// Draws `entries`; `leaf(index, label)` draws one ref. Groups open by default and while filtering.
-template <typename Leaf>
-void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& idPrefix, bool filtering, Leaf&& leaf)
+// The eye of a group row: shows or hides, in History, the refs listed under the row. All visible: a click
+// hides them, else it shows them; Ctrl-click shows only these. Mixed is drawn dimmed. Mouse only.
+void groupEye(HistoryPanel& history, std::span<const std::string> refs)
+{
+    size_t visible = 0;
+    for (const auto& r : refs)
+        visible += history.refVisible(r) ? 1 : 0;
+    const bool all = visible == refs.size();
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(visible > 0 && !all ? ImGuiCol_TextDisabled : ImGuiCol_Text));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+    const bool clicked = ImGui::SmallButton(visible > 0 ? ICON_MS_VISIBILITY "###eye" : ICON_MS_VISIBILITY_OFF "###eye");
+    ImGui::PopItemFlag();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip(all ? "Hide these branches in History (Ctrl-click: show only these)"
+                    : "Show these branches in History (Ctrl-click: show only these)");
+    if (clicked) {
+        const std::vector<std::string> list(refs.begin(), refs.end());
+        if (ImGui::GetIO().KeyCtrl)
+            history.showOnlyRefs(list);
+        else
+            history.setRefsVisible(list, !all);
+    }
+}
+
+// Branches: group rows get an eye over the full refs below them. `refOf` maps a leaf index to its full ref.
+struct GroupEyes {
+    HistoryPanel& history;
+    std::function<std::string(size_t)> refOf;
+};
+
+// The full refs of the leaves under `entries`, in the order they are drawn.
+void collectRefs(const std::vector<NameTree::Entry>& entries, const GroupEyes& eyes, std::vector<std::string>& out)
 {
     for (const auto& e : entries) {
+        if (e.group)
+            collectRefs(e.children, eyes, out);
+        else
+            out.push_back(eyes.refOf(e.item));
+    }
+}
+
+// Draws `entries`; `leaf(index, label)` draws one ref. Groups open by default and while filtering. With `eyes`,
+// a group row starts with its eye; `refs` are the refs under `entries` (collected here when empty).
+template <typename Leaf>
+void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& idPrefix, bool filtering, Leaf&& leaf,
+    const GroupEyes* eyes = nullptr, std::span<const std::string> refs = {})
+{
+    std::vector<std::string> collected;
+    if (eyes && refs.empty()) {
+        collectRefs(entries, *eyes, collected);
+        refs = collected;
+    }
+    size_t offset = 0; // of the current entry's refs in `refs`
+    for (const auto& e : entries) {
+        const size_t first = offset;
+        offset += e.leaves;
         if (!e.group) {
             leaf(e.item, e.label);
             continue;
         }
-        if (filtering)
-            ImGui::SetNextItemOpen(true);
         const std::string id = idPrefix + e.label + "/";
+        const auto below = eyes ? refs.subspan(first, e.leaves) : std::span<const std::string>();
+        if (eyes) {
+            ImGui::PushID(("group_" + rowId(id)).c_str());
+            groupEye(eyes->history, below);
+            ImGui::PopID();
+            ImGui::SameLine();
+        }
+        if (filtering) // after the eye: any item consumes the next-item data
+            ImGui::SetNextItemOpen(true);
         bool open;
         {
             const SectionHeaderColors neutral;
@@ -163,7 +231,7 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
                 ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
         }
         if (open) {
-            drawTree(e.children, id, filtering, leaf);
+            drawTree(e.children, id, filtering, leaf, eyes, below);
             ImGui::TreePop();
         }
     }
@@ -386,6 +454,7 @@ void BranchesPanel::draw(bool* open)
     for (size_t i = 0; i < m_snapshot->branches.size(); ++i)
         if (containsNoCase(m_snapshot->branches[i].name, m_filter))
             locals.push_back({i, m_snapshot->branches[i].name});
+    const GroupEyes localEyes{history, [&](size_t index) { return "refs/heads/" + m_snapshot->branches[index].name; }};
     drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
         std::string label = shortName;
@@ -422,7 +491,7 @@ void BranchesPanel::draw(bool* open)
             pushBranch(m_session, b);
         branchMenu(b);
         ImGui::PopID();
-    });
+    }, &localEyes);
 
     // Remote-tracking branches under their remote.
     std::map<std::string, std::vector<std::pair<size_t, std::string>>> byRemote;
@@ -437,6 +506,12 @@ void BranchesPanel::draw(bool* open)
         for (const auto& r : m_snapshot->remotes)
             if (r.name == remote)
                 info = &r;
+        const auto remoteTree = buildTree(list);
+        const GroupEyes remoteEyes{history, [&](size_t index) { return "refs/remotes/" + m_snapshot->remoteBranches[index].name; }};
+        std::vector<std::string> listed;
+        collectRefs(remoteTree, remoteEyes, listed);
+        groupEye(history, listed);
+        ImGui::SameLine();
         bool nodeOpen;
         {
             const SectionHeaderColors neutral;
@@ -457,7 +532,7 @@ void BranchesPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         if (nodeOpen) {
-            drawTree(buildTree(list), "remote:" + remote + "/", filtering, [&](size_t index, const std::string& shortName) {
+            drawTree(remoteTree, "remote:" + remote + "/", filtering, [&](size_t index, const std::string& shortName) {
                 const auto& r = m_snapshot->remoteBranches[index];
                 const std::string full = "refs/remotes/" + r.name;
                 // Rows keep the IDs they had before groups: <window>/remote_group_<remote>/<remote>/...
@@ -475,7 +550,7 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PopID();
                 ImGui::PopID();
                 ImGui::PopID();
-            });
+            }, &remoteEyes, listed);
             ImGui::TreePop();
         }
         ImGui::PopID();

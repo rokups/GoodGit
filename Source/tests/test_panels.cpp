@@ -581,6 +581,113 @@ GG_TEST("panels", "branches: a remote-tracking row's hover Check out creates the
     GG_CHECK_STR_EQ(side->upstream, "origin/side");
 }
 
+GG_TEST("panels", "branches: a folder group's eye hides and shows all its branches; Ctrl-click shows only them")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    s.git(repo, {"branch", "feature/three", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    const std::string groupEye = "//Branches/group_local:feature:/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()); }));
+    const std::string one = "refs/heads/feature/one", two = "refs/heads/feature/two", three = "refs/heads/feature/three";
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(!history.refVisible(one) && !history.refVisible(two) && !history.refVisible(three));
+    GG_CHECK(history.refVisible("refs/heads/main"));
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(history.refVisible(one) && history.refVisible(two) && history.refVisible(three));
+    // Mixed (one hidden by its own eye): a click shows all.
+    ctx->ItemClick("//Branches/branch_feature:one/###eye");
+    GG_CHECK(!history.refVisible(one) && history.refVisible(two));
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(history.refVisible(one) && history.refVisible(two) && history.refVisible(three));
+    // The click did not close the group.
+    GG_CHECK(s.itemExists("//Branches/branch_feature:one/###branch_feature:one"));
+    // Ctrl-click: only these, also with a member hidden.
+    ctx->ItemClick("//Branches/branch_feature:one/###eye");
+    GG_CHECK(!history.refVisible(one));
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(groupEye.c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(history.refVisible(one) && history.refVisible(two) && history.refVisible(three));
+    GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/remotes/origin/main"));
+}
+
+GG_TEST("panels", "branches: a remote node's eye hides and shows all its remote-tracking branches")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "feature/one", "feature/two"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    const std::string nodeEye = "//Branches/remote_group_origin/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(nodeEye.c_str()); }));
+    const std::string main = "refs/remotes/origin/main", one = "refs/remotes/origin/feature/one",
+                      two = "refs/remotes/origin/feature/two";
+    ctx->ItemClick(nodeEye.c_str());
+    GG_CHECK(!history.refVisible(main) && !history.refVisible(one) && !history.refVisible(two));
+    GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible("refs/heads/feature/one"));
+    ctx->ItemClick(nodeEye.c_str());
+    GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
+    // A folder group under the remote has its own eye.
+    const std::string folderEye = "//Branches/remote_group_origin/origin/group_remote:origin:feature:/###eye";
+    GG_REQUIRE(s.itemExists(folderEye.c_str()));
+    ctx->ItemClick(folderEye.c_str());
+    GG_CHECK(history.refVisible(main) && !history.refVisible(one) && !history.refVisible(two));
+    GG_CHECK(history.refVisible("refs/heads/feature/one"));
+    // Mixed: a click on the remote node shows all.
+    ctx->ItemClick(nodeEye.c_str());
+    GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
+    // Ctrl-click: only the remote's branches.
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(nodeEye.c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
+    GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/heads/feature/one"));
+}
+
+GG_TEST("panels", "branches: with a filter typed a group's eye changes only the listed branches")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/other", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_feature:one/###eye"); }));
+    ctx->ItemInputValue("//Branches/##branch_filter", "feature/o");
+    const std::string groupEye = "//Branches/group_local:feature:/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()) && !s.itemExists("//Branches/branch_feature:two/###eye"); }));
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible("refs/heads/feature/other"));
+    GG_CHECK(history.refVisible("refs/heads/feature/two"));
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(history.refVisible("refs/heads/feature/one") && history.refVisible("refs/heads/feature/other"));
+    ctx->ItemInputValue("//Branches/##branch_filter", "");
+}
+
+GG_TEST("panels", "branches: a filter opens a closed group")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/other", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = "//Branches/branch_feature:one/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->ItemClose("//Branches/###group_local:feature:");
+    GG_REQUIRE(s.waitUntil([&] { return !s.itemExists(row.c_str()); }));
+    ctx->ItemInputValue("//Branches/##branch_filter", "feature/o");
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->ItemInputValue("//Branches/##branch_filter", "");
+}
+
 GG_TEST("panels", "tags: the hover action reveals a tag; there is no Delete button")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

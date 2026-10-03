@@ -41,6 +41,8 @@ public:
     // Scope (side panels): visibility of refs by full name.
     bool refVisible(const std::string& fullName) const { return !m_hidden.count(fullName); }
     void toggleRef(const std::string& fullName, bool only);
+    // Hides every branch, remote-tracking branch and tag except `fullNames` (toggleRef's Ctrl-click).
+    void showOnlyRefs(const std::vector<std::string>& fullNames);
     void showAllRefs();
     // Shows or hides every ref in `fullNames` at once (Branches: Show all / Hide all).
     void setRefsVisible(const std::vector<std::string>& fullNames, bool visible);

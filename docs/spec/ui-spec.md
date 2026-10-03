@@ -520,7 +520,9 @@ the panel without touching the repository.
   worktree: Open here `act_open_here` (not on the current one) · Open directory `act_open_dir`.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
-  Ctrl+Space = only this; the eye is mouse-only), current outlined. Context:
+  Ctrl+Space = only this; the eye is mouse-only), current outlined. Branches are grouped by folder and
+  remote-tracking ones by remote; a group row's eye (`###eye` in the group's scope) shows/hides the branches
+  listed under it (all visible: hide, else show; mixed drawn dimmed; Ctrl-click = only these; mouse only). Context:
   Reveal · Copy name · Check out · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
   remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
