@@ -26,6 +26,11 @@
 #include <crtdbg.h>
 #include <stdlib.h>
 #endif
+#if defined(__linux__) && __has_include(<execinfo.h>)
+#include <execinfo.h>
+#include <unistd.h>
+#define GGUI_HAVE_BACKTRACE 1
+#endif
 
 #include <atomic>
 #include <cstring>
@@ -141,6 +146,12 @@ void installCrashReport()
         }
         std::fprintf(stderr, "ggui: TERMINATE in %s: %s\n", currentTestName().c_str(), what.c_str());
         std::fflush(stderr);
+#ifdef GGUI_HAVE_BACKTRACE
+        // Where it was thrown, on the throwing thread (an uncaught exception is not unwound). The lines
+        // are module(+offset): addr2line/llvm-symbolizer on the binary.
+        void* frames[48];
+        backtrace_symbols_fd(frames, backtrace(frames, 48), STDERR_FILENO);
+#endif
         std::abort();
     });
 #ifdef _WIN32
