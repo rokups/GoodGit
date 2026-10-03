@@ -19,9 +19,10 @@ env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
   GGUI_FIXTURE_CACHE: ${{ github.workspace }}/.cache/ggui-fixtures
   SHARDS: "4"
-  # Timing budgets (HIST-LOAD-FAST, the 33 ms frame limit, HOOK-FAST) x2 on shared runners with
-  # software rendering and coverage; the release gate runs them unscaled (docs/release-checklist.md).
-  GGUI_TIMING_SLACK: "2"
+  # Timing budgets (HIST-LOAD-FAST, the 33 ms frame limit, HOOK-FAST) x3 on shared runners (software
+  # rendering, coverage, slow process start); the release gate runs them unscaled
+  # (docs/release-checklist.md).
+  GGUI_TIMING_SLACK: "3"
 
 jobs:
   git-min:
@@ -216,9 +217,6 @@ jobs:
         timeout-minutes: 30
         env:
           GGUI_HEADLESS: "1"
-          # Shared Windows runners (WARP rendering, slow process start) miss the timing
-          # budgets now and then by 2-2.5x; the budgets still catch real regressions.
-          GGUI_TIMING_SLACK: "3"
         run: |
           mkdir -p out
           bin/ggui.exe --test --shard=${{ matrix.shard }}/$SHARDS
