@@ -511,6 +511,13 @@ the panel without touching the repository.
   behind another tab, or while a blame loads, Change information follows the history selection again (§5).
 
 ## 8. Side panels
+- **Hover actions**: while the mouse is on a row of Branches, Tags, Remotes, Stashes or Worktrees, its most
+  common actions show as icon buttons at the row's right edge (over the row's end), buttons `###act_<name>` in
+  the row's ID scope, each the same as its menu item (same enabled state; the tooltip is the item's name); a
+  click on a button is not a click on the row. Mouse only (not keyboard stops). Local branch: Check out (not
+  on HEAD's branch) `act_checkout` · Push `act_push`; remote-tracking branch: Check out; tag: Reveal
+  `act_reveal`; remote: Fetch `act_fetch` · Pull `act_pull`; stash: Apply `act_apply` · Pop `act_pop`;
+  worktree: Open here `act_open_here` (not on the current one) · Open directory `act_open_dir`.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
   Ctrl+Space = only this; the eye is mouse-only), current outlined. Context:

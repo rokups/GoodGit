@@ -7,7 +7,10 @@
 
 #include "util/Ui.hpp"
 
+#include <libgg/Worktrees.hpp>
+
 #include <algorithm>
+#include <cstdint>
 
 namespace ggtest {
 
@@ -597,6 +600,142 @@ GG_TEST("panels", "tags: the hover action reveals a tag; there is no Delete butt
     GG_CHECK(!s.itemExists("//Tags/tag_v2.0/###act_reveal"));
     ctx->ItemClick("//Tags/tag_v1.0/###act_reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~3"); }));
+}
+
+GG_TEST("panels", "remotes: hover actions Fetch and Pull on the hovered row only")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "backup", "https://example.invalid/backup.git"});
+    // On origin/main, so that the pull below is a fast-forward.
+    s.git(repo, {"reset", "-q", "--hard", "origin/main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Remotes");
+    const std::string origin = "//Remotes/remote_origin/###row";
+    const std::string backup = "//Remotes/remote_backup/###row";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(origin.c_str()) && s.itemExists(backup.c_str()); }));
+    auto disabled = [&](const char* ref) { return (ctx->ItemInfo(ref).ItemFlags & ImGuiItemFlags_Disabled) != 0; };
+    // Not hovered: no buttons.
+    ctx->MouseMove("//Remotes/Fetch all##fetch_all");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists("//Remotes/remote_origin/###act_fetch"));
+    GG_CHECK(!s.itemExists("//Remotes/remote_origin/###act_pull"));
+    // Hovered: both, on that row only. main tracks origin/main, so Pull is there; backup has no tracking branch.
+    ctx->MouseMove(origin.c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists("//Remotes/remote_origin/###act_fetch"));
+    GG_CHECK(s.itemExists("//Remotes/remote_origin/###act_pull"));
+    GG_CHECK(!s.itemExists("//Remotes/remote_backup/###act_fetch"));
+    GG_CHECK(!disabled("//Remotes/remote_origin/###act_fetch"));
+    GG_CHECK(!disabled("//Remotes/remote_origin/###act_pull"));
+    ctx->MouseMove(backup.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists("//Remotes/remote_backup/###act_pull"));
+    GG_CHECK(!disabled("//Remotes/remote_backup/###act_fetch"));
+    GG_CHECK(disabled("//Remotes/remote_backup/###act_pull"));
+    // Fetch does what the menu item does: a commit pushed to the remote since arrives as origin/main.
+    const fs::path other = s.root() / (repo.filename().string() + "-other");
+    s.commitFile(other, "later.txt", "later\n", "Later on the remote");
+    s.git(other, {"push", "-q", "origin", "main"});
+    const std::string pushed = s.head(other);
+    GG_REQUIRE(s.revParse(repo, "origin/main") != pushed);
+    const std::string before = s.head(repo);
+    ctx->MouseMove(origin.c_str());
+    ctx->Yield(3);
+    ctx->ItemClick("//Remotes/remote_origin/###act_fetch");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == pushed; }));
+    // A fetch only: the branch stays where it was until Pull.
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), before);
+    ctx->MouseMove(origin.c_str());
+    ctx->Yield(3);
+    ctx->ItemClick("//Remotes/remote_origin/###act_pull");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == pushed; }));
+}
+
+GG_TEST("panels", "stashes: hover actions Apply and Pop leave the selection alone")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    auto stashRowRef = [](int index) { return "//Stashes/stash_" + std::to_string(index) + "/###row"; };
+    auto stashes = [&] { // SIZE_MAX while refs/stash is being rewritten (git briefly fails then)
+        const auto r = s.gitMayFail(repo, {"stash", "list"});
+        return r.ok() ? gg::splitLines(r.out).size() : SIZE_MAX;
+    };
+    auto stashButton = [](int index, const char* name) { return "//Stashes/stash_" + std::to_string(index) + "/###" + name; };
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRowRef(1).c_str()) && s.itemExists(stashRowRef(2).c_str()); }));
+    // Not hovered: no buttons; hovered: both, on that row only.
+    ctx->MouseMove("//Stashes/Push##stash_push");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(stashButton(2, "act_apply").c_str()));
+    ctx->MouseMove(stashRowRef(2).c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists(stashButton(2, "act_apply").c_str()));
+    GG_CHECK(s.itemExists(stashButton(2, "act_pop").c_str()));
+    GG_CHECK(!s.itemExists(stashButton(1, "act_apply").c_str()));
+    GG_CHECK(!s.itemExists(stashButton(0, "act_pop").c_str()));
+    // Select stash 1; a click on a button of another row does not move the selection.
+    ctx->ItemClick(stashRowRef(1).c_str());
+    const auto selected = s.session()->selection();
+    GG_REQUIRE(selected.kind == ggui::SelKind::Stash);
+    // Apply (stash 2: "worktree change") applies and keeps the stash.
+    ctx->MouseMove(stashRowRef(2).c_str());
+    ctx->Yield(3);
+    ctx->ItemClick(stashButton(2, "act_apply").c_str());
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "a.txt") == "a changed\n"; }));
+    s.settle();
+    GG_CHECK_EQ(stashes(), 3u);
+    GG_CHECK(s.session()->selection().kind == selected.kind && s.session()->selection().id == selected.id);
+    s.git(repo, {"checkout", "--", "a.txt"});
+    // Pop (stash 0: "with untracked") applies and drops it.
+    ctx->MouseMove(stashRowRef(0).c_str());
+    ctx->Yield(3);
+    ctx->ItemClick(stashButton(0, "act_pop").c_str());
+    GG_CHECK(s.waitUntil([&] { return stashes() == 2; }));
+    s.settle();
+    GG_CHECK(fs::exists(repo / "new.txt"));
+    GG_CHECK(s.session()->selection().kind == selected.kind && s.session()->selection().id == selected.id);
+}
+
+GG_TEST("panels", "worktrees: hover actions Open here (not on the current one) and Open directory")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Worktrees");
+    const std::string wt1 = repo.filename().string() + "-wt1";
+    const std::string wt3 = repo.filename().string() + "-wt3"; // its directory is gone
+    auto row = [](const std::string& name) { return "//Worktrees/worktree_" + name + "/###row"; };
+    auto button = [](const std::string& name, const char* act) { return "//Worktrees/worktree_" + name + "/###" + act; };
+    auto disabled = [&](const std::string& ref) { return (ctx->ItemInfo(ref.c_str()).ItemFlags & ImGuiItemFlags_Disabled) != 0; };
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row(wt1).c_str()) && s.itemExists(row(wt3).c_str()); }));
+    // Not hovered: no buttons.
+    ctx->MouseMove("//Worktrees/###add_worktree");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(button(wt1, "act_open_dir").c_str()));
+    // The current (main) worktree: Open directory only.
+    ctx->MouseMove(row("main").c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists(button("main", "act_open_dir").c_str()));
+    GG_CHECK(!s.itemExists(button("main", "act_open_here").c_str()));
+    GG_CHECK(!s.itemExists(button(wt1, "act_open_dir").c_str()));
+    // A missing one: both buttons, disabled.
+    ctx->MouseMove(row(wt3).c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(button(wt3, "act_open_here").c_str()));
+    GG_CHECK(disabled(button(wt3, "act_open_here")));
+    GG_CHECK(disabled(button(wt3, "act_open_dir")));
+    // Another worktree: both, enabled; Open here switches this window to it.
+    ctx->MouseMove(row(wt1).c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(button(wt1, "act_open_here").c_str()));
+    GG_CHECK(!disabled(button(wt1, "act_open_here")));
+    GG_CHECK(s.itemExists(button(wt1, "act_open_dir").c_str()));
+    GG_CHECK(!disabled(button(wt1, "act_open_dir")));
+    ctx->ItemClick(button(wt1, "act_open_here").c_str());
+    GG_CHECK(s.waitUntil([&] {
+        auto* session = s.session();
+        return session && session->opened() && gg::worktrees::samePath(session->path(), s.root() / wt1);
+    }));
 }
 
 } // namespace ggtest

@@ -169,6 +169,13 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
     }
 }
 
+// Pull in a remote's menu and on its row: only for the current branch when it tracks this remote.
+bool remotePullable(const core::Snapshot& snap, const core::RemoteInfo& r, bool free)
+{
+    const auto* current = snap.currentBranch();
+    return free && current && current->upstream.rfind(r.name + "/", 0) == 0;
+}
+
 // The Remotes panel's menu for a remote; also on the remote's node in Branches (remote-level items
 // only: a remote-tracking branch has its own branch menu).
 void remoteMenuItems(Session& session, const core::RemoteInfo& r)
@@ -176,7 +183,6 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
     auto& actions = session.actions();
     const bool free = actions.busy().empty();
     const auto snap = session.snapshot();
-    const auto* current = snap->currentBranch();
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(r.name.c_str());
     if (menuItem(ICON_MS_LINK, "Copy URL", nullptr, false, !r.url.empty()))
@@ -186,8 +192,7 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
         actions.fetch(r.name, false, false);
     if (menuItem(ICON_MS_DELETE_SWEEP, "Fetch and prune", nullptr, false, free))
         actions.fetch(r.name, true, false);
-    const bool pullable = free && current && current->upstream.rfind(r.name + "/", 0) == 0;
-    if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, pullable))
+    if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, remotePullable(*snap, r, free)))
         actions.pull(PullMode::Config);
     bool prune = r.pruneOnFetch;
     if (menuItem(ICON_MS_DELETE_SWEEP, "Prune on fetch", nullptr, &prune, free))
@@ -648,8 +653,19 @@ void WorktreesPanel::draw(bool* open)
         label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength)) : w.branch;
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
-        selectableDimRange((label + "###row").c_str(), dimFrom, dimTo, w.isCurrent);
+        ImGui::SetNextItemAllowOverlap();
+        selectableDimRange((label + "###row").c_str(), dimFrom, dimTo, w.isCurrent, ImGuiSelectableFlags_AllowOverlap);
         ImGui::PopStyleColor();
+        // The hover buttons do what the menu's Open here and Open directory do (Open here: not for the current one).
+        const RowAction acts[] = {
+            {ICON_MS_FOLDER_OPEN, "act_open_here", "Open here", !w.missing, !w.isCurrent},
+            {ICON_MS_OPEN_IN_NEW, "act_open_dir", "Open directory", !w.missing},
+        };
+        const int action = rowActions(acts, w.isCurrent);
+        if (action == 0)
+            m_session.app().openRepository(w.path);
+        else if (action == 1)
+            openInFileManager(w.path);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 std::string text = w.path.string();
@@ -747,7 +763,18 @@ void RemotesPanel::draw(bool* open)
             label += "@" + host;
         if (r.pruneOnFetch)
             label += "  (prune)";
-        selectableDimRange((label + "###row").c_str(), dimBegin, label.size());
+        ImGui::SetNextItemAllowOverlap();
+        selectableDimRange((label + "###row").c_str(), dimBegin, label.size(), false, ImGuiSelectableFlags_AllowOverlap);
+        // The hover buttons do what the menu's Fetch and Pull do.
+        const RowAction acts[] = {
+            {ICON_MS_DOWNLOAD, "act_fetch", "Fetch", free},
+            {ICON_MS_ARROW_DOWNWARD, "act_pull", "Pull", remotePullable(*snap, r, free)},
+        };
+        const int action = rowActions(acts);
+        if (action == 0)
+            actions.fetch(r.name, false, false);
+        else if (action == 1)
+            actions.pull(PullMode::Config);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
@@ -823,8 +850,10 @@ void StashesPanel::draw(bool* open)
         const std::string label = prefix + fitText(std::string(firstLine(s.message)), room);
         const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
         // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
-        if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav))
+        ImGui::SetNextItemAllowOverlap();
+        if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav | ImGuiSelectableFlags_AllowOverlap))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
+        const ImGuiLastItemData rowItem = ImGui::GetCurrentContext()->LastItemData;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             idTooltip(s.commit.hex(), cachedTooltipText(ImGui::GetItemID(), m_snapshot->generation, [&] {
                 return "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
@@ -855,6 +884,18 @@ void StashesPanel::draw(bool* open)
         baseSlot = rowIdText(s.base.hex());
         ImGui::SameLine(0, 0);
         ImGui::TextDisabled("  %s", core::formatTime(s.time).c_str());
+        // The hover buttons do what the menu's Apply and Pop do. Last, so that the base ID and the date (drawn
+        // after the row) do not end up over the buttons: the row is the last item again for rowActions.
+        ImGui::GetCurrentContext()->LastItemData = rowItem;
+        const RowAction acts[] = {
+            {ICON_MS_UNARCHIVE, "act_apply", "Apply", free},
+            {ICON_MS_OUTBOX, "act_pop", "Pop", free},
+        };
+        const int action = rowActions(acts, selected);
+        if (action == 0)
+            actions.stashApply(s.index, false, false);
+        else if (action == 1)
+            actions.stashApply(s.index, true, false);
         ImGui::PopID();
     }
     if (m_snapshot->stashes.empty())
