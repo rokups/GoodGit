@@ -2,6 +2,7 @@
 
 #include "Readers.hpp"
 
+#include <libgg/Keep.hpp>
 #include <libgg/Thread.hpp>
 
 #include <spdlog/spdlog.h>
@@ -43,6 +44,10 @@ void buildBadges(HistoryState& st)
         addBadge(st, r.target, RefKind::RemoteBranch, r.name);
     for (const auto& t : s.tags)
         addBadge(st, t.target, RefKind::Tag, t.name);
+    // A detached HEAD's own commit is kept too; its Head badge says so already.
+    for (const auto& k : s.kept)
+        if (!(s.headDetached && k.id == s.head))
+            addBadge(st, k.id, RefKind::Keep, k.id.hex());
     for (const auto& w : s.worktrees)
         if (!w.isCurrent && !w.bare && !w.head.isNull())
             addBadge(st, w.head, RefKind::Worktree, w.name);
@@ -328,6 +333,8 @@ void historyStart(git_repository* repo, HistoryState& st, std::uint64_t query, c
         push(r.target, refVisible(scope, "refs/remotes/" + r.name), true);
     for (const auto& t : s.tags)
         push(t.target, refVisible(scope, "refs/tags/" + t.name), false);
+    for (const auto& k : s.kept)
+        push(k.id, refVisible(scope, gg::keep::refName(k.id.hex())), false);
     for (const auto& w : s.worktrees)
         if (!w.isCurrent && !w.head.isNull())
             push(w.head, scope.allRefs, false);

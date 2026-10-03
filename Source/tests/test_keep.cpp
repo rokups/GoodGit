@@ -1452,4 +1452,103 @@ GG_TEST("keep", "git gg new --before a kept tip moves the keep ref to the replay
     checkNothingElse(s, repo, r);
 }
 
+// The kept commits of the open snapshot, as "<id> <summary>".
+std::vector<std::string> keptOf(Scenario& s)
+{
+    std::vector<std::string> out;
+    for (const auto& k : s.session()->snapshot()->kept)
+        out.push_back(k.id.hex() + " " + k.summary);
+    return out;
+}
+
+bool hasKeepBadge(Scenario& s, const std::string& id)
+{
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(id));
+    return row && std::any_of(row->refs.begin(), row->refs.end(), [&](const ggui::core::RefBadge& b) {
+        return b.kind == ggui::core::RefKind::Keep && b.name == id;
+    });
+}
+
+GG_TEST("keep", "the snapshot lists the kept commits with their summaries, and none once a branch reaches them")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = detachedCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(maintain(repo).ok);
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(keepRefs(s, repo) == names({x}));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return keptOf(s) == std::vector<std::string>{x + " Detached x.txt"}; }));
+    s.git(repo, {"branch", "graduated", x});
+    GG_CHECK(s.waitUntil([&] { return keepRefs(s, repo).empty() && keptOf(s).empty(); }));
+}
+
+GG_TEST("keep", "History: a kept commit carries a Keep badge with its short ID and loses it, and its row, with its ref hidden")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = detachedCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(maintain(repo).ok);
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(x)) != nullptr; }));
+    GG_CHECK(hasKeepBadge(s, x));
+    const std::string badge = "//History/**/" + x + "/###badge_" + x;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badge.c_str()); }));
+    GG_CHECK(s.itemText(badge.c_str()).find(x.substr(0, 7)) != std::string::npos);
+    GG_CHECK(s.itemText(badge.c_str()).find(x.substr(0, 8)) == std::string::npos);
+    // Hidden like a branch: its commit leaves History unless another ref reaches it.
+    s.session()->history().toggleRef(gg::keep::refName(x), false);
+    GG_CHECK(s.waitUntil([&] {
+        return !s.session()->history().loading() && s.session()->history().row(ggui::core::Oid::fromHex(x)) == nullptr;
+    }));
+    GG_CHECK(!s.itemExists(badge.c_str()));
+    s.session()->history().toggleRef(gg::keep::refName(x), false);
+    GG_CHECK(s.waitUntil([&] { return hasKeepBadge(s, x); }));
+}
+
+GG_TEST("keep", "History: the detached HEAD's own commit has the Head badge and no Keep badge")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = detachedCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(maintain(repo).ok);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(x)) != nullptr; }));
+    GG_CHECK(keptOf(s).size() == 1);
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(x));
+    GG_REQUIRE(row != nullptr);
+    GG_CHECK(std::any_of(row->refs.begin(), row->refs.end(),
+        [](const ggui::core::RefBadge& b) { return b.kind == ggui::core::RefKind::Head; }));
+    GG_CHECK(!hasKeepBadge(s, x));
+}
+
+GG_TEST("keep", "the Operations tooltip names a keep ref as detached <short ID>")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path wt = s.path("detached-wt");
+    s.git(repo, {"worktree", "add", "-q", "--detach", wt.string(), "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.commitFile(wt, "w.txt", "w\n", "In the worktree");
+    const std::string w = s.head(wt);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error);
+    GG_REQUIRE(s.waitUntil([&] { return keepRefs(s, repo) == names({w}); }));
+    const auto kept = opsChanging(repo, gg::keep::refName(w), true);
+    GG_REQUIRE(kept.size() == 1);
+    GG_REQUIRE(s.waitUntil([&] {
+        for (const auto& op : s.session()->operations())
+            if (op.id == kept[0].id)
+                return true;
+        return false;
+    }));
+    s.settle();
+    s.showPanel("Operations");
+    const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + kept[0].id + "/###row";
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    ctx->MouseMove(row.c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "detached " + w.substr(0, 10)));
+    GG_CHECK(!s.textShown("//##Tooltip_00", gg::keep::kPrefix));
+}
+
 } // namespace ggtest

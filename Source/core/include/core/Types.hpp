@@ -93,6 +93,12 @@ struct TagInfo {
     std::string message;
 };
 
+// A commit kept by a refs/gg/keep/<id> ref (made on a detached HEAD, reached by no branch or tag).
+struct KeptInfo {
+    Oid id;
+    std::string summary;         // the commit's first message line
+};
+
 struct RemoteInfo {
     std::string name;
     std::string url;
@@ -160,6 +166,7 @@ struct Snapshot {
     std::vector<RemoteBranchInfo> remoteBranches;
     std::vector<RemoteHeadInfo> remoteHeads;   // <remote>/HEAD aliases
     std::vector<TagInfo> tags;
+    std::vector<KeptInfo> kept;                // one per well-formed keep ref, by ref name
     std::vector<RemoteInfo> remotes;
     std::vector<WorktreeInfo> worktrees;
     std::vector<StashInfo> stashes;
@@ -215,11 +222,11 @@ using StatusPtr = std::shared_ptr<const StatusResult>;
 
 // ---- History -----------------------------------------------------------------------------------
 
-enum class RefKind : std::uint8_t { LocalBranch, RemoteBranch, Tag, Head, Worktree, Stash };
+enum class RefKind : std::uint8_t { LocalBranch, RemoteBranch, Tag, Head, Worktree, Stash, Keep };
 
 struct RefBadge {
     RefKind kind;
-    std::string name;
+    std::string name;                // Keep: the kept commit's full ID (the ref is refs/gg/keep/<name>)
     bool current = false;            // checked-out branch
 };
 

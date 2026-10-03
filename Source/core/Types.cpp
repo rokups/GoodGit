@@ -94,6 +94,8 @@ std::string Snapshot::refsFingerprint() const
         fp += h.name + "->" + h.symref + "=" + h.target.hex() + ";";
     for (const auto& t : tags)
         fp += t.name + "=" + t.target.hex() + ";";
+    for (const auto& k : kept)
+        fp += "k" + k.id.hex() + ";";
     for (const auto& s : stashes)
         fp += "s" + s.commit.hex() + ";";
     for (const auto& w : worktrees)

@@ -9,6 +9,8 @@
 #include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
+#include <libgg/Keep.hpp>
+
 #include <IconsMaterialSymbols.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -1088,6 +1090,18 @@ void ReflogPanel::draw(bool* open)
 
 // ---- Operations ---------------------------------------------------------------------------------
 
+namespace {
+
+// A ref as the tooltip names it: a keep ref is "detached <short ID>", the others by their full name.
+std::string refChangeName(const std::string& ref)
+{
+    if (!gg::keep::isKeepRef(ref))
+        return ref;
+    return "detached " + ref.substr(std::string(gg::keep::kPrefix).size()).substr(0, 10);
+}
+
+} // namespace
+
 void OperationsPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Operations, open)) {
@@ -1127,7 +1141,7 @@ void OperationsPanel::draw(bool* open)
                 const std::string* const lines = &cachedTooltipText(ImGui::GetItemID(), revision, [&] {
                     std::string text;
                     for (const auto& r : op.refs)
-                        text += (text.empty() ? "" : "\n") + r.ref + ": " + r.oldValue.substr(0, 10)
+                        text += (text.empty() ? "" : "\n") + refChangeName(r.ref) + ": " + r.oldValue.substr(0, 10)
                             + " " ICON_MS_ARROW_RIGHT_ALT " " + r.newValue.substr(0, 10);
                     return text;
                 });

@@ -1,5 +1,6 @@
 #include "Readers.hpp"
 
+#include <libgg/Keep.hpp>
 #include <libgg/Todo.hpp>
 
 #include <libgg/Markers.hpp>
@@ -340,6 +341,22 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         }
         return true;
     });
+
+    for (const std::string& id : gg::keep::read(repo)) {
+        gg::throwIfCancelled(cancel);
+        KeptInfo k;
+        k.id = Oid::fromHex(id);
+        const git_oid oid = toGit(k.id);
+        git_commit* commit = nullptr;
+        if (k.id.isNull() || git_commit_lookup(&commit, repo, &oid) != 0) {
+            git_error_clear();
+            continue;
+        }
+        const char* summary = git_commit_summary(commit);
+        k.summary = summary ? summary : "";
+        git_commit_free(commit);
+        snap->kept.push_back(std::move(k));
+    }
 
     for (const auto& [full, oid] : localBranches) {
         gg::throwIfCancelled(cancel);

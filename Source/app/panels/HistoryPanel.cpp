@@ -7,6 +7,8 @@
 #include "shell/Widgets.hpp"
 #include "util/Ui.hpp"
 
+#include <libgg/Keep.hpp>
+
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -40,6 +42,9 @@ core::HistoryScope HistoryPanel::buildScope() const
     for (const auto& t : s.tags)
         if (refVisible("refs/tags/" + t.name))
             scope.refs.push_back("refs/tags/" + t.name);
+    for (const auto& k : s.kept)
+        if (refVisible(gg::keep::refName(k.id.hex())))
+            scope.refs.push_back(gg::keep::refName(k.id.hex()));
     // HEAD follows its branch; a detached HEAD is always shown.
     if (s.headDetached || refVisible("refs/heads/" + s.headBranch))
         scope.refs.push_back("HEAD");
@@ -241,6 +246,8 @@ void HistoryPanel::showOnlyRefs(const std::vector<std::string>& fullNames)
         m_hidden.insert("refs/remotes/" + r.name);
     for (const auto& t : s.tags)
         m_hidden.insert("refs/tags/" + t.name);
+    for (const auto& k : s.kept)
+        m_hidden.insert(gg::keep::refName(k.id.hex()));
     for (const auto& name : fullNames)
         m_hidden.erase(name);
     reload();
@@ -731,7 +738,8 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         // A hidden ref loses its badge even where other refs keep the commit in view.
         if ((ref.kind == core::RefKind::LocalBranch && !refVisible("refs/heads/" + ref.name))
             || (ref.kind == core::RefKind::RemoteBranch && !refVisible("refs/remotes/" + ref.name))
-            || (ref.kind == core::RefKind::Tag && !refVisible("refs/tags/" + ref.name)))
+            || (ref.kind == core::RefKind::Tag && !refVisible("refs/tags/" + ref.name))
+            || (ref.kind == core::RefKind::Keep && !refVisible(gg::keep::refName(ref.name))))
             continue;
         ImGui::SameLine();
         ImU32 color = p.branch;
@@ -743,10 +751,13 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         case core::RefKind::Head: color = p.head; icon = ""; break;
         case core::RefKind::Worktree: color = p.worktree; icon = ICON_MS_FOLDER; break;
         case core::RefKind::Stash: color = p.stash; icon = ICON_MS_INVENTORY_2; break;
+        case core::RefKind::Keep: color = p.head; icon = ICON_MS_PUSH_PIN; break;
         }
-        // A long name is shortened in the middle; the ID keeps the full name.
+        // A long name is shortened in the middle; the ID keeps the full name. A kept commit shows its short ID.
         const auto& settings = m_session.app().settings().data();
-        const std::string shown = elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+        const std::string shown = ref.kind == core::RefKind::Keep
+            ? ref.name.substr(0, core::kShortIdLength)
+            : elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
         const std::string badge = std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
         drawBadge(badge.c_str(), color, ref.current);
         if (ref.kind == core::RefKind::LocalBranch)

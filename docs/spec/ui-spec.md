@@ -196,9 +196,11 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
   Row IDs: `row_wt` (Working tree), `row_index` (Index, N, only when something is staged),
   `row_<full commit id>` for commits.
 - Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
-  stash (N). A badge's name longer than prefix + suffix + 1 characters (the General settings,
+  stash (N), keep (a commit kept from a detached HEAD: a pin icon and the short ID, in the HEAD
+  badge's colour, `###badge_<full commit id>`; hidden like a branch, by the ref `refs/gg/keep/<full
+  commit id>`; not drawn on the detached HEAD's own row, which has the HEAD badge). A badge's name longer than prefix + suffix + 1 characters (the General settings,
   default 12 + 12) is shown as its first prefix characters, "…" and its last suffix characters, for
-  every kind of badge; the badge's ID (`###badge_<name>`) keeps the full name. Published commits (reachable from a remote-tracking ref) use the normal text colour;
+  every kind of badge but keep; the badge's ID (`###badge_<name>`) keeps the full name. Published commits (reachable from a remote-tracking ref) use the normal text colour;
   unpublished commits are highlighted. Conflicted commits: conflict colour and ⚠ icon.
 - Keys: ↑/↓ select, `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
@@ -582,7 +584,8 @@ the panel without touching the repository.
   `###copy_id`, the old one's `old/###copy_id`) · Reveal old/new ·
   Create branch from old/new….
 - **Operations** `"Operations"` (M): rows `op_<id>` (time, source label, description). Context:
-  Restore (undo back to before this operation). Plain git commands appear as `git <command>` rows (source `git`), journaled by the reconciler
+  Restore (undo back to before this operation). The tooltip lists the refs the operation changed;
+  a keep ref reads `detached <first 10 characters of the ID>`, not `refs/gg/keep/<id>`. Plain git commands appear as `git <command>` rows (source `git`), journaled by the reconciler
   (undo-journal §4); there is no footer note.
 
 ## 9. Dialogs
