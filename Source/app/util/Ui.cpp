@@ -204,17 +204,22 @@ void plainText(const char* label)
     textItem(label, end, std::string::npos, *end ? ImGui::GetID(label) : 0);
 }
 
-void shortIdText(const std::string& hex, const char* id, bool clickable)
+// A short commit ID: the first kShortIdLength characters of `hex`, split after kIdPrefixLength. Registered like
+// plainText under `id` when given. With `clickable` (needs an id) a click on the highlighted prefix copies the
+// prefix and a click on the dimmed rest copies the full `hex`; the hand cursor shows on hover.
+static void shortIdText(const std::string& hex, const char* id = nullptr, bool clickable = false)
 {
     idItem(hex, kShortIdLength, kIdPrefixLength, id, clickable);
 }
 
-void fullIdText(const std::string& hex, const char* id, bool clickable)
+// A full commit ID: split after kShortIdLength. Clickable like shortIdText (the prefix copies the short ID).
+static void fullIdText(const std::string& hex, const char* id = nullptr, bool clickable = false)
 {
     idItem(hex, std::string::npos, kShortIdLength, id, clickable);
 }
 
-ImVec2 lastIdPrefixRange() { return g_lastIdPrefixRange; }
+// The X range [min, max) on screen of the highlighted prefix of the ID that shortIdText / fullIdText drew last.
+static ImVec2 lastIdPrefixRange() { return g_lastIdPrefixRange; }
 
 // Tooltip text wraps at this many font sizes and is cut after this many wrapped lines.
 static float tooltipWrapWidth() { return ImGui::GetFontSize() * 40.0f; }
@@ -393,13 +398,21 @@ struct IdCopyOpen {
     bool keyboard = false;
     bool onPrefix = false;
     bool shift = false;
-    int target = -1; // the ID of several that was clicked (the captureIdCopyClick that takes a list)
+    int target = -1; // the ID of several that was clicked (captureTargets)
 };
 IdCopyOpen g_idCopyOpen;
 
-} // namespace
+// The X range of an ID's whole text and of its highlighted prefix; ImVec2() for both = an ID without a range of its
+// own (nothing to copy).
+struct IdCopyTarget {
+    ImVec2 text;
+    ImVec2 prefix;
+};
 
-void captureIdCopyClick(const ImVec2& prefixRange)
+// On the first frame of an ID's context menu: records whether the right click that opened it was inside
+// `prefixRange` and whether Shift was held, and keeps both while the menu stays open. A menu opened from the
+// keyboard (Alt+Space) has no click.
+void captureClick(const ImVec2& prefixRange)
 {
     if (!ImGui::IsWindowAppearing())
         return;
@@ -412,12 +425,12 @@ void captureIdCopyClick(const ImVec2& prefixRange)
     g_idCopyOpen.target = -1;
 }
 
-namespace {
-
+// captureClick for a menu over several IDs. Returns the index of the ID the right click was on, or -1 for a click
+// elsewhere on the row or a menu opened from the keyboard; the prefix range that counts is that ID's.
 int captureTargets(std::span<const IdCopyTarget> ids)
 {
     if (ImGui::IsWindowAppearing()) {
-        captureIdCopyClick(ImVec2());
+        captureClick(ImVec2());
         const float x = ImGui::GetIO().MousePos.x;
         int i = 0;
         for (const IdCopyTarget& id : ids) {
@@ -432,16 +445,12 @@ int captureTargets(std::span<const IdCopyTarget> ids)
     return g_idCopyOpen.target;
 }
 
-} // namespace
-
-int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids)
+// The item for what captureClick / captureTargets recorded, with the stable ID "###copy_id". `longId` is a full ID
+// (its highlighted prefix is the 7 characters) rather than a short one (3). Shift counts when it was held as the
+// menu opened or while it is open (a menu opened from the keyboard). `what` names the ID in the label ("Copy old
+// a1b2c3d", "Copy old full ID") for a menu with a second item. Returns true when clicked (after copying).
+bool copyItem(const std::string& hex, bool longId, bool enabled = true, const char* what = nullptr)
 {
-    return captureTargets(std::span<const IdCopyTarget>(ids.begin(), ids.size()));
-}
-
-bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled, const char* what)
-{
-    // Shift counts when held as the menu opened or while it is open (a menu opened from the keyboard).
     const bool shift = g_idCopyOpen.shift || ImGui::GetIO().KeyShift;
     IdCopyChoice choice = g_idCopyOpen.keyboard ? idCopyChoiceKeyboard(hex, shift)
                                                 : idCopyChoice(hex, longId, g_idCopyOpen.onPrefix, shift);
@@ -453,11 +462,27 @@ bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled, const cha
     return true;
 }
 
+} // namespace
+
+void captureIdCopyClick(const IdSlot& slot) { captureClick(slot.prefix); }
+
+bool idCopyMenuItem(const std::string& hex, bool enabled) { return copyItem(hex, false, enabled); }
+
 IdSlot idSlotAt(float left, std::string_view shown, size_t lead)
 {
     const char* text = shown.data();
     return {ImVec2(left, left + ImGui::CalcTextSize(text, text + shown.size()).x),
         ImVec2(left, left + ImGui::CalcTextSize(text, text + std::min(lead, shown.size())).x)};
+}
+
+IdSlot rowIdText(const std::string& hex, const char* id, bool full)
+{
+    if (full)
+        fullIdText(hex, id);
+    else
+        shortIdText(hex, id);
+    const ImVec2 prefix = lastIdPrefixRange();
+    return {ImVec2(prefix.x, ImGui::GetItemRectMax().x), prefix};
 }
 
 IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options)
@@ -477,8 +502,8 @@ IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options
         ImGui::EndTooltip();
     }
     if (beginContextMenu((std::string("##") + id + "_menu").c_str())) {
-        captureIdCopyClick(prefix);
-        idCopyMenuItem(hex, options.full);
+        captureClick(prefix);
+        copyItem(hex, options.full);
         ImGui::EndPopup();
     }
     return slot;
@@ -494,10 +519,10 @@ void idCopyMenuItems(std::initializer_list<IdMenuEntry> entries)
         targets.push_back(e.enabled ? IdCopyTarget{e.slot.text, e.slot.prefix} : IdCopyTarget{});
     const int clicked = captureTargets(targets);
     if (clicked >= 0) {
-        idCopyMenuItem((entries.begin() + clicked)->hex, false);
+        copyItem((entries.begin() + clicked)->hex, false);
         return;
     }
-    idCopyMenuItem(entries.begin()->hex, false, entries.begin()->enabled);
+    copyItem(entries.begin()->hex, false, entries.begin()->enabled);
     int i = 0;
     for (const IdMenuEntry& e : entries) {
         if (i++ == 0 || !e.enabled)
@@ -506,7 +531,7 @@ void idCopyMenuItems(std::initializer_list<IdMenuEntry> entries)
             ImGui::PushID(e.what);
         else
             ImGui::PushID(i);
-        idCopyMenuItem(e.hex, false, true, e.what);
+        copyItem(e.hex, false, true, e.what);
         ImGui::PopID();
     }
 }

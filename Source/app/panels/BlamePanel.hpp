@@ -2,6 +2,7 @@
 #pragma once
 
 #include "shell/Session.hpp"
+#include "util/Ui.hpp"
 
 #include <core/Engine.hpp>
 
@@ -125,7 +126,7 @@ private:
     std::vector<unsigned char> m_parity; // per line: 0 or 1, flips with every change block
     float m_gutterWidth = 0;             // pixels
     float m_authorWidth = 0;             // the gutter's author column, pixels
-    ImVec2 m_idPrefixRange;              // the X range of the gutter's highlighted ID prefix (the gutter is drawn before its menu)
+    IdSlot m_idSlot;                     // where the gutter's ID is drawn (the gutter is drawn before its menu)
     float m_gutterFont = 0;              // the font size the gutter was measured at
     ImFont* m_gutterFace = nullptr;      // and the font
     bool m_gutterDirty = false;          // a blame was loaded: the gutter is measured again

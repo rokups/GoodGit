@@ -939,7 +939,7 @@ void ChangesPanel::draw(bool* open)
     default: title = "Nothing selected"; break;
     }
     if (!idText.empty()) {
-        shortIdText(idText, "changes_title_id");
+        rowIdText(idText, "changes_title_id");
         ImGui::SameLine(0.0f, title.empty() ? 0.0f : ImGui::CalcTextSize(" ").x);
     }
     plainText((title + "###changes_title").c_str());

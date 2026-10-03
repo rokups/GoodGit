@@ -30,17 +30,11 @@ void drawBadge(const char* label, ImU32 color, bool outlined = false);
 void plainText(const char* label);
 // Commit ID rules: a short ID is always kShortIdLength characters; wherever an ID is drawn, its first
 // kIdPrefixLength characters (a short ID) or kShortIdLength characters (a full ID) are in the text
-// colour and the rest is dimmed.
+// colour and the rest is dimmed. Every place that shows an ID draws it with commitId or rowIdText (below), or as
+// part of a selectable's label with idSlotAt giving its place, and offers its copy item with commitId,
+// idCopyMenuItems or the two-step captureIdCopyClick / idCopyMenuItem, so they look and behave alike.
 using core::kIdPrefixLength;
 using core::kShortIdLength;
-// A short commit ID: the first kShortIdLength characters of `hex`, split after kIdPrefixLength. Registered
-// like plainText under `id` when given. With `clickable` (needs an id) a click on the highlighted
-// prefix copies the prefix and a click on the dimmed rest copies the full `hex`; the hand cursor shows on hover.
-void shortIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
-// A full commit ID: split after kShortIdLength. Clickable like shortIdText (the prefix copies the short ID).
-void fullIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
-// The X range [min, max) on screen of the highlighted prefix of the ID that shortIdText / fullIdText drew last.
-ImVec2 lastIdPrefixRange();
 // A list counts as scrolling until its scroll position has been still for this long (seconds).
 constexpr double kScrollSettleSeconds = 0.3;
 // True while the current window, or the window it is a child of, has scrolled within kScrollSettleSeconds
@@ -59,7 +53,7 @@ bool beginTooltip();
 const std::string& cachedTooltipText(ImGuiID key, uint64_t revision, const std::function<std::string()>& build);
 // Tests: how many times cachedTooltipText has called its `build`.
 int tooltipTextBuilds();
-// A tooltip that starts with a full commit ID (drawn as fullIdText) followed by more lines.
+// A tooltip that starts with a full commit ID (split after kShortIdLength) followed by more lines.
 void idTooltip(const std::string& hex, const std::string& rest);
 // Text inside an open tooltip: word-wrapped at 40 font sizes and cut with "…" after 10 lines
 // ('\n' in the text ends a line too). Every tooltip with text goes through this.
@@ -78,24 +72,6 @@ IdCopyChoice idCopyChoice(const std::string& hex, bool longId, bool onPrefix, bo
 // The item of a menu opened from the keyboard (Alt+Space), for a long or a short ID: "Copy <7 characters>", with
 // Shift "Copy full ID"; never the 3 characters.
 IdCopyChoice idCopyChoiceKeyboard(const std::string& hex, bool shift);
-// Call first inside an ID's context menu: on the menu's first frame it records whether the right click that opened
-// it was inside `prefixRange` (the X range of the ID's highlighted prefix, lastIdPrefixRange) and whether Shift was
-// held, and keeps both while the menu stays open. A menu opened from the keyboard (Alt+Space) has no click: see
-// idCopyChoiceKeyboard.
-void captureIdCopyClick(const ImVec2& prefixRange);
-// captureIdCopyClick for a menu over several IDs (a reflog row shows two). Each has the X range of its whole text and
-// of its highlighted prefix; an ID without a range of its own (nothing to copy) has the empty `ImVec2()` for both.
-// Returns the index of the ID the right click was on, or -1 for a click elsewhere on the row or a menu opened
-// from the keyboard; the prefix range that counts is that ID's.
-struct IdCopyTarget {
-    ImVec2 text;
-    ImVec2 prefix;
-};
-int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids);
-// The item for what captureIdCopyClick recorded, with the stable ID "###copy_id". Shift counts when it was held as
-// the menu opened or is held while it is open. `what` names the ID in the label ("Copy old a1b2c3d", "Copy old full ID")
-// for a menu with a second item. Returns true when clicked (after copying).
-bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled = true, const char* what = nullptr);
 // X ranges [min, max) on screen of a drawn ID's whole text and of its highlighted prefix; ImVec2() = none.
 struct IdSlot {
     ImVec2 text;
@@ -110,6 +86,9 @@ struct IdOptions {
 // (never while a list scrolls: beginTooltip()), copies on left click (the highlighted prefix copies that part, the
 // rest the full ID), and owns its context menu "##<id>_menu" whose only item is the ###copy_id item. Returns its slot.
 IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options = {});
+// A commit ID drawn as text inside a row or a line of text: no click, tooltip or menu of its own (the row's own
+// tooltip and menu stay). Registered like plainText under `id` when given. Returns its slot, for the row's menu.
+IdSlot rowIdText(const std::string& hex, const char* id = nullptr, bool full = false);
 // The slot of an ID the caller draws itself as part of a selectable's label: `shown` is the ID text starting at
 // screen X `left`, `lead` the number of highlighted characters.
 IdSlot idSlotAt(float left, std::string_view shown, size_t lead);
@@ -124,6 +103,13 @@ struct IdMenuEntry {
     bool enabled = true;
 };
 void idCopyMenuItems(std::initializer_list<IdMenuEntry> entries);
+// The two-step form of idCopyMenuItems for a menu whose copy item sits in a submenu (the submenu's first frame is
+// not the click) or after other items that depend on the ID: call captureIdCopyClick first inside the menu itself
+// (on its first frame it records whether the right click was inside the slot's prefix and whether Shift was held),
+// then idCopyMenuItem where the item goes.
+// A menu opened from the keyboard offers the 7 characters, with Shift the full ID.
+void captureIdCopyClick(const IdSlot& slot);
+bool idCopyMenuItem(const std::string& hex, bool enabled = true);
 // Alt+Space on the keyboard-focused item (the keyboard equivalent of the right click that opens its
 // context menu). Call right after the item. The chord is a routed shortcut owned by the item, so
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing

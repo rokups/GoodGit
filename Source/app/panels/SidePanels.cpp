@@ -803,7 +803,7 @@ void StashesPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         ImGui::SameLine();
-        shortIdText(s.base.hex());
+        rowIdText(s.base.hex());
         ImGui::SameLine(0, 0);
         ImGui::TextDisabled("  %s", core::formatTime(s.time).c_str());
         ImGui::PopID();
@@ -888,26 +888,15 @@ void ReflogPanel::draw(bool* open)
                 // Where the two IDs are drawn (the selectable's text starts at the cursor), for the menu's copy item.
                 const float oldLeft = ImGui::GetCursorScreenPos().x;
                 const float newLeft = oldLeft + ImGui::CalcTextSize(label.c_str(), label.c_str() + newAt).x;
-                const auto textRange = [](float left, const std::string& id, size_t chars) {
-                    return ImVec2(left, left + ImGui::CalcTextSize(id.c_str(), id.c_str() + std::min(chars, id.size())).x);
-                };
-                const std::string newText = e.newId.shortHex(kShortIdLength);
+                const IdSlot oldSlot = idSlotAt(oldLeft, oldText, kIdPrefixLength);
+                const IdSlot newSlot = idSlotAt(newLeft, e.newId.shortHex(kShortIdLength), kIdPrefixLength);
                 selectableDimRanges(label.c_str(),
                     {{kIdPrefixLength, kShortIdLength}, {newAt + kIdPrefixLength, newAt + kShortIdLength}}, false,
                     ImGuiSelectableFlags_SpanAllColumns);
                 if (beginContextMenu("##reflog_menu")) {
                     // One item for the ID the right click was on. Off the IDs (and from the keyboard) the new ID's,
                     // and the old ID's after it so that it stays reachable.
-                    const int clicked = captureIdCopyClick(
-                        {{e.oldId.isNull() ? ImVec2() : textRange(oldLeft, oldText, oldText.size()),
-                             e.oldId.isNull() ? ImVec2() : textRange(oldLeft, oldText, kIdPrefixLength)},
-                            {textRange(newLeft, newText, newText.size()), textRange(newLeft, newText, kIdPrefixLength)}});
-                    idCopyMenuItem((clicked == 0 ? e.oldId : e.newId).hex(), false);
-                    if (clicked < 0 && !e.oldId.isNull()) {
-                        ImGui::PushID("old");
-                        idCopyMenuItem(e.oldId.hex(), false, true, "old");
-                        ImGui::PopID();
-                    }
+                    idCopyMenuItems({{e.newId.hex(), newSlot}, {e.oldId.hex(), oldSlot, "old", !e.oldId.isNull()}});
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
                         m_session.revealCommit(e.newId);
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal old commit", nullptr, false, !e.oldId.isNull()))

@@ -323,7 +323,7 @@ void BlamePanel::drawLineMenuItems(int index, bool gutter)
     const bool committed = !line.commit.isNull();
     // The gutter shows the ID on the first line of a block only; a click anywhere else counts as the rest of the ID.
     const bool idDrawn = committed && (index == 0 || m_blame->lines[static_cast<size_t>(index - 1)].commit != line.commit);
-    captureIdCopyClick(gutter && idDrawn ? m_idPrefixRange : ImVec2());
+    captureIdCopyClick(gutter && idDrawn ? m_idSlot : IdSlot{});
     // The line stays on its screen row in the blame opened from it.
     const int row = std::max(0, index - m_editor->GetFirstVisibleLine());
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame before this change", nullptr, false, committed))
@@ -333,7 +333,7 @@ void BlamePanel::drawLineMenuItems(int index, bool gutter)
     ImGui::Separator();
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
-    idCopyMenuItem(line.commit.hex(), false, committed);
+    idCopyMenuItem(line.commit.hex(), committed);
     ImGui::Separator();
     if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
         selectBlock(index);
@@ -507,9 +507,9 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     // The first line of a block carries what it shows as its label.
     ImGui::PushOverrideID(ImGui::GetCurrentWindow()->ID);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
-    m_idPrefixRange = ImVec2(pos.x, pos.x + static_cast<float>(kIdPrefixLength) * glyph); // the same on every line
     const ImVec2 size(std::max(1.0f, width), height);
     const std::string id = committed ? l.commit.shortHex(kShortIdLength) : std::string(kNotCommitted);
+    m_idSlot = idSlotAt(pos.x, id, kIdPrefixLength); // the same on every line
     const std::string label = (newBlock ? id : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
     ImGui::InvisibleButton(label.c_str(), size);
     if (m_menuPending > 0 && index == m_menuLine) {
@@ -632,7 +632,7 @@ void BlamePanel::draw(bool* open)
         if (q.commit.isNull())
             ImGui::TextUnformatted("working tree");
         else
-            shortIdText(q.commit.hex());
+            rowIdText(q.commit.hex());
     }
     if (m_loading) {
         ImGui::SameLine();

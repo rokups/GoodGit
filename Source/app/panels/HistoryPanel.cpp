@@ -507,7 +507,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
 {
     if (!beginContextMenu("##row_menu"))
         return;
-    captureIdCopyClick(m_idPrefixRange);
+    captureIdCopyClick(m_idSlot);
     // The table runs with zero vertical item spacing; the menu uses the regular one.
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
     // A click on a row outside the selection selects just that row; on a selected row it keeps the selection.
@@ -577,7 +577,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         disabledHint(movable.empty(), "No other branch to move here.");
     ImGui::Separator();
     if (beginMenu(ICON_MS_CONTENT_COPY, "Copy", single)) {
-        idCopyMenuItem(hex, false);
+        idCopyMenuItem(hex);
         if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
             std::string text = hex + " " + row.subject + "\nAuthor: " + row.author + " <" + row.authorEmail
                 + ">\nDate: " + core::formatTime(row.time, true);
@@ -715,8 +715,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         ImGui::TableSetColumnIndex(1);
     else
         ImGui::SetCursorScreenPos(cellStart); // the row's Selectable shares the first column
-    shortIdText(row.id.hex());
-    m_idPrefixRange = lastIdPrefixRange();
+    m_idSlot = rowIdText(row.id.hex());
     const bool showStashes = m_session.app().settings().data().historyShowStashes;
     for (const auto& ref : row.refs) {
         if (ref.kind == core::RefKind::Stash && !showStashes)
