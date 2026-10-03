@@ -15,8 +15,9 @@
 namespace gg {
 
 // Current value of every ref the journal tracks: this worktree's HEAD (symbolic as
-// "ref:<target>") under its journal key, and everything under refs/ except refs/gg/ (ggui keeps no
-// private refs; leftovers of the old gg there are deleted on open, never journaled).
+// "ref:<target>") under its journal key, and everything under refs/ that journal::tracked() accepts:
+// all but refs/gg/, except the keep refs under refs/gg/keep/ (leftovers of the old gg in refs/gg/
+// are deleted on open, never journaled).
 std::map<std::string, std::string> readRefValues(git_repository* repo);
 std::string zeroId(git_repository* repo);
 std::string worktreeKey(git_repository* repo);

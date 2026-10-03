@@ -739,7 +739,7 @@ Result run(git_repository* repo, std::string* error)
     // Only refs readRefValues reports are compared: another worktree's HEAD in the journal is not
     // ours to judge (and is never "deleted").
     auto relevant = [&](const std::string& ref) {
-        return ref == myHead || (ref.rfind("refs/", 0) == 0 && ref.rfind("refs/gg/", 0) != 0);
+        return ref == myHead || journal::tracked(ref);
     };
 
     // The reflog is read around the refs: a plain git command running right now could otherwise

@@ -152,6 +152,12 @@ private:
 std::string worktreeKeyForGitDir(const std::filesystem::path& gitDir, const std::filesystem::path& commonDir);
 // Journal key for HEAD of a worktree.
 std::string headKey(const std::string& worktree);
+// Whether the journal tracks the ref `name`: everything under refs/ except refs/gg/, but including
+// refs/gg/keep/ (the keep refs of detached commits, Keep.hpp). HEAD is tracked under headKey().
+inline bool tracked(const std::string& name)
+{
+    return name.rfind("refs/", 0) == 0 && (name.rfind("refs/gg/", 0) != 0 || name.rfind("refs/gg/keep/", 0) == 0);
+}
 
 // ---- Undo / redo planning --------------------------------------------------------------------
 

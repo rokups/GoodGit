@@ -180,7 +180,7 @@ bool Scenario::gitTransparent(const fs::path& repo, std::string* why)
     if (!common.ok())
         return true; // not a repository any more (fsck reports it)
     for (const auto& ref : gg::splitLines(gitMayFail(repo, {"for-each-ref", "--format=%(refname)", "refs/gg"}).out))
-        if (!ref.empty())
+        if (!ref.empty() && ref.rfind("refs/gg/keep/", 0) != 0) // the keep refs are the exception
             problems += "\n  ref written under refs/gg/: " + ref;
     const fs::path ggDir = fs::path(gg::trim(common.out)) / "gg";
     std::error_code ec;

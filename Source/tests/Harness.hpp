@@ -203,8 +203,9 @@ public:
     std::string statusPorcelain(const fs::path& repo);      // git status --porcelain=v2 -z
     bool fsck(const fs::path& repo, std::string* output = nullptr);
     // Git transparency (rule 2, product spec §9), checked after every test: no ref under refs/gg/
-    // (old gg leftovers are deleted on open), and $GIT_COMMON_DIR/gg holds only the journal,
-    // disposable caches, the reconciler state and journal bookkeeping.
+    // but the keep refs under refs/gg/keep/ (old gg leftovers are deleted on open), and
+    // $GIT_COMMON_DIR/gg holds only the journal, disposable caches, the reconciler state and
+    // journal bookkeeping.
     bool gitTransparent(const fs::path& repo, std::string* why = nullptr);
     // Every file under .git with its bytes, except disposable caches (the "byte-identical" check).
     std::map<std::string, std::string> gitDirBytes(const fs::path& repo);

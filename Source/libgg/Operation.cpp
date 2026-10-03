@@ -37,8 +37,9 @@ std::map<std::string, std::string> readRefValues(git_repository* repo)
     }
     forEachReference(repo, [&](git_reference* ref) {
         const std::string name = git_reference_name(ref);
-        // Leftovers of the old gg (refs/gg/*) are deleted on open and never journaled.
-        if (name.rfind("refs/", 0) != 0 || name.rfind("refs/gg/", 0) == 0)
+        // Leftovers of the old gg (refs/gg/*) are deleted on open and never journaled; the keep
+        // refs (refs/gg/keep/*) are.
+        if (!journal::tracked(name))
             return true;
         if (git_reference_type(ref) == GIT_REFERENCE_SYMBOLIC)
             values[name] = std::string("ref:") + git_reference_symbolic_target(ref);

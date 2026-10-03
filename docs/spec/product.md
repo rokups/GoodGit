@@ -25,7 +25,7 @@ scripts and code comments cite them.
   not guarded (P1).
 - **Undo** restores refs and the index. It updates the working tree only when nothing is
   lost; otherwise it refuses or offers to stash first (U1).
-- Leftover `refs/gg/*` from the old gg: **deleted automatically and silently** on open, in ggui and git-gg (C3).
+- Leftover `refs/gg/*` from the old gg, except `refs/gg/keep/*`: **deleted automatically and silently** on open, in ggui and git-gg (C3).
 - Platforms for the first release: **Linux and Windows**. macOS comes later.
 - **Tests are complete integration tests only, run through Dear ImGui Test Engine in the
   real `ggui` binary.** There are no unit tests and no GoogleTest. The goals are **every
@@ -112,7 +112,11 @@ layer that wraps libgit2.
     cancellation (killing the process tree), no console windows on Windows, locale forced
     to C for parsing (user-visible messages are shown as-is), and `GIT_TERMINAL_PROMPT=0`
     plus `GIT_ASKPASS`. It never waits on the UI thread.
-- **No private refs, no semantic metadata.** Nothing is added to `refs/`. `.git/gg/` holds only:
+- **No private refs but the keep refs, no semantic metadata.** Nothing is added to `refs/` except
+  `refs/gg/keep/<id>`, one direct ref per tip of the commits a detached HEAD was on that no branch,
+  remote-tracking branch or tag reaches (K2), so `gc` cannot drop them. They are plain refs other tools see: `git log --all` and
+  `for-each-ref` list them, `gc` keeps them, `fetch` and `clone` ignore them, `push --mirror`
+  copies them. `.git/gg/` holds only:
   1. the undo journal (history; losing it only disables Undo for past operations)
   2. disposable caches, for example "does this tree contain conflicts", which can always
      be rebuilt from the objects
@@ -610,7 +614,7 @@ Undo, and in `git gg op log`. Format and rules: `docs/spec/undo-journal.md` §4.
   replay: Undo starts from then. Plain `git push` is not guarded (§4.10, P1).
 - **Migration of older installs (H1).** On open (ggui, and every `git gg` command that opens a
   repository), managed hooks of older versions are uninstalled silently: previous hooks are
-  restored byte-exact (config-defined and wrapper modes), and `refs/gg/*` is deleted (C3). No
+  restored byte-exact (config-defined and wrapper modes), and `refs/gg/*` is deleted except `refs/gg/keep/*` (C3). No
   prompt, nothing is kept. `git gg hook …` stays as a silent exit-0 no-op for stale installs;
   `git gg hooks install|status` print "managed hooks were removed; Undo covers plain git without
   them"; `git gg hooks uninstall` runs the uninstall.
@@ -721,7 +725,7 @@ user wants to adjust more.
 
 | ID | Decision | Recommendation |
 |---|---|---|
-| U1 (confirmed) | How Undo/Redo and the Operations panel work without the gg operation log | Scope: **refs plus index; worktree updated only when lossless**, otherwise refuse or offer to stash. A **ref-state journal** in `.git/gg/journal` (per worktree for HEAD, shared for other refs). Each entry is one operation: its source (ggui / git-gg / plain git via the reconciler), the before and after values of every ref it touched (HEAD, branches, tags, `refs/stash` and other reflog-backed refs), and the index tree when known. **Undo** is itself a new operation that restores the before values, like jj and gg, so Redo = undo the undo. Undo refuses if the refs no longer match the entry's after values (moved outside the journal, for example by a tool that changed refs since the last pass). It also refuses if the working tree would lose data, and offers to stash first. Commits that are only reachable from the journal are protected from `gc` by using the refs' reflogs (Git's `gc` keeps reflog entries until they expire), so there are no private refs. The journal is history only: deleting it disables past Undo and nothing else |
+| U1 (confirmed) | How Undo/Redo and the Operations panel work without the gg operation log | Scope: **refs plus index; worktree updated only when lossless**, otherwise refuse or offer to stash. A **ref-state journal** in `.git/gg/journal` (per worktree for HEAD, shared for other refs). Each entry is one operation: its source (ggui / git-gg / plain git via the reconciler), the before and after values of every ref it touched (HEAD, branches, tags, `refs/stash` and other reflog-backed refs), and the index tree when known. **Undo** is itself a new operation that restores the before values, like jj and gg, so Redo = undo the undo. Undo refuses if the refs no longer match the entry's after values (moved outside the journal, for example by a tool that changed refs since the last pass). It also refuses if the working tree would lose data, and offers to stash first. Commits that are only reachable from the journal are protected from `gc` by using the refs' reflogs (Git's `gc` keeps reflog entries until they expire), so the only private refs are the keep refs (K2). The journal is history only: deleting it disables past Undo and nothing else |
 | R1 | Rewriting history that conflicts | Do rewrites in memory. **Text conflicts** become in-file first-class conflicts and the rewrite continues. **Non-text conflicts** are resolved in the pre-flight dialog before anything is written (§4.10). A ggui rewrite never leaves a native sequencer state, **except** an interactive rebase the user runs with the native engine (R3). Only failures outside content conflicts abort the rewrite with nothing changed: locked refs, worktree collisions, hook rejection, I/O errors |
 | K1 (confirmed) | Which conflicts may be first-class | Text content only. Binary, filtered (LFS), mode, type, delete and rename conflicts must be resolved immediately (§4.10 table) |
 | M1 | Marker format | Standard Git diff3 markers for two-sided conflicts, with the base always present. Extended alternating side and base sections for N sides. Marker length grows to avoid ambiguity. Edge cases (final newline, CRLF, empty sides) are encoded in-band. The spec defines the grammar formally; there is **no** separate storage |
@@ -733,9 +737,10 @@ user wants to adjust more.
 | G1 | Filter drivers (LFS etc.) | **Not needed.** Checkout, add and staging go through `git`, which runs the filters. In-memory rewrites work on stored (clean) blobs, and conflicts in filtered files must be resolved immediately (K1) |
 | G2 (confirmed) | Git access | Hybrid: libgit2 for reads and in-memory rewrites; `git` CLI for every mutation plain git has; ref moves after a rewrite go through one `git update-ref --stdin`. Minimum **git 2.36** (for `git hook run`), checked on startup with a clear error |
 | P1 (confirmed) | Push with conflicts | Always refused by ggui; plain `git push` is not guarded |
-| C3 (confirmed) | Leftover `refs/gg/*` from the old gg | On open (ggui and git-gg), delete them automatically and silently with one `git update-ref --no-deref --stdin`, with no prompt, no backup branches and no setting. The deletion is not journaled (the journal never records `refs/gg/*`), so it cannot be undone. Nothing is kept |
+| C3 (confirmed) | Leftover `refs/gg/*` from the old gg | On open (ggui and git-gg), delete them, except `refs/gg/keep/*` (K2), automatically and silently with one `git update-ref --no-deref --stdin`, with no prompt, no backup branches and no setting. The deletion is not journaled (the journal records no `refs/gg/*` but the keep refs), so it cannot be undone. Nothing is kept |
 | X1 (confirmed) | Platforms | First release: **Linux and Windows** (MinGW-static and MSVC presets). macOS later: it needs the SDL_GPU MSL/Metal path, signing and a preset |
 | I1 | CLI name | Ship the executable as `git-gg` so Git's subcommand lookup finds it as `git gg` |
+| K2 | Keeping the commits made on a detached HEAD | **Keep refs**: `refs/gg/keep/<full hex commit id>`, a direct ref to that same commit (the only private refs; the journal tracks them, unlike the rest of `refs/gg/*`). **Invariant K**, restored by one `git update-ref --no-deref --stdin` (nothing runs when it already holds; two, deletions first, when a malformed ref lies below a name to create): with A the commits `refs/heads/*`, `refs/remotes/*` and `refs/tags/*` reach (tags peeled) and H the HEADs of the worktrees that are detached, not bare and not in the middle of an operation, the keep refs are the tips of (existing keep refs ∪ H ∪ commits the caller names) that A does not reach: a commit a branch or tag reaches (graduation) or that is an ancestor of another kept commit loses its ref. Malformed refs under the prefix (another name, a symbolic ref) are repaired or deleted. The library has it (`libgg/Keep.hpp`); later work wires it in |
 
 ---
 

@@ -118,7 +118,7 @@ gg::git2::Repository openHere(bool migrate = true)
     if (git_repository_open_ext(&raw, ".", GIT_REPOSITORY_OPEN_FROM_ENV, nullptr) != 0)
         throw std::runtime_error("not a git repository (or any of the parent directories)");
     gg::git2::Repository repo(raw);
-    // Managed hooks and refs/gg/* left by older versions: removed silently.
+    // Managed hooks and refs/gg/* (but the keep refs) left by older versions: removed silently.
     if (migrate)
         gg::migrateLegacy(repo.get());
     return repo;

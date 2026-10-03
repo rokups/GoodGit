@@ -184,7 +184,7 @@ RequestId Engine::open()
         simulateLatency(job.token);
         job.worker.resetRepo();
         git_repository* repo = job.repo();
-        // What older versions left (managed git hooks, refs/gg/*): removed silently, not journaled.
+        // What older versions left (managed git hooks, refs/gg/* but the keep refs): removed silently, not journaled.
         {
             const gg::LegacyMigration migration = gg::migrateLegacy(repo);
             if (migration.hooksRemoved)

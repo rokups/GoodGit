@@ -121,7 +121,7 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
 - **Known value.** The journal says what every ref should be: *Known(ref)* is the last `new` value
   of the ref over all operations (undo and open ones included), else the baseline value from
   `reconcile.json`, else the null ID. After a pass, Known equals the current value of every ref:
-  all `refs/*` (except `refs/gg/*`) and this worktree's `HEAD`. Other worktrees' `HEAD` keys are
+  all `refs/*` (except `refs/gg/*`, but `refs/gg/keep/*`, the keep refs, are tracked) and this worktree's `HEAD`. Other worktrees' `HEAD` keys are
   not judged by a pass of this one.
 - **State file** `$GIT_COMMON_DIR/gg/reconcile.json`:
   `{"v":1,"baseline":{"<ref>":"<value>"},"journal":"<first op id>","cursors":{"<HEAD key>":{"n","old","new","time","msg"}}}`.

@@ -3,6 +3,7 @@
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/HooksLegacy.hpp"
+#include "libgg/Keep.hpp"
 
 #include <exception>
 #include <vector>
@@ -13,7 +14,9 @@ namespace {
 
 int collectName(const char* name, void* payload)
 {
-    static_cast<std::vector<std::string>*>(payload)->emplace_back(name);
+    // The keep refs are not leftovers (Keep.hpp).
+    if (!keep::isKeepRef(name))
+        static_cast<std::vector<std::string>*>(payload)->emplace_back(name);
     return 0;
 }
 
