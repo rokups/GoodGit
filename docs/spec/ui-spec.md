@@ -432,6 +432,13 @@ the panel without touching the repository.
 - **Toolbar:** Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5), the file and where it is blamed
   ("tale.txt at 1a2b3c4", "at working tree"), "loading..." while a blame runs, and the filter `##blame_filter`.
   "Large file: only the first lines are blamed." is shown above the code of a capped blame.
+  Back and Forward move only within the blames of one file: blaming another file (from outside the panel) or closing
+  the panel clears the history, and closing clears the filter too. The reopened panel is empty, with the hint "Use
+  "Blame file" on a file ..." and Back and Forward disabled. "Another file" is a path that is none of the history's
+  entries: the old name of a renamed file, reached by *Show originating source*, is the same file, and blaming it by
+  its new name adds to the history. Blaming what is already shown adds nothing; a working-tree blame is run again,
+  and keeps its position (first visible line, cursor line, selection). A blame reached by Back or Forward is shown
+  at the first visible line, with the cursor line and the selection it was left with.
 - **Code:** the whole file in a read-only text editor `##blame_editor` with line numbers. The editor does the
   syntax highlighting, chosen by the file name's extension (no highlighting for other files; the colours follow the
   theme and change with it). Text can be selected with the mouse and keys and copied (Ctrl+C); typing, paste, Delete,
@@ -445,7 +452,8 @@ the panel without touching the repository.
   is on the gutter only. The selected lines have the code's selection colour in the gutter too, in place of
   the alternate background.
 - **Opening at a line:** *Show originating source* and *Blame before this change* open the blame with the cursor on the
-  corresponding line, scrolled to the middle of the code. That is not a selection: Down in the window selects it.
+  corresponding line. When they are used on a line, that line stays on the same row of the editor; without a known row
+  it is scrolled to the middle of the code. That is not a selection: Down in the window selects it.
 - **Menus:** a right click on a line's gutter, on its line number or on its code, and Alt+Space (for the cursor line), open the
   menu of that line. The code's menu has Copy (enabled with a selection) and Select all first, a separator and then the
   line items; the other three have the line items only. Line items: Blame before this

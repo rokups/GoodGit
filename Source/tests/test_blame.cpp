@@ -743,7 +743,8 @@ GG_TEST("blame", "Change information and the blame selection: Esc cases, Shift r
     // Another blame loaded with a line selected: the selection and the override are gone.
     ctx->ItemClick(lineRef(s, 5).c_str());
     GG_REQUIRE(s.waitUntil([&] { return infoShows(r.c3); }));
-    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    session.blameFile("story.txt", ggui::core::Oid::fromHex(r.c1));
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "story.txt", r.c1); }));
     ctx->Yield(3);
     GG_CHECK(!session.infoOverride());
     GG_CHECK_EQ(blame.selectionFirst(), -1);
@@ -1038,9 +1039,9 @@ GG_TEST("blame", "a long file: open at a line, Down, Alt+Space and F3 bring line
     auto& blame = session.blame();
     ImGuiContext& g = *ImGui::GetCurrentContext();
     // Opened at line 150 (as "Show originating source" does): the cursor is there, in view, nothing selected.
+    s.showPanel("Blame"); // a closed panel keeps nothing: it is shown before it is given a blame
     blame.open("long.txt", ggui::core::Oid::fromHex(head), false, 150);
     ctx->Yield(2);
-    s.showPanel("Blame");
     GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
     ctx->Yield(4);
     GG_CHECK_EQ(blame.editorLines(), 200);
@@ -1140,6 +1141,275 @@ GG_TEST("blame", "a long file: open at a line, Down, Alt+Space and F3 bring line
     GG_CHECK_EQ(blame.selectionLast(), 5);
     ctx->MouseUp(ImGuiMouseButton_Left);
     ctx->Yield(3);
+}
+
+GG_TEST("blame", "history: blaming another file replaces it; the same file at another commit is added")
+{
+    const BlameRepo r = makeRepo(s);
+    s.commitFile(r.path, "other.txt", "O1\nO2\n", "Add another file");
+    const std::string o1 = s.head(r.path);
+    s.commitFile(r.path, "other.txt", "O1\nO2 edited\n", "Edit the other file");
+    const std::string o2 = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + o2).c_str()); }));
+    auto& session = *s.session();
+    auto& blame = session.blame();
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    ctx->Yield(2);
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    GG_CHECK(!blame.canGoBack());
+    // The line menu follows the file's rename: the same file, so the history grows.
+    s.contextMenu(lineRef(s, 2).c_str(), "Show originating source");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "story.txt", r.c1); }));
+    GG_CHECK(blame.canGoBack());
+    // The renamed file asked for by its new name from outside: still the same file, the blame is added.
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    ctx->Yield(3);
+    GG_CHECK(blame.canGoBack());
+    ctx->ItemClick("//Blame/###blame_back");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "story.txt", r.c1); }));
+    GG_CHECK(blame.canGoBack());
+    GG_CHECK(blame.canGoForward());
+    // Another file asked for from outside: only that blame is left.
+    session.blameFile("other.txt", ggui::core::Oid::fromHex(o2));
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "other.txt", o2); }));
+    ctx->Yield(3);
+    GG_CHECK(!blame.canGoBack());
+    GG_CHECK(!blame.canGoForward());
+    // What is shown asked for again: no copy of it in the history.
+    session.blameFile("other.txt", ggui::core::Oid::fromHex(o2));
+    ctx->Yield(3);
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(blameShows(s, "other.txt", o2));
+    GG_CHECK(!blame.canGoBack());
+    // The same file at another commit is added.
+    session.blameFile("other.txt", ggui::core::Oid::fromHex(o1));
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "other.txt", o1); }));
+    ctx->Yield(3);
+    GG_CHECK(blame.canGoBack());
+    ctx->ItemClick("//Blame/###blame_back");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "other.txt", o2); }));
+    GG_CHECK(!blame.canGoBack());
+    GG_CHECK(blame.canGoForward());
+}
+
+GG_TEST("blame", "history: blaming the working-tree file again blames it again in place")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& session = *s.session();
+    auto& blame = session.blame();
+    s.showPanel("Blame");
+    session.blameFile("tale.txt", ggui::core::Oid());
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    ctx->Yield(4);
+    ctx->ItemClick(lineRef(s, 3).c_str());
+    ctx->Yield(2);
+    GG_REQUIRE(blame.selectionFirst() == 2);
+    GG_CHECK(blame.text().find("L1 uncommitted") != std::string::npos);
+    // The file changes on disk (once); asking for its blame again shows the new content, no entry is added.
+    s.write(r.path, "tale.txt", "L1 rewritten\nL2\nL3 edited\nL4\nL5 renamed\n");
+    session.blameFile("tale.txt", ggui::core::Oid());
+    GG_REQUIRE(s.waitUntil([&] { return blame.text().find("L1 rewritten") != std::string::npos; }));
+    ctx->Yield(3);
+    GG_CHECK(blame.text().find("L1 uncommitted") == std::string::npos);
+    GG_CHECK(!blame.canGoBack());
+    GG_CHECK(!blame.canGoForward());
+    // The selection is where it was.
+    GG_CHECK_EQ(blame.selectionFirst(), 2);
+    GG_CHECK_EQ(blame.cursorLine(), 2);
+}
+
+GG_TEST("blame", "history: closing the panel clears it")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + r.c3).c_str()); }));
+    auto& session = *s.session();
+    auto& blame = session.blame();
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    ctx->Yield(2);
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    ctx->ItemInputValue("//Blame/##blame_filter", "L1");
+    ctx->Yield(2);
+    GG_CHECK(blame.matchCount() > 0);
+    s.contextMenu(lineRef(s, 2).c_str(), "Show originating source");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "story.txt", r.c1); }));
+    GG_REQUIRE(blame.canGoBack());
+    s.app.settings().data().panels["Blame"] = false;
+    ctx->Yield(3);
+    s.showPanel("Blame");
+    GG_CHECK(blame.query() == nullptr);
+    GG_CHECK(!blame.blame());
+    GG_CHECK(!blame.canGoBack());
+    GG_CHECK(!blame.canGoForward());
+    GG_CHECK_EQ(blame.matchCount(), 0);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+    GG_CHECK(blame.text().empty());
+    GG_CHECK(s.textShown("//Blame", "Blame file"));
+    // Blaming again works, from an empty history.
+    session.blameFile("tale.txt", ggui::core::Oid::fromHex(r.c3));
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", r.c3); }));
+    ctx->Yield(3);
+    GG_CHECK(!blame.canGoBack());
+    GG_CHECK_EQ(blame.editorLines(), 5);
+    // Closed while a blame is on its way: the late result is dropped.
+    session.blameFile("tale.txt", ggui::core::Oid());
+    s.app.settings().data().panels["Blame"] = false;
+    ctx->Yield(3);
+    s.showPanel("Blame");
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(!blame.blame());
+}
+
+namespace {
+
+// 200 lines of long.txt in four commits: c1 wrote 1-100, c2 101-150, c3 151-200, c4 changed line 50.
+std::string longHead(Scenario& s, const fs::path& repo)
+{
+    auto content = [](int count, bool edited) {
+        std::string text;
+        for (int i = 1; i <= count; ++i)
+            text += i == 50 && edited ? "row 50 edited\n" : "row " + std::to_string(i) + "\n";
+        return text;
+    };
+    s.commitFile(repo, "long.txt", content(100, false), "Write 100 rows");
+    s.commitFile(repo, "long.txt", content(150, false), "Write 50 more rows");
+    s.commitFile(repo, "long.txt", content(200, false), "Write the last 50 rows");
+    s.commitFile(repo, "long.txt", content(200, true), "Edit row 50");
+    return s.head(repo);
+}
+
+// Scrolls the editor with the wheel over its text (negative: down) and lets it settle.
+void wheelBlame(Scenario& s, float notches)
+{
+    s.ctx->SetInputMode(ImGuiInputSource_Mouse);
+    s.ctx->MouseMoveToPos(textPos(s, s.session()->blame().firstVisibleLine() + 3, 40.0f));
+    s.ctx->MouseWheelY(notches);
+    s.ctx->Yield(4);
+}
+
+} // namespace
+
+GG_TEST("blame", "history: Back and Forward return to the scroll position and selection")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-views");
+    const std::string head = longHead(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(historyShows(s, head));
+    auto& blame = s.session()->blame();
+    // Opened at line 50 (the cursor there, the view centred on it), scrolled a little and a line selected.
+    s.showPanel("Blame");
+    blame.open("long.txt", ggui::core::Oid::fromHex(head), false, 50);
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    const int opened = blame.firstVisibleLine();
+    wheelBlame(s, -2.0f);
+    const int first1 = blame.firstVisibleLine();
+    GG_REQUIRE(first1 > opened);
+    GG_REQUIRE(s.itemExists(lineRef(s, 50).c_str()));
+    ctx->ItemClick(lineRef(s, 50).c_str());
+    ctx->Yield(2);
+    GG_REQUIRE(blame.selectionFirst() == 49);
+    GG_CHECK_EQ(blame.firstVisibleLine(), first1);
+    // Row 50 was edited in the head commit: its blame before is long.txt of the commit before.
+    s.contextMenu(lineRef(s, 50).c_str(), "Blame before this change");
+    GG_REQUIRE(s.waitUntil([&] { return blame.blame() && blame.blame()->query.commit.hex() != head; }));
+    ctx->Yield(4);
+    GG_REQUIRE(blame.canGoBack());
+    wheelBlame(s, -3.0f);
+    const int first2 = blame.firstVisibleLine();
+    ctx->ItemClick(lineRef(s, first2 + 5).c_str());
+    ctx->Yield(2);
+    const int sel2 = blame.selectionFirst();
+    GG_REQUIRE(sel2 == first2 + 4);
+    GG_REQUIRE(first2 != first1);
+    // Back: the first blame is as it was left.
+    ctx->ItemClick("//Blame/###blame_back");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    GG_CHECK_EQ(blame.firstVisibleLine(), first1);
+    GG_CHECK_EQ(blame.selectionFirst(), 49);
+    GG_CHECK_EQ(blame.selectionLast(), 49);
+    // Forward: the second one.
+    ctx->ItemClick("//Blame/###blame_fwd");
+    GG_REQUIRE(s.waitUntil([&] { return blame.blame() && blame.blame()->query.commit.hex() != head; }));
+    ctx->Yield(4);
+    GG_CHECK_EQ(blame.firstVisibleLine(), first2);
+    GG_CHECK_EQ(blame.selectionFirst(), sel2);
+    GG_CHECK_EQ(blame.selectionLast(), sel2);
+}
+
+GG_TEST("blame", "history: Back and Forward return the cursor line of a blame nobody clicked in")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-cursor");
+    const std::string head = longHead(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(historyShows(s, head));
+    auto& blame = s.session()->blame();
+    s.showPanel("Blame");
+    blame.open("long.txt", ggui::core::Oid::fromHex(head), false, 50);
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    // The second blame is opened from the line menu at line 50, and only scrolled afterwards.
+    s.contextMenu(lineRef(s, 50).c_str(), "Blame before this change");
+    GG_REQUIRE(s.waitUntil([&] { return blame.blame() && blame.blame()->query.commit.hex() != head; }));
+    ctx->Yield(4);
+    GG_REQUIRE(blame.cursorLine() == 49);
+    wheelBlame(s, -3.0f);
+    const int first2 = blame.firstVisibleLine();
+    GG_CHECK_EQ(blame.cursorLine(), 49);
+    ctx->ItemClick("//Blame/###blame_back");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    ctx->ItemClick("//Blame/###blame_fwd");
+    GG_REQUIRE(s.waitUntil([&] { return blame.blame() && blame.blame()->query.commit.hex() != head; }));
+    ctx->Yield(4);
+    GG_CHECK_EQ(blame.firstVisibleLine(), first2);
+    GG_CHECK_EQ(blame.cursorLine(), 49);
+    GG_CHECK_EQ(blame.selectionFirst(), -1);
+}
+
+GG_TEST("blame", "line menu: the blamed line stays on the same screen row")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-row");
+    const std::string head = longHead(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(historyShows(s, head));
+    auto& blame = s.session()->blame();
+    s.showPanel("Blame");
+    blame.open("long.txt", ggui::core::Oid::fromHex(head), false, 50);
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    const int centred = blame.firstVisibleLine();
+    // Row 50 is two or more lines off the centre of the editor.
+    wheelBlame(s, -2.0f);
+    const int first = blame.firstVisibleLine();
+    GG_REQUIRE(first >= centred + 2);
+    GG_REQUIRE(s.itemExists(lineRef(s, 50).c_str()));
+    const int offset = 49 - first;
+    s.contextMenu(lineRef(s, 50).c_str(), "Blame before this change");
+    GG_REQUIRE(s.waitUntil([&] { return blame.blame() && blame.blame()->query.commit.hex() != head; }));
+    ctx->Yield(4);
+    GG_CHECK_EQ(blame.cursorLine(), 49);
+    GG_CHECK_EQ(blame.firstVisibleLine(), 49 - offset);
+    // The same for the originating source of a line further down.
+    ctx->ItemClick("//Blame/###blame_back");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    const int second = blame.firstVisibleLine();
+    const int row = second + (second + 6 == 49 ? 7 : 6); // a line (0-based) about six rows below the top, not the edited one
+    s.contextMenu(lineRef(s, row + 1).c_str(), "Show originating source");
+    GG_REQUIRE(s.waitUntil([&] { return blame.blame() && blame.blame()->query.commit.hex() != head; }));
+    ctx->Yield(4);
+    GG_CHECK_EQ(blame.cursorLine(), row);
+    GG_CHECK_EQ(blame.firstVisibleLine(), second);
 }
 
 } // namespace ggtest

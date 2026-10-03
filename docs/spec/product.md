@@ -369,7 +369,9 @@ the History panel list newly conflicted commits. See §5, decision R1.
 
 ### 4.6 Blame panel
 - **K** Everything: working-tree blame (uncommitted lines marked), filter,
-  back/forward history (mouse buttons), per-line tooltips, "Blame before this change",
+  back/forward history (mouse buttons; only within one file, cleared by blaming another file or closing the panel;
+  a blame reached by Back or Forward keeps the scroll position, cursor line and selection it was left with; a blame opened from a
+  line keeps that line on the same row), per-line tooltips, "Blame before this change",
   originating source, reveal/copy commit, select or copy a change block. The gutter shows the commit, author and
   date of each change block, with the blocks told apart by a separator and an alternating background.
 - **N** The code is the whole file in a read-only text editor, syntax highlighted by the file name's extension (the

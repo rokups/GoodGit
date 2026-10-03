@@ -74,34 +74,112 @@ BlamePanel::BlamePanel(Session& session) : m_session(session), m_editor(std::mak
 
 BlamePanel::~BlamePanel() = default;
 
-void BlamePanel::open(const std::string& path, const core::Oid& commit, bool before, int line)
+void BlamePanel::open(const std::string& path, const core::Oid& commit, bool before, int line, int row)
 {
+    saveView();
     core::BlameQuery q;
     q.path = path;
     q.commit = commit;
     q.beforeCommit = before;
     q.scrollToLine = line;
-    if (m_pos + 1 < static_cast<int>(m_history.size()))
+    if (m_pos + 1 < static_cast<int>(m_history.size())) {
         m_history.resize(static_cast<size_t>(m_pos + 1));
+        m_views.resize(m_history.size());
+    }
     m_history.push_back(q);
+    m_views.emplace_back();
     m_pos = static_cast<int>(m_history.size()) - 1;
+    m_scrollRow = row;
     request();
+}
+
+void BlamePanel::show(const std::string& path, const core::Oid& commit)
+{
+    // The history is the blames of one file: a file that was renamed has its old name in an entry too.
+    const auto named = [&](const core::BlameQuery& q) { return q.path == path; };
+    if (m_pos >= 0 && !std::any_of(m_history.begin(), m_history.end(), named)) {
+        m_history.clear();
+        m_views.clear();
+        m_pos = -1;
+    }
+    if (m_pos >= 0) {
+        // Asked for again what is shown: no copy of it in the history.
+        const auto& q = m_history[static_cast<size_t>(m_pos)];
+        if (q.path == path && q.commit == commit && !q.beforeCommit) {
+            if (commit.isNull()) {
+                // The working tree may have changed since: blame it again in place, the view kept.
+                saveView();
+                m_scrollRow = -1;
+                request();
+                if (m_views[static_cast<size_t>(m_pos)].firstLine >= 0)
+                    m_restore = m_views[static_cast<size_t>(m_pos)];
+            } else if (!m_blame && !m_loading) {
+                request();
+            }
+            return;
+        }
+    }
+    open(path, commit);
 }
 
 void BlamePanel::back()
 {
-    if (m_pos > 0) {
+    if (canGoBack()) {
+        saveView();
         --m_pos;
+        m_scrollRow = -1;
         request();
+        if (m_views[static_cast<size_t>(m_pos)].firstLine >= 0)
+            m_restore = m_views[static_cast<size_t>(m_pos)];
     }
 }
 
 void BlamePanel::forward()
 {
-    if (m_pos + 1 < static_cast<int>(m_history.size())) {
+    if (canGoForward()) {
+        saveView();
         ++m_pos;
+        m_scrollRow = -1;
         request();
+        if (m_views[static_cast<size_t>(m_pos)].firstLine >= 0)
+            m_restore = m_views[static_cast<size_t>(m_pos)];
     }
+}
+
+void BlamePanel::saveView()
+{
+    if (m_pos < 0 || !m_blame || m_loading || !m_viewDrawn)
+        return;
+    m_views[static_cast<size_t>(m_pos)] = {m_editor->GetFirstVisibleLine(), cursorLine(), m_selFirst, m_selLast};
+}
+
+void BlamePanel::clearHistory()
+{
+    m_history.clear();
+    m_views.clear();
+    m_pos = -1;
+    m_request = 0; // a blame still on its way is dropped
+    m_loading = false;
+    m_restore.reset();
+    m_scrollTo = 0;
+    m_scrollRow = -1;
+    m_blame.reset();
+    m_parity.clear();
+    m_editor->SetLanguage(nullptr);
+    m_editor->SetText(std::string());
+    m_gutterDirty = true;
+    m_viewDrawn = false;
+    m_filter.clear();
+    m_filterApplied.clear();
+    m_matches.clear();
+    m_matchPos = -1;
+    m_matchVisited = false;
+    m_marksDirty = false;
+    m_blameChanged = false;
+    m_dragging = false;
+    m_menuPending = 0;
+    m_menuLine = -1;
+    clearSelection();
 }
 
 void BlamePanel::request()
@@ -111,6 +189,7 @@ void BlamePanel::request()
     m_loading = true;
     clearSelection();
     m_scrollTo = m_history[static_cast<size_t>(m_pos)].scrollToLine;
+    m_restore.reset();
     m_request = m_session.engine().blame(m_history[static_cast<size_t>(m_pos)]);
 }
 
@@ -144,15 +223,33 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
     m_blameChanged = true;
     m_dragging = false;
     clearSelection(); // the lines of the previous blame are gone
+    m_viewDrawn = false;
     const int count = m_blame ? static_cast<int>(m_blame->lines.size()) : 0;
-    if (m_scrollTo > 0 && count > 0) {
-        // The line asked for: the cursor is put on it, which is not a selection.
+    if (m_restore && count > 0) {
+        // Back or forward: the view the blame was left in. The filter does not scroll over it (it scrolls
+        // only when its text changes).
+        if (m_restore->selFirst >= 0 && m_restore->selLast < count) {
+            selectRange(m_restore->selFirst, m_restore->selLast);
+        } else {
+            // SetText put the cursor on line 0: it goes back where it was (not a selection).
+            m_editor->SetCursor(std::min(m_restore->cursor, count - 1), 0);
+            m_cursorSeen = cursorState();
+        }
+        m_editor->ScrollToLine(std::min(m_restore->firstLine, count - 1), TextEditor::Scroll::alignTop);
+    } else if (m_scrollTo > 0 && count > 0) {
+        // The line asked for: the cursor is put on it, which is not a selection. It goes to the row it was
+        // opened from, or to the middle.
         const int line = std::min(m_scrollTo, count) - 1;
         m_editor->SetCursor(line, 0);
-        m_editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
+        if (m_scrollRow >= 0)
+            m_editor->ScrollToLine(std::max(0, line - m_scrollRow), TextEditor::Scroll::alignTop);
+        else
+            m_editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
         m_cursorSeen = cursorState();
     }
+    m_restore.reset();
     m_scrollTo = 0;
+    m_scrollRow = -1;
     if (!m_blame)
         return;
 
@@ -223,10 +320,12 @@ void BlamePanel::drawLineMenuItems(int index)
         return;
     const auto& line = m_blame->lines[static_cast<size_t>(index)];
     const bool committed = !line.commit.isNull();
+    // The line stays on its screen row in the blame opened from it.
+    const int row = std::max(0, index - m_editor->GetFirstVisibleLine());
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame before this change", nullptr, false, committed))
-        open(line.origPath, line.commit, true, line.origLine);
+        open(line.origPath, line.commit, true, line.origLine, row);
     if (menuItem(ICON_MS_SOURCE, "Show originating source", nullptr, false, committed))
-        open(line.origPath, line.commit, false, line.origLine);
+        open(line.origPath, line.commit, false, line.origLine, row);
     ImGui::Separator();
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
@@ -505,12 +604,12 @@ void BlamePanel::draw(bool* open)
         if (ImGui::IsMouseClicked(ImGuiMouseButton(4)))
             forward();
     }
-    ImGui::BeginDisabled(m_pos <= 0);
+    ImGui::BeginDisabled(!canGoBack());
     if (ImGui::Button(ICON_MS_ARROW_BACK "###blame_back"))
         back();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::BeginDisabled(m_pos + 1 >= static_cast<int>(m_history.size()));
+    ImGui::BeginDisabled(!canGoForward());
     if (ImGui::Button(ICON_MS_ARROW_FORWARD "###blame_fwd"))
         forward();
     ImGui::EndDisabled();
@@ -613,6 +712,7 @@ void BlamePanel::draw(bool* open)
     if (m_gutterDirty || ImGui::GetFontSize() != m_gutterFont || ImGui::GetFont() != m_gutterFace)
         updateGutter(ImGui::GetFontSize());
     m_editor->Render("##blame_editor", ImVec2(0, 0));
+    m_viewDrawn = true;
     m_editorFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::IsWindowFocused();
     followGutterDrag();
     if (m_menuPending > 0)

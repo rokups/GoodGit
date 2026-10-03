@@ -21,14 +21,26 @@ class BlamePanel {
 public:
     explicit BlamePanel(Session& session);
     ~BlamePanel();
-    // Opens a new blame (pushes the current one to the back history).
-    void open(const std::string& path, const core::Oid& commit, bool before = false, int line = 0);
+    // Opens a new blame (pushes the current one to the back history). `line` (1-based) is put under the cursor:
+    // with `row` (the screen row, counted from the first line in view, of the line the blame was opened from)
+    // on that row, otherwise in the middle.
+    void open(const std::string& path, const core::Oid& commit, bool before = false, int line = 0, int row = -1);
+    // Blames a file asked for from outside the panel: the history only holds the blames of one file, so another
+    // file replaces it.
+    void show(const std::string& path, const core::Oid& commit);
     void back();
     void forward();
+    bool canGoBack() const { return m_pos > 0; }
+    bool canGoForward() const { return m_pos + 1 < static_cast<int>(m_history.size()); }
     void onBlame(const core::BlameEvent& event);
     void draw(bool* open);
-    // Called instead of draw() while the panel is closed.
-    void hidden() { publishInfoOverride(false); }
+    // Called instead of draw() while the panel is closed: the closed panel keeps no history and no blame.
+    void hidden()
+    {
+        publishInfoOverride(false);
+        if (!m_history.empty() || m_blame || m_loading || !m_filter.empty())
+            clearHistory();
+    }
     // Drops the blame selection; the editor's text selection collapses to its cursor.
     void clearSelection();
     const core::BlamePtr& blame() const { return m_blame; }
@@ -58,8 +70,19 @@ public:
 
 private:
     using CursorState = std::array<int, 6>; // the main cursor's selection and position
+    // The view of a history entry as it was left: the first line in view, the cursor line and the selected lines.
+    struct View {
+        int firstLine = -1;
+        int cursor = 0;
+        int selFirst = -1;
+        int selLast = -1;
+    };
 
     void request();
+    // Notes the view of the current entry, when the editor shows it, before the position moves.
+    void saveView();
+    // Forgets the history and the blame: the panel is as new.
+    void clearHistory();
     // Measures the gutter with the editor's font (current) and gives it to the editor.
     void updateGutter(float fontSize);
     void drawGutter(int index, float width, float height, float glyph);
@@ -87,6 +110,7 @@ private:
 
     Session& m_session;
     std::vector<core::BlameQuery> m_history;
+    std::vector<View> m_views; // per history entry
     int m_pos = -1;
     core::RequestId m_request = 0;
     core::BlamePtr m_blame;
@@ -119,6 +143,9 @@ private:
     int m_menuLine = -1;        // the line of the gutter menu
     std::optional<Selection> m_published; // what was given to Session::setInfoOverride()
     int m_scrollTo = 0;
+    int m_scrollRow = -1;           // the row m_scrollTo goes to, -1: the middle
+    std::optional<View> m_restore;  // the view a blame reached by back/forward is shown in
+    bool m_viewDrawn = false;       // the editor has been drawn since the blame was loaded: its first line is the blame's
 };
 
 } // namespace ggui

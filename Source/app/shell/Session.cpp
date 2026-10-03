@@ -267,7 +267,7 @@ void Session::nextChangedFile(int direction) { m_changes->moveCurrent(direction)
 void Session::blameFile(const std::string& path, const core::Oid& commit)
 {
     focusPanel(panel::Blame);
-    m_blame->open(path, commit);
+    m_blame->show(path, commit);
 }
 
 void Session::focusPanel(const char* name)
