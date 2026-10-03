@@ -3,10 +3,12 @@
 #pragma once
 
 #include "shell/Session.hpp"
+#include "util/Ui.hpp"
 
 #include <core/Engine.hpp>
 
 #include <string>
+#include <vector>
 
 namespace ggui {
 
@@ -63,6 +65,9 @@ public:
 private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
+    // Where each row's base ID was drawn (by position in the list; a row's menu is drawn before its ID, so it uses
+    // the previous frame's).
+    std::vector<IdSlot> m_baseSlots;
 };
 
 class ReflogPanel {

@@ -766,7 +766,10 @@ void StashesPanel::draw(bool* open)
     ImGui::EndDisabled();
     // Only the list scrolls: the controls above stay put.
     beginList();
+    m_baseSlots.resize(m_snapshot->stashes.size());
+    size_t row = 0;
     for (const auto& s : m_snapshot->stashes) {
+        IdSlot& baseSlot = m_baseSlots[row++];
         ImGui::PushID(("stash_" + std::to_string(s.index)).c_str());
         // The message's first line, cut to leave the base and date after it (the ID after ### is unchanged);
         // in a panel too narrow for both the message keeps a minimum and the trailing text is clipped.
@@ -800,10 +803,14 @@ void StashesPanel::draw(bool* open)
                 m_session.showBranchFromStashDialog(s.index);
             if (menuItem(ICON_MS_DELETE, "Drop...", nullptr, false, free))
                 m_session.showDropStashDialog(s.index);
+            ImGui::Separator();
+            // One item for the ID the right click was on; off the base ID (and from the keyboard) the stash's
+            // commit, and the base's after it.
+            idCopyMenuItems({{s.commit.hex(), IdSlot{}}, {s.base.hex(), baseSlot, "base"}});
             ImGui::EndPopup();
         }
         ImGui::SameLine();
-        rowIdText(s.base.hex());
+        baseSlot = rowIdText(s.base.hex());
         ImGui::SameLine(0, 0);
         ImGui::TextDisabled("  %s", core::formatTime(s.time).c_str());
         ImGui::PopID();

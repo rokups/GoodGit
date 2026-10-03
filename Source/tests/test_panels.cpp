@@ -266,6 +266,75 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/heads/temp" && reflog.reflog()->entries.size() == 1; }));
 }
 
+GG_TEST("panels", "stashes: copy the stash's ID and its base's ID")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    const std::string row = "//Stashes/stash_0/###row";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    const std::string stashId = s.revParse(repo, "stash@{0}"), baseId = s.revParse(repo, "stash@{0}^1");
+    const std::string stash7 = stashId.substr(0, 7), base7 = baseId.substr(0, 7);
+    const std::string copyItem = "//$FOCUSED/###copy_id", baseItem = "//$FOCUSED/base/###copy_id";
+    auto copied = [&](const std::string& label, const std::string& text) {
+        GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + label + "###copy_id");
+        ctx->MenuClick(copyItem.c_str());
+        GG_CHECK_STR_EQ(s.clipboard(), text);
+    };
+    // A right click on the base ID: only the base's item (the highlighted 3 characters, the rest, Shift: full).
+    GG_REQUIRE(s.rightClickIdChars("//Stashes", base7, 0, 3));
+    GG_CHECK(!s.itemExists(baseItem.c_str()));
+    copied(base7.substr(0, 3), base7.substr(0, 3));
+    GG_REQUIRE(s.rightClickIdChars("//Stashes", base7, 3, 7));
+    GG_CHECK(!s.itemExists(baseItem.c_str()));
+    copied(base7, base7);
+    GG_REQUIRE(s.rightClickIdChars("//Stashes", base7, 3, 7, true));
+    GG_CHECK(!s.itemExists(baseItem.c_str()));
+    copied("full ID", baseId);
+    GG_REQUIRE(s.rightClickIdChars("//Stashes", base7, 0, 3, true));
+    GG_CHECK(!s.itemExists(baseItem.c_str()));
+    copied("full ID", baseId);
+    // Elsewhere on the row (its start, over the "stash@{0}" text): the stash's commit, and the base's after it.
+    const ImRect rect = ctx->ItemInfo(row.c_str()).RectFull;
+    const ImVec2 off(rect.Min.x + 8.0f, rect.GetCenter().y);
+    ctx->MouseMoveToPos(off);
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    GG_CHECK_STR_EQ(s.itemLabel(baseItem.c_str()), "Copy base " + base7 + "###copy_id");
+    copied(stash7, stash7);
+    ctx->MouseMoveToPos(off);
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    ctx->ItemClick(baseItem.c_str()); // MenuClick would read "base" as a menu
+    GG_CHECK_STR_EQ(s.clipboard(), base7);
+    // With Shift held at the click both items give the full ID; the base one says which.
+    ctx->MouseMoveToPos(off);
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK_STR_EQ(s.itemLabel(baseItem.c_str()), "Copy base full ID###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy full ID###copy_id");
+    ctx->ItemClick(baseItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), baseId);
+    ctx->MouseMoveToPos(off);
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->MenuClick(copyItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), stashId);
+    // Opened with Alt+Space (no click): the stash's item, then the base's.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo(row.c_str());
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + stash7 + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(baseItem.c_str()), "Copy base " + base7 + "###copy_id");
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+}
+
 GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

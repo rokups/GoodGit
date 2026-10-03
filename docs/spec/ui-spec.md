@@ -112,8 +112,8 @@ Shift "Copy full ID"; without it the 3-character prefix gives "Copy a1b" and the
 a1b2c3d". A right click on a row outside its ID text counts as the rest. A menu opened with
 `Alt+Space` has no click: it gives "Copy a1b2c3d" for a short and for a full ID, and "Copy full ID"
 with Shift, never the 3 characters. The item's ID is `###copy_id`. This applies to every ID menu
-(the toolbar HEAD, the History row's Copy submenu, Blame's line menus, the reflog, Change
-information's commit ID and parents). ID text on its own (the toolbar HEAD and the Change
+(the toolbar HEAD, the History row's Copy submenu, Blame's line menus, the reflog, the Stashes
+rows, Change information's commit ID and parents). ID text on its own (the toolbar HEAD and the Change
 information commit ID) is the exception to "plain text does nothing on click": clicking its
 highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and clicking the
 dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID copies
@@ -561,7 +561,10 @@ the panel without touching the repository.
 - **Remotes** `"Remotes"`: rows `remote_<name>` with URL. Context: Copy name · Fetch · Pull ·
   Delete · N: Edit URL… · Prune on fetch (checkbox) · Fetch all. Header: Add remote…
 - **Stashes** `"Stashes"` (N): rows `stash_<n>` (index, message, base, date). Context: Apply ·
-  Pop · Apply (restore index) · Drop… · Branch from stash… · Header: Stash changes… · Clear all….
+  Apply (restore index) · Pop · Pop (restore index) · Branch from stash… · Drop… · Copy (the one ID item, after a separator: on
+  the drawn base ID, the base's; off it, and when opened with `Alt+Space`, the stash's commit, followed by
+  a second item for the base, labelled "Copy base a1b2c3d", "Copy base full ID" with Shift; the item's ID
+  is `###copy_id`, the base's `base/###copy_id`) · Header: Stash changes… · Clear all….
 - **Reflog** `"Reflog"`: chooser `##reflog_ref` (HEAD, branches, stash), filter, rows with old →
   new, message. Context: Copy (the one ID item: for the ID the right click was on; off the IDs, and
   when opened with `Alt+Space`, the new ID's, followed by a second item for the old ID when there
