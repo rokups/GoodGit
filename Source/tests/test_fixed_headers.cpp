@@ -48,10 +48,23 @@ void checkFixedHeader(Scenario& s, const char* window, const std::string& header
 }
 
 // The OS window's height set to `h`, for a few frames; the panel windows are docked, so they follow.
+// The request is asynchronous: SDL reports the new size only after the window system's event arrives
+// (under Xvfb later than a few frames: the window was still at the previous size when the test ended,
+// and the tests after it ran in that size), so this waits until the window reports the size.
 void resizeAppWindow(Scenario& s, int w, int h)
 {
-    SDL_SetWindowSize(s.app.platform().window(), w, h);
-    s.ctx->Yield(4);
+    SDL_Window* window = s.app.platform().window();
+    int cw = 0, ch = 0;
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        SDL_SetWindowSize(window, w, h);
+        s.ctx->Yield(4);
+        SDL_GetWindowSize(window, &cw, &ch);
+        if (cw == w && ch == h)
+            break;
+    }
+    s.ctx->Yield(2); // frames laid out at the new size
+    GG_CHECK_EQ(cw, w);
+    GG_CHECK_EQ(ch, h);
 }
 
 // Window `window` (content that fits) never scrolls itself while the app window is reduced in steps and
