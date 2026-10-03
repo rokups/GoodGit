@@ -660,15 +660,18 @@ void endListChild()
     ImGui::EndChild();
     // The child overhangs the content area by the padding: that must neither make the window scrollable nor
     // leave the cursor (and so a group around the list) below the content. Its item rect, which an
-    // EndGroup() takes in, is the part inside the content area.
+    // EndGroup() takes in, is the part inside the content area. That area ends at the content region, not at
+    // WorkRect: ImGui stretches WorkRect to last frame's content size, so after the window shrank, clamping to
+    // it would keep the old, larger content size alive and the window would stay scrollable by the difference.
     ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const ImRect area(window->WorkRect.Min, ImVec2(window->WorkRect.Max.x, window->ContentRegionRect.Max.y));
     ImRect& item = ImGui::GetCurrentContext()->LastItemData.Rect;
-    item.ClipWith(window->WorkRect);
+    item.ClipWith(area);
     const OpenList open = g_openLists.back();
     g_openLists.pop_back();
     window->DC.CursorPos.y -= open.overhang;
-    window->DC.CursorMaxPos = ImVec2(std::max(open.maxPos.x, std::min(window->DC.CursorMaxPos.x, window->WorkRect.Max.x)),
-        std::max(open.maxPos.y, std::min(window->DC.CursorMaxPos.y, window->WorkRect.Max.y)));
+    window->DC.CursorMaxPos = ImVec2(std::max(open.maxPos.x, std::min(window->DC.CursorMaxPos.x, area.Max.x)),
+        std::max(open.maxPos.y, std::min(window->DC.CursorMaxPos.y, area.Max.y)));
 }
 
 void beginList(float width)

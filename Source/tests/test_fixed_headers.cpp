@@ -1,10 +1,13 @@
 // Controls above a list stay visible: only the list scrolls, never the whole window.
+#include "platform/Platform.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Settings.hpp"
 #include "shell/Theme.hpp"
 #include "tests/Harness.hpp"
 
+#include <SDL3/SDL.h>
+#include <imgui_internal.h>
 #include <fstream>
 
 namespace ggtest {
@@ -42,6 +45,40 @@ void checkFixedHeader(Scenario& s, const char* window, const std::string& header
     ctx->Yield(3);
     GG_CHECK(list->Scroll.y > 0.0f);
     GG_CHECK_EQ(win->Scroll.y, 0.0f);
+}
+
+// The OS window's height set to `h`, for a few frames; the panel windows are docked, so they follow.
+void resizeAppWindow(Scenario& s, int w, int h)
+{
+    SDL_SetWindowSize(s.app.platform().window(), w, h);
+    s.ctx->Yield(4);
+}
+
+// Window `window` (content that fits) never scrolls itself while the app window is reduced in steps and
+// grown again: no vertical scroll range, no scrollbar. `list`: its "##list" child scrolls, the window still does not.
+void checkWindowStaysUnscrollable(Scenario& s, const char* window, bool list)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    const std::string ref = std::string("//") + window;
+    ImGuiWindow* win = ctx->WindowInfo(ref.c_str(), ImGuiTestOpFlags_NoError).Window;
+    GG_REQUIRE(win != nullptr);
+    ImGuiWindow* child = list ? ctx->WindowInfo(s.child(ref.c_str(), "##list").c_str(), ImGuiTestOpFlags_NoError).Window : nullptr;
+    int w = 0, h = 0;
+    SDL_GetWindowSize(s.app.platform().window(), &w, &h);
+    struct Restore {
+        Scenario& s;
+        int w, h;
+        ~Restore() { resizeAppWindow(s, w, h); }
+    } restore{s, w, h};
+    ctx->Yield(3);
+    const int heights[] = {h, h - 40, h - 120, h - 121, h - 200, h - 330, h - 120, h - 20, h - 350, h};
+    for (const int height : heights) {
+        resizeAppWindow(s, w, height);
+        GG_CHECK_EQ(win->ScrollMax.y, 0.0f);
+        GG_CHECK(!win->ScrollbarY);
+        if (child)
+            GG_CHECK(child->ScrollMax.y > 0.0f);
+    }
 }
 
 } // namespace
@@ -116,6 +153,33 @@ GG_TEST("fixed headers", "welcome: the buttons and the path field stay while the
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Welcome/recent_19/###row"); }));
     checkFixedHeader(s, "Welcome", "//Welcome/###welcome_open");
     checkFixedHeader(s, "Welcome", "//Welcome/##welcome_path");
+}
+
+GG_TEST("fixed headers", "branches: the window does not scroll when the app window is reduced and grown")
+{
+    GG_REQUIRE(s.openRepository(s.fixture(Recipe::Linear)));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/##branch_filter"); }));
+    checkWindowStaysUnscrollable(s, "Branches", false);
+}
+
+GG_TEST("fixed headers", "tags: the window does not scroll while the list does, when the app window is reduced and grown")
+{
+    GG_REQUIRE(s.openRepository(s.fixture(Recipe::ManyRefs)));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/##tag_filter"); }));
+    checkWindowStaysUnscrollable(s, "Tags", true);
+}
+
+GG_TEST("fixed headers", "stashes: the window does not scroll when the app window is reduced and grown")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::ofstream(repo / "stash.txt") << "x\n";
+    s.git(repo, {"stash", "push", "-q", "-u", "-m", "s0"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    checkWindowStaysUnscrollable(s, "Stashes", false);
 }
 
 GG_TEST("fixed headers", "rows keep clear of the list's edge: outlines and highlights are not clipped")
