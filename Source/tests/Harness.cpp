@@ -546,6 +546,22 @@ void Scenario::clickIdText(const char* ref, size_t leadChars, bool lead)
     ctx->MouseClick(ImGuiMouseButton_Left);
 }
 
+void Scenario::rightClickIdText(const char* ref, size_t leadChars, bool lead, bool shift)
+{
+    const ImGuiTestItemInfo info = ctx->ItemInfo(ref);
+    const std::string text = itemText(ref);
+    const float leadWidth = ImGui::CalcTextSize(text.c_str(), text.c_str() + std::min(leadChars, text.size())).x;
+    const float x = info.RectFull.Min.x + (lead ? leadWidth * 0.5f : (leadWidth + info.RectFull.GetWidth()) * 0.5f);
+    ctx->MouseMoveToPos(ImVec2(x, info.RectFull.GetCenter().y));
+    if (shift) {
+        ctx->KeyDown(ImGuiMod_Shift);
+        ctx->Yield(2);
+    }
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    if (shift)
+        ctx->KeyUp(ImGuiMod_Shift);
+}
+
 std::vector<std::string> Scenario::drawnText(const char* windowRef)
 {
     const auto glyphs = windowGlyphs(ctx, windowRef);

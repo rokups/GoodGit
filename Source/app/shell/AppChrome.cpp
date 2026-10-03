@@ -624,6 +624,7 @@ void App::drawToolbar()
             plainText((headText + "###tb_head").c_str());
         else
             shortIdText(snap.head.hex(), "tb_head", true);
+        const ImVec2 headPrefixRange = lastIdPrefixRange();
         if (!snap.head.isNull()) {
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && beginTooltip()) {
                 ImGui::TextUnformatted("HEAD");
@@ -632,7 +633,8 @@ void App::drawToolbar()
                 ImGui::EndTooltip();
             }
             if (beginContextMenu("##tb_head_menu")) {
-                copyIdMenuItems("Copy ", snap.head.hex());
+                captureIdCopyClick(headPrefixRange);
+                idCopyMenuItem(snap.head.hex(), false);
                 ImGui::EndPopup();
             }
         }

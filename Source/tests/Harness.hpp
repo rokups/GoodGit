@@ -252,6 +252,8 @@ public:
     bool idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen);
     // Left-clicks the ID text item `ref`: inside its first `leadChars` characters, or inside the rest of it.
     void clickIdText(const char* ref, size_t leadChars, bool lead);
+    // Right-clicks the ID text item `ref` like clickIdText, with Shift held at the click when `shift`.
+    void rightClickIdText(const char* ref, size_t leadChars, bool lead, bool shift = false);
     // Waits for an error popup and closes it with OK; false if none appeared.
     bool dismissError(float seconds = 20.0f);
     // Brings a docked panel's tab to the front (e.g. "Tags" behind "Branches").

@@ -79,7 +79,7 @@ Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_pus
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
 recent repositories; Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
 current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
-(short ID, clickable text; tooltip with the full ID; right-click: the three Copy ID items) ·
+(short ID, clickable text; tooltip with the full ID; right-click: the Copy ID item) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,
 BISECTING) with Continue / Skip / Abort (and *Commit with conflicts* for text-only conflicts) ·
 while a `git rebase -i` is stopped (from ggui or plain git, detected from `.git/rebase-merge/`):
@@ -104,9 +104,15 @@ General rules: items whose click does nothing are plain text (no hover or
 click highlight; a context menu may still attach). Commit IDs follow one rule wherever one is drawn on its own: in rows, in tooltips and as standalone
 text; IDs inside sentences, window titles and dialog previews are plain 7-character text. A short ID
 is always the first 7 characters and shows the first 3 in the text colour and the other 4 dimmed; a
-full ID shows its first 7 characters in the text colour and the rest dimmed. Every "Copy ID" offers
-three menu items that state the ID itself: `<prefix>a1b` (3 characters), `<prefix>a1b2c3d` (7
-characters) and `<prefix>full ID`; there is no Shift variant. ID text on its own (the toolbar HEAD
+full ID shows its first 7 characters in the text colour and the rest dimmed. The context menu of a
+commit ID offers one "Copy" item that states what it copies; it depends on where the right click
+landed and on Shift (held as the menu opens or while it is open). A full ID: its 7-character prefix gives "Copy
+a1b2c3d", the rest "Copy full ID". A short ID: with Shift "Copy full ID"; without it the 3-character
+prefix gives "Copy a1b" and the rest "Copy a1b2c3d". A right click on a row outside its ID text counts
+as the rest. A menu opened with `Alt+Space` has no click: it gives "Copy a1b2c3d" for a short and for a
+full ID, and "Copy full ID" with Shift, never the 3 characters. The item's ID is `###copy_id`. This applies to the toolbar
+HEAD and the History row's Copy submenu; the other ID menus (Blame, reflog, stashes, Change information)
+still offer the three items (3 characters, 7 characters, full ID). ID text on its own (the toolbar HEAD
 and the Change information commit ID) is the exception to "plain text does nothing on click":
 clicking its highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and
 clicking the dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID

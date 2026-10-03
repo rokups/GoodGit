@@ -690,19 +690,44 @@ GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
     // The window navigator (Ctrl+Tab) lists the toolbar by its title, not "(Untitled)".
     ImGuiWindow* toolbar = ctx->GetWindowByRef("//###Toolbar");
     GG_CHECK(toolbar && ImGui::FindRenderedTextEnd(toolbar->Name) != toolbar->Name);
-    // Right-click still offers the three copy items, each stating the ID it copies.
-    ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy ID3").find("Copy " + head.substr(0, 3) + "###") != std::string::npos);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy ID7").find("Copy " + head.substr(0, 7) + "###") != std::string::npos);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy IDfull").find("Copy full ID###") != std::string::npos);
-    ctx->MenuClick("//$FOCUSED/###Copy ID3");
+    // Right-click offers one copy item that depends on where the click landed and on Shift.
+    const std::string copyItem = "//$FOCUSED/###copy_id";
+    s.rightClickIdText("//###Toolbar/###tb_head", 3, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + head.substr(0, 3) + "###copy_id");
+    GG_CHECK(s.itemLabel("//$FOCUSED/###Copy ID3").empty() && s.itemLabel("//$FOCUSED/###Copy ID7").empty()
+        && s.itemLabel("//$FOCUSED/###Copy IDfull").empty());
+    ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
-    ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
-    ctx->MenuClick("//$FOCUSED/###Copy ID7");
+    s.rightClickIdText("//###Toolbar/###tb_head", 3, false);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), shortHead);
-    ctx->ItemClick("//###Toolbar/###tb_head", ImGuiMouseButton_Right);
-    ctx->MenuClick("//$FOCUSED/###Copy IDfull");
+    // Shift held at the click: the full ID, whichever part was clicked.
+    s.rightClickIdText("//###Toolbar/###tb_head", 3, true, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy full ID###copy_id");
+    ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), head);
+    // Opened with Alt+Space (no click: the rest), the item is the 7 characters; Shift pressed while the menu is open
+    // makes it the full ID, and activating it with Shift held copies that.
+    s.rightClickIdText("//###Toolbar/###tb_head", 3, true);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo("//###Toolbar/###tb_head");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy full ID###copy_id");
+    ctx->NavMoveTo(copyItem.c_str());
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.clipboard(), head);
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
 }
 
 GG_TEST("shell", "activity spinner, task tooltip and Cancel")

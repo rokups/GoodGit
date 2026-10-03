@@ -39,6 +39,8 @@ using core::kShortIdLength;
 void shortIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
 // A full commit ID: split after kShortIdLength. Clickable like shortIdText (the prefix copies the short ID).
 void fullIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
+// The X range [min, max) on screen of the highlighted prefix of the ID that shortIdText / fullIdText drew last.
+ImVec2 lastIdPrefixRange();
 // A list counts as scrolling until its scroll position has been still for this long (seconds).
 constexpr double kScrollSettleSeconds = 0.3;
 // True while the current window, or the window it is a child of, has scrolled within kScrollSettleSeconds
@@ -69,6 +71,26 @@ void tooltip(const char* fmt, ...) IM_FMTARGS(1);
 // "###<prefix>ID3", "###<prefix>ID7" and "###<prefix>IDfull". Returns true when one was clicked (after
 // copying that part of `hex`).
 bool copyIdMenuItems(const char* prefix, const std::string& hex, bool enabled = true);
+// The one "copy ID" menu item every commit ID offers. `longId` is a full ID (its highlighted prefix is the 7
+// characters) rather than a short one (3). Which part was clicked and whether Shift was held decide the item:
+//   long ID:  the 7-character prefix -> "Copy <7 characters>"; the rest -> "Copy full ID";
+//   short ID: Shift -> "Copy full ID"; else the 3-character prefix -> "Copy <3 characters>", the rest -> "Copy <7 characters>".
+struct IdCopyChoice {
+    std::string label; // the item's text
+    std::string text;  // what it copies
+};
+IdCopyChoice idCopyChoice(const std::string& hex, bool longId, bool onPrefix, bool shift);
+// The item of a menu opened from the keyboard (Alt+Space), for a long or a short ID: "Copy <7 characters>", with
+// Shift "Copy full ID"; never the 3 characters.
+IdCopyChoice idCopyChoiceKeyboard(const std::string& hex, bool shift);
+// Call first inside an ID's context menu: on the menu's first frame it records whether the right click that opened
+// it was inside `prefixRange` (the X range of the ID's highlighted prefix, lastIdPrefixRange) and whether Shift was
+// held, and keeps both while the menu stays open. A menu opened from the keyboard (Alt+Space) has no click: see
+// idCopyChoiceKeyboard.
+void captureIdCopyClick(const ImVec2& prefixRange);
+// The item for what captureIdCopyClick recorded, with the stable ID "###copy_id". Shift counts when it was held as
+// the menu opened or is held while it is open. Returns true when clicked (after copying).
+bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled = true);
 // Alt+Space on the keyboard-focused item (the keyboard equivalent of the right click that opens its
 // context menu). Call right after the item. The chord is a routed shortcut owned by the item, so
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing

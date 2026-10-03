@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <set>
 
@@ -378,6 +379,31 @@ GG_TEST("history", "keyboard navigation")
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
 }
 
+GG_TEST("history", "the copy-ID menu item by part clicked and Shift: all five rows")
+{
+    const std::string hex = "0123456789abcdef0123456789abcdef01234567";
+    const auto check = [&](bool longId, bool onPrefix, bool shift, const char* label, const std::string& text) {
+        const ggui::IdCopyChoice choice = ggui::idCopyChoice(hex, longId, onPrefix, shift);
+        GG_CHECK_STR_EQ(choice.label, label);
+        GG_CHECK_STR_EQ(choice.text, text);
+    };
+    check(true, true, false, "Copy 0123456", hex.substr(0, 7));
+    check(true, false, false, "Copy full ID", hex);
+    check(false, false, true, "Copy full ID", hex);
+    check(false, true, false, "Copy 012", hex.substr(0, 3));
+    check(false, false, false, "Copy 0123456", hex.substr(0, 7));
+    // A long ID: Shift changes nothing.
+    check(true, true, true, "Copy 0123456", hex.substr(0, 7));
+    check(true, false, true, "Copy full ID", hex);
+    // A short ID with Shift: the full ID, on the prefix too.
+    check(false, true, true, "Copy full ID", hex);
+    // A menu opened from the keyboard: the 7 characters, with Shift the full ID.
+    GG_CHECK_STR_EQ(ggui::idCopyChoiceKeyboard(hex, false).label, "Copy 0123456");
+    GG_CHECK_STR_EQ(ggui::idCopyChoiceKeyboard(hex, false).text, hex.substr(0, 7));
+    GG_CHECK_STR_EQ(ggui::idCopyChoiceKeyboard(hex, true).label, "Copy full ID");
+    GG_CHECK_STR_EQ(ggui::idCopyChoiceKeyboard(hex, true).text, hex);
+}
+
 GG_TEST("history", "copy ID and full description; tooltip ID")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -385,22 +411,34 @@ GG_TEST("history", "copy ID and full description; tooltip ID")
     const std::string id = s.revParse(repo, "HEAD~2");
     // The row shows the short ID: 3 characters in the text colour, the other 4 dimmed.
     GG_CHECK(s.idShownDimmed("//History", id.substr(0, 7), 3));
-    // The menu has three items that state the ID itself; none depends on Shift.
+    // The Copy submenu has one item that states the ID it copies: a click on the row outside the ID is the tail
+    // (7 characters), Shift held at the click gives the full ID.
     ctx->ItemClick(rowRef(id).c_str(), ImGuiMouseButton_Right);
     ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Copy");
-    GG_CHECK(s.itemLabel("//$FOCUSED/###ID3").find(id.substr(0, 3) + "###") != std::string::npos);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###ID7").find(id.substr(0, 7) + "###") != std::string::npos);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###IDfull").find("Full ID###") != std::string::npos);
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + id.substr(0, 7) + "###copy_id");
+    GG_CHECK(s.itemLabel("//$FOCUSED/###ID3").empty() && s.itemLabel("//$FOCUSED/###IDfull").empty());
+    ctx->ItemClick("//$FOCUSED/###copy_id");
+    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 7));
     ctx->KeyDown(ImGuiMod_Shift);
     ctx->Yield(2);
-    GG_CHECK(s.itemLabel("//$FOCUSED/###ID7").find(id.substr(0, 7) + "###") != std::string::npos);
+    ctx->ItemClick(rowRef(id).c_str(), ImGuiMouseButton_Right);
     ctx->KeyUp(ImGuiMod_Shift);
-    ctx->ItemClick("//$FOCUSED/###ID3");
-    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 3));
-    s.contextMenu(rowRef(id).c_str(), "Copy/###ID7");
-    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 7));
-    s.contextMenu(rowRef(id).c_str(), "Copy/###IDfull");
+    ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Copy");
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy full ID###copy_id");
+    ctx->ItemClick("//$FOCUSED/###copy_id");
     GG_CHECK_STR_EQ(s.clipboard(), id);
+    // A right click on the ID's highlighted prefix: the 3 characters.
+    const ImGuiTestItemInfo row = ctx->ItemInfo(rowRef(id).c_str());
+    const ImVec2 range = s.session()->history().idPrefixRange();
+    GG_REQUIRE(range.y > range.x);
+    // The range spans the first 3 characters of the ID as drawn.
+    GG_CHECK(std::abs((range.y - range.x) - ImGui::CalcTextSize(id.c_str(), id.c_str() + 3).x) < 0.5f);
+    ctx->MouseMoveToPos(ImVec2((range.x + range.y) * 0.5f, row.RectFull.GetCenter().y));
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Copy");
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + id.substr(0, 3) + "###copy_id");
+    ctx->ItemClick("//$FOCUSED/###copy_id");
+    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 3));
     // The row tooltip starts with the full ID: 7 characters in the text colour, the rest dimmed.
     ctx->MouseMove(rowRef(id).c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);

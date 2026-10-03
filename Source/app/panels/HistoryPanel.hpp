@@ -72,6 +72,8 @@ public:
     bool graphShown() const { return m_graphShown; }
     // Whether the list scrolled within the last moment (tooltips are held back meanwhile).
     bool scrolling() const { return m_scrolling; }
+    // The X range of the highlighted prefix of the ID column, from the last drawn row.
+    ImVec2 idPrefixRange() const { return m_idPrefixRange; }
 
 private:
     core::HistoryScope buildScope() const;
@@ -125,6 +127,9 @@ private:
     bool m_rowPitchOk = true;
     // The graph column is hidden while a filter is active (the graph of filtered rows is broken).
     bool m_graphShown = true;
+    // The X range of the ID's highlighted prefix, from the last drawn row (the same for every row; the row menu is
+    // drawn before the row's ID); empty until an ID has been drawn.
+    ImVec2 m_idPrefixRange{};
     ImVec2 m_menuItemSpacing{}; // the style's ItemSpacing, before the table zeroes it (for the row context menu)
     int column(int c) const { return m_graphShown ? c : c - 1; }
 
