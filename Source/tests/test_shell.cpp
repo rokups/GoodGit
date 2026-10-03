@@ -607,14 +607,23 @@ GG_TEST("shell", "the ini wins over settings.json, which is only a fallback")
         s.app.resetForTest();
         ctx->Yield(2);
     };
-    // No imgui.ini: the values an earlier version kept in settings.json apply.
+    // The app saves the ini on its I/O thread: a save still on its way would replace the file written here.
+    auto writeIni = [&](const std::string& text) {
+        GG_REQUIRE(s.waitIdle());
+        s.write(prefs, "imgui.ini", text);
+    };
+    // No imgui.ini: the values an earlier version kept in settings.json apply. (A save the app posted
+    // before the test began would make one.)
+    GG_REQUIRE(s.waitIdle());
+    std::error_code ec;
+    fs::remove(prefs / "imgui.ini", ec);
     s.write(prefs, "settings.json", R"({"diff":{"sideBySide":true,"context":7},"historyShowStashes":false})");
     restart();
     GG_CHECK(s.app.settings().data().diffSideBySide);
     GG_CHECK_EQ(s.app.settings().data().diffContext, 7);
     GG_CHECK(!s.app.settings().data().historyShowStashes);
     // With one, its values win; the rest still come from settings.json.
-    s.write(prefs, "imgui.ini",
+    writeIni(
         "[GGUIView][Diff]\nContext=9\n\n[GGUIView][History]\nConflictedOnly=1\n\n[GGUIView][Rebase]\nNewestFirst=1\n\n");
     restart();
     GG_CHECK_EQ(s.app.settings().data().diffContext, 9);
@@ -623,7 +632,7 @@ GG_TEST("shell", "the ini wins over settings.json, which is only a fallback")
     GG_CHECK(s.app.settings().data().diffSideBySide);
     GG_CHECK(!s.app.settings().data().historyShowStashes);
     // Out-of-range values are clamped; unknown keys, sections and garbage are ignored.
-    s.write(prefs, "imgui.ini",
+    writeIni(
         "[GGUIView][Diff]\nContext=999\nWhitespace=-4\nBogus=1\nNoValue\nSideBySide=x\n\n"
         "[GGUIView][Nowhere]\nContext=1\n\n");
     restart();
