@@ -1,5 +1,6 @@
 #include "libgg/Journal.hpp"
 
+#include "libgg/Keep.hpp"
 #include "libgg/Process.hpp"
 
 #include <nlohmann/json.hpp>
@@ -443,12 +444,37 @@ bool visibleFrom(const Operation& op, const std::string& wt)
         return (op.wt.empty() ? std::string("main") : op.wt) == wt;
     const std::string head = headKey(wt);
     for (const auto& r : op.refs)
-        if (!isHeadKey(r.ref) || r.ref == head)
+        if (r.ref == head || (!isHeadKey(r.ref) && !keep::isKeepRef(r.ref))) // (keep refs are repository-wide housekeeping)
             return true;
     for (const auto& i : op.index)
         if (i.wt == wt)
             return true;
     return false;
+}
+
+bool Operation::keepOnly() const
+{
+    return !refs.empty() && index.empty() && worktrees.empty() && undoes.empty()
+        && std::all_of(refs.begin(), refs.end(), [](const RefChange& r) { return keep::isKeepRef(r.ref); });
+}
+
+bool writeKeepHousekeeping(Writer& writer, const std::string& wt, const std::vector<RefChange>& changes,
+    std::string* error, std::string* idOut)
+{
+    Operation hk;
+    hk.id = Journal::newOperationId();
+    if (idOut)
+        *idOut = hk.id;
+    hk.src = "gg";
+    hk.label = "keep refs";
+    hk.wt = wt;
+    return writer.begin(hk, error) && writer.appendRefs(hk.id, changes, error) && writer.end(hk.id, true, error);
+}
+
+// A ref value that means "no such ref" (empty, or the null id).
+static bool noRef(const std::string& v)
+{
+    return v.find_first_not_of('0') == std::string::npos;
 }
 
 UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool redo,
@@ -473,7 +499,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
     const Operation* target = nullptr;
     if (!redo) {
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-            if (!it->ended || !it->ok || it->isUndo() || undone[it->id] || !visibleFrom(*it, wt))
+            if (!it->ended || !it->ok || it->isUndo() || undone[it->id] || !visibleFrom(*it, wt) || it->keepOnly())
                 continue;
             if (!it->restorable())
                 continue; // nothing to undo (e.g. a failed or no-op command)
@@ -486,7 +512,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
         }
     } else {
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-            if (!it->ended || !it->ok || !visibleFrom(*it, wt))
+            if (!it->ended || !it->ok || !visibleFrom(*it, wt) || it->keepOnly())
                 continue;
             if (it->undoes.empty() && it->restorable())
                 break; // a newer normal operation: nothing to redo
@@ -507,6 +533,18 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
             continue; // another worktree's HEAD is not ours to restore
         if (r.oldValue == r.newValue)
             continue; // back where it started (HEAD during a rebase): nothing to restore
+        if (keep::isKeepRef(r.ref)) {
+            // Derived state (libgg/Keep.hpp): never a reason to refuse, never restored literally. What
+            // the target created goes when it is still there; what it deleted is handed to the caller,
+            // whose keep::maintain keeps it only if nothing else reaches it now.
+            if (noRef(r.oldValue) && !noRef(r.newValue)) {
+                const std::string now = current(r.ref);
+                if (!noRef(now))
+                    plan.restore.push_back(RefChange{r.ref, now, r.oldValue});
+            } else if (!noRef(r.oldValue))
+                plan.keepExtra.push_back(r.oldValue);
+            continue;
+        }
         const std::string now = current(r.ref);
         if (now != r.newValue)
             plan.movedRefs.push_back(r.ref);

@@ -27,7 +27,7 @@ uses the same journal.
 name under `$GIT_COMMON_DIR/worktrees/`). Index trees are recorded per worktree the same way.
 Other refs (`refs/heads/*`, `refs/tags/*`, `refs/stash`, `refs/remotes/*`, any other
 reflog-backed ref) are shared. Undo run from worktree *W* considers only operations that touched
-a shared ref or *W*'s own HEAD/index (§5.1). An operation that added, removed, locked or unlocked
+a shared ref or *W*'s own HEAD/index (§5.1); a keep ref (`refs/gg/keep/*`) does not count. An operation that added, removed, locked or unlocked
 a linked worktree (`worktree` records) belongs to the worktree that ran it only (§5.4).
 
 ## 2. Encoding
@@ -121,7 +121,8 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
 - **Known value.** The journal says what every ref should be: *Known(ref)* is the last `new` value
   of the ref over all operations (undo and open ones included), else the baseline value from
   `reconcile.json`, else the null ID. After a pass, Known equals the current value of every ref:
-  all `refs/*` (except `refs/gg/*`, but `refs/gg/keep/*`, the keep refs, are tracked) and this worktree's `HEAD`. Other worktrees' `HEAD` keys are
+  all `refs/*` (except `refs/gg/*`, but `refs/gg/keep/*`, the keep refs, are tracked, whichever
+  operation or worktree created them) and this worktree's `HEAD`. Other worktrees' `HEAD` keys are
   not judged by a pass of this one.
 - **State file** `$GIT_COMMON_DIR/gg/reconcile.json`:
   `{"v":1,"baseline":{"<ref>":"<value>"},"journal":"<first op id>","cursors":{"<HEAD key>":{"n","old","new","time","msg"}}}`.
@@ -170,6 +171,30 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
   usable cursor. Label `git fetch`, `git push` or `git pull` when the newest reflog entry of a
   changed remote-tracking ref says so (at most three reflogs are read), else `external changes`;
   `cmd` empty, `time` now. It restores to Known, so Undo of a lump puts every ref back at once.
+- **Keep refs (invariant K, product spec K2).** `refs/gg/keep/*` is derived, repository-wide state.
+  `keep::maintain` runs in `OperationRecorder::finish`, before it reads the after-values, and at the
+  end of each reconcile pass that was not deferred or skipped. `finish` skips it while a native
+  rebase is stopped, unless the operation passed keep ids of its own; the pass does not skip: `maintain`
+  itself ignores the HEAD of a worktree in the middle of a native operation. A failure never fails
+  the operation or the pass.
+  - *Ownership.* The creation of a keep ref is recorded in an operation only when the commit is
+    that operation's own worktree's detached HEAD afterwards, or a commit the operation asked to
+    keep (the Undo of an operation that had deleted the keep ref). A deletion, or a move, is recorded in the
+    operation the maintenance ran for (in a pass: only an operation begun in that pass). Every
+    other keep change is written as an operation of its own: `src` `gg`, label `keep refs`,
+    holding only keep refs (`Operation::keepOnly()`, `journal::writeKeepHousekeeping`), so the next
+    pass finds it in Known. A keep ref that exists already when the operation that made its commit
+    is journaled stays with the `keep refs` operation; undoing that operation leaves the commit
+    kept. An operation continued from an earlier pass or call (an open rebase group) never owns a
+    keep change: it is older than what was journaled since.
+  - *Undo and Redo.* A keep ref does not make an operation visible from another worktree (§5.1).
+    Keep-only operations are passed over by Undo and Redo. The keep entries of the undone
+    operation are never a reason for "refs moved outside the journal" and are not restored
+    literally: a keep ref the operation created is deleted if it still exists; the commit of one
+    it deleted is handed to the maintenance (`UndoPlan::keepExtra`,
+    `OperationRecorder::setKeepExtra`), which keeps it again unless something reaches it.
+  - A `keep refs` operation stays in the journal and in the Operations panel; Undo and Redo pass
+    over it, and the Restore item of its row is disabled.
 - **Dedupe.** `OperationRecorder::finish` may advance the cursor without the lock when that stays
   busy, and ggui may crash between its append and the cursor. An operation derived from reflog entries whose
   ref changes already are the newest journal changes of those refs is not written again.
@@ -231,7 +256,8 @@ A `git rebase` (either backend) that stops runs as several git commands
 
 ### 5.1 Which operation
 Let *W* be the current worktree. The *visible* operations are those that touched a shared ref,
-or *W*'s HEAD/index.
+or *W*'s HEAD/index. A keep ref (`refs/gg/keep/*`) is repository-wide housekeeping and does not
+count as a shared ref here: it never makes an operation visible from another worktree.
 
 - Only operations with something to restore count: a ref whose recorded old and new values
   differ, an index tree, or a `worktree` record (a no-op `git reset --hard` is passed over).

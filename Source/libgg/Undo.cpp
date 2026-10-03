@@ -2,6 +2,7 @@
 
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
+#include "libgg/Keep.hpp"
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Reconcile.hpp"
@@ -346,6 +347,11 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         recorder.finish(false);
         return result;
     }
+    // The keep refs the restored operation had deleted come back through the maintenance of finish()
+    // (only when no branch or tag reaches them now), so the undo operation's diff records the net
+    // keep effect, and the keep refs of these ids are its own. A failure is not fatal: the next
+    // operation or reconcile pass tries again.
+    recorder.setKeepExtra(plan.keepExtra);
     recorder.finish(true, followWorktree);
     result.ok = true;
     return result;

@@ -1139,7 +1139,7 @@ void OperationsPanel::draw(bool* open)
                 ImGui::EndTooltip();
             }
             if (beginContextMenu("##op_menu")) {
-                if (menuItem(ICON_MS_RESTORE, "Restore (undo this operation)", nullptr, false, free && op.restorable()))
+                if (menuItem(ICON_MS_RESTORE, "Restore (undo this operation)", nullptr, false, free && op.restorable() && !op.keepOnly()))
                     actions.restore(op.id);
                 if (menuItem(ICON_MS_CONTENT_COPY, "Copy operation ID"))
                     ImGui::SetClipboardText(op.id.c_str());

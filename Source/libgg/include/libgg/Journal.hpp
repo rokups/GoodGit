@@ -75,6 +75,10 @@ struct Operation {
         return !index.empty() || !worktrees.empty();
     }
     bool isRedo() const { return !undoes.empty() && redo; }
+    // Housekeeping: at least one ref change, every one of them a keep ref (libgg/Keep.hpp), and no
+    // index or worktree record and not an undo or redo. It has no user intent, so Undo and
+    // Redo pass over it as if it were absent.
+    bool keepOnly() const;
 };
 
 // The append API of the journal. Every call appends one record and returns false (with a reason)
@@ -102,6 +106,12 @@ protected:
     // Appends one JSON line (without the newline).
     virtual bool appendLine(const std::string& line, std::string* error) = 0;
 };
+
+// Writes the keep-only housekeeping operation for ref changes that belong to no operation of their
+// own (src "gg", label "keep refs", worktree `wt`, time now): begun, filled and ended. Returns false
+// when a record could not be written. `idOut` receives the operation's id.
+bool writeKeepHousekeeping(Writer& writer, const std::string& wt, const std::vector<RefChange>& changes,
+    std::string* error = nullptr, std::string* idOut = nullptr);
 
 class Journal : public Writer {
 public:
@@ -170,6 +180,9 @@ struct UndoPlan {
     std::optional<IndexChange> index;   // before = current index tree, after = tree to restore
     std::vector<std::string> movedRefs; // refs that moved outside the journal
     std::vector<WorktreeChange> worktrees; // to apply, in this order (the target's, inverted, last first)
+    // Commits the target's keep refs (libgg/Keep.hpp) it deleted pointed at: they are not restored
+    // literally, the caller hands them to keep::maintain as `extra` after applying `restore`.
+    std::vector<std::string> keepExtra;
 };
 
 // Chooses the operation to undo (or redo) for worktree `wt` and checks that every ref it

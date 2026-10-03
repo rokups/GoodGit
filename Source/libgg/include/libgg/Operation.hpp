@@ -38,6 +38,10 @@ public:
     // recorder joins that rebase's operation instead (NativeRebase.hpp); an operation that starts
     // a rebase stays open until the rebase is finished.
     void begin();
+    // Commit ids this operation's maintenance of the keep refs must keep although nothing holds
+    // them yet (an undo's restored keep refs); finish() runs the one keep::maintain with them, and
+    // their keep refs are this operation's own changes. Call before finish(true).
+    void setKeepExtra(std::vector<std::string> ids) { m_keepExtra = std::move(ids); }
     // A worktree the operation added, removed, locked or unlocked (written by finish()).
     void addWorktree(journal::WorktreeChange change) { m_worktrees.push_back(std::move(change)); }
     // Records the resulting ref and index changes and the end record.
@@ -58,6 +62,7 @@ private:
     std::map<std::string, std::string> m_before;
     std::string m_indexBefore;
     std::vector<journal::WorktreeChange> m_worktrees;
+    std::vector<std::string> m_keepExtra;
     std::string m_previousOperation;
     std::string m_error;
 };

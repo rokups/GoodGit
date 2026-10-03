@@ -735,7 +735,9 @@ GG_TEST("reconcile", "a plain rebase whose finish entry a pass reads only after 
         GG_CHECK(!fs::exists(gitDir / "gg" / "rebase"));
     }
     GG_REQUIRE(s.openRepository(repo));
-    GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() == 7; }));
+    // 8: the first pass saw HEAD detached on the last pick and kept it; the second, with the branch on it,
+    // dropped that keep ref in a "keep refs" operation of its own, which Undo passes over.
+    GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() == 8; }));
     s.settle();
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(s.waitUntil([&] { return refState(s, repo) == before; }));

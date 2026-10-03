@@ -2,6 +2,7 @@
 
 #include "libgg/Files.hpp"
 #include "libgg/Journal.hpp"
+#include "libgg/Keep.hpp"
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Process.hpp"
@@ -805,6 +806,26 @@ Result run(git_repository* repo, std::string* error)
         }
     };
     const char* workdir = git_repository_workdir(repo);
+    // The last operation this pass wrote or appended to, and the operations it began (with the
+    // detached commit the HEAD of this worktree is left at, "" when none): who owns which keep ref
+    // change is decided from them, below.
+    std::string lastOp;
+    struct Begun {
+        std::string id;
+        std::string head;
+    };
+    std::vector<Begun> begun;
+    const auto noteBegun = [&](const std::string& id, const std::vector<journal::RefChange>& cs) {
+        std::string head;
+        for (const auto& c : cs) {
+            if (c.ref == myHead && !startsWith(c.newValue, "ref:") && c.newValue != zero)
+                head = c.newValue; // a detached HEAD is stored as the plain id
+            else if (c.ref == myHead)
+                head.clear();
+        }
+        begun.push_back(Begun{id, head});
+        lastOp = id;
+    };
 
     // One operation per plain git command found in HEAD's reflog since the cursor; a rebase, from
     // its start to its finish, is one operation over however many passes it takes (an open one
@@ -862,6 +883,8 @@ Result run(git_repository* repo, std::string* error)
                         newest[c.ref] = c;
                     ++result.appended;
                 }
+                if (p.finished || (!p.changes.empty() && !dup))
+                    lastOp = open->op;
                 if (p.finished) {
                     // A rebase ggui started, finished in a terminal: the index at its end joins the
                     // one ggui recorded at its start (plain git's own has none).
@@ -898,6 +921,7 @@ Result run(git_repository* repo, std::string* error)
             for (const auto& c : p.changes)
                 newest[c.ref] = c;
             ++result.appended;
+            noteBegun(op.id, p.changes);
             noteFirst(op.id);
         }
         // A remembered operation whose rebase is gone, with no reflog entry to say so (git rebase
@@ -931,10 +955,73 @@ Result run(git_repository* repo, std::string* error)
             return result;
         }
         ++result.appended;
+        noteBegun(op.id, changes);
         if (state.journal.empty()) { // the first operation of a new journal
             state.journal = op.id;
             identityChanged = true;
         }
+    }
+    // Keep refs (invariant K): brought up to date at the end of every pass. Their changes are
+    // recorded where the next pass's `known` (the latest begin record of a ref) finds them, so they
+    // are not reported as external changes, with the rule OperationRecorder::finish applies: a
+    // creation belongs to the operation this pass began whose HEAD it is (the newest such), a
+    // deletion or a move to the pass's last operation when this pass began it; the rest is
+    // housekeeping, an operation of its own. An operation continued from an earlier pass (an open
+    // rebase) never takes them: for `known` it is older than what came since. Also when maintenance
+    // failed half-way: what it did is journaled all the same.
+    {
+        std::vector<journal::RefChange> keepChanges;
+        std::string keepError;
+        const bool kept = keep::maintain(repo, {}, &keepChanges, &keepError);
+        if (!kept && error && error->empty())
+            *error = keepError;
+        const auto isBegun = [&](const std::string& id) {
+            return std::any_of(begun.begin(), begun.end(), [&](const Begun& b) { return b.id == id; });
+        };
+        std::vector<std::pair<std::string, std::vector<journal::RefChange>>> owned; // by operation, in order
+        const auto give = [&](const std::string& id, const journal::RefChange& c) {
+            for (auto& entry : owned)
+                if (entry.first == id) {
+                    entry.second.push_back(c);
+                    return;
+                }
+            owned.push_back({id, {c}});
+        };
+        std::vector<journal::RefChange> housekeeping;
+        for (const auto& c : keepChanges) {
+            std::string owner;
+            if (c.newValue == zero || c.oldValue != zero) {
+                if (!lastOp.empty() && isBegun(lastOp))
+                    owner = lastOp;
+            } else {
+                for (auto it = begun.rbegin(); it != begun.rend() && owner.empty(); ++it)
+                    if (it->head == c.newValue)
+                        owner = it->id;
+            }
+            if (!owner.empty())
+                give(owner, c);
+            else
+                housekeeping.push_back(c);
+        }
+        std::string err;
+        bool ok = true;
+        for (const auto& [id, cs] : owned) {
+            if (ok) {
+                ok = t.appendRefs(id, cs, &err);
+                if (ok)
+                    ++result.appended;
+            }
+        }
+        if (ok && !housekeeping.empty()) {
+            std::string hkId;
+            ok = journal::writeKeepHousekeeping(t, wt, housekeeping, &err, &hkId);
+            if (ok) {
+                ++result.appended;
+                noteFirst(hkId);
+            }
+        }
+        if (!ok && error)
+            *error = err;
     }
     if (firstRun || baselineGrew || identityChanged || cursorChanged) {
         // A state that cannot be written makes every later pass a first run (refs created since are

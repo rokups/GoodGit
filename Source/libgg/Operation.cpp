@@ -1,9 +1,12 @@
 #include "libgg/Operation.hpp"
 
 #include "libgg/GitRunner.hpp"
+#include "libgg/Keep.hpp"
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Reconcile.hpp"
 #include "libgg/Thread.hpp"
+
+#include <algorithm>
 
 namespace gg {
 
@@ -123,22 +126,60 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
         return;
     m_finished = true;
     setCurrentOperation(m_previousOperation);
+    // The keep refs (invariant K, libgg/Keep.hpp) are brought up to date before the after-values are
+    // read, so what maintenance does lands in the before/after diff (also when it only got half
+    // done). Not while a native rebase is stopped: its intermediate HEAD is not a commit anyone
+    // made on a detached HEAD (an undo's `extra` is still honoured). A failure does not fail the
+    // operation, and there is no channel for non-fatal problems here (m_error is the operation's
+    // own): the next operation or reconcile pass tries again.
+    if (!m_keepExtra.empty() || native::rebaseIdentity(m_repo).empty()) {
+        std::string ignored;
+        keep::maintain(m_repo, m_keepExtra, nullptr, &ignored);
+    }
     const auto after = readRefValues(m_repo);
     const std::string zero = zeroId(m_repo);
+    // The keep ref changes of this operation's diff that are its own: the deletions (maintenance ran
+    // for it) and the creations of the keep ref of its own worktree's detached HEAD or of an id it
+    // asked to keep. The rest (a keep ref another worktree's commit needed, made by whatever else
+    // ran meanwhile) is housekeeping: an operation of its own, so that Undo of this one does not
+    // carry it along and it is not labelled with this operation.
     std::vector<journal::RefChange> changes;
+    std::vector<journal::RefChange> housekeeping;
+    const auto headAfter = after.find(journal::headKey(m_op.wt));
+    const auto owns = [&](const journal::RefChange& c) {
+        if (!keep::isKeepRef(c.ref))
+            return true;
+        if (m_resumed)
+            return false; // an older begin record than a later "keep refs" operation: `known` would take the ref's value from the latter
+        if (c.newValue == zero)
+            return true;
+        if (c.oldValue != zero)
+            return true; // a keep ref that moved (maintenance never does that; whoever did is not another worktree's commit)
+        return (headAfter != after.end() && headAfter->second == c.newValue)
+            || std::find(m_keepExtra.begin(), m_keepExtra.end(), c.newValue) != m_keepExtra.end();
+    };
+    const auto add = [&](journal::RefChange c) {
+        (owns(c) ? changes : housekeeping).push_back(std::move(c));
+    };
     for (const auto& [ref, value] : after) {
         auto it = m_before.find(ref);
         const std::string old = it == m_before.end() ? zero : it->second;
         if (old != value)
-            changes.push_back(journal::RefChange{ref, old, value});
+            add(journal::RefChange{ref, old, value});
     }
     for (const auto& [ref, value] : m_before)
         if (!after.count(ref))
-            changes.push_back(journal::RefChange{ref, value, zero});
+            add(journal::RefChange{ref, value, zero});
     std::string error;
     for (const auto& w : m_worktrees)
         m_journal.appendWorktree(m_op.id, w, &error);
     m_journal.appendRefs(m_op.id, changes, &error);
+    if (!housekeeping.empty()) {
+        // While this operation is still open, so no reconcile pass can see these keep refs
+        // unjournaled in between.
+        std::string hkError;
+        journal::writeKeepHousekeeping(m_journal, m_op.wt, housekeeping, &hkError);
+    }
     // The git commands this operation ran left reflog entries: they are accounted for now (the
     // op is still open, so no reconcile pass can journal them meanwhile).
     reconcile::advanceCursor(m_repo, &error);
