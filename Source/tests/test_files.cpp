@@ -28,9 +28,9 @@ GG_TEST("files", "replaceFile gives up with an error after a short time when the
     s.write(dir, "target.txt", "kept\n");
     const auto start = std::chrono::steady_clock::now();
     const std::error_code ec = gg::replaceFile(dir / "missing.tmp", dir / "target.txt");
-    const auto took = std::chrono::steady_clock::now() - start;
+    const double tookMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     GG_CHECK(static_cast<bool>(ec));
-    GG_CHECK(took < std::chrono::seconds(2));
+    GG_CHECK(tookMs < timeBudgetMs(2000));
     GG_CHECK_STR_EQ(s.read(dir, "target.txt"), "kept\n");
 }
 
