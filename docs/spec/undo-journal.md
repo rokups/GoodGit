@@ -125,7 +125,8 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
   not judged by a pass of this one.
 - **State file** `$GIT_COMMON_DIR/gg/reconcile.json`:
   `{"v":1,"baseline":{"<ref>":"<value>"},"journal":"<first op id>","cursors":{"<HEAD key>":{"n","old","new","time","msg"}}}`.
-  Written to a temp file and renamed, only when it changed. Disposable, like the journal.
+  Written to a temp file and renamed, only when it changed. A rename that fails is retried for a
+  short time: on Windows it fails while a reader has the file open. Disposable, like the journal.
   - The **first run** (no file) writes the baseline (every ref's current value) and the cursors
     (reflog tips). Nothing is replayed: what happened before ggui first looked is not history.
   - `journal` is the ID of the journal's first operation. When it no longer matches (the journal

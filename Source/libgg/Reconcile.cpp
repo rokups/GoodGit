@@ -1,5 +1,6 @@
 #include "libgg/Reconcile.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Journal.hpp"
 #include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
@@ -79,7 +80,7 @@ bool writeState(const fs::path& dir, const fs::path& path, const State& st)
         if (!out)
             return false;
     }
-    fs::rename(tmp, path, ec);
+    ec = replaceFile(tmp, path);
     if (ec) {
         fs::remove(tmp, ec);
         return false;

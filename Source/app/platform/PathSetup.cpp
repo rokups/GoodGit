@@ -2,6 +2,8 @@
 
 #include "util/Env.hpp"
 
+#include <libgg/Files.hpp>
+
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
@@ -141,7 +143,7 @@ std::string writePathSetup(
             return "Cannot write " + tmp.string() + ".";
         }
     }
-    fs::rename(tmp, file, ec);
+    ec = gg::replaceFile(tmp, file);
     if (ec) {
         std::error_code ignore;
         fs::remove(tmp, ignore);

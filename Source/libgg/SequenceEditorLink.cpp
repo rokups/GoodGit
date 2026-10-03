@@ -1,5 +1,7 @@
 #include "libgg/SequenceEditorLink.hpp"
 
+#include "libgg/Files.hpp"
+
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -64,7 +66,7 @@ bool writeInstance(const Instance& instance)
     }
     std::error_code ec;
     fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
-    fs::rename(tmp, file, ec);
+    ec = replaceFile(tmp, file);
     return !ec;
 }
 

@@ -2,6 +2,8 @@
 
 #include "util/Env.hpp"
 
+#include <libgg/Files.hpp>
+
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 #include <imgui.h>
@@ -117,7 +119,7 @@ void writeAtomically(const fs::path& p, const std::string& text)
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         f << text;
     }
-    fs::rename(tmp, p, ec);
+    ec = gg::replaceFile(tmp, p);
     if (ec)
         spdlog::warn("cannot write {}: {}", p.string(), ec.message());
 }

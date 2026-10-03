@@ -1,5 +1,6 @@
 #include "libgg/Conflicts.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Markers.hpp"
 #include "libgg/Thread.hpp"
 
@@ -162,7 +163,7 @@ void Cache::save()
                 out << f.sides << '\t' << f.path << '\n';
         }
     }
-    fs::rename(tmp, m_file, ec);
+    replaceFile(tmp, m_file);
     dirty = false;
 }
 
