@@ -224,7 +224,9 @@ GG_TEST("linestaging", "CRLF lines, missing final newline, new files")
     GG_REQUIRE(showFile(s, "Untracked", "new.txt"));
     ctx->ItemClick((body(s) + "/###line_2").c_str());
     s.contextMenu((body(s) + "/###line_2").c_str(), "Discard line(s)");
-    GG_CHECK(s.waitUntil([&] { return s.read(repo, "new.txt") == "keep one\nkeep two\n"; }));
+    // Read the file once git is done with it: on Windows an open handle makes git's rewrite fail.
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK_STR_EQ(s.read(repo, "new.txt"), "keep one\nkeep two\n");
     s.settle();
     // Stage one line of it (a new file with only that line in the index).
     GG_REQUIRE(showFile(s, "Untracked", "new.txt"));
