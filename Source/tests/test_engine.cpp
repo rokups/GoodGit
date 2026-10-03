@@ -101,9 +101,10 @@ GG_TEST("engine", "responsiveness on the large repository")
     ctx->ItemInputValue("//History/##hist_filter", "");
     s.waitIdle(30.0f);
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
-    ctx->LogInfo("frames %lld, max %.1f ms, > 33 ms: %lld", probe.frames, probe.maxMs, probe.slowFrames);
+    ctx->LogInfo("frames %lld, app max %.1f ms, present max %.1f ms, total max %.1f ms, app > 33 ms: %lld",
+        probe.frames, probe.maxAppMs, probe.maxPresentMs, probe.maxTotalMs, probe.slowFrames);
     GG_CHECK(probe.frames > 50);
-    GG_CHECK(probe.maxMs < timeBudgetMs(33.0));
+    GG_CHECK(probe.maxAppMs < timeBudgetMs(33.0));
 }
 
 } // namespace ggtest

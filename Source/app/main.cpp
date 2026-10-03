@@ -198,9 +198,11 @@ int main(int argc, char** argv)
         platform.beginFrame();
         const auto frameStart = std::chrono::steady_clock::now();
         app->frame();
+        const auto appEnd = std::chrono::steady_clock::now();
         platform.endFrame();
-        ggui::frameProbe().record(
-            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart).count());
+        const auto presentEnd = std::chrono::steady_clock::now();
+        ggui::frameProbe().record(std::chrono::duration<double, std::milli>(appEnd - frameStart).count(),
+            std::chrono::duration<double, std::milli>(presentEnd - appEnd).count());
 #ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
         if (tests) {
             tests->postSwap();

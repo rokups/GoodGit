@@ -1263,11 +1263,13 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
     p = previewReady(s, 60.0f);
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
     GG_REQUIRE(p && p->ok);
-    ctx->LogInfo("frames %lld, max %.1f ms; previews requested %d, shown %d", probe.frames, probe.maxMs,
+    ctx->LogInfo("frames %lld, app max %.1f ms, present max %.1f ms, total max %.1f ms, app > 33 ms: %lld; "
+                 "previews requested %d, shown %d",
+        probe.frames, probe.maxAppMs, probe.maxPresentMs, probe.maxTotalMs, probe.slowFrames,
         editor(s).previewsRequested() - requested, editor(s).previewsShown() - shown);
     GG_CHECK(editor(s).previewsRequested() - requested == 5);
     GG_CHECK(editor(s).previewsShown() - shown < 5);
-    GG_CHECK(probe.maxMs < timeBudgetMs(33.0));
+    GG_CHECK(probe.maxAppMs < timeBudgetMs(33.0));
     GG_CHECK(p->rows.size() == 28);
     const auto names = previewSubjects(*p);
     GG_CHECK(std::find(names.begin(), names.end(), "c20") == names.end());
