@@ -522,10 +522,13 @@ GG_TEST("blame", "Ctrl+F focuses the filter, not the editor's find window")
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_F);
     ctx->Yield(3);
     GG_CHECK(g.ActiveId == filter);
-    // The editor's find UI is a child window "find-replace" (ImGuiColorTextEdit, TextEditor.cpp).
+    // The editor's find UI is a child window "find-replace" (ImGuiColorTextEdit, TextEditor.cpp). Windows
+    // are never removed from g.Windows: the one of another panel's editor, or of an earlier test, stays in
+    // it inactive, and a failed check would make the KeyChars below do nothing.
     bool find = false;
     for (ImGuiWindow* w : g.Windows)
-        find = find || std::string(w->Name).find("find-replace") != std::string::npos;
+        find = find || (w->Active && !w->Hidden && std::string(w->Name).starts_with("Blame/")
+                        && std::string(w->Name).find("find-replace") != std::string::npos);
     GG_CHECK(!find);
     GG_CHECK_EQ(s.session()->blame().selectionFirst(), 1);
     // The field takes the typing, with the selection kept.
