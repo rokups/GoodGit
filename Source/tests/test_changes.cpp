@@ -138,12 +138,31 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     s.contextMenu("//Changes/##compare_with", "Clear");
     GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
     s.git(repo, {"checkout", "--", "f2.txt"});
-    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title_id"), s.revParse(repo, "HEAD~3").substr(0, 7));
+    const std::string shown = s.revParse(repo, "HEAD~3");
+    GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title_id"), shown.substr(0, 7));
+    // The title's ID copies like every standalone ID: a click on the prefix or the rest, and the copy item.
+    s.clickIdText("//Changes/###changes_title_id", 3, true);
+    GG_CHECK_STR_EQ(s.clipboard(), shown.substr(0, 3));
+    s.clickIdText("//Changes/###changes_title_id", 3, false);
+    GG_CHECK_STR_EQ(s.clipboard(), shown);
+    s.rightClickIdText("//Changes/###changes_title_id", 3, false);
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + shown.substr(0, 7) + "###copy_id");
+    ctx->MenuClick("//$FOCUSED/###copy_id");
+    GG_CHECK_STR_EQ(s.clipboard(), shown.substr(0, 7));
+    s.rightClickIdText("//Changes/###changes_title_id", 3, true, true);
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy full ID###copy_id");
+    ctx->MenuClick("//$FOCUSED/###copy_id");
+    GG_CHECK_STR_EQ(s.clipboard(), shown);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::Commit);
     // The working tree: the zero ID before "Working tree"; Compare with HEAD disabled, in both panels.
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::WorkingTree; }));
     const std::string zeros(7, '0');
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title_id"), zeros);
+    // The zeros are not a commit's ID: a click copies nothing.
+    ImGui::SetClipboardText("unchanged");
+    ctx->ItemClick("//Changes/###changes_title_id");
+    GG_CHECK_STR_EQ(s.clipboard(), "unchanged");
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), "Working tree");
     GG_CHECK(ctx->ItemInfo("//Changes/##compare_with").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);

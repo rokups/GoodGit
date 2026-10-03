@@ -939,7 +939,11 @@ void ChangesPanel::draw(bool* open)
     default: title = "Nothing selected"; break;
     }
     if (!idText.empty()) {
-        rowIdText(idText, "changes_title_id");
+        // A commit's ID copies like any standalone ID; the working tree's zeros are not an ID to copy.
+        if (m_selection.kind == SelKind::Commit)
+            commitId(idText, "changes_title_id");
+        else
+            rowIdText(idText, "changes_title_id");
         ImGui::SameLine(0.0f, title.empty() ? 0.0f : ImGui::CalcTextSize(" ").x);
     }
     plainText((title + "###changes_title").c_str());

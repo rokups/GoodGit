@@ -113,8 +113,8 @@ a1b2c3d". A right click on a row outside its ID text counts as the rest. A menu 
 `Alt+Space` has no click: it gives "Copy a1b2c3d" for a short and for a full ID, and "Copy full ID"
 with Shift, never the 3 characters. The item's ID is `###copy_id`. This applies to every ID menu
 (the toolbar HEAD, the History row's Copy submenu, Blame's line menus, the reflog, the Stashes
-rows, Change information's commit ID and parents). ID text on its own (the toolbar HEAD and the Change
-information commit ID) is the exception to "plain text does nothing on click": clicking its
+rows, Change information's commit ID and parents, the Changes title's commit ID). ID text on its own
+(the toolbar HEAD, the Change information commit ID and the Changes title's commit ID) is the exception to "plain text does nothing on click": clicking its
 highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and clicking the
 dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID copies
 the full ID. IDs inside rows and tooltips are not clickable.
@@ -228,7 +228,7 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
 ## 3. Changes panel — window `"Changes"`
 - Header `###changes_title`: title of the selection ("0000000 Working tree" — the zero ID —,
   "Index", short ID and commit subject, stash message; the ID follows the ID rule, its own item
-  `###changes_title_id`), filter `##changes_filter`, toggle
+  `###changes_title_id`; a commit's ID copies on click and has the Copy ID item, the zero ID does neither), filter `##changes_filter`, toggle
   *Compare with HEAD* `##compare_head` (enabled for commits only).
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
   renames shown `old → new`; files holding first-class conflicts are in the conflict colour with
