@@ -1551,4 +1551,213 @@ GG_TEST("keep", "the Operations tooltip names a keep ref as detached <short ID>"
     GG_CHECK(!s.textShown("//##Tooltip_00", gg::keep::kPrefix));
 }
 
+// A kept commit made on a detached HEAD at `from`, with HEAD back on main (the repository is not open yet).
+std::string keptCommit(Scenario& s, const fs::path& repo, const std::string& from, const std::string& file)
+{
+    const std::string id = detachedCommit(s, repo, from, file);
+    GG_CHECK(maintain(repo).ok);
+    s.git(repo, {"checkout", "-q", "main"});
+    return id;
+}
+
+// Branches panel: the Detached node and its rows.
+std::string detachedRow(const std::string& hex) { return "//Branches/detached_group/detached_" + hex; }
+const char* const kDetachedEye = "//Branches/detached_group/###eye";
+
+GG_TEST("keep", "Branches: the Detached node and a row per kept commit appear with the kept commit and go with it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    s.settle();
+    GG_CHECK(!s.itemExists(kDetachedEye));
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kDetachedEye); }));
+    const std::string row = detachedRow(x);
+    GG_REQUIRE(s.itemExists((row + "/###detached_" + x).c_str()));
+    GG_CHECK_STR_EQ(s.itemText((row + "/###detached_" + x).c_str()), x.substr(0, 7) + "  Detached x.txt");
+    s.git(repo, {"branch", "graduated", x});
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(kDetachedEye); }));
+    GG_CHECK(!s.itemExists((row + "/###detached_" + x).c_str()));
+}
+
+GG_TEST("keep", "Branches: a Detached row's eye hides its commit in History; the node's eye and Hide all hide every kept commit")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    const std::string y = keptCommit(s, repo, "main~1", "y.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    const std::string kx = gg::keep::refName(x), ky = gg::keep::refName(y);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kDetachedEye) && s.itemExists((detachedRow(y) + "/###eye").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return history.row(ggui::core::Oid::fromHex(x)) && history.row(ggui::core::Oid::fromHex(y)); }));
+    // The kept commits are listed in the snapshot's order.
+    const ggui::core::SnapshotPtr snap = s.session()->snapshot();
+    const auto& kept = snap->kept;
+    GG_REQUIRE(kept.size() == 2u);
+    GG_CHECK(ctx->ItemInfo((detachedRow(kept[0].id.hex()) + "/###eye").c_str()).RectFull.Min.y
+        < ctx->ItemInfo((detachedRow(kept[1].id.hex()) + "/###eye").c_str()).RectFull.Min.y);
+    // A row's eye.
+    ctx->ItemClick((detachedRow(x) + "/###eye").c_str());
+    GG_CHECK(!history.refVisible(kx) && history.refVisible(ky));
+    GG_CHECK(s.waitUntil([&] { return !history.loading() && history.row(ggui::core::Oid::fromHex(x)) == nullptr; }));
+    GG_CHECK(history.row(ggui::core::Oid::fromHex(y)) != nullptr);
+    // The node's eye: mixed shows all, then hides all.
+    ctx->ItemClick(kDetachedEye);
+    GG_CHECK(history.refVisible(kx) && history.refVisible(ky));
+    ctx->ItemClick(kDetachedEye);
+    GG_CHECK(!history.refVisible(kx) && !history.refVisible(ky));
+    GG_CHECK(history.refVisible("refs/heads/main"));
+    // Show all and Hide all at the top reach the kept commits too.
+    ctx->ItemClick("//Branches/###show_all_branches");
+    GG_CHECK(history.refVisible(kx) && history.refVisible(ky));
+    ctx->ItemClick("//Branches/###hide_all_branches");
+    GG_CHECK(!history.refVisible(kx) && !history.refVisible(ky) && !history.refVisible("refs/heads/main"));
+}
+
+GG_TEST("keep", "Branches: the filter lists the kept commits whose ID or summary matches, and the node's eye acts on the listed ones")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    const std::string y = keptCommit(s, repo, "main~1", "y.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((detachedRow(y) + "/###eye").c_str()); }));
+    ctx->ItemInputValue("//Branches/##branch_filter", "DETACHED Y");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists((detachedRow(y) + "/###eye").c_str()));
+    GG_CHECK(!s.itemExists((detachedRow(x) + "/###eye").c_str()));
+    ctx->ItemClick(kDetachedEye);
+    GG_CHECK(!history.refVisible(gg::keep::refName(y)) && history.refVisible(gg::keep::refName(x)));
+    ctx->ItemInputValue("//Branches/##branch_filter", x.substr(2, 6).c_str());
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists((detachedRow(x) + "/###eye").c_str()));
+    GG_CHECK(!s.itemExists((detachedRow(y) + "/###eye").c_str()));
+    ctx->ItemInputValue("//Branches/##branch_filter", "no such commit");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists(kDetachedEye));
+}
+
+GG_TEST("keep", "Branches: a kept commit that is another worktree's detached HEAD names that worktree")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path wt = s.path("detached-wt");
+    s.git(repo, {"worktree", "add", "-q", "--detach", wt.string(), "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.commitFile(wt, "w.txt", "w\n", "wt");
+    const std::string w = s.head(wt);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error);
+    s.showPanel("Branches");
+    const std::string label = detachedRow(w) + "/###detached_" + w;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(label.c_str()); }));
+    GG_CHECK_STR_EQ(s.itemText(label.c_str()), w.substr(0, 7) + "  wt  [detached-wt]");
+}
+
+GG_TEST("keep", "Branches: a Detached row's hover Check out detaches HEAD on the commit and then goes; the row is the current one")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = detachedRow(x) + "/###detached_" + x;
+    const std::string checkout = detachedRow(x) + "/###act_checkout";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->MouseMove("//Branches/##branch_filter");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(checkout.c_str()));
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(checkout.c_str()));
+    GG_CHECK(s.itemExists((detachedRow(x) + "/###act_branch").c_str()));
+    ctx->ItemClick(checkout.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headDetached && s.session()->snapshot()->head.hex() == x; }));
+    s.settle();
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists((detachedRow(x) + "/###act_branch").c_str()));
+    GG_CHECK(!s.itemExists(checkout.c_str()));
+    // The commit stays kept: HEAD is on it, no branch reaches it.
+    GG_CHECK(s.itemExists(row.c_str()));
+}
+
+GG_TEST("keep", "Branches: a double click on a Detached row checks the commit out detached")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = detachedRow(x) + "/###detached_" + x;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    GG_REQUIRE(!s.session()->snapshot()->headDetached);
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    ctx->ItemDoubleClick(row.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headDetached && s.session()->snapshot()->head.hex() == x; }));
+}
+
+GG_TEST("keep", "Branches: Create branch on a Detached row creates the branch at the kept commit and the row goes")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = detachedRow(x) + "/###detached_" + x;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    ctx->ItemClick((detachedRow(x) + "/###act_branch").c_str());
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    s.dialogText("Create branch", "name", "graduated");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
+    s.dialogButton("Create branch", "Create");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/graduated"}).ok(); }));
+    GG_CHECK_STR_EQ(s.revParse(repo, "graduated"), x);
+    GG_CHECK(s.waitUntil([&] { return keepRefs(s, repo).empty() && !s.itemExists(row.c_str()); }));
+    // The menu item opens the same dialog at the commit.
+    const std::string y = keptCommit(s, repo, "main~1", "y.txt");
+    const std::string yRow = detachedRow(y) + "/###detached_" + y;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(yRow.c_str()); }));
+    s.contextMenu(yRow.c_str(), "Create branch here...");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    s.dialogButton("Create branch", "Cancel");
+}
+
+GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, Reveal, Copy and Abandon; Copy and Abandon work")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = keptCommit(s, repo, "main", "x.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = detachedRow(x) + "/###detached_" + x;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
+    for (const char* item : {"Check out", "Create branch here...", "Reveal", "Abandon..."})
+        GG_CHECK(s.itemExists(("//$FOCUSED/" + std::string(item)).c_str()));
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + x.substr(0, 7) + "###copy_id");
+    ctx->ItemClick("//$FOCUSED/###copy_id");
+    GG_CHECK_STR_EQ(s.clipboard(), x.substr(0, 7));
+    // Shift held at the click: the full ID.
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy full ID###copy_id");
+    ctx->ItemClick("//$FOCUSED/###copy_id");
+    GG_CHECK_STR_EQ(s.clipboard(), x);
+    // Reveal selects the commit in History.
+    s.contextMenu(row.c_str(), "Reveal");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == x; }));
+    // Abandon asks first; the commit is dropped and its row goes.
+    s.contextMenu(row.c_str(), "Abandon...");
+    GG_REQUIRE(s.dialogOpen("Abandon commit"));
+    s.dialogButton("Abandon commit", "Abandon");
+    GG_CHECK(s.waitUntil([&] { return keepRefs(s, repo).empty() && !s.itemExists(row.c_str()); }));
+    GG_CHECK(keptOf(s).empty());
+}
+
 } // namespace ggtest

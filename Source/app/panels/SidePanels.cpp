@@ -37,12 +37,14 @@ struct RowEvents {
     bool toggle = false;        // the eye icon was clicked (Ctrl: only this ref)
     bool doubleClicked = false; // the row itself (only rows with a double-click action react)
     int action = -1;            // the index of the hover button clicked in `acts`
+    float labelLeft = 0;        // screen X where the label's text starts
 };
 
 // A ref row: the eye icon toggles visibility in History; the label is the row's item (menus and
 // tooltips attach to it). Rows without a double-click action are plain text. `acts` are the row's hover buttons.
+// `dim` is a byte range of the label drawn dimmed (the tail of a short ID); only on a row with a double-click action.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
-    bool doubleClickable, std::span<const RowAction> acts = {})
+    bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {})
 {
     RowEvents events;
     const std::string id = rowId(rawId);
@@ -59,6 +61,7 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         tooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
     ImGui::SameLine();
+    events.labelLeft = ImGui::GetCursorScreenPos().x;
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
     const std::string item = label + "###" + id;
     if (doubleClickable) {
@@ -66,7 +69,11 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         // AllowOverlap only reaches its click handling): else a double click on a button is also the row's.
         if (!acts.empty())
             ImGui::SetNextItemAllowOverlap();
-        selectable(item.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap));
+        const ImGuiSelectableFlags flags = ImGuiSelectableFlags_AllowDoubleClick | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap);
+        if (dim.second > dim.first)
+            selectableDimRange(item.c_str(), dim.first, dim.second, false, flags);
+        else
+            selectable(item.c_str(), false, flags);
         events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     } else {
         if (!acts.empty())
@@ -169,8 +176,8 @@ void groupEye(HistoryPanel& history, std::span<const std::string> refs)
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip(all ? "Hide these branches in History (Ctrl-click: show only these)"
-                    : "Show these branches in History (Ctrl-click: show only these)");
+        tooltip(all ? "Hide these in History (Ctrl-click: show only these)"
+                    : "Show these in History (Ctrl-click: show only these)");
     if (clicked) {
         const std::vector<std::string> list(refs.begin(), refs.end());
         if (ImGui::GetIO().KeyCtrl)
@@ -412,6 +419,28 @@ void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
     ImGui::EndPopup();
 }
 
+// The menu of a kept commit (a row of the Detached node): History's commit actions on it.
+void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot)
+{
+    if (!beginContextMenu(("##kept_menu_" + k.id.hex()).c_str()))
+        return;
+    captureIdCopyClick(idSlot);
+    auto& actions = m_session.actions();
+    const bool free = actions.busy().empty();
+    const std::string hex = k.id.hex();
+    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free && !current))
+        actions.checkout(hex, true);
+    if (menuItem(ICON_MS_ADD, "Create branch here...", nullptr, false, free))
+        m_session.showCreateBranchDialog(hex);
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
+        m_session.revealCommit(k.id);
+    idCopyMenuItem(hex);
+    ImGui::Separator();
+    if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon...", nullptr, false, free))
+        showAbandonDialog(m_session, k.id);
+    ImGui::EndPopup();
+}
+
 void BranchesPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Branches, open)) {
@@ -426,12 +455,14 @@ void BranchesPanel::draw(bool* open)
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Create branch at HEAD...");
     auto& history = m_session.history();
-    // Show all / Hide all: every local and remote-tracking branch in History.
+    // Show all / Hide all: every local and remote-tracking branch and kept commit in History.
     std::vector<std::string> all;
     for (const auto& b : m_snapshot->branches)
         all.push_back("refs/heads/" + b.name);
     for (const auto& r : m_snapshot->remoteBranches)
         all.push_back("refs/remotes/" + r.name);
+    for (const auto& k : m_snapshot->kept)
+        all.push_back(gg::keep::refName(k.id.hex()));
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_branches"))
         history.setRefsVisible(all, true);
@@ -494,6 +525,58 @@ void BranchesPanel::draw(bool* open)
         branchMenu(b);
         ImGui::PopID();
     }, &localEyes);
+
+    // Kept commits (a detached HEAD's commits no branch reaches) between the local and the remote branches.
+    std::vector<const core::KeptInfo*> kept;
+    for (const auto& k : m_snapshot->kept)
+        if (containsNoCase(k.id.hex(), m_filter) || containsNoCase(k.summary, m_filter))
+            kept.push_back(&k);
+    if (!kept.empty()) {
+        ImGui::PushID("detached_group");
+        std::vector<std::string> listed;
+        for (const auto* k : kept)
+            listed.push_back(gg::keep::refName(k->id.hex()));
+        groupEye(history, listed);
+        ImGui::SameLine();
+        bool nodeOpen;
+        {
+            const SectionHeaderColors neutral;
+            nodeOpen = ImGui::TreeNodeEx("Detached", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+        }
+        if (nodeOpen) {
+            for (const auto* k : kept) {
+                const std::string hex = k->id.hex();
+                const std::string full = gg::keep::refName(hex);
+                const bool current = m_snapshot->headDetached && m_snapshot->head == k->id;
+                const std::string shortId = k->id.shortHex(kShortIdLength);
+                std::string label = shortId + "  " + k->summary;
+                for (const auto& w : m_snapshot->worktrees)
+                    if (!w.isCurrent && w.branch.empty() && w.head == k->id)
+                        label += "  [" + w.name + "]";
+                ImGui::PushOverrideID(windowId);
+                ImGui::PushID("detached_group");
+                const RowAction acts[] = {
+                    {ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free && !current, !current},
+                    {ICON_MS_ADD, "act_branch", "Create branch here...", free},
+                };
+                const RowEvents events = visibilityRow("detached_" + hex, label, history.refVisible(full), current,
+                    current ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts,
+                    {kIdPrefixLength, kShortIdLength});
+                if (events.toggle)
+                    history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+                // Double-click checks the commit out.
+                if ((events.doubleClicked && free && !current) || events.action == 0)
+                    m_session.actions().checkout(hex, true);
+                else if (events.action == 1)
+                    m_session.showCreateBranchDialog(hex);
+                keptMenu(*k, current, idSlotAt(events.labelLeft, shortId, kIdPrefixLength));
+                ImGui::PopID();
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
 
     // Remote-tracking branches under their remote.
     std::map<std::string, std::vector<std::pair<size_t, std::string>>> byRemote;

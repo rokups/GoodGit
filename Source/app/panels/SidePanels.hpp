@@ -21,6 +21,7 @@ public:
 private:
     void branchMenu(const core::BranchInfo& b);
     void remoteBranchMenu(const core::RemoteBranchInfo& r);
+    void keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot);
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_filter;
