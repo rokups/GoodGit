@@ -885,17 +885,28 @@ void ReflogPanel::draw(bool* open)
                 const std::string arrow = " " ICON_MS_ARROW_RIGHT_ALT " ";
                 const std::string label = oldText + arrow + e.newId.shortHex(kShortIdLength) + "###reflog_" + std::to_string(i);
                 const size_t newAt = oldText.size() + arrow.size();
+                // Where the two IDs are drawn (the selectable's text starts at the cursor), for the menu's copy item.
+                const float oldLeft = ImGui::GetCursorScreenPos().x;
+                const float newLeft = oldLeft + ImGui::CalcTextSize(label.c_str(), label.c_str() + newAt).x;
+                const auto textRange = [](float left, const std::string& id, size_t chars) {
+                    return ImVec2(left, left + ImGui::CalcTextSize(id.c_str(), id.c_str() + std::min(chars, id.size())).x);
+                };
+                const std::string newText = e.newId.shortHex(kShortIdLength);
                 selectableDimRanges(label.c_str(),
                     {{kIdPrefixLength, kShortIdLength}, {newAt + kIdPrefixLength, newAt + kShortIdLength}}, false,
                     ImGuiSelectableFlags_SpanAllColumns);
                 if (beginContextMenu("##reflog_menu")) {
-                    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy new ID")) {
-                        copyIdMenuItems("", e.newId.hex());
-                        ImGui::EndMenu();
-                    }
-                    if (beginMenu(ICON_MS_CONTENT_COPY, "Copy old ID", !e.oldId.isNull())) {
-                        copyIdMenuItems("", e.oldId.hex());
-                        ImGui::EndMenu();
+                    // One item for the ID the right click was on. Off the IDs (and from the keyboard) the new ID's,
+                    // and the old ID's after it so that it stays reachable.
+                    const int clicked = captureIdCopyClick(
+                        {{e.oldId.isNull() ? ImVec2() : textRange(oldLeft, oldText, oldText.size()),
+                             e.oldId.isNull() ? ImVec2() : textRange(oldLeft, oldText, kIdPrefixLength)},
+                            {textRange(newLeft, newText, newText.size()), textRange(newLeft, newText, kIdPrefixLength)}});
+                    idCopyMenuItem((clicked == 0 ? e.oldId : e.newId).hex(), false);
+                    if (clicked < 0 && !e.oldId.isNull()) {
+                        ImGui::PushID("old");
+                        idCopyMenuItem(e.oldId.hex(), false);
+                        ImGui::PopID();
                     }
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
                         m_session.revealCommit(e.newId);

@@ -69,7 +69,7 @@ BlamePanel::BlamePanel(Session& session) : m_session(session), m_editor(std::mak
     m_editor->SetShowWhitespacesEnabled(false);
     // Right click does not move the cursor: the menus work on the line under the mouse.
     m_editor->SetTextContextMenuCallback([this](int line, int) { drawTextMenu(line); });
-    m_editor->SetLineNumberContextMenuCallback([this](int line) { drawLineMenuItems(line); });
+    m_editor->SetLineNumberContextMenuCallback([this](int line) { drawLineMenuItems(line, false); });
 }
 
 BlamePanel::~BlamePanel() = default;
@@ -315,12 +315,15 @@ void BlamePanel::updateGutter(float fontSize)
         [this](TextEditor::Decorator& d) { drawGutter(d.line, d.width, d.height, d.glyphSize.x); });
 }
 
-void BlamePanel::drawLineMenuItems(int index)
+void BlamePanel::drawLineMenuItems(int index, bool gutter)
 {
     if (!m_blame || index < 0 || index >= static_cast<int>(m_blame->lines.size()))
         return;
     const auto& line = m_blame->lines[static_cast<size_t>(index)];
     const bool committed = !line.commit.isNull();
+    // The gutter shows the ID on the first line of a block only; a click anywhere else counts as the rest of the ID.
+    const bool idDrawn = committed && (index == 0 || m_blame->lines[static_cast<size_t>(index - 1)].commit != line.commit);
+    captureIdCopyClick(gutter && idDrawn ? m_idPrefixRange : ImVec2());
     // The line stays on its screen row in the blame opened from it.
     const int row = std::max(0, index - m_editor->GetFirstVisibleLine());
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame before this change", nullptr, false, committed))
@@ -330,7 +333,7 @@ void BlamePanel::drawLineMenuItems(int index)
     ImGui::Separator();
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal commit", nullptr, false, committed))
         m_session.revealCommit(line.commit);
-    copyIdMenuItems("Copy commit ", line.commit.hex(), committed);
+    idCopyMenuItem(line.commit.hex(), false, committed);
     ImGui::Separator();
     if (menuItem(ICON_MS_SELECT_ALL, "Select change block"))
         selectBlock(index);
@@ -347,7 +350,7 @@ void BlamePanel::drawTextMenu(int index)
     if (!m_blame || index < 0 || index >= static_cast<int>(m_blame->lines.size()))
         return;
     ImGui::Separator();
-    drawLineMenuItems(index);
+    drawLineMenuItems(index, false);
 }
 
 BlamePanel::CursorState BlamePanel::cursorState() const
@@ -504,6 +507,7 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     // The first line of a block carries what it shows as its label.
     ImGui::PushOverrideID(ImGui::GetCurrentWindow()->ID);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
+    m_idPrefixRange = ImVec2(pos.x, pos.x + static_cast<float>(kIdPrefixLength) * glyph); // the same on every line
     const ImVec2 size(std::max(1.0f, width), height);
     const std::string id = committed ? l.commit.shortHex(kShortIdLength) : std::string(kNotCommitted);
     const std::string label = (newBlock ? id : std::string()) + "###blame_line_" + std::to_string(l.lineNo);
@@ -725,7 +729,7 @@ void BlamePanel::draw(bool* open)
     // The menu of a line's gutter (the editor opens its own over the code and the line numbers).
     if (ImGui::BeginPopupEx(kMenuId, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar
                 | ImGuiWindowFlags_NoSavedSettings)) {
-        drawLineMenuItems(m_menuLine);
+        drawLineMenuItems(m_menuLine, true);
         ImGui::EndPopup();
     }
     ImGui::PopFont();

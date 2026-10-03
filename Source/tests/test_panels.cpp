@@ -187,16 +187,52 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     GG_CHECK(s.textShown("//Reflog", "Commits"));
     const std::string table = "//Reflog/##reflog_table";
     const std::string oldId = s.revParse(repo, "HEAD@{1}");
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID/###ID3");
-    GG_CHECK_STR_EQ(s.clipboard(), headLines[0].substr(0, 3));
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID/###ID7");
-    GG_CHECK_STR_EQ(s.clipboard(), headLines[0].substr(0, 7));
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy new ID/###IDfull");
-    GG_CHECK_STR_EQ(s.clipboard(), headLines[0]);
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID/###ID7");
-    GG_CHECK_STR_EQ(s.clipboard(), oldId.substr(0, 7));
-    s.contextMenu((table + "/r0/###reflog_0").c_str(), "Copy old ID/###IDfull");
-    GG_CHECK_STR_EQ(s.clipboard(), oldId);
+    // One copy item: for the ID the right click was on (its prefix: 3 characters, the rest: 7), the new ID anywhere
+    // else on the row; Shift makes it the full ID.
+    const std::string copyItem = "//$FOCUSED/###copy_id";
+    const std::string newHead = headLines[0].substr(0, 7), oldHead = oldId.substr(0, 7);
+    auto copied = [&](const std::string& label, const std::string& text) {
+        GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + label + "###copy_id");
+        ctx->MenuClick(copyItem.c_str());
+        GG_CHECK_STR_EQ(s.clipboard(), text);
+    };
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 0, 3));
+    copied(newHead.substr(0, 3), newHead.substr(0, 3));
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 3, 7));
+    copied(newHead, newHead);
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", oldHead, 0, 3));
+    copied(oldHead.substr(0, 3), oldHead.substr(0, 3));
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", oldHead, 3, 7));
+    copied(oldHead, oldHead);
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", oldHead, 3, 7, true));
+    copied("full ID", oldId);
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 0, 3, true));
+    copied("full ID", headLines[0]);
+    // Off the IDs (the message), the new ID, and the old ID's item after it.
+    const std::string oldItem = "//$FOCUSED/old/###copy_id";
+    const std::string row0 = table + "/r0/###reflog_0";
+    ctx->ItemClick(row0.c_str(), ImGuiMouseButton_Right);
+    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy " + oldHead + "###copy_id");
+    copied(newHead, newHead);
+    ctx->ItemClick(row0.c_str(), ImGuiMouseButton_Right);
+    ctx->ItemClick(oldItem.c_str()); // MenuClick would read "old" as a menu
+    GG_CHECK_STR_EQ(s.clipboard(), oldHead);
+    // On an ID, only that ID's item.
+    GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 3, 7));
+    GG_CHECK(s.itemExists(copyItem.c_str()) && !s.itemExists(oldItem.c_str()));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    // Opened with Alt+Space (no click): the new ID's item, then the old ID's.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo(row0.c_str());
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + newHead + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy " + oldHead + "###copy_id");
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
     // Both IDs of a row are 7 characters: 3 highlighted, 4 dimmed.
     GG_CHECK(s.idShownDimmed("//Reflog", headLines[0].substr(0, 7), 3));
     GG_CHECK(s.idShownDimmed("//Reflog", oldId.substr(0, 7), 3));

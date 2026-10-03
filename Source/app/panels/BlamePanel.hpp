@@ -5,6 +5,8 @@
 
 #include <core/Engine.hpp>
 
+#include <imgui.h>
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -87,7 +89,7 @@ private:
     // Measures the gutter with the editor's font (current) and gives it to the editor.
     void updateGutter(float fontSize);
     void drawGutter(int index, float width, float height, float glyph);
-    void drawLineMenuItems(int index);
+    void drawLineMenuItems(int index, bool gutter); // `gutter`: opened on the gutter, where the line's ID is drawn
     void drawTextMenu(int index);
     // A press on a line's gutter: selects the line, with `extend` the lines from the anchor to it.
     void selectLine(int index, bool extend);
@@ -123,6 +125,7 @@ private:
     std::vector<unsigned char> m_parity; // per line: 0 or 1, flips with every change block
     float m_gutterWidth = 0;             // pixels
     float m_authorWidth = 0;             // the gutter's author column, pixels
+    ImVec2 m_idPrefixRange;              // the X range of the gutter's highlighted ID prefix (the gutter is drawn before its menu)
     float m_gutterFont = 0;              // the font size the gutter was measured at
     ImFont* m_gutterFace = nullptr;      // and the font
     bool m_gutterDirty = false;          // a blame was loaded: the gutter is measured again

@@ -392,6 +392,7 @@ struct IdCopyOpen {
     bool keyboard = false;
     bool onPrefix = false;
     bool shift = false;
+    int target = -1; // the ID of several that was clicked (the captureIdCopyClick that takes a list)
 };
 IdCopyOpen g_idCopyOpen;
 
@@ -401,12 +402,31 @@ void captureIdCopyClick(const ImVec2& prefixRange)
 {
     if (!ImGui::IsWindowAppearing())
         return;
-    // A context menu opens on the release of the right button and shows in the same call; one opened from the
-    // keyboard has no click.
+    // A context menu opens on the release of the right button (Blame's gutter menu on its press) and shows in the
+    // same call; one opened from the keyboard has no click.
     const float x = ImGui::GetIO().MousePos.x;
-    g_idCopyOpen.keyboard = !ImGui::IsMouseReleased(ImGuiMouseButton_Right);
+    g_idCopyOpen.keyboard = !ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !ImGui::IsMouseClicked(ImGuiMouseButton_Right);
     g_idCopyOpen.onPrefix = !g_idCopyOpen.keyboard && x >= prefixRange.x && x < prefixRange.y;
     g_idCopyOpen.shift = ImGui::GetIO().KeyShift;
+    g_idCopyOpen.target = -1;
+}
+
+int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids)
+{
+    if (ImGui::IsWindowAppearing()) {
+        captureIdCopyClick(ImVec2());
+        const float x = ImGui::GetIO().MousePos.x;
+        int i = 0;
+        for (const IdCopyTarget& id : ids) {
+            if (!g_idCopyOpen.keyboard && x >= id.text.x && x < id.text.y) {
+                g_idCopyOpen.target = i;
+                g_idCopyOpen.onPrefix = x >= id.prefix.x && x < id.prefix.y;
+                break;
+            }
+            ++i;
+        }
+    }
+    return g_idCopyOpen.target;
 }
 
 bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled)
@@ -419,31 +439,6 @@ bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled)
         return false;
     ImGui::SetClipboardText(choice.text.c_str());
     return true;
-}
-
-bool copyIdMenuItems(const char* prefix, const std::string& hex, bool enabled)
-{
-    struct Part {
-        std::string text;
-        std::string copied;
-        const char* key;
-    };
-    const std::string name = prefix;
-    std::string full = name + "full ID";
-    if (name.empty())
-        full[0] = 'F';
-    const Part parts[] = {
-        {name + hex.substr(0, kIdPrefixLength), hex.substr(0, kIdPrefixLength), "ID3"},
-        {name + hex.substr(0, kShortIdLength), hex.substr(0, kShortIdLength), "ID7"},
-        {full, hex, "IDfull"},
-    };
-    bool clicked = false;
-    for (const Part& part : parts)
-        if (menuItem(ICON_MS_CONTENT_COPY, (part.text + "###" + name + part.key).c_str(), nullptr, false, enabled)) {
-            ImGui::SetClipboardText(part.copied.c_str());
-            clicked = true;
-        }
-    return clicked;
 }
 
 void spinner(const char* id, float radius)

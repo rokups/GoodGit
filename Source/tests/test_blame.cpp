@@ -339,12 +339,30 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK_EQ(s.session()->blame().cursorLine(), 4);
     ctx->SetInputMode(ImGuiInputSource_Mouse);
     // Reveal and copy the commit of line 3.
-    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID3");
+    // One copy item on the gutter's ID: its 3 highlighted characters copy those 3, the rest of the line the 7, Shift
+    // the full ID; a line that does not show the ID (the block's second line) counts as the rest.
+    const std::string copyItem = "//$FOCUSED/###copy_id";
+    s.rightClickIdText(lineRef(s, 3).c_str(), 3, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + r.c2.substr(0, 3) + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 3));
-    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit ID7");
+    s.rightClickIdText(lineRef(s, 3).c_str(), 3, false);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + r.c2.substr(0, 7) + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 7));
-    s.contextMenu(lineRef(s, 3).c_str(), "###Copy commit IDfull");
+    s.rightClickIdText(lineRef(s, 3).c_str(), 3, true, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy full ID###copy_id");
+    ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), r.c2);
+    int second = 2;
+    while (second < 5 && line(s, second)->commit != line(s, second - 1)->commit)
+        ++second;
+    GG_REQUIRE(line(s, second)->commit == line(s, second - 1)->commit);
+    const std::string blockId = line(s, second)->commit.hex();
+    s.rightClickIdText(lineRef(s, second).c_str(), 3, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + blockId.substr(0, 7) + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), blockId.substr(0, 7));
     // The commit column shows the 7-character ID, 3 highlighted and 4 dimmed (c1 is not the header's commit).
     GG_CHECK(s.idShownDimmed("//Blame", r.c1.substr(0, 7), 3));
     s.contextMenu(lineRef(s, 3).c_str(), "Reveal commit");
@@ -921,7 +939,7 @@ GG_TEST("blame", "text menu and line number menu: the line items act on the line
     rightClickAt(s, textPos(s, 4, 20.0f));
     GG_CHECK_EQ(blame.cursorLine(), 0);
     for (const char* item : {"Copy", "Select all", "Blame before this change", "Show originating source", "Reveal commit",
-             "###Copy commit ID7", "Select change block", "Copy change block"})
+             "###copy_id", "Select change block", "Copy change block"})
         GG_CHECK(s.itemExists((std::string("//$FOCUSED/") + item).c_str()));
     ctx->MenuClick("//$FOCUSED/Select change block");
     ctx->Yield(2);
@@ -942,11 +960,11 @@ GG_TEST("blame", "text menu and line number menu: the line items act on the line
     GG_REQUIRE(s.itemExists("//$FOCUSED/Copy change block")); // the menu is open
     GG_CHECK(!s.itemExists("//$FOCUSED/Select all"));
     GG_CHECK_EQ(blame.cursorLine(), cursor);
-    ctx->MenuClick("//$FOCUSED/###Copy commit ID7");
+    ctx->MenuClick("//$FOCUSED/###copy_id");
     ctx->Yield(2);
     GG_CHECK_STR_EQ(s.clipboard(), r.c1.substr(0, 7));
     rightClickAt(s, numberPos(s, 3));
-    ctx->MenuClick("//$FOCUSED/###Copy commit ID7");
+    ctx->MenuClick("//$FOCUSED/###copy_id");
     ctx->Yield(2);
     GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 7));
     GG_CHECK_EQ(blame.cursorLine(), cursor);

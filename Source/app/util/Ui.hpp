@@ -66,11 +66,6 @@ void idTooltip(const std::string& hex, const std::string& rest);
 void tooltipText(std::string_view text);
 // A tooltip (like SetTooltip) with the text wrapped and cut by tooltipText; the text may be any length.
 void tooltip(const char* fmt, ...) IM_FMTARGS(1);
-// Three "copy ID" menu items that state the ID itself: "<prefix><first 3>", "<prefix><first 7>" and
-// "<prefix>full ID" (the first letter capitalised when the prefix is empty), with the stable IDs
-// "###<prefix>ID3", "###<prefix>ID7" and "###<prefix>IDfull". Returns true when one was clicked (after
-// copying that part of `hex`).
-bool copyIdMenuItems(const char* prefix, const std::string& hex, bool enabled = true);
 // The one "copy ID" menu item every commit ID offers. `longId` is a full ID (its highlighted prefix is the 7
 // characters) rather than a short one (3). Which part was clicked and whether Shift was held decide the item:
 //   long ID:  the 7-character prefix -> "Copy <7 characters>"; the rest -> "Copy full ID";
@@ -88,6 +83,15 @@ IdCopyChoice idCopyChoiceKeyboard(const std::string& hex, bool shift);
 // held, and keeps both while the menu stays open. A menu opened from the keyboard (Alt+Space) has no click: see
 // idCopyChoiceKeyboard.
 void captureIdCopyClick(const ImVec2& prefixRange);
+// captureIdCopyClick for a menu over several IDs (a reflog row shows two). Each has the X range of its whole text and
+// of its highlighted prefix; an ID without a range of its own (nothing to copy) has the empty `ImVec2()` for both.
+// Returns the index of the ID the right click was on, or -1 for a click elsewhere on the row or a menu opened
+// from the keyboard; the prefix range that counts is that ID's.
+struct IdCopyTarget {
+    ImVec2 text;
+    ImVec2 prefix;
+};
+int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids);
 // The item for what captureIdCopyClick recorded, with the stable ID "###copy_id". Shift counts when it was held as
 // the menu opened or is held while it is open. Returns true when clicked (after copying).
 bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled = true);

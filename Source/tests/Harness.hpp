@@ -254,6 +254,9 @@ public:
     void clickIdText(const char* ref, size_t leadChars, bool lead);
     // Right-clicks the ID text item `ref` like clickIdText, with Shift held at the click when `shift`.
     void rightClickIdText(const char* ref, size_t leadChars, bool lead, bool shift = false);
+    // Right-clicks the middle of characters [from, to) of the ID `hex` (its first 7 characters) drawn in the window
+    // `windowRef`, with Shift held at the click when `shift`; false when the ID is not drawn there.
+    bool rightClickIdChars(const char* windowRef, const std::string& hex, size_t from, size_t to, bool shift = false);
     // Waits for an error popup and closes it with OK; false if none appeared.
     bool dismissError(float seconds = 20.0f);
     // Brings a docked panel's tab to the front (e.g. "Tags" behind "Branches").

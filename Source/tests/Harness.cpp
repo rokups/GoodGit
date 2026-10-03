@@ -562,6 +562,37 @@ void Scenario::rightClickIdText(const char* ref, size_t leadChars, bool lead, bo
         ctx->KeyUp(ImGuiMod_Shift);
 }
 
+bool Scenario::rightClickIdChars(const char* windowRef, const std::string& hex, size_t from, size_t to, bool shift)
+{
+    const auto glyphs = windowGlyphs(ctx, windowRef);
+    size_t start = 0;
+    for (size_t i = 1; i <= glyphs.size(); ++i) {
+        if (i < glyphs.size() && std::abs(glyphs[i].baseline - glyphs[start].baseline) <= 0.5f)
+            continue;
+        std::string text;
+        for (size_t k = start; k < i; ++k)
+            text += glyphs[k].codepoint < 0x80 ? static_cast<char>(glyphs[k].codepoint) : '?';
+        const size_t at = text.find(hex);
+        if (at != std::string::npos && to <= hex.size() && from < to) {
+            const size_t first = start + at;
+            const float x0 = glyphs[first + from].x;
+            const float x1 = to < hex.size() ? glyphs[first + to].x : glyphs[first + to - 1].x + ImGui::GetFontSize() * 0.5f;
+            ctx->MouseMoveToPos(ImVec2((x0 + x1) * 0.5f, glyphs[first].baseline - ImGui::GetFontSize() * 0.3f));
+            if (shift) {
+                ctx->KeyDown(ImGuiMod_Shift);
+                ctx->Yield(2);
+            }
+            ctx->MouseClick(ImGuiMouseButton_Right);
+            if (shift)
+                ctx->KeyUp(ImGuiMod_Shift);
+            return true;
+        }
+        start = i;
+    }
+    ctx->LogInfo("ID %s not drawn in %s", hex.c_str(), windowRef);
+    return false;
+}
+
 std::vector<std::string> Scenario::drawnText(const char* windowRef)
 {
     const auto glyphs = windowGlyphs(ctx, windowRef);
