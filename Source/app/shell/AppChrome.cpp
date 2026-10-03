@@ -625,7 +625,7 @@ void App::drawToolbar()
         else
             shortIdText(snap.head.hex(), "tb_head", true);
         if (!snap.head.isNull()) {
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && ImGui::BeginTooltip()) {
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && beginTooltip()) {
                 ImGui::TextUnformatted("HEAD");
                 ImGui::SameLine();
                 fullIdText(snap.head.hex());
@@ -653,8 +653,7 @@ void App::drawToolbar()
     if (!activities.empty()) {
         ImGui::SameLine();
         spinner("##tb_activity", ImGui::GetFontSize() * 0.45f);
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
+        if (ImGui::IsItemHovered() && beginTooltip()) {
             for (const auto& a : activities) {
                 if (a.percent >= 0)
                     tooltipText(a.label + " (" + std::to_string(a.percent) + "%)");

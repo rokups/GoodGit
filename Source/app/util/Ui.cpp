@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace ggui {
@@ -246,8 +247,65 @@ void tooltipText(std::string_view text)
     ImGui::PopTextWrapPos();
 }
 
+namespace {
+
+struct ScrollRecord {
+    float scrollX = 0.0f;
+    float scrollY = 0.0f;
+    double changedAt = -1.0e9; // ImGui time of the last change of the scroll position
+    int frame = 0;             // the last frame the record was updated in
+};
+std::unordered_map<ImGuiID, ScrollRecord> g_scrollRecords;
+
+// Compares the window's scroll position with the record; a window not seen in the last frame only gets a baseline.
+ScrollRecord& updateScrollRecord(const ImGuiWindow* w, int frame, double now)
+{
+    auto [it, fresh] = g_scrollRecords.try_emplace(w->ID);
+    ScrollRecord& r = it->second;
+    if (!fresh && r.frame >= frame - 1
+        && (std::abs(w->Scroll.x - r.scrollX) > 0.5f || std::abs(w->Scroll.y - r.scrollY) > 0.5f))
+        r.changedAt = now;
+    r.scrollX = w->Scroll.x;
+    r.scrollY = w->Scroll.y;
+    r.frame = frame;
+    return r;
+}
+
+} // namespace
+
+void trackScrolling()
+{
+    // Every window every frame, not only those that ask: a tooltip site is reached only once its hover delay has
+    // passed, and a record that old would take the scrolled position as its baseline.
+    const int frame = ImGui::GetFrameCount();
+    const double now = ImGui::GetTime();
+    for (const ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (w->Active)
+            updateScrollRecord(w, frame, now);
+}
+
+bool listScrolling()
+{
+    const int frame = ImGui::GetFrameCount();
+    const double now = ImGui::GetTime();
+    bool scrolling = false;
+    // The window and the windows it is a child of: a tooltip over a table's rows asks from inside its scroll child.
+    for (ImGuiWindow* w = ImGui::GetCurrentWindowRead(); w; w = w->ParentWindow) {
+        scrolling = scrolling || now - updateScrollRecord(w, frame, now).changedAt < kScrollSettleSeconds;
+        if (!(w->Flags & ImGuiWindowFlags_ChildWindow))
+            break;
+    }
+    return scrolling;
+}
+
+bool tooltipAllowed() { return !listScrolling(); }
+
+bool beginTooltip() { return tooltipAllowed() && ImGui::BeginTooltip(); }
+
 void tooltip(const char* fmt, ...)
 {
+    if (!tooltipAllowed())
+        return;
     va_list args;
     va_start(args, fmt);
     va_list copy;
@@ -267,7 +325,7 @@ void tooltip(const char* fmt, ...)
 
 void idTooltip(const std::string& hex, const std::string& rest)
 {
-    if (!ImGui::BeginTooltip())
+    if (!beginTooltip())
         return;
     fullIdText(hex);
     if (!rest.empty())

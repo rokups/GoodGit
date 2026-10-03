@@ -1231,7 +1231,7 @@ void RebasePanel::drawPreview()
                 }
             }
         }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string tip = row.unchanged ? "Unchanged: " + shortHex(row.id, n) : "New commit from";
             if (!row.unchanged)
                 for (const auto& src : row.sources)
@@ -1427,7 +1427,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         }
         ImGui::EndDragDropTarget();
     }
-    if (hasInfo && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (hasInfo && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         idTooltip(item.commit,
             info->second.authorName + " <" + info->second.authorEmail + ">"
                 + (item.isCommit() ? "\n" + std::string(firstLine(info->second.subject)) : std::string()));

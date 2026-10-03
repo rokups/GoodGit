@@ -525,7 +525,7 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
         ImGui::OpenPopupEx(kMenuId);
     }
     // The tooltip is on the gutter only: over the code it would be in the way of selecting text.
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+    if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
         if (committed)
             idTooltip(l.commit.hex(),
                 l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"

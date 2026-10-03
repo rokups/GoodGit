@@ -504,6 +504,7 @@ void App::frame()
     saveIniIfNeeded();
     updateTitle();
     snapshotNavToggle();
+    trackScrolling();
 }
 
 void App::updateTitle()

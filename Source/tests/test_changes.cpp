@@ -476,4 +476,31 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     GG_CHECK(s.waitUntil([&] { return info.details() && info.details()->parents.empty(); }));
 }
 
+GG_TEST("changes", "file tooltips wait until scrolling stops")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int i = 0; i < 80; ++i)
+        s.write(repo, "dir/file" + std::to_string(100 + i) + ".txt", "x\n");
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string row = fileRef(s, "Untracked", "dir/file110.txt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    ctx->MouseMove(row.c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse).
+    ctx->MouseWheelY(-1.0f);
+    ctx->Yield(1);
+    GG_CHECK(!tipShown());
+    ctx->MouseWheelY(-1.0f);
+    ctx->SleepNoSkip(0.15f, 0.05f);
+    GG_CHECK(!tipShown());
+    // Once it stops, tooltips come back.
+    ctx->SleepNoSkip(1.2f, 0.1f);
+    GG_CHECK(tipShown());
+}
+
 } // namespace ggtest

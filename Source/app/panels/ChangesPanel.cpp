@@ -806,7 +806,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
         }
     }
     ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+    if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
         if (broken) {
             std::string lines;
             for (size_t i = 0; i < row.brokenMarkerLines.size(); ++i)

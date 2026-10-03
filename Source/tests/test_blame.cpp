@@ -1412,4 +1412,34 @@ GG_TEST("blame", "line menu: the blamed line stays on the same screen row")
     GG_CHECK_EQ(blame.firstVisibleLine(), second);
 }
 
+GG_TEST("blame", "gutter tooltip waits until scrolling stops")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-tooltip");
+    const std::string head = longHead(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(historyShows(s, head));
+    auto& blame = s.session()->blame();
+    s.showPanel("Blame");
+    blame.open("long.txt", ggui::core::Oid::fromHex(head), false, 50);
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "long.txt", head); }));
+    ctx->Yield(4);
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    ctx->MouseMove(lineRef(s, 50).c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+    // The wheel over the gutter scrolls the editor: no tooltip while it does, whatever line is under the mouse.
+    ctx->MouseWheelY(-1.0f);
+    ctx->Yield(1);
+    GG_CHECK(!tipShown());
+    ctx->MouseWheelY(-1.0f);
+    ctx->SleepNoSkip(0.15f, 0.05f);
+    GG_CHECK(!tipShown());
+    // Once it stops, the tooltip comes back.
+    ctx->SleepNoSkip(1.2f, 0.1f);
+    GG_CHECK(tipShown());
+}
+
 } // namespace ggtest

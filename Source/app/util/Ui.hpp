@@ -37,6 +37,20 @@ using core::kShortIdLength;
 void shortIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
 // A full commit ID: split after kShortIdLength. Clickable like shortIdText (the prefix copies the short ID).
 void fullIdText(const std::string& hex, const char* id = nullptr, bool clickable = false);
+// A list counts as scrolling until its scroll position has been still for this long (seconds).
+constexpr double kScrollSettleSeconds = 0.3;
+// True while the current window, or the window it is a child of, has scrolled within kScrollSettleSeconds
+// (wheel, scrollbar, keyboard or code). Call it inside the list; cheap enough for every item of every frame.
+// A window seen for the first time (or not drawn in the last frame) counts as not scrolling.
+bool listScrolling();
+// Updates the scroll record of every window; the app calls it once at the end of each frame, so listScrolling
+// compares with the previous frame whenever it is asked.
+void trackScrolling();
+// Tooltips never show over a scrolling list or editor gutter, only once it is stationary.
+bool tooltipAllowed();
+// ImGui::BeginTooltip() that does nothing (false) while the list is scrolling; every tooltip goes through it.
+// Check tooltipAllowed() before building a tooltip's text, so no text is built while scrolling.
+bool beginTooltip();
 // A tooltip that starts with a full commit ID (drawn as fullIdText) followed by more lines.
 void idTooltip(const std::string& hex, const std::string& rest);
 // Text inside an open tooltip: word-wrapped at 40 font sizes and cut with "…" after 10 lines

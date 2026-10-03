@@ -700,7 +700,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
             root->NavRectRel[ImGuiNavLayer_Main] = ImGui::WindowRectAbsToRel(root, g.LastItemData.NavRect);
         }
     }
-    if (!m_scrolling && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (!m_scrolling && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         idTooltip(row.id.hex(),
             row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true));
     dragAndDrop(row);
@@ -942,7 +942,7 @@ void HistoryPanel::draw(bool* open)
         if (std::abs(scrollY - m_lastScrollY) > 0.5f)
             m_scrolledAt = ImGui::GetTime();
         m_lastScrollY = scrollY;
-        m_scrolling = m_scrolledAt >= 0.0 && ImGui::GetTime() - m_scrolledAt < 0.3;
+        m_scrolling = m_scrolledAt >= 0.0 && ImGui::GetTime() - m_scrolledAt < kScrollSettleSeconds;
         if (!m_snapshot->bare) {
             std::string wtLabel = "Working tree";
             if (m_nativeConflicts)

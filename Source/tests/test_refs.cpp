@@ -526,4 +526,70 @@ GG_TEST("refs", "create a branch from a reflog entry")
     GG_CHECK_STR_EQ(s.revParse(repo, "rescued"), old);
 }
 
+GG_TEST("refs", "tooltips wait until scrolling stops")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int i = 0; i < 60; ++i)
+        s.git(repo, {"branch", "topic/b" + std::to_string(100 + i)});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = branchRow("topic/b110");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    // A branch in a group has its full name in the tooltip.
+    ctx->MouseMove(row.c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse).
+    ctx->MouseWheelY(-1.0f);
+    ctx->Yield(1);
+    GG_CHECK(!tipShown());
+    ctx->MouseWheelY(-1.0f);
+    ctx->SleepNoSkip(0.15f, 0.05f);
+    GG_CHECK(!tipShown());
+    // Once it stops, tooltips come back.
+    ctx->SleepNoSkip(1.2f, 0.1f);
+    GG_CHECK(tipShown());
+}
+
+GG_TEST("refs", "tooltips wait until scrolling stops also when the hover delay has passed on another row")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int i = 0; i < 60; ++i)
+        s.git(repo, {"branch", "topic/b" + std::to_string(100 + i)});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string plain = branchRow("main");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(plain.c_str()); }));
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    // The hover delay is shared by all rows, and `main` (no tooltip) does not restart it. The mouse rests where
+    // `main` is; the list is scrolled down one notch, so a row with a tooltip is under the mouse.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->ScrollToTop(s.child("//Branches", "##list").c_str()); // the window keeps its scroll from an earlier test
+    ctx->Yield(2);
+    const ImVec2 mainPos = ctx->ItemInfo(plain.c_str()).RectFull.GetCenter();
+    ctx->MouseMoveToPos(mainPos);
+    ctx->MouseWheelY(-1.0f);
+    ctx->SleepNoSkip(0.5f, 0.1f);
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_REQUIRE(tipShown());
+    // One notch back up: `main` is under the mouse, and one down again: a row with a tooltip, at once. Not while it moves.
+    ctx->MouseWheelY(1.0f);
+    ctx->Yield(1);
+    GG_CHECK(!tipShown());
+    ctx->MouseWheelY(-1.0f);
+    ctx->Yield(1);
+    GG_CHECK(!tipShown());
+    ctx->SleepNoSkip(0.15f, 0.05f);
+    GG_CHECK(!tipShown());
+    ctx->SleepNoSkip(1.2f, 0.1f);
+    GG_CHECK(tipShown());
+}
+
 } // namespace ggtest

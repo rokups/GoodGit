@@ -509,7 +509,7 @@ void TagsPanel::draw(bool* open)
         const std::string full = "refs/tags/" + t.name;
         if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tagText, false).toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
-        if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && ImGui::BeginTooltip()) {
+        if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && beginTooltip()) {
             // The message (it can run to several paragraphs), wrapped and cut after the line limit.
             tooltipText(t.message);
             ImGui::EndTooltip();
@@ -606,7 +606,7 @@ void WorktreesPanel::draw(bool* open)
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         selectableDimRange((label + "###row").c_str(), dimFrom, dimTo, w.isCurrent);
         ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string tip = w.path.string();
             if (w.isCurrent)
                 tip += "\nShown in this window";
@@ -702,7 +702,7 @@ void RemotesPanel::draw(bool* open)
         if (r.pruneOnFetch)
             label += "  (prune)";
         selectableDimRange((label + "###row").c_str(), dimBegin, label.size());
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
             std::string tip = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
             if (r.pruneOnFetch)
@@ -774,7 +774,7 @@ void StashesPanel::draw(bool* open)
         // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
         if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             idTooltip(s.commit.hex(),
                 "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
                     + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
@@ -946,8 +946,7 @@ void OperationsPanel::draw(bool* open)
             ImGui::PushID(("op_" + op.id).c_str());
             const std::string time = core::formatTime(op.time / 1000, true);
             selectable((time + "###row").c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty()) {
-                ImGui::BeginTooltip();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty() && beginTooltip()) {
                 for (const auto& r : op.refs)
                     tooltipText(r.ref + ": " + r.oldValue.substr(0, 10) + " " ICON_MS_ARROW_RIGHT_ALT " " + r.newValue.substr(0, 10));
                 ImGui::EndTooltip();

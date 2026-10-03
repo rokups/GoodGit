@@ -358,7 +358,7 @@ bool textElided(std::string_view text, const char* id, bool tooltip, float width
         IMGUI_TEST_ENGINE_ITEM_INFO(itemId, id, ImGuiItemStatusFlags_None);
     }
     ImGui::RenderTextEllipsis(window->DrawList, bb.Min, bb.Max, bb.Max.x, begin, end, &size);
-    if (cut && tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && ImGui::BeginTooltip()) {
+    if (cut && tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && beginTooltip()) {
         tooltipText(line);
         ImGui::EndTooltip();
     }

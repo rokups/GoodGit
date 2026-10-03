@@ -19,6 +19,11 @@ rename is a spec change. Window names are fixed (`"History"`, `"Changes"` …); 
 
 Tooltips wrap at about 40 font sizes and are cut with "…" after 10 lines.
 
+A tooltip never shows over a list or an editor gutter while it scrolls (wheel, scrollbar, keyboard or
+code): a tooltip that is showing when the scrolling starts goes away, and tooltips come back once
+the scroll position has been still for 0.3 s. This holds for every scrolling window, also when
+an enclosing window is the one that scrolls.
+
 ---
 
 ## 1. Application shell
@@ -176,7 +181,6 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
   (`##hist_table_filtered`, three columns). The graph starts slightly inside its column so the
   current commit's outline is not clipped. Changes to the rows (refresh, expanding or
   collapsing merges, loading more, the Index row appearing) keep the rows in view in place.
-  Row, graph and badge tooltips are held back while the list scrolls.
   Row IDs: `row_wt` (Working tree), `row_index` (Index, N, only when something is staged),
   `row_<full commit id>` for commits.
 - Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
