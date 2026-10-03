@@ -211,7 +211,10 @@ A `git rebase` (either backend) that stops runs as several git commands
 - It ends when its `finish` or `abort` entry is seen (ggui's step that finished it writes `end`
   itself). A remembered operation whose rebase is no longer in progress and that has no such entry
   (`git rebase --quit`, an expired reflog) gets its `end` the next time a pass runs or before Undo
-  plans.
+  plans. A pass that sees a rebase's entries that change something, without the finish, opens the
+  operation also when the rebase is no longer in progress (git writes the finish entry before it
+  removes `rebase-merge/`: a pass that read the reflog just before it finds the rebase gone and
+  no finish): the finish entry joins it in the next pass, which ends it, or ends it without one.
 - **Undo refuses while a rebase is in progress** in the worktree: a rebase of either backend ("finish or abort the
   rebase first") or `git am` (`rebase-apply/` without `rebasing`; "... git am first"), for every operation, older ones included: undoing what came before would pull refs
   out from under git.

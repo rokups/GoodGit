@@ -813,6 +813,7 @@ Result run(git_repository* repo, std::string* error)
                 }
             }
         }
+        bool opened = false; // this pass opened a group whose rebase is already gone (see below)
         std::vector<Pending> headOps = deriveOps(entries, known, current, myHead, zero, rebaseOpen, rebasing);
         std::vector<Pending> branchOps = deriveBranchOps(repo, headOps, known, current, zero);
         const std::vector<Pending> derived = mergeOps(std::move(headOps), std::move(branchOps));
@@ -852,8 +853,12 @@ Result run(git_repository* repo, std::string* error)
             }
             if (dup)
                 continue;
-            const bool opens = p.rebase && !p.finished && rebasing;
-            if (p.changes.empty() && !opens)
+            // A rebase without its finish in this pass stays open, also when its directory is gone
+            // already: git writes the finish entry before it removes the directory, so a pass that
+            // read the reflog just before it has no finish yet but finds no rebase either. The
+            // finish joins in the next pass; a quit rebase is ended by the pass after this one.
+            const bool opens = p.rebase && !p.finished;
+            if (p.changes.empty() && !(opens && rebasing))
                 continue;
             journal::Operation op;
             op.id = journal::Journal::newOperationId();
@@ -864,9 +869,10 @@ Result run(git_repository* repo, std::string* error)
             op.time = p.time;
             if (!t.begin(op, &err) || !t.appendRefs(op.id, p.changes, &err))
                 return fail();
-            if (opens)
+            if (opens) {
                 native::rememberGroup(repo, t, op.id, "git"); // stays open until the rebase ends
-            else if (!t.end(op.id, true, &err))
+                opened = opened || !rebasing;
+            } else if (!t.end(op.id, true, &err))
                 return fail();
             for (const auto& c : p.changes)
                 newest[c.ref] = c;
@@ -874,8 +880,10 @@ Result run(git_repository* repo, std::string* error)
             noteFirst(op.id);
         }
         // A remembered operation whose rebase is gone, with no reflog entry to say so (git rebase
-        // --quit, an expired log): ends now.
-        native::closeFinishedGroup(repo, t);
+        // --quit, an expired log): ends now. Not the group this pass opened without a rebase in
+        // progress: its finish entry is for the next pass; that pass ends it when it has none.
+        if (!opened)
+            native::closeFinishedGroup(repo, t);
         cursorChanged = setCursor(state, myHead, *headLog);
     }
 

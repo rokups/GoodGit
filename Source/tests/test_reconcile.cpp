@@ -6,7 +6,9 @@
 
 #include "util/Env.hpp"
 
+#include <libgg/Git2.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/Reconcile.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -629,6 +631,112 @@ GG_TEST("reconcile", "a finished plain rebase is one operation and Undo restores
     GG_CHECK_STR_EQ(ops.back().label, "git rebase");
     GG_CHECK(refChange(ops.back(), "refs/heads/feat") != nullptr);
     GG_CHECK(refChange(ops.back(), "HEAD") == nullptr); // back on the branch it started on
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == before; }));
+}
+
+GG_TEST("reconcile", "git rebase <upstream> <branch> on an up-to-date branch adds no operation")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"switch", "-q", "-c", "feat"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "f1"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 3; }));
+    s.settle();
+    s.git(repo, {"rebase", "-q", "main", "main"}); // up to date: "rebase: checkout main", nothing else
+    s.waitUntil([] { return false; }, 0.4f); // the watcher's debounce, and the pass after it
+    s.settle();
+    GG_CHECK_EQ(gitOps(repo).size(), 3u);
+    s.git(repo, {"switch", "-q", "feat"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 4; }));
+    s.settle();
+    s.git(repo, {"rebase", "-q", "feat", "feat"});
+    s.waitUntil([] { return false; }, 0.4f); // the watcher's debounce, and the pass after it
+    s.settle();
+    GG_CHECK_EQ(gitOps(repo).size(), 4u);
+    for (const auto& op : gitOps(repo))
+        GG_CHECK(op.label != "git rebase");
+}
+
+GG_TEST("reconcile", "a plain rebase whose finish entry a pass reads only after the rebase directory is gone is still one operation")
+{
+    // What the race looks like: a pass read the reflog up to the last pick, then git wrote the
+    // finish and removed rebase-merge/ before the pass looked for it. Staged by hand: the files a
+    // finished rebase leaves are put back to that moment, and then forward again.
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    s.git(repo, {"switch", "-q", "-c", "feat"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "f1"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "f2"});
+    s.git(repo, {"switch", "-q", "main"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "m1"});
+    s.git(repo, {"switch", "-q", "feat"});
+    GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 6; }));
+    s.settle();
+    const std::string before = refState(s, repo);
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+
+    const fs::path gitDir = repo / ".git";
+    const std::vector<std::string> names = {"logs/HEAD", "logs/refs/heads/feat", "refs/heads/feat", "HEAD"};
+    auto read = [&](const std::string& name) {
+        std::ifstream in(gitDir / name, std::ios::binary);
+        std::ostringstream text;
+        text << in.rdbuf();
+        return text.str();
+    };
+    auto write = [&](const std::string& name, const std::string& text) {
+        std::ofstream out(gitDir / name, std::ios::binary | std::ios::trunc);
+        out << text;
+    };
+    std::map<std::string, std::string> started, finished;
+    for (const auto& name : names)
+        started[name] = read(name);
+    s.git(repo, {"rebase", "-q", "main"});
+    for (const auto& name : names)
+        finished[name] = read(name);
+    const std::string tip = finished["refs/heads/feat"]; // the last replayed commit
+    std::string headLog = finished["logs/HEAD"];
+    const size_t lastLine = headLog.rfind('\n', headLog.size() - 2);
+    GG_REQUIRE(lastLine != std::string::npos);
+    GG_REQUIRE(headLog.find("rebase (finish)", lastLine) != std::string::npos);
+    headLog.resize(lastLine + 1); // the finish entry is not written yet
+
+    // The moment: HEAD detached on the last pick, the branch where it was, no rebase directory.
+    // The two passes are run here, one after the other, with no watcher to run one in between.
+    write("refs/heads/feat", started["refs/heads/feat"]);
+    write("logs/refs/heads/feat", started["logs/refs/heads/feat"]);
+    write("logs/HEAD", headLog);
+    write("HEAD", tip);
+    GG_REQUIRE(!fs::exists(gitDir / "rebase-merge"));
+    {
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        std::string error;
+        gg::reconcile::run(r.get(), &error);
+        GG_CHECK(error.empty());
+        GG_REQUIRE(gitOps(repo).size() == 7);
+        GG_CHECK_STR_EQ(gitOps(repo).back().label, "git rebase");
+        GG_CHECK(!gitOps(repo).back().ended); // the finish is still to come
+
+        // Then git is done: the branch moves, HEAD goes back on it, the finish entry is there.
+        for (const auto& name : {"refs/heads/feat", "logs/refs/heads/feat", "HEAD", "logs/HEAD"})
+            write(name, finished[name]);
+        gg::reconcile::run(r.get(), &error);
+        GG_CHECK(error.empty());
+        const auto ops = gitOps(repo);
+        GG_REQUIRE(ops.size() == 7);
+        GG_CHECK_STR_EQ(ops.back().label, "git rebase");
+        GG_CHECK(ops.back().ended);
+        GG_CHECK(refChange(ops.back(), "refs/heads/feat") != nullptr);
+        GG_CHECK(refChange(ops.back(), "HEAD") == nullptr); // back on the branch it started on
+        GG_CHECK(!fs::exists(gitDir / "gg" / "rebase"));
+    }
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() == 7; }));
+    s.settle();
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(s.waitUntil([&] { return refState(s, repo) == before; }));
 }
