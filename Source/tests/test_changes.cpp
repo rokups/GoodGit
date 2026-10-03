@@ -492,20 +492,22 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), head);
     GG_CHECK(info.details()->authorTime > 0);
-    // Hovering the commit ID shows the full ID in a tooltip: 7 characters in the text colour, the rest dimmed.
+    // Hovering the commit ID shows no tooltip.
     ctx->MouseMove("//Change information/**/###commit_id_text");
     ctx->SleepNoSkip(1.0f, 0.1f);
-    GG_CHECK(s.idShownDimmed("//##Tooltip_00", head, 7));
+    ImGuiWindow* idTip = ctx->GetWindowByRef("//##Tooltip_00");
+    GG_CHECK(idTip == nullptr || !idTip->Active);
     // Parents: the merge has two; clicking one reveals it.
     selectCommit(s, s.revParse(repo, "HEAD~1"));
     GG_REQUIRE(s.waitUntil([&] { return info.details() && info.details()->parents.size() == 2; }));
     // (A clickable item does draw a hover highlight: the check above can fail.)
     ctx->MouseMove("//Change information/**/###parent_1");
     GG_CHECK(s.itemDrawsBackground("//Change information/**/###parent_1"));
-    // The parent's tooltip shows its full ID.
+    // A parent shows no tooltip.
     const std::string parent2 = s.revParse(repo, "HEAD~1^2");
     ctx->SleepNoSkip(1.0f, 0.1f);
-    GG_CHECK(s.idShownDimmed("//##Tooltip_00", parent2, 7));
+    idTip = ctx->GetWindowByRef("//##Tooltip_00");
+    GG_CHECK(idTip == nullptr || !idTip->Active);
     // A parent's right-click offers the same copy item, for that parent.
     s.rightClickIdText("//Change information/**/###parent_1", 3, false);
     GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + parent2.substr(0, 7) + "###copy_id");

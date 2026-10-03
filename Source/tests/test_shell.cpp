@@ -696,6 +696,10 @@ GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
     GG_CHECK(ImGui::GetActiveID() == 0);
     ctx->MouseMove("//###Toolbar/###tb_head");
     GG_CHECK(!s.itemDrawsBackground("//###Toolbar/###tb_head") && !s.itemDrawsBackground("//###Toolbar/###tb_branch"));
+    // No tooltip on the HEAD ID.
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    ImGuiWindow* headTip = ctx->GetWindowByRef("//##Tooltip_00");
+    GG_CHECK(headTip == nullptr || !headTip->Active);
     // The window navigator (Ctrl+Tab) lists the toolbar by its title, not "(Untitled)".
     ImGuiWindow* toolbar = ctx->GetWindowByRef("//###Toolbar");
     GG_CHECK(toolbar && ImGui::FindRenderedTextEnd(toolbar->Name) != toolbar->Name);
@@ -1017,7 +1021,7 @@ GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a 
     GG_CHECK(r.err.find("SDL_CreateGPUDevice failed") != std::string::npos);
 }
 
-GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a detached rebase's progress")
+GG_TEST("shell", "toolbar details: force with lease, push tags, a detached rebase's progress")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     GG_REQUIRE(s.openRepository(repo));
@@ -1040,9 +1044,6 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, HEAD tooltip, a 
     ctx->ItemClick("//$FOCUSED/Force with lease...");
     GG_REQUIRE(s.dialogOpen("Push to"));
     s.dialogButton("Push to", "Cancel");
-    // HEAD's full ID on hover.
-    ctx->MouseMove("//###Toolbar/###tb_head");
-    ctx->SleepNoSkip(1.0f, 0.1f);
     // A rebase of a detached HEAD, stopped: the progress view names it.
     s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
     const fs::path list = s.root() / "todo.txt";

@@ -493,14 +493,6 @@ IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options
         shortIdText(hex, id, true);
     const ImVec2 prefix = lastIdPrefixRange();
     const IdSlot slot{ImVec2(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().x), prefix};
-    if (ImGui::IsItemHovered(options.tooltipDelay) && beginTooltip()) {
-        if (options.tooltipLabel) {
-            ImGui::TextUnformatted(options.tooltipLabel);
-            ImGui::SameLine();
-        }
-        fullIdText(hex);
-        ImGui::EndTooltip();
-    }
     if (beginContextMenu((std::string("##") + id + "_menu").c_str())) {
         captureClick(prefix);
         copyItem(hex, options.full);

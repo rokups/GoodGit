@@ -388,8 +388,6 @@ void InfoPanel::draw(bool* open)
             if (selectableDimRange(id.c_str(), kIdPrefixLength, kShortIdLength, false, ImGuiSelectableFlags_None,
                     ImGui::CalcTextSize(id.c_str(), nullptr, true)))
                 revealParent(d.parents[i]);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                idTooltip(d.parents[i].hex(), "");
             ImGui::PushID(static_cast<int>(i));
             if (beginContextMenu("##parent_menu")) {
                 idCopyMenuItems({{d.parents[i].hex(), slot}});

@@ -623,7 +623,7 @@ void App::drawToolbar()
         if (snap.head.isNull())
             plainText((headText + "###tb_head").c_str());
         else
-            commitId(snap.head.hex(), "tb_head", {.tooltipLabel = "HEAD", .tooltipDelay = ImGuiHoveredFlags_DelayShort});
+            commitId(snap.head.hex(), "tb_head");
         drawStateBadge();
         drawEditBanner();
     }

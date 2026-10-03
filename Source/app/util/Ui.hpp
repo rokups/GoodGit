@@ -78,13 +78,11 @@ struct IdSlot {
     ImVec2 prefix;
 };
 struct IdOptions {
-    bool full = false;                  // the full ID (split after 7) instead of the short one (3 of 7)
-    const char* tooltipLabel = nullptr; // text shown in the tooltip with the full ID (e.g. "HEAD")
-    ImGuiHoveredFlags tooltipDelay = ImGuiHoveredFlags_DelayNormal;
+    bool full = false; // the full ID (split after 7) instead of the short one (3 of 7)
 };
-// A standalone commit ID (an item of its own, `id` is its item ID): draws it, shows the tooltip with the full ID
-// (never while a list scrolls: beginTooltip()), copies on left click (the highlighted prefix copies that part, the
-// rest the full ID), and owns its context menu "##<id>_menu" whose only item is the ###copy_id item. Returns its slot.
+// A standalone commit ID (an item of its own, `id` is its item ID): draws it, copies on left click (the highlighted
+// prefix copies that part, the rest the full ID), and owns its context menu "##<id>_menu" whose only item is the
+// ###copy_id item. Returns its slot.
 IdSlot commitId(const std::string& hex, const char* id, const IdOptions& options = {});
 // A commit ID drawn as text inside a row or a line of text: no click, tooltip or menu of its own (the row's own
 // tooltip and menu stay). Registered like plainText under `id` when given. Returns its slot, for the row's menu.
