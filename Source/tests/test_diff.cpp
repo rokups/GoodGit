@@ -629,8 +629,13 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "copy.txt" && !b->lines.empty();
     }));
-    ctx->Yield(3);
-    s.contextMenu((s.child("//Blame", "##blame_editor") + "/###blame_line_1").c_str(), "Blame before this change");
+    // The panel may not draw its lines for some frames after the blame arrives.
+    std::string blameLine;
+    GG_REQUIRE(s.waitUntil([&] {
+        blameLine = s.child("//Blame", "##blame_editor") + "/###blame_line_1";
+        return s.itemExists(blameLine.c_str());
+    }));
+    s.contextMenu(blameLine.c_str(), "Blame before this change");
     GG_CHECK(s.waitUntil([&] {
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "source.txt";

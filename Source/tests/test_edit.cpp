@@ -976,7 +976,8 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "conflict.txt" && b->lines.size() > 3;
     }));
-    ctx->Yield(3);
+    // The panel may not draw its lines for some frames after the blame arrives.
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Blame", "##blame_editor") + "/###blame_line_1").c_str()); }));
     auto clickLine = [&](int n, ImGuiKeyChord mods) {
         const std::string ref = s.child("//Blame", "##blame_editor") + "/###blame_line_" + std::to_string(n);
         if (mods)
