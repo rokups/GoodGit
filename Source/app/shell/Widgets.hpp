@@ -63,6 +63,9 @@ bool acceptCommitDrop(std::string& text);
 std::string_view firstLine(std::string_view text);
 // `text` cut to `width` pixels with an ellipsis (as it is when it already fits).
 std::string fitText(const std::string& text, float width);
+// `text` as its first `prefix` and last `suffix` characters (UTF-8 codepoints, each at least 1) around an
+// ellipsis; unchanged when it has at most prefix + suffix + 1 characters (cutting would not shorten it).
+std::string elideMiddle(std::string_view text, int prefix, int suffix);
 // firstLine(text) as one line of text in the current text colour that ends in an ellipsis where it does
 // not fit `width` (the room left to the window's content edge when 0). A table cell clips without one.
 // An item like TextUnformatted (laid out, SameLine and IsItemHovered work), but with no ID and no hover

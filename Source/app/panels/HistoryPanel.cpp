@@ -736,7 +736,11 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         case core::RefKind::Worktree: color = p.worktree; icon = ICON_MS_FOLDER; break;
         case core::RefKind::Stash: color = p.stash; icon = ICON_MS_INVENTORY_2; break;
         }
-        const std::string badge = std::string(icon) + (icon[0] ? " " : "") + ref.name + "###badge_" + ref.name;
+        // A long branch name is shortened in the middle; the ID keeps the full name.
+        const bool isBranch = ref.kind == core::RefKind::LocalBranch || ref.kind == core::RefKind::RemoteBranch;
+        const auto& settings = m_session.app().settings().data();
+        const std::string shown = isBranch ? elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix) : ref.name;
+        const std::string badge = std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
         drawBadge(badge.c_str(), color, ref.current);
         if (ref.kind == core::RefKind::LocalBranch)
             m_badgeRects[row.id].emplace_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()), ref.name);

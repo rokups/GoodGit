@@ -58,6 +58,8 @@ struct SettingsData {
     NothingStaged nothingStaged = NothingStaged::Ask;
     bool expandConflictStages = false; // §4.10: index stages 1–3 for two-sided first-class conflicts on checkout
     bool expandStagesOnCheckout = false;
+    int historyBadgePrefix = 12; // History: characters kept at the start of an elided branch badge (1 – 100)
+    int historyBadgeSuffix = 12; // ... and at its end
     // Main window placement (imgui.ini [GGUIWindow])
     int windowX = -1, windowY = -1, windowW = 0, windowH = 0;
     bool windowMaximized = false;

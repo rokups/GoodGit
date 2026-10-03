@@ -3,6 +3,7 @@
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
 #include "util/Ui.hpp"
 
@@ -700,6 +701,75 @@ GG_TEST("history", "cancel a long history load and a reveal")
     GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
     GG_CHECK(s.session()->selection().id.hex() != root);
     GG_CHECK(history.rows().size() < 100000);
+}
+
+GG_TEST("history", "elideMiddle cuts on codepoint boundaries and leaves short names alone")
+{
+    using ggui::elideMiddle;
+    const std::string dots = "\xE2\x80\xA6";
+    // Exactly prefix + suffix + 1 characters stay; one more is elided.
+    GG_CHECK_STR_EQ(elideMiddle("abcdefgh", 4, 3), "abcdefgh");
+    GG_CHECK_STR_EQ(elideMiddle("abcdefghi", 4, 3), "abcd" + dots + "ghi");
+    // Multi-byte names count and cut in codepoints.
+    const std::string lt = "\xC4\x85\xC4\x8D\xC4\x99\xC4\x97\xC4\xAF\xC5\xA1\xC5\xB3\xC5\xAB\xC5\xBE"; // ąčęėįšųūž
+    const std::string name = lt + "-" + lt + "-" + lt;
+    const std::string got = elideMiddle(name, 3, 2);
+    GG_CHECK_STR_EQ(got, "\xC4\x85\xC4\x8D\xC4\x99" + dots + "\xC5\xAB\xC5\xBE");
+    GG_CHECK_STR_EQ(elideMiddle(lt + "-", 8, 1), lt + "-"); // 10 characters, limit 10
+    GG_CHECK_STR_EQ(elideMiddle(lt + "-", 7, 1), lt.substr(0, 14) + dots + "-");
+    // Lengths below 1 act as 1.
+    GG_CHECK_STR_EQ(elideMiddle("abcd", 0, 0), "a" + dots + "d");
+    GG_CHECK_STR_EQ(elideMiddle("abc", -5, 0), "abc");
+    GG_CHECK_STR_EQ(elideMiddle("", 1, 1), "");
+}
+
+GG_TEST("history", "a long branch name is elided in its badge, the ID keeps the full name, and the settings set the lengths")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string longName = "a-very-long-branch-name-for-elision";
+    s.git(repo, {"branch", longName, "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "main");
+    const std::string dots = "\xE2\x80\xA6";
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, tip) != nullptr && !s.session()->history().loading(); }));
+    ctx->Yield(2);
+    const std::string longRef = "//History/**/" + tip + "/###badge_" + longName;
+    const std::string shortRef = "//History/**/" + tip + "/###badge_main";
+    GG_REQUIRE(s.itemExists(longRef.c_str()));
+    GG_REQUIRE(s.itemExists(shortRef.c_str()));
+    // The label is the icon, a space, the visible text and the ID part (the test engine keeps its first 31 bytes).
+    auto visible = [&](const std::string& ref) {
+        const std::string label = s.itemLabel(ref.c_str());
+        return label.substr(0, label.find("###"));
+    };
+    auto endsWith = [](const std::string& a, const std::string& b) { return a.size() >= b.size() && a.compare(a.size() - b.size(), b.size(), b) == 0; };
+    GG_CHECK(endsWith(visible(longRef), " " + longName.substr(0, 12) + dots + longName.substr(longName.size() - 12)));
+    GG_CHECK(endsWith(visible(shortRef), " main"));
+    // The Settings fields change the lengths.
+    s.app.openSettings();
+    ctx->Yield(2);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge prefix##badge_prefix", 4);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge suffix##badge_suffix", 3);
+    ctx->Yield(3);
+    GG_CHECK_EQ(s.app.settings().data().historyBadgePrefix, 4);
+    GG_CHECK_EQ(s.app.settings().data().historyBadgeSuffix, 3);
+    GG_CHECK(endsWith(visible(longRef), " " + longName.substr(0, 4) + dots + longName.substr(longName.size() - 3)));
+    GG_CHECK(endsWith(visible(shortRef), " main")); // 4 characters: 4 + 3 + 1 would still hold it
+    // Out-of-range values are clamped.
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge prefix##badge_prefix", 0);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge suffix##badge_suffix", 500);
+    ctx->Yield(3);
+    GG_CHECK_EQ(s.app.settings().data().historyBadgePrefix, 1);
+    GG_CHECK_EQ(s.app.settings().data().historyBadgeSuffix, 100);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge prefix##badge_prefix", 4);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge suffix##badge_suffix", 3);
+    ctx->Yield(3);
+    // They are read back by a restart (settings.json).
+    GG_REQUIRE(s.waitIdle());
+    s.app.resetForTest();
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.app.settings().data().historyBadgePrefix, 4);
+    GG_CHECK_EQ(s.app.settings().data().historyBadgeSuffix, 3);
 }
 
 GG_TEST("history", "first rows of a large history appear quickly")

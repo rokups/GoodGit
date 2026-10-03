@@ -14,6 +14,7 @@
 #include <cctype>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace ggui {
 
@@ -330,6 +331,21 @@ std::string fitText(const std::string& text, float width)
         cut = next;
     }
     return text.substr(0, cut) + "\xE2\x80\xA6";
+}
+
+std::string elideMiddle(std::string_view text, int prefix, int suffix)
+{
+    const size_t head = static_cast<size_t>(std::max(prefix, 1));
+    const size_t tail = static_cast<size_t>(std::max(suffix, 1));
+    // Byte offsets of the codepoint starts, then the end.
+    std::vector<size_t> starts;
+    for (size_t i = 0; i < text.size(); ++i)
+        if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80)
+            starts.push_back(i);
+    if (starts.size() <= head + tail + 1)
+        return std::string(text);
+    const size_t tailStart = starts[starts.size() - tail];
+    return std::string(text.substr(0, starts[head])) + "\xE2\x80\xA6" + std::string(text.substr(tailStart));
 }
 
 bool textElided(std::string_view text, const char* id, bool tooltip, float width)

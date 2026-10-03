@@ -408,6 +408,19 @@ void App::drawSettingsWindow()
             ImGui::SameLine();
             helpMarker("How the Recent lists (toolbar switcher, Repository > Recent and the welcome screen) are ordered. "
                        "Alphabetical sorts by the name shown.");
+            const float digits = ImGui::CalcTextSize("1000").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            ImGui::SetNextItemWidth(digits);
+            bool badgeChanged = ImGui::InputInt("Branch badge prefix##badge_prefix", &d.historyBadgePrefix, 0, 0);
+            ImGui::SetNextItemWidth(digits);
+            badgeChanged |= ImGui::InputInt("Branch badge suffix##badge_suffix", &d.historyBadgeSuffix, 0, 0);
+            if (badgeChanged) {
+                d.historyBadgePrefix = std::clamp(d.historyBadgePrefix, 1, 100);
+                d.historyBadgeSuffix = std::clamp(d.historyBadgeSuffix, 1, 100);
+                m_settings.save();
+            }
+            ImGui::SameLine();
+            helpMarker("A branch name longer than these two lengths in History badges is shortened in the middle: "
+                       "this many characters are kept at its start and at its end.");
             drawPathSetting();
             ImGui::EndTabItem();
         }

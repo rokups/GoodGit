@@ -160,6 +160,8 @@ nlohmann::json toJson(const SettingsData& d)
                                                                           : "ask";
     j["expandStagesOnCheckout"] = d.expandStagesOnCheckout;
     j["expandConflictStages"] = d.expandConflictStages;
+    j["historyBadgePrefix"] = d.historyBadgePrefix;
+    j["historyBadgeSuffix"] = d.historyBadgeSuffix;
     return j;
 }
 
@@ -170,6 +172,8 @@ SettingsData fromJson(const nlohmann::json& j)
         return d;
     d.uiScale = std::clamp(j.value("uiScale", 1.0f), 0.5f, 3.0f);
     d.theme = j.value("theme", std::string("dark")) == "light" ? Theme::Light : Theme::Dark;
+    d.historyBadgePrefix = std::clamp(j.value("historyBadgePrefix", 12), 1, 100);
+    d.historyBadgeSuffix = std::clamp(j.value("historyBadgeSuffix", 12), 1, 100);
     if (j.contains("recent") && j["recent"].is_array())
         for (const auto& r : j["recent"])
             if (r.is_string())
