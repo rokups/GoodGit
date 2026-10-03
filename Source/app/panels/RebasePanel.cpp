@@ -1350,8 +1350,9 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     const size_t n = m_session.shortIdLength();
     const auto info = c.commits.find(item.commit);
     const bool merge = item.action == Action::Merge;
-    // Every commit of the list is in the context (a merge row's merge too).
-    const bool hasInfo = item.isCommit() || (merge && info != c.commits.end());
+    // Every commit of the list is in the context (a merge row's merge too); a row whose commit is not there
+    // shows its ID and no more.
+    const bool hasInfo = (item.isCommit() || merge) && info != c.commits.end();
     const std::string key = item.isCommit() ? item.commit
         : merge && !item.commit.empty() ? "merge_" + item.commit
                                         : "row_" + std::to_string(row);
@@ -1365,7 +1366,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
     // Where the Selectable below puts its text; the ID is drawn over it split into prefix and rest.
     const ImGuiWindow* const rowWindow = ImGui::GetCurrentWindow();
     const ImVec2 idPos(rowWindow->DC.CursorPos.x, rowWindow->DC.CursorPos.y + rowWindow->DC.CurrLineTextBaseOffset);
-    const std::string idText = hasInfo ? shortHex(item.commit, n) : std::string();
+    const std::string idText = item.isCommit() || hasInfo ? shortHex(item.commit, n) : std::string();
     const bool selected = m_selection.count(row) > 0;
     ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32_BLACK_TRANS);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32_BLACK_TRANS);
@@ -1418,7 +1419,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         const std::string payload = std::to_string(row);
         ImGui::SetDragDropPayload("GG_TODO_ROW", payload.data(), payload.size());
         ImGui::Text("%s %s", actionLabel(item).c_str(),
-            fitText(std::string(firstLine(hasInfo ? info->second.subject : item.arg)), ImGui::GetFontSize() * 30).c_str());
+            fitText(std::string(firstLine(hasInfo ? info->second.subject : item.isCommit() ? item.subject : item.arg)), ImGui::GetFontSize() * 30).c_str());
         ImGui::EndDragDropSource();
     }
     if (ImGui::BeginDragDropTarget()) {
@@ -1490,7 +1491,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             }
     if (item.isCommit()) {
         ImGui::PushStyleColor(ImGuiCol_Text, item.action == Action::Drop ? p.dim : ImGui::GetColorU32(ImGuiCol_Text));
-        textElided(info->second.subject, ("###ir_subject_" + std::to_string(row)).c_str(), false);
+        textElided(hasInfo ? info->second.subject : item.subject, ("###ir_subject_" + std::to_string(row)).c_str(), false);
         ImGui::PopStyleColor();
     } else if (item.action == Action::Label) {
         drawArgField(row, "ir_label_", "label name", ImGui::GetFontSize() * 10);
