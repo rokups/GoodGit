@@ -351,7 +351,9 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
             ctx->LogError("git fsck failed for %s:\n%s", repo.string().c_str(), output.c_str());
         IM_CHECK_NO_RET(ok);
         std::string why;
-        const bool transparent = scenario.gitTransparent(repo, &why);
+        // The reconciler may still be writing its state (reconcile.json.tmp<pid>, then a rename): a
+        // file that is there for a moment is no litter, one that stays is.
+        const bool transparent = scenario.waitUntil([&] { return scenario.gitTransparent(repo, &why); }, 5.0f);
         if (!transparent)
             ctx->LogError("git transparency (product spec §9) broken for %s:%s", repo.string().c_str(), why.c_str());
         IM_CHECK_NO_RET(transparent);
