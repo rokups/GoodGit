@@ -723,11 +723,13 @@ GG_TEST("history", "elideMiddle cuts on codepoint boundaries and leaves short na
     GG_CHECK_STR_EQ(elideMiddle("", 1, 1), "");
 }
 
-GG_TEST("history", "a long branch name is elided in its badge, the ID keeps the full name, and the settings set the lengths")
+GG_TEST("history", "a long branch or tag name is elided in its badge, the ID keeps the full name, and the settings set the lengths")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string longName = "a-very-long-branch-name-for-elision";
+    const std::string longTag = "a-very-long-tag-name-for-the-elision";
     s.git(repo, {"branch", longName, "main"});
+    s.git(repo, {"tag", longTag, "main"});
     GG_REQUIRE(s.openRepository(repo));
     const std::string tip = s.revParse(repo, "main");
     const std::string dots = "\xE2\x80\xA6";
@@ -745,24 +747,29 @@ GG_TEST("history", "a long branch name is elided in its badge, the ID keeps the 
     auto endsWith = [](const std::string& a, const std::string& b) { return a.size() >= b.size() && a.compare(a.size() - b.size(), b.size(), b) == 0; };
     GG_CHECK(endsWith(visible(longRef), " " + longName.substr(0, 12) + dots + longName.substr(longName.size() - 12)));
     GG_CHECK(endsWith(visible(shortRef), " main"));
+    // A tag's badge follows the same rule.
+    const std::string tagRef = "//History/**/" + tip + "/###badge_" + longTag;
+    GG_REQUIRE(s.itemExists(tagRef.c_str()));
+    GG_CHECK(endsWith(visible(tagRef), " " + longTag.substr(0, 12) + dots + longTag.substr(longTag.size() - 12)));
     // The Settings fields change the lengths.
     s.app.openSettings();
     ctx->Yield(2);
-    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge prefix##badge_prefix", 4);
-    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge suffix##badge_suffix", 3);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/History badge prefix##badge_prefix", 4);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/History badge suffix##badge_suffix", 3);
     ctx->Yield(3);
     GG_CHECK_EQ(s.app.settings().data().historyBadgePrefix, 4);
     GG_CHECK_EQ(s.app.settings().data().historyBadgeSuffix, 3);
     GG_CHECK(endsWith(visible(longRef), " " + longName.substr(0, 4) + dots + longName.substr(longName.size() - 3)));
+    GG_CHECK(endsWith(visible(tagRef), " " + longTag.substr(0, 4) + dots + longTag.substr(longTag.size() - 3)));
     GG_CHECK(endsWith(visible(shortRef), " main")); // 4 characters: 4 + 3 + 1 would still hold it
     // Out-of-range values are clamped.
-    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge prefix##badge_prefix", 0);
-    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge suffix##badge_suffix", 500);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/History badge prefix##badge_prefix", 0);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/History badge suffix##badge_suffix", 500);
     ctx->Yield(3);
     GG_CHECK_EQ(s.app.settings().data().historyBadgePrefix, 1);
     GG_CHECK_EQ(s.app.settings().data().historyBadgeSuffix, 100);
-    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge prefix##badge_prefix", 4);
-    ctx->ItemInputValue("//Settings/##settings_tabs/General/Branch badge suffix##badge_suffix", 3);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/History badge prefix##badge_prefix", 4);
+    ctx->ItemInputValue("//Settings/##settings_tabs/General/History badge suffix##badge_suffix", 3);
     ctx->Yield(3);
     // They are read back by a restart (settings.json).
     GG_REQUIRE(s.waitIdle());

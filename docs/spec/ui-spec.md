@@ -139,7 +139,7 @@ the whole window (keyboard navigation still crosses between the controls and the
   replaces the older one.
 
 ### 1.6 Settings window `"Settings"` (K/N)
-Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light, *Branch badge prefix* `##badge_prefix` and *Branch badge suffix* `##badge_suffix` (number fields, 1–100, default 12, stored in settings.json: the characters kept at the start and at the end of an elided branch badge in History), *Add GoodGit to PATH* `##add_to_path` (N, Linux with systemd: checked iff `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` names the executable directory; a warning when it names another directory or no PATH entry, with buttons `Point to this GoodGit##path_repoint` and `Remove the file##path_remove`; "Takes effect at next login"; disabled with a tooltip without systemd or off Linux; errors in the `Add GoodGit to PATH` error popup)),
+Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light, *History badge prefix* `##badge_prefix` and *History badge suffix* `##badge_suffix` (number fields, 1–100, default 12, stored in settings.json: the characters kept at the start and at the end of an elided badge in History), *Add GoodGit to PATH* `##add_to_path` (N, Linux with systemd: checked iff `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` names the executable directory; a warning when it names another directory or no PATH entry, with buttons `Point to this GoodGit##path_repoint` and `Remove the file##path_remove`; "Takes effect at next login"; disabled with a tooltip without systemd or off Linux; errors in the `Add GoodGit to PATH` error popup)),
 **Git** (N: "When nothing is staged" default: Ask / Stage all tracked / Stage selected; git
 configuration with scope tabs `##config_scope` User / Repository / Worktree, one field per option:
 `user.name`, `user.email`, `core.editor`, `merge.tool`, `diff.tool`, *Pull method*
@@ -196,10 +196,9 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
   Row IDs: `row_wt` (Working tree), `row_index` (Index, N, only when something is staged),
   `row_<full commit id>` for commits.
 - Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
-  stash (N). A local or remote-tracking branch name longer than prefix + suffix + 1 characters
-  (the General settings, default 12 + 12) is shown as its first prefix characters, "…" and its last
-  suffix characters; the badge's ID (`###badge_<name>`) keeps the full name, and other badges are not
-  elided. Published commits (reachable from a remote-tracking ref) use the normal text colour;
+  stash (N). A badge's name longer than prefix + suffix + 1 characters (the General settings,
+  default 12 + 12) is shown as its first prefix characters, "…" and its last suffix characters, for
+  every kind of badge; the badge's ID (`###badge_<name>`) keeps the full name. Published commits (reachable from a remote-tracking ref) use the normal text colour;
   unpublished commits are highlighted. Conflicted commits: conflict colour and ⚠ icon.
 - Keys: ↑/↓ select, `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
