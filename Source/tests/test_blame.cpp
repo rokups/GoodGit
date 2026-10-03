@@ -154,7 +154,7 @@ GG_TEST("blame", "gutter: blocks and width")
 GG_TEST("blame", "selection: a selection ending at column 0, a drag over the gutter")
 {
     // The last line of gaps.txt is empty, and so is line 2.
-    const std::string repo = s.fixture(Recipe::Empty, "blame-gaps");
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-gaps");
     s.commitFile(repo, "gaps.txt", "G1\n\nG3\n\n", "Write the gaps");
     const std::string id = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
@@ -955,7 +955,7 @@ GG_TEST("blame", "text menu and line number menu: the line items act on the line
 
 GG_TEST("blame", "the language follows the file name")
 {
-    const std::string repo = s.fixture(Recipe::Empty, "blame-lang");
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-lang");
     s.commitFile(repo, "code.cpp", "int main() { return 0; }\n", "Add C++");
     const std::string cpp = s.head(repo);
     s.commitFile(repo, "tool.py", "def run():\n    return 1\n", "Add Python");
@@ -1020,7 +1020,7 @@ GG_TEST("blame", "theme switch: the editor's palette, the filter marks and the g
 GG_TEST("blame", "a long file: open at a line, Down, Alt+Space and F3 bring lines into view, a drag past the edges")
 {
     // 200 lines of long.txt in four commits: c1 wrote 1-100, c2 101-150, c3 151-200, c4 changed line 50.
-    const std::string repo = s.fixture(Recipe::Empty, "blame-long");
+    const fs::path repo = s.fixture(Recipe::Empty, "blame-long");
     auto content = [](int count, bool edited) {
         std::string text;
         for (int i = 1; i <= count; ++i)
