@@ -302,6 +302,34 @@ bool tooltipAllowed() { return !listScrolling(); }
 
 bool beginTooltip() { return tooltipAllowed() && ImGui::BeginTooltip(); }
 
+namespace {
+struct TooltipTextCache {
+    ImGuiID key = 0;
+    uint64_t revision = 0;
+    int lastFrame = -2;
+    std::string text;
+};
+TooltipTextCache g_tooltipText; // one entry: only one tooltip is visible at a time
+int g_tooltipTextBuilds = 0;
+} // namespace
+
+const std::string& cachedTooltipText(ImGuiID key, uint64_t revision, const std::function<std::string()>& build)
+{
+    const int frame = ImGui::GetFrameCount();
+    TooltipTextCache& c = g_tooltipText;
+    // Asked for in the previous frame (or this one) too: the tooltip has stayed shown.
+    if (c.key != key || c.revision != revision || c.lastFrame < frame - 1) {
+        ++g_tooltipTextBuilds;
+        c.text = build();
+        c.key = key;
+        c.revision = revision;
+    }
+    c.lastFrame = frame;
+    return c.text;
+}
+
+int tooltipTextBuilds() { return g_tooltipTextBuilds; }
+
 void tooltip(const char* fmt, ...)
 {
     if (!tooltipAllowed())

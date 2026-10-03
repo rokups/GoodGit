@@ -199,6 +199,7 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
         return;
     m_loading = false;
     m_blame = event.blame;
+    ++m_blameRevision;
 
     // The editor holds the whole file and highlights it by the file's language. A newline separates the
     // lines: none follows the last one, so the editor has no empty line after it.
@@ -527,9 +528,12 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
     // The tooltip is on the gutter only: over the code it would be in the way of selecting text.
     if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
         if (committed)
+            // The gutter's IDs are the same in every blame: the revision counts the loaded blames.
             idTooltip(l.commit.hex(),
-                l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"
-                    + std::to_string(l.origLine));
+                cachedTooltipText(ImGui::GetItemID(), m_blameRevision, [&] {
+                    return l.summary + "\n" + l.author + ", " + core::formatTime(l.time) + "\n" + l.origPath + ":"
+                        + std::to_string(l.origLine);
+                }));
         else
             tooltip("Not committed yet");
     }

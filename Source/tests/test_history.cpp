@@ -4,6 +4,7 @@
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+#include "util/Ui.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -583,6 +584,39 @@ GG_TEST("history", "tooltips wait until scrolling stops")
     ctx->SleepNoSkip(1.2f, 0.1f);
     GG_CHECK(!history.scrolling());
     GG_CHECK(tipShown());
+}
+
+GG_TEST("history", "tooltip text is built once while the tooltip stays shown")
+{
+    const fs::path repo = tallRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading() && history.rows().size() > 20; }));
+    // Two adjacent rows: the mouse does not pass over another row on its way from one to the other.
+    const std::string first = s.revParse(repo, "HEAD~3");
+    const std::string second = s.revParse(repo, "HEAD~4");
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    const int start = ggui::tooltipTextBuilds();
+    ctx->MouseMove(rowRef(first).c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+    GG_CHECK(ggui::tooltipTextBuilds() > start);
+    // Shown for many more frames: its text was built when it appeared, and not again.
+    const int built = ggui::tooltipTextBuilds();
+    ctx->Yield(10);
+    GG_CHECK(tipShown());
+    GG_CHECK_EQ(ggui::tooltipTextBuilds(), built);
+    // The next row's tooltip is another text: built once more, then kept.
+    ctx->MouseMove(rowRef(second).c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+    GG_CHECK_EQ(ggui::tooltipTextBuilds(), built + 1);
+    ctx->Yield(10);
+    GG_CHECK(tipShown());
+    GG_CHECK_EQ(ggui::tooltipTextBuilds(), built + 1);
 }
 
 GG_TEST("history", "large history: first page, Show more, reveal, cancel")

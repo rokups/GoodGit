@@ -24,6 +24,11 @@ code): a tooltip that is showing when the scrolling starts goes away, and toolti
 the scroll position has been still for 0.3 s. This holds for every scrolling window, also when
 an enclosing window is the one that scrolls.
 
+The tooltip of a row in a list or table, or of an editor gutter line, whose text is put together
+from several parts is built once when it appears and reused for as long as it stays shown; it is
+built again when the row's data changes. (Tooltips of buttons and menu items are built on each
+frame.)
+
 ---
 
 ## 1. Application shell

@@ -11,10 +11,12 @@
 
 #include <IconsMaterialSymbols.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <map>
+#include <string_view>
 
 namespace ggui {
 
@@ -607,17 +609,19 @@ void WorktreesPanel::draw(bool* open)
         selectableDimRange((label + "###row").c_str(), dimFrom, dimTo, w.isCurrent);
         ImGui::PopStyleColor();
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-            std::string tip = w.path.string();
-            if (w.isCurrent)
-                tip += "\nShown in this window";
-            if (w.locked)
-                tip += "\nLocked" + (w.lockReason.empty() ? std::string() : ": " + w.lockReason)
-                    + " (git does not prune, move or remove it)";
-            if (w.missing)
-                tip += w.locked ? "\nMissing: its directory is gone (kept while locked; Repair if it was moved)"
-                                : "\nMissing: its directory is gone. Prune removes its records; Repair reconnects it if it "
-                                  "was moved";
-            tooltip("%s", tip.c_str());
+            tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
+                std::string text = w.path.string();
+                if (w.isCurrent)
+                    text += "\nShown in this window";
+                if (w.locked)
+                    text += "\nLocked" + (w.lockReason.empty() ? std::string() : ": " + w.lockReason)
+                        + " (git does not prune, move or remove it)";
+                if (w.missing)
+                    text += w.locked ? "\nMissing: its directory is gone (kept while locked; Repair if it was moved)"
+                                     : "\nMissing: its directory is gone. Prune removes its records; Repair reconnects it "
+                                       "if it was moved";
+                return text;
+            }).c_str());
         }
         if (beginContextMenu("##worktree_menu")) {
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
@@ -703,11 +707,13 @@ void RemotesPanel::draw(bool* open)
             label += "  (prune)";
         selectableDimRange((label + "###row").c_str(), dimBegin, label.size());
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-            const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
-            std::string tip = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
-            if (r.pruneOnFetch)
-                tip += "\nPrunes on fetch";
-            tooltip("%s", tip.c_str());
+            tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
+                const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
+                std::string text = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
+                if (r.pruneOnFetch)
+                    text += "\nPrunes on fetch";
+                return text;
+            }).c_str());
         }
         if (beginContextMenu("##remote_menu")) {
             remoteMenuItems(m_session, r);
@@ -775,9 +781,10 @@ void StashesPanel::draw(bool* open)
         if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            idTooltip(s.commit.hex(),
-                "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
-                    + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : ""));
+            idTooltip(s.commit.hex(), cachedTooltipText(ImGui::GetItemID(), m_snapshot->generation, [&] {
+                return "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
+                    + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : "");
+            }));
         // The menu belongs to the row (the last item before it must be the Selectable).
         if (beginContextMenu("##stash_menu")) {
             if (menuItem(ICON_MS_UNARCHIVE, "Apply", nullptr, false, free))
@@ -947,8 +954,23 @@ void OperationsPanel::draw(bool* open)
             const std::string time = core::formatTime(op.time / 1000, true);
             selectable((time + "###row").c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty() && beginTooltip()) {
+                // A running operation records its refs as it goes (merged per ref: the new value changes): the revision
+                // follows them. The text is the lines joined with '\n', drawn one tooltipText per line as before.
+                ImGuiID revision = ImHashData(&op.ended, sizeof op.ended, static_cast<ImGuiID>(op.refs.size()));
                 for (const auto& r : op.refs)
-                    tooltipText(r.ref + ": " + r.oldValue.substr(0, 10) + " " ICON_MS_ARROW_RIGHT_ALT " " + r.newValue.substr(0, 10));
+                    revision = ImHashStr(r.newValue.c_str(), r.newValue.size(), revision);
+                const std::string* const lines = &cachedTooltipText(ImGui::GetItemID(), revision, [&] {
+                    std::string text;
+                    for (const auto& r : op.refs)
+                        text += (text.empty() ? "" : "\n") + r.ref + ": " + r.oldValue.substr(0, 10)
+                            + " " ICON_MS_ARROW_RIGHT_ALT " " + r.newValue.substr(0, 10);
+                    return text;
+                });
+                for (size_t from = 0; from <= lines->size();) {
+                    const size_t eol = std::min(lines->find('\n', from), lines->size());
+                    tooltipText(std::string_view(*lines).substr(from, eol - from));
+                    from = eol + 1;
+                }
                 ImGui::EndTooltip();
             }
             if (beginContextMenu("##op_menu")) {

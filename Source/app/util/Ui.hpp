@@ -5,7 +5,9 @@
 
 #include <imgui.h>
 
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -51,6 +53,10 @@ bool tooltipAllowed();
 // ImGui::BeginTooltip() that does nothing (false) while the list is scrolling; every tooltip goes through it.
 // Check tooltipAllowed() before building a tooltip's text, so no text is built while scrolling.
 bool beginTooltip();
+// The text of the tooltip `key`, built once and kept while it is asked for every frame and `revision` stays the same.
+const std::string& cachedTooltipText(ImGuiID key, uint64_t revision, const std::function<std::string()>& build);
+// Tests: how many times cachedTooltipText has called its `build`.
+int tooltipTextBuilds();
 // A tooltip that starts with a full commit ID (drawn as fullIdText) followed by more lines.
 void idTooltip(const std::string& hex, const std::string& rest);
 // Text inside an open tooltip: word-wrapped at 40 font sizes and cut with "…" after 10 lines

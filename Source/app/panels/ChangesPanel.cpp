@@ -808,13 +808,16 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     ImGui::PopStyleColor();
     if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
         if (broken) {
-            std::string lines;
-            for (size_t i = 0; i < row.brokenMarkerLines.size(); ++i)
-                lines += (i ? ", " : "") + std::to_string(row.brokenMarkerLines[i]);
-            tooltip(
-                "Conflict markers left at line %s: this edit broke a conflict region, so the file no longer "
-                "counts as conflicted. Fix the markers or remove them.",
-                lines.c_str());
+            // The row's ID is its path; the marker lines change when the status is read again.
+            tooltip("%s", cachedTooltipText(ImGui::GetItemID(),
+                ImHashData(row.brokenMarkerLines.data(), row.brokenMarkerLines.size() * sizeof(size_t)), [&] {
+                    std::string lines;
+                    for (size_t i = 0; i < row.brokenMarkerLines.size(); ++i)
+                        lines += (i ? ", " : "") + std::to_string(row.brokenMarkerLines[i]);
+                    return "Conflict markers left at line " + lines
+                        + ": this edit broke a conflict region, so the file no longer counts as conflicted. Fix the "
+                          "markers or remove them.";
+                }).c_str());
         } else {
             tooltip("%s", row.path.c_str());
         }

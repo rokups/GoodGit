@@ -701,8 +701,10 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         }
     }
     if (!m_scrolling && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        idTooltip(row.id.hex(),
-            row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true));
+        // The row's ID is its commit's, and a commit does not change: no revision.
+        idTooltip(row.id.hex(), cachedTooltipText(ImGui::GetItemID(), 0, [&] {
+            return row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true);
+        }));
     dragAndDrop(row);
     drawRowMenu(row);
     if (m_graphShown)

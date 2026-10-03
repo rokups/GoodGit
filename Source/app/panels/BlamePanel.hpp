@@ -6,6 +6,7 @@
 #include <core/Engine.hpp>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -114,6 +115,7 @@ private:
     int m_pos = -1;
     core::RequestId m_request = 0;
     core::BlamePtr m_blame;
+    std::uint64_t m_blameRevision = 0; // counts the blames loaded (the gutter tooltip text is cached by it)
     bool m_loading = false;
     std::unique_ptr<BlameEditor> m_editor; // holds the whole file: highlighting, selection and copying are its own
     int m_paletteTheme = -1;

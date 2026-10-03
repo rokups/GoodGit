@@ -1232,32 +1232,38 @@ void RebasePanel::drawPreview()
             }
         }
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-            std::string tip = row.unchanged ? "Unchanged: " + shortHex(row.id, n) : "New commit from";
-            if (!row.unchanged)
-                for (const auto& src : row.sources)
-                    tip += " " + shortHex(src, n);
-            if (!row.conflicts.empty()) {
-                tip += row.newConflicts ? "\nFirst-class conflicts in:" : "\nConflicts carried along in:";
-                for (const auto& [path, sides] : row.conflicts)
-                    tip += "\n    " + path + (sides > 2 ? " (" + std::to_string(sides) + " sides)" : "");
-            }
-            if (!row.resolved.empty()) {
-                tip += "\nConflicts resolved in:";
-                for (const auto& path : row.resolved)
-                    tip += "\n    " + path;
-            }
-            if (!row.decisions.empty()) {
-                tip += "\nNeeds a decision before it can be written (Start asks):";
-                for (const auto& d : row.decisions)
-                    tip += "\n    " + d.path + " (" + d.kind + ")";
-            }
-            if (row.empty)
-                tip += row.wasEmpty ? "\nAn empty commit (it was empty before)."
-                    : m_options.emptied == gg::rewrite::Emptied::Ask
-                    ? "\nBecomes empty: its changes are already in the base. Start asks whether to keep it."
-                    : "\nBecomes empty: its changes are already in the base.";
-            tip += "\n" + std::string(firstLine(row.subject)); // (the subject's own tooltip would compete with this one)
-            tooltip("%s", tip.c_str());
+            // The preview is replaced as a whole; the row's ID tells the rows of one preview apart.
+            const void* previewAt = m_preview.get();
+            tooltip("%s", cachedTooltipText(ImGui::GetItemID(),
+                ImHashData(&previewAt, sizeof previewAt,
+                    ImHashStr(row.id.c_str(), 0, static_cast<ImU32>(m_options.emptied))), [&] {
+                    std::string text = row.unchanged ? "Unchanged: " + shortHex(row.id, n) : "New commit from";
+                    if (!row.unchanged)
+                        for (const auto& src : row.sources)
+                            text += " " + shortHex(src, n);
+                    if (!row.conflicts.empty()) {
+                        text += row.newConflicts ? "\nFirst-class conflicts in:" : "\nConflicts carried along in:";
+                        for (const auto& [path, sides] : row.conflicts)
+                            text += "\n    " + path + (sides > 2 ? " (" + std::to_string(sides) + " sides)" : "");
+                    }
+                    if (!row.resolved.empty()) {
+                        text += "\nConflicts resolved in:";
+                        for (const auto& path : row.resolved)
+                            text += "\n    " + path;
+                    }
+                    if (!row.decisions.empty()) {
+                        text += "\nNeeds a decision before it can be written (Start asks):";
+                        for (const auto& d : row.decisions)
+                            text += "\n    " + d.path + " (" + d.kind + ")";
+                    }
+                    if (row.empty)
+                        text += row.wasEmpty ? "\nAn empty commit (it was empty before)."
+                            : m_options.emptied == gg::rewrite::Emptied::Ask
+                            ? "\nBecomes empty: its changes are already in the base. Start asks whether to keep it."
+                            : "\nBecomes empty: its changes are already in the base.";
+                    text += "\n" + std::string(firstLine(row.subject)); // (the subject's own tooltip would compete with this one)
+                    return text;
+                }).c_str());
         }
         const bool head = c.tipIsHead
             && std::find_if(row.branches.begin(), row.branches.end(), [&](const std::string& b) { return b == tipName; }) != row.branches.end();
@@ -1428,9 +1434,11 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         ImGui::EndDragDropTarget();
     }
     if (hasInfo && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        idTooltip(item.commit,
-            info->second.authorName + " <" + info->second.authorEmail + ">"
-                + (item.isCommit() ? "\n" + std::string(firstLine(info->second.subject)) : std::string()));
+        // The row's ID carries its index, and a move puts another commit under the cursor: the commit is the revision.
+        idTooltip(item.commit, cachedTooltipText(ImGui::GetItemID(), ImHashStr(item.commit.c_str()), [&] {
+            return info->second.authorName + " <" + info->second.authorEmail + ">"
+                + (item.isCommit() ? "\n" + std::string(firstLine(info->second.subject)) : std::string());
+        }));
 
     // Action.
     ImGui::TableSetColumnIndex(0);
