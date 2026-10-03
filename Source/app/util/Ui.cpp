@@ -168,7 +168,8 @@ Hit textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id, boo
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         } else {
             // Hover is tracked (tooltips, context menus, the test engine) but never drawn.
-            ImGui::ItemHoverable(bb, id, ImGuiItemFlags_None);
+            // (ImGui::SetNextItemAllowOverlap() lets a button drawn on top of the text be hovered.)
+            ImGui::ItemHoverable(bb, id, ImGui::GetCurrentContext()->LastItemData.ItemFlags & ImGuiItemFlags_AllowOverlap);
         }
         IMGUI_TEST_ENGINE_ITEM_INFO(id, label, ImGuiItemStatusFlags_None);
     }

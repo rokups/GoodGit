@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <span>
 #include <string>
 #include <vector>
@@ -180,6 +181,101 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
     if (selected)
         ImGui::PopStyleColor(3);
     return pressed;
+}
+
+int rowActions(std::span<const RowAction> actions, bool rowSelected, bool paddedRow)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems || actions.empty())
+        return -1;
+    const ImGuiLastItemData row = g.LastItemData;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    // The row's band across the window: the mouse anywhere on it counts as on the row (a text row's item is
+    // only as wide as its text, and the buttons sit past that). A selectable's rect already includes half the
+    // item spacing on each side; a text row's does not.
+    const float spacingUp = paddedRow ? 0.0f : std::trunc(style.ItemSpacing.y * 0.5f);
+    const float spacingDown = paddedRow ? 0.0f : style.ItemSpacing.y - spacingUp;
+    const float bandTop = row.Rect.Min.y - spacingUp, bandBottom = row.Rect.Max.y + spacingDown;
+    // The buttons are there while the row is hovered; one being held keeps them (the row stops being hovered
+    // while another item is active, and the click would never complete).
+    const bool hovered = g.HoveredWindow == window && (g.ActiveId == 0 || g.ActiveIdAllowOverlap)
+        && ImGui::IsMouseHoveringRect(ImVec2(window->InnerRect.Min.x, bandTop), ImVec2(window->InnerRect.Max.x, bandBottom))
+        && ImGui::IsWindowContentHoverable(window, ImGuiHoveredFlags_None);
+    if (!hovered && g.ActiveId == 0)
+        return -1; // the common case, for every row of every frame: nothing is built
+    std::vector<std::string> labels;
+    std::vector<size_t> shown;
+    bool held = false;
+    for (size_t i = 0; i < actions.size(); ++i) {
+        if (!actions[i].visible)
+            continue;
+        labels.push_back(std::string(actions[i].icon) + "###" + actions[i].id);
+        shown.push_back(i);
+        held = held || g.ActiveId == ImGui::GetID(labels.back().c_str());
+    }
+    if (shown.empty() || !(held || hovered))
+        return -1;
+
+    // Each button is as tall as the band and a gap wider than its glyph, side by side: no part of the strip
+    // is left to the row beneath, so a click that is a little off still lands on a button.
+    const float gap = std::trunc(style.ItemSpacing.x * 0.5f);
+    std::vector<float> widths;
+    float total = 0.0f;
+    for (const auto& label : labels) {
+        widths.push_back(ImGui::CalcTextSize(label.c_str(), nullptr, true).x + gap);
+        total += widths.back();
+    }
+    const float right = window->InnerRect.Max.x;
+    const float left = right - total;
+    // Opaque strip behind the buttons (the label may run under them), in the row's hover colour.
+    const ImVec2 stripMin(left, bandTop);
+    const ImVec2 stripMax(right, bandBottom);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(stripMin, stripMax, ImGui::GetColorU32(ImGuiCol_WindowBg, 1.0f));
+    if (paddedRow)
+        dl->AddRectFilled(stripMin, stripMax, rowSelected ? theme().palette().selectionHovered : ImGui::GetColorU32(ImGuiCol_HeaderHovered));
+
+    // Placing the buttons leaves the layout as it was.
+    const ImVec2 cursor = window->DC.CursorPos;
+    const bool wasSetPos = window->DC.IsSetPos;
+    const ImVec2 cursorPrevLine = window->DC.CursorPosPrevLine, maxPos = window->DC.CursorMaxPos, idealMax = window->DC.IdealMaxPos;
+    const ImVec2 prevSize = window->DC.PrevLineSize, currSize = window->DC.CurrLineSize;
+    const float prevBase = window->DC.PrevLineTextBaseOffset, currBase = window->DC.CurrLineTextBaseOffset;
+    int clicked = -1;
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+    ImGui::PushItemFlag(ImGuiItemFlags_NoFocus, true); // a click does not move the keyboard focus onto a button
+    float x = left;
+    for (size_t k = 0; k < shown.size(); ++k) {
+        const RowAction& a = actions[shown[k]];
+        ImGui::SetCursorScreenPos(ImVec2(x, bandTop));
+        window->DC.CurrLineTextBaseOffset = 0.0f;
+        ImGui::BeginDisabled(!a.enabled);
+        // The glyph is centred in the band, where the row's label is.
+        if (ImGui::Button(labels[k].c_str(), ImVec2(widths[k], bandBottom - bandTop)))
+            clicked = static_cast<int>(shown[k]);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_AllowWhenDisabled))
+            tooltip("%s", a.tip);
+        x += widths[k];
+    }
+    ImGui::PopItemFlag();
+    ImGui::PopItemFlag();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+    window->DC.CursorPosPrevLine = cursorPrevLine;
+    window->DC.CursorMaxPos = maxPos;
+    window->DC.IdealMaxPos = idealMax;
+    window->DC.PrevLineSize = prevSize;
+    window->DC.CurrLineSize = currSize;
+    window->DC.PrevLineTextBaseOffset = prevBase;
+    window->DC.CurrLineTextBaseOffset = currBase;
+    window->DC.CursorPos = cursor;
+    window->DC.IsSetPos = wasSetPos;
+    g.LastItemData = row; // menus and tooltips attach to the row
+    return clicked;
 }
 
 namespace {

@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <initializer_list>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -36,6 +37,26 @@ bool smallButton(const char* icon, const char* label);
 // ImGui::Selectable that stays highlighted while hovered when selected (ImGui draws a hovered row with
 // HeaderHovered, the neutral hover overlay, which would hide the selection).
 bool selectable(const char* label, bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
+// One icon button of a list row's hover actions (see rowActions). `id` names the button ("act_checkout": the
+// label is `icon###id`, so tests address it as <row scope>/###act_checkout); `tip` is its tooltip.
+struct RowAction {
+    const char* icon;
+    const char* id;
+    const char* tip;
+    bool enabled = true; // false: drawn disabled
+    bool visible = true; // false: not drawn at all
+};
+// The most common actions of a list row as icon buttons at the right edge of the window's visible area, shown
+// only while the mouse is on the row's band across the window. Call right after the row's item, inside its ID
+// scope and before its menu and tooltip code: the row is the last item again on return. The row must allow
+// overlap: call ImGui::SetNextItemAllowOverlap() before its item, a selectable or plainText alike.
+// ImGuiSelectableFlags_AllowOverlap alone is not enough: the buttons work, but the row still counts as hovered
+// under them, so a double click or right click on a button is also the row's. Each button is as tall as the band and its glyph is centred in it, where the
+// row's label is. `paddedRow`: the row is a selectable, whose rect already includes half the item spacing on
+// each side and which draws a hover highlight (the strip behind the buttons repeats it; `rowSelected` picks the
+// selection's hover colour); false: a plain text row, as tall as its text. Returns the index of the button
+// clicked, or -1.
+int rowActions(std::span<const RowAction> actions, bool rowSelected = false, bool paddedRow = true);
 // menuItem()/selectable() whose visible label starts with `dimLen` bytes (a folder prefix) drawn in
 // the dimmed text colour; the rest keeps the normal colour. The widget is laid out, identified and
 // registered exactly like the plain call with the same `label`.

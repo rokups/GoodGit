@@ -431,4 +431,212 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     s.git(repo, {"worktree", "remove", "--force", locked.string()});
 }
 
+// Row hover actions (GG-50): icon buttons at a row's right edge while it is hovered.
+GG_TEST("panels", "branches: hover actions appear on the hovered row only and check out or push")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "other"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string other = "//Branches/branch_other/###branch_other";
+    const std::string mainRow = "//Branches/branch_main/###branch_main";
+    const std::string otherCheckout = "//Branches/branch_other/###act_checkout";
+    const std::string otherPush = "//Branches/branch_other/###act_push";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(other.c_str()); }));
+    // Not hovered: no buttons.
+    ctx->MouseMove("//Branches/##branch_filter");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(otherCheckout.c_str()));
+    GG_CHECK(!s.itemExists(otherPush.c_str()));
+    // Hovered: both; the mouse leaving removes them.
+    ctx->MouseMove(other.c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists(otherCheckout.c_str()));
+    GG_CHECK(s.itemExists(otherPush.c_str()));
+    // ... and only that row's: main's are absent while other is hovered.
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###act_push"));
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###act_checkout"));
+    ctx->MouseMove("//Branches/##branch_filter");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(otherCheckout.c_str()));
+    GG_CHECK(!s.itemExists(otherPush.c_str()));
+    // The HEAD branch has no Check out; Push stays.
+    ctx->MouseMove(mainRow.c_str());
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###act_checkout"));
+    GG_CHECK(s.itemExists("//Branches/branch_main/###act_push"));
+    // Check out does what the menu item does.
+    ctx->MouseMove(other.c_str());
+    ctx->Yield(3);
+    ctx->ItemClick(otherCheckout.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "other"; }));
+    s.settle();
+    ctx->MouseMove(other.c_str());
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(otherCheckout.c_str()));
+}
+
+GG_TEST("panels", "branches: Push on a branch without an upstream opens Push to from the hover button")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "other"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string other = "//Branches/branch_other/###branch_other";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(other.c_str()); }));
+    auto& history = s.session()->history();
+    GG_CHECK(history.refVisible("refs/heads/other"));
+    ctx->MouseMove(other.c_str());
+    ctx->Yield(3);
+    const ImGuiID pushId = ctx->ItemInfo("//Branches/branch_other/###act_push").ID;
+    ctx->ItemClick("//Branches/branch_other/###act_push");
+    GG_REQUIRE(s.dialogOpen("Push to"));
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->snapshot()->headBranch, "main");
+    GG_CHECK(history.refVisible("refs/heads/other"));
+    s.dialogButton("Push to", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->snapshot()->headBranch, "main");
+    // The button is not a keyboard stop: the click did not move the navigation focus onto it.
+    GG_CHECK(ImGui::GetCurrentContext()->NavId != pushId);
+}
+
+// The modal of the test above would hide a click that also reached the row; a button that opens nothing shows it.
+GG_TEST("panels", "branches: a click on a hover button is not a click on the row")
+{
+    const fs::path repo = s.fixture(Recipe::Linear); // no remote: Push is disabled
+    s.git(repo, {"branch", "other"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string other = "//Branches/branch_other/###branch_other";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(other.c_str()); }));
+    const std::string head = s.session()->snapshot()->headBranch;
+    GG_REQUIRE(head != "other");
+    ctx->MouseMove(other.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists("//Branches/branch_other/###act_push"));
+    ctx->ItemDoubleClick("//Branches/branch_other/###act_push");
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->snapshot()->headBranch, head);
+    // The row's own double click still checks the branch out.
+    ctx->MouseMove(other.c_str());
+    ctx->Yield(3);
+    ctx->ItemDoubleClick(other.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "other"; }));
+}
+
+// The strip of buttons belongs to the hovered row alone: one pixel inside either edge of a row, a neighbour
+// shows nothing (a selectable's rect already includes half the item spacing on each side).
+GG_TEST("panels", "branches: hover buttons stay on their own row at its edges")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "alpha"});
+    s.git(repo, {"branch", "other"});
+    s.git(repo, {"branch", "zeta"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string other = "//Branches/branch_other/###branch_other";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(other.c_str()); }));
+    const auto absent = [&](const char* name) {
+        return !s.itemExists(("//Branches/branch_" + std::string(name) + "/###act_push").c_str());
+    };
+    const ImGuiTestItemInfo row = ctx->ItemInfo(other.c_str());
+    const float x = row.RectFull.Min.x + 10.0f;
+    for (const float y : {row.RectFull.Max.y - 1.0f, row.RectFull.Min.y + 1.0f}) {
+        ctx->MouseMoveToPos(ImVec2(x, y));
+        ctx->Yield(3);
+        GG_CHECK(s.itemExists("//Branches/branch_other/###act_push"));
+        GG_CHECK(absent("alpha"));
+        GG_CHECK(absent("zeta"));
+        GG_CHECK(absent("main"));
+    }
+}
+
+GG_TEST("panels", "branches: a remote-tracking row's hover Check out creates the tracking branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "-f", "side", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "side"});
+    s.git(repo, {"branch", "-D", "side"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = "//Branches/remote_group_origin/origin/rbranch_origin:side/###rbranch_origin:side";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    const std::string checkout = "//Branches/remote_group_origin/origin/rbranch_origin:side/###act_checkout";
+    ctx->MouseMove("//Branches/##branch_filter");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(checkout.c_str()));
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(checkout.c_str()));
+    ctx->ItemClick(checkout.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "side"; }));
+    const auto snapshot = s.session()->snapshot();
+    const auto* side = snapshot->findBranch("side");
+    GG_REQUIRE(side != nullptr);
+    GG_CHECK_STR_EQ(side->upstream, "origin/side");
+}
+
+GG_TEST("panels", "tags: hover actions reveal a tag and delete a local-only tag")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1.0", "HEAD~3"});
+    s.git(repo, {"tag", "v2.0", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    const std::string v1 = "//Tags/tag_v1.0/###tag_v1.0";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(v1.c_str()); }));
+    ctx->MouseMove("//Tags/##tag_filter");
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###act_reveal"));
+    GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###act_delete"));
+    ctx->MouseMove(v1.c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists("//Tags/tag_v1.0/###act_reveal"));
+    GG_CHECK(s.itemExists("//Tags/tag_v1.0/###act_delete"));
+    GG_CHECK(!s.itemExists("//Tags/tag_v2.0/###act_reveal"));
+    ctx->ItemClick("//Tags/tag_v1.0/###act_reveal");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~3"); }));
+    ctx->MouseMove(v1.c_str());
+    ctx->Yield(3);
+    ctx->ItemClick("//Tags/tag_v1.0/###act_delete");
+    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/tags/v1.0"}).ok(); }));
+    GG_CHECK(s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/tags/v2.0"}).ok());
+}
+
+// A tag that is on a remote too: the Delete button asks which one, as the menu's submenu does.
+GG_TEST("panels", "tags: the Delete button of a tag that is also on a remote asks which one")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"tag", "both", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "both"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    const auto onOrigin = [&] {
+        return !s.gitOut(repo, {"ls-remote", "--tags", "origin", "refs/tags/both"}).empty();
+    };
+    const auto localTag = [&] { return s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/tags/both"}).ok(); };
+    GG_REQUIRE(onOrigin());
+    const std::string row = "//Tags/tag_both/###tag_both";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& tags = s.session()->remoteTags();
+        const auto it = tags.find("origin");
+        return it != tags.end() && it->second.ok && it->second.tags.count("both") != 0;
+    }));
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    ctx->ItemClick("//Tags/tag_both/###act_delete");
+    ctx->Yield(3);
+    // Nothing is deleted yet: the popup offers Local and origin.
+    GG_CHECK(localTag());
+    GG_CHECK(s.itemExists("//$FOCUSED/Local"));
+    GG_CHECK(s.itemExists("//$FOCUSED/origin"));
+    ctx->ItemClick("//$FOCUSED/Local");
+    GG_CHECK(s.waitUntil([&] { return !localTag(); }));
+    s.settle();
+    GG_CHECK(onOrigin());
+}
+
 } // namespace ggtest

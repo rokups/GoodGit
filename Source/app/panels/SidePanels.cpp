@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <map>
+#include <span>
 #include <string_view>
 
 namespace ggui {
@@ -32,12 +33,13 @@ std::string rowId(std::string id)
 struct RowEvents {
     bool toggle = false;        // the eye icon was clicked (Ctrl: only this ref)
     bool doubleClicked = false; // the row itself (only rows with a double-click action react)
+    int action = -1;            // the index of the hover button clicked in `acts`
 };
 
 // A ref row: the eye icon toggles visibility in History; the label is the row's item (menus and
-// tooltips attach to it). Rows without a double-click action are plain text.
+// tooltips attach to it). Rows without a double-click action are plain text. `acts` are the row's hover buttons.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
-    bool doubleClickable)
+    bool doubleClickable, std::span<const RowAction> acts = {})
 {
     RowEvents events;
     const std::string id = rowId(rawId);
@@ -57,9 +59,15 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
     const std::string item = label + "###" + id;
     if (doubleClickable) {
-        selectable(item.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick);
+        // With buttons over it the row must be flagged as overlappable for IsItemHovered() too (Selectable's own
+        // AllowOverlap only reaches its click handling): else a double click on a button is also the row's.
+        if (!acts.empty())
+            ImGui::SetNextItemAllowOverlap();
+        selectable(item.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap));
         events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     } else {
+        if (!acts.empty())
+            ImGui::SetNextItemAllowOverlap();
         plainText(item.c_str());
     }
     ImGui::PopStyleColor();
@@ -70,6 +78,8 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
             ImGui::GetColorU32(ImGuiCol_Text), 2.0f, 0, 1.5f);
     }
+    if (!acts.empty())
+        events.action = rowActions(acts, false, doubleClickable);
     ImGui::PopID();
     return events;
 }
@@ -195,6 +205,28 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
     }
 }
 
+// Push on a local branch's row or menu: to its upstream, or the Push to... dialog without one.
+void pushBranch(Session& session, const core::BranchInfo& b)
+{
+    if (!b.upstream.empty()) {
+        const auto slash = b.upstream.find('/');
+        session.actions().push(b.upstream.substr(0, slash), b.name, b.upstream.substr(slash + 1), false, false);
+    } else {
+        session.showPushToDialog(b.name);
+    }
+}
+
+// Check out on a remote-tracking branch's row or menu: a local branch of that name is checked out;
+// otherwise one is created to track it.
+void checkoutRemoteBranch(Session& session, const core::Snapshot& snapshot, const core::RemoteBranchInfo& r)
+{
+    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
+    if (snapshot.findBranch(shortName))
+        session.actions().checkout(shortName, false);
+    else
+        session.actions().createBranch(shortName, r.name, true);
+}
+
 } // namespace
 
 // ---- Branches -----------------------------------------------------------------------------------
@@ -226,14 +258,8 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", ("Checked out in " + b.worktree).c_str());
     else if (menuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", nullptr, false, free))
         m_session.showAddWorktreeDialog(1, b.name);
-    if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && hasRemotes)) {
-        if (!b.upstream.empty()) {
-            const auto slash = b.upstream.find('/');
-            actions.push(b.upstream.substr(0, slash), b.name, b.upstream.substr(slash + 1), false, false);
-        } else {
-            m_session.showPushToDialog(b.name);
-        }
-    }
+    if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && hasRemotes))
+        pushBranch(m_session, b);
     if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, free && hasRemotes))
         m_session.showPushToDialog(b.name);
     if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, free && b.isHead && !b.upstream.empty()))
@@ -297,12 +323,8 @@ void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
         ImGui::SetClipboardText(r.name.c_str());
     ImGui::Separator();
     // A local branch of that name is checked out; otherwise one is created to track this branch.
-    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free)) {
-        if (m_snapshot->findBranch(shortName))
-            actions.checkout(shortName, false);
-        else
-            actions.createBranch(shortName, r.name, true);
-    }
+    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free))
+        checkoutRemoteBranch(m_session, *m_snapshot, r);
     if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
         m_session.showCreateBranchDialog(r.name, shortName);
     if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !m_snapshot->headUnborn))
@@ -375,8 +397,13 @@ void BranchesPanel::draw(bool* open)
             label += "  [" + b.worktree + "]";
         const std::string full = "refs/heads/" + b.name;
         ImGui::PushOverrideID(windowId);
+        // The hover buttons do what the menu's Check out and Push do.
+        const RowAction acts[] = {
+            {ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free && !b.isHead, !b.isHead},
+            {ICON_MS_UPLOAD, "act_push", "Push", free && !m_snapshot->remotes.empty()},
+        };
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
-            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true);
+            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts);
         if (shortName != b.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", b.name.c_str());
         if (events.toggle)
@@ -384,6 +411,10 @@ void BranchesPanel::draw(bool* open)
         // Double-click checks the branch out.
         if (events.doubleClicked && free && !b.isHead)
             m_session.actions().checkout(b.name, false);
+        if (events.action == 0)
+            m_session.actions().checkout(b.name, false);
+        else if (events.action == 1)
+            pushBranch(m_session, b);
         branchMenu(b);
         ImGui::PopID();
     });
@@ -428,10 +459,13 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PushOverrideID(windowId);
                 ImGui::PushID(("remote_group_" + remote).c_str());
                 ImGui::PushID(remote.c_str());
+                const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free}};
                 const RowEvents events = visibilityRow("rbranch_" + r.name, shortName,
-                    history.refVisible(full), false, p.remoteText, false);
+                    history.refVisible(full), false, p.remoteText, false, acts);
                 if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+                if (events.action == 0)
+                    checkoutRemoteBranch(m_session, *m_snapshot, r);
                 remoteBranchMenu(r);
                 ImGui::PopID();
                 ImGui::PopID();
@@ -474,43 +508,72 @@ void TagsPanel::draw(bool* open)
     // Delete: one item for a tag only here; a submenu (Local, then each remote that has it) when a
     // remote has it too. A remote whose tags are still being read or could not be read is offered
     // with a note (the tag may be there).
-    auto deleteItems = [&](const std::string& name, bool local) {
-        std::vector<std::string> remotes; // menu labels, the remote's name first
+    struct DeleteRemotes {
+        std::vector<std::string> labels; // menu labels, the remote's name first
         std::vector<std::string> names;
+    };
+    auto deleteRemotes = [&](const std::string& name) {
+        DeleteRemotes out;
         for (const auto& r : m_snapshot->remotes) {
             auto it = remoteTags.find(r.name);
             if (it == remoteTags.end()) {
-                remotes.push_back(r.name + " (checking...)");
-                names.push_back(r.name);
+                out.labels.push_back(r.name + " (checking...)");
+                out.names.push_back(r.name);
             } else if (!it->second.ok) {
-                remotes.push_back(r.name + " (not checked)");
-                names.push_back(r.name);
+                out.labels.push_back(r.name + " (not checked)");
+                out.names.push_back(r.name);
             } else if (it->second.tags.count(name)) {
-                remotes.push_back(r.name);
-                names.push_back(r.name);
+                out.labels.push_back(r.name);
+                out.names.push_back(r.name);
             }
         }
-        if (local && remotes.empty()) {
+        return out;
+    };
+    // The entries of the Delete submenu (and of the row button's popup).
+    auto deleteEntries = [&](const std::string& name, bool local, const DeleteRemotes& remotes) {
+        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
+            actions.deleteTag(name);
+        ImGui::Separator();
+        for (size_t i = 0; i < remotes.labels.size(); ++i)
+            if (menuItem(ICON_MS_DELETE, remotes.labels[i].c_str()))
+                actions.deleteRemoteTag(remotes.names[i], name);
+    };
+    // Read only once a menu is open: this is per row, and only the open one needs it.
+    auto deleteItems = [&](const std::string& name, bool local) {
+        const DeleteRemotes remotes = deleteRemotes(name);
+        if (local && remotes.names.empty()) {
             if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
                 actions.deleteTag(name);
             return;
         }
         if (!beginMenu(ICON_MS_DELETE, "Delete", free))
             return;
-        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
-            actions.deleteTag(name);
-        ImGui::Separator();
-        for (size_t i = 0; i < remotes.size(); ++i)
-            if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
-                actions.deleteRemoteTag(names[i], name);
+        deleteEntries(name, local, remotes);
         ImGui::EndMenu();
     };
     for (const auto& t : m_snapshot->tags) {
         if (!containsNoCase(t.name, m_filter))
             continue;
         const std::string full = "refs/tags/" + t.name;
-        if (visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false, theme().palette().tagText, false).toggle)
+        const std::string deletePopup = "##tag_delete_" + rowId(t.name);
+        // The hover buttons do what the menu's Reveal and Delete do (Delete asks which one in a popup).
+        const RowAction acts[] = {
+            {ICON_MS_MY_LOCATION, "act_reveal", "Reveal"},
+            {ICON_MS_DELETE, "act_delete", "Delete", free},
+        };
+        const RowEvents events = visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false,
+            theme().palette().tagText, false, acts);
+        if (events.toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+        if (events.action == 0)
+            m_session.revealCommit(t.target);
+        else if (events.action == 1) {
+            // A tag only here: no choice to make; else the popup asks which one.
+            if (deleteRemotes(t.name).names.empty())
+                actions.deleteTag(t.name);
+            else
+                ImGui::OpenPopup(deletePopup.c_str());
+        }
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && beginTooltip()) {
             // The message (it can run to several paragraphs), wrapped and cut after the line limit.
             tooltipText(t.message);
@@ -529,6 +592,13 @@ void TagsPanel::draw(bool* open)
                         actions.pushTag(r.name, t.name);
                 ImGui::EndMenu();
             }
+            ImGui::EndPopup();
+        }
+        // After the row's tooltip and menu, which belong to the row, not to the popup's last item.
+        if (ImGui::BeginPopup(deletePopup.c_str())) {
+            ImGui::BeginDisabled(!free);
+            deleteEntries(t.name, true, deleteRemotes(t.name));
+            ImGui::EndDisabled();
             ImGui::EndPopup();
         }
     }
