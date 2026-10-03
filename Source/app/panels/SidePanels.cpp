@@ -905,7 +905,7 @@ void ReflogPanel::draw(bool* open)
                     idCopyMenuItem((clicked == 0 ? e.oldId : e.newId).hex(), false);
                     if (clicked < 0 && !e.oldId.isNull()) {
                         ImGui::PushID("old");
-                        idCopyMenuItem(e.oldId.hex(), false);
+                        idCopyMenuItem(e.oldId.hex(), false, true, "old");
                         ImGui::PopID();
                     }
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))

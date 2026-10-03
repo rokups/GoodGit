@@ -112,12 +112,12 @@ Shift "Copy full ID"; without it the 3-character prefix gives "Copy a1b" and the
 a1b2c3d". A right click on a row outside its ID text counts as the rest. A menu opened with
 `Alt+Space` has no click: it gives "Copy a1b2c3d" for a short and for a full ID, and "Copy full ID"
 with Shift, never the 3 characters. The item's ID is `###copy_id`. This applies to every ID menu
-(the toolbar HEAD, the History row's Copy submenu, Blame's line menus, the reflog); the Change
-information ID has no menu (§5). ID text on its own (the toolbar HEAD and the Change information
-commit ID) is the exception to "plain text does nothing on click": clicking its highlighted part
-copies that part (3 characters of a short ID, 7 of a full ID) and clicking the dimmed rest copies
-the full ID (hand cursor, no highlight); Space/Enter on the focused ID copies the full ID. IDs
-inside rows and tooltips are not clickable.
+(the toolbar HEAD, the History row's Copy submenu, Blame's line menus, the reflog, Change
+information's commit ID and parents). ID text on its own (the toolbar HEAD and the Change
+information commit ID) is the exception to "plain text does nothing on click": clicking its
+highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and clicking the
+dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID copies
+the full ID. IDs inside rows and tooltips are not clickable.
 Every item with a right-click context menu also opens it on `Alt+Space` while it has keyboard
 focus (the menu opens below the item's bottom-left corner; Space does not also activate it, and
 the Alt press does not switch to the menu bar; ignored while text is being typed).
@@ -413,9 +413,10 @@ the panel without touching the repository.
   height is shared by the fields and persistent (`[GGUIView][Info] MessageLines`).
 - Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
   differs (N); Date; published/lock state ("Published" / "Not published").
-- Commit ID `###commit_id_text` (full, dimmed after the first 7 characters; clickable text, see the
-  general rules) with Copy `###commit_id` (copies the short ID); Parents list
-  `parent_<n>` (click reveals).
+- Commit ID `###commit_id_text` (a short ID: 3 characters in the text colour, 4
+  dimmed; clickable text, see the general rules; no Copy button) with the one copy-ID context
+  menu item; Parents list
+  `parent_<n>` (short IDs; click reveals; right click: the same item for that parent).
 - N: conflicted files list with side counts.
 - D: aliases list.
 
@@ -563,7 +564,8 @@ the panel without touching the repository.
 - **Reflog** `"Reflog"`: chooser `##reflog_ref` (HEAD, branches, stash), filter, rows with old →
   new, message. Context: Copy (the one ID item: for the ID the right click was on; off the IDs, and
   when opened with `Alt+Space`, the new ID's, followed by a second item for the old ID when there
-  is one; the item's ID is `###copy_id`, the old one's `old/###copy_id`) · Reveal old/new ·
+  is one, labelled "Copy old a1b2c3d", "Copy old full ID" with Shift; the item's ID is
+  `###copy_id`, the old one's `old/###copy_id`) · Reveal old/new ·
   Create branch from old/new….
 - **Operations** `"Operations"` (M): rows `op_<id>` (time, source label, description). Context:
   Restore (undo back to before this operation). Plain git commands appear as `git <command>` rows (source `git`), journaled by the reconciler

@@ -465,17 +465,32 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     ctx->ItemClick("//Change information/**/###author");
     ctx->Yield(2);
     GG_CHECK(ImGui::GetActiveID() == 0 && !s.itemDrawsBackground("//Change information/**/###author"));
-    // The full ID shows its first 7 characters normally and the rest dimmed. The button copies the short
-    // ID; a click on the text copies the highlighted 7 characters, or the full ID from the dimmed part.
+    // The short ID shows its first 3 characters normally and the rest dimmed. A click on the text copies the
+    // highlighted 3 characters, or the full ID from the dimmed part. There is no Copy button.
     const std::string head = s.head(repo);
+    const std::string shortHead = head.substr(0, 7);
     ctx->ScrollToItemY("//Change information/**/###commit_id_text");
-    GG_CHECK(s.idShownDimmed("//Change information", head, 7));
-    ctx->ItemClick("//Change information/**/###commit_id");
-    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 7));
-    s.clickIdText("//Change information/**/###commit_id_text", 7, false);
+    GG_CHECK_STR_EQ(s.itemText("//Change information/**/###commit_id_text"), shortHead);
+    GG_CHECK(s.idShownDimmed("//Change information", shortHead, 3));
+    GG_CHECK(!s.itemExists("//Change information/**/###commit_id"));
+    s.clickIdText("//Change information/**/###commit_id_text", 3, false);
     GG_CHECK_STR_EQ(s.clipboard(), head);
-    s.clickIdText("//Change information/**/###commit_id_text", 7, true);
-    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 7));
+    s.clickIdText("//Change information/**/###commit_id_text", 3, true);
+    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    // Right-click offers the one copy item: the 3 characters on the prefix, the 7 on the rest, the full ID with Shift.
+    const std::string copyItem = "//$FOCUSED/###copy_id";
+    s.rightClickIdText("//Change information/**/###commit_id_text", 3, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + head.substr(0, 3) + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    s.rightClickIdText("//Change information/**/###commit_id_text", 3, false);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
+    s.rightClickIdText("//Change information/**/###commit_id_text", 3, true, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy full ID###copy_id");
+    ctx->MenuClick(copyItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), head);
     GG_CHECK(info.details()->authorTime > 0);
     // Parents: the merge has two; clicking one reveals it.
     selectCommit(s, s.revParse(repo, "HEAD~1"));
@@ -483,8 +498,18 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     // (A clickable item does draw a hover highlight: the check above can fail.)
     ctx->MouseMove("//Change information/**/###parent_1");
     GG_CHECK(s.itemDrawsBackground("//Change information/**/###parent_1"));
+    // A parent's right-click offers the same copy item, for that parent.
+    const std::string parent2 = s.revParse(repo, "HEAD~1^2");
+    s.rightClickIdText("//Change information/**/###parent_1", 3, false);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + parent2.substr(0, 7) + "###copy_id");
+    ctx->MenuClick(copyItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), parent2.substr(0, 7));
+    s.rightClickIdText("//Change information/**/###parent_1", 3, true);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + parent2.substr(0, 3) + "###copy_id");
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
     ctx->ItemClick("//Change information/**/###parent_1");
-    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~1^2"); }));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == parent2; }));
     // The root commit has no parents.
     selectCommit(s, s.revParse(repo, "HEAD~1^2~2"));
     GG_CHECK(s.waitUntil([&] { return info.details() && info.details()->parents.empty(); }));

@@ -212,11 +212,21 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     const std::string oldItem = "//$FOCUSED/old/###copy_id";
     const std::string row0 = table + "/r0/###reflog_0";
     ctx->ItemClick(row0.c_str(), ImGuiMouseButton_Right);
-    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy " + oldHead + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy old " + oldHead + "###copy_id");
     copied(newHead, newHead);
     ctx->ItemClick(row0.c_str(), ImGuiMouseButton_Right);
     ctx->ItemClick(oldItem.c_str()); // MenuClick would read "old" as a menu
     GG_CHECK_STR_EQ(s.clipboard(), oldHead);
+    // With Shift held at the click both items give the full ID; the old one says which.
+    ctx->MouseMove(row0.c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy full ID###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy old full ID###copy_id");
+    ctx->ItemClick(oldItem.c_str());
+    GG_CHECK_STR_EQ(s.clipboard(), oldId);
     // On an ID, only that ID's item.
     GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 3, 7));
     GG_CHECK(s.itemExists(copyItem.c_str()) && !s.itemExists(oldItem.c_str()));
@@ -229,7 +239,7 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_Space);
     ctx->Yield(3);
     GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + newHead + "###copy_id");
-    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy " + oldHead + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(oldItem.c_str()), "Copy old " + oldHead + "###copy_id");
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);
     ctx->SetInputMode(ImGuiInputSource_Mouse);

@@ -429,12 +429,14 @@ int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids)
     return g_idCopyOpen.target;
 }
 
-bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled)
+bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled, const char* what)
 {
     // Shift counts when held as the menu opened or while it is open (a menu opened from the keyboard).
     const bool shift = g_idCopyOpen.shift || ImGui::GetIO().KeyShift;
-    const IdCopyChoice choice = g_idCopyOpen.keyboard ? idCopyChoiceKeyboard(hex, shift)
-                                                      : idCopyChoice(hex, longId, g_idCopyOpen.onPrefix, shift);
+    IdCopyChoice choice = g_idCopyOpen.keyboard ? idCopyChoiceKeyboard(hex, shift)
+                                                : idCopyChoice(hex, longId, g_idCopyOpen.onPrefix, shift);
+    if (what)
+        choice.label.insert(std::string("Copy ").size(), std::string(what) + " ");
     if (!menuItem(ICON_MS_CONTENT_COPY, (choice.label + "###copy_id").c_str(), nullptr, false, enabled))
         return false;
     ImGui::SetClipboardText(choice.text.c_str());

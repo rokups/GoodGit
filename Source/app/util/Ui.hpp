@@ -93,8 +93,9 @@ struct IdCopyTarget {
 };
 int captureIdCopyClick(std::initializer_list<IdCopyTarget> ids);
 // The item for what captureIdCopyClick recorded, with the stable ID "###copy_id". Shift counts when it was held as
-// the menu opened or is held while it is open. Returns true when clicked (after copying).
-bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled = true);
+// the menu opened or is held while it is open. `what` names the ID in the label ("Copy old a1b2c3d", "Copy old full ID")
+// for a menu with a second item. Returns true when clicked (after copying).
+bool idCopyMenuItem(const std::string& hex, bool longId, bool enabled = true, const char* what = nullptr);
 // Alt+Space on the keyboard-focused item (the keyboard equivalent of the right click that opens its
 // context menu). Call right after the item. The chord is a routed shortcut owned by the item, so
 // Space does not also activate it and releasing Alt does not toggle the menu layer; it does nothing
