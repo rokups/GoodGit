@@ -309,7 +309,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Squash… / with descendants | **M** | Fold into a parent or a chosen target (fixup/squash) |
 | Split… | **M** | Split a commit by selected files into two commits |
 | Restore… | **M** | Restore paths in a commit from another commit (rewrite), or restore the working tree from a commit (`git restore --source`) |
-| Abandon / Abandon branch | **M** | Drop the commit(s) and rebase the descendants. Optionally delete the remote branch too |
+| Abandon… / Abandon branch… | **M** | Both ask for confirmation first. Drop the commit(s) and rebase the descendants. Optionally delete the remote branch too |
 | Simplify parents | **M** | Remove redundant merge parents |
 | Move @ to previous/next | **M** | Check out the parent/child commit. Detach if it is not a branch tip |
 | Reorder (drag) | **M** | Move a commit before or after another in the same chain, or copy it there |

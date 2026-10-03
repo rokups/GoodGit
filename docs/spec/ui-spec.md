@@ -250,7 +250,7 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Check out (a branch), Edit commit (E; detaches at the commit; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
-Abandon/Abandon branch, Simplify parents, Reorder, Move
+Abandon…/Abandon branch…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it

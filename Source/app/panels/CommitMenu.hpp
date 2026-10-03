@@ -40,6 +40,7 @@ void showSquashDialog(Session& session, const std::vector<core::Oid>& commits);
 // Squash (S / the menu item) for the History selection: its dialog when it can be squashed.
 void squashSelection(Session& session);
 void showSplitDialog(Session& session, const core::Oid& commit);
+void showAbandonDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
 // Restore `paths` from the commit named in the dialog's field, in what `in` (the Changes panel's
 // selection) shows: a commit (rewrite it, or the working tree), the working tree or the index

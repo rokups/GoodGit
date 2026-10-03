@@ -220,8 +220,8 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     if (shift) {
         if (one(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A"))
             showAbandonBranchDialog(session, row.id);
-    } else if (one(ICON_MS_DELETE_FOREVER, "Abandon", "A")) {
-        session.actions().abandon(row.id, false);
+    } else if (one(ICON_MS_DELETE_FOREVER, "Abandon...", "A")) {
+        showAbandonDialog(session, row.id);
     }
 }
 
@@ -250,7 +250,7 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
     else if (ImGui::IsKeyPressed(ImGuiKey_A, false) && io.KeyShift)
         showAbandonBranchDialog(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_A, false))
-        session.actions().abandon(row.id, false);
+        showAbandonDialog(session, row.id);
 }
 
 void showRebaseDialog(Session& session, const core::Oid& commit, const std::string& prefill)
@@ -374,6 +374,24 @@ void showSplitDialog(Session& session, const core::Oid& commit)
                 picked += form.checked("file_" + std::to_string(i)) ? 1 : 0;
             return picked > 0 && picked < n;
         }});
+    f.buttons.push_back({"Cancel", {}});
+    session.app().dialogs().open(std::move(f));
+}
+
+void showAbandonDialog(Session& session, const core::Oid& commit)
+{
+    Form f;
+    f.title = "Abandon commit";
+    // Whatever pointed at the commit moves to its first parent's replacement, or to nothing when it has none.
+    const core::HistoryRow* row = session.history().row(commit);
+    f.message = "Drop this commit. Its descendants are rebased onto its parent.";
+    if (row && row->parents.empty())
+        f.message = "Drop this commit. Its children become root commits.";
+    else if (row && row->parents.size() > 1)
+        f.message = "Drop this merge. Its descendants are rebased onto its first parent; the merged-in commits are no longer part of them.";
+    f.add(commitInfo(session, "Abandon", commit));
+    Session* s = &session;
+    f.buttons.push_back({"Abandon", [s, commit](Form&) { s->actions().abandon(commit, false); }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }

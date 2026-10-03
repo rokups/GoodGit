@@ -170,7 +170,7 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     // One commit: its items are enabled, the range item is not.
     ctx->ItemClick(rowRef(c0).c_str());
     GG_CHECK(probe(s, ctx, c0, "Create tag...").enabled);
-    GG_CHECK(probe(s, ctx, c0, "Abandon").enabled);
+    GG_CHECK(probe(s, ctx, c0, "Abandon...").enabled);
     GG_CHECK(!probe(s, ctx, c0, "Interactive rebase selection...").enabled);
     // c0 and c2 (a gap at c1): single-commit items and the range item are disabled.
     ctx->ItemClick(rowRef(c0).c_str());
@@ -178,7 +178,7 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     ctx->ItemClick(rowRef(c2).c_str());
     ctx->KeyUp(ImGuiMod_Ctrl);
     GG_CHECK_EQ(s.session()->history().extraSelection().size(), static_cast<size_t>(1));
-    for (const char* item : {"New detached", "Create tag...", "Abandon", "Duplicate", "Check out"})
+    for (const char* item : {"New detached", "Create tag...", "Abandon...", "Duplicate", "Check out"})
         GG_CHECK(!probe(s, ctx, c0, item).enabled);
     GG_CHECK(!probe(s, ctx, c0, "Interactive rebase selection...").enabled);
     // Right-clicking a selected row keeps the selection.
