@@ -103,6 +103,7 @@ private:
         std::vector<int> firstLine; // per row: first editor line (-1 = not in this view)
         std::vector<int> lastLine;
         Side side = Side::Unified;
+        bool focused = false; // the editor (or a window over it) had the keyboard last frame
     };
 
     void request();
@@ -144,6 +145,7 @@ private:
     View* m_active = nullptr;   // view the selection belongs to
     int m_anchorRow = -1;
     bool m_viewsDirty = true;
+    bool m_cutKey = false;      // Ctrl+X or Shift+Delete went to the Diff window this frame
     bool m_resetScroll = true;
     int m_navLine = -1;         // editor line of the last hunk navigation ...
     bool m_navSideBySide = false; // ... in this view mode

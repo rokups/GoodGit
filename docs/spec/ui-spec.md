@@ -421,7 +421,7 @@ the panel without touching the repository.
   Side by side shows only code: no hunk rows at all (gap placeholders mark omitted lines).
   Line selection with click/Shift-click; Ctrl+C and the menu's Copy copy only code lines: hunk
   rows, the "... N unchanged lines" placeholders and side-by-side fillers are left out of the
-  copied text (both views).
+  copied text (both views). Ctrl+X and Shift+Delete copy as well (the text cannot be cut).
 - Expandable context rows `expand_<n>` (click: 10 lines; Shift+click: whole gap).
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.

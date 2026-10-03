@@ -427,6 +427,20 @@ void DiffPanel::renderEditor(View& v, const char* id, float width)
             ImGui::SetClipboardText((text.empty() ? before : text).c_str());
         }
     }
+    // A cut is a copy of the code (the editor is read-only, see draw()), into the focused editor's view.
+    if (m_cutKey && v.focused) {
+        View* saved = m_active;
+        m_active = &v;
+        const std::string text = selectedText();
+        m_active = saved;
+        if (!text.empty())
+            ImGui::SetClipboardText(text.c_str());
+    }
+    const ImGuiWindow* editorWindow = ImGui::GetCurrentWindow()->DC.ChildWindows.back();
+    const ImGuiWindow* nav = ImGui::GetCurrentContext()->NavWindow;
+    while (nav && nav != editorWindow)
+        nav = nav->ParentWindow;
+    v.focused = nav != nullptr;
 }
 
 DiffPanel::View& DiffPanel::primaryView()
@@ -1110,6 +1124,12 @@ void DiffPanel::draw(bool* open)
     if (m_viewsDirty)
         buildViews();
     const bool canSideBySide = !f.binary && !f.submodule && f.oldText && f.newText;
+    // The editors cut on Ctrl+X and Shift+Delete even though they are read-only (text would vanish): here a
+    // cut is a copy. Taken before they render, so they no longer see the keys. Repeat keeps a held key
+    // locked on its repeat frames too.
+    const ImGuiInputFlags cutFlags = ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat;
+    const bool cut = hotkey(ImGuiMod_Ctrl | ImGuiKey_X, cutFlags);
+    m_cutKey = hotkey(ImGuiMod_Shift | ImGuiKey_Delete, cutFlags) || cut;
     if (!f.binary && !f.submodule) {
         if (m_session.app().settings().data().diffSideBySide && canSideBySide)
             drawSideBySide();

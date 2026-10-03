@@ -389,6 +389,48 @@ GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code")
     GG_CHECK_STR_EQ(s.clipboard(), "keep");
 }
 
+GG_TEST("diff", "Ctrl+X and Shift+Delete copy the selection and delete nothing, in both views")
+{
+    const DiffRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    showFile(s, r.change, "code.cpp");
+    // Selects text in the editor `windowRef` with the mouse (which gives it the keyboard), then cuts it.
+    auto cutIn = [&](const std::string& windowRef) {
+        ImGuiWindow* w = ctx->GetWindowByRef(windowRef.c_str());
+        GG_REQUIRE(w);
+        const float line = ImGui::GetFontSize() + ImGui::GetStyle().ItemSpacing.y;
+        const ImVec2 from(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.45f, w->InnerRect.Min.y + line * 2.5f);
+        const ImVec2 to(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.35f, w->InnerRect.Min.y + line * 4.5f);
+        ctx->MouseMoveToPos(from);
+        ctx->MouseDown(ImGuiMouseButton_Left);
+        ctx->MouseMoveToPos(to);
+        ctx->MouseUp(ImGuiMouseButton_Left);
+        ctx->Yield(2);
+        // What Ctrl+C copies from this editor is what a cut has to copy.
+        ImGui::SetClipboardText("");
+        ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+        ctx->Yield(2);
+        const std::string selected = s.clipboard();
+        GG_REQUIRE(selected.find('\n') != std::string::npos);
+        const auto before = s.drawnText(windowRef.c_str());
+        for (ImGuiKeyChord cut : {ImGuiKeyChord(ImGuiMod_Ctrl | ImGuiKey_X), ImGuiKeyChord(ImGuiMod_Shift | ImGuiKey_Delete)}) {
+            ImGui::SetClipboardText("");
+            ctx->KeyPress(cut);
+            ctx->Yield(2);
+            GG_CHECK_STR_EQ(s.clipboard(), selected);
+            GG_CHECK(s.drawnText(windowRef.c_str()) == before);
+        }
+    };
+    auto waitOutDoubleClick = [&] { ctx->SleepNoSkip(2.0f * ImGui::GetIO().MouseDoubleClickTime, 0.1f); };
+    cutIn(body(s));
+    s.comboSelect("//Diff/##diff_view", "Side by side");
+    ctx->Yield(3);
+    waitOutDoubleClick();
+    cutIn(s.child(body(s).c_str(), "##sbs_left"));
+    waitOutDoubleClick();
+    cutIn(s.child(body(s).c_str(), "##sbs_right"));
+}
+
 GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a final newline; light theme; side-by-side scroll sync; text menu; term views of a conflicted commit")
 {
     const DiffRepo r = makeRepo(s);
