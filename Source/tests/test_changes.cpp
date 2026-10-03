@@ -374,6 +374,8 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame")
     const fs::path out = s.path("file.patch");
     ggui::setEnv("GGUI_TEST_PICK_PATH", out.string());
     s.contextMenu(ref.c_str(), "Patch/Save...");
+    // Wait for ggui to finish writing before reading the file (also below).
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(s.root(), "file.patch") == expected; }));
 
     // A multi-file selection saves one patch for all selected files.
@@ -384,6 +386,7 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame")
     ggui::setEnv("GGUI_TEST_PICK_PATH", both.string());
     s.contextMenu(ref.c_str(), "Patch/Save...");
     const std::string expectedBoth = s.git(repo, {"diff", "HEAD~1", "HEAD"}).out;
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(s.root(), "both.patch") == expectedBoth; }));
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
 

@@ -160,6 +160,8 @@ GG_TEST("edit", "Restore from... lives in Changes: prefill, restoring one select
     GG_CHECK_STR_EQ(field("from"), "HEAD");
     s.dialogText("Restore", "from", r.c1);
     s.dialogButton("Restore", "Restore");
+    // Wait for git before reading the file: on Windows an open handle makes git's rewrite fail (also below).
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(r.path, "a.txt") == "one\ntwo\nthree\n"; }));
     s.settle();
     GG_CHECK_STR_EQ(s.read(r.path, "b.txt"), "edited b\n");
@@ -479,6 +481,7 @@ GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents
     s.dialogText("Restore", "from", r.c1);
     s.comboSelect("//Restore/Restore into##where", "The working tree (git restore)");
     s.dialogButton("Restore", "Restore");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(r.path, "a.txt") == "one\ntwo\nthree\n"; }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--cached", "--name-only"}), "a.txt");

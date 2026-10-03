@@ -162,6 +162,8 @@ GG_TEST("linestaging", "stage, discard and unstage hunks")
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
     GG_REQUIRE(diffFile(s)->hunks.size() == 1);
     ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    // Wait for git before reading the file: on Windows an open handle makes git's rewrite fail (also below).
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt").find("LINE 3") == std::string::npos; }));
     s.settle();
     GG_CHECK(s.read(repo, "f.txt").find("LINE 27") != std::string::npos);
@@ -199,6 +201,7 @@ GG_TEST("linestaging", "hunks from the context menu in the side-by-side view")
     s.settle();
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
     s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_3").c_str(), "Discard hunk(s)");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt").find("LINE 3") == std::string::npos; }));
     s.settle();
     GG_CHECK(s.read(repo, "f.txt").find("LINE 27") != std::string::npos);

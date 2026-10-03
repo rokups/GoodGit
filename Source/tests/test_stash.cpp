@@ -158,6 +158,8 @@ GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo,
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRow(2).c_str()); }));
     // Apply stash@{2} (a.txt changed): the stash stays.
     s.contextMenu(stashRow(2).c_str(), "Apply");
+    // Wait for git before reading the file: on Windows an open handle makes git's rewrite fail (also below).
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "a.txt") == "a changed\n"; }));
     s.settle();
     GG_CHECK_EQ(stashCount(s, repo), static_cast<size_t>(3));
@@ -167,6 +169,7 @@ GG_TEST("stash", "apply, pop with the index, apply one file, branch, drop, undo,
     ctx->ItemClick(stashRow(0).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Working tree", "b.txt").c_str()); }));
     s.contextMenu(fileRef(s, "Working tree", "b.txt").c_str(), "Apply this file");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "b.txt") == "b again\n"; }));
     s.settle();
     GG_CHECK(!fs::exists(repo / "new.txt"));

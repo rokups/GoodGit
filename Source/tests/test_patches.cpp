@@ -39,6 +39,8 @@ GG_TEST("patches", "apply from the clipboard or a file, to the working tree or t
     // Clipboard → working tree.
     ImGui::SetClipboardText(patch.c_str());
     applyPatch(s, "Clipboard", "Working tree");
+    // Wait for git before reading the file: on Windows an open handle makes git's rewrite fail (also below).
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f1.txt") == "patched 1\n"; }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
@@ -57,6 +59,7 @@ GG_TEST("patches", "apply from the clipboard or a file, to the working tree or t
     s.settle();
     s.git(repo, {"reset", "-q"});
     applyPatch(s, "File", "Working tree", (s.root() / "change.patch").string());
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f1.txt") == "patched 1\n"; }));
     s.settle();
     s.git(repo, {"checkout", "-q", "--", "f1.txt"});

@@ -73,6 +73,8 @@ GG_TEST("conflicts", "native merge: three-way diff, take ours, edit the message,
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##merge_message"); }));
     s.setText("//Change information/##merge_message", "Merged by the test\n");
     ctx->ItemClick("//Change information/Save message##save_merge_message");
+    // Wait for the operation before reading the file: on Windows an open handle can make a rewrite of it fail (also below).
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo / ".git", "MERGE_MSG").rfind("Merged by the test", 0) == 0; }));
     s.settle();
     ctx->ItemClick("//###Toolbar/Continue##tb_continue");
@@ -645,6 +647,7 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     GG_CHECK(removed && added);
     // Take side 2 for the whole file, mark resolved, amend.
     s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Take side/Side 2 (whole file)###wholeside1");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=2\nbottom\n"; }));
     s.settle();
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()) || s.session()->status()->unstaged.size() == 1; }));
@@ -677,6 +680,7 @@ GG_TEST("conflicts", "first-class: take a side in one region; resolve in the edi
     s.dialogText("Take side in a region", "region", "2");
     s.dialogText("Take side in a region", "side", "1");
     s.dialogButton("Take side in a region", "Take");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "two.txt").find("B1\nz\n") != std::string::npos; }));
     s.settle();
     GG_CHECK(s.read(repo, "two.txt").find("<<<<<<< side 1\nA1") != std::string::npos); // region 1 kept
@@ -687,6 +691,7 @@ GG_TEST("conflicts", "first-class: take a side in one region; resolve in the edi
     ggui::unsetEnv("GIT_EDITOR"); // the test runner sets GIT_EDITOR=true, which beats core.editor
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "two.txt").c_str()); }));
     s.contextMenu(wtFile(s, "two.txt").c_str(), "Open working-copy file");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "two.txt") == "a\nA2\nmiddle\nB1\nz\n"; }));
     s.settle();
     s.git(repo, {"add", "two.txt"});
@@ -713,6 +718,7 @@ GG_TEST("conflicts", "first-class: resolve with the merge tool (stages from the 
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()); }));
     s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=merged\nbottom\n"; }));
     s.settle();
     // The tool saw base, ours and theirs taken from the region, and the result is staged.
@@ -749,6 +755,7 @@ GG_TEST("conflicts", "first-class: resolve one pair of sides of an N-sided confl
     // Resolving sides 1 and 2 (pair 0): the tool saw base 1 (x=0), side 1 (x=3), side 2 (x=1).
     s.git(repo, {"config", "merge.tool", "fctooln"});
     s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool/Sides 1 and 2###pair0");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") != original; }));
     s.settle();
     GG_CHECK_STR_EQ(s.read(s.root(), "fc-merge-tool-n-content.log"), "x=0\nx=3\nx=1\n");
@@ -815,6 +822,7 @@ GG_TEST("conflicts", "toolbar for other operations: abort a revert and an apply-
     GG_CHECK(s.statusPorcelain(repo).empty());
     s.git(repo, {"config", "merge.tool", "fake"});
     s.contextMenu(row.c_str(), "Resolve with merge tool");
+    GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=2\nbottom\n"; }));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "conflict.txt");
