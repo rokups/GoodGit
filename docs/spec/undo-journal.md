@@ -187,8 +187,23 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     is journaled stays with the `keep refs` operation; undoing that operation leaves the commit
     kept. An operation continued from an earlier pass or call (an open rebase group) never owns a
     keep change: it is older than what was journaled since.
+  - *Rewrites.* A rewrite (reword, amend, squash, move, drop, ...) carries a keep ref the way it
+    carries a local branch. The commits kept by a keep ref count among the descendants a rewrite
+    replays. For each keep ref whose commit the rewrite replaced (a key of `Result::mapping`, which
+    maps a dropped commit to its replacement parent), `Rewriter::apply` deletes `refs/gg/keep/<id>` in the
+    transaction that moves the branches, and `Result::keepExtra` holds the replacement. The caller
+    that owns the recorder passes it to `OperationRecorder::setKeepExtra` (`MutationContext::keepExtra`
+    in ggui, the recorder itself in git-gg), so the one maintenance of `finish` keeps the replacement
+    unless a branch, remote-tracking branch or tag reaches it or it is not a tip. Dropping a
+    kept tip whose parent is on a branch leaves no keep ref; above another unreachable commit it
+    keeps that commit. The deletion and the creation are the rewrite's own entries: no `keep refs`
+    operation, and Undo and Redo restore them as any other keep entries (below).
+    A kept commit that is another worktree's detached HEAD stays kept as well: that worktree is
+    still on it, so the maintenance creates its keep ref again beside the replacement's.
   - *Undo and Redo.* A keep ref does not make an operation visible from another worktree (§5.1).
-    Keep-only operations are passed over by Undo and Redo. The keep entries of the undone
+    Only a `keep refs` operation (`src` `gg`, `Operation::keepOnly()`) is passed over by Undo and
+    Redo; an operation of a user that changed only keep refs is a target like any other (its
+    restore may hold keep deletions only, or nothing but commits to keep again). The keep entries of the undone
     operation are never a reason for "refs moved outside the journal" and are not restored
     literally: a keep ref the operation created is deleted if it still exists; the commit of one
     it deleted is handed to the maintenance (`UndoPlan::keepExtra`,
@@ -257,7 +272,10 @@ A `git rebase` (either backend) that stops runs as several git commands
 ### 5.1 Which operation
 Let *W* be the current worktree. The *visible* operations are those that touched a shared ref,
 or *W*'s HEAD/index. A keep ref (`refs/gg/keep/*`) is repository-wide housekeeping and does not
-count as a shared ref here: it never makes an operation visible from another worktree.
+count as a shared ref here: it never makes an operation visible from another worktree. An
+operation that changed no HEAD and no ref but keep refs (a rewrite of commits only a keep ref
+reaches) is visible from the worktree it ran in and from no other, unless it is a `keep refs`
+operation (`src` `gg`), which is visible from none.
 
 - Only operations with something to restore count: a ref whose recorded old and new values
   differ, an index tree, or a `worktree` record (a no-op `git reset --hard` is passed over).

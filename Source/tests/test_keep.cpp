@@ -13,10 +13,13 @@
 #include <libgg/Legacy.hpp>
 #include <libgg/Operation.hpp>
 #include <libgg/Reconcile.hpp>
+#include <libgg/Rewrite.hpp>
 #include <libgg/Undo.hpp>
 
 #include <algorithm>
 #include <fstream>
+#include <functional>
+#include <map>
 #include <optional>
 
 namespace ggtest {
@@ -135,6 +138,72 @@ void newDetachedOn(ImGuiTestContext* ctx, Scenario& s, const std::string& id)
 bool commitReadable(Scenario& s, const fs::path& repo, const std::string& id)
 {
     return s.gitMayFail(repo, {"cat-file", "-e", id + "^{commit}"}).ok();
+}
+
+// A detached, unreachable chain p <- t made with plain git and picked up by a reconcile pass (which
+// keeps t), then HEAD back on main: the keep ref, not HEAD, holds both commits.
+struct KeptChain {
+    std::string p;
+    std::string t;
+};
+
+KeptChain keptChain(Scenario& s, const fs::path& repo, gg::git2::Repository& r)
+{
+    std::string error;
+    KeptChain c;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    c.p = detachedCommit(s, repo, "main", "p.txt");
+    s.commitFile(repo, "t.txt", "t\n", "Detached t");
+    c.t = s.head(repo);
+    gg::reconcile::run(r.get(), &error);
+    s.git(repo, {"checkout", "-q", "main"});
+    gg::reconcile::run(r.get(), &error);
+    return c;
+}
+
+// A rewrite in an operation of its own, as the app runs one: the plan from `build`, applied, the
+// replacements handed to the recorder. Returns the rewrite's mapping (old id -> new id).
+std::map<std::string, std::string> rewriteOperation(gg::git2::Repository& r, const fs::path& repo, const std::string& label,
+    const std::function<gg::rewrite::Plan(git_repository*)>& build)
+{
+    gg::OperationRecorder rec(r.get(), "test", label, false);
+    rec.begin();
+    gg::rewrite::Plan plan = build(r.get());
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    std::string error;
+    const bool ok = result.ok && rewriter.apply(plan, result, error);
+    rec.setKeepExtra(result.keepExtra);
+    rec.finish(ok, false);
+    return ok ? result.mapping : std::map<std::string, std::string>{};
+}
+
+gg::rewrite::Plan rewordPlan(git_repository* repo, const std::string& commit)
+{
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(repo, {commit});
+    for (auto& step : plan.steps)
+        if (step.source == commit)
+            step.message = "Reworded\n";
+    return plan;
+}
+
+gg::rewrite::Plan abandonPlan(git_repository* repo, const std::string& commit)
+{
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(repo, {commit});
+    plan.steps.erase(std::remove_if(plan.steps.begin(), plan.steps.end(), [&](const gg::rewrite::Step& st) { return st.source == commit; }),
+        plan.steps.end());
+    plan.dropped = {commit};
+    return plan;
+}
+
+// After a rewrite's own operation: nothing for a pass to report, no "keep refs" operation.
+void checkNothingElse(Scenario& s, const fs::path& repo, gg::git2::Repository& r)
+{
+    std::string error;
+    GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+    GG_CHECK(error.empty());
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    GG_CHECK(keepRefs(s, repo).size() <= 1u);
 }
 
 } // namespace
@@ -1206,12 +1275,135 @@ GG_TEST("keep", "a checkout of a kept detached commit in a terminal takes no kee
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
 }
 
+// The kept commit is not listed by the History panel while HEAD is elsewhere, so the rewrites below
+// are driven at library level (the plan and the recorder the app builds), the way the app runs them.
+GG_TEST("keep", "a reword of the kept tip keeps the new commit instead; Undo brings the old ref back, Redo swaps again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const KeptChain c = keptChain(s, repo, r);
+    GG_REQUIRE(keepRefs(s, repo) == names({c.t}));
+    const fs::path linked = s.path("linked");
+    s.git(repo, {"worktree", "add", "-q", "--detach", linked.string(), "main"});
+    const std::string start = refState(s, repo);
+
+    const auto mapping = rewriteOperation(r, repo, "reword", [&](git_repository* g) { return rewordPlan(g, c.t); });
+    GG_REQUIRE(mapping.count(c.t) == 1);
+    const std::string t2 = mapping.at(c.t);
+    GG_CHECK(keepRefs(s, repo) == names({t2}));
+    GG_CHECK_STR_EQ(s.revParse(repo, gg::keep::refName(t2)), t2);
+    const std::string rewritten = refState(s, repo);
+    {
+        // The old ref's deletion and the new one's creation are the rewrite's own. It changed keep refs
+        // only, so it is visible from the worktree it ran in and from no other.
+        const auto made = opsChanging(repo, gg::keep::refName(t2), true);
+        const auto gone = opsChanging(repo, gg::keep::refName(c.t), false);
+        GG_REQUIRE(made.size() == 1);
+        GG_REQUIRE(gone.size() >= 1);
+        GG_CHECK_STR_EQ(made[0].id, gone.back().id);
+        GG_CHECK(!made[0].keepOnly());
+        GG_CHECK(gg::journal::visibleFrom(made[0], "main"));
+        GG_CHECK(!gg::journal::visibleFrom(made[0], "linked"));
+    }
+    checkNothingElse(s, repo, r);
+
+    const gg::UndoResult undone = gg::undo(r.get(), false, "test");
+    GG_CHECK(undone.ok);
+    GG_CHECK_STR_EQ(refState(s, repo), start);
+    GG_CHECK(keepRefs(s, repo) == names({c.t}));
+    checkNothingElse(s, repo, r);
+
+    const gg::UndoResult redone = gg::undo(r.get(), true, "test");
+    GG_CHECK(redone.ok);
+    GG_CHECK_STR_EQ(refState(s, repo), rewritten);
+    GG_CHECK(keepRefs(s, repo) == names({t2}));
+    checkNothingElse(s, repo, r);
+}
+
+GG_TEST("keep", "a reword of the commit below the kept tip rewrites the tip too: exactly one keep ref, on the new tip")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const KeptChain c = keptChain(s, repo, r);
+    GG_REQUIRE(keepRefs(s, repo) == names({c.t}));
+    const std::string start = refState(s, repo);
+
+    const auto mapping = rewriteOperation(r, repo, "reword", [&](git_repository* g) { return rewordPlan(g, c.p); });
+    GG_REQUIRE(mapping.count(c.p) == 1);
+    GG_REQUIRE(mapping.count(c.t) == 1);
+    const std::string t2 = mapping.at(c.t);
+    GG_CHECK(t2 != c.t);
+    GG_CHECK(keepRefs(s, repo) == names({t2}));
+    GG_CHECK_STR_EQ(s.revParse(repo, t2 + "~1"), mapping.at(c.p));
+    checkNothingElse(s, repo, r);
+
+    GG_CHECK(gg::undo(r.get(), false, "test").ok);
+    GG_CHECK_STR_EQ(refState(s, repo), start);
+    GG_CHECK(keepRefs(s, repo) == names({c.t}));
+    checkNothingElse(s, repo, r);
+}
+
+GG_TEST("keep", "abandoning the kept tip above another unreachable commit keeps its parent; Undo restores the tip's ref and drops the parent's")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const KeptChain c = keptChain(s, repo, r);
+    GG_REQUIRE(keepRefs(s, repo) == names({c.t}));
+    const std::string start = refState(s, repo);
+
+    const auto mapping = rewriteOperation(r, repo, "abandon", [&](git_repository* g) { return abandonPlan(g, c.t); });
+    GG_REQUIRE(mapping.count(c.t) == 1);
+    GG_CHECK_STR_EQ(mapping.at(c.t), c.p); // what took the dropped commit's place
+    GG_CHECK(keepRefs(s, repo) == names({c.p}));
+    const std::string abandoned = refState(s, repo);
+    checkNothingElse(s, repo, r);
+
+    GG_CHECK(gg::undo(r.get(), false, "test").ok);
+    GG_CHECK_STR_EQ(refState(s, repo), start);
+    GG_CHECK(keepRefs(s, repo) == names({c.t}));
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", gg::keep::refName(c.p)}).ok());
+    checkNothingElse(s, repo, r);
+
+    GG_CHECK(gg::undo(r.get(), true, "test").ok);
+    GG_CHECK_STR_EQ(refState(s, repo), abandoned);
+    checkNothingElse(s, repo, r);
+}
+
+GG_TEST("keep", "abandoning a kept tip whose parent is on a branch leaves no keep ref")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    const std::string t = detachedCommit(s, repo, "main", "t.txt"); // main's tip is its parent
+    gg::reconcile::run(r.get(), &error);
+    s.git(repo, {"checkout", "-q", "main"});
+    gg::reconcile::run(r.get(), &error);
+    GG_REQUIRE(keepRefs(s, repo) == names({t}));
+    const std::string start = refState(s, repo);
+
+    const auto mapping = rewriteOperation(r, repo, "abandon", [&](git_repository* g) { return abandonPlan(g, t); });
+    GG_REQUIRE(mapping.count(t) == 1);
+    GG_CHECK_STR_EQ(mapping.at(t), s.revParse(repo, "main"));
+    GG_CHECK(keepRefs(s, repo).empty());
+    checkNothingElse(s, repo, r);
+
+    GG_CHECK(gg::undo(r.get(), false, "test").ok);
+    GG_CHECK_STR_EQ(refState(s, repo), start);
+    GG_CHECK(keepRefs(s, repo) == names({t}));
+    checkNothingElse(s, repo, r);
+}
+
 GG_TEST("keep", "an operation with a keep ref entry and an index record is not keep-only")
 {
     gg::journal::Operation op;
     op.id = "op";
+    op.src = gg::journal::keepHousekeepingSrc;
     op.refs.push_back({gg::keep::refName(std::string(40, 'a')), std::string(40, '0'), std::string(40, 'a')});
     GG_CHECK(op.keepOnly());
+    gg::journal::Operation user = op; // a user operation that changed only keep refs is not housekeeping
+    user.src = "ggui";
+    GG_CHECK(!user.keepOnly());
     gg::journal::Operation withIndex = op;
     withIndex.index.push_back(gg::journal::IndexChange{"", std::string(40, 'b'), std::string(40, 'c'), false});
     GG_CHECK(!withIndex.keepOnly());
@@ -1221,6 +1413,43 @@ GG_TEST("keep", "an operation with a keep ref entry and an index record is not k
     gg::journal::Operation undo = op;
     undo.undoes = "other";
     GG_CHECK(!undo.keepOnly());
+}
+
+GG_TEST("keep", "git gg new --before a kept tip moves the keep ref to the replayed commit; undo and redo move it back and forth")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    const std::string t = detachedCommit(s, repo, "main", "t.txt");
+    gg::reconcile::run(r.get(), &error);
+    s.git(repo, {"checkout", "-q", "main"});
+    gg::reconcile::run(r.get(), &error);
+    GG_REQUIRE(keepRefs(s, repo) == names({t}));
+    const auto subject = [&](const std::string& rev) { return gg::trim(s.gitOut(repo, {"log", "-1", "--format=%s", rev})); };
+    const std::string tSubject = subject(t);
+
+    GG_REQUIRE(s.gitgg(repo, {"new", "--before", t, "-m", "inserted"}).ok());
+    const std::vector<std::string> refs = keepRefs(s, repo);
+    GG_REQUIRE(refs.size() == 1u);
+    GG_CHECK(refs != names({t}));
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", gg::keep::refName(t)}).ok());
+    const std::string t2 = s.revParse(repo, refs[0]);
+    GG_CHECK(refs == names({t2}));
+    GG_CHECK(t2 != t);
+    GG_CHECK_STR_EQ(subject(t2), tSubject);
+    GG_CHECK_STR_EQ(subject(t2 + "~1"), "inserted");
+    checkNothingElse(s, repo, r);
+
+    GG_REQUIRE(s.gitgg(repo, {"undo"}).ok());
+    GG_CHECK(keepRefs(s, repo) == names({t}));
+    GG_CHECK_STR_EQ(s.revParse(repo, gg::keep::refName(t)), t);
+    checkNothingElse(s, repo, r);
+
+    GG_REQUIRE(s.gitgg(repo, {"redo"}).ok());
+    GG_CHECK(keepRefs(s, repo) == names({t2}));
+    GG_CHECK_STR_EQ(s.revParse(repo, gg::keep::refName(t2)), t2);
+    checkNothingElse(s, repo, r);
 }
 
 } // namespace ggtest

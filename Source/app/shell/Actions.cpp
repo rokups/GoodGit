@@ -459,6 +459,7 @@ void Actions::amendNow(const std::string& message, bool noVerify, bool messageOn
                     throw MutationError{Outcome::Failed, "amend undone: restacking the descendants failed: " + error,
                         error};
                 }
+                ctx.keepExtra = r.keepExtra;
                 if (!r.conflicted.empty()) {
                     std::string list;
                     for (const auto& id : r.conflicted)

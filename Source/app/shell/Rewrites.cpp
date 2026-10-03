@@ -235,6 +235,8 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
                     ctx.gitMayFail({"stash", "pop", "-q", "--index"});
                 throw MutationError{Outcome::Failed, error, error};
             }
+            // Before anything that can throw: apply deleted the keep refs of the rewritten commits.
+            ctx.keepExtra = r.keepExtra;
             if (stashed && !ctx.gitMayFail({"stash", "pop", "-q", "--index"}).ok())
                 ctx.info = "Applying the autostash gave conflicts; your changes are safe in the stash.";
             ctx.worktreeFollowsIndex = r.headAfter != r.headBefore || stashed;

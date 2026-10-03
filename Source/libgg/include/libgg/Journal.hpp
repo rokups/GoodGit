@@ -16,6 +16,9 @@
 
 namespace gg::journal {
 
+// The `src` of the keep-ref housekeeping operation (writeKeepHousekeeping); no user operation uses it.
+inline const std::string keepHousekeepingSrc = "gg";
+
 constexpr int kFormatVersion = 1;
 
 struct RefChange {
@@ -47,7 +50,7 @@ WorktreeChange inverse(const WorktreeChange& c);
 
 struct Operation {
     std::string id;
-    std::string src;       // "ggui", "git-gg", "git"
+    std::string src;       // "ggui", "git-gg", "git", "gg" (keepHousekeepingSrc)
     std::string label;
     std::string wt;
     std::string cmd;
@@ -75,9 +78,11 @@ struct Operation {
         return !index.empty() || !worktrees.empty();
     }
     bool isRedo() const { return !undoes.empty() && redo; }
-    // Housekeeping: at least one ref change, every one of them a keep ref (libgg/Keep.hpp), and no
+    // Housekeeping: written by writeKeepHousekeeping (src keepHousekeepingSrc, which no user
+    // operation uses), at least one ref change, every one of them a keep ref (libgg/Keep.hpp), and no
     // index or worktree record and not an undo or redo. It has no user intent, so Undo and
-    // Redo pass over it as if it were absent.
+    // Redo pass over it as if it were absent. An operation of a user that changed only keep refs (a
+    // rewrite of commits only a keep ref reaches) is not housekeeping: Undo and Redo target it.
     bool keepOnly() const;
 };
 
@@ -108,7 +113,7 @@ protected:
 };
 
 // Writes the keep-only housekeeping operation for ref changes that belong to no operation of their
-// own (src "gg", label "keep refs", worktree `wt`, time now): begun, filled and ended. Returns false
+// own (src keepHousekeepingSrc, label "keep refs", worktree `wt`, time now): begun, filled and ended. Returns false
 // when a record could not be written. `idOut` receives the operation's id.
 bool writeKeepHousekeeping(Writer& writer, const std::string& wt, const std::vector<RefChange>& changes,
     std::string* error = nullptr, std::string* idOut = nullptr);

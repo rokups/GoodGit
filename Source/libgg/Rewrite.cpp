@@ -4,6 +4,7 @@
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
+#include "libgg/Keep.hpp"
 #include "libgg/Markers.hpp"
 #include "libgg/Thread.hpp"
 
@@ -877,6 +878,17 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             }
         }
 
+        // Keep refs (libgg/Keep.hpp) follow the commits they keep the way local branches do: the ref of a
+        // rewritten (or dropped) commit goes, and what replaced the commit is kept instead.
+        if (!plan.keepBranches)
+            for (const auto& kept : keep::read(m->repo.get())) {
+                const auto it = result.mapping.find(kept);
+                if (it == result.mapping.end() || it->second.empty())
+                    continue;
+                result.keepDeleted.push_back(kept);
+                result.keepExtra.push_back(it->second);
+            }
+
         // Commits that gain or lose first-class conflicts, compared with every original commit
         // they hold (a squashed conflicted commit carries its conflicts along, it adds none).
         for (const auto& [now, sources] : contributorsOf) {
@@ -989,6 +1001,8 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
             else
                 input += "update " + mv.ref + " " + to + " " + from + "\n";
         }
+        for (const auto& kept : result.keepDeleted)
+            input += std::string(forward ? "delete " : "create ") + keep::refName(kept) + " " + kept + "\n";
         return git(m->cwd, {"update-ref", "--create-reflog", "-m", plan.reflogMessage, "--stdin"}, input);
     };
     const RunResult refs = transaction(true);
@@ -1064,6 +1078,9 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
     git_oid head;
     if (git_reference_name_to_id(&head, repo, "HEAD") == 0) // (not when unborn)
         git_revwalk_push(walk.get(), &head);
+    for (const auto& kept : keep::read(repo)) // kept commits are rewritten along with the rest
+        if (const auto id = fromHex(kept))
+            git_revwalk_push(walk.get(), &*id);
     for (const auto& c : changed) {
         Commit commit = lookupCommit(repo, *fromHex(c));
         for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)

@@ -443,18 +443,25 @@ bool visibleFrom(const Operation& op, const std::string& wt)
     if (!op.worktrees.empty())
         return (op.wt.empty() ? std::string("main") : op.wt) == wt;
     const std::string head = headKey(wt);
-    for (const auto& r : op.refs)
+    bool headOrShared = false; // a HEAD key (any worktree's) or a ref that is not a keep ref
+    for (const auto& r : op.refs) {
         if (r.ref == head || (!isHeadKey(r.ref) && !keep::isKeepRef(r.ref))) // (keep refs are repository-wide housekeeping)
             return true;
+        headOrShared = headOrShared || !keep::isKeepRef(r.ref);
+    }
     for (const auto& i : op.index)
         if (i.wt == wt)
             return true;
+    // An operation that changed only keep refs (a rewrite of commits only a keep ref reaches) has no
+    // other trace: it belongs to the worktree it ran in. Housekeeping belongs to no one.
+    if (!headOrShared && !op.keepOnly())
+        return (op.wt.empty() ? std::string("main") : op.wt) == wt;
     return false;
 }
 
 bool Operation::keepOnly() const
 {
-    return !refs.empty() && index.empty() && worktrees.empty() && undoes.empty()
+    return src == keepHousekeepingSrc && !refs.empty() && index.empty() && worktrees.empty() && undoes.empty()
         && std::all_of(refs.begin(), refs.end(), [](const RefChange& r) { return keep::isKeepRef(r.ref); });
 }
 
@@ -465,7 +472,7 @@ bool writeKeepHousekeeping(Writer& writer, const std::string& wt, const std::vec
     hk.id = Journal::newOperationId();
     if (idOut)
         *idOut = hk.id;
-    hk.src = "gg";
+    hk.src = keepHousekeepingSrc;
     hk.label = "keep refs";
     hk.wt = wt;
     return writer.begin(hk, error) && writer.appendRefs(hk.id, changes, error) && writer.end(hk.id, true, error);

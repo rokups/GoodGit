@@ -194,6 +194,9 @@ public:
     std::string info;
     // Set when the step changed the working tree along with the index (checkout, stash, …).
     bool worktreeFollowsIndex = false;
+    // Commits the keep refs (libgg/Keep.hpp) must keep although nothing else anchors them: what a
+    // rewrite put in place of the commits it replaced (rewrite::Result::keepExtra).
+    std::vector<std::string> keepExtra;
     // Linked worktrees the mutation added, removed, locked or unlocked (journaled so Undo can
     // do the opposite).
     std::vector<gg::journal::WorktreeChange> worktrees;

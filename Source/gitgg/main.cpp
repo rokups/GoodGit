@@ -171,6 +171,8 @@ int cmdInsert(const std::string& rev, bool before, const std::string& message)
     gg::rewrite::Result result = rewriter.compute(plan);
     std::string error = result.error;
     const bool ok = result.ok && rewriter.apply(plan, result, error);
+    if (ok)
+        recorder.setKeepExtra(result.keepExtra);
     recorder.finish(ok, result.headAfter != result.headBefore);
     if (!ok)
         return fatal(error);

@@ -490,6 +490,7 @@ RequestId Engine::mutate(MutationSpec spec)
         if (recorder) {
             for (auto& w : ctx.worktrees)
                 recorder->addWorktree(std::move(w));
+            recorder->setKeepExtra(std::move(ctx.keepExtra));
             recorder->finish(ev.outcome == Outcome::Ok, ctx.worktreeFollowsIndex);
             ev.operation = recorder->id();
             ev.journalError = recorder->journalError();

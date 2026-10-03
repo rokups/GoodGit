@@ -178,6 +178,12 @@ struct Result {
     std::map<std::string, std::string> rewritten;
     std::map<std::string, std::string> steps;        // step key → new commit
     std::vector<RefMove> moves;
+    // Keep refs of rewritten commits: apply() deletes refs/gg/keep/<id> for each id in keepDeleted
+    // (with the ref moves), and keepExtra holds the commits that replace them (the mapping's value:
+    // for a dropped commit its replacement parent). The caller that owns the OperationRecorder gives
+    // keepExtra to OperationRecorder::setKeepExtra, so maintenance keeps them when nothing reaches them.
+    std::vector<std::string> keepDeleted;
+    std::vector<std::string> keepExtra;
     // New commits with first-class conflicts their original commits (the commit and any squashed
     // into it) did not have; conflicts carried along from the originals do not count.
     std::vector<std::string> conflicted;
@@ -214,8 +220,8 @@ private:
 };
 
 // Commits to replay when `changed` are rewritten: every commit reachable from a local branch
-// (or the detached HEAD) that has one of them as an ancestor, `changed` included, parents
-// first.
+// (or the detached HEAD) or kept by a keep ref that has one of them as an ancestor, `changed`
+// included, parents first.
 std::vector<std::string> descendants(git_repository* repo, const std::vector<std::string>& changed);
 
 // A Plan that replays `changed` and their descendants with the given per-commit edits.
