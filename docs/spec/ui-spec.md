@@ -196,7 +196,7 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
   Row IDs: `row_wt` (Working tree), `row_index` (Index, N, only when something is staged),
   `row_<full commit id>` for commits.
 - Badges: local branch (outlined when checked out), remote-tracking branch, tag, worktree HEAD,
-  stash (N), keep (a commit kept from a detached HEAD: a pin icon and the short ID, in the HEAD
+  stash (N), keep (a commit a ggui or git-gg operation made on a detached HEAD that no branch or tag reaches: a pin icon and the short ID, in the HEAD
   badge's colour, `###badge_<full commit id>`; hidden like a branch, by the ref `refs/gg/keep/<full
   commit id>`; not drawn on the detached HEAD's own row, which has the HEAD badge). A badge's name longer than prefix + suffix + 1 characters (the General settings,
   default 12 + 12) is shown as its first prefix characters, "…" and its last suffix characters, for
@@ -538,8 +538,8 @@ the panel without touching the repository.
   Copy name · Remote <name> ▸ (the same menu). Set upstream… has a filter field (Enter picks
   the first match).
   The **Detached** node `detached_group` sits between the local and the remote branches. It is shown only
-  while the snapshot lists kept commits (commits made on a detached HEAD that no branch or tag reaches,
-  kept by `refs/gg/keep/<id>`) that pass the filter; open by default. Its eye (`###eye` in the node's scope) acts on the listed rows
+  while the snapshot lists kept commits (commits a ggui or git-gg operation made on a detached HEAD that no branch or tag reaches,
+  kept by `refs/gg/keep/<id>`; a detached HEAD merely on a commit does not list it) that pass the filter; open by default. Its eye (`###eye` in the node's scope) acts on the listed rows
   like a group's eye. One row per kept commit, in the snapshot's order, `detached_<full commit id>`: the short ID
   (7 characters, the last 4 dimmed), two spaces, the summary, and `[<worktree>]` when the commit is another
   worktree's detached HEAD. The row's eye toggles `refs/gg/keep/<id>` in History. This worktree's detached HEAD

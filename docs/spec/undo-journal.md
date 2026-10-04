@@ -174,19 +174,35 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
 - **Keep refs (invariant K, product spec K2).** `refs/gg/keep/*` is derived, repository-wide state.
   `keep::maintain` runs in `OperationRecorder::finish`, before it reads the after-values, and at the
   end of each reconcile pass that was not deferred or skipped. `finish` skips it while a native
-  rebase is stopped, unless the operation passed keep ids of its own; the pass does not skip: `maintain`
-  itself ignores the HEAD of a worktree in the middle of a native operation. A failure never fails
-  the operation or the pass.
-  - *Ownership.* The creation of a keep ref is recorded in an operation only when the commit is
-    that operation's own worktree's detached HEAD afterwards, or a commit the operation asked to
-    keep (the Undo of an operation that had deleted the keep ref). A deletion, or a move, is recorded in the
-    operation the maintenance ran for (in a pass: only an operation begun in that pass). Every
-    other keep change is written as an operation of its own: `src` `gg`, label `keep refs`,
-    holding only keep refs (`Operation::keepOnly()`, `journal::writeKeepHousekeeping`), so the next
-    pass finds it in Known. A keep ref that exists already when the operation that made its commit
-    is journaled stays with the `keep refs` operation; undoing that operation leaves the commit
-    kept. An operation continued from an earlier pass or call (an open rebase group) never owns a
-    keep change: it is older than what was journaled since.
+  rebase is stopped, unless the operation passed keep ids of its own; the pass does not skip. Its
+  candidates are the existing keep refs and the commits the caller names; `keep::maintain` reads no HEAD. A commit is kept because a ggui or git-gg operation created it on a detached
+  HEAD and named it, never because a detached HEAD sits on it: a checkout, a commit made by plain
+  git and a rebase finished in a terminal keep nothing, and a pass or an operation that names
+  nothing keeps no commit that was not kept (it still deletes, and repairs: a misnamed ref's commit
+  gets its ref under the right name). A failure never fails the operation or
+  the pass.
+  - *Who names.* An operation that creates commits (`OperationRecorder::setCreatesCommits`,
+    `MutationSpec::createsCommits`: Commit, also of the working tree and with
+    conflicts, amend, also Amend and continue, New commit, merge, pull then push, interactive
+    rebase, Continue, Skip, `git gg new`) names the commit it leaves its worktree's detached HEAD
+    on, when the operation succeeded, HEAD moved in it and no native operation (merge, cherry-pick,
+    revert, rebase, bisect) is in progress afterwards (a rebase
+    stopped when the operation began and over when it ends counts even if HEAD did not move in the
+    last step). A rewrite names what `Result::keepExtra` holds (below), and Undo what
+    `UndoPlan::keepExtra` holds.
+  - *Ownership.* The creation of a keep ref is recorded in an operation exactly when the
+    operation named the commit; this holds also for a recorder that joined an open rebase group (a
+    rebase finished through ggui), unless an operation begun after the group already records that
+    keep ref: the creation is then written as housekeeping, since the next pass's Known takes a
+    ref's value from the last operation in begin order. A deletion, or a move, is recorded in the
+    operation the maintenance ran for (in a pass: only an operation begun in that pass), unless the
+    recorder joined an open rebase group. Every other keep change is written as an operation of its
+    own: `src` `gg`, label `keep refs`, holding only keep refs (`Operation::keepOnly()`,
+    `journal::writeKeepHousekeeping`), so the next pass finds it in Known: a deletion by a pass
+    that began no operation to give it to, the keep changes of a joined recorder named above, and a
+    keep ref changed by something else while an operation was open (a repair, another process). A keep ref that exists already when the
+    operation that made its commit is journaled stays with the operation that wrote it; undoing the
+    operation that made the commit leaves the commit kept.
   - *Rewrites.* A rewrite (reword, amend, squash, move, drop, ...) carries a keep ref the way it
     carries a local branch. The commits kept by a keep ref count among the descendants a rewrite
     replays. For each keep ref whose commit the rewrite replaced (a key of `Result::mapping`, which
@@ -194,12 +210,11 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     transaction that moves the branches, and `Result::keepExtra` holds the replacement. The caller
     that owns the recorder passes it to `OperationRecorder::setKeepExtra` (`MutationContext::keepExtra`
     in ggui, the recorder itself in git-gg), so the one maintenance of `finish` keeps the replacement
-    unless a branch, remote-tracking branch or tag reaches it or it is not a tip. Dropping a
+    unless a branch, remote-tracking branch or tag reaches it or it is not a tip; a rewrite also
+    names the commit it puts a detached HEAD on, not one it puts a branch on. Dropping a
     kept tip whose parent is on a branch leaves no keep ref; above another unreachable commit it
     keeps that commit. The deletion and the creation are the rewrite's own entries: no `keep refs`
     operation, and Undo and Redo restore them as any other keep entries (below).
-    A kept commit that is another worktree's detached HEAD stays kept as well: that worktree is
-    still on it, so the maintenance creates its keep ref again beside the replacement's.
   - *Undo and Redo.* A keep ref does not make an operation visible from another worktree (§5.1).
     Only a `keep refs` operation (`src` `gg`, `Operation::keepOnly()`) is passed over by Undo and
     Redo; an operation of a user that changed only keep refs is a target like any other (its
@@ -207,7 +222,8 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     operation are never a reason for "refs moved outside the journal" and are not restored
     literally: a keep ref the operation created is deleted if it still exists; the commit of one
     it deleted is handed to the maintenance (`UndoPlan::keepExtra`,
-    `OperationRecorder::setKeepExtra`), which keeps it again unless something reaches it.
+    `OperationRecorder::setKeepExtra`), which keeps it again unless something reaches it. So Undo of
+    an operation drops the keep refs it created, and Redo of that Undo keeps the commit again.
   - A `keep refs` operation stays in the journal and in the Operations panel; Undo and Redo pass
     over it, and the Restore item of its row is disabled.
 - **Dedupe.** `OperationRecorder::finish` may advance the cursor without the lock when that stays
