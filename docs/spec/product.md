@@ -251,6 +251,23 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   (rewrites it; checking does the same) and **Remove the file**. Written atomically; a directory containing `$ \ " ' :` or a line break is refused with an
   error. Takes effect at next login. Systemd is detected as `/run/systemd/system` being a
   directory; elsewhere the control is disabled with an explanatory tooltip.
+- **N** Settings > General "Add "Open in GoodGit" to file manager menus" `##context_menu` (Linux
+  only): adds an "Open in GoodGit" item for folders to Dolphin, Nemo and Nautilus, for the current
+  user, by writing three files under `$XDG_DATA_HOME` (default `~/.local/share`), each running the
+  full path of the ggui executable with the folder: `kio/servicemenus/goodgit-open.desktop`
+  (Dolphin service menu, mode 0755; `X-KDE-ServiceTypes=KonqPopupMenu/Plugin` is there for
+  Plasma 5), `nemo/actions/goodgit-open.nemo_action` (Nemo; `Quote=double` so a folder with spaces
+  is one argument) and `nautilus/scripts/Open in GoodGit` (Nautilus, under Scripts, mode 0755; the
+  script makes a relative folder absolute so a name like `-wip` is not an option). Each carries a
+  comment saying ggui manages it; written atomically. Unchecking tries all three files, reports the
+  first failure, and never removes directories. The state is read from disk: checked iff all three
+  exist with exactly the content for the current executable and the two executable files keep the
+  owner-exec bit; files that exist but differ (another GoodGit, incomplete) show a warning, in the
+  warning colour, with **Update** `##context_menu_update` (rewrites them) and **Remove**
+  `##context_menu_remove`. An executable path containing `" ' \ $` `` ` `` `%` or a line break is
+  refused with an error. A `MimeType=inode/directory` application entry is deliberately not
+  installed (it could become the default folder handler); Thunar is not covered. Elsewhere the
+  control is disabled with an explanatory tooltip.
 - **K** Open a linked worktree in a new window. Open files in the external editor, open
   folders, run the external diff tool (vs HEAD, vs parent) and the three-way merge tool.
 - **K** File watcher: debounced refresh of the paths that changed. Also watch `.git/index`,

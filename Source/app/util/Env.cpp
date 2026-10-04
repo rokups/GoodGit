@@ -3,6 +3,8 @@
 #include <SDL3/SDL_filesystem.h>
 
 #include <cstdlib>
+#include <filesystem>
+#include <system_error>
 
 #ifdef _WIN32
 #include <process.h>
@@ -52,6 +54,27 @@ std::string executableDir()
     while (dir.size() > 1 && (dir.back() == '/' || dir.back() == '\\'))
         dir.pop_back();
     return dir;
+}
+
+std::string executablePath()
+{
+#ifdef __linux__
+    std::error_code ec;
+    std::string path = std::filesystem::read_symlink("/proc/self/exe", ec).string();
+    if (ec)
+        return {};
+    // A binary replaced while running reads as "<path> (deleted)": the file now at <path> is its successor.
+    const std::string deleted = " (deleted)";
+    if (!std::filesystem::exists(path, ec) && path.size() > deleted.size()
+        && path.compare(path.size() - deleted.size(), deleted.size(), deleted) == 0) {
+        path.resize(path.size() - deleted.size());
+        if (!std::filesystem::exists(path, ec))
+            return {};
+    }
+    return path;
+#else
+    return {};
+#endif
 }
 
 } // namespace ggui

@@ -1,4 +1,4 @@
-// Process environment helpers (portable setenv/unsetenv, pid, executable directory).
+// Process environment helpers (portable setenv/unsetenv, pid, executable directory and path).
 #pragma once
 
 #include <string>
@@ -11,5 +11,7 @@ std::string getEnv(const std::string& name);
 long long processId();
 // Directory containing the running executable (with a trailing separator removed).
 std::string executableDir();
+// Full path of the running executable ("" when it cannot be told, and off Linux).
+std::string executablePath();
 
 } // namespace ggui

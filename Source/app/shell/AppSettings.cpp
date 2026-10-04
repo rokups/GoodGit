@@ -369,6 +369,50 @@ void App::drawPathSetting()
         fix(false);
 }
 
+// "Add "Open in GoodGit" to file manager menus": the state is the managed files on disk
+// (platform/ContextMenu.hpp).
+void App::drawContextMenuSetting()
+{
+    const ContextMenuSupport support = contextMenuSupport();
+    const std::string exe = executablePath();
+    const std::string dataHome = contextMenuDataHome();
+    bool on = m_contextMenu.enabled;
+    ImGui::BeginDisabled(support != ContextMenuSupport::Available);
+    if (ImGui::Checkbox("Add \"Open in GoodGit\" to file manager menus##context_menu", &on)) {
+        const std::string err = writeContextMenu(support, dataHome, exe, on);
+        if (!err.empty())
+            showError("File manager context menu", err);
+        m_contextMenu = readContextMenu(dataHome, exe);
+    }
+    ImGui::EndDisabled();
+    if (support != ContextMenuSupport::Available) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            tooltip("%s", contextMenuUnavailableReason(support).c_str());
+        return;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip("Adds \"Open in GoodGit\" for folders to the context menus of Dolphin, Nemo and Nautilus "
+                "(under Scripts), for this user only.");
+    }
+    if (!m_contextMenu.present || m_contextMenu.enabled)
+        return;
+    // Files are there but point to another GoodGit (moved, or another install) or are incomplete.
+    ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().warning);
+    ImGui::TextWrapped("The file manager menu items in %s point to another GoodGit or are incomplete.", dataHome.c_str());
+    ImGui::PopStyleColor();
+    const auto fix = [&](bool enable) {
+        const std::string err = writeContextMenu(support, dataHome, exe, enable);
+        if (!err.empty())
+            showError("File manager context menu", err);
+        m_contextMenu = readContextMenu(dataHome, exe);
+    };
+    if (ImGui::Button("Update##context_menu_update"))
+        fix(true);
+    ImGui::SameLine();
+    if (ImGui::Button("Remove##context_menu_remove"))
+        fix(false);
+}
+
 void App::drawSettingsWindow()
 {
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 46, ImGui::GetFontSize() * 34), ImGuiCond_FirstUseEver);
@@ -379,8 +423,10 @@ void App::drawSettingsWindow()
     auto& d = m_settings.data();
     Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
     if (ImGui::BeginTabBar("##settings_tabs")) {
-        if (m_settingsFreshOpen)
+        if (m_settingsFreshOpen) {
             m_pathSetup = readPathSetup(pathSetupConfigHome(), executableDir());
+            m_contextMenu = readContextMenu(contextMenuDataHome(), executablePath());
+        }
         const ImGuiTabItemFlags first = m_settingsFreshOpen ? ImGuiTabItemFlags_SetSelected : 0;
         m_settingsFreshOpen = false;
         if (ImGui::BeginTabItem("General", nullptr, first)) {
@@ -422,6 +468,8 @@ void App::drawSettingsWindow()
             helpMarker("A name longer than these two lengths in a History badge is shortened in the middle: "
                        "this many characters are kept at its start and at its end.");
             drawPathSetting();
+            ImGui::Separator();
+            drawContextMenuSetting();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Git")) {
