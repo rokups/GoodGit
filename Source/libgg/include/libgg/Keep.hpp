@@ -1,14 +1,19 @@
-// Keep refs: the commits made on a detached HEAD stay alive (product spec §5, decision K2).
+// Keep refs: the commits a ggui or git-gg operation made on a detached HEAD stay alive (product spec §5,
+// decision K2).
 //
 // refs/gg/keep/<full hex commit id> is a direct ref to that same commit; it is the only private ref
 // ggui writes. "Well-formed" is a direct ref named for its target, which is a commit.
 //
+// A commit is kept because a ggui or git-gg operation created it and named it (`extra` of maintain:
+// OperationRecorder::setCreatesCommits, a rewrite's replacement, Undo's keepExtra), never because a
+// detached HEAD sits on it: a plain git commit, a checkout and a pass keep nothing new.
+//
 // Invariant K (maintain): with A the commits the refs/heads/*, refs/remotes/* and refs/tags/* point
-// at (tags peeled; what is not a commit is ignored), H the HEAD of every worktree that is detached,
-// not bare and not in the middle of a native operation (merge, rebase, cherry-pick, ...), and the
-// candidates the targets of the existing keep refs, H and the caller's `extra` ids, the keep refs
-// are those of the candidates that are not reachable from A and not an ancestor of another such
-// candidate (tips only). A branch or tag that reaches a commit is its graduation: its keep ref goes.
+// at (tags peeled; what is not a commit is ignored), and the candidates the targets of the existing
+// keep refs and the caller's `extra` ids, the keep refs are those of the candidates that are not
+// reachable from A and not an ancestor of another such candidate (tips only). A branch or tag that
+// reaches a commit is its graduation: its keep ref goes. Existing keep refs follow the same rules
+// whoever made them.
 #pragma once
 
 #include "libgg/Git2.hpp"

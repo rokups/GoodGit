@@ -128,15 +128,15 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     setCurrentOperation(m_previousOperation);
     // The keep refs (invariant K, libgg/Keep.hpp) are brought up to date before the after-values are
     // read, so what maintenance does lands in the before/after diff (also when it only got half
-    // done). Not while a native rebase is stopped: its intermediate HEAD is not a commit anyone
-    // made on a detached HEAD (an undo's `extra` is still honoured). A failure does not fail the
-    // operation, and there is no channel for non-fatal problems here (m_error is the operation's
-    // own): the next operation or reconcile pass tries again.
-    // A commit this operation made on its worktree's detached HEAD is named for maintenance, so it is
-    // kept without anything having to look at the worktrees' HEADs. Not mid-merge or mid-rebase: HEAD
-    // is then an intermediate commit nobody made on a detached HEAD. A rebase that was stopped at
-    // begin and is over now counts although HEAD may not have moved in its last step (an `edit` or
-    // `break` at the end of the todo, then Continue).
+    // done). While a native rebase is stopped, maintenance waits for the next pass unless this
+    // operation names commits (an undo's `extra`, or a rewrite's): it only deletes and repairs. A
+    // failure does not fail the operation, and there is no channel for non-fatal problems here
+    // (m_error is the operation's own): the next operation or reconcile pass tries again.
+    // A commit is kept only when it is named: an operation that creates commits names the one it
+    // leaves its worktree's detached HEAD on (the others it asked to keep are in m_keepExtra already).
+    // Not mid-merge or mid-rebase: HEAD is then an intermediate commit nobody made on a detached
+    // HEAD. A rebase that was stopped at begin and is over now counts although HEAD may not have
+    // moved in its last step (an `edit` or `break` at the end of the todo, then Continue).
     if (m_createsCommits && ok && git_repository_is_bare(m_repo) != 1 && git_repository_head_detached(m_repo) == 1
         && git_repository_state(m_repo) == GIT_REPOSITORY_STATE_NONE && native::rebaseIdentity(m_repo).empty()) {
         git_oid head;
@@ -155,25 +155,39 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     }
     const auto after = readRefValues(m_repo);
     const std::string zero = zeroId(m_repo);
-    // The keep ref changes of this operation's diff that are its own: the deletions (maintenance ran
-    // for it) and the creations of the keep ref of its own worktree's detached HEAD or of an id it
-    // asked to keep. The rest (a keep ref another worktree's commit needed, made by whatever else
-    // ran meanwhile) is housekeeping: an operation of its own, so that Undo of this one does not
-    // carry it along and it is not labelled with this operation.
+    // The keep ref changes of this operation's diff that are its own: the creations of the keep ref of
+    // a commit it named (m_keepExtra) and, unless it joined a rebase begun earlier, the deletions
+    // (maintenance ran for it). The rest (a keep ref deleted or created by whatever else ran
+    // meanwhile) is housekeeping: an operation of its own, so that Undo of this one does not carry it
+    // along and it is not labelled with this operation.
     std::vector<journal::RefChange> changes;
     std::vector<journal::RefChange> housekeeping;
-    const auto headAfter = after.find(journal::headKey(m_op.wt));
+    // A resumed recorder's records go to the group's operation, which began before the operations
+    // begun since: a creation appended there is hidden from the reconcile pass's `known` by a later
+    // operation that touched the same keep ref (it takes the ref's value from the last one in begin
+    // order), and the pass would journal it again. So a creation is the group's own only when no
+    // later operation records that keep ref.
+    const auto laterOperationTouches = [&](const std::string& ref) {
+        const auto ops = m_journal.read();
+        const auto group = std::find_if(ops.begin(), ops.end(), [&](const journal::Operation& o) { return o.id == m_op.id; });
+        if (group == ops.end())
+            return false;
+        return std::any_of(group + 1, ops.end(), [&](const journal::Operation& o) {
+            return std::any_of(o.refs.begin(), o.refs.end(), [&](const journal::RefChange& r) { return r.ref == ref; });
+        });
+    };
     const auto owns = [&](const journal::RefChange& c) {
         if (!keep::isKeepRef(c.ref))
             return true;
-        if (m_resumed)
-            return false; // an older begin record than a later "keep refs" operation: `known` would take the ref's value from the latter
-        if (c.newValue == zero)
-            return true;
-        if (c.oldValue != zero)
-            return true; // a keep ref that moved (maintenance never does that; whoever did is not another worktree's commit)
-        return (headAfter != after.end() && headAfter->second == c.newValue)
-            || std::find(m_keepExtra.begin(), m_keepExtra.end(), c.newValue) != m_keepExtra.end();
+        if (c.oldValue == zero) {
+            if (std::find(m_keepExtra.begin(), m_keepExtra.end(), c.newValue) == m_keepExtra.end())
+                return false;
+            return !m_resumed || !laterOperationTouches(c.ref);
+        }
+        // A deletion or a keep ref that moved (maintenance never does that). Not for a resumed
+        // recorder: its begin record is older than a later "keep refs" operation, and `known` would
+        // take the ref's value from the latter.
+        return !m_resumed;
     };
     const auto add = [&](journal::RefChange c) {
         (owns(c) ? changes : housekeeping).push_back(std::move(c));

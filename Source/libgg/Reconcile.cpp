@@ -964,8 +964,9 @@ Result run(git_repository* repo, std::string* error)
     // Keep refs (invariant K): brought up to date at the end of every pass. Their changes are
     // recorded where the next pass's `known` (the latest begin record of a ref) finds them, so they
     // are not reported as external changes, with the rule OperationRecorder::finish applies: a
-    // creation belongs to the operation this pass began whose HEAD it is (the newest such), a
-    // deletion or a move to the pass's last operation when this pass began it; the rest is
+    // deletion or a move belongs to the pass's last operation when this pass began it; a creation
+    // to the operation this pass began whose HEAD it is (the newest such; a pass names no commit, so
+    // it creates none today); the rest is
     // housekeeping, an operation of its own. An operation continued from an earlier pass (an open
     // rebase) never takes them: for `known` it is older than what came since. Also when maintenance
     // failed half-way: what it did is journaled all the same.

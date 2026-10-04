@@ -44,7 +44,7 @@ void buildBadges(HistoryState& st)
         addBadge(st, r.target, RefKind::RemoteBranch, r.name);
     for (const auto& t : s.tags)
         addBadge(st, t.target, RefKind::Tag, t.name);
-    // A detached HEAD's own commit is kept too; its Head badge says so already.
+    // When the detached HEAD's own commit is kept, its Head badge says so already.
     for (const auto& k : s.kept)
         if (!(s.headDetached && k.id == s.head))
             addBadge(st, k.id, RefKind::Keep, k.id.hex());

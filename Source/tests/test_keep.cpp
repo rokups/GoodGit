@@ -5,6 +5,7 @@
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+#include "util/Env.hpp"
 
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
@@ -260,13 +261,18 @@ void checkNothingElse(Scenario& s, const fs::path& repo, gg::git2::Repository& r
 
 } // namespace
 
-GG_TEST("keep", "a detached HEAD on a commit no branch reaches is kept; the second run changes nothing")
+GG_TEST("keep", "a detached HEAD keeps nothing; a commit named for maintenance is kept and the second run changes nothing")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = detachedCommit(s, repo, "main", "x.txt");
-    const Maintained first = maintain(repo);
+    const Maintained none = maintain(repo);
+    GG_CHECK(none.ok);
+    GG_CHECK(none.changes.empty());
+    GG_CHECK(keepRefs(s, repo).empty());
+    const Maintained first = maintain(repo, {x});
     GG_CHECK(first.ok);
     GG_CHECK(first.error.empty());
+    GG_CHECK_EQ(first.changes.size(), 1u);
     GG_CHECK(keepRefs(s, repo) == names({x}));
     GG_CHECK_STR_EQ(s.revParse(repo, gg::keep::refName(x)), x);
     GG_CHECK(gg::keep::read(gg::git2::openRepository(repo).get()) == std::vector<std::string>{x});
@@ -280,49 +286,49 @@ GG_TEST("keep", "a detached HEAD at a branch tip, a tagged commit or a remote-tr
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"checkout", "-q", "--detach", "main"});
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {s.head(repo)}).ok);
     GG_CHECK(keepRefs(s, repo).empty());
     s.git(repo, {"tag", "t1", "main~1"});
     s.git(repo, {"tag", "-a", "-m", "annotated", "t2", "main~2"});
     s.git(repo, {"checkout", "-q", "--detach", "t1"});
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {s.head(repo)}).ok);
     GG_CHECK(keepRefs(s, repo).empty());
     s.git(repo, {"checkout", "-q", "--detach", "t2"}); // an annotated tag is peeled
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {s.head(repo)}).ok);
     GG_CHECK(keepRefs(s, repo).empty());
     const std::string x = detachedCommit(s, repo, "main", "x.txt");
     s.git(repo, {"update-ref", "refs/remotes/origin/topic", x});
-    const Maintained m = maintain(repo);
+    const Maintained m = maintain(repo, {x});
     GG_CHECK(m.ok);
     GG_CHECK(m.changes.empty());
     GG_CHECK(keepRefs(s, repo).empty());
     // Below a branch tip too.
     s.git(repo, {"checkout", "-q", "--detach", "main~3"});
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {s.head(repo)}).ok);
     GG_CHECK(keepRefs(s, repo).empty());
 }
 
-GG_TEST("keep", "tips only: a commit on the detached HEAD replaces its parent's ref; unrelated lines keep one each")
+GG_TEST("keep", "tips only: a named commit on the detached HEAD replaces its parent's ref; unrelated lines keep one each")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x1 = detachedCommit(s, repo, "main", "x1.txt");
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {x1}).ok);
     GG_CHECK(keepRefs(s, repo) == names({x1}));
     s.commitFile(repo, "x2.txt", "x2\n", "Second on the detached HEAD");
     const std::string x2 = s.head(repo);
-    const Maintained m = maintain(repo);
+    const Maintained m = maintain(repo, {x2});
     GG_CHECK(m.ok);
     GG_CHECK(keepRefs(s, repo) == names({x2}));
     GG_CHECK_EQ(m.changes.size(), 2u);
     // A second, unrelated line: both tips stay.
     const std::string y = detachedCommit(s, repo, "main~2", "y.txt");
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {y}).ok);
     GG_CHECK(keepRefs(s, repo) == names({x2, y}));
     GG_CHECK(gg::keep::read(gg::git2::openRepository(repo).get()).size() == 2u);
     // A merge of the two lines swallows both.
     s.git(repo, {"merge", "-q", "--no-edit", x2});
     const std::string merged = s.head(repo);
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {merged}).ok);
     GG_CHECK(keepRefs(s, repo) == names({merged}));
 }
 
@@ -415,7 +421,7 @@ GG_TEST("keep", "extra ids are kept when nothing anchors them")
     GG_CHECK_EQ(m.changes.size(), 1u);
 }
 
-GG_TEST("keep", "worktrees: a linked detached HEAD is kept; one in the middle of an operation is not considered")
+GG_TEST("keep", "worktrees: no detached HEAD is kept unless it is named, one in the middle of an operation or not")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const fs::path wt = s.path("wt");
@@ -423,6 +429,9 @@ GG_TEST("keep", "worktrees: a linked detached HEAD is kept; one in the middle of
     s.commitFile(wt, "w.txt", "w\n", "In the worktree");
     const std::string w = s.head(wt);
     GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(wt).ok);
+    GG_CHECK(keepRefs(s, repo).empty());
+    GG_CHECK(maintain(repo, {w}).ok);
     GG_CHECK(keepRefs(s, repo) == names({w}));
     // From the linked worktree's own handle the answer is the same.
     {
@@ -430,13 +439,15 @@ GG_TEST("keep", "worktrees: a linked detached HEAD is kept; one in the middle of
         GG_CHECK(again.ok);
         GG_CHECK(again.changes.empty());
     }
-    // The main worktree detached as well: both.
+    // The main worktree detached as well: its commit is not kept until it is named.
     const std::string x = detachedCommit(s, repo, "main", "x.txt");
     GG_CHECK(maintain(wt).ok);
+    GG_CHECK(keepRefs(s, repo) == names({w}));
+    GG_CHECK(maintain(wt, {x}).ok);
     GG_CHECK(keepRefs(s, repo) == names({w, x}));
     s.git(repo, {"checkout", "-q", "main"});
-    // The linked worktree stops in a cherry-pick: not considered, so a commit only its HEAD held
-    // is not kept.
+    // The linked worktree stops in a cherry-pick: a commit only its HEAD holds is not kept, stopped
+    // or aborted.
     s.git(repo, {"update-ref", "-d", gg::keep::refName(w)});
     s.git(repo, {"update-ref", "-d", gg::keep::refName(x)});
     s.git(repo, {"branch", "side", "main~4"});
@@ -450,13 +461,12 @@ GG_TEST("keep", "worktrees: a linked detached HEAD is kept; one in the middle of
     const Maintained stopped = maintain(repo);
     GG_CHECK(stopped.ok);
     GG_CHECK(keepRefs(s, repo).empty());
-    // Aborted, it counts again.
     s.git(wt, {"cherry-pick", "--abort"});
     GG_CHECK(maintain(repo).ok);
-    GG_CHECK_EQ(keepRefs(s, repo).size(), 1u);
+    GG_CHECK(keepRefs(s, repo).empty());
 }
 
-GG_TEST("keep", "a worktree stopped in the middle of a rebase is not considered")
+GG_TEST("keep", "an operation that creates commits and finishes while a rebase is stopped names nothing")
 {
     const fs::path repo = s.fixture(Recipe::Empty);
     s.commitFile(repo, "f.txt", "a\nb\nc\n", "Base");
@@ -471,9 +481,21 @@ GG_TEST("keep", "a worktree stopped in the middle of a rebase is not considered"
     // HEAD is detached on the replayed clean pick, which no branch reaches.
     const std::string head = s.head(repo);
     GG_REQUIRE(s.gitOut(repo, {"for-each-ref", "--contains", head, "refs/heads"}).empty());
+    {
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        gg::OperationRecorder rec(r.get(), "test", "commit", false);
+        rec.setCreatesCommits(true);
+        rec.begin();
+        s.git(repo, {"checkout", "-q", "--theirs", "f.txt"});
+        s.git(repo, {"add", "f.txt"});
+        s.git(repo, {"commit", "-q", "-m", "Mid-rebase commit"}); // HEAD moves, still mid-rebase
+        rec.finish(true, false);
+    }
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_CHECK(keepRefs(s, repo).empty());
     GG_CHECK(maintain(repo).ok);
     GG_CHECK(keepRefs(s, repo).empty());
-    s.git(repo, {"rebase", "--abort"});
+    s.gitMayFail(repo, {"rebase", "--abort"});
     {
         const Maintained again = maintain(repo);
         GG_CHECK(again.ok);
@@ -491,14 +513,14 @@ GG_TEST("keep", "changes lists the refs created and deleted with their old and n
     const std::string x1 = detachedCommit(s, repo, "main", "x1.txt");
     gg::git2::Repository r = gg::git2::openRepository(repo);
     const std::string zero(gg::git2::hexSize(gg::git2::oidType(r.get())), '0');
-    Maintained m = maintain(repo);
+    Maintained m = maintain(repo, {x1});
     GG_REQUIRE(m.changes.size() == 1u);
     GG_CHECK_STR_EQ(m.changes[0].ref, gg::keep::refName(x1));
     GG_CHECK_STR_EQ(m.changes[0].oldValue, zero);
     GG_CHECK_STR_EQ(m.changes[0].newValue, x1);
     s.commitFile(repo, "x2.txt", "x2\n", "Next");
     const std::string x2 = s.head(repo);
-    m = maintain(repo);
+    m = maintain(repo, {x2});
     GG_REQUIRE(m.changes.size() == 2u);
     const auto deleted = std::find_if(m.changes.begin(), m.changes.end(), [&](const auto& c) { return c.newValue == zero; });
     const auto created = std::find_if(m.changes.begin(), m.changes.end(), [&](const auto& c) { return c.oldValue == zero; });
@@ -599,7 +621,7 @@ GG_TEST("keep", "a keep ref that points at a blob is deleted and nothing is kept
     GG_CHECK_EQ(m.changes.size(), 1u);
 }
 
-GG_TEST("keep", "a linked worktree whose directory was removed is skipped")
+GG_TEST("keep", "a linked worktree whose directory was removed does not matter: the named commit is kept, its HEAD is not")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const fs::path wt = s.path("gone");
@@ -609,7 +631,7 @@ GG_TEST("keep", "a linked worktree whose directory was removed is skipped")
     fs::remove_all(wt, ec);
     GG_REQUIRE(!fs::exists(wt));
     const std::string x = detachedCommit(s, repo, "main", "x.txt");
-    const Maintained m = maintain(repo);
+    const Maintained m = maintain(repo, {x});
     GG_CHECK(m.ok);
     GG_CHECK(keepRefs(s, repo) == names({x}));
 }
@@ -623,13 +645,13 @@ GG_TEST("keep", "a failed write reports the error, changes nothing and lists no 
     const fs::path lock = repo / ".git" / (gg::keep::refName(x) + ".lock");
     fs::create_directories(lock.parent_path());
     { std::ofstream(lock) << "locked\n"; }
-    const Maintained m = maintain(repo);
+    const Maintained m = maintain(repo, {x});
     GG_CHECK(!m.ok);
     GG_CHECK(!m.error.empty());
     GG_CHECK(m.changes.empty());
     GG_CHECK_STR_EQ(s.gitOut(repo, {"for-each-ref"}), before);
     fs::remove(lock);
-    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(maintain(repo, {x}).ok);
     GG_CHECK(keepRefs(s, repo) == names({x}));
 }
 
@@ -725,7 +747,7 @@ GG_TEST("keep", "creating a branch at the kept tip removes its keep ref in that 
     GG_CHECK_EQ(gitOpCount(repo), 0u);
 }
 
-GG_TEST("keep", "a plain git commit on a detached HEAD: the pass keeps it inside the commit's operation and the next pass adds nothing")
+GG_TEST("keep", "a plain git commit on a detached HEAD is not kept: its pass journals the commit and creates no keep ref")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     gg::git2::Repository r = gg::git2::openRepository(repo);
@@ -740,55 +762,46 @@ GG_TEST("keep", "a plain git commit on a detached HEAD: the pass keeps it inside
     const gg::reconcile::Result pass = gg::reconcile::run(r.get(), &error);
     GG_CHECK(error.empty());
     GG_CHECK(pass.appended > 0);
-    GG_CHECK(keepRefs(s, repo) == names({x}));
-    GG_CHECK_EQ(gitOpCount(repo), before + 1); // one operation for the commit, keep ref included
-    GG_CHECK_EQ(housekeepingCount(repo), 0u); // the commit's operation owns the keep ref: no "keep refs"
-    const auto made = opsChanging(repo, gg::keep::refName(x), true);
-    GG_REQUIRE(made.size() == 1);
-    GG_CHECK_STR_EQ(made[0].label, "git commit");
-    GG_CHECK(made[0].ended);
-    GG_CHECK(!made[0].keepOnly());
+    GG_CHECK(keepRefs(s, repo).empty());
+    GG_CHECK_EQ(gitOpCount(repo), before + 1); // one operation for the commit, with no keep ref in it
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    GG_CHECK(opsChanging(repo, gg::keep::refName(x), true).empty());
     const gg::reconcile::Result again = gg::reconcile::run(r.get(), &error);
     GG_CHECK(error.empty());
     GG_CHECK_EQ(again.appended, 0u);
-    GG_CHECK_EQ(gitOpCount(repo), before + 1);
-    // A second commit moves the ref, again in the commit's own operation.
+    // A second commit is not kept either.
     s.commitFile(repo, "y.txt", "y\n", "Detached y");
-    const std::string y = s.head(repo);
     gg::reconcile::run(r.get(), &error);
-    GG_CHECK(keepRefs(s, repo) == names({y}));
+    GG_CHECK(keepRefs(s, repo).empty());
     GG_CHECK_EQ(gitOpCount(repo), before + 2);
-    const auto moved = opsChanging(repo, gg::keep::refName(y), true);
-    const auto dropped = opsChanging(repo, gg::keep::refName(x), false);
-    GG_REQUIRE(moved.size() == 1);
-    GG_REQUIRE(dropped.size() == 1);
-    GG_CHECK_STR_EQ(moved[0].id, dropped[0].id);
-    GG_CHECK_STR_EQ(moved[0].label, "git commit");
     GG_CHECK_EQ(housekeepingCount(repo), 0u);
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
 }
 
 GG_TEST("keep", "a pass whose only change is a keep ref writes one operation of its own; the next pass writes nothing")
 {
-    // The journal's first pass takes HEAD as it is (no operation for it), so only the keep ref of
-    // the unanchored commit HEAD is on is left to record.
+    // The journal's first pass takes the refs as they are (no operation for them), so only the
+    // deletion of the keep ref of a commit a branch reaches is left to record.
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = detachedCommit(s, repo, "main", "x.txt");
+    GG_CHECK(maintain(repo, {x}).ok);
+    s.git(repo, {"branch", "graduated", x});
     gg::git2::Repository r = gg::git2::openRepository(repo);
     std::string error;
     const gg::reconcile::Result first = gg::reconcile::run(r.get(), &error);
     GG_CHECK(error.empty());
     GG_CHECK_EQ(first.appended, 1u);
-    GG_CHECK(keepRefs(s, repo) == names({x}));
+    GG_CHECK(keepRefs(s, repo).empty());
     const auto ops = journalOps(repo);
     GG_REQUIRE(ops.size() == 1);
-    // No operation of this pass made x: housekeeping, not "external changes".
+    // No operation of this pass deleted it: housekeeping, not "external changes".
     GG_CHECK_STR_EQ(ops[0].src, "gg");
     GG_CHECK_STR_EQ(ops[0].label, "keep refs");
     GG_CHECK(ops[0].keepOnly());
     GG_CHECK(ops[0].ended);
     GG_REQUIRE(ops[0].refs.size() == 1);
     GG_CHECK_STR_EQ(ops[0].refs[0].ref, gg::keep::refName(x));
+    GG_CHECK_STR_EQ(ops[0].refs[0].oldValue, x);
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
     GG_CHECK_EQ(journalOps(repo).size(), 1u);
 }
@@ -797,9 +810,10 @@ GG_TEST("keep", "after leaving the detached commit with a plain git checkout the
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = detachedCommit(s, repo, "main", "x.txt");
+    GG_CHECK(maintain(repo, {x}).ok);
     GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.waitUntil([&] { return keepRefs(s, repo) == names({x}); }));
     s.settle();
+    GG_CHECK(keepRefs(s, repo) == names({x}));
     s.git(repo, {"checkout", "-q", "main"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headDetached == false; }));
     s.settle();
@@ -820,7 +834,7 @@ GG_TEST("keep", "a stopped native rebase: a pass maintains the keep refs (a grad
     s.commitFile(repo, "a1.txt", "a1\n", "A1");
     s.commitFile(repo, "a2.txt", "a2\n", "A2");
     const std::string a2 = s.head(repo);
-    gg::reconcile::run(r.get(), &error);
+    keepByName(repo, {a2});
     GG_REQUIRE(keepRefs(s, repo) == names({a2}));
     // Stops after the first replayed commit (the exec fails): HEAD is then in the middle of the rebase.
     s.gitMayFail(repo, {"rebase", "-x", "false", "--onto", "main~1", "main"});
@@ -843,7 +857,7 @@ GG_TEST("keep", "a stopped native rebase: a pass maintains the keep refs (a grad
             GG_CHECK(!gg::keep::isKeepRef(c.ref) || c.newValue == gg::zeroId(r.get()) || c.newValue == a2);
 }
 
-GG_TEST("keep", "a rebase stopped in a pass and finished in a terminal: its keep refs are not appended to the operation the earlier pass began")
+GG_TEST("keep", "a rebase stopped in a pass and finished in a terminal keeps nothing, and a keep ref deleted later is not appended to the operation the earlier pass began")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const fs::path wt = s.path("detached-wt");
@@ -855,12 +869,12 @@ GG_TEST("keep", "a rebase stopped in a pass and finished in a terminal: its keep
     gg::reconcile::run(r.get(), &error);
     s.commitFile(repo, "a.txt", "a\n", "A");
     const std::string a = s.head(repo);
-    gg::reconcile::run(r.get(), &error); // K(a)
+    keepByName(repo, {a}); // K(a)
     s.git(repo, {"checkout", "-q", "--detach", "main"});
     s.commitFile(repo, "d1.txt", "d1\n", "D1");
     s.commitFile(repo, "d.txt", "d\n", "D");
     const std::string d = s.head(repo);
-    gg::reconcile::run(r.get(), &error);
+    keepByName(repo, {d});
     GG_REQUIRE(keepRefs(s, repo) == names({a, d}));
     // D1 and D are replayed onto A, stopping after each (the exec fails): HEAD moves while the rebase is open.
     s.gitMayFail(repo, {"rebase", "-x", "false", "--onto", a, "main"});
@@ -873,15 +887,14 @@ GG_TEST("keep", "a rebase stopped in a pass and finished in a terminal: its keep
         if (!op.ended)
             rebaseOp = op.id;
     GG_REQUIRE(!rebaseOp.empty());
-    // A commit of the linked worktree and a step of the stopped rebase (HEAD moves: the pass appends
-    // that to the open operation, which is then the last one it touched): the worktree's keep ref
-    // is housekeeping, not part of the rebase.
+    // A commit of the linked worktree and a step of the stopped rebase (HEAD moves: the operation
+    // that keeps w by name appends that to the open rebase operation, which is then the last one it
+    // touched): the worktree's keep ref is housekeeping, not part of the rebase.
     s.commitFile(wt, "w.txt", "w\n", "In the worktree");
     const std::string w = s.head(wt);
     s.gitMayFail(repo, {"rebase", "--continue"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
-    gg::reconcile::run(r.get(), &error);
-    GG_CHECK(error.empty());
+    keepByName(repo, {w});
     GG_CHECK(keepRefs(s, repo) == names({a, d, w}));
     {
         const auto kept = opsChanging(repo, gg::keep::refName(w), true);
@@ -891,32 +904,40 @@ GG_TEST("keep", "a rebase stopped in a pass and finished in a terminal: its keep
         GG_CHECK_STR_EQ(kept[0].label, "keep refs");
     }
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+    {
+        // A branch at A made through ggui while the rebase is stopped: the recorder joins the rebase's
+        // operation, and its finish leaves the keep refs alone (mid-rebase), so K(a) stays for now.
+        gg::OperationRecorder rec(r.get(), "test", "branch", false);
+        rec.begin();
+        s.git(repo, {"branch", "graduated", a});
+        rec.finish(true, false);
+    }
+    GG_CHECK(keepRefs(s, repo) == names({a, d, w}));
     const size_t before = journalOps(repo).size();
     for (int i = 0; i < 4 && fs::exists(repo / ".git" / "rebase-merge"); ++i)
         s.gitMayFail(repo, {"rebase", "--continue"});
     GG_REQUIRE(!fs::exists(repo / ".git" / "rebase-merge"));
     const std::string d2 = s.head(repo);
     GG_CHECK(d2 != d);
+    // The pass that sees the rebase end (this pass begins nothing, and a detached rebase writes no
+    // finish entry for it to read): D' is not kept (a rebase finished in a terminal names nothing)
+    // and A's keep ref, which the branch made, goes in a "keep refs" operation of its own, never in
+    // the rebase's, which an earlier pass began (for the journal it would be older than everything
+    // written since).
     gg::reconcile::run(r.get(), &error);
     GG_CHECK(error.empty());
-    // D' is a child of A: A's keep ref goes, D' gets one, D keeps its own.
-    GG_CHECK(keepRefs(s, repo) == names({d, d2, w}));
-    // Those changes are in an operation of their own, never in the rebase's, which an earlier pass
-    // began (for the journal it would be older than everything written since).
-    const auto made = opsChanging(repo, gg::keep::refName(d2), true);
+    GG_CHECK(keepRefs(s, repo) == names({d, w}));
     const auto gone = opsChanging(repo, gg::keep::refName(a), false);
-    GG_REQUIRE(made.size() == 1);
     GG_REQUIRE(gone.size() == 1);
-    GG_CHECK(made[0].id != rebaseOp);
     GG_CHECK(gone[0].id != rebaseOp);
+    GG_CHECK(gone[0].keepOnly());
     const auto ops = journalOps(repo);
     for (const auto& op : ops)
         if (op.id == rebaseOp)
             for (const auto& c : op.refs)
                 GG_CHECK(!gg::keep::isKeepRef(c.ref));
-    for (const auto& id : {made[0].id, gone[0].id})
-        GG_CHECK(std::none_of(ops.begin(), ops.begin() + static_cast<std::ptrdiff_t>(before),
-            [&](const gg::journal::Operation& op) { return op.id == id; })); // written by the last pass
+    GG_CHECK(std::none_of(ops.begin(), ops.begin() + static_cast<std::ptrdiff_t>(before),
+        [&](const gg::journal::Operation& op) { return op.id == gone[0].id; })); // written by the last pass
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
     GG_CHECK_EQ(journalOps(repo).size(), ops.size());
 }
@@ -933,13 +954,13 @@ GG_TEST("keep", "Undo and Redo pass over a keep-only operation: main's commit is
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
 
-    // A plain git commit in the detached worktree, then a pass in main: its keep ref is journaled
-    // as an operation of its own (nothing else changed in main's view), on top of the commit.
+    // A plain git commit in the detached worktree, kept by name (keepAsHousekeeping): its keep ref is
+    // journaled as an operation of its own (nothing else changed in main's view), on top of the commit.
     s.commitFile(wt, "w.txt", "w\n", "In the worktree");
     const std::string w = s.head(wt);
+    keepAsHousekeeping(repo, {w});
     gg::git2::Repository r = gg::git2::openRepository(repo);
     std::string error;
-    gg::reconcile::run(r.get(), &error);
     GG_REQUIRE(s.waitUntil([&] { return keepRefs(s, repo) == names({w}); }));
     const auto kept = opsChanging(repo, gg::keep::refName(w), true);
     GG_REQUIRE(kept.size() == 1);
@@ -1173,6 +1194,7 @@ GG_TEST("keep", "a keep ref that another worktree's commit needs is journaled as
         s.commitFile(wt, "w3.txt", "w3\n", "w3");
         w3 = s.head(wt);
         s.commitFile(repo, "m.txt", "m\n", "In main");
+        keepNamed(r, {w3}); // kept by name, but not by main's operation: its keep ref is not its own
         rec.finish(true, false);
     }
     GG_REQUIRE(keepRefs(s, repo) == names({w3}));
@@ -1255,19 +1277,18 @@ GG_TEST("keep", "no adoption: the keep ref an app operation journaled as houseke
     std::string error;
     gg::reconcile::run(rm.get(), &error); // the baselines
     gg::reconcile::run(rw.get(), &error);
-    s.commitFile(wt, "p.txt", "p\n", "Parent");
-    const std::string p = s.head(wt);
-    gg::reconcile::run(rw.get(), &error);
+    const std::string p = commitOperation(s, wt, "p.txt", "p\n", "Parent"); // W's own operation keeps p
     GG_REQUIRE(keepRefs(s, repo) == names({p}));
     std::string c;
     {
-        // W commits with plain git while an operation of main is open: main's finish journals K(c)
-        // as housekeeping.
+        // W commits with plain git while an operation of main is open and c is kept by name there:
+        // K(c) is journaled as housekeeping.
         gg::OperationRecorder rec(rm.get(), "test", "main commit", false);
         rec.begin();
         s.commitFile(wt, "c.txt", "c\n", "Child");
         c = s.head(wt);
         s.commitFile(repo, "m.txt", "m\n", "In main");
+        keepNamed(rm, {c});
         rec.finish(true, false);
     }
     GG_REQUIRE(keepRefs(s, repo) == names({c}));
@@ -1350,7 +1371,9 @@ GG_TEST("keep", "a rebase that finishes without moving HEAD in its last step (ed
     gg::reconcile::run(r.get(), &error); // the baseline
     detachedCommit(s, repo, "main", "p.txt");
     s.commitFile(repo, "t.txt", "t\n", "Detached t");
-    s.git(repo, {"-c", "sequence.editor=sed -i '2s/^pick/edit/'", "rebase", "-i", "main"}); // stops at t
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "main"}); // stops at t
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
     GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
     std::string tip;
     {
@@ -1365,6 +1388,102 @@ GG_TEST("keep", "a rebase that finishes without moving HEAD in its last step (ed
     GG_CHECK(keepRefs(s, repo) == names({tip}));
 }
 
+GG_TEST("keep", "a keep ref a resumed recorder creates again after an operation of a later pass deleted it is housekeeping, and no pass journals it twice")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    const std::string t = detachedOperation(s, repo, "main", "t.txt"); // K(t)
+    GG_REQUIRE(keepRefs(s, repo) == names({t}));
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "main"}); // stops on t, unchanged
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
+    GG_REQUIRE(s.head(repo) == t);
+    gg::reconcile::run(r.get(), &error); // begins the rebase's operation
+    GG_CHECK(error.empty());
+    // A branch at t in a terminal: the next pass begins its operation (later than the rebase's) and
+    // deletes K(t) in it.
+    s.git(repo, {"branch", "b", t});
+    gg::reconcile::run(r.get(), &error);
+    GG_CHECK(error.empty());
+    GG_REQUIRE(keepRefs(s, repo).empty());
+    s.git(repo, {"branch", "-q", "-D", "b"});
+    {
+        gg::OperationRecorder rec(r.get(), "test", "continue", false); // joins the rebase's operation
+        rec.setCreatesCommits(true);
+        rec.begin();
+        s.git(repo, {"rebase", "--continue"});
+        rec.finish(true, false); // names t: K(t) comes back
+    }
+    GG_REQUIRE(gg::native::rebaseIdentity(r.get()).empty());
+    GG_CHECK(keepRefs(s, repo) == names({t}));
+    GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+    GG_CHECK(error.empty());
+    GG_CHECK(keepRefs(s, repo) == names({t}));
+    const auto made = opsChanging(repo, gg::keep::refName(t), true);
+    GG_REQUIRE(made.size() == 2); // the one that named it first, and the housekeeping that names it again
+    GG_CHECK(made.back().keepOnly());
+}
+
+GG_TEST("keep", "Undo of a rebase finished through ggui on a detached HEAD deletes the tip's keep ref")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt"); // the rebase below replays it onto main
+    s.commitFile(repo, "t.txt", "t\n", "Detached t");
+    const std::string before = s.head(repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "main"}); // stops at t
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
+    std::string tip;
+    {
+        gg::OperationRecorder rec(r.get(), "test", "continue", false); // joins the rebase begun above
+        rec.setCreatesCommits(true);
+        rec.begin();
+        s.git(repo, {"rebase", "--continue"});
+        tip = s.head(repo);
+        rec.finish(true, false);
+    }
+    GG_REQUIRE(gg::native::rebaseIdentity(r.get()).empty());
+    GG_REQUIRE(tip != before);
+    GG_REQUIRE(keepRefs(s, repo) == names({p, tip}));
+
+    const gg::UndoResult undone = gg::undo(r.get(), false, "test");
+    GG_CHECK(undone.ok);
+    GG_CHECK_STR_EQ(undone.error, "");
+    GG_CHECK_STR_EQ(s.head(repo), before);
+    GG_CHECK(keepRefs(s, repo) == names({p})); // the tip's ref goes; p's was never touched
+    GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+}
+
+GG_TEST("keep", "Redo of an undone commit made on a detached HEAD keeps the commit again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    const std::string main = s.head(repo);
+    const std::string c = detachedOperation(s, repo, "main", "c.txt");
+    GG_REQUIRE(keepRefs(s, repo) == names({c}));
+
+    const gg::UndoResult undone = gg::undo(r.get(), false, "test");
+    GG_REQUIRE(undone.ok);
+    GG_CHECK_STR_EQ(s.head(repo), main);
+    GG_CHECK(keepRefs(s, repo).empty());
+
+    const gg::UndoResult redone = gg::undo(r.get(), true, "test");
+    GG_CHECK(redone.ok);
+    GG_CHECK_STR_EQ(redone.error, "");
+    GG_CHECK_STR_EQ(s.head(repo), c);
+    GG_CHECK(keepRefs(s, repo) == names({c}));
+    GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+}
+
 GG_TEST("keep", "a checkout of a kept detached commit in a terminal takes no keep ref: Undo of it leaves the commit kept")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -1372,10 +1491,7 @@ GG_TEST("keep", "a checkout of a kept detached commit in a terminal takes no kee
     std::string error;
     gg::reconcile::run(r.get(), &error); // the baseline
     const std::string main = s.head(repo);
-    s.git(repo, {"checkout", "-q", "--detach", "main"});
-    s.commitFile(repo, "c.txt", "c\n", "Unreachable");
-    const std::string c = s.head(repo);
-    gg::reconcile::run(r.get(), &error); // K(c) journaled
+    const std::string c = detachedOperation(s, repo, "main", "c.txt"); // its operation keeps c
     GG_REQUIRE(keepRefs(s, repo) == names({c}));
     s.git(repo, {"checkout", "-q", "main"});
     s.git(repo, {"checkout", "-q", c});
@@ -1763,9 +1879,7 @@ GG_TEST("keep", "Branches: a kept commit that is another worktree's detached HEA
     s.settle();
     s.commitFile(wt, "w.txt", "w\n", "wt");
     const std::string w = s.head(wt);
-    gg::git2::Repository r = gg::git2::openRepository(repo);
-    std::string error;
-    gg::reconcile::run(r.get(), &error);
+    keepByName(repo, {w});
     s.showPanel("Branches");
     const std::string label = detachedRow(w) + "/###detached_" + w;
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(label.c_str()); }));

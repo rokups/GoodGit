@@ -1,7 +1,6 @@
 #include "libgg/Keep.hpp"
 
 #include "libgg/GitRunner.hpp"
-#include "libgg/NativeRebase.hpp"
 #include "libgg/Operation.hpp"
 #include "libgg/Thread.hpp"
 
@@ -88,54 +87,6 @@ std::vector<Existing> existingKeepRefs(git_repository* repo)
 // Well-formed: a direct ref named for the commit it points at.
 bool wellFormed(const Existing& e) { return !e.symbolic && e.commit && e.name == refName(toHex(*e.commit)); }
 
-// The HEAD commit of `r` when it counts for H.
-void addDetachedHead(git_repository* r, std::vector<git_oid>& heads)
-{
-    if (git_repository_is_bare(r) == 1 || git_repository_head_detached(r) != 1
-        || git_repository_state(r) != GIT_REPOSITORY_STATE_NONE || !native::rebaseIdentity(r).empty())
-        return;
-    git_oid oid;
-    if (git_reference_name_to_id(&oid, r, "HEAD") == 0 && isCommit(r, oid))
-        heads.push_back(oid);
-    else
-        git_error_clear();
-}
-
-// H: the detached HEADs of the repository's worktrees, `repo`'s own and the others (the main one
-// when `repo` is linked), as branchesInOtherWorktrees finds them.
-std::vector<git_oid> detachedHeads(git_repository* repo)
-{
-    std::vector<git_oid> heads;
-    addDetachedHead(repo, heads);
-    std::string self;
-    if (git_repository_is_worktree(repo) == 1) {
-        self = std::filesystem::path(git_repository_path(repo)).parent_path().filename().string();
-        git_repository* rawMain = nullptr;
-        if (git_repository_open(&rawMain, git_repository_commondir(repo)) == 0) {
-            Repository mainRepo(rawMain);
-            addDetachedHead(mainRepo.get(), heads);
-        } else {
-            git_error_clear();
-        }
-    }
-    StrArray names;
-    git_worktree_list(&names.arr, repo); // on failure the list stays empty
-    for (size_t i = 0; i < names.arr.count; ++i) {
-        const std::string name = names.arr.strings[i];
-        git_worktree* rawWt = nullptr;
-        git_repository* rawRepo = nullptr;
-        if (name == self || git_worktree_lookup(&rawWt, repo, name.c_str()) != 0)
-            continue;
-        Worktree wt(rawWt);
-        if (git_repository_open_from_worktree(&rawRepo, wt.get()) != 0)
-            continue; // its directory is gone (prunable)
-        Repository wtRepo(rawRepo);
-        addDetachedHead(wtRepo.get(), heads);
-    }
-    git_error_clear();
-    return heads;
-}
-
 // A: the commits branches, remote-tracking branches and tags point at.
 std::vector<git_oid> anchors(git_repository* repo)
 {
@@ -220,7 +171,7 @@ bool maintain(git_repository* repo, const std::vector<std::string>& extra, std::
     bool nested = false; // a ref to delete is below a name to create: the directory must go first
     try {
         const std::vector<Existing> existing = existingKeepRefs(repo);
-        std::vector<git_oid> candidates = detachedHeads(repo);
+        std::vector<git_oid> candidates;
         for (const auto& e : existing)
             if (e.commit)
                 candidates.push_back(*e.commit);
