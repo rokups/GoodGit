@@ -495,7 +495,7 @@ GG_TEST("keep", "an operation that creates commits and finishes while a rebase i
     GG_CHECK(keepRefs(s, repo).empty());
     GG_CHECK(maintain(repo).ok);
     GG_CHECK(keepRefs(s, repo).empty());
-    s.gitMayFail(repo, {"rebase", "--abort"});
+    s.git(repo, {"rebase", "--abort"});
     {
         const Maintained again = maintain(repo);
         GG_CHECK(again.ok);
@@ -1986,6 +1986,222 @@ GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, R
     s.dialogButton("Abandon commit", "Abandon");
     GG_CHECK(s.waitUntil([&] { return keepRefs(s, repo).empty() && !s.itemExists(row.c_str()); }));
     GG_CHECK(keptOf(s).empty());
+}
+
+// App operations on a detached HEAD: only the commit an operation creates and names is kept.
+
+// A detached HEAD on a kept new commit (made through the app) in a repository opened in the app; returns its id,
+// or "" when the commit was not kept.
+std::string openOnKeptCommit(ImGuiTestContext* ctx, Scenario& s, const fs::path& repo)
+{
+    s.git(repo, {"checkout", "-q", "--detach", "main"});
+    GG_CHECK(s.openRepository(repo));
+    s.settle();
+    newDetachedOn(ctx, s, s.head(repo));
+    if (!s.waitUntil([&] { return keepRefs(s, repo).size() == 1; }))
+        return {};
+    s.settle();
+    return s.head(repo);
+}
+
+GG_TEST("keep", "amending the kept tip through the app keeps the amended commit in its own operation; Undo drops its keep ref")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string x = openOnKeptCommit(ctx, s, repo);
+    GG_REQUIRE(!x.empty());
+    const std::string kept = refState(s, repo);
+    s.write(repo, "a.txt", "amended\n");
+    s.git(repo, {"add", "a.txt"});
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogCheck("Commit", "amend", "Amend");
+    s.dialogText("Commit", "message", "Amended");
+    s.dialogButton("Commit", "Amend");
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != x; }));
+    s.settle();
+    const std::string x2 = s.head(repo);
+    GG_CHECK(keepRefs(s, repo) == names({x, x2})); // x2 does not descend from x: x stays kept
+    {
+        const auto made = opsChanging(repo, gg::keep::refName(x2), true);
+        GG_REQUIRE(made.size() == 1);
+        GG_CHECK(made[0].src != "git");
+        GG_CHECK(!made[0].keepOnly());
+    }
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    GG_CHECK_EQ(gitOpCount(repo), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(becomes(s, repo, kept));
+    GG_CHECK(keepRefs(s, repo) == names({x}));
+    GG_CHECK_EQ(gitOpCount(repo), 0u);
+}
+
+GG_TEST("keep", "merging a branch into the kept detached HEAD through the app keeps the merge commit; Undo drops its keep ref")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"checkout", "-q", "-b", "side", "main~2"});
+    s.commitFile(repo, "s.txt", "s\n", "Side change");
+    const std::string x = openOnKeptCommit(ctx, s, repo);
+    GG_REQUIRE(!x.empty());
+    const std::string kept = refState(s, repo);
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != x; }));
+    s.settle();
+    const std::string merge = s.head(repo);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^1"), x);
+    GG_CHECK(keepRefs(s, repo) == names({merge})); // x is an ancestor of the merge: its ref went
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(becomes(s, repo, kept));
+    GG_CHECK(keepRefs(s, repo) == names({x}));
+    GG_CHECK_EQ(gitOpCount(repo), 0u);
+}
+
+GG_TEST("keep", "cherry-picking onto the kept detached HEAD keeps the new commit, which replaces its parent's ref; Duplicate keeps its copy; Undo drops them")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"checkout", "-q", "-b", "side", "main~2"});
+    s.commitFile(repo, "s.txt", "s\n", "Side change");
+    const std::string src = s.head(repo);
+    const std::string srcParent = s.revParse(repo, "HEAD^");
+    const std::string x = openOnKeptCommit(ctx, s, repo); // HEAD stays on x from here on
+    GG_REQUIRE(!x.empty());
+    const std::string kept = refState(s, repo);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(src)) != nullptr; }));
+    ctx->ItemClick(rowRef(src).c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->Yield(2);
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Cherry-pick and commit");
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != x; }));
+    s.settle();
+    const std::string picked = s.head(repo);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^"), x);
+    GG_CHECK(keepRefs(s, repo) == names({picked})); // x is an ancestor of the new commit: its ref went
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    GG_CHECK_EQ(gitOpCount(repo), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(becomes(s, repo, kept));
+    GG_CHECK(keepRefs(s, repo) == names({x}));
+    // Duplicate of the side commit puts HEAD on a copy of it beside x (not on top of it): both are kept.
+    ctx->ItemClick(rowRef(src).c_str());
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Duplicate");
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != x; }));
+    s.settle();
+    const std::string copy = s.head(repo);
+    GG_CHECK(copy != x);
+    GG_CHECK(copy != src);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^"), srcParent);
+    GG_CHECK(keepRefs(s, repo) == names({x, copy}));
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(becomes(s, repo, kept));
+    GG_CHECK(keepRefs(s, repo) == names({x}));
+    GG_CHECK_EQ(gitOpCount(repo), 0u);
+}
+
+GG_TEST("keep", "checking out an unreachable commit or a branch tip detached through the app keeps nothing")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string old = detachedCommit(s, repo, "main~1", "old.txt"); // plain git: no ref reaches it, no keep ref
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo).empty());
+    s.session()->actions().checkout(old, true);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headDetached && s.head(repo) == old; }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo).empty());
+    s.session()->actions().checkout(s.revParse(repo, "main"), true);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == s.revParse(repo, "main"); }));
+    s.settle();
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK(keepRefs(s, repo).empty());
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    GG_CHECK(commitReadable(s, repo, old));
+}
+
+GG_TEST("keep", "a rebase of a detached HEAD stopped in an edit and continued in the app keeps nothing while stopped and the commit it ends on after")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt"); // the rebase below replays it onto main
+    s.commitFile(repo, "t.txt", "t\n", "Detached t");
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "main"}); // stops at the replayed t
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    const std::string stopped = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive; }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo) == names({p})); // neither the replayed commits nor the stopped HEAD
+    ctx->ItemClick("//###Toolbar/Continue##tb_continue");
+    GG_REQUIRE(s.waitUntil([&] { return !fs::exists(repo / ".git" / "rebase-merge"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), stopped); // the last step moved nothing: the tip is the stopped commit
+    GG_CHECK(keepRefs(s, repo) == names({p, stopped}));
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+}
+
+GG_TEST("keep", "a rebase of a branch stopped in a pass and finished in a terminal: the keep ref that goes with the finishing pass is housekeeping, not part of the rebase's operation")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    const std::string k = detachedCommit(s, repo, "main", "k.txt");
+    keepNamed(r, {k});
+    s.git(repo, {"checkout", "-q", "-b", "topic", "main~2"});
+    s.commitFile(repo, "t1.txt", "t1\n", "Topic 1");
+    s.commitFile(repo, "t2.txt", "t2\n", "Topic 2");
+    gg::reconcile::run(r.get(), &error); // the baseline
+    GG_REQUIRE(keepRefs(s, repo) == names({k}));
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "main"}); // stops at the replayed Topic 1
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    gg::reconcile::run(r.get(), &error); // the pass that begins the rebase's operation
+    GG_CHECK(error.empty());
+    std::string rebaseOp;
+    for (const auto& op : journalOps(repo))
+        if (!op.ended)
+            rebaseOp = op.id;
+    GG_REQUIRE(!rebaseOp.empty());
+    {
+        // A branch at k made through ggui while the rebase is stopped: the recorder joins the rebase's
+        // operation and leaves the keep refs alone, so K(k) stays for now. The finishing pass finds
+        // the branch journaled and begins no operation of its own.
+        gg::OperationRecorder rec(r.get(), "test", "branch", false);
+        rec.begin();
+        s.git(repo, {"branch", "graduated", k});
+        rec.finish(true, false);
+    }
+    GG_CHECK(keepRefs(s, repo) == names({k}));
+    for (int i = 0; i < 4 && fs::exists(repo / ".git" / "rebase-merge"); ++i)
+        s.gitMayFail(repo, {"rebase", "--continue"});
+    GG_REQUIRE(!fs::exists(repo / ".git" / "rebase-merge"));
+    const size_t before = journalOps(repo).size();
+    // This pass appends the rebase's finish to the operation an earlier pass began and deletes K(k):
+    // for the journal that operation is older than everything written since, so the deletion is
+    // housekeeping.
+    gg::reconcile::run(r.get(), &error);
+    GG_CHECK(error.empty());
+    GG_CHECK(keepRefs(s, repo).empty());
+    const auto gone = opsChanging(repo, gg::keep::refName(k), false);
+    GG_REQUIRE(gone.size() == 1);
+    GG_CHECK(gone[0].id != rebaseOp);
+    GG_CHECK(gone[0].keepOnly());
+    const auto ops = journalOps(repo);
+    GG_CHECK_EQ(ops.size(), before + 1);
+    for (const auto& op : ops)
+        if (op.id == rebaseOp) {
+            GG_CHECK(op.ended);
+            for (const auto& c : op.refs)
+                GG_CHECK(!gg::keep::isKeepRef(c.ref));
+        }
+    GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
 }
 
 } // namespace ggtest
