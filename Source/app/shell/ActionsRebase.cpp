@@ -163,7 +163,7 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 throw MutationError{core::classifyFailure(all), gitMessage(res), all};
             }
         },
-        std::move(done));
+        std::move(done), false, true, true, true);
 }
 
 void Actions::amendAndContinue()
@@ -176,7 +176,7 @@ void Actions::amendAndContinue()
             ctx.env.clear();
         }
         rebaseStep(ctx, {"--continue"});
-    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
 void Actions::editRemainingTodo(std::string expected, std::string todo, std::map<std::string, std::string> messages,

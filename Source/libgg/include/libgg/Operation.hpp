@@ -42,6 +42,9 @@ public:
     // them yet (an undo's restored keep refs); finish() runs the one keep::maintain with them, and
     // their keep refs are this operation's own changes. Call before finish(true).
     void setKeepExtra(std::vector<std::string> ids) { m_keepExtra = std::move(ids); }
+    // The operation creates commits with plain git (commit, amend, merge, continuing a stopped one):
+    // finish() keeps its worktree's HEAD commit when HEAD is detached and moved, as if by setKeepExtra.
+    void setCreatesCommits(bool creates) { m_createsCommits = creates; }
     // A worktree the operation added, removed, locked or unlocked (written by finish()).
     void addWorktree(journal::WorktreeChange change) { m_worktrees.push_back(std::move(change)); }
     // Records the resulting ref and index changes and the end record.
@@ -59,6 +62,7 @@ private:
     bool m_resumed = false;       // joined the operation of the native rebase in progress
     bool m_rebaseAtBegin = false; // a native rebase was in progress when it began
     bool m_finished = false;
+    bool m_createsCommits = false;
     std::map<std::string, std::string> m_before;
     std::string m_indexBefore;
     std::vector<journal::WorktreeChange> m_worktrees;

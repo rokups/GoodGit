@@ -865,8 +865,10 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             if (ref == headRef)
                 result.headAfter = to;
         }
+        bool detachesHead = false; // HEAD becomes detached by this rewrite
         if (!plan.detachHeadAt.empty()) {
             if (const std::string to = target(plan.detachHeadAt); !to.empty() && to != result.headBefore) {
+                detachesHead = true;
                 // HEAD becomes detached: its symbolic value is replaced (see apply).
                 result.moves.push_back(RefMove{"HEAD", result.headBefore, to, false});
                 result.headAfter = to;
@@ -888,6 +890,10 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 result.keepDeleted.push_back(kept);
                 result.keepExtra.push_back(it->second);
             }
+        // A commit the rewrite put a detached HEAD on is kept too (a duplicate, an insert, a rewritten tip).
+        if ((headRef.empty() || detachesHead) && !result.headAfter.empty() && result.headAfter != result.headBefore
+            && std::find(result.keepExtra.begin(), result.keepExtra.end(), result.headAfter) == result.keepExtra.end())
+            result.keepExtra.push_back(result.headAfter);
 
         // Commits that gain or lose first-class conflicts, compared with every original commit
         // they hold (a squashed conflicted commit carries its conflicts along, it adds none).

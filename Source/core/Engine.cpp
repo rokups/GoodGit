@@ -468,6 +468,7 @@ RequestId Engine::mutate(MutationSpec spec)
         std::optional<gg::OperationRecorder> recorder;
         if (spec.journal) {
             recorder.emplace(repo, "ggui", spec.label, spec.captureIndex && !bare);
+            recorder->setCreatesCommits(spec.createsCommits);
             recorder->begin();
         }
         MutationContext ctx(*this, job.id, repo, cwd, job.token);

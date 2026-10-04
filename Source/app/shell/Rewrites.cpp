@@ -1134,7 +1134,7 @@ void Actions::mergeNative(const std::string& branch)
         const auto r = ctx.gitMayFail({"merge", "--no-edit", branch});
         if (!r.ok() && !std::filesystem::exists(ctx.cwd() / ".git" / "MERGE_HEAD"))
             throw MutationError{Outcome::Failed, r.message(), r.message()};
-    });
+    }, {}, false, true, true, true);
 }
 
 void Actions::rebaseHeadOnto(const std::string& branch)

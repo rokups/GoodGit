@@ -55,7 +55,7 @@ public:
     std::string busyTooltip() const;
 
     core::RequestId run(std::string label, std::function<void(core::MutationContext&)> fn, Callback done = {},
-        bool network = false, bool journal = true, bool refreshAfter = true);
+        bool network = false, bool journal = true, bool refreshAfter = true, bool createsCommits = false);
 
     // ---- files (§4.4) ---------------------------------------------------------------------
     void stage(const std::vector<std::string>& paths);

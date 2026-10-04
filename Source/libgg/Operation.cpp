@@ -132,6 +132,23 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     // made on a detached HEAD (an undo's `extra` is still honoured). A failure does not fail the
     // operation, and there is no channel for non-fatal problems here (m_error is the operation's
     // own): the next operation or reconcile pass tries again.
+    // A commit this operation made on its worktree's detached HEAD is named for maintenance, so it is
+    // kept without anything having to look at the worktrees' HEADs. Not mid-merge or mid-rebase: HEAD
+    // is then an intermediate commit nobody made on a detached HEAD. A rebase that was stopped at
+    // begin and is over now counts although HEAD may not have moved in its last step (an `edit` or
+    // `break` at the end of the todo, then Continue).
+    if (m_createsCommits && ok && git_repository_is_bare(m_repo) != 1 && git_repository_head_detached(m_repo) == 1
+        && git_repository_state(m_repo) == GIT_REPOSITORY_STATE_NONE && native::rebaseIdentity(m_repo).empty()) {
+        git_oid head;
+        if (git_reference_name_to_id(&head, m_repo, "HEAD") == 0) {
+            const std::string id = toHex(head);
+            const auto before = m_before.find(journal::headKey(m_op.wt));
+            if ((m_rebaseAtBegin || before == m_before.end() || before->second != id)
+                && std::find(m_keepExtra.begin(), m_keepExtra.end(), id) == m_keepExtra.end())
+                m_keepExtra.push_back(id);
+        }
+        git_error_clear();
+    }
     if (!m_keepExtra.empty() || native::rebaseIdentity(m_repo).empty()) {
         std::string ignored;
         keep::maintain(m_repo, m_keepExtra, nullptr, &ignored);

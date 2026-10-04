@@ -225,6 +225,7 @@ struct MutationSpec {
     bool journal = true;             // record in the undo journal
     bool captureIndex = true;
     bool refreshAfter = true;
+    bool createsCommits = false;     // makes commits with plain git: the recorder keeps a detached HEAD's new commit
     std::function<void(MutationContext&)> run;
 };
 

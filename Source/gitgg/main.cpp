@@ -142,6 +142,7 @@ int cmdNew(const std::vector<std::string>& parents, const std::string& message, 
 {
     auto repo = openHere();
     gg::OperationRecorder recorder(repo.get(), "git-gg", "new", false);
+    recorder.setCreatesCommits(true);
     recorder.begin();
     gg::NewCommitOptions options;
     options.parents = parents;

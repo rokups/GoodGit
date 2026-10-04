@@ -1247,6 +1247,74 @@ GG_TEST("keep", "no adoption: the keep ref an app operation journaled as houseke
     GG_CHECK_EQ(gg::reconcile::run(rm.get(), &error).appended, 0u);
 }
 
+GG_TEST("keep", "an operation that creates commits names the one on its detached HEAD: its keep ref is that operation's own change")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"checkout", "-q", "--detach", "main"});
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    std::string c;
+    std::string id;
+    {
+        gg::OperationRecorder rec(r.get(), "test", "commit", false);
+        rec.setCreatesCommits(true);
+        rec.begin();
+        s.commitFile(repo, "c.txt", "c\n", "Child");
+        c = s.head(repo);
+        id = rec.id();
+        rec.finish(true, false);
+    }
+    GG_CHECK(keepRefs(s, repo) == names({c}));
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    const auto created = opsChanging(repo, gg::keep::refName(c), true);
+    GG_REQUIRE(created.size() == 1);
+    GG_CHECK_STR_EQ(created[0].id, id);
+    GG_CHECK(!created[0].keepOnly());
+}
+
+GG_TEST("keep", "a rewrite names the commit it puts a detached HEAD on, not one it puts a branch on")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const std::string x = detachedCommit(s, repo, "main", "x.txt");
+    gg::rewrite::Rewriter detachedRewriter(repo);
+    const gg::rewrite::Result detached = detachedRewriter.compute(rewordPlan(r.get(), x));
+    GG_REQUIRE(detached.ok);
+    GG_CHECK(!detached.headAfter.empty() && detached.headAfter != detached.headBefore);
+    GG_CHECK(std::find(detached.keepExtra.begin(), detached.keepExtra.end(), detached.headAfter) != detached.keepExtra.end());
+
+    s.git(repo, {"checkout", "-q", "main"});
+    gg::rewrite::Rewriter branchRewriter(repo);
+    const gg::rewrite::Result onBranch = branchRewriter.compute(rewordPlan(r.get(), s.head(repo)));
+    GG_REQUIRE(onBranch.ok);
+    GG_CHECK(onBranch.headAfter != onBranch.headBefore);
+    GG_CHECK(std::find(onBranch.keepExtra.begin(), onBranch.keepExtra.end(), onBranch.headAfter) == onBranch.keepExtra.end());
+}
+
+GG_TEST("keep", "a rebase that finishes without moving HEAD in its last step (edit, then Continue) keeps the tip")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    detachedCommit(s, repo, "main", "p.txt");
+    s.commitFile(repo, "t.txt", "t\n", "Detached t");
+    s.git(repo, {"-c", "sequence.editor=sed -i '2s/^pick/edit/'", "rebase", "-i", "main"}); // stops at t
+    GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
+    std::string tip;
+    {
+        gg::OperationRecorder rec(r.get(), "test", "continue", false);
+        rec.setCreatesCommits(true);
+        rec.begin();
+        s.git(repo, {"rebase", "--continue"});
+        tip = s.head(repo);
+        rec.finish(true, false);
+    }
+    GG_REQUIRE(gg::native::rebaseIdentity(r.get()).empty());
+    GG_CHECK(keepRefs(s, repo) == names({tip}));
+}
+
 GG_TEST("keep", "a checkout of a kept detached commit in a terminal takes no keep ref: Undo of it leaves the commit kept")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

@@ -71,7 +71,7 @@ std::string Actions::busyTooltip() const
 }
 
 core::RequestId Actions::run(std::string label, std::function<void(MutationContext&)> fn, Callback done, bool network,
-    bool journal, bool refreshAfter)
+    bool journal, bool refreshAfter, bool createsCommits)
 {
     core::MutationSpec spec;
     spec.label = std::move(label);
@@ -79,6 +79,7 @@ core::RequestId Actions::run(std::string label, std::function<void(MutationConte
     spec.network = network;
     spec.journal = journal;
     spec.refreshAfter = refreshAfter;
+    spec.createsCommits = createsCommits;
     const core::RequestId id = m_session.engine().mutate(std::move(spec));
     if (network)
         m_networkRuns.insert(id);
@@ -245,7 +246,7 @@ void Actions::commit(const std::string& message, bool noVerify, CommitMode mode,
             ctx.git(args, message);
             ctx.result = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
         },
-        std::move(done));
+        std::move(done), false, true, true, true);
 }
 
 // Commits only the working tree's own changes (unstaged tracked edits and untracked files), leaving
@@ -329,7 +330,7 @@ void Actions::commitWorktree(const std::string& message, Callback done)
             fs::rename(indexB, gitDir / "index");
             ctx.result = newHead;
         },
-        std::move(done));
+        std::move(done), false, true, true, true);
 }
 
 namespace {
@@ -475,7 +476,7 @@ void Actions::amendNow(const std::string& message, bool noVerify, bool messageOn
                 gg::edit::write(file, *session);
             }
         },
-        std::move(done));
+        std::move(done), false, true, true, true);
 }
 
 void Actions::takeConflictSide(const std::vector<std::string>& paths, int side, int region)
@@ -577,7 +578,7 @@ void Actions::newCommit(const std::vector<std::string>& parents, bool detach, co
             throw MutationError{core::classifyFailure(result.error), result.error, result.error};
         ctx.result = result.commit;
         ctx.worktreeFollowsIndex = true;
-    });
+    }, {}, false, true, true, true);
 }
 
 namespace {
@@ -940,7 +941,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                                      {}, true);
                                                  ctx.worktreeFollowsIndex = true;
                                              },
-                                             {}, true);
+                                             {}, true, true, true, true); // the pull can merge on a detached HEAD
                                      }});
                 f.buttons.push_back({"Force with lease...", [this, remote, localBranch, remoteBranch](Form&) {
                                          Form confirm;
@@ -1147,7 +1148,7 @@ void Actions::continueOperation()
         else
             ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
-    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
 void Actions::skipOperation()
@@ -1163,7 +1164,7 @@ void Actions::skipOperation()
         else
             ctx.git({cmd, "--skip"});
         ctx.worktreeFollowsIndex = true;
-    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
 void Actions::abortOperation()
@@ -1249,7 +1250,7 @@ void Actions::commitWithConflicts()
         else
             ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
-    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); });
+    }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
 void Actions::saveMergeMessage(const std::string& message)
