@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+struct SDL_Window;
+
 namespace ggui {
 class App;
 class Session;
@@ -106,6 +108,10 @@ struct Registrar {
 
 // Called by GG_REQUIRE_GIT: the running test is skipped (TestRunner.cpp).
 void markCurrentTestSkipped(const std::string& reason);
+
+// The OS window set to `w` x `h`; returns true when the window reports that size for several frames in a
+// row (TestRunner.cpp). Waits at most a bounded number of frames.
+bool setAppWindowSize(ImGuiTestContext* ctx, SDL_Window* window, int w, int h);
 
 // Check helpers that record a failure in the test engine and continue.
 #define GG_CHECK(expr) IM_CHECK_NO_RET(expr)

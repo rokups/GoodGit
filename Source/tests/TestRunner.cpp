@@ -11,6 +11,7 @@
 #include <libgg/Thread.hpp>
 
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_video.h>
 #include <imgui_te_engine.h>
 #include <imgui_te_internal.h>
 #include <imgui_te_utils.h>
@@ -301,7 +302,60 @@ void writeFailureOutput(ImGuiTestContext* ctx, const TestInfo& info, const Scena
     spdlog::warn("test failed: {}/{} (seed {}), output in {}", info.category, info.name, s.seed(), out.string());
 }
 
+bool setAppWindowSize(ImGuiTestContext* ctx, SDL_Window* window, int w, int h)
+{
+    constexpr int stableFrames = 6;  // frames in a row at the requested size
+    constexpr int maxFrames = 300;   // upper limit, so the wait cannot hang
+    int stable = 0;
+    for (int frame = 0; frame < maxFrames && stable < stableFrames; ++frame) {
+        int cw = 0, ch = 0;
+        SDL_GetWindowSize(window, &cw, &ch);
+        if (cw == w && ch == h) {
+            ++stable;
+        } else {
+            // The size can change again (a pending request of the app): ask again.
+            stable = 0;
+            SDL_SetWindowSize(window, w, h);
+            SDL_SyncWindow(window);
+        }
+        ctx->Yield(1);
+    }
+    ctx->Yield(2); // frames laid out at the new size
+    int cw = 0, ch = 0;
+    SDL_GetWindowSize(window, &cw, &ch);
+    return stable >= stableFrames && cw == w && ch == h;
+}
+
 namespace {
+
+// Every test starts and ends in the window size of the first test of the run. A test can change the
+// size (checkWindowStaysUnscrollable): the app saves the size in imgui.ini when the ImGui save timer
+// expires, and the next resetForTest loads that file and sets the window to the saved size, after the
+// test has restored the size. So this runs before the body and after the last resetForTest.
+void restoreWindowSize(ImGuiTestContext* ctx)
+{
+    static bool recorded = false;
+    static int w = 0, h = 0;
+    SDL_Window* window = g_app->platform().window();
+    if (!window)
+        return;
+    SDL_SyncWindow(window); // a size request of the app that is still pending is applied first
+    int cw = 0, ch = 0;
+    SDL_GetWindowSize(window, &cw, &ch);
+    if (!recorded) {
+        recorded = true;
+        w = cw;
+        h = ch;
+        return;
+    }
+    if (cw == w && ch == h)
+        return;
+    ctx->LogWarning("window size is %d x %d, set to %d x %d", cw, ch, w, h);
+    if (!setAppWindowSize(ctx, window, w, h)) {
+        SDL_GetWindowSize(window, &cw, &ch);
+        ctx->LogError("window size not set: requested %d x %d, reported %d x %d", w, h, cw, ch);
+    }
+}
 
 void runTest(ImGuiTestContext* ctx, const TestInfo& info)
 {
@@ -327,6 +381,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
 
     g_app->resetForTest();
     ctx->Yield(2);
+    restoreWindowSize(ctx);
 
     Scenario scenario(ctx, *g_app, dir, seed);
     g_skipped.erase(&info);
@@ -367,6 +422,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
 
     g_app->resetForTest();
     ctx->Yield(2);
+    restoreWindowSize(ctx);
     if (!ctx->IsError() && !std::getenv("GGUI_KEEP_TEST_DIRS"))
         removeAll(dir);
 }
