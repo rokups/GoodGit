@@ -93,12 +93,180 @@ GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c3", "c1"}));
 }
 
-GG_TEST("dnd", "a branch badge onto a commit moves the branch")
+namespace {
+
+std::string badgeRef(const std::string& commit, const std::string& branch) { return "//History/**/" + commit + "/###badge_" + branch; }
+
+// A drag of a badge onto an exact position (ItemDragAndDrop drops at the centre of the target item).
+void dragToPos(Scenario& s, const std::string& from, ImVec2 pos)
+{
+    s.waitUntil([&] { return s.itemExists(from.c_str()); });
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(pos);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+}
+
+bool menuOpen(Scenario& s) { return s.itemExists("//$FOCUSED/###move"); }
+
+bool itemDisabled(Scenario& s, const char* item)
+{
+    return (s.ctx->ItemInfo((std::string("//$FOCUSED/") + item).c_str()).ItemFlags & ImGuiItemFlags_Disabled) != 0;
+}
+
+} // namespace
+
+GG_TEST("dnd", "a branch badge onto a commit opens a menu; Escape changes nothing; Move moves the branch")
 {
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));
-    drag(s, "//History/**/" + r.c[1] + "/###badge_side", rowRef(r.c[3]));
+    // Onto the row of main's tip: the target is main (the only branch there), the current one.
+    drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[3]));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(s.itemExists("//$FOCUSED/###merge"));
+    GG_CHECK(s.itemExists("//$FOCUSED/###rebase"));
+    GG_CHECK(!itemDisabled(s, "###merge"));
+    GG_CHECK(itemDisabled(s, "###rebase")); // side is not the current branch
+    GG_CHECK(!itemDisabled(s, "###move"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.c[1]);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
+    // Onto a commit without a branch: the target is the commit, so Merge is off. Move moves the branch.
+    drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[2]));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(itemDisabled(s, "###merge"));
+    GG_CHECK(!itemDisabled(s, "###move"));
+    ctx->ItemClick("//$FOCUSED/###move");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c[2]; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
+}
+
+GG_TEST("dnd", "a branch badge onto a commit with Shift moves the branch; onto its own commit nothing happens")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    // Its own row and its own badge: no menu, no move.
+    drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[1]));
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+    drag(s, badgeRef(r.c[1], "side"), badgeRef(r.c[1], "side"));
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.c[1]);
+    // Shift: the move at once.
+    drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[3]), ImGuiMod_Shift);
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c[3]; }));
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+}
+
+GG_TEST("dnd", "a branch badge onto a branch badge: Merge into the current branch, Rebase of the current branch")
+{
+    const Chain r = makeChain(s);
+    // feat: one commit on side's commit (c2); main stays the current branch.
+    s.git(r.path, {"checkout", "-q", "-b", "feat", "side"});
+    s.commitFile(r.path, "feat.txt", "x\n", "feat1");
+    const std::string feat = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(feat, "feat").c_str()); }));
+    // Onto side's badge: side is not the current branch, so Merge is off.
+    drag(s, badgeRef(feat, "feat"), badgeRef(r.c[1], "side"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(itemDisabled(s, "###merge"));
+    GG_CHECK(itemDisabled(s, "###rebase"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+    // Onto main's badge: Merge feat into main.
+    const std::string tip = s.revParse(r.path, "main");
+    drag(s, badgeRef(feat, "feat"), badgeRef(tip, "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(!itemDisabled(s, "###merge"));
+    ctx->ItemClick("//$FOCUSED/###merge");
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Merge into HEAD"); }));
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main^2"), feat);
+}
+
+GG_TEST("dnd", "the target of a branch drop: the badge under the mouse, else the only branch, else the commit")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"branch", "other", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string tip = r.c[3];
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(tip, "other").c_str()) && s.itemExists(badgeRef(tip, "main").c_str()); }));
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(tip));
+    GG_REQUIRE(row != nullptr);
+    const std::string shortId = row->shortId;
+    auto label = [&] { return std::string(ctx->ItemInfo("//$FOCUSED/###merge").DebugLabel); };
+    // On the badge of main (the current branch): Merge is on.
+    dragToPos(s, badgeRef(r.c[1], "side"), ctx->ItemInfo(badgeRef(tip, "main").c_str()).RectFull.GetCenter());
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(label().find("Merge side into main") == 0);
+    GG_CHECK(!itemDisabled(s, "###merge"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+    // On the badge of other: Merge is off.
+    dragToPos(s, badgeRef(r.c[1], "side"), ctx->ItemInfo(badgeRef(tip, "other").c_str()).RectFull.GetCenter());
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(label().find("Merge side into other") == 0);
+    GG_CHECK(itemDisabled(s, "###merge"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
+    // On the row outside the badges, with two branches there: the target is the commit.
+    const ImRect rowRect = ctx->ItemInfo(rowRef(tip).c_str()).RectFull;
+    dragToPos(s, badgeRef(r.c[1], "side"), ImVec2(rowRect.Max.x - 10.0f, rowRect.GetCenter().y));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(label().find("Merge side into " + shortId) == 0);
+    GG_CHECK(itemDisabled(s, "###merge"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.c[1]);
+}
+
+GG_TEST("dnd", "a branch of another worktree moves through the Move branch dialog")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"worktree", "add", "-q", (r.path.parent_path() / "wt_side").string(), "side"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(r.c[1], "side").c_str()); }));
+    // Shift: the dialog with the warning, not the move.
+    drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[3]), ImGuiMod_Shift);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Move branch"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.c[1]);
+    s.dialogButton("Move branch", "Move");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c[3]; }));
+}
+
+GG_TEST("dnd", "a branch badge onto a branch badge: Rebase of the current branch onto the target")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"checkout", "-q", "-b", "feat", "side"});
+    s.commitFile(r.path, "feat.txt", "x\n", "feat1");
+    const std::string feat = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(feat, "feat").c_str()); }));
+    // feat is the current branch: Rebase is on, Merge is off (main is not the current branch).
+    drag(s, badgeRef(feat, "feat"), badgeRef(r.c[3], "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(!itemDisabled(s, "###rebase"));
+    GG_CHECK(itemDisabled(s, "###merge"));
+    ctx->ItemClick("//$FOCUSED/###rebase");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "feat~1") == r.c[3]; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
 }

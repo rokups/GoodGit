@@ -246,8 +246,9 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 - Working tree context menu: Commit… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.
 - Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase; Shift = move
-  before, Ctrl = squash, Alt = rebase, none = chooser popup `##drop_chooser`), branch
-  badge→commit (move branch), files from Changes→commit (move changes).
+  before, Ctrl = squash, Alt = rebase, none = chooser popup `##dnd_chooser`), branch
+  badge→commit or badge (a menu `##branch_drop_chooser`: Merge into, Rebase onto, Move here; Shift = move at once),
+  files from Changes→commit (move changes).
 - Reveal: loads more history until the commit is found; progress in the activity area,
   cancellable.
 - Scope: branch/tag/remote visibility from the side panels.
@@ -257,7 +258,16 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (with
   descendants). Without a modifier a chooser pops up: Move before / Move after / Copy after /
   Squash into / Rebase onto.
-- **Branch badge → commit row:** moves the branch there (the drag starts on the badge).
+- **Branch badge X → commit row or badge:** (the drag starts on the badge of a local branch; the tooltip
+  shows the name of X.) Without a modifier a small menu `##branch_drop_chooser` pops up, with the items
+  "Merge X into Y" (`###merge`), "Rebase X onto Y" (`###rebase`) and "Move X here" (`###move`, shortcut text
+  "Shift"). Y is the target: the local branch of the badge the drop is on; else the only local branch at the
+  commit; else the short ID of the commit. Merge X into Y is enabled when Y is the current branch: it opens
+  the "Merge into HEAD" dialog with X. Rebase X onto Y is enabled when X is the current branch: it replays
+  the commits of X onto Y (the branch or the commit). Move X here moves X to the commit; when another worktree has X checked out, it opens the "Move branch" dialog (with the warning) instead. A disabled item has
+  a hint with the reason. Shift at the drop moves the branch at once, without the menu (the same rule for a branch of another worktree). A drop on the commit of
+  X, or on its badge, does nothing. The menu closes without an action when X or the target goes away (a
+  reload); its items are off while a task runs.
 - **Files from Changes → commit row:** a commit's files go to its parent, its child or the
   checked-out commit (other targets are refused with a notification); working tree files are
   folded into the target commit (descendants rebased, the working tree kept as it is).

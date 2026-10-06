@@ -304,7 +304,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **K** Drag and drop:
   - commit → commit: Move before, Move after, Squash, Rebase (modifier keys pick the default;
     otherwise a chooser pops up)
-  - branch badge → commit: move the branch
+  - branch badge → commit or badge: a menu with Merge X into Y (Y is the current branch), Rebase X onto Y
+    (X is the current branch) and Move X here; Shift at the drop moves the branch at once
   - file(s) from Changes → commit: move the file changes into that commit
 - **K** Warn before rewriting published history (commits reachable from remote-tracking refs).
 

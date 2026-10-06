@@ -157,6 +157,17 @@ private:
     std::optional<core::Oid> m_firstClickRow; // the row that got the last first click (a double click needs it)
     void dragAndDrop(const core::HistoryRow& row);
     void drawDropChooser();
+    // A branch dropped on a row (without Shift) waits for the menu: the branch, the row, and the local branch
+    // the drop was on ("" = the target is the commit).
+    struct BranchDrop {
+        std::string branch;
+        core::Oid row;
+        std::string targetBranch;
+    };
+    std::optional<BranchDrop> m_branchDrop;
+    bool m_openBranchDrop = false; // the drop just happened: open the menu (once; closing it cancels)
+    void drawBranchDropChooser();
+    void moveBranchHere(const core::BranchInfo& branch, const std::string& commit);
     bool m_rowPitchOk = true;
     // The graph column is hidden while a filter is active (the graph of filtered rows is broken).
     bool m_graphShown = true;

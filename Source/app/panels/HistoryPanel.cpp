@@ -354,6 +354,16 @@ std::vector<int> HistoryPanel::visibleIndexes() const
     return out;
 }
 
+// Moves the branch to the commit. A branch that another worktree has checked out goes through the Move branch
+// dialog, which warns that the working tree of that worktree does not follow.
+void HistoryPanel::moveBranchHere(const core::BranchInfo& branch, const std::string& commit)
+{
+    if (branch.worktree.empty())
+        m_session.actions().moveBranch(branch.name, commit);
+    else
+        m_session.showMoveBranchDialog(branch.name, commit);
+}
+
 void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
 {
     // Source: the commit, or a branch when the drag starts on its badge.
@@ -365,7 +375,7 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
                 branch = badge.name;
         if (!branch.empty()) {
             ImGui::SetDragDropPayload("GG_BRANCH", branch.data(), branch.size());
-            ImGui::Text("Move %s", branch.c_str());
+            ImGui::TextUnformatted(branch.c_str()); // the drop moves it, merges or rebases: a menu asks
         } else {
             const std::string hex = row.id.hex();
             ImGui::SetDragDropPayload("GG_COMMIT", hex.data(), hex.size());
@@ -395,8 +405,35 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
             }
         }
     }
-    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_BRANCH"); p && free)
-        actions.moveBranch(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)), row.id.hex());
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_BRANCH"); p && free) {
+        const std::string branch(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
+        const auto* info = m_snapshot->findBranch(branch);
+        // On its own commit there is nothing to do. Shift moves the branch; otherwise the menu asks.
+        if (info && info->target != row.id) {
+            if (ImGui::GetIO().KeyShift) {
+                moveBranchHere(*info, row.id.hex());
+            } else {
+                // The target: the local branch of the badge under the mouse, else the only local branch of the row.
+                std::string target;
+                const ImVec2 mouse = ImGui::GetIO().MousePos;
+                for (const auto& badge : m_rowBadges)
+                    if (badge.kind == core::RefKind::LocalBranch && badge.rect.Contains(mouse))
+                        target = badge.name;
+                if (target.empty()) {
+                    int count = 0;
+                    for (const auto& ref : row.refs)
+                        if (ref.kind == core::RefKind::LocalBranch) {
+                            target = ref.name;
+                            ++count;
+                        }
+                    if (count != 1)
+                        target.clear();
+                }
+                m_branchDrop = BranchDrop{branch, row.id, target};
+                m_openBranchDrop = true;
+            }
+        }
+    }
     if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES"); p && free) {
         // The source ("@<commit>" or a Changes group), then the paths.
         auto lines = gg::splitLines(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)));
@@ -629,6 +666,7 @@ void HistoryPanel::drawDropChooser()
         m_pendingDrop.reset();
         return;
     }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
     const auto [source, target] = *m_pendingDrop;
     auto& actions = m_session.actions();
     bool chosen = true;
@@ -648,6 +686,72 @@ void HistoryPanel::drawDropChooser()
         m_pendingDrop.reset();
         ImGui::CloseCurrentPopup();
     }
+    ImGui::PopStyleVar();
+    ImGui::EndPopup();
+}
+
+// The menu of a branch dropped on a row: merge it into the target, rebase it onto the target, or move it there.
+void HistoryPanel::drawBranchDropChooser()
+{
+    if (!m_branchDrop)
+        return;
+    if (m_openBranchDrop) {
+        ImGui::OpenPopup("##branch_drop_chooser");
+        m_openBranchDrop = false;
+    }
+    if (!ImGui::BeginPopup("##branch_drop_chooser")) { // closed without a choice (Escape, a click elsewhere)
+        m_branchDrop.reset();
+        return;
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
+    auto& actions = m_session.actions();
+    const bool free = actions.busy().empty();
+    const core::Snapshot& snap = *m_snapshot;
+    const std::string& x = m_branchDrop->branch;
+    const std::string& to = m_branchDrop->targetBranch;
+    const auto* src = snap.findBranch(x);
+    const auto* dst = to.empty() ? nullptr : snap.findBranch(to);
+    const auto* targetRow = row(m_branchDrop->row);
+    // The branch, the target branch or the row is gone (a reload): the choice is stale.
+    if (!src || !targetRow || (!to.empty() && !dst)) {
+        m_branchDrop.reset();
+        ImGui::CloseCurrentPopup();
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+        return;
+    }
+    const std::string y = to.empty() ? targetRow->shortId : to;
+    const std::string commit = m_branchDrop->row.hex();
+    auto item = [&](const char* icon, const std::string& label, const char* shortcut, const std::string& reason) {
+        if (!reason.empty()) {
+            disabledMenuItem(icon, label.c_str(), reason.c_str(), shortcut);
+            return false;
+        }
+        return menuItem(icon, label.c_str(), shortcut, false, free);
+    };
+    std::string mergeReason;
+    if (!dst)
+        mergeReason = "The target is not a branch.";
+    else if (!dst->isHead || snap.headUnborn)
+        mergeReason = y + " is not the current branch.";
+    std::string rebaseReason;
+    if (!src->isHead)
+        rebaseReason = x + " is not the current branch.";
+    const std::string moveReason = src->target == m_branchDrop->row ? x + " is already there." : std::string();
+    bool chosen = true;
+    if (item(ICON_MS_MERGE, "Merge " + x + " into " + y + "###merge", nullptr, mergeReason))
+        showMergeDialog(m_session, x);
+    else if (item(ICON_MS_LOW_PRIORITY, "Rebase " + x + " onto " + y + "###rebase", nullptr, rebaseReason))
+        actions.rebaseHeadOnto(dst ? to : commit);
+    else if (item(ICON_MS_SWAP_HORIZ, "Move " + x + " here###move", "Shift", moveReason))
+        moveBranchHere(*src, commit);
+    else
+        chosen = false;
+    if (chosen) {
+        m_branchDrop.reset();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
 
@@ -1308,6 +1412,7 @@ void HistoryPanel::draw(bool* open)
         captureScrollAnchor(virtualRows);
         ImGui::EndTable();
         drawDropChooser();
+        drawBranchDropChooser();
         drawBadgeMenu();
         drawCheckoutChooser();
         m_rowPitchOk = true;
