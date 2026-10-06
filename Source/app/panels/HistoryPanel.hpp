@@ -81,6 +81,7 @@ public:
 private:
     core::HistoryScope buildScope() const;
     void drawRow(const core::HistoryRow& row, int index, float laneWidth);
+    bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);
 
@@ -114,6 +115,7 @@ private:
     std::unordered_set<core::Oid, core::OidHash> m_matches;
 
     std::vector<core::Oid> m_extra;
+    std::optional<core::Oid> m_rangeAnchor; // the row Shift-click and Shift+arrow extend from
     std::optional<core::Oid> m_pendingReveal;
     bool m_scrollToSelection = false;
     std::vector<int> m_visible; // indexes into m_rows (filtered)

@@ -1,4 +1,5 @@
 // History panel (§4.2).
+#include "panels/CommitMenu.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
@@ -531,6 +532,213 @@ GG_TEST("history", "keyboard only: nav into the list, select by arrows, Alt+Spac
     GG_REQUIRE(last != nullptr);
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), last->id.hex());
     GG_CHECK(g.NavId == ctx->ItemInfo(rowRef(last->id.hex()).c_str()).ID);
+}
+
+namespace {
+
+// Clicks a row with a modifier held (0: a plain click).
+void clickRow(Scenario& s, const std::string& hex, ImGuiKeyChord mod = 0)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    if (mod)
+        ctx->KeyDown(mod);
+    ctx->ItemClick(rowRef(hex).c_str());
+    if (mod)
+        ctx->KeyUp(mod);
+    ctx->Yield(2);
+}
+
+// The selected commits (the primary one and the extra ones) as a set of hex IDs.
+std::set<std::string> selectedCommits(Scenario& s)
+{
+    std::set<std::string> out;
+    if (s.session()->selection().kind == ggui::SelKind::Commit)
+        out.insert(s.session()->selection().id.hex());
+    for (const auto& id : s.session()->history().extraSelection())
+        out.insert(id.hex());
+    return out;
+}
+
+} // namespace
+
+GG_TEST("history", "shift-click selects the range from the anchor, downward and upward, the clicked row is primary")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string c[5];
+    for (int i = 0; i < 5; ++i)
+        c[i] = s.revParse(repo, "HEAD~" + std::to_string(i));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c[4]).c_str()); }));
+    auto& history = s.session()->history();
+    // Downward: c1 (plain) to c3 (Shift).
+    clickRow(s, c[1]);
+    clickRow(s, c[3], ImGuiMod_Shift);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[3]);
+    GG_CHECK_EQ(history.extraSelection().size(), static_cast<size_t>(2));
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[1], c[2], c[3]}));
+    // The anchor stays: Shift-click upward replaces the range with c1 to c0.
+    clickRow(s, c[0], ImGuiMod_Shift);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[0]);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[0], c[1]}));
+    GG_CHECK_EQ(history.extraSelection().size(), static_cast<size_t>(1));
+    // Upward from a new anchor.
+    clickRow(s, c[3]);
+    clickRow(s, c[1], ImGuiMod_Shift);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[1]);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[1], c[2], c[3]}));
+    // Adjacent commits of a linear history are a range (the rebase item needs that).
+    GG_CHECK(ggui::selectionShape(*s.session()).range());
+    GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), static_cast<size_t>(3));
+    // A plain click after a range clears it.
+    clickRow(s, c[4]);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[4]);
+    GG_CHECK(history.extraSelection().empty());
+    // Shift-click on the anchor row selects just that row.
+    clickRow(s, c[4], ImGuiMod_Shift);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[4]}));
+}
+
+GG_TEST("history", "shift-click after a ctrl-click takes the ctrl-clicked row as the anchor")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string c[5];
+    for (int i = 0; i < 5; ++i)
+        c[i] = s.revParse(repo, "HEAD~" + std::to_string(i));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c[4]).c_str()); }));
+    clickRow(s, c[0]);
+    clickRow(s, c[2], ImGuiMod_Ctrl);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[0], c[2]}));
+    // The range runs from c2, not from c0; it replaces the Ctrl-clicked set.
+    clickRow(s, c[4], ImGuiMod_Shift);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[2], c[3], c[4]}));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[4]);
+}
+
+GG_TEST("history", "ctrl-click selects the commit when nothing or the Working tree row is selected")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string c0 = s.head(repo);
+    const std::string c1 = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c1).c_str()); }));
+    // Nothing selected: the Ctrl-clicked commit becomes the selection.
+    s.session()->select(ggui::Selection{});
+    ctx->Yield(2);
+    GG_REQUIRE(s.session()->selection().kind == ggui::SelKind::None);
+    clickRow(s, c0, ImGuiMod_Ctrl);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::Commit);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c0}));
+    ctx->ItemClick("//History/**/###row_wt");
+    ctx->Yield(2);
+    GG_REQUIRE(s.session()->selection().kind == ggui::SelKind::WorkingTree);
+    clickRow(s, c1, ImGuiMod_Ctrl);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::Commit);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c1);
+    GG_CHECK(s.session()->history().extraSelection().empty());
+    // With a primary commit, Ctrl-click adds as before.
+    clickRow(s, c0, ImGuiMod_Ctrl);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c0, c1}));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c1);
+    // Shift-click with the Working tree row selected acts as a plain click.
+    ctx->ItemClick("//History/**/###row_wt");
+    ctx->Yield(2);
+    clickRow(s, c1, ImGuiMod_Shift);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c1}));
+}
+
+GG_TEST("history", "shift+arrow extends the range from the anchor, a plain arrow collapses it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string c[5];
+    for (int i = 0; i < 5; ++i)
+        c[i] = s.revParse(repo, "HEAD~" + std::to_string(i));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c[4]).c_str()); }));
+    clickRow(s, c[1]);
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[3]);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[1], c[2], c[3]}));
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[1], c[2]}));
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[3]}));
+    // A plain arrow sets the anchor; Shift+End extends the range to the last row.
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_End);
+    ctx->Yield(3);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[3], c[4]}));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[4]);
+}
+
+GG_TEST("history", "shift+arrow onto the Working tree row keeps the range; a shift-click on it selects it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string c0 = s.head(repo);
+    const std::string c1 = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c1).c_str()); }));
+    clickRow(s, c1);
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c0, c1}));
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::Commit);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c0, c1}));
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick("//History/**/###row_wt");
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->Yield(2);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
+    GG_CHECK(s.session()->history().extraSelection().empty());
+}
+
+GG_TEST("history", "shift-click without a usable anchor or primary commit")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string c[5];
+    for (int i = 0; i < 5; ++i)
+        c[i] = s.revParse(repo, "HEAD~" + std::to_string(i));
+    // Two branches: a filter on their name leaves c1 and c4 in the list.
+    s.git(repo, {"branch", "pick-a", c[1]});
+    s.git(repo, {"branch", "pick-b", c[4]});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c[4]).c_str()); }));
+    auto& history = s.session()->history();
+    // The anchor is selected but a filter hides it: the primary commit is the anchor.
+    clickRow(s, c[1]);
+    clickRow(s, c[3], ImGuiMod_Ctrl);
+    ctx->ItemInputValue("//History/##hist_filter", "pick-");
+    GG_REQUIRE(s.waitUntil([&] { return history.visibleIds().size() == 2; }));
+    ctx->Yield(2);
+    clickRow(s, c[4], ImGuiMod_Shift);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[1], c[4]}));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), c[4]);
+    ctx->ItemInputValue("//History/##hist_filter", "");
+    GG_REQUIRE(s.waitUntil([&] { return history.visibleIds().size() == history.rows().size(); }));
+    ctx->Yield(2);
+    // A Ctrl-click that removes the anchor row: the anchor is the primary commit.
+    clickRow(s, c[0]);
+    clickRow(s, c[2], ImGuiMod_Ctrl);
+    clickRow(s, c[2], ImGuiMod_Ctrl);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[0]}));
+    clickRow(s, c[3], ImGuiMod_Shift);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[0], c[1], c[2], c[3]}));
+    // The selection is not a commit any more (a stash from a side panel): Shift-click is a plain click.
+    clickRow(s, c[0]);
+    clickRow(s, c[2], ImGuiMod_Ctrl);
+    s.session()->select(ggui::Selection{});
+    ctx->Yield(2);
+    clickRow(s, c[4], ImGuiMod_Shift);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{c[4]}));
 }
 
 GG_TEST("history", "keyboard: a programmatic selection moves the nav cursor, so the next arrow is relative to it")

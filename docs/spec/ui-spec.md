@@ -204,13 +204,22 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   default 12 + 12) is shown as its first prefix characters, "…" and its last suffix characters, for
   every kind of badge but keep; the badge's ID (`###badge_<name>`) keeps the full name. Published commits (reachable from a remote-tracking ref) use the normal text colour;
   unpublished commits are highlighted. Conflicted commits: conflict colour and ⚠ icon.
-- Keys: ↑/↓ select, `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
+- Selection: a click selects one commit; the row is the anchor. Ctrl-click adds a commit or removes it (it
+  selects the commit as the primary one when nothing, the Working tree row or the Index row is selected).
+  Shift-click selects the commits from the anchor to the clicked row, both included, in the order of the
+  list now (filter and collapsed merges apply; the Working tree, Index and Show more rows are never in it).
+  The anchor is the row of the last plain click, the last Ctrl-click that added a commit or the last plain
+  arrow key, while that commit is selected and in the list; else the primary commit; with none, Shift-click is a plain click.
+  The clicked row is the primary commit (the Changes panel follows it), the others are the extra selection.
+  A range of adjacent commits enables *Interactive rebase selection…* and Squash. Shift with an arrow key onto the
+  Working tree or Index row does not select it (the selection stays); a Shift-click on it does.
+- Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
   branch, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
 - Row context menu: New · New detached · Check out ▸ (branches at the commit; disabled when none) ·
   Edit commit · Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
   description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
-  several commits are selected with Ctrl-click: the list starts at the oldest selected commit and
+  several adjacent commits are selected with Ctrl-click or Shift-click: the list starts at the oldest selected commit and
   the selected commits start selected in the editor).
 - Working tree context menu: Commit… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.

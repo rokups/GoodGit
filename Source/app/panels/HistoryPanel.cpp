@@ -468,8 +468,11 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     const std::string sid = std::string(label) + "###" + id;
     // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
     if (rowSelectable(sid.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav)
-        && !(pressSource() == PressSource::NavActivate && selected))
+        && !(pressSource() == PressSource::NavActivate && selected)
+        && !(pressSource() == PressSource::NavMove && (pressMods() & ImGuiMod_Shift))) { // Shift+arrow onto it only walks past
+        m_extra.clear(); // the extra commits are not part of this selection (a Shift range would take them up)
         m_session.select(Selection{kind, {}, -1});
+    }
     ImGui::PopStyleColor();
     if (kind == SelKind::WorkingTree && beginContextMenu("##wt_menu")) {
         auto& actions = m_session.actions();
@@ -612,7 +615,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     drawCommitEditItems(m_session, row);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free && sel.range()))
         openInteractiveRebaseSelection(m_session, sel.ids);
-    disabledHint(!sel.range(), sel.count() < 2 ? "Needs two or more adjacent commits selected (Ctrl-click to add)."
+    disabledHint(!sel.range(), sel.count() < 2 ? "Needs two or more adjacent commits selected (Ctrl-click or Shift-click to add)."
                                                : "The selected commits are not adjacent (gaps between them).");
     ImGui::PopStyleVar();
     ImGui::EndPopup();
@@ -656,6 +659,38 @@ void HistoryPanel::drawMergeIcon(const core::HistoryRow& row)
     ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
 }
 
+// Selects the listed rows from the range anchor to `id`, both included: `id` becomes the primary commit, the
+// others the extra selection. The anchor is the last click's row while it is still selected, else the primary
+// commit (also when the anchor is not in the list); with no primary commit, or one that is not in the list,
+// nothing is done and false returned.
+bool HistoryPanel::selectRange(const core::Oid& id)
+{
+    const Selection& sel = m_session.selection();
+    if (sel.kind != SelKind::Commit)
+        return false;
+    auto selected = [&](const core::Oid& o) { return sel.id == o || std::find(m_extra.begin(), m_extra.end(), o) != m_extra.end(); };
+    auto indexOf = [&](const core::Oid& o) {
+        for (size_t i = 0; i < m_visible.size(); ++i)
+            if (m_rows[static_cast<size_t>(m_visible[i])].id == o)
+                return static_cast<int>(i);
+        return -1;
+    };
+    if (!m_rangeAnchor || !selected(*m_rangeAnchor) || indexOf(*m_rangeAnchor) < 0)
+        m_rangeAnchor = sel.id; // no anchor, or one that is not selected or not in the list: the primary commit
+    const int a = indexOf(*m_rangeAnchor);
+    const int b = indexOf(id);
+    if (a < 0 || b < 0)
+        return false;
+    m_extra.clear();
+    for (int i = std::min(a, b); i <= std::max(a, b); ++i) {
+        const core::Oid& rowId = m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(i)])].id;
+        if (rowId != id)
+            m_extra.push_back(rowId);
+    }
+    m_session.selectCommit(id);
+    return true;
+}
+
 void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWidth)
 {
     const Palette& p = theme().palette();
@@ -677,21 +712,32 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     if (rowSelectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap | ImGuiSelectableFlags_SelectOnNav)) {
         const bool ctrl = ImGui::GetIO().KeyCtrl;
         const PressSource source = pressSource();
-        if (source == PressSource::NavActivate && !ctrl) {
+        const bool shift = (pressMods() & ImGuiMod_Shift) != 0;
+        if (source == PressSource::NavActivate && !ctrl && !shift) {
             // Space / Enter on the cursor row keeps the selection (it is already selected after a cursor move).
             if (!selected) {
                 m_extra.clear();
                 m_session.selectCommit(row.id);
+                m_rangeAnchor = row.id;
             }
-        } else if (ctrl && sel.kind == SelKind::Commit && sel.id != row.id) {
-            // Ctrl-click / Ctrl+Space add (or remove) further commits.
-            if (extra)
+        } else if (ctrl && !(sel.kind == SelKind::Commit && sel.id == row.id)) {
+            // Ctrl-click / Ctrl+Space add (or remove) further commits; without a primary commit the row becomes it.
+            if (sel.kind != SelKind::Commit) {
+                m_extra.clear();
+                m_session.selectCommit(row.id);
+                m_rangeAnchor = row.id;
+            } else if (extra) {
                 m_extra.erase(std::find(m_extra.begin(), m_extra.end(), row.id));
-            else
+            } else {
                 m_extra.push_back(row.id);
+                m_rangeAnchor = row.id;
+            }
+        } else if (shift && selectRange(row.id)) {
+            // Shift-click / Shift+arrow: the rows from the anchor to this one (see selectRange).
         } else {
             m_extra.clear();
             m_session.selectCommit(row.id);
+            m_rangeAnchor = row.id;
         }
     }
     ImGui::PopStyleColor();
