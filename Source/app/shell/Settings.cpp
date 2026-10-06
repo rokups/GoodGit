@@ -153,6 +153,14 @@ nlohmann::json toJson(const SettingsData& d)
     j["uiScale"] = d.uiScale;
     j["theme"] = d.theme == Theme::Light ? "light" : "dark";
     j["recent"] = d.recent;
+    j["repositories"] = nlohmann::json::array();
+    for (const auto& e : d.repositories) {
+        nlohmann::json item;
+        item["path"] = e.path;
+        if (!e.alias.empty())
+            item["alias"] = e.alias;
+        j["repositories"].push_back(std::move(item));
+    }
     j["recentOrder"] = d.recentOrder == RecentOrder::Alphabetical ? "alphabetical" : "recent";
     j["panels"] = d.panels;
     j["nothingStaged"] = d.nothingStaged == NothingStaged::StageAll ? "stage-all"
@@ -179,6 +187,27 @@ SettingsData fromJson(const nlohmann::json& j)
             if (r.is_string())
                 d.recent.push_back(r.get<std::string>());
     d.recent = uniqueRepoPaths(d.recent);
+    if (j.contains("repositories") && j["repositories"].is_array()) {
+        std::set<std::string> seen;
+        for (const auto& item : j["repositories"]) {
+            if (!item.is_object())
+                continue;
+            const auto pathIt = item.find("path");
+            if (pathIt == item.end() || !pathIt->is_string())
+                continue;
+            std::string path = normalizeRepoPath(pathIt->get<std::string>());
+            if (path.empty() || !seen.insert(path).second)
+                continue;
+            const auto aliasIt = item.find("alias");
+            std::string alias = aliasIt != item.end() && aliasIt->is_string() ? normalizeAlias(aliasIt->get<std::string>())
+                                                                              : std::string();
+            d.repositories.push_back({std::move(path), std::move(alias)});
+        }
+    } else if (!j.contains("repositories")) {
+        // A settings file from before the permanent list: it starts as the recent list.
+        for (const auto& path : d.recent)
+            d.repositories.push_back({path, std::string()});
+    }
     d.recentOrder = j.value("recentOrder", std::string("recent")) == "alphabetical" ? RecentOrder::Alphabetical
                                                                                     : RecentOrder::MostRecent;
     if (j.contains("panels") && j["panels"].is_object())
@@ -388,6 +417,32 @@ std::vector<std::string> uniqueRepoPaths(const std::vector<std::string>& paths)
     return out;
 }
 
+std::string normalizeAlias(const std::string& alias)
+{
+    const auto trim = [](const std::string& s) {
+        const auto space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
+        size_t b = 0, e = s.size();
+        while (b < e && space(s[b]))
+            ++b;
+        while (e > b && space(s[e - 1]))
+            --e;
+        return s.substr(b, e - b);
+    };
+    std::string out;
+    size_t start = 0;
+    const std::string text = trim(alias);
+    while (start <= text.size()) {
+        size_t slash = text.find('/', start);
+        if (slash == std::string::npos)
+            slash = text.size();
+        const std::string segment = trim(text.substr(start, slash - start));
+        if (!segment.empty())
+            out += (out.empty() ? "" : "/") + segment;
+        start = slash + 1;
+    }
+    return out;
+}
+
 std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, RecentOrder order)
 {
     std::vector<size_t> idx(paths.size());
@@ -426,6 +481,37 @@ void Settings::forgetRecent(const std::string& path)
     std::erase(m_data.recent, path);
     std::erase(m_data.recent, normalizeRepoPath(path));
     save();
+}
+
+void Settings::addRepository(const std::string& rawPath)
+{
+    const std::string path = normalizeRepoPath(rawPath);
+    if (path.empty())
+        return;
+    auto& r = m_data.repositories;
+    if (std::any_of(r.begin(), r.end(), [&](const RepoEntry& e) { return e.path == path; }))
+        return;
+    r.push_back({path, std::string()});
+    save();
+}
+
+void Settings::removeRepository(const std::string& path)
+{
+    const std::string normalized = normalizeRepoPath(path);
+    std::erase_if(m_data.repositories, [&](const RepoEntry& e) { return e.path == path || e.path == normalized; });
+    save();
+}
+
+void Settings::setAlias(const std::string& path, const std::string& alias)
+{
+    const std::string normalized = normalizeRepoPath(path);
+    for (auto& e : m_data.repositories) {
+        if (e.path != path && e.path != normalized)
+            continue;
+        e.alias = normalizeAlias(alias);
+        save();
+        return;
+    }
 }
 
 std::vector<RecentName> uniqueRecentNames(const std::vector<std::string>& paths)

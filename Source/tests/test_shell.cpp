@@ -122,6 +122,14 @@ GG_TEST("shell", "folders dropped on the window: the first opens, the repositori
     GG_CHECK(fs::equivalent(recent[1], second));
     for (const auto& r : recent)
         GG_CHECK(!fs::equivalent(r, plain));
+    // The permanent list has the repositories too, in the dropped order.
+    const auto& repos = s.app.settings().data().repositories;
+    const auto listed = [&](const fs::path& p) {
+        return std::find_if(repos.begin(), repos.end(), [&](const ggui::RepoEntry& e) { return fs::equivalent(e.path, p); });
+    };
+    GG_REQUIRE(listed(first) != repos.end() && listed(second) != repos.end());
+    GG_CHECK(listed(first) < listed(second));
+    GG_CHECK(listed(plain) == repos.end());
     // One folder: it opens.
     drop({second.string()});
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
@@ -232,6 +240,104 @@ GG_TEST("shell", "recent repositories: paths are normalised and unique, display 
     const std::vector<std::string> paths{"/w/zeta", "/x/Alpha", "/b/app", "/a/app"};
     GG_CHECK((recentDisplayOrder(paths, RecentOrder::MostRecent) == std::vector<size_t>{0, 1, 2, 3}));
     GG_CHECK((recentDisplayOrder(paths, RecentOrder::Alphabetical) == std::vector<size_t>{3, 1, 2, 0}));
+}
+
+GG_TEST("shell", "permanent repositories: add, remove and alias")
+{
+    using namespace ggui;
+    const auto native = [](const char* p) { return fs::absolute(p).make_preferred().string(); };
+    Settings& st = s.app.settings();
+    st.data().repositories.clear();
+    st.data().recent.clear();
+    // "/a/b/" and "/a/b" are one entry; the order is the order added.
+    st.addRepository("/a/b/");
+    st.addRepository("/x/y");
+    st.addRepository("/a/b");
+    const auto& repos = st.data().repositories;
+    GG_REQUIRE(repos.size() == 2);
+    GG_CHECK_STR_EQ(repos[0].path, native("/a/b"));
+    GG_CHECK_STR_EQ(repos[1].path, native("/x/y"));
+    GG_CHECK(repos[0].alias.empty());
+    // An alias is normalised; an empty result removes it; an unknown path changes nothing.
+    st.setAlias("/a/b/", " work // app/ ");
+    GG_CHECK_STR_EQ(repos[0].alias, "work/app");
+    st.setAlias("/unknown", "zzz");
+    GG_CHECK(repos.size() == 2);
+    GG_CHECK(repos[1].alias.empty());
+    st.setAlias("/a/b", " / ");
+    GG_CHECK(repos[0].alias.empty());
+    st.setAlias("/a/b", "kept");
+    st.addRepository("/a/b"); // existing: the alias stays
+    GG_CHECK_STR_EQ(repos[0].alias, "kept");
+    st.removeRepository("/x/y");
+    GG_REQUIRE(repos.size() == 1);
+    GG_CHECK_STR_EQ(repos[0].path, native("/a/b"));
+    st.removeRepository("/not/listed");
+    GG_CHECK(repos.size() == 1);
+    st.removeRepository("/a/b");
+    GG_CHECK(repos.empty());
+    // No limit, while recent stops at 20.
+    for (int i = 0; i < 30; ++i) {
+        st.addRecent("/many/r" + std::to_string(i));
+        st.addRepository("/many/r" + std::to_string(i));
+    }
+    GG_CHECK_EQ(st.data().repositories.size(), size_t(30));
+    GG_CHECK_EQ(st.data().recent.size(), size_t(20));
+    st.data().repositories.clear();
+    st.data().recent.clear();
+}
+
+GG_TEST("shell", "permanent repositories: normalizeAlias")
+{
+    using ggui::normalizeAlias;
+    GG_CHECK_STR_EQ(normalizeAlias(" a//b/ "), "a/b");
+    GG_CHECK_STR_EQ(normalizeAlias("/"), "");
+    GG_CHECK_STR_EQ(normalizeAlias(""), "");
+    GG_CHECK_STR_EQ(normalizeAlias("   "), "");
+    GG_CHECK_STR_EQ(normalizeAlias("a"), "a");
+    GG_CHECK_STR_EQ(normalizeAlias("/a/b/"), "a/b");
+    GG_CHECK_STR_EQ(normalizeAlias(" a / b "), "a/b");
+    GG_CHECK_STR_EQ(normalizeAlias("a/ /b"), "a/b");
+    GG_CHECK_STR_EQ(normalizeAlias("my app"), "my app");
+}
+
+GG_TEST("shell", "permanent repositories: JSON round trip and loading")
+{
+    using namespace ggui;
+    const auto native = [](const char* p) { return fs::absolute(p).make_preferred().string(); };
+    SettingsData d;
+    d.repositories = {{native("/a/b"), "work/app"}, {native("/c/d"), ""}};
+    const nlohmann::json j = toJson(d);
+    GG_REQUIRE(j["repositories"].is_array() && j["repositories"].size() == 2);
+    GG_CHECK(j["repositories"][0].contains("alias"));
+    GG_CHECK(!j["repositories"][1].contains("alias"));
+    const SettingsData back = fromJson(j);
+    GG_REQUIRE(back.repositories.size() == 2);
+    GG_CHECK_STR_EQ(back.repositories[0].path, native("/a/b"));
+    GG_CHECK_STR_EQ(back.repositories[0].alias, "work/app");
+    GG_CHECK_STR_EQ(back.repositories[1].path, native("/c/d"));
+    GG_CHECK(back.repositories[1].alias.empty());
+    // Without the key (an old file) the list starts as the recent list; with the key it does not.
+    const SettingsData old = fromJson(nlohmann::json::parse(R"({"recent":["/a/b/","/c/d","/a/b"]})"));
+    GG_REQUIRE(old.repositories.size() == 2);
+    GG_CHECK_STR_EQ(old.repositories[0].path, native("/a/b"));
+    GG_CHECK_STR_EQ(old.repositories[1].path, native("/c/d"));
+    GG_CHECK(old.repositories[0].alias.empty());
+    const SettingsData empty = fromJson(nlohmann::json::parse(R"({"recent":["/a/b"],"repositories":[]})"));
+    GG_CHECK(empty.repositories.empty());
+    GG_CHECK(fromJson(nlohmann::json::parse(R"({"repositories":[]})")).repositories.empty());
+    GG_CHECK(fromJson(nlohmann::json::parse(R"({"recent":["/a/b"],"repositories":null})")).repositories.empty());
+    // Bad items are ignored; paths are normalised and unique, aliases are normalised.
+    const SettingsData bad = fromJson(nlohmann::json::parse(
+        R"({"recent":["/z"],"repositories":[1,"/q",null,{"alias":"x"},{"path":""},{"path":5},
+            {"path":"/a/b/","alias":" w // x/ "},{"path":"/a/b","alias":"dup"},{"path":"/e/f","alias":7}]})"));
+    GG_REQUIRE(bad.repositories.size() == 2);
+    GG_CHECK_STR_EQ(bad.repositories[0].path, native("/a/b"));
+    GG_CHECK_STR_EQ(bad.repositories[0].alias, "w/x");
+    GG_CHECK_STR_EQ(bad.repositories[1].path, native("/e/f"));
+    GG_CHECK(bad.repositories[1].alias.empty());
+    // A settings file that is not an object gives no repositories.
+    GG_CHECK(fromJson(nlohmann::json::parse("[]")).repositories.empty());
 }
 
 GG_TEST("shell", "elideStart keeps the end of a name; the toolbar switcher fits the name it shows")

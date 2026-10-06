@@ -457,6 +457,10 @@ void App::openDropped(const std::vector<std::string>& paths)
     for (auto it = folders.rbegin(); it != folders.rend(); ++it)
         if (isRepository(*it))
             m_settings.addRecent(it->string());
+    // The permanent list appends, so it takes them in the dropped order.
+    for (const auto& folder : folders)
+        if (isRepository(folder))
+            m_settings.addRepository(folder.string());
     m_summaries.request(std::vector<fs::path>(m_settings.data().recent.begin(), m_settings.data().recent.end()));
     openRepository(folders.front());
 }
@@ -481,6 +485,7 @@ void App::frame()
         } else if (m_session->opened() && m_recordedRecent != m_session->path().string()) {
             m_recordedRecent = m_session->path().string();
             m_settings.addRecent(m_recordedRecent);
+            m_settings.addRepository(m_recordedRecent);
         }
     }
     if (!m_session || !m_session->opened())

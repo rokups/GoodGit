@@ -49,10 +49,17 @@ enum class Theme { Dark, Light };
 enum class NothingStaged { Ask, StageAll, StageSelected };
 enum class RecentOrder { MostRecent, Alphabetical }; // order of the Recent lists (storage stays by recency)
 
+// A permanent repository entry: a normalised path and an optional alias ("work/app", see normalizeAlias).
+struct RepoEntry {
+    std::string path;
+    std::string alias; // empty: the entry has no alias
+};
+
 struct SettingsData {
     float uiScale = 1.0f;          // 0.5 – 3.0
     Theme theme = Theme::Dark;
     std::vector<std::string> recent; // most recent first, unique (normalised paths)
+    std::vector<RepoEntry> repositories; // in the order added, unique paths, no limit
     RecentOrder recentOrder = RecentOrder::MostRecent;
     std::map<std::string, bool> panels; // window name → visible
     NothingStaged nothingStaged = NothingStaged::Ask;
@@ -101,6 +108,13 @@ public:
     void addRecent(const std::string& path);
     void forgetRecent(const std::string& path);
 
+    // Permanent repositories. addRepository does nothing (no save) when the path is already listed.
+    void addRepository(const std::string& path);
+    void removeRepository(const std::string& path);
+    // Stores normalizeAlias(alias) for the entry; an empty result removes the alias. An unknown path
+    // changes nothing.
+    void setAlias(const std::string& path, const std::string& alias);
+
 private:
     AsyncIo& m_io;
     SettingsData m_data;
@@ -116,6 +130,9 @@ SettingsData fromJson(const nlohmann::json& j);
 std::string normalizeRepoPath(const std::string& path);
 // `paths` without repeated repositories (after normalisation), first occurrence kept.
 std::vector<std::string> uniqueRepoPaths(const std::vector<std::string>& paths);
+// An alias as stored: white space trimmed from the whole text and from each "/" segment, empty
+// segments removed, so no "/" at either end (" a//b/ " gives "a/b"; "/" gives "").
+std::string normalizeAlias(const std::string& alias);
 // Indices into `paths` in display order: as stored, or alphabetical by the unique display name
 // (case-insensitive; the whole name as shown, parent prefix included).
 std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, RecentOrder order);
