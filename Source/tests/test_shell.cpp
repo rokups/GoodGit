@@ -374,7 +374,7 @@ GG_TEST("shell", "permanent repositories: JSON round trip and loading")
     GG_CHECK(fromJson(nlohmann::json::parse("[]")).repositories.empty());
 }
 
-GG_TEST("shell", "elideStart keeps the end of a name; the toolbar switcher fits the name it shows")
+GG_TEST("shell", "elideStart keeps the end of a name")
 {
     const std::string dots = "\xE2\x80\xA6";
     const std::string name = "some/parent/directory/with/a/long/path/to/repository-name";
@@ -392,10 +392,17 @@ GG_TEST("shell", "elideStart keeps the end of a name; the toolbar switcher fits 
     GG_CHECK(((lt + lt + lt).size() - (fit.size() - dots.size())) % 2 == 0);
     GG_CHECK(ImGui::CalcTextSize(fit.c_str()).x <= 60.0f);
 
+}
+
+// A short test name and short folder names: libgit2 on Windows refuses a repository whose path, with its
+// longest internal file name, is longer than 260 characters, and the root folder has the test name in it.
+GG_TEST("shell", "wide switcher")
+{
     // A deduplicated name longer than the maximum: the combo is at the maximum, not wider.
-    const std::string dir(60, 'W');
-    const fs::path a = s.fixture(Recipe::Linear, "left/" + dir + "/proj");
-    const fs::path b = s.fixture(Recipe::Linear, "right/" + dir + "/proj");
+    const std::string dir(62, 'W');
+    GG_REQUIRE(ImGui::CalcTextSize(("l/" + dir + "/p").c_str()).x > ImGui::GetFontSize() * 28.0f);
+    const fs::path a = s.fixture(Recipe::Linear, "l/" + dir + "/p");
+    const fs::path b = s.fixture(Recipe::Linear, "r/" + dir + "/p");
     GG_REQUIRE(s.openRepository(a));
     GG_REQUIRE(s.openRepository(b));
     s.settle();
