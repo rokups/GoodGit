@@ -774,9 +774,28 @@ void TagsPanel::draw(bool* open)
 
 // ---- Repositories -------------------------------------------------------------------------------
 
+// A tree node with the look of a selected row: the selection colours of selectable(). The arrow opens
+// it, so a click or a double-click on the label does not toggle it (the keyboard does: Enter or Space
+// on the focused node, and the arrow keys, as on any tree node).
+static bool selectableTreeNode(const char* label, bool selected)
+{
+    if (selected) {
+        const Palette& p = theme().palette();
+        ImGui::PushStyleColor(ImGuiCol_Header, p.selection);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, p.selectionHovered);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, p.selectionHovered);
+    }
+    const bool open = ImGui::TreeNodeEx(label,
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | (selected ? ImGuiTreeNodeFlags_Selected : 0));
+    if (selected)
+        ImGui::PopStyleColor(3);
+    return open;
+}
+
 // A group is a tree node, open by default; a repository is a row. `toOpen` gets the path of the one
 // double-clicked. Both ids come from the group path or the label ('/' becomes ':'); equal labels
-// among siblings get a "#n" suffix.
+// among siblings get a "#n" suffix. The row of the open repository is a node, closed by default, with
+// its worktrees below it when it has more than the main one.
 void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen)
 {
     std::map<std::string, int> seen;
@@ -795,14 +814,60 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         ImGui::PushID(("repo_" + id + (n ? "#" + std::to_string(n) : std::string())).c_str());
         // The open repository has the text colour of the current branch; the selected look is the selection only.
         const bool isOpen = node.path == m_openPath;
+        const auto& snap = m_session.snapshot();
+        const bool hasWorktrees = isOpen && snap
+            && (snap->worktrees.size() > 1 || (snap->worktrees.size() == 1 && !snap->worktrees.front().isMain));
+        const bool selected = !m_selectedWorktree && node.path == m_selected;
+        const std::string label = node.label + "###row";
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
-        if (selectable((node.label + "###row").c_str(), node.path == m_selected))
+        bool nodeOpen = false;
+        if (hasWorktrees) {
+            nodeOpen = selectableTreeNode(label.c_str(), selected);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+                m_selected = node.path;
+                m_selectedWorktree = false;
+            }
+        } else if (selectable(label.c_str(), selected)) {
             m_selected = node.path;
+            m_selectedWorktree = false;
+        }
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             toOpen = node.path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", node.path.c_str());
+        if (nodeOpen) {
+            drawWorktrees(toOpen);
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+}
+
+// The worktrees of the open repository as rows below its node. The current one has the text colour of the
+// current branch and a missing one is dimmed. A double-click opens a worktree, not the current or a missing one.
+void RepositoriesPanel::drawWorktrees(std::string& toOpen)
+{
+    for (const auto& w : m_session.snapshot()->worktrees) {
+        std::string label = w.name;
+        if (w.isMain)
+            label += " (main)";
+        label += "  ";
+        label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength)) : w.branch;
+        const std::string path = w.path.string();
+        ImGui::PushID(("worktree_" + w.name).c_str());
+        const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
+                                        : ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        if (selectable((label + "###row").c_str(), m_selectedWorktree && path == m_selected)) {
+            m_selected = path;
+            m_selectedWorktree = true;
+        }
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !w.isCurrent && !w.missing)
+            toOpen = path;
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            tooltip("%s", path.c_str());
         ImGui::PopID();
     }
 }
@@ -819,8 +884,16 @@ void RepositoriesPanel::draw(bool* open)
     beginList();
     drawNodes(tree, toOpen);
     endList();
-    if (!m_selected.empty() && ImGui::Shortcut(ImGuiKey_Enter, ImGuiInputFlags_RouteFocused))
-        toOpen = m_selected;
+    if (!m_selected.empty() && ImGui::Shortcut(ImGuiKey_Enter, ImGuiInputFlags_RouteFocused)) {
+        if (!m_selectedWorktree) {
+            toOpen = m_selected;
+        } else if (const auto& snap = m_session.snapshot()) {
+            // The current worktree and a missing one do not open, as with a double-click.
+            for (const auto& w : snap->worktrees)
+                if (w.path.string() == m_selected && !w.isCurrent && !w.missing)
+                    toOpen = m_selected;
+        }
+    }
     // Not the open one: opening it again would replace the session and cancel its work.
     if (!toOpen.empty() && toOpen != m_openPath)
         m_session.app().openRepository(toOpen);

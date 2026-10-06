@@ -155,6 +155,8 @@ GG_TEST("panels", "repositories: the open repository has the mark, an alias make
     GG_CHECK_STR_EQ(panel.openPath(), ggui::normalizeRepoPath(repo.string()));
     const std::string row = repoRow(s, repo);
     GG_CHECK(s.itemExists(row.c_str()));
+    // With only its main worktree it is a plain row: no expand arrow.
+    GG_CHECK(!(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
     GG_CHECK(panel.selectedPath().empty());
     // The row of the open repository is the one compared for the mark; a double-click on it keeps the session.
     GG_REQUIRE(s.app.settings().data().repositories.size() == 1);
@@ -223,6 +225,123 @@ GG_TEST("panels", "repositories: Enter opens the selected repository")
     ctx->WindowFocus("//Repositories");
     ctx->KeyPress(ImGuiKey_Enter);
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+}
+
+// The reference of the row of a worktree below the row of the open repository.
+static std::string worktreeRow(const std::string& repoRowRef, const std::string& name)
+{
+    return repoRowRef + "/worktree_" + name + "/###row";
+}
+
+// Opens the node of the open repository with a click on its arrow (ItemOpen would click the label).
+static void openRepoNode(ImGuiTestContext* ctx, const std::string& row)
+{
+    const ImGuiTestItemInfo info = ctx->ItemInfo(row.c_str());
+    if (info.StatusFlags & ImGuiItemStatusFlags_Opened)
+        return;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float x = info.RectFull.Min.x + style.FramePadding.x + ImGui::GetFontSize() * 0.5f;
+    ctx->MouseMoveToPos(ImVec2(x, (info.RectFull.Min.y + info.RectFull.Max.y) * 0.5f));
+    ctx->MouseClick(0);
+    ctx->Yield(2);
+}
+
+GG_TEST("panels", "repositories: the open repository expands to its worktrees")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path plain = s.fixture(Recipe::Linear, "plain");
+    GG_REQUIRE(s.openRepository(repo));
+    s.app.settings().addRepository(plain.string());
+    s.showPanel("Repositories");
+    const auto snapshot = s.session()->snapshot();
+    GG_REQUIRE(snapshot->worktrees.size() == 4);
+    const std::string row = repoRow(s, repo);
+    const std::string plainRow = repoRow(s, plain);
+    GG_REQUIRE(s.itemExists(row.c_str()) && s.itemExists(plainRow.c_str()));
+    // Only the open repository has an expand arrow, and its node is closed by default.
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    GG_CHECK(!(ctx->ItemInfo(plainRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    for (const auto& w : snapshot->worktrees)
+        GG_CHECK(!s.itemExists(worktreeRow(row, w.name).c_str()));
+    // A click on the label selects the row and does not open the node; so does a double-click.
+    ctx->ItemClick(row.c_str());
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), ggui::normalizeRepoPath(repo.string()));
+    GG_CHECK(!s.itemExists(worktreeRow(row, snapshot->worktrees.front().name).c_str()));
+    const auto* session = s.session();
+    ctx->ItemDoubleClick(row.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    GG_CHECK(!s.itemExists(worktreeRow(row, snapshot->worktrees.front().name).c_str()));
+    // The arrow opens it: a row for each worktree.
+    openRepoNode(ctx, row);
+    for (const auto& w : snapshot->worktrees)
+        GG_CHECK(s.itemExists(worktreeRow(row, w.name).c_str()));
+}
+
+GG_TEST("panels", "repositories: a worktree row selects on a click and opens on a double-click")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string wt1 = repo.filename().string() + "-wt1";
+    const std::string wtRow = worktreeRow(row, wt1);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+    ctx->ItemClick(wtRow.c_str());
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), (s.root() / wt1).string());
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    ctx->ItemDoubleClick(wtRow.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+}
+
+GG_TEST("panels", "repositories: the current and a missing worktree do not open, Enter opens the selected one")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string current = worktreeRow(row, "main");
+    GG_REQUIRE(s.itemExists(current.c_str()));
+    const auto* session = s.session();
+    ctx->ItemDoubleClick(current.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    ctx->KeyPress(ImGuiKey_Enter); // the double-click selected it
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    // A missing worktree: neither a double-click nor Enter opens it.
+    const auto snapshot = s.session()->snapshot();
+    const auto missing = std::find_if(snapshot->worktrees.begin(), snapshot->worktrees.end(),
+        [](const auto& w) { return w.missing; });
+    GG_REQUIRE(missing != snapshot->worktrees.end());
+    const std::string missingRow = worktreeRow(row, missing->name);
+    ctx->ItemDoubleClick(missingRow.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), missing->path.string());
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    // Enter opens another worktree.
+    const std::string wt1 = repo.filename().string() + "-wt1";
+    ctx->ItemClick(worktreeRow(row, wt1).c_str());
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
 }
 
 GG_TEST("panels", "remotes: list and copy")

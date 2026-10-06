@@ -45,15 +45,18 @@ class RepositoriesPanel {
 public:
     explicit RepositoriesPanel(Session& session) : m_session(session) { }
     void draw(bool* open);
-    // The path of the selected repository row ("" when none).
+    // The path of the selected row, repository or worktree ("" when none).
     const std::string& selectedPath() const { return m_selected; }
     // The normalised path of the repository the window shows, as of the last frame drawn.
     const std::string& openPath() const { return m_openPath; }
 
 private:
     void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
+    void drawWorktrees(std::string& toOpen);
     Session& m_session;
+    // The selected row: a repository (its path) or a worktree of the open one (m_selectedWorktree, its path).
     std::string m_selected;
+    bool m_selectedWorktree = false;
     std::string m_openPath;
 };
 
