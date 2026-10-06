@@ -168,8 +168,8 @@ index stages on checkout"). **D** max-new-file-size.
 | Branches | Tags|                            | Changes                   |
 |                |          History           +---------------------------+
 |                |                            | Change information        |
-|                |                            +---------------------------+
-|                |                            | Diff | Blame | Reflog |   |
++----------------+                            +---------------------------+
+| Repositories   |                            | Diff | Blame | Reflog |   |
 +----------------+                            | Operations                |
 | Remotes |      |                            |                           |
 | Stashes |      |                            |                           |
@@ -177,8 +177,10 @@ index stages on checkout"). **D** max-new-file-size.
 +----------------+----------------------------+---------------------------+
 ```
 Left column ≈ 18 %, right column ≈ 34 %; Changes/Change information ≈ 45 % of the right column;
-Remotes/Stashes/Worktrees ≈ 15 % of the left column, at its bottom. The layout is built when
-imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is left as it is.
+Remotes/Stashes/Worktrees ≈ 15 % of the left column, at its bottom; Repositories ≈ 30 % of the
+part above it, between Branches/Tags and Remotes/Stashes/Worktrees. The layout is built when
+imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is left as it is, so
+there a panel that is new (Repositories) shows floating until a reset or a manual dock.
 
 ---
 
@@ -552,6 +554,30 @@ the panel without touching the repository.
 - **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)
   (visibility toggle, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
+- **Repositories** `"Repositories"` (N): the permanent repository list of the settings (`repositories`:
+  `[{path, alias}]`, no limit; each opened or dropped repository is added; a settings file without the
+  key starts with the recent list) as a tree. An alias `group/subgroup/name` puts a repository in groups
+  (tree nodes `###group_<group path, "/" as ":">`, open by default) under the label `name`; a repository
+  without an alias is at the top level with its deduplicated folder name. Each level lists the groups
+  first, then the repositories, each part by label (ignoring case). Rows `repo_<label, "/" as ":">/###row` in the
+  scope of their groups (equal labels among siblings: `repo_<label>#n/###row`, n from 1 for the second); the tooltip is the full path. The alias
+  shows only here: the toolbar switcher, Welcome and the title bar keep the deduplicated folder names.
+  A click selects a row; a double-click, or Enter while the panel has the focus, opens the repository in
+  this window. The open repository has the text colour of the current branch and is not opened again.
+  When it has more than its main worktree its row is a tree node, closed by default (the arrow toggles
+  it, a click on the label does not), with one row per worktree, `worktree_<name>/###row` in the row's
+  scope: the name, "(main)", then the branch or the short ID; the current one has the text colour of the
+  current branch, a missing one is dimmed; a double-click or Enter opens a worktree, not the current or
+  a missing one. The other repositories have no arrow. Context (repository rows): Open (disabled on the
+  open one) · Set alias… · Copy path · Remove from list (also the open one; it comes back without its
+  alias at its next open).
+  Drag and drop: a repository row (not a worktree row) dragged onto a group node goes into that group:
+  the alias becomes the group path plus the last segment of the alias, or plus the last "/" segment of
+  the label when there is no alias. The empty area below the rows (`###top_level`) is the top level: the alias keeps only its
+  last segment, and no alias stays no alias. A drop on the own group changes nothing.
+  - `Set alias`: *Alias for <path>* `##alias` (the alias now) · a note ("/" makes groups; empty removes
+    the alias) · *Set* / *Cancel*. The text is stored trimmed, also each "/" segment, without empty
+    segments.
 - **Worktrees** `"Worktrees"` (M): header Add worktree… `###add_worktree` (disabled while HEAD
   is unborn); rows `worktree_<name>` (git's id, the directory name) with "(main)", "(bare)", a lock
   icon, "(missing)" (directory gone; dimmed), "(prunable)" (git worktree prune would remove it:
@@ -614,7 +640,8 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
 itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
 *Replace* / *Cancel*, §1.6), `Add worktree`, `Remove worktree`, `Remove worktree with changes`,
-`Lock worktree`, `Prune worktrees`, `Repair worktree` (Phase 4, §8 Worktrees), `Settings`.
+`Lock worktree`, `Prune worktrees`, `Repair worktree` (Phase 4, §8 Worktrees), `Set alias`
+(§8 Repositories), `Settings`.
 The `Commit` dialog has the message field `##message`, an *Amend* checkbox `##amend` (unchecked;
 disabled with a tooltip on an unborn HEAD or during a merge, cherry-pick or revert), *Skip hooks*
 `##skip_hooks` and, while Amend is ticked, *Change the message only* `##message_only`. Ticking
