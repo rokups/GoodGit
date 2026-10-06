@@ -844,6 +844,64 @@ void HistoryPanel::selectForMenu(const core::HistoryRow& row)
     }
 }
 
+void HistoryPanel::applyFilter()
+{
+    m_appliedFilter = m_filter;
+    m_matches.clear();
+    m_visibleDirty = true;
+    if (!m_appliedFilter.empty())
+        m_searchRequest = m_session.engine().searchHistory(m_appliedFilter);
+}
+
+void HistoryPanel::goToParent(const core::HistoryRow& from, core::Oid id) // by value: a reload may free the row
+{
+    // A collapsed merge has no row for a parent that only its side history leads to, and the walk cannot reveal a
+    // commit it dropped: expand the merge (a reload) first. The reveal request queues behind that reload.
+    // The first parent is never hidden this way: without a row it is only not loaded yet.
+    if (!m_index.count(id) && id != from.parents.front() && mergeToggle(from) && from.collapsed)
+        toggleMerge(from.id);
+    m_session.revealCommit(id);
+}
+
+void HistoryPanel::drawGoToItems(const core::HistoryRow& from, bool single)
+{
+    // One commit is an item, more are a submenu with one item each (the drag tooltip's text).
+    auto goTo = [&](const char* icon, const char* label, const std::vector<core::Oid>& ids, const char* none, bool parents) {
+        auto go = [&](const core::Oid& id) {
+            if (parents)
+                goToParent(from, id);
+            else
+                m_session.revealCommit(id);
+        };
+        if (ids.size() > 1) {
+            if (beginMenu(icon, label, single)) {
+                for (const auto& id : ids) {
+                    const core::HistoryRow* r = row(id);
+                    std::string text = r ? r->shortId + " " + fitText(std::string(firstLine(r->subject)), ImGui::GetFontSize() * 30)
+                                         : id.shortHex(core::kShortIdLength);
+                    // The ID names the item: two parents may have the same text.
+                    text += "###go_" + id.hex();
+                    if (menuItem(icon, text.c_str()))
+                        go(id);
+                }
+                ImGui::EndMenu();
+            }
+        } else if (menuItem(icon, label, nullptr, false, single && !ids.empty()))
+            go(ids.front());
+        if (!single)
+            disabledHint(true, "Needs a single selected commit.");
+        else
+            disabledHint(ids.empty(), none);
+    };
+    std::vector<core::Oid> children;
+    if (single)
+        for (const auto& r : m_rows)
+            if (std::find(r.parents.begin(), r.parents.end(), from.id) != r.parents.end())
+                children.push_back(r.id);
+    goTo(ICON_MS_ARROW_DOWNWARD, "Go to parent", from.parents, "The commit has no parent.", true);
+    goTo(ICON_MS_ARROW_UPWARD, "Go to child", children, "No child in the loaded history.", false);
+}
+
 void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
 {
     if (!beginContextMenu("##row_menu"))
@@ -923,6 +981,12 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     ImGui::Separator();
     drawCommitEditItems(m_session, row);
     ImGui::Separator();
+    drawGoToItems(row, single);
+    if (menuItem(ICON_MS_PERSON_SEARCH, "Filter by author", nullptr, false, single && !row.author.empty())) {
+        m_filter = row.author;
+        applyFilter();
+    }
+    needOne();
     if (beginMenu(ICON_MS_CONTENT_COPY, "Copy", single)) {
         idCopyMenuItem(hex);
         if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
@@ -1267,18 +1331,20 @@ void HistoryPanel::draw(bool* open)
     }
     // Header: filter, toggles.
     // Wide enough for its hint, never wider than the panel; the toggles after it flow to the next line when short of room.
-    const char* filterHint = ICON_MS_SEARCH " Filter: message, ID, branch, tag";
+    const char* filterHint = ICON_MS_SEARCH " Filter: message, ID, author, branch, tag";
     ImGui::SetNextItemWidth(std::clamp(ImGui::CalcTextSize(filterHint).x + ImGui::GetStyle().FramePadding.x * 2.0f,
         std::min(ImGui::GetFontSize() * 8, ImGui::GetContentRegionAvail().x), ImGui::GetContentRegionAvail().x));
     bool filterChanged = ImGui::InputTextWithHint("##hist_filter", filterHint, &m_filter);
     filterChanged = acceptCommitDrop(m_filter) || filterChanged;
-    if (filterChanged) {
-        m_appliedFilter = m_filter;
-        m_matches.clear();
-        m_visibleDirty = true;
-        if (!m_appliedFilter.empty())
-            m_searchRequest = m_session.engine().searchHistory(m_appliedFilter);
-    }
+    if (filterChanged)
+        applyFilter();
+    sameLineIfFits(buttonWidth(ICON_MS_MY_LOCATION, "HEAD"));
+    ImGui::BeginDisabled(m_snapshot->head.isNull());
+    if (smallButton(ICON_MS_MY_LOCATION, "HEAD##hist_head"))
+        m_session.revealCommit(m_snapshot->head);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        tooltip("Go to the HEAD commit");
     sameLineIfFits(checkboxWidth("Conflicted only"));
     bool only = conflictedOnly();
     if (ImGui::Checkbox("Conflicted only##hist_conflicted", &only)) {

@@ -70,6 +70,7 @@ public:
     // Ids of the rows currently shown (after the filter), in order.
     std::vector<core::Oid> visibleIds() const;
     bool searchActive() const { return !m_appliedFilter.empty(); }
+    const std::string& filterText() const { return m_filter; }
     bool conflictedOnly() const; // the "Conflicted only" filter (a view setting, kept in imgui.ini)
     // Selects the next (+1) / previous (-1) conflicted commit (F7 / Shift+F7).
     void selectConflicted(int direction);
@@ -91,6 +92,11 @@ private:
     bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);
+    // Reveals a parent of `from`; expands `from` first when it is a collapsed merge that hides the parent.
+    void goToParent(const core::HistoryRow& from, core::Oid id);
+    void drawGoToItems(const core::HistoryRow& from, bool single);
+    // Runs the search for m_filter (typed, dropped or set by a menu item).
+    void applyFilter();
     void selectForMenu(const core::HistoryRow& row);
     void drawBadgeMenu();
 

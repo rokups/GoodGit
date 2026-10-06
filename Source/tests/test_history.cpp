@@ -1402,7 +1402,8 @@ GG_TEST("history", "the commit menu uses git words")
         "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Reset main to here...###reset_here",
         "Interactive rebase selection...", "Cherry-pick###cherry_pick", "Cherry-pick (no commit)###cherry_pick_no_commit",
         "Revert###revert", "Revert (no commit)###revert_no_commit", "Edit commit (checkout detached)", "Duplicate",
-        "Squash...", "Split...", "Simplify parents", "Drop commit...", "Copy"};
+        "Squash...", "Split...", "Simplify parents", "Drop commit...", "Go to parent", "Go to child", "Filter by author",
+        "Copy"};
     float last = -1.0f;
     for (const char* label : labels) {
         const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError);
@@ -1412,6 +1413,126 @@ GG_TEST("history", "the commit menu uses git words")
         last = info.RectFull.Min.y;
     }
     ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("history", "the HEAD button selects the HEAD commit")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string head = s.revParse(repo, "HEAD");
+    const std::string other = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(other).c_str()); }));
+    ctx->ItemClick(rowRef(other).c_str());
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), other);
+    GG_CHECK(!(ctx->ItemInfo("//History/HEAD##hist_head").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->ItemClick("//History/HEAD##hist_head");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == head; }));
+}
+
+GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
+{
+    const fs::path repo = s.fixture(Recipe::Unborn);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/HEAD##hist_head"); }));
+    GG_CHECK(ctx->ItemInfo("//History/HEAD##hist_head").ItemFlags & ImGuiItemFlags_Disabled);
+}
+
+GG_TEST("history", "Go to parent selects the parent; a merge commit lists both parents")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string merge = s.revParse(repo, "main");
+    const std::string first = s.revParse(repo, "main^1");
+    const std::string second = s.revParse(repo, "main^2");
+    GG_REQUIRE(s.expandMerge(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(merge).c_str()) && s.itemExists(rowRef(first).c_str()); }));
+    // A commit with one parent: a plain item.
+    s.contextMenu(rowRef(first).c_str(), "Go to parent");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "main~2"); }));
+    // A merge: a submenu with one item per parent.
+    s.contextMenu(rowRef(merge).c_str(), ("Go to parent/###go_" + first).c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == first; }));
+    s.contextMenu(rowRef(merge).c_str(), ("Go to parent/###go_" + second).c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == second; }));
+    // A root commit has no parent.
+    const std::string root = s.revParse(repo, "main~3");
+    ctx->ItemClick(rowRef(root).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Go to parent").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("history", "Go to parent reveals a parent hidden in a collapsed merge")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    // Without its branch the second parent has no ref: the collapsed merge hides it.
+    const std::string merge = s.revParse(repo, "main");
+    const std::string second = s.revParse(repo, "main^2");
+    s.git(repo, {"branch", "-q", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return history.row(Oid::fromHex(merge)) != nullptr && !history.loading(); }));
+    GG_REQUIRE(history.row(Oid::fromHex(merge))->collapsed);
+    GG_REQUIRE(history.row(Oid::fromHex(second)) == nullptr);
+    s.contextMenu(rowRef(merge).c_str(), ("Go to parent/###go_" + second).c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == second; }));
+    GG_CHECK(history.row(Oid::fromHex(second)) != nullptr);
+    GG_CHECK(!history.row(Oid::fromHex(merge))->collapsed);
+}
+
+GG_TEST("history", "Go to child selects the child; it is disabled without a child; two children give a submenu")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string merge = s.revParse(repo, "main");
+    GG_REQUIRE(s.expandMerge(merge));
+    const std::string feature = s.revParse(repo, "main^2");
+    const std::string fork = s.revParse(repo, "main~3"); // Base: Main 1 and Feature 1 start from it
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(merge).c_str()) && s.itemExists(rowRef(fork).c_str()); }));
+    // One child: a plain item.
+    s.contextMenu(rowRef(feature).c_str(), "Go to child");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == merge; }));
+    // No child: disabled.
+    ctx->ItemClick(rowRef(merge).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Go to child").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // Two children: a submenu.
+    const std::string side = s.revParse(repo, "feature~1");
+    const std::string mainSide = s.revParse(repo, "main~2");
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, side) != nullptr && findRow(s, mainSide) != nullptr; }));
+    s.contextMenu(rowRef(fork).c_str(), ("Go to child/###go_" + side).c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == side; }));
+    s.contextMenu(rowRef(fork).c_str(), ("Go to child/###go_" + mainSide).c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == mainSide; }));
+}
+
+GG_TEST("history", "Filter by author leaves the commits of that author")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "other.txt", "x\n");
+    s.git(repo, {"add", "other.txt"});
+    s.git(repo, {"commit", "-q", "--author=Other Author <other@example.com>", "-m", "Add a file"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    const std::string head = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(head).c_str()); }));
+    GG_CHECK_STR_EQ(findRow(s, head)->author, "Other Author");
+    const std::string mine = s.revParse(repo, "HEAD~1");
+    const std::string mineAuthor = findRow(s, mine)->author;
+    GG_CHECK(mineAuthor != "Other Author");
+    s.contextMenu(rowRef(head).c_str(), "Filter by author");
+    GG_CHECK(s.waitUntil([&] { return history.visibleIds().size() == 1; }));
+    GG_CHECK_STR_EQ(history.filterText(), "Other Author");
+    GG_CHECK_STR_EQ(history.visibleIds()[0].hex(), head);
+    // The other author: every other row stays.
+    ctx->ItemInputValue("//History/##hist_filter", "");
+    GG_REQUIRE(s.waitUntil([&] { return history.visibleIds().size() == history.rows().size(); }));
+    s.contextMenu(rowRef(mine).c_str(), "Filter by author");
+    GG_CHECK(s.waitUntil([&] { return history.visibleIds().size() + 1 == history.rows().size(); }));
+    GG_CHECK_STR_EQ(history.filterText(), mineAuthor);
+    for (const auto& id : history.visibleIds())
+        GG_CHECK(id.hex() != head);
 }
 
 } // namespace ggtest

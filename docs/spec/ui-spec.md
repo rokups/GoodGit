@@ -185,7 +185,12 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 ---
 
 ## 2. History panel — window `"History"`
-- Header row: filter field `##hist_filter` (message, ID, branch, tag), toggle *Conflicted only*
+- Header row: filter field `##hist_filter` (hint "Filter: message, ID, author, branch, tag"), button *HEAD*
+  `##hist_head` (icon, tooltip "Go to the HEAD commit"; reveals and selects the HEAD commit as the
+  *Reveal* items do, with their notice when the scope has no such commit; when the commit is already loaded and
+  the text filter hides it, the text filter is cleared; a commit that must load first, or that *Conflicted only*
+  hides, is selected with the filter kept, so its row may stay hidden; disabled when HEAD has no commit),
+  toggle *Conflicted only*
   `##hist_conflicted` (N; a view setting like *Stashes*, stored in imgui.ini as
   `[GGUIView][History] ConflictedOnly`, so it stays on across repositories and restarts; in the next
   repository the graph is hidden at once and the conflicted commits appear as the scan finds them),
@@ -233,8 +238,15 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   *Interactive rebase selection…* (Phase 3, when several adjacent commits are selected with Ctrl-click or Shift-click:
   the list starts at the oldest selected commit and the selected commits start selected in the editor) |
   Cherry-pick · Cherry-pick (no commit) · Revert · Revert (no commit) (with several selected commits: "Cherry-pick 3 commits" and so on) | Edit commit (checkout detached) · Duplicate · Squash… · Split… · Simplify parents ·
-  Drop commit… | Copy ▸ (ID, Full description) · Expand / Collapse merged history. The menu has no branch actions
+  Drop commit… | *Go to parent* · *Go to child* · *Filter by author* · Copy ▸ (ID, Full description) · Expand / Collapse merged history. The menu has no branch actions
   (Delete branch, Push): the menu of a branch badge has them (right click on the badge).
+  *Go to parent* and *Go to child* (single selected commit) reveal and select the commit: one parent or child is
+  a plain item, more (a merge commit; a commit with several children among the loaded rows) are a submenu with
+  an item "\<short ID\> \<subject\>" each (ids `###go_<ID>`). A parent that a collapsed merge hides (it has no
+  row) expands the merge first, then is revealed. *Go to parent* is disabled for a root commit
+  ("The commit has no parent."), *Go to child* when no loaded row has the commit as a parent ("No child in the
+  loaded history."). *Filter by author* (single selected commit) puts the author's name in the filter field and
+  filters as a typed text does (the search text has name and email).
 - Badge context menu: a right click on a badge selects the row (as a right click on the row does) and shows the
   menu of the badge's ref, with the items of the ref's menu in its side panel (the same code): a local branch the
   Branches panel's branch menu (`##badge_branch_menu`), a remote-tracking branch the remote-tracking branch menu
