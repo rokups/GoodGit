@@ -91,6 +91,8 @@ private:
     bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);
+    void selectForMenu(const core::HistoryRow& row);
+    void drawBadgeMenu();
 
     Session& m_session;
     core::SnapshotPtr m_snapshot;
@@ -128,12 +130,23 @@ private:
     std::vector<int> m_visible; // indexes into m_rows (filtered)
     bool m_visibleDirty = true;
     std::vector<std::pair<int, float>> m_rowTops; // (display index, top y) drawn this frame
-    // Drag and drop: where the branch badges were (last frame), and a commit dropped without a
-    // modifier waiting for the chooser (source, target).
-    std::unordered_map<core::Oid, std::vector<std::pair<ImRect, std::string>>, core::OidHash> m_badgeRects;
+    // Where the badges of a row were (last frame): a drag of a branch badge and a right click on a badge find
+    // theirs here.
+    struct BadgeRect {
+        ImRect rect;
+        core::RefKind kind;
+        std::string name;
+    };
+    std::unordered_map<core::Oid, std::vector<BadgeRect>, core::OidHash> m_badgeRects;
+    // A commit dropped without a modifier waits for the chooser (source, target).
     std::optional<std::pair<core::Oid, core::Oid>> m_pendingDrop;
     bool m_openChooser = false; // the drop just happened: open the chooser (once; closing it cancels)
-    std::vector<std::pair<ImRect, std::string>> m_dragBadges;
+    std::vector<BadgeRect> m_rowBadges; // the badges of the row being drawn
+    // The menu of the badge that was right-clicked: its ref, and the popup opens once after the table.
+    core::RefKind m_badgeMenuKind = core::RefKind::LocalBranch;
+    std::string m_badgeMenuName;
+    core::Oid m_badgeMenuRow; // the commit of the row the badge is on
+    bool m_openBadgeMenu = false;
     void dragAndDrop(const core::HistoryRow& row);
     void drawDropChooser();
     bool m_rowPitchOk = true;

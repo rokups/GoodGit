@@ -1014,4 +1014,181 @@ GG_TEST("history", "first rows of a large history appear quickly")
     }
 }
 
+namespace {
+
+// A badge by its row and name. The ID is computed (a '/' in a name does not go through a wildcard reference).
+ImGuiTestItemInfo badgeItem(Scenario& s, const std::string& hex, const std::string& name)
+{
+    const ImGuiTestItemInfo row = s.ctx->ItemInfo(rowRef(hex).c_str(), ImGuiTestOpFlags_NoError);
+    if (row.ID == 0)
+        return {};
+    return s.ctx->ItemInfo(ImGuiTestRef(ImHashStr(("###badge_" + name).c_str(), 0, row.ParentID)), ImGuiTestOpFlags_NoError);
+}
+
+bool badgeShown(Scenario& s, const std::string& hex, const std::string& name) { return badgeItem(s, hex, name).ID != 0; }
+
+// A badge takes no hover: the mouse goes to its centre and the row below it gets the click.
+void clickBadge(Scenario& s, const std::string& hex, const std::string& name, ImGuiMouseButton button)
+{
+    s.ctx->MouseMoveToPos(badgeItem(s, hex, name).RectFull.GetCenter());
+    s.ctx->MouseClick(button);
+}
+
+} // namespace
+
+GG_TEST("history", "a right click on a local branch badge shows the branch menu and selects the row")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "side");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "side"); }));
+    GG_CHECK(s.session()->selection().id.hex() != tip);
+    clickBadge(s, tip, "side", ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rename..."); }));
+    // The items of the branch menu, not the commit menu.
+    GG_CHECK(s.itemExists("//$FOCUSED/Merge into HEAD..."));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), tip);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // A left click on the badge selects its row.
+    ctx->ItemClick(rowRef(s.revParse(repo, "HEAD")).c_str());
+    GG_CHECK(s.session()->selection().id.hex() != tip);
+    clickBadge(s, tip, "side", ImGuiMouseButton_Left);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), tip);
+}
+
+GG_TEST("history", "an item of the branch menu works from the badge")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "side");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "side"); }));
+    clickBadge(s, tip, "side", ImGuiMouseButton_Right);
+    ctx->MenuClick("//$FOCUSED/Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename branch"));
+    s.dialogText("Rename branch", "name", "renamed");
+    s.dialogButton("Rename branch", "Rename");
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->findBranch("renamed") != nullptr; }));
+    GG_CHECK(s.session()->snapshot()->findBranch("side") == nullptr);
+    GG_CHECK_STR_EQ(s.revParse(repo, "renamed"), tip);
+}
+
+GG_TEST("history", "a right click on a remote branch badge and on a tag badge shows their menus")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"tag", "v1.0", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string remoteTip = s.revParse(repo, "origin/main");
+    const std::string tagTip = s.revParse(repo, "v1.0");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tagTip, "v1.0"); }));
+    GG_CHECK(hasBadge(findRow(s, remoteTip), ggui::core::RefKind::RemoteBranch, "origin/main"));
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, remoteTip, "origin/main"); }));
+    clickBadge(s, remoteTip, "origin/main", ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Delete on remote..."); }));
+    GG_CHECK(s.itemExists("//$FOCUSED/Create local branch..."));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    ctx->KeyPress(ImGuiKey_Escape);
+    clickBadge(s, tagTip, "v1.0", ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Push tag"); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), tagTip);
+    ctx->KeyPress(ImGuiKey_Escape);
+    // The Copy name item of the tag menu.
+    clickBadge(s, tagTip, "v1.0", ImGuiMouseButton_Right);
+    ctx->MenuClick("//$FOCUSED/Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), "v1.0");
+}
+
+GG_TEST("history", "a right click on the row outside its badges shows the commit menu")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "side");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "side"); }));
+    const ImGuiTestItemInfo row = ctx->ItemInfo(rowRef(tip).c_str());
+    ctx->MouseMoveToPos(ImVec2(row.RectFull.Max.x - 4.0f, row.RectFull.GetCenter().y));
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Create branch..."); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Rename..."));
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("history", "a right click on the Author cell of a row with more badges than fit shows the commit menu")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    // Twelve badges of 25 characters each are wider than the Description column: the ones that do not fit are
+    // clipped and lie under the Author and Date cells.
+    for (int i = 0; i < 12; ++i)
+        s.git(repo, {"branch", "a-very-long-branch-name-for-clipping-" + std::to_string(i), "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "a-very-long-branch-name-for-clipping-11"); }));
+    const ImGuiTestItemInfo row = ctx->ItemInfo(rowRef(tip).c_str());
+    // Where the Author cell is: the Date column is 8 and the Author column 9 font sizes wide.
+    const float fontSize = ImGui::GetFontSize();
+    const float x = row.RectFull.Max.x - fontSize * 8 - fontSize * 4.5f;
+    // The clicked place is under a badge that is not visible.
+    bool covered = false;
+    for (int i = 0; i < 12; ++i) {
+        const ImRect r = badgeItem(s, tip, "a-very-long-branch-name-for-clipping-" + std::to_string(i)).RectFull;
+        covered = covered || (r.Min.x <= x && x <= r.Max.x);
+    }
+    GG_CHECK(covered);
+    ctx->MouseMoveToPos(ImVec2(x, row.RectFull.GetCenter().y));
+    ctx->MouseClick(ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Create branch..."); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Rename..."));
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("history", "the badge menu closes when its ref goes away")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "side"); }));
+    clickBadge(s, tip, "side", ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rename..."); }));
+    // The branch is renamed outside ggui: its badge and the menu go.
+    s.git(repo, {"branch", "-m", "side", "gone"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->findBranch("gone") != nullptr; }));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists("//$FOCUSED/Rename..."); }));
+    GG_CHECK(s.itemExists(rowRef(tip).c_str()));
+}
+
+GG_TEST("history", "a right click on a worktree badge shows the worktree menu")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    const auto snap = s.session()->snapshot();
+    const ggui::core::WorktreeInfo* linked = nullptr;
+    for (const auto& w : snap->worktrees)
+        if (!w.isCurrent && !w.bare && !w.head.isNull() && !linked)
+            linked = &w;
+    GG_REQUIRE(linked != nullptr);
+    const std::string head = linked->head.hex();
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, head, linked->name); }));
+    clickBadge(s, head, linked->name, ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Open in new window"); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    ctx->MenuClick("//$FOCUSED/Copy name");
+    GG_CHECK_STR_EQ(s.clipboard(), linked->name);
+}
+
+GG_TEST("history", "a right click on a stash badge shows the stash menu")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string base = s.revParse(repo, "stash@{0}^1");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, base, "stash@{0}"); }));
+    clickBadge(s, base, "stash@{0}", ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Branch from stash..."); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
 } // namespace ggtest

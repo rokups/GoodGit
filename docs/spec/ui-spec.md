@@ -222,6 +222,14 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
   several adjacent commits are selected with Ctrl-click or Shift-click: the list starts at the oldest selected commit and
   the selected commits start selected in the editor).
+- Badge context menu: a right click on a badge selects the row (as a right click on the row does) and shows the
+  menu of the badge's ref, with the items of the ref's menu in its side panel (the same code): a local branch the
+  Branches panel's branch menu (`##badge_branch_menu`), a remote-tracking branch the remote-tracking branch menu
+  (`##badge_rbranch_menu`), a tag the Tags panel's tag menu (`##badge_tag_menu`), a stash the Stashes panel's menu
+  (`##badge_stash_menu`), a worktree the Worktrees panel's menu (`##badge_worktree_menu`), a keep badge the menu of
+  the commit in the Detached node of Branches (`##badge_kept_menu`). The menu is drawn after the table, so it stays
+  when its row scrolls out of view. The HEAD badge has no menu of its own: it shows the row context menu. A right
+  click on the row outside its badges shows the row context menu. The left click and the drag of a badge are as before.
 - Working tree context menu: Commit… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.
 - Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase; Shift = move

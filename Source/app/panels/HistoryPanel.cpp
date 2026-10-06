@@ -1,6 +1,7 @@
 #include "panels/HistoryPanel.hpp"
 #include "panels/CommitMenu.hpp"
 #include "panels/Graph.hpp"
+#include "panels/SidePanels.hpp"
 
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
@@ -359,9 +360,9 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
         const ImVec2 start = ImGui::GetIO().MouseClickedPos[0];
         std::string branch;
-        for (const auto& [rect, name] : m_dragBadges)
-            if (rect.Contains(start))
-                branch = name;
+        for (const auto& badge : m_rowBadges)
+            if (badge.kind == core::RefKind::LocalBranch && badge.rect.Contains(start))
+                branch = badge.name;
         if (!branch.empty()) {
             ImGui::SetDragDropPayload("GG_BRANCH", branch.data(), branch.size());
             ImGui::Text("Move %s", branch.c_str());
@@ -423,6 +424,84 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
         }
     }
     ImGui::EndDragDropTarget();
+}
+
+// The menu of a badge's ref, the same items as the ref's row in its side panel. It is drawn here, outside the
+// rows, so that it stays when its row scrolls out of view; the popup of each kind has its own ID.
+void HistoryPanel::drawBadgeMenu()
+{
+    const char* id = "##badge_branch_menu";
+    switch (m_badgeMenuKind) {
+    case core::RefKind::LocalBranch: break;
+    case core::RefKind::RemoteBranch: id = "##badge_rbranch_menu"; break;
+    case core::RefKind::Tag: id = "##badge_tag_menu"; break;
+    case core::RefKind::Stash: id = "##badge_stash_menu"; break;
+    case core::RefKind::Worktree: id = "##badge_worktree_menu"; break;
+    case core::RefKind::Keep: id = "##badge_kept_menu"; break;
+    case core::RefKind::Head: return; // no menu: its click is the row's
+    }
+    if (m_openBadgeMenu) {
+        ImGui::OpenPopup(id);
+        m_openBadgeMenu = false;
+    }
+    if (!ImGui::BeginPopup(id))
+        return;
+    // The table runs with zero vertical item spacing; the menu uses the regular one.
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
+    const core::Snapshot& snap = *m_snapshot;
+    const std::string& name = m_badgeMenuName;
+    bool found = false;
+    switch (m_badgeMenuKind) {
+    case core::RefKind::LocalBranch:
+        if (const auto* b = snap.findBranch(name)) {
+            branchMenuItems(m_session, snap, *b);
+            found = true;
+        }
+        break;
+    case core::RefKind::RemoteBranch:
+        for (const auto& r : snap.remoteBranches)
+            if (r.name == name) {
+                remoteBranchMenuItems(m_session, snap, r);
+                found = true;
+            }
+        break;
+    case core::RefKind::Tag:
+        m_session.requestRemoteTagsIfStale(); // the Delete item offers the remotes that have the tag
+        for (const auto& t : snap.tags)
+            if (t.name == name) {
+                tagMenuItems(m_session, snap, t);
+                found = true;
+            }
+        break;
+    case core::RefKind::Stash:
+        for (const auto& s : snap.stashes)
+            if ("stash@{" + std::to_string(s.index) + "}" == name) {
+                stashMenuItems(m_session, s, IdSlot{});
+                found = true;
+            }
+        break;
+    case core::RefKind::Worktree:
+        // The name and the commit the badge is on: the main worktree and a linked one in a folder "main" share a name.
+        for (const auto& w : snap.worktrees)
+            if (w.name == name && w.head == m_badgeMenuRow) {
+                worktreeMenuItems(m_session, snap, w);
+                found = true;
+                break;
+            }
+        break;
+    case core::RefKind::Keep:
+        for (const auto& k : snap.kept)
+            if (k.id.hex() == name) {
+                keptMenuItems(m_session, k, snap.headDetached && snap.head == k.id, IdSlot{});
+                found = true;
+            }
+        break;
+    case core::RefKind::Head: break;
+    }
+    ImGui::PopStyleVar();
+    if (!found) // the ref is gone (a reload)
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 void HistoryPanel::drawDropChooser()
@@ -538,6 +617,16 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     ImGui::PopStyleColor();
 }
 
+// A right click on a row outside the selection selects just that row; on a selected row it keeps the selection.
+void HistoryPanel::selectForMenu(const core::HistoryRow& row)
+{
+    if (m_session.selection().kind != SelKind::Commit || (m_session.selection().id != row.id
+            && std::find(m_extra.begin(), m_extra.end(), row.id) == m_extra.end())) {
+        m_extra.clear();
+        m_session.selectCommit(row.id);
+    }
+}
+
 void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
 {
     if (!beginContextMenu("##row_menu"))
@@ -545,12 +634,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     captureIdCopyClick(m_idSlot);
     // The table runs with zero vertical item spacing; the menu uses the regular one.
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
-    // A click on a row outside the selection selects just that row; on a selected row it keeps the selection.
-    if (m_session.selection().kind != SelKind::Commit || (m_session.selection().id != row.id
-            && std::find(m_extra.begin(), m_extra.end(), row.id) == m_extra.end())) {
-        m_extra.clear();
-        m_session.selectCommit(row.id);
-    }
+    selectForMenu(row);
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
     const SelectionShape sel = selectionShape(m_session);
@@ -720,7 +804,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     const bool selected = (sel.kind == SelKind::Commit && sel.id == row.id) || extra;
     ImGui::PushID(row.id.hex().c_str());
     const ImVec2 cellStart = ImGui::GetCursorScreenPos();
-    m_dragBadges = m_badgeRects[row.id]; // last frame's badges, for a drag starting now
+    m_rowBadges = m_badgeRects[row.id]; // last frame's badges, for a drag or a right click now
     m_badgeRects[row.id].clear();
     m_rowTops.emplace_back(index, cellStart.y);
     const std::string label = row.shortId + " " + row.subject + "###row_" + row.id.hex();
@@ -785,7 +869,23 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
             return row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true);
         }));
     dragAndDrop(row);
-    drawRowMenu(row);
+    // A right click on a badge selects the row and opens the menu of the badge's ref (drawBadgeMenu, after the
+    // table) in place of the row's. Only the badges that have a menu: the HEAD badge shows the row's.
+    bool badgeClick = false;
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Right) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup)) {
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        for (const auto& badge : m_rowBadges)
+            if (badge.kind != core::RefKind::Head && badge.rect.Contains(mouse)) {
+                badgeClick = true;
+                selectForMenu(row);
+                m_badgeMenuKind = badge.kind;
+                m_badgeMenuName = badge.name;
+                m_badgeMenuRow = row.id;
+                m_openBadgeMenu = true;
+            }
+    }
+    if (!badgeClick)
+        drawRowMenu(row);
     if (m_graphShown)
         graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head);
 
@@ -823,8 +923,12 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
             : elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
         const std::string badge = std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
         drawBadge(badge.c_str(), color, ref.current);
-        if (ref.kind == core::RefKind::LocalBranch)
-            m_badgeRects[row.id].emplace_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()), ref.name);
+        // Only the part inside the column counts: a badge that does not fit is clipped, and its hidden part lies
+        // under the cells to the right (a right click there is on the row).
+        ImRect shownRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        shownRect.ClipWithFull(ImGui::GetCurrentWindow()->ClipRect);
+        if (shownRect.GetWidth() > 0 && shownRect.GetHeight() > 0)
+            m_badgeRects[row.id].push_back({shownRect, ref.kind, ref.name});
     }
     ImGui::SameLine();
     drawMergeIcon(row);
@@ -1070,6 +1174,7 @@ void HistoryPanel::draw(bool* open)
         captureScrollAnchor(virtualRows);
         ImGui::EndTable();
         drawDropChooser();
+        drawBadgeMenu();
         m_rowPitchOk = true;
         for (size_t k = 1; k < m_rowTops.size(); ++k)
             if (m_rowTops[k].first == m_rowTops[k - 1].first + 1
