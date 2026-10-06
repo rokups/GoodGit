@@ -1,7 +1,8 @@
-// Side panels (product spec §4.7): Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations.
+// Side panels (product spec §4.7): Branches, Tags, Repositories, Worktrees, Remotes, Stashes, Reflog, Operations.
 // Each panel keeps its own small view model.
 #pragma once
 
+#include "shell/RepoTree.hpp"
 #include "shell/Session.hpp"
 #include "util/Ui.hpp"
 
@@ -37,6 +38,23 @@ private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_filter;
+};
+
+// The permanent repository list as a tree of groups and repositories (GG-12).
+class RepositoriesPanel {
+public:
+    explicit RepositoriesPanel(Session& session) : m_session(session) { }
+    void draw(bool* open);
+    // The path of the selected repository row ("" when none).
+    const std::string& selectedPath() const { return m_selected; }
+    // The normalised path of the repository the window shows, as of the last frame drawn.
+    const std::string& openPath() const { return m_openPath; }
+
+private:
+    void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
+    Session& m_session;
+    std::string m_selected;
+    std::string m_openPath;
 };
 
 class WorktreesPanel {

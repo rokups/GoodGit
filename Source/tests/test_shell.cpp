@@ -37,7 +37,7 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.session() && s.session()->opened());
     GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_branch"), "main");
-    // Default dock layout: Branches|Tags, Remotes|Stashes|Worktrees, History, Changes,
+    // Default dock layout: Branches|Tags, Repositories, Remotes|Stashes|Worktrees, History, Changes,
     // Change information, Diff (Blame, Reflog and Operations join it when shown; hidden at first).
     ctx->Yield(3);
     for (const char* hidden : {"Blame", "Reflog", "Operations"}) {
@@ -50,6 +50,8 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu")
     ImGuiDockNode* branches = dockOf(ctx, "//Branches");
     GG_CHECK(branches != nullptr);
     GG_CHECK(branches == dockOf(ctx, "//Tags"));
+    ImGuiDockNode* repositories = dockOf(ctx, "//Repositories");
+    GG_CHECK(repositories != nullptr && repositories != branches);
     GG_CHECK(dockOf(ctx, "//Worktrees") == dockOf(ctx, "//Remotes"));
     GG_CHECK(dockOf(ctx, "//Worktrees") == dockOf(ctx, "//Stashes"));
     // Tabs in that node: Remotes, Stashes, Worktrees.
@@ -72,12 +74,16 @@ GG_TEST("shell", "open by typed path, default layout, close from the menu")
     ImGuiWindow* left = ctx->GetWindowByRef("//Branches");
     GG_REQUIRE(history && changes && left);
     GG_CHECK(left->Pos.x < history->Pos.x && history->Pos.x < changes->Pos.x);
-    // Remotes|Stashes|Worktrees sit below Branches|Tags and take about 15 % of the left column.
+    // Repositories sit below Branches|Tags and take about 30 % of the column above Remotes|Stashes|Worktrees,
+    // which take about 15 % of the left column.
     ImGuiDockNode* remotes = dockOf(ctx, "//Remotes");
-    GG_REQUIRE(branches && remotes);
-    GG_CHECK(remotes->Pos.y > branches->Pos.y);
-    const float share = remotes->Size.y / (branches->Size.y + remotes->Size.y);
+    GG_REQUIRE(branches && repositories && remotes);
+    GG_CHECK(repositories->Pos.y > branches->Pos.y && remotes->Pos.y > repositories->Pos.y);
+    const float column = branches->Size.y + repositories->Size.y + remotes->Size.y;
+    const float share = remotes->Size.y / column;
     GG_CHECK(share > 0.12f && share < 0.18f);
+    const float middle = repositories->Size.y / (branches->Size.y + repositories->Size.y);
+    GG_CHECK(middle > 0.25f && middle < 0.35f);
 
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_CHECK(s.waitUntil([&] { return closed(s); }));

@@ -28,6 +28,7 @@ class DiffPanel;
 class BlamePanel;
 class BranchesPanel;
 class TagsPanel;
+class RepositoriesPanel;
 class WorktreesPanel;
 class RemotesPanel;
 class StashesPanel;
@@ -56,13 +57,14 @@ inline constexpr const char* Diff = "Diff";
 inline constexpr const char* Blame = "Blame";
 inline constexpr const char* Branches = "Branches";
 inline constexpr const char* Tags = "Tags";
+inline constexpr const char* Repositories = "Repositories";
 inline constexpr const char* Worktrees = "Worktrees";
 inline constexpr const char* Remotes = "Remotes";
 inline constexpr const char* Stashes = "Stashes";
 inline constexpr const char* Reflog = "Reflog";
 inline constexpr const char* Operations = "Operations";
-inline constexpr const char* All[] = {History, Changes, Info, Diff, Blame, Branches, Tags, Worktrees, Remotes,
-    Stashes, Reflog, Operations};
+inline constexpr const char* All[] = {History, Changes, Info, Diff, Blame, Branches, Tags, Repositories,
+    Worktrees, Remotes, Stashes, Reflog, Operations};
 // Reflog, Operations and Blame start hidden (View menu, or opened on demand).
 inline bool defaultVisible(const std::string& name) { return name != Blame && name != Reflog && name != Operations; }
 } // namespace panel
@@ -218,6 +220,7 @@ public:
     BlamePanel& blame() { return *m_blame; }
     BranchesPanel& branches() { return *m_branches; }
     TagsPanel& tags() { return *m_tags; }
+    RepositoriesPanel& repositories() { return *m_repositories; }
     ReflogPanel& reflog() { return *m_reflog; }
     OperationsPanel& operationsPanel() { return *m_operationsPanel; }
     // The interactive rebase todo editor (shown while a todo is open).
@@ -257,6 +260,7 @@ private:
     std::unique_ptr<BlamePanel> m_blame;
     std::unique_ptr<BranchesPanel> m_branches;
     std::unique_ptr<TagsPanel> m_tags;
+    std::unique_ptr<RepositoriesPanel> m_repositories;
     std::unique_ptr<WorktreesPanel> m_worktrees;
     std::unique_ptr<RemotesPanel> m_remotes;
     std::unique_ptr<StashesPanel> m_stashes;

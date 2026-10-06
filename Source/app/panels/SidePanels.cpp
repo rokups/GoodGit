@@ -772,6 +772,61 @@ void TagsPanel::draw(bool* open)
     ImGui::End();
 }
 
+// ---- Repositories -------------------------------------------------------------------------------
+
+// A group is a tree node, open by default; a repository is a row. `toOpen` gets the path of the one
+// double-clicked. Both ids come from the group path or the label ('/' becomes ':'); equal labels
+// among siblings get a "#n" suffix.
+void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen)
+{
+    std::map<std::string, int> seen;
+    for (const auto& node : nodes) {
+        if (node.isGroup()) {
+            const bool open = ImGui::TreeNodeEx((node.label + "###group_" + rowId(node.group)).c_str(),
+                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            if (open) {
+                drawNodes(node.children, toOpen);
+                ImGui::TreePop();
+            }
+            continue;
+        }
+        const std::string id = rowId(node.label);
+        const int n = seen[id]++;
+        ImGui::PushID(("repo_" + id + (n ? "#" + std::to_string(n) : std::string())).c_str());
+        // The open repository has the text colour of the current branch; the selected look is the selection only.
+        const bool isOpen = node.path == m_openPath;
+        ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
+        if (selectable((node.label + "###row").c_str(), node.path == m_selected))
+            m_selected = node.path;
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+            toOpen = node.path;
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            tooltip("%s", node.path.c_str());
+        ImGui::PopID();
+    }
+}
+
+void RepositoriesPanel::draw(bool* open)
+{
+    if (!ImGui::Begin(panel::Repositories, open)) {
+        ImGui::End();
+        return;
+    }
+    m_openPath = normalizeRepoPath(m_session.path().string());
+    const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
+    std::string toOpen;
+    beginList();
+    drawNodes(tree, toOpen);
+    endList();
+    if (!m_selected.empty() && ImGui::Shortcut(ImGuiKey_Enter, ImGuiInputFlags_RouteFocused))
+        toOpen = m_selected;
+    // Not the open one: opening it again would replace the session and cancel its work.
+    if (!toOpen.empty() && toOpen != m_openPath)
+        m_session.app().openRepository(toOpen);
+    ImGui::End();
+}
+
 // ---- Worktrees ----------------------------------------------------------------------------------
 
 void WorktreesPanel::draw(bool* open)

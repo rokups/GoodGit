@@ -121,6 +121,110 @@ GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open")
     }));
 }
 
+// The label of the repository leaf in the tree of the Repositories panel ("" when there is none).
+static std::string repoLeafLabel(const std::vector<ggui::RepoNode>& nodes, const fs::path& path)
+{
+    for (const auto& n : nodes) {
+        if (n.isGroup()) {
+            const std::string inner = repoLeafLabel(n.children, path);
+            if (!inner.empty())
+                return inner;
+        } else if (fs::equivalent(n.path, path)) {
+            return n.label;
+        }
+    }
+    return std::string();
+}
+
+static std::string repoRow(Scenario& s, const fs::path& path)
+{
+    const auto tree = ggui::buildRepoTree(s.app.settings().data().repositories);
+    std::string label = repoLeafLabel(tree, path); // the panel writes ':' for '/' in an ID
+    std::replace(label.begin(), label.end(), '/', ':');
+    return "//Repositories/repo_" + label + "/###row";
+}
+
+GG_TEST("panels", "repositories: the open repository has the mark, an alias makes a group")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Linear, "first");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const auto& panel = s.session()->repositories();
+    GG_REQUIRE(s.waitUntil([&] { return !panel.openPath().empty(); }));
+    GG_CHECK_STR_EQ(panel.openPath(), ggui::normalizeRepoPath(repo.string()));
+    const std::string row = repoRow(s, repo);
+    GG_CHECK(s.itemExists(row.c_str()));
+    GG_CHECK(panel.selectedPath().empty());
+    // The row of the open repository is the one compared for the mark; a double-click on it keeps the session.
+    GG_REQUIRE(s.app.settings().data().repositories.size() == 1);
+    GG_CHECK_STR_EQ(s.app.settings().data().repositories.front().path, panel.openPath());
+    const auto* session = s.session();
+    ctx->ItemDoubleClick(row.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    // An alias "grp/name" moves the repository into the group "grp" under the label "name".
+    s.app.settings().setAlias(ggui::normalizeRepoPath(repo.string()), "grp/name");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//Repositories/###group_grp"));
+    GG_CHECK(s.itemExists("//Repositories/###group_grp/repo_name/###row"));
+    GG_CHECK(!s.itemExists(row.c_str()));
+    // A nested group has its own node.
+    s.app.settings().setAlias(ggui::normalizeRepoPath(repo.string()), "grp/sub/name");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//Repositories/###group_grp/###group_grp:sub/repo_name/###row"));
+}
+
+GG_TEST("panels", "repositories: a click selects, a double-click opens")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, second);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    ctx->ItemClick(row.c_str());
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), ggui::normalizeRepoPath(second.string()));
+    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    ctx->ItemDoubleClick(row.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+}
+
+GG_TEST("panels", "repositories: Enter opens the selected repository")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, second);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    ctx->KeyPress(ImGuiKey_Enter); // nothing is selected yet
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    ctx->ItemClick(row.c_str());
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    // Enter is the panel's only while it has the focus.
+    ctx->WindowFocus("//History");
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    ctx->WindowFocus("//Repositories");
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+}
+
 GG_TEST("panels", "remotes: list and copy")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

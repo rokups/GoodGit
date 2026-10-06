@@ -77,6 +77,8 @@ const char* panelIcon(const char* name)
         return ICON_MS_FORK_RIGHT;
     if (name == panel::Tags)
         return ICON_MS_SELL;
+    if (name == panel::Repositories)
+        return ICON_MS_FOLDER; // the permanent repository list
     if (name == panel::Worktrees)
         return ICON_MS_FOLDER_COPY; // one checkout per folder
     if (name == panel::Remotes)

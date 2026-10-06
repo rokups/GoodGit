@@ -31,6 +31,7 @@ Session::Session(App& app, std::filesystem::path path) : m_app(app), m_path(std:
     m_blame = std::make_unique<BlamePanel>(*this);
     m_branches = std::make_unique<BranchesPanel>(*this);
     m_tags = std::make_unique<TagsPanel>(*this);
+    m_repositories = std::make_unique<RepositoriesPanel>(*this);
     m_worktrees = std::make_unique<WorktreesPanel>(*this);
     m_remotes = std::make_unique<RemotesPanel>(*this);
     m_stashes = std::make_unique<StashesPanel>(*this);
@@ -371,6 +372,7 @@ void Session::draw()
     };
     drawPanel(panel::Branches, *m_branches);
     drawPanel(panel::Tags, *m_tags);
+    drawPanel(panel::Repositories, *m_repositories);
     // Tabs of a shared dock node follow this order.
     drawPanel(panel::Remotes, *m_remotes);
     drawPanel(panel::Stashes, *m_stashes);

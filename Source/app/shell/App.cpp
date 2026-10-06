@@ -614,14 +614,16 @@ void App::drawDockHost()
         ImGuiID left = 0, center = 0, right = 0;
         ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &left, &center);
         ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.40f, &right, &center);
-        ImGuiID leftTop = 0, leftBottom = 0;
-        ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.15f, &leftBottom, &leftTop);
+        ImGuiID leftUpper = 0, leftTop = 0, leftMiddle = 0, leftBottom = 0;
+        ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.15f, &leftBottom, &leftUpper);
+        ImGui::DockBuilderSplitNode(leftUpper, ImGuiDir_Down, 0.30f, &leftMiddle, &leftTop);
         ImGuiID rightTop = 0, rightBottom = 0;
         ImGui::DockBuilderSplitNode(right, ImGuiDir_Up, 0.45f, &rightTop, &rightBottom);
         ImGuiID changes = 0, info = 0;
         ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Up, 0.55f, &changes, &info);
         ImGui::DockBuilderDockWindow(panel::Branches, leftTop);
         ImGui::DockBuilderDockWindow(panel::Tags, leftTop);
+        ImGui::DockBuilderDockWindow(panel::Repositories, leftMiddle);
         ImGui::DockBuilderDockWindow(panel::Remotes, leftBottom);
         ImGui::DockBuilderDockWindow(panel::Stashes, leftBottom);
         ImGui::DockBuilderDockWindow(panel::Worktrees, leftBottom);
