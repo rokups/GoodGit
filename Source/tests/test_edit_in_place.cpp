@@ -172,6 +172,29 @@ MergeRepo makeMerge(Scenario& s, const std::map<int, std::string>& f1Lines, cons
 
 std::string fileAt(Scenario& s, const fs::path& p, const std::string& rev) { return s.gitOut(p, {"show", rev + ":f.txt"}); }
 
+// A clone with "origin/feature" two commits (f1, f2) past main and no local "feature" yet.
+struct RemoteRepo {
+    fs::path path;
+    std::string f1, f2;
+};
+
+RemoteRepo makeRemoteFeature(Scenario& s)
+{
+    RemoteRepo r;
+    r.path = s.fixture(Recipe::WithRemote);
+    const fs::path& p = r.path;
+    s.git(p, {"switch", "-q", "-c", "feature", "main"});
+    s.commitFile(p, "f1.txt", "f1\n", "f1 feature");
+    r.f1 = s.head(p);
+    s.git(p, {"push", "-q", "origin", "feature"});
+    s.commitFile(p, "local-only.txt", "f2\n", "f2 feature");
+    r.f2 = s.head(p);
+    s.git(p, {"push", "-q", "origin", "feature"});
+    s.git(p, {"switch", "-q", "main"});
+    s.git(p, {"branch", "-q", "-D", "feature"});
+    return r;
+}
+
 } // namespace
 
 GG_TEST("edit-in-place", "edit a mid-stack commit: descendants and branches restack, Return goes back")
@@ -422,6 +445,123 @@ GG_TEST("edit-in-place", "amending below a merge base reaches the tip once, with
     GG_CHECK(tip.find("<<<<<<<") == std::string::npos);
     GG_CHECK(s.revParse(p, "main~1^1") != r.a);
     GG_CHECK(s.revParse(p, "main~1^2") != r.f1);
+}
+
+GG_TEST("edit-in-place", "Edit commit on a commit only a remote-tracking branch has makes the local branch; Undo removes it")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/feature"}).ok());
+    s.settle();
+    const std::string before = repoState(s, p);
+    GG_REQUIRE(editCommit(s, p, r.f2, "feature"));
+    s.settle();
+    GG_CHECK(detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f2);
+    GG_CHECK_STR_EQ(s.gitOut(p, {"rev-parse", "--abbrev-ref", "feature@{upstream}"}), "origin/feature");
+    ctx->MenuClick("//##MainMenuBar/Edit/Undo");
+    GG_CHECK(s.waitUntil([&] { return repoState(s, p) == before; }));
+    s.settle();
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/feature"}).ok());
+    GG_CHECK(!detached(s, p));
+}
+
+GG_TEST("edit-in-place", "Edit commit moves a local branch that is behind the remote-tracking branch")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    s.git(p, {"branch", "-q", "feature", r.f1});
+    GG_REQUIRE(s.openRepository(p));
+    s.settle();
+    const std::string before = repoState(s, p);
+    GG_REQUIRE(editCommit(s, p, r.f2, "feature"));
+    s.settle();
+    GG_CHECK(detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f2);
+    // The upstream of an existing branch is not set by the fast-forward.
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "--abbrev-ref", "feature@{upstream}"}).ok());
+    ctx->MenuClick("//##MainMenuBar/Edit/Undo");
+    GG_CHECK(s.waitUntil([&] { return repoState(s, p) == before; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f1);
+}
+
+GG_TEST("edit-in-place", "Edit commit on a branch that has diverged from the remote-tracking branch is refused")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    s.git(p, {"switch", "-q", "-c", "feature", r.f1});
+    s.commitFile(p, "g.txt", "g\n", "g local");
+    s.git(p, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    const std::string before = repoState(s, p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit");
+    GG_REQUIRE(s.dialogOpen(("edit " + r.f2.substr(0, 10)).c_str()));
+    GG_CHECK_STR_EQ(s.app.errorMessage(), "The commit is on origin/feature, but the local branch feature has diverged from it");
+    s.dialogButton(("edit " + r.f2.substr(0, 10)).c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK(!s.session()->editSession());
+    GG_CHECK(noSessionFile(p));
+}
+
+GG_TEST("edit-in-place", "a failed switch of Edit commit leaves no local branch; Stash and switch then makes it")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    s.write(p, "local-only.txt", "my local edit\n");
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit");
+    GG_REQUIRE(s.dialogOpen("Stash and switch"));
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/feature"}).ok());
+    GG_CHECK(!detached(s, p));
+    s.dialogButton("Stash and switch", "Stash and switch");
+    GG_CHECK(editing(s, r.f2, "feature"));
+    s.settle();
+    GG_CHECK(detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f2);
+}
+
+GG_TEST("edit-in-place", "Edit commit on the tip of origin/main moves main, which is behind it, and ignores origin/HEAD")
+{
+    const fs::path p = s.fixture(Recipe::WithRemote);
+    s.git(p, {"remote", "set-head", "origin", "main"});
+    s.git(p, {"reset", "-q", "--hard", "origin/main~1"});
+    const std::string tip = s.revParse(p, "origin/main");
+    GG_REQUIRE(s.revParse(p, "origin/HEAD") == tip);
+    const std::string upstream = s.gitOut(p, {"rev-parse", "--abbrev-ref", "main@{upstream}"});
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, tip, "main"));
+    s.settle();
+    GG_CHECK(detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "main"), tip);
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/HEAD"}).ok());
+    GG_CHECK_STR_EQ(s.gitOut(p, {"rev-parse", "--abbrev-ref", "main@{upstream}"}), upstream);
+}
+
+GG_TEST("edit-in-place", "Edit commit is refused when another worktree has the local branch behind the remote-tracking branch")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    const fs::path wt = p.string() + "-feature-wt";
+    s.git(p, {"branch", "-q", "feature", r.f1});
+    s.git(p, {"worktree", "add", "-q", wt.string(), "feature"});
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    const std::string before = repoState(s, p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK(s.app.errorMessage().find("another worktree has the local branch feature") != std::string::npos);
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK(!s.session()->editSession());
 }
 
 } // namespace ggtest

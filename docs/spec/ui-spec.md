@@ -251,7 +251,7 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
   Move to parent · Revert (commit files: index and working tree; Shift: Revert and commit, a new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
-New commit, Check out (a branch), Edit commit (E; detaches at the commit; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
+New commit, Check out (a branch), Edit commit (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
 Abandon…/Abandon branch…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:

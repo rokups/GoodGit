@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -626,6 +627,55 @@ void collapseConflictStages(MutationContext& ctx)
     }
 }
 
+// Edit commit, when no local branch contains the commit: the remote-tracking branch that does,
+// with the local branch to make for it (or, when that exists behind it, to fast-forward).
+struct RemoteBranch {
+    std::string ref;  // refs/remotes/<remote>/<name>
+    std::string name; // the branch name without the remote
+    bool create = false;
+};
+
+// The first usable remote-tracking branch containing `target`; none when it is on no remote branch.
+// A refusal names why the others are not usable: the local branch has diverged, or another worktree has it.
+std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::string& target, const std::string& headBranch)
+{
+    std::string why;
+    bool any = false;
+    for (const auto& line : gg::splitLines(ctx.gitMayFail({"for-each-ref", "--contains", target,
+             "--format=%(refname)\t%(symref)\t%(refname:lstrip=3)", "refs/remotes/"}).out)) {
+        // Fields: ref, symref (empty unless the ref is symbolic, like refs/remotes/<remote>/HEAD), name.
+        const auto tab = line.find('\t');
+        const auto tab2 = tab == std::string::npos ? tab : line.find('\t', tab + 1);
+        if (tab2 == std::string::npos || tab2 != tab + 1)
+            continue;
+        RemoteBranch candidate{line.substr(0, tab), line.substr(tab2 + 1), false};
+        if (candidate.name.empty())
+            continue;
+        any = true;
+        const std::string local = "refs/heads/" + candidate.name;
+        const std::string shown = candidate.ref.substr(std::string("refs/remotes/").size());
+        if (!ctx.gitMayFail({"rev-parse", "-q", "--verify", local}).ok()) {
+            candidate.create = true;
+            return candidate;
+        }
+        if (!ctx.gitMayFail({"merge-base", "--is-ancestor", local, candidate.ref}).ok()) {
+            if (why.empty())
+                why = "The commit is on " + shown + ", but the local branch " + candidate.name + " has diverged from it";
+            continue;
+        }
+        const std::string elsewhere = gg::trim(ctx.gitMayFail({"for-each-ref", "--format=%(worktreepath)", local}).out);
+        if (!elsewhere.empty() && candidate.name != headBranch) {
+            if (why.empty())
+                why = "The commit is on " + shown + ", but another worktree has the local branch " + candidate.name;
+            continue;
+        }
+        return candidate;
+    }
+    if (any)
+        throw MutationError{Outcome::Refused, why, {}};
+    return std::nullopt;
+}
+
 } // namespace
 
 void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit)
@@ -637,8 +687,11 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
     run(label,
         [target, detach, stashFirst, expand, edit](MutationContext& ctx) {
             // Edit commit: the branch to return to is the one HEAD is on (or the current edit
-            // session's) if it contains the commit, else the first local branch that does.
+            // session's) if it contains the commit, else the first local branch that does, else
+            // a local branch made (or fast-forwarded) from the first remote-tracking branch that
+            // does, after the switch, so a switch that fails leaves no branch behind.
             std::string branch;
+            std::optional<RemoteBranch> remote;
             if (edit) {
                 std::vector<std::string> candidates{gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out)};
                 if (auto session = gg::edit::read(editSessionFile(ctx)))
@@ -655,8 +708,12 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                             branch = b;
                             break;
                         }
-                if (branch.empty())
-                    throw MutationError{Outcome::Refused, "The commit is not on a local branch", {}};
+                if (branch.empty()) {
+                    remote = remoteBranchFor(ctx, target, candidates.front());
+                    if (!remote)
+                        throw MutationError{Outcome::Refused, "The commit is not on a local branch", {}};
+                    branch = remote->name;
+                }
             }
             collapseConflictStages(ctx);
             if (stashFirst)
@@ -668,6 +725,12 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             if (expand)
                 expandConflictStages(ctx);
             ctx.worktreeFollowsIndex = true;
+            if (remote) {
+                if (remote->create)
+                    ctx.git({"branch", "--track", remote->name, remote->ref});
+                else
+                    ctx.git({"branch", "-f", "--no-track", remote->name, remote->ref});
+            }
             if (edit) {
                 const std::string head = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
                 const int n = static_cast<int>(gg::rewrite::descendants(ctx.repo(), {head}).size()) - 1;
