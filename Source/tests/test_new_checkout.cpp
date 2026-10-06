@@ -170,7 +170,7 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     // One commit: its items are enabled, the range item is not.
     ctx->ItemClick(rowRef(c0).c_str());
     GG_CHECK(probe(s, ctx, c0, "Create tag...").enabled);
-    GG_CHECK(probe(s, ctx, c0, "Abandon...").enabled);
+    GG_CHECK(probe(s, ctx, c0, "Drop commit...").enabled);
     GG_CHECK(!probe(s, ctx, c0, "Interactive rebase selection...").enabled);
     // c0 and c2 (a gap at c1): single-commit items and the range item are disabled.
     ctx->ItemClick(rowRef(c0).c_str());
@@ -178,7 +178,7 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     ctx->ItemClick(rowRef(c2).c_str());
     ctx->KeyUp(ImGuiMod_Ctrl);
     GG_CHECK_EQ(s.session()->history().extraSelection().size(), static_cast<size_t>(1));
-    for (const char* item : {"New detached", "Create tag...", "Abandon...", "Duplicate", "Check out"})
+    for (const char* item : {"New detached", "Create tag...", "Drop commit...", "Duplicate", "Check out"})
         GG_CHECK(!probe(s, ctx, c0, item).enabled);
     GG_CHECK(!probe(s, ctx, c0, "Interactive rebase selection...").enabled);
     // Right-clicking a selected row keeps the selection.
@@ -195,7 +195,7 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     GG_CHECK(s.session()->history().extraSelection().empty());
 }
 
-GG_TEST("checkout", "Check out lists the branches at the commit and Detached; Edit commit follows it")
+GG_TEST("checkout", "Check out lists the branches at the commit and Detached; Edit commit is in the editing group")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string tip = s.revParse(repo, "topic");
@@ -206,15 +206,15 @@ GG_TEST("checkout", "Check out lists the branches at the commit and Detached; Ed
     GG_REQUIRE(gg::splitLines(s.gitOut(repo, {"branch", "--points-at", noBranch})).empty());
     GG_CHECK(probe(s, ctx, noBranch, "Check out").enabled);
     GG_CHECK(probe(s, ctx, tip, "Check out").enabled);
-    GG_CHECK(probe(s, ctx, noBranch, "Edit commit").enabled);
-    // Edit commit comes right after Check out, before Create branch.
+    GG_CHECK(probe(s, ctx, noBranch, "Edit commit (checkout detached)").enabled);
+    // Edit commit is in the history editing group, after Create branch.
     ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_REQUIRE(s.itemExists("//$FOCUSED/Edit commit"));
+    GG_REQUIRE(s.itemExists("//$FOCUSED/Edit commit (checkout detached)"));
     const float checkOutY = ctx->ItemInfo("//$FOCUSED/Check out", ImGuiTestOpFlags_NoError).RectFull.Min.y;
-    const float editY = ctx->ItemInfo("//$FOCUSED/Edit commit", ImGuiTestOpFlags_NoError).RectFull.Min.y;
+    const float editY = ctx->ItemInfo("//$FOCUSED/Edit commit (checkout detached)", ImGuiTestOpFlags_NoError).RectFull.Min.y;
     const float createY = ctx->ItemInfo("//$FOCUSED/Create branch...", ImGuiTestOpFlags_NoError).RectFull.Min.y;
-    GG_CHECK(checkOutY < editY && editY < createY);
+    GG_CHECK(checkOutY < createY && createY < editY);
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);
 
@@ -239,7 +239,7 @@ GG_TEST("checkout", "switch to a branch, detach")
     s.contextMenu(rowRef(topic).c_str(), "Check out/topic");
     GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "topic"; }));
     s.settle();
-    s.contextMenu(rowRef(featureParent).c_str(), "Edit commit");
+    s.contextMenu(rowRef(featureParent).c_str(), "Edit commit (checkout detached)");
     GG_CHECK(s.waitUntil([&] { return headIs(s, repo, featureParent) && symbolicHead(s, repo) == "(detached)"; }));
     s.settle();
     s.contextMenu(rowRef(s.revParse(repo, "main")).c_str(), "Check out/main");

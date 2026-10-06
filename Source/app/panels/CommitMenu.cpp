@@ -123,28 +123,40 @@ void disabledHint(bool disabled, const char* why)
         tooltip("%s", why);
 }
 
-void drawEditCommitItem(Session& session, const core::HistoryRow& row)
-{
-    const bool single = selectionShape(session).single();
-    if (menuItem(ICON_MS_EDIT, "Edit commit", "E", false, ::ggui::free(session) && single))
-        session.actions().editCommit(row.id);
-    if (!single)
-        disabledHint(true, "Needs a single selected commit.");
-}
+namespace {
 
-void drawCommitEditItems(Session& session, const core::HistoryRow& row)
+// What the commit menu items share: whether an action can start, the selection and the Shift state.
+struct MenuContext
 {
-    const bool free = ::ggui::free(session);
-    const SelectionShape sel = selectionShape(session);
-    const Other other = otherCommit(session, row);
-    const bool merge = row.parents.size() > 1;
+    Session& session;
+    const core::HistoryRow& row;
+    bool free;
+    SelectionShape sel;
     // Holding Shift swaps an item for its sibling (the same variants as the Shift+key hotkeys).
-    const bool shift = ImGui::GetIO().KeyShift;
+    bool shift;
+    bool merge;
+    bool headCommit; // HEAD has a commit
+    bool isHead;     // this commit is HEAD
+
+    MenuContext(Session& s, const core::HistoryRow& r)
+        : session(s)
+        , row(r)
+        , free(::ggui::free(s))
+        , sel(selectionShape(s))
+        , shift(ImGui::GetIO().KeyShift)
+        , merge(r.parents.size() > 1)
+    {
+        const auto snap = s.snapshot();
+        isHead = snap->head == r.id; // null when unborn
+        headCommit = !snap->headUnborn;
+    }
+
     // An item acting on one commit: disabled unless exactly one commit is selected (and `enabled`).
     // `why` explains a disabled `enabled`. `withOther`: a second selected commit is allowed (the
     // item's dialog takes it as the other commit).
-    auto one = [&](const char* icon, const char* label, const char* shortcut, bool enabled = true, const char* why = nullptr,
-                   bool withOther = false) {
+    bool one(const char* icon, const char* label, const char* shortcut, bool enabled = true, const char* why = nullptr,
+             bool withOther = false) const
+    {
         const bool shapeOk = sel.single() || (withOther && sel.count() == 2);
         const bool hit = menuItem(icon, label, shortcut, false, free && shapeOk && enabled);
         if (!shapeOk)
@@ -153,74 +165,90 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         else if (why)
             disabledHint(!enabled, why);
         return hit;
-    };
-    if (one(ICON_MS_CONTROL_POINT_DUPLICATE, shift ? "Duplicate branch" : "Duplicate", shift ? "Shift+D" : "D"))
-        session.actions().duplicate(row.id, shift);
-    if (one(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, true, nullptr, true))
-        showRebaseDialog(session, row.id, other.ref);
-    if (one(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I"))
-        openInteractiveRebase(session, row.id);
+    }
+};
+
+} // namespace
+
+void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row)
+{
+    const MenuContext c(session, row);
+    const Other other = otherCommit(session, row);
     // HEAD and this commit (plan §4.3 "Merge into @"): also in Branches.
-    const auto snap = session.snapshot();
-    const bool isHead = snap->head == row.id; // null when unborn
-    const bool headCommit = !snap->headUnborn;
-    if (one(ICON_MS_MERGE, "Merge into HEAD...", nullptr, headCommit && !isHead,
-            headCommit ? "This commit is HEAD." : "HEAD has no commit yet."))
+    if (c.one(ICON_MS_MERGE, "Merge into HEAD...", nullptr, c.headCommit && !c.isHead,
+            c.headCommit ? "This commit is HEAD." : "HEAD has no commit yet."))
         showMergeDialog(session, row.id.hex(), true);
+    if (c.one(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, true, nullptr, true))
+        showRebaseDialog(session, row.id, other.ref);
+    if (c.one(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I"))
+        openInteractiveRebase(session, row.id);
+}
+
+void drawCommitPickItems(Session& session, const core::HistoryRow& row)
+{
+    const MenuContext c(session, row);
     // Revert / cherry-pick onto HEAD (plan §4.3). A merge commit's change is taken against its
     // first parent (-m 1). Picking an ancestor of HEAD other than HEAD is refused on the worker.
-    {
-        const std::string blocked = !headCommit ? "HEAD has no commit yet."
-            : isHead                            ? "This commit is HEAD: its change is already there."
-                                                : "";
-        auto item = [&](const char* icon, const char* label, bool enabled, const char* what, bool revert, bool commit) {
-            if (menuItem(icon, label, nullptr, false, free && sel.single() && enabled))
-                session.actions().revertOrPick(row.id, revert, commit);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-                std::string tip = what;
-                if (merge)
-                    tip += "\nA merge commit: its change against its first parent (-m 1).";
-                if (!sel.single())
-                    tip += "\nNeeds a single selected commit.";
-                else if (!enabled)
-                    tip += "\n" + (revert ? std::string("HEAD has no commit yet.") : blocked);
-                tooltip("%s", tip.c_str());
-            }
-        };
-        if (shift)
-            item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", headCommit,
-                "A new commit on HEAD that undoes this commit. Text conflicts become first-class conflicts.", true, true);
-        else
-            item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", headCommit,
-                "Undo this commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
-        if (shift)
-            item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick and commit", blocked.empty(),
-                "A copy of this commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
-        else
-            item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", blocked.empty(),
-                "Apply this commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false,
-                false);
-    }
-    if (shift) {
-        if (one(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S"))
+    const std::string blocked = !c.headCommit ? "HEAD has no commit yet."
+        : c.isHead                            ? "This commit is HEAD: its change is already there."
+                                              : "";
+    auto item = [&](const char* icon, const char* label, bool enabled, const char* what, bool revert, bool commit) {
+        if (menuItem(icon, label, nullptr, false, c.free && c.sel.single() && enabled))
+            session.actions().revertOrPick(row.id, revert, commit);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+            std::string tip = what;
+            if (c.merge)
+                tip += "\nA merge commit: its change against its first parent (-m 1).";
+            if (!c.sel.single())
+                tip += "\nNeeds a single selected commit.";
+            else if (!enabled)
+                tip += "\n" + (revert ? std::string("HEAD has no commit yet.") : blocked);
+            tooltip("%s", tip.c_str());
+        }
+    };
+    if (c.shift)
+        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick and commit", blocked.empty(),
+            "A copy of this commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
+    else
+        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", blocked.empty(),
+            "Apply this commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false,
+            false);
+    if (c.shift)
+        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", c.headCommit,
+            "A new commit on HEAD that undoes this commit. Text conflicts become first-class conflicts.", true, true);
+    else
+        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", c.headCommit,
+            "Undo this commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
+}
+
+void drawCommitEditItems(Session& session, const core::HistoryRow& row)
+{
+    const MenuContext c(session, row);
+    if (menuItem(ICON_MS_EDIT, "Edit commit (checkout detached)", "E", false, c.free && c.sel.single()))
+        session.actions().editCommit(row.id);
+    if (!c.sel.single())
+        disabledHint(true, "Needs a single selected commit.");
+    if (c.one(ICON_MS_CONTROL_POINT_DUPLICATE, c.shift ? "Duplicate branch" : "Duplicate", c.shift ? "Shift+D" : "D"))
+        session.actions().duplicate(row.id, c.shift);
+    if (c.shift) {
+        if (c.one(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S"))
             session.actions().squashDescendants(row.id);
     } else {
         const char* why = nullptr;
-        const auto commits = squashCommits(session, sel, &why);
-        const bool hit = menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, free && !commits.empty());
+        const auto commits = squashCommits(session, c.sel, &why);
+        const bool hit = menuItem(ICON_MS_JOIN_INNER, "Squash...", "S", false, c.free && !commits.empty());
         disabledHint(commits.empty() && why, why);
         if (hit)
             showSquashDialog(session, commits);
     }
-    if (one(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", !merge, "A merge commit cannot be split."))
+    if (c.one(ICON_MS_CALL_SPLIT, "Split...", "Alt+S", !c.merge, "A merge commit cannot be split."))
         showSplitDialog(session, row.id);
-    if (one(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, merge, "Only a merge commit has parents to simplify."))
+    if (c.one(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, c.merge, "Only a merge commit has parents to simplify."))
         session.actions().simplifyParents(row.id);
-    ImGui::Separator();
-    if (shift) {
-        if (one(ICON_MS_DELETE_FOREVER, "Abandon branch...", "Shift+A"))
+    if (c.shift) {
+        if (c.one(ICON_MS_DELETE_FOREVER, "Drop branch...", "Shift+A"))
             showAbandonBranchDialog(session, row.id);
-    } else if (one(ICON_MS_DELETE_FOREVER, "Abandon...", "A")) {
+    } else if (c.one(ICON_MS_DELETE_FOREVER, "Drop commit...", "A")) {
         showAbandonDialog(session, row.id);
     }
 }
@@ -381,7 +409,7 @@ void showSplitDialog(Session& session, const core::Oid& commit)
 void showAbandonDialog(Session& session, const core::Oid& commit)
 {
     Form f;
-    f.title = "Abandon commit";
+    f.title = "Drop commit";
     // Whatever pointed at the commit moves to its first parent's replacement, or to nothing when it has none.
     const core::HistoryRow* row = session.history().row(commit);
     f.message = "Drop this commit. Its descendants are rebased onto its parent.";
@@ -389,9 +417,9 @@ void showAbandonDialog(Session& session, const core::Oid& commit)
         f.message = "Drop this commit. Its children become root commits.";
     else if (row && row->parents.size() > 1)
         f.message = "Drop this merge. Its descendants are rebased onto its first parent; the merged-in commits are no longer part of them.";
-    f.add(commitInfo(session, "Abandon", commit));
+    f.add(commitInfo(session, "Drop", commit));
     Session* s = &session;
-    f.buttons.push_back({"Abandon", [s, commit](Form&) { s->actions().abandon(commit, false); }});
+    f.buttons.push_back({"Drop", [s, commit](Form&) { s->actions().abandon(commit, false); }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }
@@ -399,15 +427,15 @@ void showAbandonDialog(Session& session, const core::Oid& commit)
 void showAbandonBranchDialog(Session& session, const core::Oid& commit)
 {
     Form f;
-    f.title = "Abandon branch";
+    f.title = "Drop branch";
     f.message = "Drop this commit and everything after it.";
-    f.add(commitInfo(session, "Abandon from", commit));
+    f.add(commitInfo(session, "Drop from", commit));
     Field del{Field::Check, "delete_branches", "Delete the branches that only point into it"};
     del.checked = true;
     f.add(del);
     f.add(Field{Field::Check, "delete_remote", "Also delete them on their remote"});
     Session* s = &session;
-    f.buttons.push_back({"Abandon", [s, commit](Form& form) {
+    f.buttons.push_back({"Drop", [s, commit](Form& form) {
                              const bool deleteBranches = form.checked("delete_branches");
                              const bool deleteRemote = form.checked("delete_remote");
                              // Branches at or after the commit (read now, before the rewrite moves them).

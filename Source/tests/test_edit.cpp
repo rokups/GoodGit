@@ -437,14 +437,14 @@ GG_TEST("edit", "abandon a commit (A) and a branch (Shift+A)")
     // Cancel leaves the history alone.
     const std::vector<std::string> before = subjects(s, r.path);
     ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Abandon commit"));
-    s.dialogButton("Abandon commit", "Cancel");
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Cancel");
     s.settle();
     GG_CHECK(s.revParse(r.path, "HEAD") == r.c4);
     GG_CHECK(subjects(s, r.path) == before);
     ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Abandon commit"));
-    s.dialogButton("Abandon commit", "Abandon");
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Drop");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c2 add b", "c1 add a"}));
     GG_CHECK_STR_EQ(s.read(r.path, "a.txt"), "one\ntwo\nthree\n");
@@ -453,9 +453,9 @@ GG_TEST("edit", "abandon a commit (A) and a branch (Shift+A)")
     GG_REQUIRE(rowReady(s, r.s1));
     ctx->ItemClick(rowRef(r.s1).c_str());
     ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Abandon branch"));
-    s.dialogCheck("Abandon branch", "delete_remote", "Also delete them on their remote");
-    s.dialogButton("Abandon branch", "Abandon");
+    GG_REQUIRE(s.dialogOpen("Drop branch"));
+    s.dialogCheck("Drop branch", "delete_remote", "Also delete them on their remote");
+    s.dialogButton("Drop branch", "Drop");
     // side is on its remote: rewriting it asks first.
     GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
     s.dialogButton("Rewrite published history?", "Rewrite");
@@ -516,12 +516,12 @@ GG_TEST("edit", "the commit menu swaps items for their siblings while Shift is h
     ctx->ItemClick(rowRef(r.c2).c_str(), ImGuiMouseButton_Right);
     auto shown = [&](const char* label) { return ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError).ID != 0; };
     GG_CHECK(shown("Duplicate") && !shown("Duplicate branch"));
-    GG_CHECK(shown("Abandon...") && !shown("Abandon branch..."));
+    GG_CHECK(shown("Drop commit...") && !shown("Drop branch..."));
     GG_CHECK(!shown("Push"));
     ctx->KeyDown(ImGuiMod_Shift);
     ctx->Yield(2);
     GG_CHECK(shown("Duplicate branch") && !shown("Duplicate"));
-    GG_CHECK(shown("Abandon branch...") && !shown("Abandon..."));
+    GG_CHECK(shown("Drop branch...") && !shown("Drop commit..."));
     ctx->KeyUp(ImGuiMod_Shift);
     ctx->KeyPress(ImGuiKey_Escape);
 }
@@ -658,8 +658,8 @@ GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a l
     GG_REQUIRE(rowReady(s, r.c3));
     ctx->ItemClick(rowRef(r.c3).c_str());
     ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Abandon commit"));
-    s.dialogButton("Abandon commit", "Abandon");
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Drop");
     GG_CHECK(changed(s, r.path, c5));
     GG_CHECK(s.waitUntil([&] { return !s.app.toasts().empty(); }));
     GG_CHECK(s.app.toasts().back().message.find("now have first-class conflicts") != std::string::npos);
@@ -935,19 +935,19 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c3 change a", "c3a first part", "c2 add b", "c1 add a"}));
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--name-only", "main~2", "main~1"}), "a.txt");
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), c4Tree);
-    // Abandon branch: s1 dropped; side (which only pointed into it) is kept at its parent.
-    s.contextMenu(rowRef(r.s1).c_str(), "Abandon branch...", true);
-    GG_REQUIRE(s.dialogOpen("Abandon branch"));
-    s.dialogCheck("Abandon branch", "delete_branches", "Delete the branches that only point into it", false);
-    s.dialogButton("Abandon branch", "Abandon");
+    // Drop branch: s1 dropped; side (which only pointed into it) is kept at its parent.
+    s.contextMenu(rowRef(r.s1).c_str(), "Drop branch...", true);
+    GG_REQUIRE(s.dialogOpen("Drop branch"));
+    s.dialogCheck("Drop branch", "delete_branches", "Delete the branches that only point into it", false);
+    s.dialogButton("Drop branch", "Drop");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c2; }));
     s.settle();
-    // Abandon the detached copy's tip: HEAD moves to its parent.
+    // Drop the detached copy's tip: HEAD moves to its parent.
     GG_REQUIRE(rowReady(s, branchCopy));
     const std::string copyParent = s.revParse(r.path, branchCopy + "^");
-    s.contextMenu(rowRef(branchCopy).c_str(), "Abandon...");
-    GG_REQUIRE(s.dialogOpen("Abandon commit"));
-    s.dialogButton("Abandon commit", "Abandon");
+    s.contextMenu(rowRef(branchCopy).c_str(), "Drop commit...");
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Drop");
     GG_CHECK(changed(s, r.path, branchCopy));
     GG_CHECK_STR_EQ(s.head(r.path), copyParent);
     // Create tag... on a commit other than HEAD tags that commit.

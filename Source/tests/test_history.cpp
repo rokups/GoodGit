@@ -1386,4 +1386,30 @@ GG_TEST("history", "the Check out menu has Detached and detaches without a dialo
     GG_CHECK(!s.dialogOpen("Checkout detached", 0.5f));
 }
 
+GG_TEST("history", "the commit menu uses git words")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string commit = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(commit).c_str()); }));
+    ctx->ItemClick(rowRef(commit).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//$FOCUSED/Drop commit..."));
+    GG_CHECK(s.itemExists("//$FOCUSED/Edit commit (checkout detached)"));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Abandon..."));
+    // Every item exists and each one is below the one before.
+    const char* labels[] = {"New detached", "Check out", "Create branch...", "Create tag...", "Move branch",
+        "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Interactive rebase selection...", "Cherry-pick",
+        "Revert", "Edit commit (checkout detached)", "Duplicate", "Squash...", "Split...", "Simplify parents",
+        "Drop commit...", "Copy"};
+    float last = -1.0f;
+    for (const char* label : labels) {
+        const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError);
+        GG_CHECK(info.ID != 0);
+        GG_CHECK(info.RectFull.Min.y > last);
+        last = info.RectFull.Min.y;
+    }
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
 } // namespace ggtest

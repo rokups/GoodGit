@@ -444,7 +444,7 @@ void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, cons
         session.revealCommit(k.id);
     idCopyMenuItem(hex);
     ImGui::Separator();
-    if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon...", nullptr, false, free))
+    if (menuItem(ICON_MS_DELETE_FOREVER, "Drop commit...", nullptr, false, free))
         showAbandonDialog(session, k.id);
 }
 

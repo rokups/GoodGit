@@ -788,7 +788,6 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         ImGui::EndMenu();
     }
     needOne();
-    drawEditCommitItem(m_session, row);
     if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free && single))
         m_session.showCreateBranchDialog(hex);
     needOne();
@@ -810,6 +809,16 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     else
         disabledHint(movable.empty(), "No other branch to move here.");
     ImGui::Separator();
+    drawCommitIntegrateItems(m_session, row);
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free && sel.range()))
+        openInteractiveRebaseSelection(m_session, sel.ids);
+    disabledHint(!sel.range(), sel.count() < 2 ? "Needs two or more adjacent commits selected (Ctrl-click or Shift-click to add)."
+                                               : "The selected commits are not adjacent (gaps between them).");
+    ImGui::Separator();
+    drawCommitPickItems(m_session, row);
+    ImGui::Separator();
+    drawCommitEditItems(m_session, row);
+    ImGui::Separator();
     if (beginMenu(ICON_MS_CONTENT_COPY, "Copy", single)) {
         idCopyMenuItem(hex);
         if (menuItem(ICON_MS_CONTENT_COPY, "Full description")) {
@@ -821,18 +830,11 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     }
     needOne();
     if (mergeToggle(row)) {
-        ImGui::Separator();
         if (menuItem(row.collapsed ? ICON_MS_UNFOLD_MORE : ICON_MS_UNFOLD_LESS, row.collapsed ? "Expand merged history" : "Collapse merged history",
                 nullptr, false, single))
             toggleMerge(row.id);
         needOne();
     }
-    ImGui::Separator();
-    drawCommitEditItems(m_session, row);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase selection...", nullptr, false, free && sel.range()))
-        openInteractiveRebaseSelection(m_session, sel.ids);
-    disabledHint(!sel.range(), sel.count() < 2 ? "Needs two or more adjacent commits selected (Ctrl-click or Shift-click to add)."
-                                               : "The selected commits are not adjacent (gaps between them).");
     ImGui::PopStyleVar();
     ImGui::EndPopup();
 }

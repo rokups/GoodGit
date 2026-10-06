@@ -226,12 +226,14 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   remote branch badge checks out the local branch of the short name, or opens *Create branch* with the remote
   branch as the start point and the short name as the name; a tag badge asks as above, then detaches at the tag's
   commit; any other badge acts as the row.
-- Row context menu: New · New detached · Check out ▸ (the branches at the commit, then after a separator *Detached*
-  (no dialog: chosen by name); enabled with a single selected commit, also without a branch) ·
-  Edit commit · Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
-  description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
-  several adjacent commits are selected with Ctrl-click or Shift-click: the list starts at the oldest selected commit and
-  the selected commits start selected in the editor).
+- Row context menu, in groups with separators: New · New detached · Check out ▸ (the branches at the commit, then after a
+  separator *Detached* (no dialog: chosen by name); enabled with a single selected commit, also without a branch) ·
+  Create branch… · Create tag… · Move branch ▸ | Merge into HEAD… · Rebase onto… · Interactive rebase… ·
+  *Interactive rebase selection…* (Phase 3, when several adjacent commits are selected with Ctrl-click or Shift-click:
+  the list starts at the oldest selected commit and the selected commits start selected in the editor) |
+  Cherry-pick · Revert | Edit commit (checkout detached) · Duplicate · Squash… · Split… · Simplify parents ·
+  Drop commit… | Copy ▸ (ID, Full description) · Expand / Collapse merged history. The menu has no branch actions
+  (Delete branch, Push): the menu of a branch badge has them (right click on the badge).
 - Badge context menu: a right click on a badge selects the row (as a right click on the row does) and shows the
   menu of the badge's ref, with the items of the ref's menu in its side panel (the same code): a local branch the
   Branches panel's branch menu (`##badge_branch_menu`), a remote-tracking branch the remote-tracking branch menu
@@ -287,9 +289,9 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   Move to parent · Revert (commit files: index and working tree; Shift: Revert and commit, a new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
-New commit, Check out (a branch, or detached), Edit commit (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
+New commit, Check out (a branch, or detached), Edit commit (checkout detached) (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
-Abandon…/Abandon branch…, Simplify parents, Reorder, Move
+Drop commit…/Drop branch…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it
@@ -583,7 +585,7 @@ the panel without touching the repository.
   is outlined as the current branch is. Hover actions: Check out `act_checkout` (not on the current row) ·
   Create branch `act_branch` (the `Create branch` dialog at the commit). Double-click checks the commit out.
   Context: Check out (detached; disabled on the current row) · Create branch here… · Reveal · Copy <ID> (as in
-  History) · Abandon… (History's `Abandon commit` dialog). The filter matches the commit ID or the summary,
+  History) · Drop commit… (History's `Drop commit` dialog). The filter matches the commit ID or the summary,
   ignoring case. Show all / Hide all at the top include the kept commits.
 - **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)

@@ -227,8 +227,8 @@ GG_TEST("rewrite", "in a bare repository, and at the root: reword, abandon the r
     GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(newRoot)) != nullptr; }));
     ctx->ItemClick(("//History/**/###row_" + newRoot).c_str());
     ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Abandon commit"));
-    s.dialogButton("Abandon commit", "Abandon");
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Drop");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
     GG_CHECK_STR_EQ(gg::trim(s.gitOut(repo, {"rev-list", "--count", "HEAD"})), "4");

@@ -98,7 +98,7 @@ bool editCommit(Scenario& s, const fs::path& repo, const std::string& id, const 
 {
     if (!rowReady(s, id))
         return false;
-    s.contextMenu(rowRef(id).c_str(), "Edit commit");
+    s.contextMenu(rowRef(id).c_str(), "Edit commit (checkout detached)");
     return editing(s, id, branch) && s.head(repo) == id;
 }
 
@@ -498,7 +498,7 @@ GG_TEST("edit-in-place", "Edit commit on a branch that has diverged from the rem
     GG_REQUIRE(rowReady(s, r.f2));
     s.settle();
     const std::string before = repoState(s, p);
-    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit");
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
     GG_REQUIRE(s.dialogOpen(("edit " + r.f2.substr(0, 10)).c_str()));
     GG_CHECK_STR_EQ(s.app.errorMessage(), "The commit is on origin/feature, but the local branch feature has diverged from it");
     s.dialogButton(("edit " + r.f2.substr(0, 10)).c_str(), "OK");
@@ -515,7 +515,7 @@ GG_TEST("edit-in-place", "a failed switch of Edit commit leaves no local branch;
     s.write(p, "local-only.txt", "my local edit\n");
     GG_REQUIRE(s.openRepository(p));
     GG_REQUIRE(rowReady(s, r.f2));
-    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit");
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
     GG_REQUIRE(s.dialogOpen("Stash and switch"));
     GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/feature"}).ok());
     GG_CHECK(!detached(s, p));
@@ -554,7 +554,7 @@ GG_TEST("edit-in-place", "Edit commit is refused when another worktree has the l
     GG_REQUIRE(rowReady(s, r.f2));
     s.settle();
     const std::string before = repoState(s, p);
-    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit");
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
     const std::string title = "edit " + r.f2.substr(0, 10);
     GG_REQUIRE(s.dialogOpen(title.c_str()));
     GG_CHECK(s.app.errorMessage().find("another worktree has the local branch feature") != std::string::npos);

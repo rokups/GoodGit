@@ -120,7 +120,7 @@ layer that wraps libgit2.
   1. the undo journal (history; losing it only disables Undo for past operations)
   2. disposable caches, for example "does this tree contain conflicts", which can always
      be rebuilt from the objects
-  3. `edit/<worktree>`: ggui's edit-session state (§4.3 Edit commit: the commit and the branch
+  3. `edit/<worktree>`: ggui's edit-session state (§4.3 Edit commit (checkout detached): the commit and the branch
      to return to); losing it only ends the session, HEAD and every ref stay as they are
 - **Hooks:** the user's hooks are handled by git itself (G2). There are no managed hooks: the
   undo journal learns about plain git from the refs and reflogs (§4.12 B).
@@ -294,9 +294,11 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   (duplicate commit / branch → cherry-pick), S / Shift+S / Alt+S (squash / with descendants /
   split), A / Shift+A (drop / drop branch). **N** I (interactive rebase from the selected
   commit, §4.13).
-- **K** Row context menu: New, New detached, Check out ▸ (branches at this commit), Edit commit,
-  Create branch…, Move branch ▸, Delete branch ▸, Push, Push to…, Copy ▸ (ID, full description), plus
-  the shared commit actions below.
+- **K** Row context menu, in groups: New / New detached, Check out ▸ (branches at this commit, and Detached),
+  Create branch…, Create tag…, Move branch ▸ | Merge into HEAD…, Rebase onto…, Interactive rebase…,
+  Interactive rebase selection… | Cherry-pick, Revert | Edit commit (checkout detached), Duplicate, Squash…,
+  Split…, Simplify parents, Drop commit… | Copy ▸ (ID, full description), Expand / Collapse merged history.
+  The menu of a branch badge has the branch actions.
 - **K** Working-tree context menu: Commit…, Discard changes….
   **N** Stash changes…, Stage all, Unstage all.
 - **K** Drag and drop:
@@ -318,8 +320,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Action | Status | Git-centric meaning |
 |---|---|---|
 | New commit | **M** | Empty commit on the selection (`git gg new`). Advances the branch when HEAD is attached. "New detached" leaves branches alone. More than one parent gives a merge commit. Insert before/after rebases the descendants onto it |
-| Check out | **M** | `git switch` a branch (History lists the branches at the commit). Detaching at a commit is Edit commit, below. Refuse if it would overwrite local changes; offer "stash and switch" (**N**) |
-| Edit commit (E) | **M** | Detach HEAD at any commit and save an edit session (the commit and the local branch to return to) in `.git/gg/edit/<worktree>`. A commit that only a remote-tracking branch contains gets a local branch of the same name first: made at the remote-tracking branch with it as upstream, or, when it exists and is behind, fast-forwarded to it (after the switch, so a failed switch leaves no branch; undone with the edit). A local branch that has diverged, or that another worktree has, is refused with the cause. A toolbar banner shows *Editing \<id\> of \<branch\>* with **Return to \<branch\>** and **Stop editing**. Amending it restacks its descendants and moves every branch ref that pointed at them, all or nothing: the restack is computed first, so an amend that cannot be restacked (a non-text conflict) is refused before the commit, and one that fails after it is rolled back. Text conflicts become first-class conflicts and are reported. A descendant merge keeps its parents and its own resolution, and the changes of every rewritten parent are carried into it (a clash with the merge's resolution becomes a first-class conflict). Amend and restack are one operation, undone in one step. The session follows the amended commit and is dropped when HEAD is no longer detached or the branch is gone |
+| Check out | **M** | `git switch` a branch (History lists the branches at the commit). HEAD detaches in two ways: Check out ▸ Detached (no edit session), and Edit commit (checkout detached), below. Refuse if it would overwrite local changes; offer "stash and switch" (**N**) |
+| Edit commit (checkout detached) (E) | **M** | Detach HEAD at any commit and save an edit session (the commit and the local branch to return to) in `.git/gg/edit/<worktree>`. A commit that only a remote-tracking branch contains gets a local branch of the same name first: made at the remote-tracking branch with it as upstream, or, when it exists and is behind, fast-forwarded to it (after the switch, so a failed switch leaves no branch; undone with the edit). A local branch that has diverged, or that another worktree has, is refused with the cause. A toolbar banner shows *Editing \<id\> of \<branch\>* with **Return to \<branch\>** and **Stop editing**. Amending it restacks its descendants and moves every branch ref that pointed at them, all or nothing: the restack is computed first, so an amend that cannot be restacked (a non-text conflict) is refused before the commit, and one that fails after it is rolled back. Text conflicts become first-class conflicts and are reported. A descendant merge keeps its parents and its own resolution, and the changes of every rewritten parent are carried into it (a clash with the merge's resolution becomes a first-class conflict). Amend and restack are one operation, undone in one step. The session follows the amended commit and is dropped when HEAD is no longer detached or the branch is gone |
 | Commit… | **M** | Commit the **index**. If nothing is staged, offer "commit all tracked changes" (`-a`) or "stage the selected files" |
 | Commit… with *Amend* ticked | **M** | Amend HEAD with the index (message and/or content). The checkbox is disabled on an unborn HEAD and while a merge, cherry-pick or revert is in progress. Ticking it fills the message field with HEAD's message (whatever is selected); the commit draft and the amend text are each kept while toggling, so nothing typed is lost. *Change the message only* keeps the index out. Amending commits already on a remote asks for confirmation like any history rewrite; Cancel reopens the dialog as it was |
 | Describe (Save message, Change information panel) | **M** | Reword any commit. Rebases descendants. For HEAD it is an amend: the button reads *Amend HEAD*, is red and asks for confirmation |
@@ -330,7 +332,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Squash… / with descendants | **M** | Fold into a parent or a chosen target (fixup/squash) |
 | Split… | **M** | Split a commit by selected files into two commits |
 | Restore… | **M** | Restore paths in a commit from another commit (rewrite), or restore the working tree from a commit (`git restore --source`) |
-| Abandon… / Abandon branch… | **M** | Both ask for confirmation first. Drop the commit(s) and rebase the descendants. Optionally delete the remote branch too |
+| Drop commit… / Drop branch… | **M** | Both ask for confirmation first. Drop the commit(s) and rebase the descendants. Optionally delete the remote branch too |
 | Simplify parents | **M** | Remove redundant merge parents |
 | Move @ to previous/next | **M** | Check out the parent/child commit. Detach if it is not a branch tip |
 | Reorder (drag) | **M** | Move a commit before or after another in the same chain, or copy it there |

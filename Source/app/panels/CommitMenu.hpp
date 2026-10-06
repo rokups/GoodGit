@@ -25,9 +25,11 @@ SelectionShape selectionShape(Session& session);
 // Tooltip for a menu item that just drew, shown while it is disabled (`disabled`) and hovered.
 void disabledHint(bool disabled, const char* why);
 
-// The "Edit commit" item for `row` (inside an open menu or popup).
-void drawEditCommitItem(Session& session, const core::HistoryRow& row);
-// Menu items for `row` (inside an open menu or popup), after the "Edit commit" item.
+// Menu items for `row` (inside an open menu or popup), in the groups of the commit menu: integrate
+// (Merge into HEAD, Rebase onto, Interactive rebase), pick (Cherry-pick, Revert) and history editing
+// (Edit commit, Duplicate, Squash, Split, Simplify parents, Drop). The caller puts separators between them.
+void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row);
+void drawCommitPickItems(Session& session, const core::HistoryRow& row);
 void drawCommitEditItems(Session& session, const core::HistoryRow& row);
 // Keyboard shortcuts for the selected commit (History panel focused).
 void handleCommitEditKeys(Session& session, const core::HistoryRow& row);

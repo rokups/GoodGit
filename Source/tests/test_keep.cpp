@@ -1955,7 +1955,7 @@ GG_TEST("keep", "Branches: Create branch on a Detached row creates the branch at
     s.dialogButton("Create branch", "Cancel");
 }
 
-GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, Reveal, Copy and Abandon; Copy and Abandon work")
+GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, Reveal, Copy and Drop commit; Copy and Drop commit work")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = keptCommit(s, repo, "main", "x.txt");
@@ -1964,7 +1964,7 @@ GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, R
     const std::string row = detachedRow(x) + "/###detached_" + x;
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
-    for (const char* item : {"Check out", "Create branch here...", "Reveal", "Abandon..."})
+    for (const char* item : {"Check out", "Create branch here...", "Reveal", "Drop commit..."})
         GG_CHECK(s.itemExists(("//$FOCUSED/" + std::string(item)).c_str()));
     GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + x.substr(0, 7) + "###copy_id");
     ctx->ItemClick("//$FOCUSED/###copy_id");
@@ -1980,10 +1980,10 @@ GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, R
     // Reveal selects the commit in History.
     s.contextMenu(row.c_str(), "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == x; }));
-    // Abandon asks first; the commit is dropped and its row goes.
-    s.contextMenu(row.c_str(), "Abandon...");
-    GG_REQUIRE(s.dialogOpen("Abandon commit"));
-    s.dialogButton("Abandon commit", "Abandon");
+    // Drop commit asks first; the commit is dropped and its row goes.
+    s.contextMenu(row.c_str(), "Drop commit...");
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Drop");
     GG_CHECK(s.waitUntil([&] { return keepRefs(s, repo).empty() && !s.itemExists(row.c_str()); }));
     GG_CHECK(keptOf(s).empty());
 }
