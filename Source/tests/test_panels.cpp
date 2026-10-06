@@ -275,10 +275,24 @@ GG_TEST("panels", "repositories: the open repository expands to its worktrees")
     s.settle();
     GG_CHECK(s.session() == session);
     GG_CHECK(!s.itemExists(worktreeRow(row, snapshot->worktrees.front().name).c_str()));
+    // The node has the context menu of a repository row, closed and open.
+    s.contextMenu(row.c_str(), "Copy path");
+    GG_CHECK_STR_EQ(s.clipboard(), ggui::normalizeRepoPath(repo.string()));
     // The arrow opens it: a row for each worktree.
     openRepoNode(ctx, row);
     for (const auto& w : snapshot->worktrees)
         GG_CHECK(s.itemExists(worktreeRow(row, w.name).c_str()));
+    ImGui::SetClipboardText("");
+    s.contextMenu(row.c_str(), "Copy path");
+    GG_CHECK_STR_EQ(s.clipboard(), ggui::normalizeRepoPath(repo.string()));
+    // Remove from list on the open repository drops a selected worktree row with it.
+    ctx->ItemClick(worktreeRow(row, snapshot->worktrees.front().name).c_str());
+    ctx->Yield(2);
+    GG_CHECK(!s.session()->repositories().selectedPath().empty());
+    s.contextMenu(row.c_str(), "Remove from list");
+    ctx->Yield(2);
+    GG_CHECK(s.session()->repositories().selectedPath().empty());
+    GG_CHECK(!s.itemExists(row.c_str()));
 }
 
 GG_TEST("panels", "repositories: a worktree row selects on a click and opens on a double-click")
@@ -342,6 +356,98 @@ GG_TEST("panels", "repositories: the current and a missing worktree do not open,
     ctx->ItemClick(worktreeRow(row, wt1).c_str());
     ctx->KeyPress(ImGuiKey_Enter);
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+}
+
+GG_TEST("panels", "repositories: the context menu sets and clears an alias")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Linear, "first");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string openPath = ggui::normalizeRepoPath(repo.string());
+    const std::string plainRow = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(plainRow.c_str()));
+    s.contextMenu(plainRow.c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias").empty());
+    s.dialogText("Set alias", "alias", "grp/name");
+    s.dialogButton("Set alias", "Set");
+    ctx->Yield(2);
+    GG_REQUIRE(s.app.settings().data().repositories.size() == 1);
+    GG_CHECK_STR_EQ(s.app.settings().data().repositories.front().alias, "grp/name");
+    const std::string groupRow = "//Repositories/###group_grp/repo_name/###row";
+    GG_CHECK(s.itemExists(groupRow.c_str()));
+    // The dialog starts with the current alias; an empty text removes it.
+    s.contextMenu(groupRow.c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias") == "grp/name");
+    s.dialogText("Set alias", "alias", "");
+    s.dialogButton("Set alias", "Set");
+    ctx->Yield(2);
+    GG_CHECK(s.app.settings().data().repositories.front().alias.empty());
+    GG_CHECK(s.itemExists(plainRow.c_str()));
+    GG_CHECK(!s.itemExists(groupRow.c_str()));
+    // Copy path puts the path of the entry on the clipboard.
+    s.contextMenu(plainRow.c_str(), "Copy path");
+    GG_CHECK_STR_EQ(s.clipboard(), openPath);
+}
+
+GG_TEST("panels", "repositories: the alias does not show in the toolbar switcher")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Linear, "first");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    s.app.settings().setAlias(ggui::normalizeRepoPath(repo.string()), "grp/aliased");
+    ctx->Yield(2);
+    ctx->ItemClick("//###Toolbar/##tb_repo");
+    ctx->Yield(2);
+    const std::string label = s.itemLabel("//$FOCUSED/###switch_0");
+    GG_CHECK(label.find(repo.filename().string()) != std::string::npos);
+    GG_CHECK(label.find("aliased") == std::string::npos);
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("panels", "repositories: Remove from list, and Open in the context menu")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    const std::string firstRow = repoRow(s, first);
+    const std::string row = repoRow(s, second);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    const auto* session = s.session();
+    // Open is disabled on the open repository.
+    ctx->ItemClick(firstRow.c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Open").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    // Remove from list: the entry and its row go, the selection goes with them.
+    ctx->ItemClick(row.c_str());
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), ggui::normalizeRepoPath(second.string()));
+    s.contextMenu(row.c_str(), "Remove from list");
+    ctx->Yield(3);
+    GG_CHECK_EQ(s.app.settings().data().repositories.size(), size_t(1));
+    GG_CHECK(!s.itemExists(row.c_str()));
+    GG_CHECK(s.session()->repositories().selectedPath().empty());
+    // A removed repository does not open on Enter.
+    ctx->WindowFocus("//Repositories");
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    // Open in the context menu opens the repository.
+    s.app.settings().addRepository(second.string());
+    ctx->Yield(2);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    s.contextMenu(row.c_str(), "Open");
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
 }
 
 GG_TEST("panels", "remotes: list and copy")

@@ -836,6 +836,27 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             toOpen = node.path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", node.path.c_str());
+        // `node` is part of the tree copy that draw made, so removing the entry from the settings keeps the loop valid.
+        if (beginContextMenu("##repo_menu")) {
+            if (isOpen)
+                disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open", "This window shows this repository");
+            else if (menuItem(ICON_MS_FOLDER_OPEN, "Open"))
+                toOpen = node.path;
+            if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Set alias..."))
+                m_session.showSetAliasDialog(node.path);
+            ImGui::Separator();
+            if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
+                ImGui::SetClipboardText(node.path.c_str());
+            if (menuItem(ICON_MS_CLOSE, "Remove from list")) {
+                m_session.app().settings().removeRepository(node.path);
+                // Its worktree rows go with the open repository, so a selected one too.
+                if (m_selectedWorktree ? isOpen : m_selected == node.path) {
+                    m_selected.clear();
+                    m_selectedWorktree = false;
+                }
+            }
+            ImGui::EndPopup();
+        }
         if (nodeOpen) {
             drawWorktrees(toOpen);
             ImGui::TreePop();

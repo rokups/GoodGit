@@ -424,6 +424,22 @@ void Session::showRenameBranchDialog(const std::string& branch)
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showSetAliasDialog(const std::string& repoPath)
+{
+    std::string current;
+    for (const auto& r : m_app.settings().data().repositories)
+        if (r.path == repoPath)
+            current = r.alias;
+    Form f;
+    f.title = "Set alias";
+    f.add(Field{Field::Text, "alias", "Alias for " + repoPath, current});
+    f.add(Field{Field::Info, "alias_note", "", "Use \"/\" for groups: group/subgroup/name. Leave empty to remove the alias."});
+    // The application, not the session: another repository can open while the dialog is up.
+    f.buttons.push_back({"Set", [&app = m_app, repoPath](Form& form) { app.settings().setAlias(repoPath, form.text("alias")); }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showDeleteBranchDialog(const std::string& branch, int mode)
 {
     std::vector<std::string> remotes;

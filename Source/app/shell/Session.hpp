@@ -188,6 +188,8 @@ public:
     void showDiscardAllDialog();
     void showApplyPatchDialog();
     void showRenameBranchDialog(const std::string& branch);
+    // Sets or clears (empty text) the alias of a repository of the permanent list; no git operation.
+    void showSetAliasDialog(const std::string& repoPath);
     void showDeleteBranchDialog(const std::string& branch, int mode); // 0 local, 1 remote, 2 all
     void showDeleteRemoteBranchDialog(const std::string& remoteBranch); // "origin/x": git push origin --delete x
     void showMoveBranchDialog(const std::string& branch, const std::string& to);
