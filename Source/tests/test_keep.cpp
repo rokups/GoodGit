@@ -2072,10 +2072,7 @@ GG_TEST("keep", "cherry-picking onto the kept detached HEAD keeps the new commit
     const std::string kept = refState(s, repo);
     GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(src)) != nullptr; }));
     ctx->ItemClick(rowRef(src).c_str());
-    ctx->KeyDown(ImGuiMod_Shift);
-    ctx->Yield(2);
-    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/Cherry-pick and commit");
-    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->MenuClick("//##MainMenuBar/Commit/Selected commit/###cherry_pick");
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != x; }));
     s.settle();
     const std::string picked = s.head(repo);

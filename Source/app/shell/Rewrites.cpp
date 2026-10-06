@@ -870,72 +870,149 @@ std::string cherryPickMessage(const std::string& message, const std::string& id)
     return body + "\n\n" + line;
 }
 
-void Actions::revertOrPick(const core::Oid& commit, bool revert, bool commitIt)
+namespace {
+
+// A revert or cherry-pick of several commits: `commits` is the History order (newest first); a
+// revert takes them in that order, a cherry-pick oldest first (as `git cherry-pick a b c`).
+std::vector<std::string> pickOrder(const std::vector<core::Oid>& commits, bool revert)
 {
-    const std::string id = commit.hex();
-    const std::string label = std::string(revert ? "revert " : "cherry-pick ") + id.substr(0, 10);
+    std::vector<std::string> ids;
+    for (const auto& c : commits)
+        ids.push_back(c.hex());
+    if (!revert)
+        std::reverse(ids.begin(), ids.end());
+    return ids;
+}
+
+// HEAD's commit for all of `ids` (see pickOnto). A refusal names the commit when there are several.
+std::string pickAllOnto(git_repository* repo, const std::vector<std::string>& ids, bool revert)
+{
+    std::string head;
+    for (const auto& id : ids) {
+        try {
+            head = pickOnto(repo, id, revert);
+        } catch (MutationError& e) {
+            if (ids.size() > 1)
+            {
+                const std::string message = messageOf(repo, id);
+                e.message = "commit " + id.substr(0, 10) + " (" + trimEnd(message.substr(0, message.find('\n'))) + "): " + e.message;
+            }
+            throw;
+        }
+    }
+    return head;
+}
+
+std::string pickMessage(git_repository* repo, const std::string& id, bool revert)
+{
+    const std::string message = messageOf(repo, id);
+    return revert ? revertMessage(message, id) : cherryPickMessage(message, id);
+}
+
+} // namespace
+
+void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, bool commitIt)
+{
+    if (commits.empty())
+        return;
+    const std::vector<std::string> ids = pickOrder(commits, revert);
+    const std::string label = std::string(revert ? "revert " : "cherry-pick ")
+        + (ids.size() == 1 ? ids.front().substr(0, 10) : std::to_string(ids.size()) + " commits");
     if (commitIt) {
-        // In memory, like Merge into HEAD: one new commit on HEAD, one ref update, one Undo.
-        rewrite(label, [id, revert](git_repository* repo) {
-            const std::string head = pickOnto(repo, id, revert);
-            const std::string message = messageOf(repo, id);
-            rw::Step s;
-            s.source = id;
-            s.key = "pick";
-            s.revert = revert;
-            s.forceNew = true;
-            s.mapSource = false;
-            s.sourceParents = false;
-            s.parents = {"=" + head};
-            s.message = (revert ? revertMessage(message, id) : cherryPickMessage(message, id)) + "\n";
+        // In memory, like Merge into HEAD: new commits on HEAD (each on the one before), one ref update, one Undo.
+        rewrite(label, [ids, revert](git_repository* repo) {
+            const std::string head = pickAllOnto(repo, ids, revert);
             rw::Plan plan;
-            plan.steps.push_back(std::move(s));
+            for (size_t i = 0; i < ids.size(); ++i) {
+                rw::Step s;
+                s.source = ids[i];
+                s.key = "pick" + std::to_string(i);
+                s.revert = revert;
+                s.forceNew = true;
+                s.mapSource = false;
+                s.sourceParents = false;
+                s.parents = {i == 0 ? "=" + head : "pick" + std::to_string(i - 1)};
+                s.message = pickMessage(repo, ids[i], revert) + "\n";
+                plan.steps.push_back(std::move(s));
+            }
+            const std::string last = plan.steps.back().key;
             plan.emptied = rw::Emptied::Ask; // nothing left to change: keep an empty commit or stop
             plan.reflogMessage = std::string("ggui: ") + (revert ? "revert" : "cherry-pick");
             if (const std::string target = gg::git2::headTarget(repo); !target.empty())
-                plan.refsToSteps[target] = "pick";
+                plan.refsToSteps[target] = last;
             else
-                plan.detachHeadAt = "pick";
+                plan.detachHeadAt = last;
             return plan;
         });
         return;
     }
-    // Plain git into the index and working tree; conflicts stop natively.
+    // Plain git into the index and working tree, one commit after the other (a merge commit needs
+    // -m 1, a plain commit rejects it); conflicts stop natively, at the commit that has them.
     run(label + " (no commit)",
-        [id, revert](MutationContext& ctx) {
+        [ids, revert](MutationContext& ctx) {
             git_repository* repo = ctx.repo();
-            pickOnto(repo, id, revert);
+            pickAllOnto(repo, ids, revert);
             // Abort (git reset --merge) would drop staged changes along with the pick's.
             if (!ctx.gitMayFail({"diff", "--cached", "--quiet"}).ok())
                 refuse("the index has staged changes: commit, stash or unstage them first");
-            std::vector<std::string> args{revert ? "revert" : "cherry-pick", "--no-commit"};
-            if (parentsOf(repo, id).size() > 1) {
-                args.emplace_back("-m");
-                args.emplace_back("1");
-            }
-            args.push_back(id);
             ctx.env.emplace_back("GIT_EDITOR", "true");
             ctx.worktreeFollowsIndex = true;
-            const auto r = ctx.gitMayFail(args);
-            const bool conflicts = !gg::trim(ctx.gitMayFail({"ls-files", "-u"}).out).empty();
-            if (!r.ok() && !conflicts) {
-                const std::string all = r.err + r.out;
-                throw MutationError{core::classifyFailure(all), r.message(), all};
+            std::string pending; // the messages of the commits applied so far, blank line between
+            bool conflicts = false;
+            std::string stoppedAt;
+            size_t stoppedIndex = 0;
+            for (size_t i = 0; i < ids.size() && !conflicts; ++i) {
+                const std::string& id = ids[i];
+                std::vector<std::string> args{revert ? "revert" : "cherry-pick", "--no-commit"};
+                if (parentsOf(repo, id).size() > 1) {
+                    args.emplace_back("-m");
+                    args.emplace_back("1");
+                }
+                args.push_back(id);
+                const auto r = ctx.gitMayFail(args);
+                conflicts = !gg::trim(ctx.gitMayFail({"ls-files", "-u"}).out).empty();
+                if (!r.ok() && !conflicts) {
+                    const std::string all = r.err + r.out;
+                    std::string message = r.message();
+                    std::string detail = all;
+                    if (ids.size() > 1) {
+                        // Nothing of an earlier commit stays: the index was clean, so reset --merge restores it.
+                        const bool undone = i == 0 || ctx.gitMayFail({"reset", "--merge"}).ok();
+                        const std::string which = "commit " + id.substr(0, 10) + " (" + std::to_string(i + 1) + " of "
+                            + std::to_string(ids.size()) + ") failed: ";
+                        const std::string after = i == 0 ? "" : undone ? "The earlier commits are undone." : "The changes of the earlier commits stay in the index.";
+                        message = which + message + (after.empty() ? "" : ". " + after);
+                        // The error dialog shows the detail when there is one.
+                        detail = which + gg::trim(all) + (after.empty() ? "" : "\n" + after);
+                    }
+                    throw MutationError{core::classifyFailure(all), message, detail};
+                }
+                pending += (pending.empty() ? "" : "\n\n") + pickMessage(repo, id, revert);
+                stoppedAt = id;
+                stoppedIndex = i;
             }
             // The pending message (git commit and --continue take it from MERGE_MSG).
-            const std::string message = messageOf(repo, id);
             {
                 std::ofstream out(std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG", std::ios::binary | std::ios::trunc);
-                out << (revert ? revertMessage(message, id) : cherryPickMessage(message, id)) << "\n";
+                out << pending << "\n";
             }
             if (!conflicts)
                 return;
             // git revert leaves REVERT_HEAD; cherry-pick --no-commit leaves no state: the
             // pick in progress (Continue/Abort) as a plain cherry-pick would leave it.
             if (!revert)
-                ctx.git({"update-ref", "CHERRY_PICK_HEAD", id});
-            ctx.info = "The " + std::string(revert ? "revert" : "cherry-pick")
-                + " has conflicts: resolve them, then Continue (or commit), or Abort.";
+                ctx.git({"update-ref", "CHERRY_PICK_HEAD", stoppedAt});
+            const std::string what = revert ? "revert" : "cherry-pick";
+            if (ids.size() == 1) {
+                ctx.info = "The " + what + " has conflicts: resolve them, then Continue (or commit), or Abort.";
+            } else {
+                const size_t left = ids.size() - stoppedIndex - 1;
+                ctx.info = "The " + what + " has conflicts in commit " + stoppedAt.substr(0, 10) + " (" + std::to_string(stoppedIndex + 1)
+                    + " of " + std::to_string(ids.size()) + "). "
+                    + (left == 0 ? std::string()
+                                 : std::to_string(left) + (left == 1 ? " commit is" : " commits are") + " not applied. ")
+                    + "Resolve the conflicts, then Continue (or commit), or Abort.";
+            }
         },
         [this, label](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Ok && !e.message.empty())

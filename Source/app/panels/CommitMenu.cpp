@@ -196,38 +196,41 @@ void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row)
 void drawCommitPickItems(Session& session, const core::HistoryRow& row)
 {
     const MenuContext c(session, row);
-    // Revert / cherry-pick onto HEAD (plan §4.3). A merge commit's change is taken against its
-    // first parent (-m 1). Picking an ancestor of HEAD other than HEAD is refused on the worker.
+    // Revert / cherry-pick onto HEAD (plan §4.3), each selected commit in the order git takes them.
+    // A merge commit's change is taken against its first parent (-m 1). Picking an ancestor of HEAD
+    // other than HEAD is refused on the worker (for every selected commit, not only this one).
     const std::string blocked = !c.headCommit ? "HEAD has no commit yet."
         : c.isHead                            ? "This commit is HEAD: its change is already there."
                                               : "";
-    auto item = [&](const char* icon, const char* label, bool enabled, const char* what, bool revert, bool commit) {
-        if (menuItem(icon, label, nullptr, false, c.free && c.sel.single() && enabled))
-            session.actions().revertOrPick(row.id, revert, commit);
+    const size_t count = c.sel.count();
+    auto item = [&](const char* icon, const char* name, const char* id, bool enabled, const char* what, bool revert, bool commit) {
+        std::string label = name;
+        if (count > 1)
+            label += " " + std::to_string(count) + " commits";
+        if (!commit)
+            label += " (no commit)";
+        label += std::string("###") + id;
+        if (menuItem(icon, label.c_str(), nullptr, false, c.free && count > 0 && enabled))
+            session.actions().revertOrPick(c.sel.ids, revert, commit);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
             std::string tip = what;
             if (c.merge)
                 tip += "\nA merge commit: its change against its first parent (-m 1).";
-            if (!c.sel.single())
-                tip += "\nNeeds a single selected commit.";
-            else if (!enabled)
+            if (count > 1)
+                tip += revert ? "\nThe selected commits, the newest first." : "\nThe selected commits, the oldest first.";
+            if (count > 0 && !enabled)
                 tip += "\n" + (revert ? std::string("HEAD has no commit yet.") : blocked);
             tooltip("%s", tip.c_str());
         }
     };
-    if (c.shift)
-        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick and commit", blocked.empty(),
-            "A copy of this commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
-    else
-        item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", blocked.empty(),
-            "Apply this commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false,
-            false);
-    if (c.shift)
-        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert and commit", c.headCommit,
-            "A new commit on HEAD that undoes this commit. Text conflicts become first-class conflicts.", true, true);
-    else
-        item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", c.headCommit,
-            "Undo this commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
+    item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", "cherry_pick", blocked.empty(),
+        "A copy of the commit on HEAD, with its author. Text conflicts become first-class conflicts.", false, true);
+    item(ICON_MS_CONTENT_PASTE_GO, "Cherry-pick", "cherry_pick_no_commit", blocked.empty(),
+        "Apply the commit's change to the index and working tree, without committing (git cherry-pick --no-commit).", false, false);
+    item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", "revert", c.headCommit,
+        "A new commit on HEAD that undoes the commit. Text conflicts become first-class conflicts.", true, true);
+    item(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert", "revert_no_commit", c.headCommit,
+        "Undo the commit's change in the index and working tree, without committing (git revert --no-commit).", true, false);
 }
 
 void drawCommitEditItems(Session& session, const core::HistoryRow& row)

@@ -177,12 +177,14 @@ public:
     void rebaseHeadOnto(const std::string& branch);
     void simplifyParents(const core::Oid& commit);
     void mergeIntoHead(const std::string& branch, const std::string& message);
-    // Revert (`revert`) or cherry-pick the commit onto HEAD (a merge against its first parent,
-    // `-m 1`). With `andCommit`: a new commit on HEAD built in memory (text conflicts first-class,
-    // one ref update, the branch or detached HEAD advances; a pick keeps the author). Without:
-    // `git revert/cherry-pick --no-commit` into the index and working tree (native conflicts
-    // leave the Reverting/CherryPicking state), with the message waiting in MERGE_MSG.
-    void revertOrPick(const core::Oid& commit, bool revert, bool andCommit);
+    // Revert (`revert`) or cherry-pick the commits (History order, newest first) onto HEAD (a merge
+    // against its first parent, `-m 1`). A revert takes the newest commit first, a cherry-pick the
+    // oldest. With `andCommit`: a new commit on HEAD for each, built in memory (text conflicts
+    // first-class, one ref update and one Undo, the branch or detached HEAD advances; a pick keeps
+    // the author). Without: `git revert/cherry-pick --no-commit` into the index and working tree
+    // (native conflicts stop at that commit and leave the Reverting/CherryPicking state), with the
+    // messages waiting in MERGE_MSG. One commit that cannot be taken refuses all.
+    void revertOrPick(const std::vector<core::Oid>& commits, bool revert, bool andCommit);
     // The inverse of the commit's change to `paths` or to the selected lines (`patch`, old -> new
     // as the commit's diff has them) onto HEAD (against the commit's first parent). With
     // `andCommit`: a new commit built in memory (text conflicts first-class, one Undo). Without:

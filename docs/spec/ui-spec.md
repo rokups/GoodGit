@@ -232,7 +232,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   *Reset \<branch\> to here…* (id `###reset_here`; "Reset to here…" and disabled with a detached or unborn HEAD, also disabled while a merge, rebase, cherry-pick, revert or bisect is in progress) ·
   *Interactive rebase selection…* (Phase 3, when several adjacent commits are selected with Ctrl-click or Shift-click:
   the list starts at the oldest selected commit and the selected commits start selected in the editor) |
-  Cherry-pick · Revert | Edit commit (checkout detached) · Duplicate · Squash… · Split… · Simplify parents ·
+  Cherry-pick · Cherry-pick (no commit) · Revert · Revert (no commit) (with several selected commits: "Cherry-pick 3 commits" and so on) | Edit commit (checkout detached) · Duplicate · Squash… · Split… · Simplify parents ·
   Drop commit… | Copy ▸ (ID, Full description) · Expand / Collapse merged history. The menu has no branch actions
   (Delete branch, Push): the menu of a branch badge has them (right click on the badge).
 - Badge context menu: a right click on a badge selects the row (as a right click on the row does) and shows the

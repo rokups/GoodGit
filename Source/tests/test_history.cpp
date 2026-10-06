@@ -1400,7 +1400,8 @@ GG_TEST("history", "the commit menu uses git words")
     // Every item exists and each one is below the one before.
     const char* labels[] = {"New detached", "Check out", "Create branch...", "Create tag...", "Move branch",
         "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Reset main to here...###reset_here",
-        "Interactive rebase selection...", "Cherry-pick", "Revert", "Edit commit (checkout detached)", "Duplicate",
+        "Interactive rebase selection...", "Cherry-pick###cherry_pick", "Cherry-pick (no commit)###cherry_pick_no_commit",
+        "Revert###revert", "Revert (no commit)###revert_no_commit", "Edit commit (checkout detached)", "Duplicate",
         "Squash...", "Split...", "Simplify parents", "Drop commit...", "Copy"};
     float last = -1.0f;
     for (const char* label : labels) {
