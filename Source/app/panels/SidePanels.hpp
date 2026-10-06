@@ -13,6 +13,15 @@
 
 namespace ggui {
 
+// The items of a ref's context menu, drawn into the open popup. Each side panel puts them in the menu of a
+// row; the badges of a History row put them in theirs.
+void branchMenuItems(Session& session, const core::Snapshot& snap, const core::BranchInfo& b);
+void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const core::RemoteBranchInfo& r);
+void tagMenuItems(Session& session, const core::Snapshot& snap, const core::TagInfo& t);
+void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, const IdSlot& idSlot);
+void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& baseSlot);
+void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w);
+
 class BranchesPanel {
 public:
     explicit BranchesPanel(Session& session) : m_session(session) { }

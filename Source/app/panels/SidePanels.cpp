@@ -313,37 +313,35 @@ void checkoutRemoteBranch(Session& session, const core::Snapshot& snapshot, cons
 
 // ---- Branches -----------------------------------------------------------------------------------
 
-void BranchesPanel::branchMenu(const core::BranchInfo& b)
+void branchMenuItems(Session& session, const core::Snapshot& snap, const core::BranchInfo& b)
 {
-    if (!beginContextMenu(("##branch_menu_" + rowId(b.name)).c_str()))
-        return;
-    auto& actions = m_session.actions();
+    auto& actions = session.actions();
     const bool free = actions.busy().empty();
-    const bool hasRemotes = !m_snapshot->remotes.empty();
+    const bool hasRemotes = !snap.remotes.empty();
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
-        m_session.revealCommit(b.target);
+        session.revealCommit(b.target);
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(b.name.c_str());
     ImGui::Separator();
     if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free && !b.isHead))
         actions.checkout(b.name, false);
-    const bool headAttached = !m_snapshot->headDetached && !m_snapshot->headUnborn;
-    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !b.isHead && !m_snapshot->headUnborn))
-        showMergeDialog(m_session, b.name);
+    const bool headAttached = !snap.headDetached && !snap.headUnborn;
+    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !b.isHead && !snap.headUnborn))
+        showMergeDialog(session, b.name);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && !b.isHead && headAttached))
         actions.rebaseHeadOnto(b.name);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase onto...", nullptr, false, free))
-        showInteractiveRebaseDialog(m_session, b.name);
+        showInteractiveRebaseDialog(session, b.name);
     if (b.isHead)
         disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", "Checked out in this worktree");
     else if (!b.worktree.empty())
         disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", ("Checked out in " + b.worktree).c_str());
     else if (menuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", nullptr, false, free))
-        m_session.showAddWorktreeDialog(1, b.name);
+        session.showAddWorktreeDialog(1, b.name);
     if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && hasRemotes))
-        pushBranch(m_session, b);
+        pushBranch(session, b);
     if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, free && hasRemotes))
-        m_session.showPushToDialog(b.name);
+        session.showPushToDialog(b.name);
     if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, free && b.isHead && !b.upstream.empty()))
         actions.pull(PullMode::Config);
     if (menuItem(ICON_MS_SYNC_ALT, "Reconcile with remote or branch...", nullptr, false, free && b.isHead)) {
@@ -351,12 +349,12 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
         f.title = "Reconcile";
         f.message = b.upstream.empty() ? b.name + " has no upstream: name the branch to reconcile with."
                                        : b.name + " and " + b.upstream + " have diverged.";
-        f.add(commitInfo(m_session, "HEAD (" + b.name + ")", b.target));
-        f.add(commitField(m_session, "with", "Reconcile with (branch, tag or commit)", b.upstream));
+        f.add(commitInfo(session, "HEAD (" + b.name + ")", b.target));
+        f.add(commitField(session, "with", "Reconcile with (branch, tag or commit)", b.upstream));
         Field how{Field::Combo, "how", "How"};
         how.options = {"Rebase my commits onto it", "Merge it in"};
         f.add(how);
-        Session* s = &m_session;
+        Session* s = &session;
         f.buttons.push_back({"Reconcile",
             [s](Form& form) {
                 const std::string with = gg::trim(form.text("with"));
@@ -367,77 +365,94 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
             },
             [](const Form& form) { return !gg::trim(form.text("with")).empty(); }});
         f.buttons.push_back({"Cancel", {}});
-        m_session.app().dialogs().open(std::move(f));
+        session.app().dialogs().open(std::move(f));
     }
     ImGui::Separator();
     if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Rename...", nullptr, false, free))
-        m_session.showRenameBranchDialog(b.name);
+        session.showRenameBranchDialog(b.name);
     if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
         if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, !b.isHead))
-            m_session.showDeleteBranchDialog(b.name, 0);
+            session.showDeleteBranchDialog(b.name, 0);
         if (menuItem(ICON_MS_DELETE, "On its remote", nullptr, false, !b.upstream.empty()))
-            m_session.showDeleteBranchDialog(b.name, 1);
+            session.showDeleteBranchDialog(b.name, 1);
         if (menuItem(ICON_MS_DELETE, "Local and all remotes", nullptr, false, !b.isHead))
-            m_session.showDeleteBranchDialog(b.name, 2);
+            session.showDeleteBranchDialog(b.name, 2);
         ImGui::EndMenu();
     }
     ImGui::Separator();
     if (menuItem(ICON_MS_LINK, "Set upstream...", nullptr, false, free))
-        m_session.showSetUpstreamDialog(b.name);
+        session.showSetUpstreamDialog(b.name);
     if (menuItem(ICON_MS_LINK_OFF, "Unset upstream", nullptr, false, free && !b.upstream.empty()))
         actions.unsetUpstream(b.name);
     if (menuItem(ICON_MS_FAST_FORWARD, "Fast-forward to upstream", nullptr, false, free && !b.upstream.empty() && b.behind > 0 && b.ahead == 0))
         actions.fastForward(b.name);
+}
+
+void BranchesPanel::branchMenu(const core::BranchInfo& b)
+{
+    if (!beginContextMenu(("##branch_menu_" + rowId(b.name)).c_str()))
+        return;
+    branchMenuItems(m_session, *m_snapshot, b);
     ImGui::EndPopup();
+}
+
+void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const core::RemoteBranchInfo& r)
+{
+    auto& actions = session.actions();
+    const bool free = actions.busy().empty();
+    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
+    const bool headAttached = !snap.headDetached && !snap.headUnborn;
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
+        session.revealCommit(r.target);
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
+        ImGui::SetClipboardText(r.name.c_str());
+    ImGui::Separator();
+    // A local branch of that name is checked out; otherwise one is created to track this branch.
+    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free))
+        checkoutRemoteBranch(session, snap, r);
+    if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
+        session.showCreateBranchDialog(r.name, shortName);
+    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !snap.headUnborn))
+        showMergeDialog(session, r.name);
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
+        actions.rebaseHeadOnto(r.name);
+    ImGui::Separator();
+    if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
+        session.showDeleteRemoteBranchDialog(r.name);
 }
 
 void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
 {
     if (!beginContextMenu(("##rbranch_menu_" + rowId(r.name)).c_str()))
         return;
-    auto& actions = m_session.actions();
-    const bool free = actions.busy().empty();
-    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
-    const bool headAttached = !m_snapshot->headDetached && !m_snapshot->headUnborn;
-    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
-        m_session.revealCommit(r.target);
-    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-        ImGui::SetClipboardText(r.name.c_str());
-    ImGui::Separator();
-    // A local branch of that name is checked out; otherwise one is created to track this branch.
-    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free))
-        checkoutRemoteBranch(m_session, *m_snapshot, r);
-    if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
-        m_session.showCreateBranchDialog(r.name, shortName);
-    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !m_snapshot->headUnborn))
-        showMergeDialog(m_session, r.name);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
-        actions.rebaseHeadOnto(r.name);
-    ImGui::Separator();
-    if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
-        m_session.showDeleteRemoteBranchDialog(r.name);
+    remoteBranchMenuItems(m_session, *m_snapshot, r);
     ImGui::EndPopup();
 }
 
 // The menu of a kept commit (a row of the Detached node): History's commit actions on it.
-void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot)
+void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, const IdSlot& idSlot)
 {
-    if (!beginContextMenu(("##kept_menu_" + k.id.hex()).c_str()))
-        return;
     captureIdCopyClick(idSlot);
-    auto& actions = m_session.actions();
+    auto& actions = session.actions();
     const bool free = actions.busy().empty();
     const std::string hex = k.id.hex();
     if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free && !current))
         actions.checkout(hex, true);
     if (menuItem(ICON_MS_ADD, "Create branch here...", nullptr, false, free))
-        m_session.showCreateBranchDialog(hex);
+        session.showCreateBranchDialog(hex);
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
-        m_session.revealCommit(k.id);
+        session.revealCommit(k.id);
     idCopyMenuItem(hex);
     ImGui::Separator();
     if (menuItem(ICON_MS_DELETE_FOREVER, "Abandon...", nullptr, false, free))
-        showAbandonDialog(m_session, k.id);
+        showAbandonDialog(session, k.id);
+}
+
+void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot)
+{
+    if (!beginContextMenu(("##kept_menu_" + k.id.hex()).c_str()))
+        return;
+    keptMenuItems(m_session, k, current, idSlot);
     ImGui::EndPopup();
 }
 
@@ -646,6 +661,64 @@ void BranchesPanel::draw(bool* open)
 
 // ---- Tags ---------------------------------------------------------------------------------------
 
+// Delete in a tag's menu: one item for a tag only here; a submenu (Local, then each remote that has it)
+// when a remote has it too. A remote whose tags are still being read or could not be read is offered
+// with a note (the tag may be there).
+static void tagDeleteItems(Session& session, const core::Snapshot& snap, const std::string& name, bool local)
+{
+    auto& actions = session.actions();
+    const bool free = actions.busy().empty();
+    const auto& remoteTags = session.remoteTags();
+    std::vector<std::string> remotes; // menu labels, the remote's name first
+    std::vector<std::string> names;
+    for (const auto& r : snap.remotes) {
+        auto it = remoteTags.find(r.name);
+        if (it == remoteTags.end()) {
+            remotes.push_back(r.name + " (checking...)");
+            names.push_back(r.name);
+        } else if (!it->second.ok) {
+            remotes.push_back(r.name + " (not checked)");
+            names.push_back(r.name);
+        } else if (it->second.tags.count(name)) {
+            remotes.push_back(r.name);
+            names.push_back(r.name);
+        }
+    }
+    if (local && remotes.empty()) {
+        if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
+            actions.deleteTag(name);
+        return;
+    }
+    if (!beginMenu(ICON_MS_DELETE, "Delete", free))
+        return;
+    if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
+        actions.deleteTag(name);
+    ImGui::Separator();
+    for (size_t i = 0; i < remotes.size(); ++i)
+        if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
+            actions.deleteRemoteTag(names[i], name);
+    ImGui::EndMenu();
+}
+
+// The Tags panel's menu for a tag; also on the tag's badge in History.
+void tagMenuItems(Session& session, const core::Snapshot& snap, const core::TagInfo& t)
+{
+    auto& actions = session.actions();
+    const bool free = actions.busy().empty();
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
+        session.revealCommit(t.target);
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
+        ImGui::SetClipboardText(t.name.c_str());
+    ImGui::Separator();
+    tagDeleteItems(session, snap, t.name, true);
+    if (beginMenu(ICON_MS_UPLOAD, "Push tag", free && !snap.remotes.empty())) {
+        for (const auto& r : snap.remotes)
+            if (menuItem(ICON_MS_UPLOAD, r.name.c_str()))
+                actions.pushTag(r.name, t.name);
+        ImGui::EndMenu();
+    }
+}
+
 void TagsPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Tags, open)) {
@@ -668,42 +741,6 @@ void TagsPanel::draw(bool* open)
     // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
     m_session.requestRemoteTagsIfStale();
     const auto& remoteTags = m_session.remoteTags();
-    auto& actions = m_session.actions();
-    const bool free = actions.busy().empty();
-    // Delete: one item for a tag only here; a submenu (Local, then each remote that has it) when a
-    // remote has it too. A remote whose tags are still being read or could not be read is offered
-    // with a note (the tag may be there).
-    auto deleteItems = [&](const std::string& name, bool local) {
-        std::vector<std::string> remotes; // menu labels, the remote's name first
-        std::vector<std::string> names;
-        for (const auto& r : m_snapshot->remotes) {
-            auto it = remoteTags.find(r.name);
-            if (it == remoteTags.end()) {
-                remotes.push_back(r.name + " (checking...)");
-                names.push_back(r.name);
-            } else if (!it->second.ok) {
-                remotes.push_back(r.name + " (not checked)");
-                names.push_back(r.name);
-            } else if (it->second.tags.count(name)) {
-                remotes.push_back(r.name);
-                names.push_back(r.name);
-            }
-        }
-        if (local && remotes.empty()) {
-            if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
-                actions.deleteTag(name);
-            return;
-        }
-        if (!beginMenu(ICON_MS_DELETE, "Delete", free))
-            return;
-        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
-            actions.deleteTag(name);
-        ImGui::Separator();
-        for (size_t i = 0; i < remotes.size(); ++i)
-            if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
-                actions.deleteRemoteTag(names[i], name);
-        ImGui::EndMenu();
-    };
     for (const auto& t : m_snapshot->tags) {
         if (!containsNoCase(t.name, m_filter))
             continue;
@@ -724,18 +761,7 @@ void TagsPanel::draw(bool* open)
             ImGui::EndTooltip();
         }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
-            if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
-                m_session.revealCommit(t.target);
-            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-                ImGui::SetClipboardText(t.name.c_str());
-            ImGui::Separator();
-            deleteItems(t.name, true);
-            if (beginMenu(ICON_MS_UPLOAD, "Push tag", free && !m_snapshot->remotes.empty())) {
-                for (const auto& r : m_snapshot->remotes)
-                    if (menuItem(ICON_MS_UPLOAD, r.name.c_str()))
-                        actions.pushTag(r.name, t.name);
-                ImGui::EndMenu();
-            }
+            tagMenuItems(m_session, *m_snapshot, t);
             ImGui::EndPopup();
         }
     }
@@ -763,7 +789,7 @@ void TagsPanel::draw(bool* open)
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
                 ImGui::SetClipboardText(name.c_str());
             ImGui::Separator();
-            deleteItems(name, false);
+            tagDeleteItems(m_session, *m_snapshot, name, false);
             ImGui::EndPopup();
         }
         ImGui::PopID();
@@ -964,6 +990,54 @@ void RepositoriesPanel::draw(bool* open)
 
 // ---- Worktrees ----------------------------------------------------------------------------------
 
+// The Worktrees panel's menu for a worktree; also on a worktree badge in History.
+void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w)
+{
+    const bool free = session.actions().busy().empty();
+    const bool canAdd = free && !snap.headUnborn;
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
+        ImGui::SetClipboardText(w.name.c_str());
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
+        ImGui::SetClipboardText(w.path.string().c_str());
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", nullptr, false, !w.head.isNull()))
+        session.revealCommit(w.head);
+    if (menuItem(ICON_MS_OPEN_IN_NEW, "Open directory", nullptr, false, !w.missing))
+        openInFileManager(w.path);
+    ImGui::Separator();
+    const std::string path = w.path.string();
+    if (w.isCurrent)
+        disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open here", "This window shows this worktree");
+    else if (w.missing)
+        disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open here", "Its directory is gone");
+    else if (menuItem(ICON_MS_FOLDER_OPEN, "Open here"))
+        session.app().openRepository(w.path);
+    if (w.missing)
+        disabledMenuItem(ICON_MS_LAUNCH, "Open in new window", "Its directory is gone");
+    else if (menuItem(ICON_MS_LAUNCH, "Open in new window"))
+        session.actions().openInNewWindow(path);
+    ImGui::Separator();
+    if (menuItem(ICON_MS_ADD, "Add...", nullptr, false, canAdd))
+        session.showAddWorktreeDialog();
+    if (w.isMain)
+        disabledMenuItem(ICON_MS_DELETE, "Remove...", "The main worktree cannot be removed");
+    else if (w.isCurrent)
+        disabledMenuItem(ICON_MS_DELETE, "Remove...", "This window shows this worktree: open another one first");
+    else if (menuItem(ICON_MS_DELETE, "Remove...", nullptr, false, free))
+        session.showRemoveWorktreeDialog(w);
+    if (w.isMain)
+        disabledMenuItem(ICON_MS_LOCK, "Lock...", "The main worktree cannot be locked");
+    else if (w.locked ? menuItem(ICON_MS_LOCK_OPEN, "Unlock", nullptr, false, free) : menuItem(ICON_MS_LOCK, "Lock...", nullptr, false, free)) {
+        if (w.locked)
+            session.actions().unlockWorktree(path);
+        else
+            session.showLockWorktreeDialog(w);
+    }
+    if (menuItem(ICON_MS_DELETE_SWEEP, "Prune...", nullptr, false, free))
+        session.showPruneWorktreesDialog();
+    if (menuItem(ICON_MS_HANDYMAN, "Repair...", nullptr, false, free))
+        session.showRepairWorktreeDialog(w);
+}
+
 void WorktreesPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Worktrees, open)) {
@@ -1032,47 +1106,7 @@ void WorktreesPanel::draw(bool* open)
             }).c_str());
         }
         if (beginContextMenu("##worktree_menu")) {
-            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-                ImGui::SetClipboardText(w.name.c_str());
-            if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
-                ImGui::SetClipboardText(w.path.string().c_str());
-            if (menuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", nullptr, false, !w.head.isNull()))
-                m_session.revealCommit(w.head);
-            if (menuItem(ICON_MS_OPEN_IN_NEW, "Open directory", nullptr, false, !w.missing))
-                openInFileManager(w.path);
-            ImGui::Separator();
-            const std::string path = w.path.string();
-            if (w.isCurrent)
-                disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open here", "This window shows this worktree");
-            else if (w.missing)
-                disabledMenuItem(ICON_MS_FOLDER_OPEN, "Open here", "Its directory is gone");
-            else if (menuItem(ICON_MS_FOLDER_OPEN, "Open here"))
-                m_session.app().openRepository(w.path);
-            if (w.missing)
-                disabledMenuItem(ICON_MS_LAUNCH, "Open in new window", "Its directory is gone");
-            else if (menuItem(ICON_MS_LAUNCH, "Open in new window"))
-                m_session.actions().openInNewWindow(path);
-            ImGui::Separator();
-            if (menuItem(ICON_MS_ADD, "Add...", nullptr, false, canAdd))
-                m_session.showAddWorktreeDialog();
-            if (w.isMain)
-                disabledMenuItem(ICON_MS_DELETE, "Remove...", "The main worktree cannot be removed");
-            else if (w.isCurrent)
-                disabledMenuItem(ICON_MS_DELETE, "Remove...", "This window shows this worktree: open another one first");
-            else if (menuItem(ICON_MS_DELETE, "Remove...", nullptr, false, free))
-                m_session.showRemoveWorktreeDialog(w);
-            if (w.isMain)
-                disabledMenuItem(ICON_MS_LOCK, "Lock...", "The main worktree cannot be locked");
-            else if (w.locked ? menuItem(ICON_MS_LOCK_OPEN, "Unlock", nullptr, false, free) : menuItem(ICON_MS_LOCK, "Lock...", nullptr, false, free)) {
-                if (w.locked)
-                    m_session.actions().unlockWorktree(path);
-                else
-                    m_session.showLockWorktreeDialog(w);
-            }
-            if (menuItem(ICON_MS_DELETE_SWEEP, "Prune...", nullptr, false, free))
-                m_session.showPruneWorktreesDialog();
-            if (menuItem(ICON_MS_HANDYMAN, "Repair...", nullptr, false, free))
-                m_session.showRepairWorktreeDialog(w);
+            worktreeMenuItems(m_session, *snap, w);
             ImGui::EndPopup();
         }
         ImGui::PopID();
@@ -1148,6 +1182,30 @@ void RemotesPanel::draw(bool* open)
 
 // ---- Stashes ------------------------------------------------------------------------------------
 
+// The Stashes panel's menu for a stash; also on a stash badge in History.
+void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& baseSlot)
+{
+    auto& actions = session.actions();
+    const bool free = actions.busy().empty();
+    if (menuItem(ICON_MS_UNARCHIVE, "Apply", nullptr, false, free))
+        actions.stashApply(s.index, false, false);
+    if (menuItem(ICON_MS_UNARCHIVE, "Apply (restore index)", nullptr, false, free))
+        actions.stashApply(s.index, false, true);
+    if (menuItem(ICON_MS_OUTBOX, "Pop", nullptr, false, free))
+        actions.stashApply(s.index, true, false);
+    if (menuItem(ICON_MS_OUTBOX, "Pop (restore index)", nullptr, false, free))
+        actions.stashApply(s.index, true, true);
+    ImGui::Separator();
+    if (menuItem(ICON_MS_FORK_RIGHT, "Branch from stash...", nullptr, false, free))
+        session.showBranchFromStashDialog(s.index);
+    if (menuItem(ICON_MS_DELETE, "Drop...", nullptr, false, free))
+        session.showDropStashDialog(s.index);
+    ImGui::Separator();
+    // One item for the ID the right click was on; off the base ID (and from the keyboard) the stash's
+    // commit, and the base's after it.
+    idCopyMenuItems({{s.commit.hex(), IdSlot{}}, {s.base.hex(), baseSlot, "base"}});
+}
+
 void StashesPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Stashes, open)) {
@@ -1211,23 +1269,7 @@ void StashesPanel::draw(bool* open)
             }));
         // The menu belongs to the row (the last item before it must be the Selectable).
         if (beginContextMenu("##stash_menu")) {
-            if (menuItem(ICON_MS_UNARCHIVE, "Apply", nullptr, false, free))
-                actions.stashApply(s.index, false, false);
-            if (menuItem(ICON_MS_UNARCHIVE, "Apply (restore index)", nullptr, false, free))
-                actions.stashApply(s.index, false, true);
-            if (menuItem(ICON_MS_OUTBOX, "Pop", nullptr, false, free))
-                actions.stashApply(s.index, true, false);
-            if (menuItem(ICON_MS_OUTBOX, "Pop (restore index)", nullptr, false, free))
-                actions.stashApply(s.index, true, true);
-            ImGui::Separator();
-            if (menuItem(ICON_MS_FORK_RIGHT, "Branch from stash...", nullptr, false, free))
-                m_session.showBranchFromStashDialog(s.index);
-            if (menuItem(ICON_MS_DELETE, "Drop...", nullptr, false, free))
-                m_session.showDropStashDialog(s.index);
-            ImGui::Separator();
-            // One item for the ID the right click was on; off the base ID (and from the keyboard) the stash's
-            // commit, and the base's after it.
-            idCopyMenuItems({{s.commit.hex(), IdSlot{}}, {s.base.hex(), baseSlot, "base"}});
+            stashMenuItems(m_session, s, baseSlot);
             ImGui::EndPopup();
         }
         ImGui::SameLine();
