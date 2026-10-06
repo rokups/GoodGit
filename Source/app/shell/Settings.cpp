@@ -401,12 +401,10 @@ std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, Re
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return s;
     };
-    std::stable_sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
-        const std::string ba = lower(names[a].base), bb = lower(names[b].base);
-        if (ba != bb)
-            return ba < bb;
-        return lower(names[a].prefix) < lower(names[b].prefix);
-    });
+    std::vector<std::string> keys(paths.size());
+    for (size_t i = 0; i < keys.size(); ++i)
+        keys[i] = lower(names[i].text());
+    std::stable_sort(idx.begin(), idx.end(), [&](size_t a, size_t b) { return keys[a] < keys[b]; });
     return idx;
 }
 

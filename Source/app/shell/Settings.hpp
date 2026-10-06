@@ -117,7 +117,7 @@ std::string normalizeRepoPath(const std::string& path);
 // `paths` without repeated repositories (after normalisation), first occurrence kept.
 std::vector<std::string> uniqueRepoPaths(const std::vector<std::string>& paths);
 // Indices into `paths` in display order: as stored, or alphabetical by the unique display name
-// (case-insensitive; base name first, then the parent prefix).
+// (case-insensitive; the whole name as shown, parent prefix included).
 std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, RecentOrder order);
 
 // Short display name of a recent repository: `base` is the last path component; `prefix` holds

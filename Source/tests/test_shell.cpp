@@ -226,10 +226,11 @@ GG_TEST("shell", "recent repositories: paths are normalised and unique, display 
     GG_CHECK(d.recentOrder == RecentOrder::Alphabetical);
     GG_CHECK_STR_EQ(toJson(d)["recentOrder"].get<std::string>(), "alphabetical");
     GG_CHECK(fromJson(toJson(SettingsData{})).recentOrder == RecentOrder::MostRecent);
-    // Display order: as stored, or by unique name (case-insensitive, base first).
+    // Display order: as stored, or by unique name as shown (case-insensitive): "a/app", "Alpha",
+    // "b/app", "zeta".
     const std::vector<std::string> paths{"/w/zeta", "/x/Alpha", "/b/app", "/a/app"};
     GG_CHECK((recentDisplayOrder(paths, RecentOrder::MostRecent) == std::vector<size_t>{0, 1, 2, 3}));
-    GG_CHECK((recentDisplayOrder(paths, RecentOrder::Alphabetical) == std::vector<size_t>{1, 3, 2, 0}));
+    GG_CHECK((recentDisplayOrder(paths, RecentOrder::Alphabetical) == std::vector<size_t>{3, 1, 2, 0}));
 }
 
 GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Delete forgets a hovered entry")
