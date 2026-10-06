@@ -2,10 +2,12 @@
 // the working tree / index, Staged / Unstaged / Untracked / Conflicted groups.
 #pragma once
 
+#include "panels/HistoryPanel.hpp"
 #include "shell/Session.hpp"
 
 #include <core/Engine.hpp>
 
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -62,12 +64,16 @@ public:
     void onStatus(const core::StatusPtr& status);
     void onDiff(const core::DiffEvent& event);
     void draw(bool* open);
+    // Called every frame: two selected commits in History are compared (Before: the lower row), one or three
+    // and more are not; a change reloads the file list.
+    void syncPair();
 
     // F6 / Shift+F6: move the current file.
     void moveCurrent(int direction);
     const FileRow* current() const;
     const std::vector<FileRow>& rows() const { return m_rows; }
-    const CompareTarget& compareTarget() const { return m_compare; }
+    // The target in use: the other commit while two commits are selected, else the "Compare with" one.
+    CompareTarget compareTarget() const;
     const std::set<std::string>& selectedKeys() const { return m_selected; }
     bool scanning() const { return m_scanning; }
     bool everScanned() const { return m_everScanned; }
@@ -97,6 +103,9 @@ private:
     void discard(const DiscardPlan& plan) { m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged); }
     std::vector<const FileRow*> visibleRows() const;
     core::DiffQuery patchQuery(const FileRow& row) const;
+    // The commit shown on the right: the upper one of two selected commits, else the selection itself.
+    Selection effectiveSelection() const;
+    std::optional<HistoryPanel::CommitPair> currentPair() const;
 
     Session& m_session;
     Selection m_selection;
@@ -107,7 +116,8 @@ private:
     bool m_navOnFileNow = false; // this frame: the nav cursor is on a file row
     std::string m_filter;
     std::string m_compareText;   // the "Compare with" field
-    CompareTarget m_compare;     // applied: the whole commit is compared with it
+    CompareTarget m_compare;     // applied: the whole commit is compared with it (not while m_pair is set)
+    std::optional<HistoryPanel::CommitPair> m_pair; // two commits selected in History: they are compared
     std::string m_filesError;    // the file list could not be read (an unknown revision)
     bool m_loading = false;
     bool m_scanning = false;

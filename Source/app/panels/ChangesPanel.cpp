@@ -154,6 +154,7 @@ ChangesPanel::ChangesPanel(Session& session) : m_session(session) { }
 void ChangesPanel::onSelection(const Selection& sel)
 {
     m_selection = sel;
+    m_pair = currentPair();
     m_rows.clear();
     m_selected.clear();
     m_current.clear();
@@ -166,6 +167,47 @@ void ChangesPanel::onSelection(const Selection& sel)
         requestFiles();
 }
 
+CompareTarget ChangesPanel::compareTarget() const
+{
+    if (!m_pair)
+        return m_compare;
+    CompareTarget target;
+    target.kind = CompareTarget::Rev;
+    target.rev = m_pair->older.hex();
+    return target;
+}
+
+Selection ChangesPanel::effectiveSelection() const
+{
+    Selection sel = m_selection;
+    if (m_pair)
+        sel.id = m_pair->newer;
+    return sel;
+}
+
+std::optional<HistoryPanel::CommitPair> ChangesPanel::currentPair() const
+{
+    if (m_selection.kind != SelKind::Commit)
+        return std::nullopt;
+    return m_session.history().selectedPair();
+}
+
+void ChangesPanel::syncPair()
+{
+    const auto pair = currentPair();
+    if (pair == m_pair)
+        return;
+    m_pair = pair;
+    // As a new "Compare with" target: the file list is read again and the first file shows.
+    m_rows.clear();
+    m_selected.clear();
+    m_current.clear();
+    m_anchor.clear();
+    m_filesError.clear();
+    requestFiles();
+    m_session.diff().clear();
+}
+
 void ChangesPanel::requestFiles()
 {
     auto& engine = m_session.engine();
@@ -173,7 +215,7 @@ void ChangesPanel::requestFiles()
     if (m_selection.kind == SelKind::Commit) {
         FileRow commitFiles;
         commitFiles.group = FileGroup::Commit;
-        core::DiffQuery q = DiffPanel::queryFor(m_selection, commitFiles, m_compare, snap);
+        core::DiffQuery q = DiffPanel::queryFor(effectiveSelection(), commitFiles, compareTarget(), snap);
         q.path.clear();
         q.withHunks = false;
         m_filesError.clear();
@@ -257,9 +299,12 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
     }
     // Ignore results for an older selection.
     if (m_selection.kind == SelKind::Commit) {
-        const bool matches = (d.query.kind == core::DiffKind::Commit && d.query.a == m_selection.id)
-            || ((d.query.kind == core::DiffKind::Commits || d.query.kind == core::DiffKind::WorktreeCommit)
-                && d.query.b == m_selection.id);
+        const Selection shown = effectiveSelection();
+        const CompareTarget target = compareTarget();
+        const bool matches = (d.query.kind == core::DiffKind::Commit && target.kind == CompareTarget::None && d.query.a == shown.id)
+            || (d.query.kind == core::DiffKind::Commits && target.kind == CompareTarget::Rev && d.query.b == shown.id
+                && d.query.against == target.rev)
+            || (d.query.kind == core::DiffKind::WorktreeCommit && target.kind == CompareTarget::WorkTree && d.query.b == shown.id);
         if (!matches) // (a commit's files come in kSlotFiles)
             return;
         m_filesError = d.error;
@@ -302,7 +347,7 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
 // (stage, take a side, mark resolved) do not apply to a commit's rows.
 void ChangesPanel::markConflicts()
 {
-    if (m_selection.kind != SelKind::Commit)
+    if (m_selection.kind != SelKind::Commit || m_pair) // (two compared commits: no conflict flags)
         return;
     const ConflictList* conflicts = m_session.conflictsOf(m_selection.id);
     for (auto& r : m_rows) {
@@ -338,7 +383,7 @@ std::vector<const FileRow*> ChangesPanel::visibleRows() const
 void ChangesPanel::setCurrent(const std::string& key)
 {
     m_current = key;
-    m_session.diff().showFile(m_selection, *current(), m_compare);
+    m_session.diff().showFile(effectiveSelection(), *current(), compareTarget());
 }
 
 void ChangesPanel::moveCurrent(int direction)
@@ -360,7 +405,7 @@ void ChangesPanel::moveCurrent(int direction)
 
 core::DiffQuery ChangesPanel::patchQuery(const FileRow& row) const
 {
-    core::DiffQuery q = DiffPanel::queryFor(m_selection, row, m_compare, m_session.snapshot());
+    core::DiffQuery q = DiffPanel::queryFor(effectiveSelection(), row, compareTarget(), m_session.snapshot());
     q.context = 3;
     q.whitespace = core::Whitespace::Normal;
     return q;
@@ -586,21 +631,22 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, canBlame)) {
         core::Oid at;
         if (m_selection.kind == SelKind::Commit)
-            at = m_selection.id;
+            at = effectiveSelection().id;
         m_session.blameFile(row.path, at);
     }
     {
         // "Compare": Before is the file's old side, After its new side. With "Compare with" set, a commit's
         // file compares Before with that target (it is the left side, as in the internal diff).
         const bool menuOn = free && !snap->bare;
-        const std::string id = m_selection.id.hex();
+        const std::string id = effectiveSelection().id.hex();
+        const CompareTarget compare = compareTarget();
         using V = std::vector<std::string>;
         V show, beforeWt, afterWt;
         bool canMenu = true, hasBefore = true, hasAfter = true, hasShow = true;
         switch (row.group) {
         case FileGroup::Commit: {
             const auto* h = m_session.history().row(m_selection.id);
-            hasBefore = !(h && h->parents.empty()); // a root commit has no parent
+            hasBefore = m_pair || !(h && h->parents.empty()); // a root commit has no parent
             show = {id + "^", id};
             beforeWt = {id + "^"};
             afterWt = {id};
@@ -623,13 +669,16 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             break;
         default: canMenu = false; break;
         }
-        if (canMenu && row.group == FileGroup::Commit && m_compare.kind != CompareTarget::None) {
-            const bool rev = m_compare.kind == CompareTarget::Rev;
+        if (canMenu && row.group == FileGroup::Commit && compare.kind != CompareTarget::None) {
+            const bool rev = compare.kind == CompareTarget::Rev;
+            // Two selected commits: the file in the lower one against the file in the upper one, as the panels show.
             if (menuItem(ICON_MS_OPEN_IN_NEW, "Compare", nullptr, false, menuOn && hasBefore))
-                actions.externalDiff(row.path, rev ? V{m_compare.rev, id + "^"} : V{id + "^"});
+                actions.externalDiff(row.path, m_pair ? V{compare.rev, id} : rev ? V{compare.rev, id + "^"} : V{id + "^"});
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-                if (rev)
-                    tooltip("Compare the file before this commit with %s", m_compare.rev.c_str());
+                if (m_pair)
+                    tooltip("Compare the file in the lower selected commit with the file in the upper one");
+                else if (rev)
+                    tooltip("Compare the file before this commit with %s", compare.rev.c_str());
                 else
                     tooltip("Compare the file before this commit with the working tree");
             }
@@ -643,7 +692,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             ImGui::EndMenu();
         }
     }
-    if (m_selection.kind == SelKind::Commit && row.group == FileGroup::Commit) {
+    if (m_selection.kind == SelKind::Commit && row.group == FileGroup::Commit && !m_pair) {
         // History editing on the commit's files (selection or this row).
         std::vector<std::string> paths;
         for (const FileRow* r : rows)
@@ -677,7 +726,8 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         if (menuItem(ICON_MS_CONTENT_PASTE, "Apply this file", nullptr, false, free))
             actions.stashApplyFile(m_selection.stashIndex, row.path);
     }
-    if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::WorkingTree || m_selection.kind == SelKind::Index) {
+    if ((m_selection.kind == SelKind::Commit && !m_pair) || m_selection.kind == SelKind::WorkingTree
+        || m_selection.kind == SelKind::Index) {
         // Restore the selected files from another commit: in the commit (rewrite), or in the
         // working tree / index. Untracked and conflicted files have nothing to restore.
         std::vector<std::string> restorable;
@@ -697,8 +747,8 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             if (m_selection.kind == SelKind::Commit) {
                 const core::HistoryRow* hr = m_session.history().row(m_selection.id);
                 prefill = hr && !hr->parents.empty() ? hr->parents.front().hex() : std::string();
-                if (m_compare.kind == CompareTarget::Rev)
-                    prefill = m_compare.rev;
+                if (const CompareTarget compare = compareTarget(); compare.kind == CompareTarget::Rev)
+                    prefill = compare.rev;
             }
             showRestoreDialog(m_session, m_selection, restorable, prefill);
         }
@@ -744,6 +794,11 @@ void ChangesPanel::openFile(const FileRow& row)
     case FileGroup::Staged:
     case FileGroup::Unstaged: actions.externalDiff(row.path, {"HEAD"}); break;
     case FileGroup::Commit:
+        if (m_pair) // two selected commits: the file in the lower one against the upper one, as the panels show
+            actions.externalDiff(row.path, {m_pair->older.hex(), m_pair->newer.hex()});
+        else
+            actions.externalDiff(row.path, {id + "^", id});
+        break;
     case FileGroup::StashWorktree: actions.externalDiff(row.path, {id + "^", id}); break;
     case FileGroup::StashIndex: actions.externalDiff(row.path, {id + "^1", id + "^2"}); break;
     default: break;
@@ -841,7 +896,8 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     }
     // Drag files between Staged and Unstaged, or onto a commit in History. The payload is the
     // group name ("@<commit>" for a commit's files), then one path per line.
-    const bool fromCommit = row.group == FileGroup::Commit && m_selection.kind == SelKind::Commit;
+    // (Not while two commits are compared: the rows are not changes of the primary commit.)
+    const bool fromCommit = row.group == FileGroup::Commit && m_selection.kind == SelKind::Commit && !m_pair;
     const bool draggable = row.group == FileGroup::Staged || row.group == FileGroup::Unstaged
         || row.group == FileGroup::Untracked || fromCommit;
     if (draggable && ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
@@ -981,7 +1037,15 @@ void ChangesPanel::draw(bool* open)
     // already compare with HEAD's side.
     ImGui::BeginDisabled(m_selection.kind != SelKind::Commit);
     ImGui::SetNextItemWidth(std::max(compareMin, ImGui::GetContentRegionAvail().x));
-    if (compareWithField("##compare_with", m_compareText)) {
+    if (m_pair) {
+        // Two selected commits are compared, whatever the field holds (it comes back with one commit).
+        std::string pairText = m_session.shortId(m_pair->older) + ".." + m_session.shortId(m_pair->newer);
+        ImGui::BeginDisabled();
+        ImGui::InputText("##compare_pair", &pairText, ImGuiInputTextFlags_ReadOnly);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayNormal))
+            tooltip("Two commits are selected: the changes from the lower one (Before) to the upper one (After)");
+    } else if (compareWithField("##compare_with", m_compareText)) {
         const CompareTarget target = CompareTarget::parse(m_compareText);
         if (target != m_compare) {
             m_compare = target;
@@ -1031,7 +1095,7 @@ void ChangesPanel::draw(bool* open)
             }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !ImGui::GetIO().KeyMods && navOnFile && m_selection.kind == SelKind::Commit
-            && m_session.actions().busy().empty()) {
+            && !m_pair && m_session.actions().busy().empty()) {
             // Discard from the commit: a rewrite (one Undo), published commits ask first.
             if (const FileRow* cur = current(); cur && cur->group == FileGroup::Commit) {
                 std::vector<std::string> paths;

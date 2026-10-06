@@ -59,6 +59,13 @@ public:
     bool descendsFrom(const core::Oid& id, const core::Oid& ancestor) const;
     // Commits Ctrl-clicked in addition to the selection (New with several parents = merge).
     const std::vector<core::Oid>& extraSelection() const { return m_extra; }
+    // The two selected commits (the primary one and one extra) as the lower row (older in list order) and
+    // the upper row, in the order of all loaded rows. Empty with any other selection or a commit that is not loaded.
+    struct CommitPair {
+        core::Oid older, newer;
+        bool operator==(const CommitPair&) const = default;
+    };
+    std::optional<CommitPair> selectedPair() const;
     const std::vector<core::HistoryRow>& rows() const { return m_rows; }
     // Ids of the rows currently shown (after the filter), in order.
     std::vector<core::Oid> visibleIds() const;

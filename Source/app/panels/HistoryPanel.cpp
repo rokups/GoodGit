@@ -315,6 +315,23 @@ std::vector<core::Oid> HistoryPanel::visibleIds() const
     return ids;
 }
 
+std::optional<HistoryPanel::CommitPair> HistoryPanel::selectedPair() const
+{
+    const Selection& sel = m_session.selection();
+    if (sel.kind != SelKind::Commit || m_extra.size() != 1 || m_extra.front() == sel.id)
+        return std::nullopt;
+    // The order of all loaded rows (a filter or a collapsed merge does not change it); a commit that is not loaded
+    // (a reload rewrote it) is no pair.
+    const auto first = m_index.find(sel.id);
+    const auto second = m_index.find(m_extra.front());
+    if (first == m_index.end() || second == m_index.end())
+        return std::nullopt;
+    CommitPair pair{m_extra.front(), sel.id};
+    if (first->second > second->second)
+        std::swap(pair.older, pair.newer); // the primary commit is lower in the list
+    return pair;
+}
+
 std::vector<int> HistoryPanel::visibleIndexes() const
 {
     std::vector<int> out;

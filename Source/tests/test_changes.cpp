@@ -57,6 +57,17 @@ void selectCommit(Scenario& s, const std::string& hex)
     s.waitUntil([&] { return !s.session()->changes().rows().empty(); });
 }
 
+// Clicks a History row with a modifier held (0: a plain click).
+void clickRow(Scenario& s, const std::string& hex, ImGuiKeyChord mod = 0)
+{
+    if (mod)
+        s.ctx->KeyDown(mod);
+    s.ctx->ItemClick(("//History/**/###row_" + hex).c_str());
+    if (mod)
+        s.ctx->KeyUp(mod);
+    s.ctx->Yield(2);
+}
+
 } // namespace
 
 GG_TEST("changes", "working tree groups: staged, unstaged, untracked, conflicted")
@@ -175,6 +186,155 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), "Working tree");
     GG_CHECK(ctx->ItemInfo("//Changes/##compare_with").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);
+}
+
+GG_TEST("changes", "two selected commits: Changes and Diff show the diff between them, older to newer")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f1.txt", "changed\n");
+    s.write(repo, "sub/x.txt", "x\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Two files"});
+    GG_REQUIRE(s.openRepository(repo));
+    using V = std::vector<std::string>;
+    // HEAD~3 (f3) is the lower row, HEAD~1 (f5) the upper one; HEAD~2 changes f4 in between.
+    const std::string older = s.revParse(repo, "HEAD~3");
+    const std::string newer = s.revParse(repo, "HEAD~1");
+    auto& changes = s.session()->changes();
+    auto shows = [&](const std::string& path) {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.kind == ggui::core::DiffKind::Commits && d->query.path == path && d->query.against == older
+            && d->query.b.hex() == newer;
+    };
+    for (const bool olderPrimary : {true, false}) {
+        selectCommit(s, olderPrimary ? older : newer);
+        GG_REQUIRE(s.waitUntil([&] { return !paths(s, FileGroup::Commit).empty(); }));
+        clickRow(s, olderPrimary ? newer : older, ImGuiMod_Ctrl);
+        // The union of the changes between them, the first file shown at once, the typed target not used.
+        GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f4.txt", "f5.txt"}); }));
+        GG_CHECK(s.waitUntil([&] { return shows("f4.txt"); }));
+        GG_CHECK(changes.compareTarget().kind == ggui::CompareTarget::Rev);
+        GG_CHECK_STR_EQ(changes.compareTarget().rev, older);
+        // Older to newer: f4 and f5 are added (reversed, they would be deleted).
+        GG_REQUIRE(rowFor(s, "f4.txt") != nullptr);
+        GG_CHECK(rowFor(s, "f4.txt")->kind == ggui::core::ChangeKind::Added);
+        ctx->ItemClick(fileRef(s, nullptr, "f5.txt").c_str());
+        GG_CHECK(s.waitUntil([&] { return shows("f5.txt"); }));
+        // The indicator replaces the "Compare with" field.
+        GG_CHECK(s.itemExists("//Changes/##compare_pair"));
+        GG_CHECK(!s.itemExists("//Changes/##compare_with"));
+        GG_CHECK(ctx->ItemInfo("//Changes/##compare_pair").ItemFlags & ImGuiItemFlags_Disabled);
+        // Ctrl-click on the other commit again: one commit, its own changes.
+        clickRow(s, olderPrimary ? newer : older, ImGuiMod_Ctrl);
+        GG_CHECK(s.waitUntil([&] { return changes.compareTarget().kind == ggui::CompareTarget::None; }));
+        GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{olderPrimary ? "f3.txt" : "f5.txt"}); }));
+        GG_CHECK(!s.itemExists("//Changes/##compare_pair"));
+        GG_CHECK(s.itemExists("//Changes/##compare_with"));
+    }
+}
+
+GG_TEST("changes", "two selected commits: the typed Compare with applies again with one commit, three commits compare nothing")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    using V = std::vector<std::string>;
+    const std::string c1 = s.revParse(repo, "HEAD~1");
+    const std::string c2 = s.revParse(repo, "HEAD~2");
+    const std::string c3 = s.revParse(repo, "HEAD~3");
+    auto& changes = s.session()->changes();
+    selectCommit(s, c3);
+    ctx->ItemInputValue("//Changes/##compare_with", "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return changes.compareTarget().rev == "HEAD" && paths(s, FileGroup::Commit).size() > 1; }));
+    // Two commits: the typed target is overridden (c3 to c1 changes f3 and f4).
+    clickRow(s, c1, ImGuiMod_Ctrl);
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt", "f4.txt"}); }));
+    GG_CHECK_STR_EQ(changes.compareTarget().rev, c3);
+    // Three commits: no automatic comparison; the primary commit shows as for one, with the typed target.
+    clickRow(s, c2, ImGuiMod_Ctrl);
+    GG_CHECK(s.waitUntil([&] { return changes.compareTarget().rev == "HEAD"; }));
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt", "f4.txt", "f5.txt"}); }));
+    GG_CHECK(!s.itemExists("//Changes/##compare_pair"));
+    GG_CHECK(s.itemExists("//Changes/##compare_with"));
+    // Two commits again, then one: the typed target applies again.
+    clickRow(s, c1, ImGuiMod_Ctrl);
+    GG_CHECK(s.waitUntil([&] { return changes.compareTarget().rev == c3 && paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
+    clickRow(s, c2, ImGuiMod_Ctrl);
+    GG_CHECK(s.waitUntil([&] { return changes.compareTarget().rev == "HEAD"; }));
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt", "f4.txt", "f5.txt"}); }));
+    GG_CHECK(s.itemExists("//Changes/##compare_with"));
+}
+
+GG_TEST("changes", "two selected commits: the D key and the file drag do nothing, as the rows are not changes of the primary commit")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string older = s.revParse(repo, "HEAD~3"); // "Add f2"
+    const std::string newer = s.revParse(repo, "HEAD~1"); // "Add f4": the primary commit, it changes f4.txt
+    const std::string tip = s.head(repo);
+    const std::string headRow = "//History/**/###row_" + tip;
+    auto& changes = s.session()->changes();
+    using V = std::vector<std::string>;
+    selectCommit(s, newer);
+    clickRow(s, older, ImGuiMod_Ctrl);
+    GG_REQUIRE(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt", "f4.txt"}); }));
+    GG_REQUIRE(changes.compareTarget().kind == ggui::CompareTarget::Rev);
+    // The D key on f4.txt (the primary commit's own file): nothing is discarded.
+    ctx->ItemClick(fileRef(s, nullptr, "f4.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), tip);
+    GG_CHECK(!s.dialogOpen("Rewrite published history?", 0.5f));
+    // f4.txt dropped on its commit's child, HEAD (it would move the file into HEAD): nothing moves.
+    ctx->ItemDragAndDrop(fileRef(s, nullptr, "f4.txt").c_str(), headRow.c_str());
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), tip);
+    // One commit: the D key rewrites the commit without a dialog (Undo restores it) ...
+    clickRow(s, older, ImGuiMod_Ctrl);
+    GG_REQUIRE(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f4.txt"}); }));
+    ctx->ItemClick(fileRef(s, nullptr, "f4.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != tip; }));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == tip; }));
+    s.settle();
+    // ... and the same drag moves the file into HEAD (the controls of the two checks above).
+    clickRow(s, newer);
+    GG_REQUIRE(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f4.txt"}); }));
+    ctx->ItemDragAndDrop(fileRef(s, nullptr, "f4.txt").c_str(), headRow.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != tip; }));
+}
+
+GG_TEST("changes", "two selected commits: a History filter that hides one of them keeps the direction; a rewritten commit ends the comparison")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    using V = std::vector<std::string>;
+    const std::string older = s.revParse(repo, "HEAD~2"); // "Add f3"
+    const std::string newer = s.head(repo);              // "Add f5"
+    auto& changes = s.session()->changes();
+    selectCommit(s, older);
+    clickRow(s, newer, ImGuiMod_Ctrl);
+    GG_REQUIRE(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f4.txt", "f5.txt"}); }));
+    GG_REQUIRE(s.itemExists("//Changes/##compare_pair"));
+    // The primary commit is the lower row and the filter hides the upper one: nothing changes.
+    ctx->ItemInputValue("//History/##hist_filter", "Add f3");
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return history.searchActive() && history.visibleIds().size() == 1; }));
+    ctx->Yield(5);
+    GG_CHECK(s.itemExists("//Changes/##compare_pair"));
+    GG_CHECK_STR_EQ(changes.compareTarget().rev, older);
+    GG_CHECK(paths(s, FileGroup::Commit) == (V{"f4.txt", "f5.txt"}));
+    GG_REQUIRE(rowFor(s, "f5.txt") != nullptr);
+    GG_CHECK(rowFor(s, "f5.txt")->kind == ggui::core::ChangeKind::Added);
+    ctx->ItemInputValue("//History/##hist_filter", "");
+    GG_REQUIRE(s.waitUntil([&] { return !history.searchActive() && history.visibleIds().size() == history.rows().size(); }));
+    // The upper commit is rewritten (amended): it is not in the list any more, so the comparison ends.
+    s.git(repo, {"commit", "-q", "--amend", "-m", "Add f5, reworded"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->head.hex() == s.head(repo); }));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists("//Changes/##compare_pair"); }));
+    GG_CHECK(s.waitUntil([&] { return changes.compareTarget().kind == ggui::CompareTarget::None; }));
+    GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f3.txt"}); }));
 }
 
 GG_TEST("changes", "selecting a commit selects its first file and shows its diff")

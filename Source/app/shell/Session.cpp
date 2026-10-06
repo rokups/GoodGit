@@ -401,6 +401,7 @@ void Session::draw()
     drawPanel(panel::Stashes, *m_stashes);
     drawPanel(panel::Worktrees, *m_worktrees);
     drawPanel(panel::History, *m_history);
+    m_changes->syncPair(); // History may have changed the extra commits
     drawPanel(panel::Changes, *m_changes);
     drawPanel(panel::Info, *m_info);
     drawPanel(panel::Diff, *m_diff);

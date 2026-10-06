@@ -211,6 +211,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   The anchor is the row of the last plain click, the last Ctrl-click that added a commit or the last plain
   arrow key, while that commit is selected and in the list; else the primary commit; with none, Shift-click is a plain click.
   The clicked row is the primary commit (the Changes panel follows it), the others are the extra selection.
+  With exactly two commits selected, Changes and Diff show the diff between them.
   A range of adjacent commits enables *Interactive rebase selection…* and Squash. Shift with an arrow key onto the
   Working tree or Index row does not select it (the selection stays); a Shift-click on it does.
 - Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
@@ -243,8 +244,14 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 ## 3. Changes panel — window `"Changes"`
 - Header `###changes_title`: title of the selection ("0000000 Working tree" — the zero ID —,
   "Index", short ID and commit subject, stash message; the ID follows the ID rule, its own item
-  `###changes_title_id`; a commit's ID copies on click and has the Copy ID item, the zero ID does neither), filter `##changes_filter`, toggle
-  *Compare with HEAD* `##compare_head` (enabled for commits only).
+  `###changes_title_id`; a commit's ID copies on click and has the Copy ID item, the zero ID does neither), filter `##changes_filter`, text field
+  *Compare with* `##compare_with` (HEAD, a commit ID or ref, or Work Tree; enabled for commits only). While two
+  commits are selected in History, the field is replaced by the disabled field `##compare_pair` that shows
+  `<lower short ID>..<upper short ID>`: the files and the diff are those between the two commits (Before: the
+  lower row in the list, After: the upper row, whichever is the primary commit), the typed target comes back
+  with one commit or three or more, and the History-editing and Restore items of the file menu are off.
+  In that state the `D` key does nothing and a file row cannot be dragged onto a commit. The pair ends when one of the
+  two commits is no longer in the loaded history (a reload rewrote it).
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
   renames shown `old → new`; files holding first-class conflicts are in the conflict colour with
   "N-sided conflict", and double-clicking one at HEAD opens the editor. Selecting a commit
