@@ -795,7 +795,8 @@ static bool selectableTreeNode(const char* label, bool selected)
 // A group is a tree node, open by default; a repository is a row. `toOpen` gets the path of the one
 // double-clicked. Both ids come from the group path or the label ('/' becomes ':'); equal labels
 // among siblings get a "#n" suffix. The row of the open repository is a node, closed by default, with
-// its worktrees below it when it has more than the main one.
+// its worktrees below it when it has more than the main one. A repository row is a drag source and a
+// group node a drop target (repoDropTarget): the drop puts the repository in the group.
 void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen)
 {
     std::map<std::string, int> seen;
@@ -803,6 +804,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         if (node.isGroup()) {
             const bool open = ImGui::TreeNodeEx((node.label + "###group_" + rowId(node.group)).c_str(),
                 ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            repoDropTarget(node.group);
             if (open) {
                 drawNodes(node.children, toOpen);
                 ImGui::TreePop();
@@ -832,6 +834,13 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             m_selectedWorktree = false;
         }
         ImGui::PopStyleColor();
+        // Drag the repository onto a group: the payload is its path, the preview its label.
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+            m_dragLabel = node.label;
+            ImGui::SetDragDropPayload("GG_REPO", node.path.data(), node.path.size());
+            ImGui::TextUnformatted(node.label.c_str());
+            ImGui::EndDragDropSource();
+        }
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             toOpen = node.path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
@@ -863,6 +872,26 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         }
         ImGui::PopID();
     }
+}
+
+// A drop of a repository on the last item puts it in `group` ("" is the top level). The alias gets the
+// new group part; an alias that does not change is not stored, so the settings are not saved.
+void RepositoriesPanel::repoDropTarget(const std::string& group)
+{
+    if (!ImGui::BeginDragDropTarget())
+        return;
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_REPO")) {
+        const std::string path(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
+        auto& settings = m_session.app().settings();
+        std::string alias;
+        for (const auto& entry : settings.data().repositories)
+            if (entry.path == path)
+                alias = normalizeAlias(entry.alias);
+        const std::string newAlias = aliasWithGroup(alias, m_dragLabel, group);
+        if (newAlias != alias)
+            settings.setAlias(path, newAlias);
+    }
+    ImGui::EndDragDropTarget();
 }
 
 // The worktrees of the open repository as rows below its node. The current one has the text colour of the
@@ -904,6 +933,9 @@ void RepositoriesPanel::draw(bool* open)
     std::string toOpen;
     beginList();
     drawNodes(tree, toOpen);
+    // The empty area below the rows is the top level as a drop target: a repository dropped here leaves its group.
+    ImGui::InvisibleButton("###top_level", ImVec2(-FLT_MIN, std::max(ImGui::GetContentRegionAvail().y, ImGui::GetFrameHeight())));
+    repoDropTarget(std::string());
     endList();
     if (!m_selected.empty() && ImGui::Shortcut(ImGuiKey_Enter, ImGuiInputFlags_RouteFocused)) {
         if (!m_selectedWorktree) {

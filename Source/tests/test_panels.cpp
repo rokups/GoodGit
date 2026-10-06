@@ -392,6 +392,89 @@ GG_TEST("panels", "repositories: the context menu sets and clears an alias")
     GG_CHECK_STR_EQ(s.clipboard(), openPath);
 }
 
+// The alias the settings hold for a repository ("" when it has none).
+static std::string repoAlias(Scenario& s, const fs::path& path)
+{
+    const std::string key = ggui::normalizeRepoPath(path.string());
+    for (const auto& e : s.app.settings().data().repositories)
+        if (e.path == key)
+            return e.alias;
+    return std::string();
+}
+
+GG_TEST("panels", "repositories: a drag onto a group sets the group part of the alias")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.app.settings().setAlias(ggui::normalizeRepoPath(second.string()), "grp/other");
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    // A repository without an alias gets "group/<label>"; the label is the deduplicated folder name.
+    const std::string row = repoRow(s, first);
+    const std::string label = repoLeafLabel(ggui::buildRepoTree(s.app.settings().data().repositories), first);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_REQUIRE(s.itemExists("//Repositories/###group_grp"));
+    ctx->ItemDragAndDrop(row.c_str(), "//Repositories/###group_grp");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(repoAlias(s, first), "grp/" + label);
+    GG_CHECK(s.itemExists(("//Repositories/###group_grp/repo_" + label + "/###row").c_str()));
+}
+
+GG_TEST("panels", "repositories: a drag keeps the last segment of the alias, a drop on the own group changes nothing")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.app.settings().setAlias(ggui::normalizeRepoPath(first.string()), "a/x");
+    s.app.settings().setAlias(ggui::normalizeRepoPath(second.string()), "b/y");
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    const std::string own = "//Repositories/###group_a/repo_x/###row";
+    GG_REQUIRE(s.itemExists(own.c_str()));
+    // Onto the own group: the alias stays.
+    ctx->ItemDragAndDrop(own.c_str(), "//Repositories/###group_a");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(repoAlias(s, first), "a/x");
+    // Onto the group "b": "a/x" becomes "b/x" and the group "a" goes away.
+    ctx->ItemDragAndDrop(own.c_str(), "//Repositories/###group_b");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(repoAlias(s, first), "b/x");
+    GG_CHECK(s.itemExists("//Repositories/###group_b/repo_x/###row"));
+    GG_CHECK(!s.itemExists("//Repositories/###group_a"));
+}
+
+GG_TEST("panels", "repositories: a drag onto the empty area leaves the group")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.app.settings().setAlias(ggui::normalizeRepoPath(first.string()), "a/x");
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    GG_REQUIRE(s.itemExists("//Repositories/###top_level"));
+    ctx->ItemDragAndDrop("//Repositories/###group_a/repo_x/###row", "//Repositories/###top_level");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(repoAlias(s, first), "x");
+    GG_CHECK(s.itemExists("//Repositories/repo_x/###row"));
+    GG_CHECK(!s.itemExists("//Repositories/###group_a"));
+    // Without an alias a repository stays without one.
+    const std::string plain = repoRow(s, second);
+    ctx->ItemDragAndDrop(plain.c_str(), "//Repositories/###top_level");
+    ctx->Yield(2);
+    GG_CHECK(repoAlias(s, second).empty());
+    GG_CHECK(s.itemExists(plain.c_str()));
+}
+
 GG_TEST("panels", "repositories: the alias does not show in the toolbar switcher")
 {
     s.app.settings().data().repositories.clear();

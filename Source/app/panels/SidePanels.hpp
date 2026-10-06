@@ -53,7 +53,10 @@ public:
 private:
     void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
     void drawWorktrees(std::string& toOpen);
+    void repoDropTarget(const std::string& group);
     Session& m_session;
+    // The label of the repository row that is dragged now: the default name of its alias after a drop.
+    std::string m_dragLabel;
     // The selected row: a repository (its path) or a worktree of the open one (m_selectedWorktree, its path).
     std::string m_selected;
     bool m_selectedWorktree = false;
