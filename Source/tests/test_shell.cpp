@@ -5,6 +5,7 @@
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Settings.hpp"
+#include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
@@ -231,6 +232,37 @@ GG_TEST("shell", "recent repositories: paths are normalised and unique, display 
     const std::vector<std::string> paths{"/w/zeta", "/x/Alpha", "/b/app", "/a/app"};
     GG_CHECK((recentDisplayOrder(paths, RecentOrder::MostRecent) == std::vector<size_t>{0, 1, 2, 3}));
     GG_CHECK((recentDisplayOrder(paths, RecentOrder::Alphabetical) == std::vector<size_t>{3, 1, 2, 0}));
+}
+
+GG_TEST("shell", "elideStart keeps the end of a name; the toolbar switcher fits the name it shows")
+{
+    const std::string dots = "\xE2\x80\xA6";
+    const std::string name = "some/parent/directory/with/a/long/path/to/repository-name";
+    GG_CHECK_STR_EQ(ggui::elideStart(name, 1e6f), name);
+    for (const float width : {40.0f, 120.0f, 250.0f}) {
+        const std::string fit = ggui::elideStart(name, width);
+        GG_CHECK(fit.compare(0, dots.size(), dots) == 0);
+        GG_CHECK(fit.size() > dots.size() && name.compare(name.size() - (fit.size() - dots.size()), std::string::npos, fit, dots.size()) == 0);
+        GG_CHECK(ImGui::CalcTextSize(fit.c_str()).x <= width);
+    }
+    // Cuts fall on codepoint boundaries.
+    const std::string lt = "\xC4\x85\xC4\x8D\xC4\x99\xC4\x97\xC4\xAF\xC5\xA1\xC5\xB3\xC5\xAB\xC5\xBE"; // ąčęėįšųūž
+    const std::string fit = ggui::elideStart(lt + lt + lt, 60.0f);
+    GG_CHECK(fit.compare(0, dots.size(), dots) == 0);
+    GG_CHECK(((lt + lt + lt).size() - (fit.size() - dots.size())) % 2 == 0);
+    GG_CHECK(ImGui::CalcTextSize(fit.c_str()).x <= 60.0f);
+
+    // A deduplicated name longer than the maximum: the combo is at the maximum, not wider.
+    const std::string dir(60, 'W');
+    const fs::path a = s.fixture(Recipe::Linear, "left/" + dir + "/proj");
+    const fs::path b = s.fixture(Recipe::Linear, "right/" + dir + "/proj");
+    GG_REQUIRE(s.openRepository(a));
+    GG_REQUIRE(s.openRepository(b));
+    s.settle();
+    const float em = ImGui::GetFontSize();
+    const float width = ctx->ItemInfo("//###Toolbar/##tb_repo").RectFull.GetWidth();
+    GG_CHECK(width > em * 24.0f);
+    GG_CHECK(width <= em * 28.0f + 1.0f);
 }
 
 GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Delete forgets a hovered entry")

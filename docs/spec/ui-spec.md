@@ -77,7 +77,7 @@ New `##tb_new` · Commit `##tb_commit` (always "Commit", whatever is selected; t
 Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` ·
 Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
-recent repositories; Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
+recent repositories, as wide as the name it shows (12 to 28 font sizes; a longer name loses its start to an ellipsis, so its base name stays, and a tooltip on the closed combo gives the whole name; the list is as wide as its longest row); Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
 current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
 (short ID, clickable text; right-click: the Copy ID item) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,

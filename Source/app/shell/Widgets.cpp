@@ -429,6 +429,23 @@ std::string fitText(const std::string& text, float width)
     return text.substr(0, cut) + "\xE2\x80\xA6";
 }
 
+std::string elideStart(const std::string& text, float width)
+{
+    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+        return text;
+    const float room = width - ImGui::CalcTextSize("\xE2\x80\xA6").x;
+    size_t cut = text.size();
+    while (cut > 0) {
+        size_t prev = cut - 1;
+        while (prev > 0 && (static_cast<unsigned char>(text[prev]) & 0xC0) == 0x80)
+            --prev;
+        if (ImGui::CalcTextSize(text.c_str() + prev, text.c_str() + text.size()).x > room)
+            break;
+        cut = prev;
+    }
+    return "\xE2\x80\xA6" + text.substr(cut);
+}
+
 std::string elideMiddle(std::string_view text, int prefix, int suffix)
 {
     const size_t head = static_cast<size_t>(std::max(prefix, 1));

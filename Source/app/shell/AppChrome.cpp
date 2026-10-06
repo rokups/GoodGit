@@ -22,6 +22,10 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// Width of the toolbar's repository switcher: it fits the name shown, from the least to the most, in font sizes.
+constexpr float kRepoComboMinEm = 12.0f;
+constexpr float kRepoComboMaxEm = 28.0f;
+
 constexpr const char* kNewDetachedOnly =
     "New needs a commit that is HEAD's branch tip or has exactly one branch; here it can only be detached.";
 
@@ -581,7 +585,6 @@ void App::drawToolbar()
     ImGui::SameLine();
 
     // Repository switcher (open + recent)
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
     const auto& recent = m_settings.data().recent;
     const auto names = uniqueRecentNames(recent);
     const std::string currentKey = currentRepoKey();
@@ -589,7 +592,16 @@ void App::drawToolbar()
     for (size_t i = 0; i < recent.size(); ++i)
         if (!currentKey.empty() && recent[i] == currentKey)
             current = names[i].text();
-    if (ImGui::BeginCombo("##tb_repo", current.c_str())) {
+    // The width fits the name (text, padding, arrow); a longer one loses its start, so its end stays.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float chrome = style.FramePadding.x * 2 + ImGui::GetFrameHeight();
+    const float fontSize = ImGui::GetFontSize();
+    const std::string shown = elideStart(current, fontSize * kRepoComboMaxEm - chrome);
+    ImGui::SetNextItemWidth(std::max(fontSize * kRepoComboMinEm, ImGui::CalcTextSize(shown.c_str()).x + chrome));
+    const bool popup = ImGui::BeginCombo("##tb_repo", shown.c_str());
+    if (!popup && shown != current && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+        tooltip("%s", current.c_str());
+    if (popup) {
         std::string forget;
         for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
             const std::string& path = recent[i];

@@ -84,6 +84,9 @@ bool acceptCommitDrop(std::string& text);
 std::string_view firstLine(std::string_view text);
 // `text` cut to `width` pixels with an ellipsis (as it is when it already fits).
 std::string fitText(const std::string& text, float width);
+// `text` cut at its start to `width` pixels, with an ellipsis in front, so that its end stays (as it is when it
+// already fits).
+std::string elideStart(const std::string& text, float width);
 // `text` as its first `prefix` and last `suffix` characters (UTF-8 codepoints, each at least 1) around an
 // ellipsis; unchanged when it has at most prefix + suffix + 1 characters (cutting would not shorten it).
 std::string elideMiddle(std::string_view text, int prefix, int suffix);
