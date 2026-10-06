@@ -143,6 +143,34 @@ GG_TEST("shell", "folders dropped on the window: the first opens, the repositori
     GG_CHECK(fs::equivalent(s.app.settings().data().recent.front(), second));
 }
 
+
+GG_TEST("shell", "folders dropped on the window: a linked worktree lists its main repository, not itself")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    std::vector<std::string> paths{wt1.string()};
+    SDL_Event begin{};
+    begin.type = SDL_EVENT_DROP_BEGIN;
+    SDL_PushEvent(&begin);
+    SDL_Event file{};
+    file.type = SDL_EVENT_DROP_FILE;
+    file.drop.data = paths.front().c_str();
+    SDL_PushEvent(&file);
+    SDL_Event done{};
+    done.type = SDL_EVENT_DROP_COMPLETE;
+    SDL_PushEvent(&done);
+    ctx->Yield(3);
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), wt1); }));
+    GG_CHECK(s.waitUntil([&] { return !s.app.settings().data().repositories.empty(); }));
+    s.settle();
+    const auto& repos = s.app.settings().data().repositories;
+    GG_CHECK(repos.size() == 1);
+    GG_CHECK(!repos.empty() && fs::equivalent(repos.front().path, repo));
+    const auto& recent = s.app.settings().data().recent;
+    GG_REQUIRE(!recent.empty());
+    GG_CHECK(fs::equivalent(recent.front(), wt1));
+}
 GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

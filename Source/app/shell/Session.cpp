@@ -8,6 +8,7 @@
 #include "panels/RebasePanel.hpp"
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
+#include "shell/Settings.hpp"
 #include "util/Ui.hpp"
 
 #include <imgui.h>
@@ -52,6 +53,28 @@ std::string Session::displayName() const
     if (m_snapshot)
         return m_snapshot->name;
     return m_path.filename().string();
+}
+
+std::string Session::repositoryListPath() const
+{
+    if (!m_snapshot)
+        return {};
+    if (m_listPathSnapshot == m_snapshot)
+        return m_listPath;
+    m_listPathSnapshot = m_snapshot;
+    m_listPath = normalizeRepoPath(m_path.string());
+    for (const auto& w : m_snapshot->worktrees) {
+        if (!w.isCurrent || w.isMain)
+            continue;
+        // A linked worktree: its main worktree, when that one is a work tree on disk.
+        for (const auto& main : m_snapshot->worktrees) {
+            std::error_code ec;
+            if (main.isMain && !main.bare && !main.missing && std::filesystem::exists(main.path / ".git", ec))
+                m_listPath = normalizeRepoPath(main.path.string());
+        }
+        break;
+    }
+    return m_listPath;
 }
 
 void Session::cancelOpen() { m_engine->cancel(m_openRequest); }

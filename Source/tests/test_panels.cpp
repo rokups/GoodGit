@@ -316,6 +316,107 @@ GG_TEST("panels", "repositories: a worktree row selects on a click and opens on 
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
 }
 
+// The paths in the permanent repository list, as they are stored.
+static std::vector<std::string> listedRepositories(Scenario& s)
+{
+    std::vector<std::string> out;
+    for (const auto& entry : s.app.settings().data().repositories)
+        out.push_back(entry.path);
+    return out;
+}
+
+GG_TEST("panels", "repositories: a linked worktree that is opened stays under its main repository")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const std::string mainPath = ggui::normalizeRepoPath(repo.string());
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string wt1 = repo.filename().string() + "-wt1";
+    const std::string wtRow = worktreeRow(row, wt1);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+    ctx->ItemDoubleClick(wtRow.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+    s.showPanel("Repositories");
+    ctx->Yield(3);
+    // The list has no entry for the worktree folder; the main repository is the open row.
+    const auto listed = listedRepositories(s);
+    GG_CHECK(listed.size() == 1);
+    GG_CHECK(!listed.empty() && listed.front() == mainPath);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_CHECK_STR_EQ(s.session()->repositories().openPath(), mainPath);
+    openRepoNode(ctx, row);
+    for (const auto& w : s.session()->snapshot()->worktrees)
+        GG_CHECK(s.itemExists(worktreeRow(row, w.name).c_str()));
+    // A double-click on the row of the main repository opens nothing.
+    const auto* session = s.session();
+    ctx->ItemDoubleClick(row.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    // Enter on the selected main repository row opens nothing either.
+    ctx->ItemClick(row.c_str());
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), mainPath);
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    // A double-click on the "main" worktree row opens the main worktree again.
+    const std::string mainWorktree = worktreeRow(row, "main");
+    GG_REQUIRE(s.itemExists(mainWorktree.c_str()));
+    ctx->ItemDoubleClick(mainWorktree.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo); }));
+    GG_CHECK(listedRepositories(s).size() == 1);
+}
+
+GG_TEST("panels", "repositories: opening a linked worktree directly lists its main repository")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    GG_REQUIRE(s.openRepository(wt1));
+    GG_CHECK(s.waitUntil([&] { return !s.app.settings().data().repositories.empty(); }));
+    ctx->Yield(3);
+    const auto listed = listedRepositories(s);
+    GG_CHECK(listed.size() == 1);
+    GG_CHECK(!listed.empty() && listed.front() == ggui::normalizeRepoPath(repo.string()));
+    // The recent list keeps the path of the worktree folder.
+    GG_CHECK(!s.app.settings().data().recent.empty());
+    GG_CHECK(fs::equivalent(s.app.settings().data().recent.front(), wt1));
+}
+
+GG_TEST("panels", "repositories: a worktree entry in the list stays, opens on a double-click and is a plain row")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    s.app.settings().addRepository(wt1.string());
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    const std::string wtEntry = repoRow(s, wt1);
+    GG_REQUIRE(s.itemExists(row.c_str()) && s.itemExists(wtEntry.c_str()));
+    GG_CHECK(!(ctx->ItemInfo(wtEntry.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    ctx->ItemDoubleClick(wtEntry.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), wt1); }));
+    s.showPanel("Repositories");
+    ctx->Yield(3);
+    // A double-click on the plain entry of the worktree that the window shows does not replace the session.
+    const auto* shown = s.session();
+    ctx->ItemDoubleClick(wtEntry.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == shown);
+    // Both entries stay; the row of the main repository is the open one.
+    GG_CHECK(listedRepositories(s).size() == 2);
+    GG_CHECK(s.itemExists(wtEntry.c_str()));
+    GG_CHECK_STR_EQ(s.session()->repositories().openPath(), ggui::normalizeRepoPath(repo.string()));
+}
+
 GG_TEST("panels", "repositories: the current and a missing worktree do not open, Enter opens the selected one")
 {
     s.app.settings().data().repositories.clear();

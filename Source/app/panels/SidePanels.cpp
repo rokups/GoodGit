@@ -794,7 +794,8 @@ static bool selectableTreeNode(const char* label, bool selected)
 
 // A group is a tree node, open by default; a repository is a row. `toOpen` gets the path of the one
 // double-clicked. Both ids come from the group path or the label ('/' becomes ':'); equal labels
-// among siblings get a "#n" suffix. The row of the open repository is a node, closed by default, with
+// among siblings get a "#n" suffix. The row of the open repository (for a linked worktree: of its main
+// repository, GG-15; a worktree entry in the list is a plain row) is a node, closed by default, with
 // its worktrees below it when it has more than the main one. A repository row is a drag source and a
 // group node a drop target (repoDropTarget): the drop puts the repository in the group.
 void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen)
@@ -841,7 +842,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             ImGui::TextUnformatted(node.label.c_str());
             ImGui::EndDragDropSource();
         }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !isOpen)
             toOpen = node.path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", node.path.c_str());
@@ -928,7 +929,12 @@ void RepositoriesPanel::draw(bool* open)
         ImGui::End();
         return;
     }
-    m_openPath = normalizeRepoPath(m_session.path().string());
+    // The repository list entry of the window: the main repository when it shows a linked worktree (GG-15), so
+    // the row of the main repository is the open one, with the worktrees below it.
+    const std::string sessionPath = normalizeRepoPath(m_session.path().string());
+    m_openPath = m_session.repositoryListPath();
+    if (m_openPath.empty())
+        m_openPath = sessionPath; // before the first snapshot
     const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
     std::string toOpen;
     beginList();
@@ -939,7 +945,8 @@ void RepositoriesPanel::draw(bool* open)
     endList();
     if (!m_selected.empty() && ImGui::Shortcut(ImGuiKey_Enter, ImGuiInputFlags_RouteFocused)) {
         if (!m_selectedWorktree) {
-            toOpen = m_selected;
+            if (m_selected != m_openPath)
+                toOpen = m_selected;
         } else if (const auto& snap = m_session.snapshot()) {
             // The current worktree and a missing one do not open, as with a double-click.
             for (const auto& w : snap->worktrees)
@@ -947,8 +954,10 @@ void RepositoriesPanel::draw(bool* open)
                     toOpen = m_selected;
         }
     }
-    // Not the open one: opening it again would replace the session and cancel its work.
-    if (!toOpen.empty() && toOpen != m_openPath)
+    // Not the one the session shows: opening it again would replace the session and cancel its work. The
+    // comparison is with the session path, not m_openPath: the main worktree row of a linked worktree opens
+    // the main worktree, which is m_openPath. The open repository row sets no toOpen.
+    if (!toOpen.empty() && normalizeRepoPath(toOpen) != sessionPath)
         m_session.app().openRepository(toOpen);
     ImGui::End();
 }

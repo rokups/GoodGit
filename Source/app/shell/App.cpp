@@ -20,6 +20,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <fstream>
 #include <thread>
 
 namespace ggui {
@@ -453,13 +454,33 @@ void App::openDropped(const std::vector<std::string>& paths)
         std::error_code ec;
         return fs::exists(dir / ".git", ec) || (fs::exists(dir / "HEAD", ec) && fs::is_directory(dir / "objects", ec));
     };
+    // A linked worktree: its .git is a file "gitdir: <dir>" and <dir> has a commondir file. A submodule or a
+    // --separate-git-dir repository has the file too, but no commondir. The main repository stands for a
+    // linked worktree in the permanent list (GG-15), and frame() adds it once the session has a snapshot.
+    auto isLinkedWorktree = [](const fs::path& dir) {
+        std::error_code ec;
+        if (!fs::is_regular_file(dir / ".git", ec))
+            return false;
+        std::ifstream in(dir / ".git");
+        std::string line;
+        if (!std::getline(in, line) || line.rfind("gitdir:", 0) != 0)
+            return false;
+        const size_t start = line.find_first_not_of(" \t", 7);
+        const size_t end = line.find_last_not_of(" \t\r\n");
+        if (start == std::string::npos || end < start)
+            return false;
+        fs::path gitDir = fs::path(line.substr(start, end - start + 1));
+        if (gitDir.is_relative())
+            gitDir = dir / gitDir;
+        return fs::exists(gitDir / "commondir", ec);
+    };
     // Last first, so the list reads in the dropped order below the one that opens.
     for (auto it = folders.rbegin(); it != folders.rend(); ++it)
         if (isRepository(*it))
             m_settings.addRecent(it->string());
     // The permanent list appends, so it takes them in the dropped order.
     for (const auto& folder : folders)
-        if (isRepository(folder))
+        if (isRepository(folder) && !isLinkedWorktree(folder))
             m_settings.addRepository(folder.string());
     m_summaries.request(std::vector<fs::path>(m_settings.data().recent.begin(), m_settings.data().recent.end()));
     openRepository(folders.front());
@@ -482,14 +503,26 @@ void App::frame()
         m_session->pump();
         if (m_session->failed()) {
             m_closing.push_back(std::move(m_session));
-        } else if (m_session->opened() && m_recordedRecent != m_session->path().string()) {
-            m_recordedRecent = m_session->path().string();
-            m_settings.addRecent(m_recordedRecent);
-            m_settings.addRepository(m_recordedRecent);
+        } else if (m_session->opened()) {
+            if (m_recordedRecent != m_session->path().string()) {
+                m_recordedRecent = m_session->path().string();
+                m_settings.addRecent(m_recordedRecent);
+            }
+            // The repository list gets the main repository when the session shows a linked worktree (GG-15), so
+            // it waits for the first snapshot; a worktree entry that is in the list already stays.
+            if (m_recordedRepository != m_session->path().string()) {
+                const std::string listPath = m_session->repositoryListPath();
+                if (!listPath.empty()) {
+                    m_recordedRepository = m_session->path().string();
+                    m_settings.addRepository(listPath);
+                }
+            }
         }
     }
-    if (!m_session || !m_session->opened())
+    if (!m_session || !m_session->opened()) {
         m_recordedRecent.clear(); // reopening the same repository moves it to the front again
+        m_recordedRepository.clear();
+    }
 
     pumpAskpass();
     pumpSequenceEditor();

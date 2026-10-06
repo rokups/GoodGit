@@ -197,6 +197,7 @@ private:
     int m_menuPopups = 0;       // open popups last frame
     bool m_altOtherKey = false; // a key was pressed while Alt was down
     std::string m_recordedRecent; // path of the open repository already moved to the front of Recent
+    std::string m_recordedRepository; // session path already put in the repository list (GG-15)
     std::string m_errorTitle;
     std::string m_errorMessage;
     std::vector<Toast> m_toasts;

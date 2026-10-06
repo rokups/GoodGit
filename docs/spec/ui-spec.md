@@ -555,8 +555,8 @@ the panel without touching the repository.
   name only; the tooltip of an annotated tag shows its message)
   (visibility toggle, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
 - **Repositories** `"Repositories"` (N): the permanent repository list of the settings (`repositories`:
-  `[{path, alias}]`, no limit; each opened or dropped repository is added; a settings file without the
-  key starts with the recent list) as a tree. An alias `group/subgroup/name` puts a repository in groups
+  `[{path, alias}]`, no limit; each opened or dropped repository is added, except a linked worktree,
+  see below; a settings file without the key starts with the recent list) as a tree. An alias `group/subgroup/name` puts a repository in groups
   (tree nodes `###group_<group path, "/" as ":">`, open by default) under the label `name`; a repository
   without an alias is at the top level with its deduplicated folder name. Each level lists the groups
   first, then the repositories, each part by label (ignoring case). Rows `repo_<label, "/" as ":">/###row` in the
@@ -568,7 +568,13 @@ the panel without touching the repository.
   it, a click on the label does not), with one row per worktree, `worktree_<name>/###row` in the row's
   scope: the name, "(main)", then the branch or the short ID; the current one has the text colour of the
   current branch, a missing one is dimmed; a double-click or Enter opens a worktree, not the current or
-  a missing one. The other repositories have no arrow. Context (repository rows): Open (disabled on the
+  a missing one. A linked worktree that this window shows is not a repository entry of its own: the
+  application adds its main repository to the list (when that one has a `.git` entry and is not in the
+  list yet; a dropped linked worktree folder is not added itself), and the row of the main repository is the open row, with the worktrees below it and the
+  current worktree marked. A worktree entry that is in the list stays as a plain row (no automatic
+  removal); a double-click on it opens that worktree. When the main repository is bare, or has no `.git`
+  entry (a `--separate-git-dir` or submodule repository), the worktree folder is the entry and the open row. The Recent list gets the worktree folder as before.
+  The other repositories have no arrow. Context (repository rows): Open (disabled on the
   open one) · Set alias… · Copy path · Remove from list (also the open one; it comes back without its
   alias at its next open).
   Drag and drop: a repository row (not a worktree row) dragged onto a group node goes into that group:

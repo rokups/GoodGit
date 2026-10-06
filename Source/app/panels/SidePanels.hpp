@@ -47,7 +47,8 @@ public:
     void draw(bool* open);
     // The path of the selected row, repository or worktree ("" when none).
     const std::string& selectedPath() const { return m_selected; }
-    // The normalised path of the repository the window shows, as of the last frame drawn.
+    // The normalised list path of the repository the window shows, as of the last frame drawn: the main
+    // repository when the window shows a linked worktree (Session::repositoryListPath, GG-15).
     const std::string& openPath() const { return m_openPath; }
 
 private:
