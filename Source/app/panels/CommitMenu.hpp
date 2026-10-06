@@ -43,6 +43,8 @@ void showSquashDialog(Session& session, const std::vector<core::Oid>& commits);
 void squashSelection(Session& session);
 void showSplitDialog(Session& session, const core::Oid& commit);
 void showAbandonDialog(Session& session, const core::Oid& commit);
+// Reset the current branch to the commit (Soft, Mixed or Hard); Hard asks again when it would discard changes of tracked files or an untracked file that the commit has too.
+void showResetDialog(Session& session, const core::Oid& commit);
 void showAbandonBranchDialog(Session& session, const core::Oid& commit);
 // Restore `paths` from the commit named in the dialog's field, in what `in` (the Changes panel's
 // selection) shows: a commit (rewrite it, or the working tree), the working tree or the index

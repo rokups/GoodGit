@@ -805,6 +805,105 @@ void Actions::moveBranch(const std::string& name, const std::string& to)
     });
 }
 
+void Actions::resetBranch(const std::string& branch, const core::Oid& commit, ResetMode mode, bool confirmed)
+{
+    const char* word = mode == ResetMode::Soft ? "soft" : mode == ResetMode::Mixed ? "mixed" : "hard";
+    const std::string id = commit.hex();
+    const bool check = mode == ResetMode::Hard && !confirmed;
+    run("reset " + branch + " to " + m_session.shortId(commit) + " (" + word + ")",
+        [id, word, mode, branch, check](MutationContext& ctx) {
+            // The dialog was open while HEAD could move (a terminal): the reset acts on HEAD, so check it now.
+            if (gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "HEAD"}).out) != "refs/heads/" + branch)
+                throw MutationError{Outcome::Refused, "HEAD is not on " + branch + " any more.", {}};
+            if (check) {
+                // What a hard reset deletes: changes of tracked files, and an untracked file (or a directory
+                // with one) that the commit has too. Read now, not from the cached status. Ignored files stay
+                // out: git treats them as expendable (as `checkout` does).
+                std::vector<std::string> tracked, clash;
+                std::vector<std::string> untracked;
+                const auto st = ctx.git({"status", "--porcelain=v1", "-z", "--untracked-files=all"});
+                size_t pos = 0;
+                while (pos < st.out.size()) {
+                    size_t end = st.out.find('\0', pos);
+                    if (end == std::string::npos)
+                        end = st.out.size();
+                    const std::string entry = st.out.substr(pos, end - pos);
+                    pos = end + 1;
+                    if (entry.size() < 4)
+                        continue;
+                    const std::string path = entry.substr(3);
+                    if (entry[0] == '?')
+                        untracked.push_back(path);
+                    else
+                        tracked.push_back(path);
+                    if (entry[0] == 'R' || entry[0] == 'C' || entry[1] == 'R' || entry[1] == 'C') {
+                        const size_t old = st.out.find('\0', pos); // a rename or copy: the old path follows
+                        pos = old == std::string::npos ? st.out.size() : old + 1;
+                    }
+                }
+                if (!untracked.empty()) {
+                    // Paths of the commit, and the directories above them.
+                    std::set<std::string> files, dirs;
+                    // NUL-separated: git quotes a path with a non-ASCII byte otherwise (status gives it raw).
+                    const std::string tree = ctx.git({"ls-tree", "-r", "-z", "--name-only", id}).out;
+                    for (size_t from = 0; from < tree.size();) {
+                        size_t end = tree.find('\0', from);
+                        if (end == std::string::npos)
+                            end = tree.size();
+                        const std::string f = tree.substr(from, end - from);
+                        from = end + 1;
+                        if (f.empty())
+                            continue;
+                        files.insert(f);
+                        for (size_t slash = f.find('/'); slash != std::string::npos; slash = f.find('/', slash + 1))
+                            dirs.insert(f.substr(0, slash));
+                    }
+                    for (const auto& listed : untracked) {
+                        // An untracked nested repository is listed as "dir/".
+                        const std::string u = !listed.empty() && listed.back() == '/' ? listed.substr(0, listed.size() - 1) : listed;
+                        bool hit = files.count(u) > 0 || dirs.count(u) > 0;
+                        for (size_t slash = u.find('/'); !hit && slash != std::string::npos; slash = u.find('/', slash + 1))
+                            hit = files.count(u.substr(0, slash)) > 0;
+                        if (hit)
+                            clash.push_back(listed);
+                    }
+                }
+                if (!tracked.empty() || !clash.empty()) {
+                    auto list = [](const std::vector<std::string>& v) {
+                        std::string out;
+                        for (size_t i = 0; i < v.size() && i < 5; ++i)
+                            out += "\n  " + v[i];
+                        if (v.size() > 5)
+                            out += "\n  and " + std::to_string(v.size() - 5) + " more";
+                        return out;
+                    };
+                    std::string why;
+                    if (!tracked.empty())
+                        why += "Changes of tracked files:" + list(tracked);
+                    if (!clash.empty())
+                        why += std::string(why.empty() ? "" : "\n\n") + "Untracked files that the commit also has:" + list(clash);
+                    throw MutationError{Outcome::LocalChanges, why, {}};
+                }
+            }
+            ctx.git({"reset", "-q", std::string("--") + word, id});
+            // Only a hard reset changes the working tree along with the index.
+            ctx.worktreeFollowsIndex = mode == ResetMode::Hard;
+        },
+        [this, branch, commit, mode](const core::MutationFinishedEvent& e) {
+            if (e.outcome == Outcome::LocalChanges) {
+                Form f;
+                f.title = "Discard changes";
+                f.message = "The hard reset discards these. Changes of tracked files and untracked files cannot be "
+                            "recovered.\n\n" + e.message;
+                f.buttons.push_back({"Reset hard", [this, branch, commit, mode](Form&) { resetBranch(branch, commit, mode, true); }});
+                f.buttons.push_back({"Cancel", {}});
+                m_session.app().dialogs().open(std::move(f));
+                return;
+            }
+            handleDefault(e);
+        });
+}
+
 void Actions::setUpstream(const std::string& branch, const std::string& upstream)
 {
     run("set upstream of " + branch,

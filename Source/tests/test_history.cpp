@@ -1399,13 +1399,14 @@ GG_TEST("history", "the commit menu uses git words")
     GG_CHECK(!s.itemExists("//$FOCUSED/Abandon..."));
     // Every item exists and each one is below the one before.
     const char* labels[] = {"New detached", "Check out", "Create branch...", "Create tag...", "Move branch",
-        "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Interactive rebase selection...", "Cherry-pick",
-        "Revert", "Edit commit (checkout detached)", "Duplicate", "Squash...", "Split...", "Simplify parents",
-        "Drop commit...", "Copy"};
+        "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Reset main to here...###reset_here",
+        "Interactive rebase selection...", "Cherry-pick", "Revert", "Edit commit (checkout detached)", "Duplicate",
+        "Squash...", "Split...", "Simplify parents", "Drop commit...", "Copy"};
     float last = -1.0f;
     for (const char* label : labels) {
         const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError);
         GG_CHECK(info.ID != 0);
+        GG_CHECK(std::string(info.DebugLabel).find(std::string(label).substr(0, std::string(label).find("###"))) == 0);
         GG_CHECK(info.RectFull.Min.y > last);
         last = info.RectFull.Min.y;
     }

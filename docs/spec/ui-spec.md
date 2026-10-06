@@ -229,6 +229,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 - Row context menu, in groups with separators: New · New detached · Check out ▸ (the branches at the commit, then after a
   separator *Detached* (no dialog: chosen by name); enabled with a single selected commit, also without a branch) ·
   Create branch… · Create tag… · Move branch ▸ | Merge into HEAD… · Rebase onto… · Interactive rebase… ·
+  *Reset \<branch\> to here…* (id `###reset_here`; "Reset to here…" and disabled with a detached or unborn HEAD, also disabled while a merge, rebase, cherry-pick, revert or bisect is in progress) ·
   *Interactive rebase selection…* (Phase 3, when several adjacent commits are selected with Ctrl-click or Shift-click:
   the list starts at the oldest selected commit and the selected commits start selected in the editor) |
   Cherry-pick · Revert | Edit commit (checkout detached) · Duplicate · Squash… · Split… · Simplify parents ·
@@ -290,7 +291,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Check out (a branch, or detached), Edit commit (checkout detached) (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
-commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
+commit/branch, Rebase…, Interactive rebase…, Reset \<branch\> to here… (dialog *Reset branch*: the commit and a *Mode* Soft, Mixed (default) or Hard; Hard asks first in the dialog *Discard changes* (buttons *Reset hard* and *Cancel*) when it would discard staged, unstaged or conflicted changes, or an untracked file that the commit also has; other untracked files stay), Squash…/with descendants, Split…, Restore…,
 Drop commit…/Drop branch…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the

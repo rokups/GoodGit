@@ -100,6 +100,11 @@ public:
     void renameBranch(const std::string& from, const std::string& to);
     void deleteBranch(const std::string& name, bool force, const std::vector<std::string>& remotes, bool local);
     void moveBranch(const std::string& name, const std::string& to);
+    // git reset --soft|--mixed|--hard <commit>: the current branch `branch` moves to `commit`. A hard reset
+    // that would discard changes of tracked files, or an untracked file that `commit` also has, is refused
+    // (Outcome::LocalChanges, which opens the "Discard changes" dialog) unless `confirmed`.
+    enum class ResetMode { Soft, Mixed, Hard };
+    void resetBranch(const std::string& branch, const core::Oid& commit, ResetMode mode, bool confirmed = false);
     void setUpstream(const std::string& branch, const std::string& upstream);
     void unsetUpstream(const std::string& branch);
     void fastForward(const std::string& branch);

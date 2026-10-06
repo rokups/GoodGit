@@ -182,6 +182,15 @@ void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row)
         showRebaseDialog(session, row.id, other.ref);
     if (c.one(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I"))
         openInteractiveRebase(session, row.id);
+    // The label names the branch; the ID stays the same. Enabled on HEAD too (Mixed unstages, Hard discards).
+    const auto snap = session.snapshot();
+    const bool onBranch = !snap->headDetached && !snap->headUnborn && !snap->headBranch.empty();
+    const bool idle = snap->state == core::RepoState::None;
+    const std::string label = (onBranch ? "Reset " + snap->headBranch + " to here..." : std::string("Reset to here..."))
+        + "###reset_here";
+    if (c.one(ICON_MS_RESTART_ALT, label.c_str(), nullptr, onBranch && idle,
+            onBranch ? "An operation is in progress." : "HEAD is not on a branch."))
+        showResetDialog(session, row.id);
 }
 
 void drawCommitPickItems(Session& session, const core::HistoryRow& row)
@@ -420,6 +429,31 @@ void showAbandonDialog(Session& session, const core::Oid& commit)
     f.add(commitInfo(session, "Drop", commit));
     Session* s = &session;
     f.buttons.push_back({"Drop", [s, commit](Form&) { s->actions().abandon(commit, false); }});
+    f.buttons.push_back({"Cancel", {}});
+    session.app().dialogs().open(std::move(f));
+}
+
+void showResetDialog(Session& session, const core::Oid& commit)
+{
+    const std::string branch = session.snapshot()->headBranch;
+    Form f;
+    f.title = "Reset branch";
+    f.message = "Move " + branch + " to this commit.";
+    f.add(commitInfo(session, "Reset to", commit));
+    Field mode{Field::Combo, "mode", "Mode"};
+    mode.options = {"Soft: keep the index and the working tree", "Mixed: keep the working tree, reset the index",
+        "Hard: reset the index and the working tree"};
+    mode.choice = 1;
+    f.add(mode);
+    Session* s = &session;
+    // A hard reset that would discard something is refused by the action, which then asks (Discard changes).
+    f.buttons.push_back({"Reset", [s, commit, branch](Form& form) {
+                             const int choice = form.choice("mode");
+                             s->actions().resetBranch(branch, commit,
+                                 choice == 0 ? Actions::ResetMode::Soft
+                                     : choice == 2 ? Actions::ResetMode::Hard
+                                                   : Actions::ResetMode::Mixed);
+                         }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }
