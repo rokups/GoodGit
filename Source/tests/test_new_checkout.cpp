@@ -195,7 +195,7 @@ GG_TEST("new", "menu items follow the selection: single-commit items need one co
     GG_CHECK(s.session()->history().extraSelection().empty());
 }
 
-GG_TEST("checkout", "Check out lists the branches at the commit and is disabled without one; Edit commit follows it")
+GG_TEST("checkout", "Check out lists the branches at the commit and Detached; Edit commit follows it")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     const std::string tip = s.revParse(repo, "topic");
@@ -204,7 +204,7 @@ GG_TEST("checkout", "Check out lists the branches at the commit and is disabled 
     GG_REQUIRE(s.expandMerge(s.revParse(repo, "main")));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(noBranch).c_str()); }));
     GG_REQUIRE(gg::splitLines(s.gitOut(repo, {"branch", "--points-at", noBranch})).empty());
-    GG_CHECK(!probe(s, ctx, noBranch, "Check out").enabled);
+    GG_CHECK(probe(s, ctx, noBranch, "Check out").enabled);
     GG_CHECK(probe(s, ctx, tip, "Check out").enabled);
     GG_CHECK(probe(s, ctx, noBranch, "Edit commit").enabled);
     // Edit commit comes right after Check out, before Create branch.
@@ -218,12 +218,12 @@ GG_TEST("checkout", "Check out lists the branches at the commit and is disabled 
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);
 
-    // The submenu lists the branches only: no detached item.
+    // The submenu lists the branches and, last, Detached.
     ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
     ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Check out/topic");
     GG_CHECK(s.itemExists("//Check out###Menu_00/topic"));
-    GG_CHECK(!s.itemExists("//Check out###Menu_00/Detached HEAD"));
+    GG_CHECK(s.itemExists("//Check out###Menu_00/Detached"));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);

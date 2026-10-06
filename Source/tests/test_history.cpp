@@ -1034,6 +1034,28 @@ void clickBadge(Scenario& s, const std::string& hex, const std::string& name, Im
     s.ctx->MouseClick(button);
 }
 
+// A double click on a badge (the double click on a row is ctx->ItemDoubleClick).
+void doubleClickBadge(Scenario& s, const std::string& hex, const std::string& name)
+{
+    s.ctx->MouseMoveToPos(badgeItem(s, hex, name).RectFull.GetCenter());
+    s.ctx->MouseDoubleClick(ImGuiMouseButton_Left);
+}
+
+// Lets the double click time pass, so that the next click is not a part of the last one.
+void waitOutDoubleClick(Scenario& s) { s.ctx->SleepNoSkip(2.0f * ImGui::GetIO().MouseDoubleClickTime, 0.1f); }
+
+bool onBranch(Scenario& s, const std::string& name)
+{
+    const auto snap = s.session()->snapshot();
+    return !snap->headDetached && snap->headBranch == name;
+}
+
+bool detachedAt(Scenario& s, const std::string& hex)
+{
+    const auto snap = s.session()->snapshot();
+    return snap->headDetached && snap->head.hex() == hex;
+}
+
 } // namespace
 
 GG_TEST("history", "a right click on a local branch badge shows the branch menu and selects the row")
@@ -1189,6 +1211,179 @@ GG_TEST("history", "a right click on a stash badge shows the stash menu")
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Branch from stash..."); }));
     GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
     ctx->KeyPress(ImGuiKey_Escape);
+}
+
+GG_TEST("history", "a double click on a row with one branch checks it out")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "side");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); }));
+    ctx->ItemDoubleClick(rowRef(tip).c_str());
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "side"); }));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), tip);
+}
+
+GG_TEST("history", "a double click on a row with two branches asks which")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "one", "HEAD~2"});
+    s.git(repo, {"branch", "two", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "one");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); }));
+    ctx->ItemDoubleClick(rowRef(tip).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Detached"); }));
+    GG_CHECK(onBranch(s, "main"));
+    ctx->MenuClick("//$FOCUSED/two");
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "two"); }));
+}
+
+GG_TEST("history", "the Detached item of the branch choice asks, then detaches")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "one", "HEAD~2"});
+    s.git(repo, {"branch", "two", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "one");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); }));
+    ctx->ItemDoubleClick(rowRef(tip).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Detached"); }));
+    ctx->MenuClick("//$FOCUSED/Detached");
+    GG_REQUIRE(s.dialogOpen("Checkout detached"));
+    GG_CHECK(onBranch(s, "main"));
+    s.dialogButton("Checkout detached", "Checkout");
+    GG_CHECK(s.waitUntil([&] { return detachedAt(s, tip); }));
+}
+
+GG_TEST("history", "a double click on a row without a branch asks, then detaches")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string commit = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(commit).c_str()); }));
+    ctx->ItemDoubleClick(rowRef(commit).c_str());
+    GG_REQUIRE(s.dialogOpen("Checkout detached"));
+    s.dialogButton("Checkout detached", "Cancel");
+    GG_CHECK(s.waitIdle());
+    GG_CHECK(onBranch(s, "main"));
+    waitOutDoubleClick(s);
+    ctx->ItemDoubleClick(rowRef(commit).c_str());
+    GG_REQUIRE(s.dialogOpen("Checkout detached"));
+    s.dialogButton("Checkout detached", "Checkout");
+    GG_CHECK(s.waitUntil([&] { return detachedAt(s, commit); }));
+}
+
+GG_TEST("history", "a double click on the row of the current branch does nothing")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    // A second branch on the commit: without the guard the chooser would open.
+    s.git(repo, {"branch", "other", "HEAD"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); }));
+    ctx->ItemDoubleClick(rowRef(tip).c_str());
+    GG_CHECK(s.waitIdle());
+    ctx->Yield(3);
+    GG_CHECK(!s.dialogOpen("Checkout detached", 1.0f));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Detached"));
+    GG_CHECK(onBranch(s, "main"));
+}
+
+GG_TEST("history", "a double click with Ctrl down checks nothing out")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "side");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); }));
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemDoubleClick(rowRef(tip).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(s.waitIdle());
+    ctx->Yield(3);
+    GG_CHECK(onBranch(s, "main"));
+}
+
+GG_TEST("history", "a double click that starts on a menu does not check out")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "HEAD");
+    const std::string below = s.revParse(repo, "HEAD~3");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(below).c_str()); }));
+    // The first click closes the row menu (the menu is right of the pointer, the row is not under it); the
+    // second one is on a row that got no first click.
+    ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Copy"); }));
+    const ImRect rect = ctx->ItemInfo(rowRef(below).c_str()).RectFull;
+    ctx->MouseMoveToPos(ImVec2(rect.Min.x + 30.0f, rect.GetCenter().y));
+    ctx->MouseDoubleClick(ImGuiMouseButton_Left);
+    GG_CHECK(s.waitIdle());
+    ctx->Yield(3);
+    GG_CHECK(!s.dialogOpen("Checkout detached", 1.0f));
+    GG_CHECK(onBranch(s, "main"));
+}
+
+GG_TEST("history", "a double click on a local branch badge checks it out")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "one", "HEAD~2"});
+    s.git(repo, {"branch", "two", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "one");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "one") && badgeShown(s, tip, "two"); }));
+    doubleClickBadge(s, tip, "two");
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "two"); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Detached"));
+}
+
+GG_TEST("history", "a double click on a remote branch badge makes or checks out the local branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string first = s.revParse(repo, "origin/main~1");
+    const std::string second = s.revParse(repo, "origin/main~2");
+    s.git(repo, {"update-ref", "refs/remotes/origin/topic", first});
+    s.git(repo, {"update-ref", "refs/remotes/origin/other", second});
+    s.git(repo, {"branch", "other", second});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, first, "origin/topic") && badgeShown(s, second, "origin/other"); }));
+    // With a local branch of the short name: it is checked out.
+    doubleClickBadge(s, second, "origin/other");
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "other"); }));
+    waitOutDoubleClick(s);
+    // Without: the Create branch dialog opens with the short name as the name.
+    doubleClickBadge(s, first, "origin/topic");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    s.dialogButton("Create branch", "Create");
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->findBranch("topic") != nullptr; }));
+    GG_CHECK_STR_EQ(s.revParse(repo, "topic"), first);
+}
+
+GG_TEST("history", "a double click on a tag badge asks, then detaches")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "v1");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "v1"); }));
+    doubleClickBadge(s, tip, "v1");
+    GG_REQUIRE(s.dialogOpen("Checkout detached"));
+    GG_CHECK(onBranch(s, "main"));
+    s.dialogButton("Checkout detached", "Checkout");
+    GG_CHECK(s.waitUntil([&] { return detachedAt(s, tip); }));
+}
+
+GG_TEST("history", "the Check out menu has Detached and detaches without a dialog")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string commit = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(commit).c_str()); }));
+    s.contextMenu(rowRef(commit).c_str(), "Check out/Detached");
+    GG_CHECK(s.waitUntil([&] { return detachedAt(s, commit); }));
+    GG_CHECK(!s.dialogOpen("Checkout detached", 0.5f));
 }
 
 } // namespace ggtest

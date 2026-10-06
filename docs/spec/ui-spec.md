@@ -217,7 +217,17 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 - Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
   branch, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
-- Row context menu: New · New detached · Check out ▸ (branches at the commit; disabled when none) ·
+- Double click on a row (outside its badges; not with Ctrl or Shift, not on the Working tree and Index rows, only
+  while no task runs) checks out, as in traditional git software. One local branch at the commit: it is checked out.
+  Several: a popup (`##dblclick_checkout`) lists them and, after a separator, *Detached*. None: a dialog *Checkout
+  detached* names the short ID, says that HEAD becomes detached and has *Checkout* and *Cancel*; *Detached* in the
+  popup asks the same way. Nothing happens when HEAD is on a branch of the commit or, when the commit has no local branch, HEAD is detached at it.
+- Double click on a badge: a local branch badge checks that branch out (nothing for the current branch); a
+  remote branch badge checks out the local branch of the short name, or opens *Create branch* with the remote
+  branch as the start point and the short name as the name; a tag badge asks as above, then detaches at the tag's
+  commit; any other badge acts as the row.
+- Row context menu: New · New detached · Check out ▸ (the branches at the commit, then after a separator *Detached*
+  (no dialog: chosen by name); enabled with a single selected commit, also without a branch) ·
   Edit commit · Create branch… · Move branch ▸ · Delete branch ▸ · Push · Push to… · Copy ▸ (ID, Full
   description) · shared commit actions (§4) · *Interactive rebase selection…* (Phase 3, when
   several adjacent commits are selected with Ctrl-click or Shift-click: the list starts at the oldest selected commit and
@@ -277,7 +287,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   Move to parent · Revert (commit files: index and working tree; Shift: Revert and commit, a new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
-New commit, Check out (a branch), Edit commit (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
+New commit, Check out (a branch, or detached), Edit commit (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Squash…/with descendants, Split…, Restore…,
 Abandon…/Abandon branch…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:

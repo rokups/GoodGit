@@ -504,6 +504,119 @@ void HistoryPanel::drawBadgeMenu()
     ImGui::EndPopup();
 }
 
+namespace {
+
+// A detached check out of a commit by a double click (a row without a branch, a tag badge): asks first.
+void showDetachedCheckoutDialog(Session& session, const std::string& hex)
+{
+    Form f;
+    f.title = "Checkout detached";
+    f.message = "Check out the commit " + hex.substr(0, core::kShortIdLength) + ". HEAD becomes detached.";
+    Session* s = &session;
+    f.buttons.push_back({"Checkout", [s, hex](Form&) { s->actions().checkout(hex, true); }});
+    f.buttons.push_back({"Cancel", {}});
+    session.app().dialogs().open(std::move(f));
+}
+
+} // namespace
+
+// What a double click does, on a row (`badge` null, or a badge that has no rule of its own: HEAD, stash,
+// worktree, kept) or on a badge:
+//  - local branch badge: checks out the branch;
+//  - remote branch badge: checks out the local branch of its short name, else opens the Create branch dialog;
+//  - tag badge: asks, then checks out its commit detached;
+//  - row: the only local branch of the commit is checked out; several open the chooser (the branches and
+//    "Detached"); none asks, then checks out detached.
+// Nothing happens for a branch that is checked out already, for a commit that HEAD is on by a branch, for a
+// commit without a local branch that HEAD is detached at, or while a task runs.
+void HistoryPanel::checkoutOnDoubleClick(const core::HistoryRow& row, const BadgeRect* badge)
+{
+    auto& actions = m_session.actions();
+    if (!actions.busy().empty())
+        return;
+    const core::Snapshot& snap = *m_snapshot;
+    const std::string hex = row.id.hex();
+    const bool headHere = snap.headDetached && snap.head == row.id;
+    if (badge) {
+        switch (badge->kind) {
+        case core::RefKind::LocalBranch:
+            if (const auto* b = snap.findBranch(badge->name); b && !b->isHead)
+                actions.checkout(b->name, false);
+            return;
+        case core::RefKind::RemoteBranch:
+            for (const auto& r : snap.remoteBranches)
+                if (r.name == badge->name) {
+                    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
+                    if (const auto* b = snap.findBranch(shortName)) {
+                        if (!b->isHead)
+                            actions.checkout(b->name, false);
+                    } else {
+                        m_session.showCreateBranchDialog(r.name, shortName);
+                    }
+                    return;
+                }
+            return;
+        case core::RefKind::Tag:
+            if (!headHere)
+                showDetachedCheckoutDialog(m_session, hex);
+            return;
+        default: break;
+        }
+    }
+    std::vector<std::string> branches;
+    for (const auto& b : snap.branches) {
+        if (b.target != row.id)
+            continue;
+        if (b.isHead)
+            return; // HEAD is on a branch of this commit
+        branches.push_back(b.name);
+    }
+    if (branches.size() == 1) {
+        actions.checkout(branches.front(), false);
+    } else if (!branches.empty()) {
+        m_chooserBranches = std::move(branches);
+        m_chooserRow = row.id;
+        m_openCheckoutChooser = true;
+    } else if (!headHere) {
+        showDetachedCheckoutDialog(m_session, hex);
+    }
+}
+
+// The choice of a double click on a row with several branches. It is drawn outside the rows, like the badge menu.
+void HistoryPanel::drawCheckoutChooser()
+{
+    // The menu items act on release: the popup waits for the release of the double click, so that it does not
+    // check out a branch by the release of the click that opened it. A drag that starts with that click is a
+    // drop, not a choice.
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+        m_openCheckoutChooser = false;
+    if (m_openCheckoutChooser && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        ImGui::OpenPopup("##dblclick_checkout");
+        m_openCheckoutChooser = false;
+    }
+    if (!ImGui::BeginPopup("##dblclick_checkout"))
+        return;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
+    auto& actions = m_session.actions();
+    const bool free = actions.busy().empty();
+    // The row or one of its branches is gone (a reload): the choice is stale.
+    bool stale = row(m_chooserRow) == nullptr;
+    for (const auto& b : m_chooserBranches)
+        stale = stale || m_snapshot->findBranch(b) == nullptr;
+    if (stale) {
+        ImGui::CloseCurrentPopup();
+    } else {
+        for (const auto& b : m_chooserBranches)
+            if (menuItem(ICON_MS_SWAP_HORIZ, b.c_str(), nullptr, false, free))
+                actions.checkout(b, false);
+        ImGui::Separator();
+        if (menuItem(ICON_MS_SWAP_HORIZ, "Detached", nullptr, false, free))
+            showDetachedCheckoutDialog(m_session, m_chooserRow.hex());
+    }
+    ImGui::PopStyleVar();
+    ImGui::EndPopup();
+}
+
 void HistoryPanel::drawDropChooser()
 {
     if (!m_pendingDrop)
@@ -663,16 +776,18 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
         if (!single)
             disabledHint(true, "Needs a single selected commit.");
     };
-    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free && single && !branchesHere.empty())) {
+    if (beginMenu(ICON_MS_SWAP_HORIZ, "Check out", free && single)) {
         for (const auto& b : branchesHere)
             if (menuItem(ICON_MS_SWAP_HORIZ, b.c_str()))
                 actions.checkout(b, false);
+        if (!branchesHere.empty())
+            ImGui::Separator();
+        // Chosen by name: no confirmation (a double click on a row without a branch asks).
+        if (menuItem(ICON_MS_SWAP_HORIZ, "Detached"))
+            actions.checkout(hex, true);
         ImGui::EndMenu();
     }
-    if (!single)
-        disabledHint(true, "Needs a single selected commit.");
-    else
-        disabledHint(branchesHere.empty(), "No branch points at this commit.");
+    needOne();
     drawEditCommitItem(m_session, row);
     if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free && single))
         m_session.showCreateBranchDialog(hex);
@@ -868,6 +983,20 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         idTooltip(row.id.hex(), cachedTooltipText(ImGui::GetItemID(), 0, [&] {
             return row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true);
         }));
+    // A double click checks out (not with Ctrl or Shift: those clicks select). Its first click selected the row:
+    // a first click that closed a popup or a dialog, or that was on a row that a reload moved, does not count.
+    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left] == 1)
+        m_firstClickRow = row.id;
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && m_firstClickRow == row.id
+        && !ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeyShift) {
+        m_firstClickRow.reset();
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const BadgeRect* hit = nullptr;
+        for (const auto& badge : m_rowBadges)
+            if (badge.rect.Contains(mouse))
+                hit = &badge;
+        checkoutOnDoubleClick(row, hit);
+    }
     dragAndDrop(row);
     // A right click on a badge selects the row and opens the menu of the badge's ref (drawBadgeMenu, after the
     // table) in place of the row's. Only the badges that have a menu: the HEAD badge shows the row's.
@@ -1023,6 +1152,9 @@ void HistoryPanel::captureScrollAnchor(int virtualRows)
 
 void HistoryPanel::draw(bool* open)
 {
+    // Each first click forgets the row of the last one; the row under the mouse sets it again (see drawRow).
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left] == 1)
+        m_firstClickRow.reset();
     if (!ImGui::Begin(panel::History, open)) {
         ImGui::End();
         return;
@@ -1175,6 +1307,7 @@ void HistoryPanel::draw(bool* open)
         ImGui::EndTable();
         drawDropChooser();
         drawBadgeMenu();
+        drawCheckoutChooser();
         m_rowPitchOk = true;
         for (size_t k = 1; k < m_rowTops.size(); ++k)
             if (m_rowTops[k].first == m_rowTops[k - 1].first + 1

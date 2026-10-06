@@ -147,6 +147,14 @@ private:
     std::string m_badgeMenuName;
     core::Oid m_badgeMenuRow; // the commit of the row the badge is on
     bool m_openBadgeMenu = false;
+    // A double click on the row, or on one of its badges (`badge`; null outside them): a check out, by the same
+    // rules for both (see the body). Several branches on the row open the chooser after the table.
+    void checkoutOnDoubleClick(const core::HistoryRow& row, const BadgeRect* badge);
+    void drawCheckoutChooser();
+    std::vector<std::string> m_chooserBranches; // the local branches the chooser offers
+    core::Oid m_chooserRow;                      // the commit of the double-clicked row
+    bool m_openCheckoutChooser = false;
+    std::optional<core::Oid> m_firstClickRow; // the row that got the last first click (a double click needs it)
     void dragAndDrop(const core::HistoryRow& row);
     void drawDropChooser();
     bool m_rowPitchOk = true;
