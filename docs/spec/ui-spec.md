@@ -236,7 +236,8 @@ imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is 
   *Compare with HEAD* `##compare_head` (enabled for commits only).
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
   renames shown `old → new`; files holding first-class conflicts are in the conflict colour with
-  "N-sided conflict", and double-clicking one at HEAD opens the editor.
+  "N-sided conflict", and double-clicking one at HEAD opens the editor. Selecting a commit
+  selects its first file, as a click on the row does, and the diff shows it; the keyboard focus stays in History. A new compare target keeps the current file when the comparison still has it.
 - For Working tree / Index (N): groups `Staged`, `Unstaged`, `Untracked`, `Conflicted`, each a
   collapsible header with a count and group buttons (Stage all / Unstage all). Space/Enter
   toggles staging of the selection; drag rows between Staged and Unstaged.

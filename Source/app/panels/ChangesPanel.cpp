@@ -265,6 +265,23 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
         m_filesError = d.error;
         m_rows = rowsFromDiff(FileGroup::Commit, d);
         markConflicts();
+        // The current file stays (a new compare target) and shows again, as the compare target
+        // clears the Diff panel; otherwise the first file is selected at once, as after a click on its row.
+        // No keyboard focus moves: the arrows go on through the commits.
+        std::string key = current() ? m_current : std::string();
+        if (key.empty()) {
+            const auto rows = visibleRows();
+            if (!rows.empty())
+                key = rows.front()->key();
+        }
+        m_current.clear();
+        m_selected.clear();
+        m_anchor.clear();
+        if (!key.empty()) {
+            m_selected = {key};
+            m_anchor = key;
+            setCurrent(key);
+        }
     } else if (m_selection.kind == SelKind::Stash) {
         if (d.query.a != m_selection.id)
             return;
@@ -969,7 +986,6 @@ void ChangesPanel::draw(bool* open)
         if (target != m_compare) {
             m_compare = target;
             m_rows.clear();
-            m_current.clear();
             m_selected.clear();
             m_filesError.clear();
             requestFiles();

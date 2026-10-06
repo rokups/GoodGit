@@ -9,6 +9,8 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 
 namespace ggtest {
@@ -40,6 +42,13 @@ const ggui::FileRow* rowFor(Scenario& s, const std::string& path)
         if (r.path == path)
             return &r;
     return nullptr;
+}
+
+// The name of the window that has the keyboard focus (its root window; empty when none).
+std::string focusedWindow()
+{
+    const ImGuiWindow* w = ImGui::GetCurrentContext()->NavWindow;
+    return w ? w->RootWindow->Name : std::string();
 }
 
 void selectCommit(Scenario& s, const std::string& hex)
@@ -166,6 +175,53 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title"), "Working tree");
     GG_CHECK(ctx->ItemInfo("//Changes/##compare_with").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemInfo("//Diff/##diff_compare_with").ItemFlags & ImGuiItemFlags_Disabled);
+}
+
+GG_TEST("changes", "selecting a commit selects its first file and shows its diff")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f1.txt", "changed\n");
+    s.write(repo, "sub/x.txt", "x\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Two files"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto& changes = s.session()->changes();
+    auto shows = [&](const std::string& path) {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.path == path;
+    };
+    selectCommit(s, s.head(repo));
+    GG_REQUIRE(s.waitUntil([&] { return shows("f1.txt"); }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:f1.txt"}));
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK_STR_EQ(changes.current()->path, "f1.txt");
+    // The keyboard focus stays in History: the arrows go on through the commits.
+    GG_CHECK_STR_EQ(focusedWindow(), "History");
+    // Another commit: its first file.
+    selectCommit(s, s.revParse(repo, "HEAD~3"));
+    GG_REQUIRE(s.waitUntil([&] { return shows("f3.txt"); }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:f3.txt"}));
+    GG_CHECK_STR_EQ(focusedWindow(), "History");
+    // A new compare target keeps the current file when the comparison still has it.
+    selectCommit(s, s.head(repo));
+    GG_REQUIRE(s.waitUntil([&] { return shows("f1.txt"); }));
+    ctx->ItemClick(fileRef(s, nullptr, "sub/x.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return shows("sub/x.txt"); }));
+    ctx->ItemInputValue("//Changes/##compare_with", "HEAD~3");
+    GG_REQUIRE(s.waitUntil([&] { return changes.rows().size() == 4; }));
+    GG_REQUIRE(s.waitUntil([&] { return shows("sub/x.txt"); }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:sub/x.txt"}));
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK_STR_EQ(changes.current()->path, "sub/x.txt");
+    ctx->ItemInputValue("//Changes/##compare_with", "");
+    // A filter that hides every file: no file becomes current.
+    ctx->ItemInputValue("//Changes/##changes_filter", "no-such-file");
+    selectCommit(s, s.revParse(repo, "HEAD~3"));
+    GG_REQUIRE(s.waitUntil([&] { return changes.rows().size() == 1 && changes.rows()[0].path == "f3.txt"; }));
+    ctx->Yield(2);
+    GG_CHECK(changes.current() == nullptr);
+    GG_CHECK(changes.selectedKeys().empty());
+    ctx->ItemInputValue("//Changes/##changes_filter", "");
 }
 
 GG_TEST("changes", "the title shows the ID by the ID rule: 3 characters normal, the rest dimmed")
