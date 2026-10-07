@@ -324,7 +324,9 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
 
     // A remote-tracking branch: branch items, no remote-level items, no local-branch-only ones.
     ctx->ItemClick(rrow.c_str(), ImGuiMouseButton_Right);
-    for (const char* item : {"Check out", "Create local branch...", "Merge into HEAD...", "Rebase HEAD onto branch", "Copy name", "Delete on remote..."})
+    // No local branch "topic": Check out opens a dialog, so it ends with "...".
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###check_out"), "Check out...###check_out");
+    for (const char* item : {"Create local branch...", "Merge into HEAD...", "Rebase HEAD onto branch", "Copy name", "Delete on remote..."})
         GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
     for (const char* item : {"Fetch", "Copy URL", "Edit URL...", "Remote origin", "Rename...", "Set upstream...", "Push"})
         GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
@@ -339,6 +341,46 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     GG_CHECK(s.waitUntil([&] { return !s.itemExists(rrow.c_str()); }));
     s.settle();
     GG_CHECK(!refExists(s, repo, "refs/remotes/origin/topic"));
+}
+
+GG_TEST("refs", "branches: Check out on a remote-tracking branch opens Create branch when no local branch has its name")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "topic", "HEAD~1"});
+    s.git(repo, {"push", "-q", "-u", "origin", "topic"});
+    s.git(repo, {"branch", "-D", "topic"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string rrow = "//Branches/remote_group_origin/origin/rbranch_origin:topic/###rbranch_origin:topic";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rrow.c_str()); }));
+    const std::string before = symbolicHead(s, repo);
+    // Cancel creates nothing.
+    s.contextMenu(rrow.c_str(), "###check_out");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    GG_CHECK(s.session()->snapshot()->findBranch("topic") == nullptr);
+    GG_CHECK(!refExists(s, repo, "refs/heads/topic"));
+    s.dialogButton("Create branch", "Cancel");
+    s.settle();
+    GG_CHECK(!refExists(s, repo, "refs/heads/topic"));
+    GG_CHECK_STR_EQ(symbolicHead(s, repo), before);
+    // Create makes the branch with the upstream and checks it out.
+    s.contextMenu(rrow.c_str(), "###check_out");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->checked("checkout"));
+    s.dialogButton("Create branch", "Create");
+    GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "topic"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "--abbrev-ref", "topic@{upstream}"}), "origin/topic");
+    // With the local branch, the item is "Check out" and needs no dialog.
+    s.git(repo, {"switch", "-q", before});
+    s.settle();
+    ctx->ItemClick(rrow.c_str(), ImGuiMouseButton_Right);
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###check_out"), "Check out###check_out");
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(rrow.c_str(), "###check_out");
+    GG_CHECK(!s.dialogOpen("Create branch", 1.0f));
+    GG_CHECK(s.waitUntil([&] { return symbolicHead(s, repo) == "topic"; }));
 }
 
 GG_TEST("refs", "branches: <remote>/HEAD is not listed; the snapshot keeps it apart from the branches")

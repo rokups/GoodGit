@@ -1069,7 +1069,7 @@ GG_TEST("panels", "branches: hover buttons stay on their own row at its edges")
     }
 }
 
-GG_TEST("panels", "branches: a remote-tracking row's hover Check out creates the tracking branch")
+GG_TEST("panels", "branches: a remote-tracking row's hover Check out opens Create branch and creates the tracking branch")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "-f", "side", "HEAD~1"});
@@ -1087,6 +1087,10 @@ GG_TEST("panels", "branches: a remote-tracking row's hover Check out creates the
     ctx->Yield(3);
     GG_REQUIRE(s.itemExists(checkout.c_str()));
     ctx->ItemClick(checkout.c_str());
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    GG_CHECK(s.session()->snapshot()->findBranch("side") == nullptr);
+    GG_CHECK(s.gitOut(repo, {"branch", "--list", "side"}).empty());
+    s.dialogButton("Create branch", "Create");
     GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "side"; }));
     const auto snapshot = s.session()->snapshot();
     const auto* side = snapshot->findBranch("side");

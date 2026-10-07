@@ -299,14 +299,15 @@ void pushBranch(Session& session, const core::BranchInfo& b)
 }
 
 // Check out on a remote-tracking branch's row or menu: a local branch of that name is checked out;
-// otherwise one is created to track it.
+// otherwise the Create branch dialog opens (name: the short name, at: the remote-tracking branch, with the
+// check out on); nothing is created before the user confirms.
 void checkoutRemoteBranch(Session& session, const core::Snapshot& snapshot, const core::RemoteBranchInfo& r)
 {
     const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
     if (snapshot.findBranch(shortName))
         session.actions().checkout(shortName, false);
     else
-        session.actions().createBranch(shortName, r.name, true);
+        session.showCreateBranchDialog(r.name, shortName);
 }
 
 } // namespace
@@ -407,8 +408,9 @@ void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const c
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(r.name.c_str());
     ImGui::Separator();
-    // A local branch of that name is checked out; otherwise one is created to track this branch.
-    if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free))
+    // A local branch of that name is checked out; otherwise the Create branch dialog opens (so "...").
+    const std::string checkoutLabel = snap.findBranch(shortName) ? "Check out###check_out" : "Check out...###check_out";
+    if (menuItem(ICON_MS_SWAP_HORIZ, checkoutLabel.c_str(), nullptr, false, free))
         checkoutRemoteBranch(session, snap, r);
     if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
         session.showCreateBranchDialog(r.name, shortName);
@@ -639,7 +641,8 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PushOverrideID(windowId);
                 ImGui::PushID(("remote_group_" + remote).c_str());
                 ImGui::PushID(remote.c_str());
-                const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free}};
+                const bool hasLocal = m_snapshot->findBranch(r.name.substr(std::min(r.name.size(), r.remote.size() + 1))) != nullptr;
+                const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", hasLocal ? "Check out" : "Check out...", free}};
                 const RowEvents events = visibilityRow("rbranch_" + r.name, shortName,
                     history.refVisible(full), false, p.remoteText, false, acts);
                 if (events.toggle)

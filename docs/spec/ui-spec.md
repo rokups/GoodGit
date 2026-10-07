@@ -585,7 +585,7 @@ the panel without touching the repository.
   common actions show as icon buttons at the row's right edge (over the row's end), buttons `###act_<name>` in
   the row's ID scope, each the same as its menu item (same enabled state; the tooltip is the item's name); a
   click on a button is not a click on the row. Mouse only (not keyboard stops). Local branch: Check out (not
-  on HEAD's branch) `act_checkout` · Push `act_push`; remote-tracking branch: Check out; kept commit:
+  on HEAD's branch) `act_checkout` · Push `act_push`; remote-tracking branch: Check out ("Check out..." without a local branch); kept commit:
   Check out · Create branch `act_branch`; tag: Reveal
   `act_reveal`; remote: Fetch `act_fetch` · Pull `act_pull`; stash: Apply `act_apply` · Pop `act_pop`;
   worktree: Open here `act_open_here` (not on the current one) · Open directory `act_open_dir`.
@@ -605,6 +605,10 @@ the panel without touching the repository.
   the remote has the Remotes panel's context menu, and each remote-tracking branch has Reveal ·
   Copy name · Remote <name> ▸ (the same menu). Set upstream… has a filter field (Enter picks
   the first match).
+  Check out on a remote-tracking branch (the menu item, the row's `act_checkout` button and the double click on its
+  badge in History) has one result: a local branch of the short name is checked out; without one, the *Create branch*
+  dialog opens (name: the short name, at: the remote-tracking branch, *Check out after creating* on), and nothing is
+  created before the user confirms it. The menu item is then "Check out…" (`###check_out`); else "Check out".
   The **Detached** node `detached_group` sits between the local and the remote branches. It is shown only
   while the snapshot lists kept commits (commits a ggui or git-gg operation made on a detached HEAD that no branch or tag reaches,
   kept by `refs/gg/keep/<id>`; a detached HEAD merely on a commit does not list it) that pass the filter; open by default. Its eye (`###eye` in the node's scope) acts on the listed rows
