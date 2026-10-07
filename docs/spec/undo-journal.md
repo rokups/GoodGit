@@ -195,9 +195,10 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     rebase finished through ggui), unless an operation begun after the group already records that
     keep ref: the creation is then written as housekeeping, since the next pass's Known takes a
     ref's value from the last operation in begin order. A deletion, or a move, is recorded in the
-    operation the maintenance ran for (in a pass: only an operation begun in that pass), unless the
-    recorder joined an open rebase group. Every other keep change is written as an operation of its
-    own: `src` `gg`, label `keep refs`, holding only keep refs (`Operation::keepOnly()`,
+    operation the maintenance ran for (in a pass: only an operation begun in that pass), also for a
+    recorder that joined an open rebase group, unless an operation begun after the group already
+    records that keep ref (housekeeping then, as for a creation). Every other keep change is written
+    as an operation of its own: `src` `gg`, label `keep refs`, holding only keep refs (`Operation::keepOnly()`,
     `journal::writeKeepHousekeeping`), so the next pass finds it in Known: a deletion by a pass
     that began no operation to give it to, the keep changes of a joined recorder named above, and a
     keep ref changed by something else while an operation was open (a repair, another process). A keep ref that exists already when the

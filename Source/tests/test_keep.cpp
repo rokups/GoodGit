@@ -1461,6 +1461,50 @@ GG_TEST("keep", "Undo of a rebase finished through ggui on a detached HEAD delet
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
 }
 
+GG_TEST("keep", "a keep ref deleted in the step that finishes a rebase belongs to the rebase's operation: Undo keeps the commit again, Redo deletes it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::run(r.get(), &error); // the baseline
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
+    s.commitFile(repo, "t.txt", "t\n", "Detached t");
+    const std::string before = s.head(repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "main"}); // stops at t
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
+    std::string tip;
+    {
+        gg::OperationRecorder rec(r.get(), "test", "continue", false); // joins the rebase begun above
+        rec.setCreatesCommits(true);
+        rec.begin();
+        s.git(repo, {"rebase", "--continue"});
+        tip = s.head(repo);
+        s.git(repo, {"update-ref", "-d", gg::keep::refName(p)}); // what the app's maintenance does for p
+        rec.finish(true, false);
+    }
+    GG_REQUIRE(gg::native::rebaseIdentity(r.get()).empty());
+    GG_REQUIRE(tip != before);
+    GG_CHECK(keepRefs(s, repo) == names({tip}));
+    const auto deleted = opsChanging(repo, gg::keep::refName(p), false);
+    GG_REQUIRE(deleted.size() == 1);
+    GG_CHECK(!deleted.front().keepOnly());
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+
+    const gg::UndoResult undone = gg::undo(r.get(), false, "test");
+    GG_CHECK(undone.ok);
+    GG_CHECK_STR_EQ(undone.error, "");
+    GG_CHECK_STR_EQ(s.head(repo), before);
+    GG_CHECK(keepRefs(s, repo) == names({p}));
+
+    const gg::UndoResult redone = gg::undo(r.get(), true, "test");
+    GG_CHECK(redone.ok);
+    GG_CHECK_STR_EQ(redone.error, "");
+    GG_CHECK(keepRefs(s, repo) == names({tip}));
+}
+
 GG_TEST("keep", "Redo of an undone commit made on a detached HEAD keeps the commit again")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

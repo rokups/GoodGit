@@ -156,17 +156,17 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     const auto after = readRefValues(m_repo);
     const std::string zero = zeroId(m_repo);
     // The keep ref changes of this operation's diff that are its own: the creations of the keep ref of
-    // a commit it named (m_keepExtra) and, unless it joined a rebase begun earlier, the deletions
-    // (maintenance ran for it). The rest (a keep ref deleted or created by whatever else ran
-    // meanwhile) is housekeeping: an operation of its own, so that Undo of this one does not carry it
-    // along and it is not labelled with this operation.
+    // a commit it named (m_keepExtra) and the deletions (maintenance ran for it), both also when it
+    // joined a rebase begun earlier, unless a later operation records that keep ref. The rest (a keep
+    // ref deleted or created by whatever else ran meanwhile) is housekeeping: an operation of its own,
+    // so that Undo of this one does not carry it along and it is not labelled with this operation.
     std::vector<journal::RefChange> changes;
     std::vector<journal::RefChange> housekeeping;
     // A resumed recorder's records go to the group's operation, which began before the operations
     // begun since: a creation appended there is hidden from the reconcile pass's `known` by a later
     // operation that touched the same keep ref (it takes the ref's value from the last one in begin
-    // order), and the pass would journal it again. So a creation is the group's own only when no
-    // later operation records that keep ref.
+    // order), and the pass would journal it again. A deletion is hidden the same way. So a creation or
+    // a deletion is the group's own only when no later operation records that keep ref.
     const auto laterOperationTouches = [&](const std::string& ref) {
         const auto ops = m_journal.read();
         const auto group = std::find_if(ops.begin(), ops.end(), [&](const journal::Operation& o) { return o.id == m_op.id; });
@@ -184,10 +184,10 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
                 return false;
             return !m_resumed || !laterOperationTouches(c.ref);
         }
-        // A deletion or a keep ref that moved (maintenance never does that). Not for a resumed
-        // recorder: its begin record is older than a later "keep refs" operation, and `known` would
-        // take the ref's value from the latter.
-        return !m_resumed;
+        // A deletion or a keep ref that moved (maintenance never does that). For a resumed recorder
+        // only when no later operation records the ref: its begin record is older than a later
+        // "keep refs" operation, and `known` would take the ref's value from the latter.
+        return !m_resumed || !laterOperationTouches(c.ref);
     };
     const auto add = [&](journal::RefChange c) {
         (owns(c) ? changes : housekeeping).push_back(std::move(c));

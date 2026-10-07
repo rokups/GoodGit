@@ -968,8 +968,9 @@ Result run(git_repository* repo, std::string* error)
     // to the operation this pass began whose HEAD it is (the newest such; a pass names no commit, so
     // it creates none today); the rest is
     // housekeeping, an operation of its own. An operation continued from an earlier pass (an open
-    // rebase) never takes them: for `known` it is older than what came since. Also when maintenance
-    // failed half-way: what it did is journaled all the same.
+    // rebase) never takes them: for `known` it is older than what came since. The recorder differs
+    // here: a joined recorder gives the group its own keep changes when no later operation records
+    // the ref. Also when maintenance failed half-way: what it did is journaled all the same.
     {
         std::vector<journal::RefChange> keepChanges;
         std::string keepError;
