@@ -225,8 +225,10 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     (`gg::native::replayedCommits`: `rebase-merge/done` and `git-rebase-todo` parsed with
     `todo::parse` before the step; `request.prepared.todo` for a rebase started in one step) that
     the new HEAD does not reach (`git_graph_descendant_of` says not an ancestor; an error deletes
-    nothing). Ids match by prefix. Not on `--abort`, not for the apply backend (`rebase-apply/`, no
-    list). The new tip is kept by the maintenance of `finish`.
+    nothing) and that orig-head reaches (`rebase-merge/orig-head` read before the step; for a
+    rebase started in one step `request.tip`, the tip that the rebase replays, or HEAD before the
+    command when it is empty). Ids match by prefix. Not on `--abort`, not for the apply backend
+    (`rebase-apply/`, no list). The new tip is kept by the maintenance of `finish`.
   - *Undo and Redo.* A keep ref does not make an operation visible from another worktree (§5.1).
     Only a `keep refs` operation (`src` `gg`, `Operation::keepOnly()`) is passed over by Undo and
     Redo; an operation of a user that changed only keep refs is a target like any other (its

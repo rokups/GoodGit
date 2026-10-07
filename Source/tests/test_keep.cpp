@@ -2,6 +2,7 @@
 // keep::maintain on repositories built with plain git, and the places that call it: every
 // operation (OperationRecorder::finish) and every reconcile pass.
 #include "panels/HistoryPanel.hpp"
+#include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
@@ -2366,6 +2367,94 @@ GG_TEST("keep", "a rebase of a branch stopped in a pass and finished in a termin
                 GG_CHECK(!gg::keep::isKeepRef(c.ref));
         }
     GG_CHECK_EQ(gg::reconcile::run(r.get(), &error).appended, 0u);
+}
+
+GG_TEST("keep", "a rebase started in the app that finishes in one step replaces the keep ref of the commit it replayed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    GG_REQUIRE(keepRefs(s, repo) == names({p}));
+    ggui::RebasePanel::Request request;
+    request.upstream = "main";
+    request.onto = "main";
+    s.session()->rebase().open(request);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->rebase().isOpen() && s.session()->rebase().context() != nullptr; }));
+    ctx->Yield(2);
+    ctx->ItemCheck("//Interactive rebase/###ir_native"); // git rebase runs it; the list has no stop
+    GG_REQUIRE(s.session()->rebase().engine().engine == gg::todo::Engine::Native);
+    ctx->ItemClick("//Interactive rebase/###ir_start");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->rebase().isOpen(); }, 60.0f));
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != p; }));
+    s.settle();
+    const std::string tip = s.head(repo);
+    GG_CHECK(keepRefs(s, repo) == names({tip}));
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == p; }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo) == names({p}));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == tip; }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo) == names({tip}));
+}
+
+GG_TEST("keep", "a rebase started in the app of a kept commit that is not HEAD replaces its keep ref")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    GG_REQUIRE(keepRefs(s, repo) == names({p}));
+    ggui::RebasePanel::Request request;
+    request.upstream = "main";
+    request.tip = p; // git detaches at p first
+    request.onto = "main";
+    s.session()->rebase().open(request);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->rebase().isOpen() && s.session()->rebase().context() != nullptr; }));
+    ctx->Yield(2);
+    ctx->ItemCheck("//Interactive rebase/###ir_native");
+    GG_REQUIRE(s.session()->rebase().engine().engine == gg::todo::Engine::Native);
+    const std::string main = s.head(repo);
+    ctx->ItemClick("//Interactive rebase/###ir_start");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->rebase().isOpen(); }, 60.0f));
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != main; }));
+    s.settle();
+    const std::string tip = s.head(repo);
+    GG_CHECK(tip != p);
+    GG_CHECK(keepRefs(s, repo) == names({tip}));
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(repo) == main; }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo) == names({p}));
+}
+
+GG_TEST("keep", "a row that copies a kept commit of another history leaves its keep ref")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
+    const std::string q = detachedOperation(s, repo, "main~1", "q.txt");
+    s.git(repo, {"checkout", "-q", "--detach", p});
+    // The first row stops (edit); the pick of q is added by hand, as in a terminal editor.
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i -e '1s/^pick/edit/' -e '$a pick " + q + "'");
+    s.git(repo, {"rebase", "-i", "main"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive; }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo) == names({p, q}));
+    ctx->ItemClick("//###Toolbar/Continue##tb_continue");
+    GG_REQUIRE(s.waitUntil([&] { return !fs::exists(repo / ".git" / "rebase-merge"); }));
+    s.settle();
+    const std::string tip = s.head(repo);
+    GG_CHECK(tip != p && tip != q);
+    GG_CHECK(keepRefs(s, repo) == names({tip, q})); // p is replaced; q is copied, so its keep ref stays
+    GG_CHECK_EQ(housekeepingCount(repo), 0u);
 }
 
 } // namespace ggtest

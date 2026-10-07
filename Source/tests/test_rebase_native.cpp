@@ -876,4 +876,15 @@ GG_TEST("rebase-native", "typed squash messages reach git's editor, also for a s
     GG_CHECK_STR_EQ(s.read(r.path, ".git/exec.log"), "x\nx\n");
 }
 
+GG_TEST("rebase-native", "todo::replayedCommits lists the commit rows and the merge -C row of a todo list, in order")
+{
+    const std::string text =
+        "pick 1111111 a\nedit 2222222 b\nreword 3333333 c\nsquash 4444444 d\nfixup 5555555 e\n"
+        "fixup -C 6666666 f\ndrop 7777777 g\nmerge -C 8888888 side # h\nmerge other\nexec true\nbreak\n"
+        "label here\nreset here\nupdate-ref refs/heads/x\n# a comment\n";
+    const auto ids = todo::replayedCommits(todo::parse(text));
+    GG_CHECK(ids == (std::vector<std::string>{
+                        "1111111", "2222222", "3333333", "4444444", "5555555", "6666666", "7777777", "8888888"}));
+}
+
 } // namespace ggtest

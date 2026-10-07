@@ -91,15 +91,29 @@ bool notAncestor(git_repository* repo, const std::string& k, const std::string& 
     return r == 0;
 }
 
+// `k` is `origHead` or an ancestor of it. An error counts as "do not know": false.
+bool fromOrigHead(git_repository* repo, const std::string& k, const std::string& origHead)
+{
+    if (k == origHead)
+        return true;
+    const auto a = gg::git2::fromHex(k), b = gg::git2::fromHex(origHead);
+    if (!a || !b)
+        return false;
+    const int r = git_graph_descendant_of(repo, &*b, &*a);
+    git_error_clear();
+    return r == 1;
+}
+
 // A finished native rebase replaced the kept commits of its todo list (`replayed`: the ids of its
-// commit and merge rows, maybe abbreviated) that the new HEAD does not reach: their keep refs go
-// in the same operation, so that Undo keeps them again. Nothing for an empty list or a rebase
-// still in progress; the new tip gets its keep ref from the maintenance of the operation. A
-// deletion that fails is not fatal.
-void dropReplacedKeep(MutationContext& ctx, const std::vector<std::string>& replayed)
+// commit and merge rows, maybe abbreviated) that the tip before the rebase (`origHead`) reaches and
+// that the new HEAD does not reach: their keep refs go in the same operation, so that Undo keeps
+// them again. A row that names a kept commit of another history copied it: that keep ref stays.
+// Nothing for an empty list, an empty `origHead` or a rebase still in progress; the new tip gets
+// its keep ref from the maintenance of the operation. A deletion that fails is not fatal.
+void dropReplacedKeep(MutationContext& ctx, const std::vector<std::string>& replayed, const std::string& origHead)
 {
     git_repository* repo = ctx.repo();
-    if (replayed.empty() || !gg::native::rebaseIdentity(repo).empty())
+    if (replayed.empty() || origHead.empty() || !gg::native::rebaseIdentity(repo).empty())
         return;
     const auto rev = ctx.gitMayFail({"rev-parse", "HEAD"});
     if (!rev.ok())
@@ -108,7 +122,7 @@ void dropReplacedKeep(MutationContext& ctx, const std::vector<std::string>& repl
     for (const auto& k : gg::keep::read(repo)) {
         const bool named = std::any_of(replayed.begin(), replayed.end(),
             [&](const std::string& c) { return c.size() >= 7 && k.rfind(c, 0) == 0; });
-        if (named && notAncestor(repo, k, head))
+        if (named && fromOrigHead(repo, k, origHead) && notAncestor(repo, k, head))
             ctx.gitMayFail({"update-ref", "-d", gg::keep::refName(k), k});
     }
 }
@@ -125,6 +139,7 @@ void rebaseStep(MutationContext& ctx, std::vector<std::string> args)
     const fs::path done = fs::path(git_repository_path(repo)) / "rebase-merge" / "done";
     const std::string doneBefore = readText(done);
     const auto replayedBefore = gg::native::replayedCommits(repo);
+    const std::string origHead = gg::trim(readText(fs::path(git_repository_path(repo)) / "rebase-merge" / "orig-head"));
     const bool aborts = std::find(args.begin(), args.end(), "--abort") != args.end();
     if (gg::native::preparedFor(repo))
         useSequenceEditor(ctx, gg::native::stateDir(repo));
@@ -139,7 +154,7 @@ void rebaseStep(MutationContext& ctx, std::vector<std::string> args)
         if (stopped)
             ctx.info = gitMessage(res);
         else if (replayedBefore && !aborts)
-            dropReplacedKeep(ctx, *replayedBefore);
+            dropReplacedKeep(ctx, *replayedBefore, origHead);
         return;
     }
     if (stopped && readText(done) != doneBefore) {
@@ -173,6 +188,14 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                     "update-ref rows need git 2.38 or newer: turn off Update refs (or remove the rows), or run the "
                     "list in memory",
                     {}};
+            // The tip that the rebase starts from: `request.tip` is its orig-head (HEAD, the branch that
+            // git switches to first, where no kept commit is replaced, or the revision that git detaches
+            // at first).
+            std::string origHead = request.tip;
+            if (origHead.empty()) {
+                const auto rev = ctx.gitMayFail({"rev-parse", "HEAD"});
+                origHead = rev.ok() ? gg::trim(rev.out) : std::string();
+            }
             // git 2.45 renamed --empty=ask to stop (ask still works, with a warning).
             const std::string empty = request.empty == "stop" && version < 245 ? "ask" : request.empty;
             const fs::path dir = gg::native::stateDir(repo);
@@ -204,7 +227,7 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 throw MutationError{core::classifyFailure(all), gitMessage(res), all};
             }
             // Finished in one step: there is no rebase-merge/ to read, the rows are the list written.
-            dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo)));
+            dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo)), origHead);
         },
         std::move(done), false, true, true, true);
 }
