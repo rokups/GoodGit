@@ -285,9 +285,9 @@ RequestId Engine::revealCommit(const Oid& target)
     auto state = m_history;
     return submit(Queue::History, "Revealing commit " + target.shortHex(), 0, true, [this, state, target](Job& job) {
         const RequestId id = job.id;
-        const bool found = historyReveal(job.repo(), *state, target, job.token,
+        const HistoryRevealResult result = historyReveal(job.repo(), *state, target, job.token,
             [this, id](std::shared_ptr<HistoryBatch> b) { emit(HistoryEvent{id, std::move(b)}); });
-        emit(RevealEvent{job.id, target, found});
+        emit(RevealEvent{job.id, target, result.found, result.hiddenBy});
     });
 }
 

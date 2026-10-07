@@ -60,6 +60,7 @@ struct RevealEvent {
     RequestId request = 0;
     Oid id;
     bool found = false;
+    Oid hiddenBy; // when not found: the collapsed merge that hides the commit (null: none)
 };
 struct SearchEvent {
     RequestId request = 0;

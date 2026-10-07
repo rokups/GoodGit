@@ -45,6 +45,7 @@ struct HistoryState {
     std::unordered_set<Oid, OidHash> published;   // propagated from children
     std::unordered_set<Oid, OidHash> reach;       // shown through a visible child (edge not collapsed)
     std::unordered_map<Oid, Oid, OidHash> hiddenOwner; // pending hidden commit → collapsed merge hiding it
+    std::unordered_map<Oid, Oid, OidHash> hiddenBy; // commit dropped by a collapsed merge → that merge
     std::unordered_map<Oid, int, OidHash> collapsedCount;
     std::unordered_set<Oid, OidHash> countsChanged;   // merges whose count changed since the last batch
     std::unordered_map<Oid, std::vector<RefBadge>, OidHash> badges;
@@ -69,8 +70,13 @@ void historyStart(git_repository* repo, HistoryState& state, std::uint64_t query
 void historyContinue(git_repository* repo, HistoryState& state, int limit, const gg::CancelToken& cancel,
     const HistoryEmit& emit);
 
-// Continues until `id` is emitted. Returns whether it was found.
-bool historyReveal(git_repository* repo, HistoryState& state, const Oid& id, const gg::CancelToken& cancel,
+struct HistoryRevealResult {
+    bool found = false;
+    Oid hiddenBy; // when not found: the collapsed merge that hides the commit (null: none)
+};
+
+// Continues until `id` is emitted or dropped by a collapsed merge. Returns whether it was found.
+HistoryRevealResult historyReveal(git_repository* repo, HistoryState& state, const Oid& id, const gg::CancelToken& cancel,
     const HistoryEmit& emit);
 
 // Ids of emitted rows matching `text` (case-insensitive: id, message, author, ref names).

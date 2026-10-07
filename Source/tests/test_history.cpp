@@ -6,6 +6,7 @@
 #include "shell/Session.hpp"
 #include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
+#include "../core/History.hpp"
 #include "util/Ui.hpp"
 
 #include <spdlog/spdlog.h>
@@ -1477,6 +1478,69 @@ GG_TEST("history", "Go to parent reveals a parent hidden in a collapsed merge")
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == second; }));
     GG_CHECK(history.row(Oid::fromHex(second)) != nullptr);
     GG_CHECK(!history.row(Oid::fromHex(merge))->collapsed);
+}
+
+namespace {
+
+// A fresh walk of the open repository (merges collapsed, first batch of one row) and a reveal of `target`.
+struct RevealRun {
+    ggui::core::HistoryRevealResult result;
+    ggui::core::HistoryRevealResult again; // a second reveal of the same target on the same state
+    std::vector<ggui::core::HistoryRow> rows;
+    size_t rowsAfterFirst = 0;
+    bool complete = false; // the walk reached the end of the history
+};
+
+RevealRun revealCore(Scenario& s, const fs::path& repo, const std::string& target)
+{
+    RevealRun run;
+    const auto handle = gg::git2::openRepository(repo);
+    ggui::core::HistoryState state;
+    const auto emit = [&](std::shared_ptr<ggui::core::HistoryBatch> b) {
+        run.rows.insert(run.rows.end(), b->rows.begin(), b->rows.end());
+    };
+    ggui::core::historyStart(handle.get(), state, 1, ggui::core::HistoryScope{}, s.session()->snapshot(), 1,
+        gg::CancelToken::none(), emit);
+    run.result = ggui::core::historyReveal(handle.get(), state, Oid::fromHex(target), gg::CancelToken::none(), emit);
+    run.rowsAfterFirst = run.rows.size();
+    run.complete = state.complete;
+    run.again = ggui::core::historyReveal(handle.get(), state, Oid::fromHex(target), gg::CancelToken::none(), emit);
+    return run;
+}
+
+} // namespace
+
+GG_TEST("history", "Reveal reports the collapsed merge that hides a commit")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string merge = s.revParse(repo, "main");
+    const std::string side = s.revParse(repo, "feature~1");
+    // Without its branch the merged side has no ref: the collapsed merge hides it.
+    s.git(repo, {"branch", "-q", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
+    const RevealRun run = revealCore(s, repo, side);
+    GG_CHECK(!run.result.found);
+    GG_CHECK_STR_EQ(run.result.hiddenBy.hex(), merge);
+    GG_CHECK(!run.complete); // the walk stops at the hidden commit
+    GG_CHECK(!run.again.found);
+    GG_CHECK_STR_EQ(run.again.hiddenBy.hex(), merge);
+    GG_CHECK_EQ(run.rows.size(), run.rowsAfterFirst);
+    for (const auto& row : run.rows)
+        GG_CHECK(row.id.hex() != side);
+}
+
+GG_TEST("history", "Reveal of a visible commit below a collapsed merge is found")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string below = s.revParse(repo, "main~3");
+    s.git(repo, {"branch", "-q", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().loading() == false && s.session()->snapshot(); }));
+    const RevealRun run = revealCore(s, repo, below);
+    GG_CHECK(run.result.found);
+    GG_CHECK(run.result.hiddenBy.isNull());
+    GG_CHECK(std::any_of(run.rows.begin(), run.rows.end(), [&](const auto& row) { return row.id.hex() == below; }));
 }
 
 GG_TEST("history", "Go to child selects the child; it is disabled without a child; two children give a submenu")

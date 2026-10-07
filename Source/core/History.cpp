@@ -143,14 +143,14 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
 
         // Shown when a ref points at it or a shown child leads to it; otherwise it lies on the side
         // of a collapsed merge. Walking in time order, children come first.
-        // A commit being revealed is shown even inside a collapsed merge.
-        const bool visible = st.scopeTips.count(id) || st.reach.count(id) || (stop && stop(id));
+        const bool visible = st.scopeTips.count(id) || st.reach.count(id);
         st.reach.erase(id);
         if (!visible) {
             auto owner = st.hiddenOwner.find(id);
             if (owner != st.hiddenOwner.end()) {
                 const Oid merge = owner->second;
                 st.hiddenOwner.erase(owner);
+                st.hiddenBy[id] = merge;
                 ++st.collapsedCount[merge];
                 st.countsChanged.insert(merge);
                 for (const auto& p : parents)
@@ -161,6 +161,9 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
             for (auto& lane : st.lanes)
                 if (lane && *lane == id)
                     lane = parents.empty() ? std::nullopt : std::optional<Oid>(parents[0]);
+            // A commit being revealed that a collapsed merge hides gets no row: the caller expands the merge.
+            if (stop && stop(id))
+                break;
             continue;
         }
         st.hiddenOwner.erase(id);
@@ -352,17 +355,28 @@ void historyContinue(git_repository* repo, HistoryState& st, int limit, const gg
     walk(repo, st, limit, cancel, emit, false, {});
 }
 
-bool historyReveal(git_repository* repo, HistoryState& st, const Oid& id, const gg::CancelToken& cancel,
-    const HistoryEmit& emit)
+HistoryRevealResult historyReveal(git_repository* repo, HistoryState& st, const Oid& id,
+    const gg::CancelToken& cancel, const HistoryEmit& emit)
 {
     gg::assertNotUiThread("historyReveal");
-    if (st.rowOf.count(id))
-        return true;
+    HistoryRevealResult result;
+    if (st.rowOf.count(id)) {
+        result.found = true;
+        return result;
+    }
+    // The walk already dropped it: it is behind us and a walk would run to the end of the history.
+    if (auto hidden = st.hiddenBy.find(id); hidden != st.hiddenBy.end()) {
+        result.hiddenBy = hidden->second;
+        return result;
+    }
     if (!st.started || st.complete)
-        return false;
+        return result;
     walk(repo, st, std::numeric_limits<int>::max(), cancel, emit, false, [&](const Oid& o) { return o == id; });
     st.limit = std::max(st.limit, st.emitted);
-    return st.rowOf.count(id) != 0;
+    result.found = st.rowOf.count(id) != 0;
+    if (auto hidden = st.hiddenBy.find(id); hidden != st.hiddenBy.end())
+        result.hiddenBy = hidden->second;
+    return result;
 }
 
 std::vector<Oid> historySearch(const HistoryState& st, const std::string& text, const gg::CancelToken& cancel)
