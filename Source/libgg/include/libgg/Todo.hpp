@@ -93,6 +93,10 @@ struct ParseError {
 // malformed lines are reported and left out.
 Todo parse(std::string_view text, std::vector<ParseError>* errors = nullptr);
 
+// The commits the rows name: the commit rows (pick … drop) and the `merge -C/-c` rows, in order
+// (ids as written: may be abbreviated after parse()).
+std::vector<std::string> replayedCommits(const Todo& list);
+
 // Writes the todo as Git does: "pick <full id> # <subject>", "fixup -C <id> # …", "exec <cmd>", a
 // blank line after each update-ref, "label <name>", "reset <name> # <subject>", "merge -C <id>
 // <labels> # <subject>", "noop" when empty.

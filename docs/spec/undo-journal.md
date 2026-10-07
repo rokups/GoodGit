@@ -219,6 +219,14 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     An amend without descendants (the commit dialog), when no native rebase is in progress,
     replaces its commit without a rewrite: it deletes `refs/gg/keep/<id>` of the amended commit itself, in the same
     operation, and the new commit is kept as any commit that an operation creates on a detached HEAD.
+    A native rebase finished through ggui (`rebaseStep`, `Actions::nativeRebase`,
+    `app/shell/ActionsRebase.cpp`) deletes, in the same step, `refs/gg/keep/<id>` of every kept
+    commit named by a commit row or a `merge -C/-c` row of its todo list
+    (`gg::native::replayedCommits`: `rebase-merge/done` and `git-rebase-todo` parsed with
+    `todo::parse` before the step; `request.prepared.todo` for a rebase started in one step) that
+    the new HEAD does not reach (`git_graph_descendant_of` says not an ancestor; an error deletes
+    nothing). Ids match by prefix. Not on `--abort`, not for the apply backend (`rebase-apply/`, no
+    list). The new tip is kept by the maintenance of `finish`.
   - *Undo and Redo.* A keep ref does not make an operation visible from another worktree (§5.1).
     Only a `keep refs` operation (`src` `gg`, `Operation::keepOnly()`) is passed over by Undo and
     Redo; an operation of a user that changed only keep refs is a target like any other (its

@@ -7,6 +7,8 @@
 
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
+#include <libgg/Keep.hpp>
+#include <libgg/Todo.hpp>
 
 #include <algorithm>
 #include <cstdio>
@@ -76,6 +78,41 @@ void dropPreparedIfFinished(git_repository* repo)
         gg::native::discardPrepared(repo);
 }
 
+// `k` is not `head` and not an ancestor of it. An error counts as "do not know": false.
+bool notAncestor(git_repository* repo, const std::string& k, const std::string& head)
+{
+    if (k == head)
+        return false;
+    const auto a = gg::git2::fromHex(k), b = gg::git2::fromHex(head);
+    if (!a || !b)
+        return false;
+    const int r = git_graph_descendant_of(repo, &*b, &*a);
+    git_error_clear();
+    return r == 0;
+}
+
+// A finished native rebase replaced the kept commits of its todo list (`replayed`: the ids of its
+// commit and merge rows, maybe abbreviated) that the new HEAD does not reach: their keep refs go
+// in the same operation, so that Undo keeps them again. Nothing for an empty list or a rebase
+// still in progress; the new tip gets its keep ref from the maintenance of the operation. A
+// deletion that fails is not fatal.
+void dropReplacedKeep(MutationContext& ctx, const std::vector<std::string>& replayed)
+{
+    git_repository* repo = ctx.repo();
+    if (replayed.empty() || !gg::native::rebaseIdentity(repo).empty())
+        return;
+    const auto rev = ctx.gitMayFail({"rev-parse", "HEAD"});
+    if (!rev.ok())
+        return;
+    const std::string head = gg::trim(rev.out);
+    for (const auto& k : gg::keep::read(repo)) {
+        const bool named = std::any_of(replayed.begin(), replayed.end(),
+            [&](const std::string& c) { return c.size() >= 7 && k.rfind(c, 0) == 0; });
+        if (named && notAncestor(repo, k, head))
+            ctx.gitMayFail({"update-ref", "-d", gg::keep::refName(k), k});
+    }
+}
+
 } // namespace
 
 // `git rebase <args>` for a stopped rebase (Continue, Skip, Abort, Amend and continue, Commit
@@ -87,6 +124,8 @@ void rebaseStep(MutationContext& ctx, std::vector<std::string> args)
     git_repository* repo = ctx.repo();
     const fs::path done = fs::path(git_repository_path(repo)) / "rebase-merge" / "done";
     const std::string doneBefore = readText(done);
+    const auto replayedBefore = gg::native::replayedCommits(repo);
+    const bool aborts = std::find(args.begin(), args.end(), "--abort") != args.end();
     if (gg::native::preparedFor(repo))
         useSequenceEditor(ctx, gg::native::stateDir(repo));
     else
@@ -99,6 +138,8 @@ void rebaseStep(MutationContext& ctx, std::vector<std::string> args)
     if (res.ok()) {
         if (stopped)
             ctx.info = gitMessage(res);
+        else if (replayedBefore && !aborts)
+            dropReplacedKeep(ctx, *replayedBefore);
         return;
     }
     if (stopped && readText(done) != doneBefore) {
@@ -162,6 +203,8 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 const std::string all = res.err + res.out;
                 throw MutationError{core::classifyFailure(all), gitMessage(res), all};
             }
+            // Finished in one step: there is no rebase-merge/ to read, the rows are the list written.
+            dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo)));
         },
         std::move(done), false, true, true, true);
 }

@@ -18,6 +18,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct git_repository;
 
@@ -31,6 +32,11 @@ namespace gg::native {
 // in the worktree whose git dir is `gitDir`, "" when there is none.
 std::string rebaseIdentity(const std::filesystem::path& gitDir);
 std::string rebaseIdentity(git_repository* repo);
+
+// The commits that the rows of the todo list of the rebase in progress name (`todo::replayedCommits`
+// of rebase-merge/done and of git-rebase-todo, read now: git deletes them when the rebase ends).
+// nullopt when there is no rebase-merge/ (none in progress, or the apply backend: no list).
+std::optional<std::vector<std::string>> replayedCommits(git_repository* repo);
 
 // $GIT_COMMON_DIR/gg/rebase/<worktree key>
 std::filesystem::path stateDir(git_repository* repo);

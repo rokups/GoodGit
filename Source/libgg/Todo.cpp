@@ -228,6 +228,15 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors)
     return todo;
 }
 
+std::vector<std::string> replayedCommits(const Todo& list)
+{
+    std::vector<std::string> out;
+    for (const auto& item : list.items)
+        if ((item.isCommit() || item.action == Action::Merge) && !item.commit.empty())
+            out.push_back(item.commit);
+    return out;
+}
+
 std::string format(const Todo& todo)
 {
     if (todo.items.empty())

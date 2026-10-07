@@ -116,6 +116,20 @@ std::string rebaseIdentity(const fs::path& gitDir)
 
 std::string rebaseIdentity(git_repository* repo) { return rebaseIdentity(fs::path(git_repository_path(repo))); }
 
+std::optional<std::vector<std::string>> replayedCommits(git_repository* repo)
+{
+    const fs::path dir = fs::path(git_repository_path(repo)) / "rebase-merge";
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec))
+        return std::nullopt;
+    std::vector<std::string> out;
+    for (const char* name : {"done", "git-rebase-todo"}) {
+        const auto rows = todo::replayedCommits(todo::parse(readFile(dir / name).value_or("")));
+        out.insert(out.end(), rows.begin(), rows.end());
+    }
+    return out;
+}
+
 fs::path stateDir(git_repository* repo)
 {
     return fs::path(git_repository_commondir(repo)) / "gg" / "rebase" / worktreeKey(repo);
