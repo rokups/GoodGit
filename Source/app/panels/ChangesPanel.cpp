@@ -742,15 +742,17 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         if (menuItem(ICON_MS_ARROW_DOWNWARD, "Move to parent", nullptr, false, free))
             actions.moveChanges(id, Actions::MoveTo::Parent, paths, {});
         ImGui::Separator();
-        // Shift toggles: Revert (index and working tree) / Revert and commit (a new commit on HEAD).
-        const bool shift = ImGui::GetIO().KeyShift;
-        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, shift ? "Revert and commit" : "Revert", nullptr, false,
-                free && !m_session.snapshot()->headUnborn))
-            actions.revertChanges(id, paths, {}, shift);
+        // Revert: a new commit on HEAD. Revert (no commit): the index and working tree only.
+        const bool canRevert = free && !m_session.snapshot()->headUnborn;
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert###revert", nullptr, false, canRevert))
+            actions.revertChanges(id, paths, {}, true);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            tooltip("%s", shift ? "A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts."
-                                : "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
-                                  "added or deleted files may not apply (Shift: Revert and commit handles them).");
+            tooltip("%s", "A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts.");
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert (no commit)###revert_no_commit", nullptr, false, canRevert))
+            actions.revertChanges(id, paths, {}, false);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            tooltip("%s", "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
+                          "added or deleted files may not apply (\"Revert\" handles them).");
         if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
             actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

@@ -337,12 +337,52 @@ GG_TEST("move", "discard: a hunk's button in commit mode rewrites the commit wit
     GG_CHECK(s.fsck(r.path));
 }
 
-GG_TEST("move", "revert and commit: a commit's file undone in a new commit on HEAD; one Undo")
+// The label of a menu item of the open menu, without its ID part. The test engine keeps only the
+// first 31 characters of a label, so `expected` is cut the same way.
+static void checkMenuLabel(Scenario& s, const char* id, const std::string& expected)
+{
+    const std::string label = s.itemLabel((std::string("//$FOCUSED/") + id).c_str());
+    GG_CHECK_STR_EQ(label.substr(0, label.find("###")), expected.substr(0, 31));
+}
+
+// Opens the menu of `ref`, with or without Shift, and checks the two revert items and the old labels.
+static void checkRevertMenu(Scenario& s, const std::string& ref, const char* revert, const char* noCommit, const char* oldLabel)
+{
+    for (const bool shift : {false, true}) {
+        s.ctx->ItemClick(ref.c_str(), ImGuiMouseButton_Right);
+        if (shift)
+            s.ctx->KeyDown(ImGuiMod_Shift);
+        s.ctx->Yield(3);
+        checkMenuLabel(s, "###revert", revert);
+        checkMenuLabel(s, "###revert_no_commit", noCommit);
+        GG_CHECK(!s.itemExists((std::string("//$FOCUSED/") + oldLabel).c_str()));
+        if (shift)
+            s.ctx->KeyUp(ImGuiMod_Shift);
+        s.ctx->KeyPress(ImGuiKey_Escape);
+        s.ctx->Yield(3);
+    }
+}
+
+GG_TEST("move", "revert: the file and line menus have Revert (a commit) and Revert (no commit), with or without Shift")
 {
     const MoveRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     selectCommit(s, r.x, 3);
-    s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert and commit", true);
+    checkRevertMenu(s, fileRef(s, "a.txt"), "Revert", "Revert (no commit)", "Revert and commit");
+    ctx->ItemClick(fileRef(s, "a.txt").c_str());
+    s.showPanel("Diff");
+    GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].hunks.size() == 2; }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_1").c_str()); }));
+    ctx->ItemClick((body(s) + "/###hunk_1").c_str());
+    checkRevertMenu(s, body(s) + "/###hunk_1", "Revert line(s)", "Revert line(s) (no commit)", "Revert line(s) and commit");
+}
+
+GG_TEST("move", "revert: a commit's file undone in a new commit on HEAD; one Undo")
+{
+    const MoveRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.x, 3);
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "###revert");
     GG_REQUIRE(moved(s, r.path, r.y));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.y);
     // HEAD's tree with a.txt at the parent's (base) content; the other files untouched.
@@ -360,7 +400,7 @@ GG_TEST("move", "revert and commit: a commit's file undone in a new commit on HE
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
-GG_TEST("move", "revert and commit: a hunk's lines undone in a new commit on HEAD")
+GG_TEST("move", "revert: a hunk's lines undone in a new commit on HEAD")
 {
     const MoveRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
@@ -370,7 +410,7 @@ GG_TEST("move", "revert and commit: a hunk's lines undone in a new commit on HEA
     GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].hunks.size() == 2; }));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_1").c_str()); }));
     ctx->ItemClick((body(s) + "/###hunk_1").c_str());
-    s.contextMenu((body(s) + "/###hunk_1").c_str(), "Revert line(s) and commit", true);
+    s.contextMenu((body(s) + "/###hunk_1").c_str(), "###revert");
     GG_REQUIRE(moved(s, r.path, r.y));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.y);
     const std::string a = s.gitOut(r.path, {"show", "HEAD:a.txt"});
@@ -381,7 +421,7 @@ GG_TEST("move", "revert and commit: a hunk's lines undone in a new commit on HEA
     GG_CHECK(s.fsck(r.path));
 }
 
-GG_TEST("move", "revert and commit: a conflict with a later change lands as a first-class conflict")
+GG_TEST("move", "revert: a conflict with a later change lands as a first-class conflict")
 {
     const MoveRepo r = makeRepo(s);
     std::string a = s.gitOut(r.path, {"show", "HEAD:a.txt"}) + "\n";
@@ -390,7 +430,7 @@ GG_TEST("move", "revert and commit: a conflict with a later change lands as a fi
     const std::string z = s.head(r.path);
     GG_REQUIRE(s.openRepository(r.path));
     selectCommit(s, r.x, 3);
-    s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert and commit", true);
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "###revert");
     GG_REQUIRE(moved(s, r.path, z));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), z);
     GG_CHECK(s.gitOut(r.path, {"show", "HEAD:a.txt"}).find("<<<<<<<") != std::string::npos);
@@ -408,7 +448,7 @@ GG_TEST("move", "revert without committing: a commit's file undone in the index 
     const MoveRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     selectCommit(s, r.x, 3);
-    s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert");
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "###revert_no_commit");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(r.path), r.y);
@@ -434,7 +474,7 @@ GG_TEST("move", "revert without committing: a hunk's lines undone in the index a
     GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].hunks.size() == 2; }));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_1").c_str()); }));
     ctx->ItemClick((body(s) + "/###hunk_1").c_str());
-    s.contextMenu((body(s) + "/###hunk_1").c_str(), "Revert line(s)");
+    s.contextMenu((body(s) + "/###hunk_1").c_str(), "###revert_no_commit");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
     s.settle();
     GG_CHECK_STR_EQ(s.head(r.path), r.y);
@@ -456,7 +496,7 @@ GG_TEST("move", "revert without committing: a conflict stops as a revert; Abort,
     GG_REQUIRE(s.openRepository(r.path));
     selectCommit(s, r.x, 3);
     for (const bool abort : {true, false}) {
-        s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert");
+        s.contextMenu(fileRef(s, "a.txt").c_str(), "###revert_no_commit");
         GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::Reverting; }));
         s.settle();
         GG_CHECK_STR_EQ(s.head(r.path), z);
@@ -501,7 +541,7 @@ GG_TEST("move", "revert without committing: refused with staged changes or local
     s.git(r.path, {"add", "d.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
     s.settle();
-    s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert");
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "###revert_no_commit");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("staged changes") != std::string::npos);
     GG_CHECK(s.read(r.path, "a.txt").find("LINE 18") != std::string::npos);
@@ -512,7 +552,7 @@ GG_TEST("move", "revert without committing: refused with staged changes or local
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->unstaged.empty(); }));
     s.settle();
     const std::string edited = s.read(r.path, "a.txt");
-    s.contextMenu(fileRef(s, "a.txt").c_str(), "Revert");
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "###revert_no_commit");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("a.txt has local changes") != std::string::npos);
     GG_CHECK_STR_EQ(s.read(r.path, "a.txt"), edited);

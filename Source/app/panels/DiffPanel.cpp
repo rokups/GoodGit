@@ -1004,13 +1004,15 @@ void DiffPanel::drawMenuItems()
         if (menuItem(ICON_MS_MY_LOCATION, "Move line(s) to active commit", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Active, {}, patch);
         ImGui::Separator();
-        const bool shift = ImGui::GetIO().KeyShift;
-        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, shift ? "Revert line(s) and commit" : "Revert line(s)", nullptr, false,
-                can && !m_session.snapshot()->headUnborn))
-            actions.revertChanges(id, {}, patch, shift);
+        const bool canRevert = can && !m_session.snapshot()->headUnborn;
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert line(s)###revert", nullptr, false, canRevert))
+            actions.revertChanges(id, {}, patch, true);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
-            tooltip("%s", shift ? "A new commit on HEAD that undoes the selected lines of this change. Text conflicts become first-class conflicts."
-                                : "Undo the selected lines of this change in the index and working tree, without committing. Conflicts stop as in a revert.");
+            tooltip("%s", "A new commit on HEAD that undoes the selected lines of this change. Text conflicts become first-class conflicts.");
+        if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert line(s) (no commit)###revert_no_commit", nullptr, false, canRevert))
+            actions.revertChanges(id, {}, patch, false);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            tooltip("%s", "Undo the selected lines of this change in the index and working tree, without committing. Conflicts stop as in a revert.");
         if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
         const std::string hunkPatch = hunks.empty() ? std::string() : buildPatch(m_diff->files.front(), hunks, false);

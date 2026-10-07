@@ -315,7 +315,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Resolve with merge
   tool · Mark resolved · Patch ▸ (Copy, Save…) ·
   Blame file · External diff ▸ (vs HEAD, vs parent) · Move to child (Move to working tree on the HEAD commit, which has no child) /
-  Move to parent · Revert (commit files: index and working tree; Shift: Revert and commit, a new commit on HEAD) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
+  Move to parent · Revert (commit files: a new commit on HEAD; id `###revert`) · Revert (no commit) (index and working tree; id `###revert_no_commit`) · Discard (D; commit files: rewrites the commit, one Undo, published commits ask first) · Delete file.
 
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Check out (a branch, or detached), Edit commit (checkout detached) (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
@@ -516,7 +516,7 @@ the panel without touching the repository.
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.
 - Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) and hunk(s) (N) · Move line(s)/hunk to
-  child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Revert line(s) (a commit's lines, into the index and working tree; Shift: Revert line(s) and commit) · Discard line(s)/hunk(s) of a commit (rewrite).
+  child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Revert line(s) (a commit's lines: a new commit on HEAD; id `###revert`) · Revert line(s) (no commit) (into the index and working tree; id `###revert_no_commit`) · Discard line(s)/hunk(s) of a commit (rewrite).
 
 ## 7. Blame panel — window `"Blame"`
 - **Toolbar:** Back `##blame_back` / Forward `##blame_fwd` (also mouse buttons 4/5), the file and where it is blamed
