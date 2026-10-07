@@ -1396,7 +1396,6 @@ GG_TEST("history", "the commit menu uses git words")
     ctx->Yield(2);
     GG_CHECK(s.itemExists("//$FOCUSED/Drop commit..."));
     GG_CHECK(s.itemExists("//$FOCUSED/Edit commit (checkout detached)"));
-    GG_CHECK(!s.itemExists("//$FOCUSED/Abandon..."));
     // Every item exists and each one is below the one before.
     const char* labels[] = {"New detached", "Check out", "Create branch...", "Create tag...", "Move branch",
         "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Reset main to here...###reset_here",

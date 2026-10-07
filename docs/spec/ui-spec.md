@@ -220,8 +220,8 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   A range of adjacent commits enables *Interactive rebase selection…* and Squash. Shift with an arrow key onto the
   Working tree or Index row does not select it (the selection stays); a Shift-click on it does.
 - Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
-  commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop/drop
-  branch, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
+  commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop
+  commit/drop commit and descendants, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
 - Double click on a row (outside its badges; not with Ctrl or Shift, not on the Working tree and Index rows, only
   while no task runs) checks out, as in traditional git software. One local branch at the commit: it is checked out.
   Several: a popup (`##dblclick_checkout`) lists them and, after a separator, *Detached*. None: a dialog *Checkout
@@ -320,7 +320,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Check out (a branch, or detached), Edit commit (checkout detached) (E; detaches at the commit, after making a local branch for a commit only a remote branch has; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Reset \<branch\> to here… (dialog *Reset branch*: the commit and a *Mode* Soft, Mixed (default) or Hard; Hard asks first in the dialog *Discard changes* (buttons *Reset hard* and *Cancel*) when it would discard staged, unstaged or conflicted changes, or an untracked file that the commit also has; other untracked files stay), Squash…/with descendants, Split…, Restore…,
-Drop commit…/Drop branch…, Simplify parents, Reorder, Move
+Drop commit…/Drop commit and descendants…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it

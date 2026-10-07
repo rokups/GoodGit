@@ -1577,7 +1577,7 @@ GG_TEST("keep", "a reword of the commit below the kept tip rewrites the tip too:
     checkNothingElse(s, repo, r);
 }
 
-GG_TEST("keep", "abandoning the kept tip above another unreachable commit keeps its parent; Undo restores the tip's ref and drops the parent's")
+GG_TEST("keep", "dropping the kept tip above another unreachable commit keeps its parent; Undo restores the tip's ref and drops the parent's")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     gg::git2::Repository r = gg::git2::openRepository(repo);
@@ -1585,7 +1585,7 @@ GG_TEST("keep", "abandoning the kept tip above another unreachable commit keeps 
     GG_REQUIRE(keepRefs(s, repo) == names({c.t}));
     const std::string start = refState(s, repo);
 
-    const auto mapping = rewriteOperation(r, repo, "abandon", [&](git_repository* g) { return abandonPlan(g, c.t); });
+    const auto mapping = rewriteOperation(r, repo, "drop", [&](git_repository* g) { return abandonPlan(g, c.t); });
     GG_REQUIRE(mapping.count(c.t) == 1);
     GG_CHECK_STR_EQ(mapping.at(c.t), c.p); // what took the dropped commit's place
     GG_CHECK(keepRefs(s, repo) == names({c.p}));
@@ -1603,7 +1603,7 @@ GG_TEST("keep", "abandoning the kept tip above another unreachable commit keeps 
     checkNothingElse(s, repo, r);
 }
 
-GG_TEST("keep", "abandoning a kept tip whose parent is on a branch leaves no keep ref")
+GG_TEST("keep", "dropping a kept tip whose parent is on a branch leaves no keep ref")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     gg::git2::Repository r = gg::git2::openRepository(repo);
@@ -1615,7 +1615,7 @@ GG_TEST("keep", "abandoning a kept tip whose parent is on a branch leaves no kee
     GG_REQUIRE(keepRefs(s, repo) == names({t}));
     const std::string start = refState(s, repo);
 
-    const auto mapping = rewriteOperation(r, repo, "abandon", [&](git_repository* g) { return abandonPlan(g, t); });
+    const auto mapping = rewriteOperation(r, repo, "drop", [&](git_repository* g) { return abandonPlan(g, t); });
     GG_REQUIRE(mapping.count(t) == 1);
     GG_CHECK_STR_EQ(mapping.at(t), s.revParse(repo, "main"));
     GG_CHECK(keepRefs(s, repo).empty());

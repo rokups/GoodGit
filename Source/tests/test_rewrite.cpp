@@ -197,7 +197,7 @@ GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the ma
     s.git(repo, {"worktree", "remove", "--force", wt.string()});
 }
 
-GG_TEST("rewrite", "in a bare repository, and at the root: reword, abandon the root commit")
+GG_TEST("rewrite", "in a bare repository, and at the root: reword, drop the root commit")
 {
     // Bare: the branch moves, nothing needs a working tree.
     const fs::path bare = s.fixture(Recipe::Bare);
@@ -211,7 +211,7 @@ GG_TEST("rewrite", "in a bare repository, and at the root: reword, abandon the r
     s.settle();
     GG_CHECK(s.fsck(bare));
 
-    // The root commit: reworded (its descendants follow), then abandoned (they become roots' children).
+    // The root commit: reworded (its descendants follow), then dropped (they become roots' children).
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string root = s.revParse(repo, "HEAD~4");
     GG_REQUIRE(s.openRepository(repo));

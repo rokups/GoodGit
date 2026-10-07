@@ -258,7 +258,7 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     if (c.one(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, c.merge, "Only a merge commit has parents to simplify."))
         session.actions().simplifyParents(row.id);
     if (c.shift) {
-        if (c.one(ICON_MS_DELETE_FOREVER, "Drop branch...", "Shift+A"))
+        if (c.one(ICON_MS_DELETE_FOREVER, "Drop commit and descendants...", "Shift+A"))
             showAbandonBranchDialog(session, row.id);
     } else if (c.one(ICON_MS_DELETE_FOREVER, "Drop commit...", "A")) {
         showAbandonDialog(session, row.id);
@@ -464,8 +464,8 @@ void showResetDialog(Session& session, const core::Oid& commit)
 void showAbandonBranchDialog(Session& session, const core::Oid& commit)
 {
     Form f;
-    f.title = "Drop branch";
-    f.message = "Drop this commit and everything after it.";
+    f.title = "Drop commit and descendants";
+    f.message = "Drop this commit and all its descendants.";
     f.add(commitInfo(session, "Drop from", commit));
     Field del{Field::Check, "delete_branches", "Delete the branches that only point into it"};
     del.checked = true;

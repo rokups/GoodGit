@@ -627,16 +627,16 @@ void Actions::split(const core::Oid& commit, const std::vector<std::string>& pat
 void Actions::abandon(const core::Oid& commit, bool withDescendants, std::function<void()> then)
 {
     const std::string id = commit.hex();
-    rewrite(std::string(withDescendants ? "abandon branch from " : "abandon ") + id.substr(0, 10),
+    rewrite(std::string(withDescendants ? "drop commit and descendants from " : "drop commit ") + id.substr(0, 10),
         [id, withDescendants](git_repository* repo) {
             rw::Plan plan;
-            plan.reflogMessage = "ggui: abandon";
+            plan.reflogMessage = "ggui: drop";
             if (withDescendants) {
                 plan.dropped = rw::descendants(repo, {id});
                 return plan;
             }
             plan = replayWithout(repo, {id}, {id});
-            plan.reflogMessage = "ggui: abandon";
+            plan.reflogMessage = "ggui: drop";
             plan.dropped = {id};
             return plan;
         },
