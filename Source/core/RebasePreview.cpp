@@ -10,6 +10,7 @@
 #include "Readers.hpp"
 
 #include <libgg/Conflicts.hpp>
+#include <libgg/Keep.hpp>
 #include <libgg/Rewrite.hpp>
 
 #include <algorithm>
@@ -48,10 +49,15 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
     auto out = std::make_shared<RebasePreview>();
     out->onto = context.onto;
     try {
+        rw::Rewriter rewriter(repoPath);
+        // Before toPlan: a list the preview cannot model (NoPreview) keeps the warning too.
+        if (context.tipIsHead && context.tipRef.empty() && git_repository_head_detached(rewriter.repository()) == 1
+            && gg::keep::rebaseLeavesBaseUnkept(rewriter.repository(), context.upstream, context.onto, context.tip))
+            out->unkeptBase = context.upstream;
+        git_error_clear();
         rw::Plan plan = todo::toPlan(list, context, true);
         plan.keepCommitterDate = options.keepCommitterDate;
         plan.emptied = options.emptied == rw::Emptied::Drop ? rw::Emptied::Drop : rw::Emptied::Keep;
-        rw::Rewriter rewriter(repoPath);
         const rw::Result result = rewriter.compute(plan, cancel);
         if (!result.ok && result.unresolved.empty()) {
             out->error = result.error;

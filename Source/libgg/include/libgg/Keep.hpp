@@ -31,6 +31,16 @@ bool isKeepRef(const std::string& name);
 // "refs/gg/keep/<id>".
 std::string refName(const std::string& id);
 
+// Whether a rebase of the detached HEAD commit `head` onto `onto` (a rebase of the range
+// `upstream`..`head`) leaves `upstream` and its ancestors without a ref (full ids). True when
+// `upstream` differs from `onto` and no tip reaches it: the `onto` commit, a branch, a
+// remote-tracking branch or a tag, or a keep ref that is not in the replayed range (`head` or
+// its ancestor, and a descendant of `upstream`). False when an id does not name a commit or a
+// graph call fails. Two limits stay: a keep ref of a replayed commit that no row of the list names
+// is not deleted at the finish (the warning shows, the base stays reachable); a branch at a
+// replayed commit counts as a tip, but an update-ref row moves it (no warning, the base loses its ref).
+bool rebaseLeavesBaseUnkept(git_repository* repo, const std::string& upstream, const std::string& onto, const std::string& head);
+
 // The commits kept: the targets of the well-formed keep refs, sorted by ref name. Empty on failure.
 std::vector<std::string> read(git_repository* repo);
 

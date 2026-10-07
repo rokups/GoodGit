@@ -145,6 +145,35 @@ bool isKeepRef(const std::string& name) { return name.rfind(kPrefix, 0) == 0; }
 
 std::string refName(const std::string& id) { return kPrefix + id; }
 
+bool rebaseLeavesBaseUnkept(git_repository* repo, const std::string& upstream, const std::string& onto, const std::string& head)
+{
+    const auto u = fromHex(upstream);
+    const auto o = fromHex(onto);
+    const auto h = fromHex(head);
+    if (!u || !o || !h || git_oid_equal(&*u, &*o) || !isCommit(repo, *u) || !isCommit(repo, *o) || !isCommit(repo, *h))
+        return false;
+    // The tips that keep `u`: the onto commit, the anchors (branches, remote-tracking branches,
+    // tags; not HEAD, the stash or other refs) and the keep refs outside the replayed range.
+    std::vector<git_oid> tips = anchors(repo);
+    tips.push_back(*o);
+    for (const auto& e : existingKeepRefs(repo)) {
+        if (!e.commit)
+            continue;
+        // In the replayed range: the head or an ancestor of it, and a proper descendant of `u`.
+        const bool inRange = (git_oid_equal(&*e.commit, &*h) == 1 || git_graph_descendant_of(repo, &*h, &*e.commit) == 1)
+            && git_oid_equal(&*e.commit, &*u) == 0 && git_graph_descendant_of(repo, &*e.commit, &*u) == 1;
+        if (!inRange)
+            tips.push_back(*e.commit);
+    }
+    // True only when libgit2 answers "no" (0): a failed graph call gives no warning.
+    for (const auto& t : tips)
+        if (git_oid_equal(&t, &*u))
+            return false;
+    const int reached = git_graph_reachable_from_any(repo, &*u, tips.data(), tips.size()); // tips holds `o`: never empty
+    git_error_clear();
+    return reached == 0;
+}
+
 std::vector<std::string> read(git_repository* repo)
 {
     std::vector<std::string> ids;

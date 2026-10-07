@@ -454,6 +454,9 @@ struct RebasePreview {
     bool unsupported = false;             // `error` is a list the preview cannot model (gg::todo::NoPreview), not a failure
     std::string onto;                     // the base ("" = the root)
     std::string ontoSubject;
+    // The upstream (full id) when this rebase of the detached HEAD leaves it and its ancestors
+    // without a keep ref or any other ref; "" = nothing is lost (gg::keep::rebaseLeavesBaseUnkept).
+    std::string unkeptBase;
     std::vector<Row> rows;
     std::vector<Move> moves;              // branches (and a detached HEAD) that move
     std::vector<std::string> ontoBranches; // branches ending at the base (every commit dropped)

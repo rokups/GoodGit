@@ -924,6 +924,19 @@ void RebasePanel::drawHeader()
         plainText((text + "###ir_issue_" + std::to_string(i)).c_str());
         ImGui::PopStyleColor();
     }
+
+    // The base of a --onto rebase of a part of a detached history loses its keep ref.
+    if (m_preview && !m_preview->unkeptBase.empty()) {
+        const std::string base = shortHex(m_preview->unkeptBase, n);
+        ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
+        const std::string text = "Commit " + base + " and its ancestors have no keep ref after this rebase. "
+            "Only the reflog keeps them. Create a branch at " + base + " to keep them.";
+        plainText((std::string(ICON_MS_WARNING " ") + text + "###ir_keep_warning").c_str());
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::PopStyleColor();
+        if (hovered)
+            tooltip("%s", text.c_str()); // the line is cut at the panel's edge, like an issue line
+    }
 }
 
 void RebasePanel::drawOptions()

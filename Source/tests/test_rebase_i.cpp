@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <optional>
 #include <random>
 
 namespace ggtest {
@@ -710,6 +711,114 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
         return s.gitOut(repo, {"log", "--format=%T %an %ae %at%n%B", "HEAD"});
     };
     GG_CHECK_STR_EQ(history(p), history(copy));
+}
+
+// The "no keep ref" warning of a --onto rebase (GG-23). c1 … c5 are on main; p and t (on p) come
+// after c3. `detached`: HEAD is detached at t and only refs/gg/keep/<t> holds them (else the branch
+// "side" is at t, checked out). `branchAtP`: a branch also points at p. `ontoMain`: Onto is main (else
+// empty). `keepX`: a second kept commit x on p, not an ancestor of HEAD. `keepP`: only refs/gg/keep/<p> (no keep ref for t).
+// `ready` is false when a step failed; `text` is the warning, or nullopt when the panel shows none.
+struct KeepWarning {
+    bool ready = false;
+    std::string p;
+    fs::path repo;
+    std::optional<std::string> text;
+};
+
+KeepWarning keepWarning(Scenario& s, bool detached, bool branchAtP, bool ontoMain, bool keepX = false, bool keepP = false)
+{
+    KeepWarning out;
+    const Repo r = makeRepo(s);
+    if (detached)
+        s.git(r.path, {"checkout", "-q", "--detach", r.c[3]});
+    else
+        s.git(r.path, {"switch", "-q", "-c", "side", r.c[3]});
+    s.commitFile(r.path, "p.txt", "p\n", "p detached");
+    out.p = s.head(r.path);
+    out.repo = r.path;
+    if (keepX) {
+        s.commitFile(r.path, "x.txt", "x\n", "x on p");
+        s.git(r.path, {"update-ref", "refs/gg/keep/" + s.head(r.path), s.head(r.path)});
+        s.git(r.path, {"checkout", "-q", "--detach", out.p});
+    }
+    s.commitFile(r.path, "t.txt", "t\n", "t on p");
+    const std::string t = s.head(r.path);
+    if (detached && !keepP) // the app drops keep/<p> when keep/<t> exists (p is no tip): with keepP only p is kept
+        s.git(r.path, {"update-ref", "refs/gg/keep/" + t, t});
+    if (branchAtP)
+        s.git(r.path, {"branch", "at-p", out.p});
+    if (keepP)
+        s.git(r.path, {"update-ref", "refs/gg/keep/" + out.p, out.p});
+    if (!s.openRepository(r.path) || !rowReady(s, t))
+        return out;
+    s.ctx->ItemClick(historyRow(t).c_str());
+    s.ctx->KeyPress(ImGuiKey_I);
+    if (!editorReady(s) || editor(s).context()->upstream != out.p)
+        return out;
+    if (ontoMain) {
+        s.setText(irWidget("ir_onto"), "");
+        s.ctx->KeyChars("main");
+        s.ctx->KeyPress(ImGuiKey_Enter);
+        if (!s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == r.c[5]; }))
+            return out;
+    }
+    // The preview of the final context has arrived (the warning comes with it).
+    const std::string base = ontoMain ? r.c[5] : out.p;
+    if (!s.waitUntil([&] { return editor(s).preview() && editor(s).preview()->onto == base; }))
+        return out;
+    s.ctx->Yield(3);
+    out.ready = true;
+    if (s.itemExists(irWidget("ir_keep_warning").c_str()))
+        out.text = s.itemText(irWidget("ir_keep_warning").c_str());
+    return out;
+}
+
+GG_TEST("rebase-i", "keep warning: a --onto rebase of the tip of a kept detached history names the base")
+{
+    const KeepWarning w = keepWarning(s, true, false, true);
+    GG_REQUIRE(w.ready);
+    GG_REQUIRE(w.text.has_value());
+    const std::string id = w.p.substr(0, s.session()->shortIdLength());
+    // The label is cut at the panel's edge in the test engine: the start names the base.
+    GG_CHECK(w.text->find("Commit " + id + " and") != std::string::npos);
+}
+
+GG_TEST("rebase-i", "keep warning: none when a branch points at the base")
+{
+    const KeepWarning w = keepWarning(s, true, true, true);
+    GG_REQUIRE(w.ready);
+    GG_CHECK(!w.text.has_value());
+}
+
+GG_TEST("rebase-i", "keep warning: none for a plain rebase on the upstream")
+{
+    const KeepWarning w = keepWarning(s, true, false, false);
+    GG_REQUIRE(w.ready);
+    GG_CHECK(!w.text.has_value());
+}
+
+GG_TEST("rebase-i", "keep warning: none when a keep ref outside the replayed range reaches the base")
+{
+    const KeepWarning w = keepWarning(s, true, false, true, true);
+    GG_REQUIRE(w.ready);
+    GG_CHECK(!w.text.has_value());
+}
+
+GG_TEST("rebase-i", "keep warning: none when the base has its own keep ref")
+{
+    const KeepWarning w = keepWarning(s, true, false, true, false, true);
+    GG_REQUIRE(w.ready);
+    GG_CHECK(s.gitMayFail(w.repo, {"rev-parse", "--verify", "-q", "refs/gg/keep/" + w.p}).ok()); // the app kept it
+    GG_CHECK(!w.text.has_value());
+}
+
+// The tip branch "side" is at t and reaches p, so the branch is a tip: no warning. (After the rebase
+// the branch is at t' and p is unreachable, so a warning would be right too; the rule leaves it out.)
+GG_TEST("rebase-i", "keep warning: none when HEAD is on a branch")
+{
+    const KeepWarning w = keepWarning(s, false, false, true);
+    GG_REQUIRE(w.ready);
+    GG_CHECK(!w.text.has_value());
 }
 
 GG_TEST("rebase-i", "options: onto, update-refs, autostash, committer date")

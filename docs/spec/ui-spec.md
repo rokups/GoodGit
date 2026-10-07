@@ -341,6 +341,9 @@ the panel without touching the repository.
   tooltip: errors in the list, busy, or an engine not available yet), *Cancel* `###ir_cancel`;
   engine line `###ir_engine` ("Engine: in memory" or "git rebase", with the reason); one line per
   validation issue `###ir_issue_<n>` (error or warning icon, "Row N: …").
+  A warning line `###ir_keep_warning` follows them when the rebase is of a detached HEAD, Onto differs from the
+  upstream and no branch, tag, Onto commit or kept commit outside the replayed range reaches the upstream: it names the
+  upstream and its ancestors, which have no keep ref after this rebase, and suggests a branch there. It does not block Start.
 - **Options:** *Onto* `###ir_onto` (Enter applies; empty = the upstream; an unknown revision is an
   error and the list stays), *Autosquash* `###ir_autosquash` (on: `fixup!`/`squash!`/`amend!`
   rows are placed and marked; off: back to Git's starting list), *Update refs* `###ir_update_refs`
