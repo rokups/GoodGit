@@ -652,11 +652,17 @@ struct RemoteBranch {
 };
 
 // The first usable remote-tracking branch containing `target`; none when it is on no remote branch.
-// A refusal names why the others are not usable: the local branch has diverged, or another worktree has it.
+// A refusal names why the others are not usable: the local branch has diverged, another worktree has it,
+// or a branch is in the way of its name (refs/heads/a and refs/heads/a/b cannot both exist).
 std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::string& target, const std::string& headBranch)
 {
     std::string why;
     bool any = false;
+    // A remote name can hold a slash (up/stream), so the branch name is what follows the longest remote name.
+    std::vector<std::string> remotes;
+    for (const auto& r : gg::splitLines(ctx.gitMayFail({"remote"}).out))
+        if (!r.empty())
+            remotes.push_back(r);
     for (const auto& line : gg::splitLines(ctx.gitMayFail({"for-each-ref", "--contains", target,
              "--format=%(refname)\t%(symref)\t%(refname:lstrip=3)", "refs/remotes/"}).out)) {
         // Fields: ref, symref (empty unless the ref is symbolic, like refs/remotes/<remote>/HEAD), name.
@@ -665,12 +671,32 @@ std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::str
         if (tab2 == std::string::npos || tab2 != tab + 1)
             continue;
         RemoteBranch candidate{line.substr(0, tab), line.substr(tab2 + 1), false};
+        std::string longest;
+        for (const auto& r : remotes) {
+            const std::string prefix = "refs/remotes/" + r + "/";
+            if (r.size() > longest.size() && candidate.ref.compare(0, prefix.size(), prefix) == 0)
+                longest = r;
+        }
+        if (!longest.empty())
+            candidate.name = candidate.ref.substr(std::string("refs/remotes/").size() + longest.size() + 1);
         if (candidate.name.empty())
             continue;
         any = true;
         const std::string local = "refs/heads/" + candidate.name;
         const std::string shown = candidate.ref.substr(std::string("refs/remotes/").size());
         if (!ctx.gitMayFail({"rev-parse", "-q", "--verify", local}).ok()) {
+            // git cannot make refs/heads/<name> when a branch is below it or at a prefix of it.
+            std::string inTheWay = gg::trim(ctx.gitMayFail({"for-each-ref", "--count=1", "--format=%(refname:lstrip=2)",
+                                                            local + "/"}).out);
+            for (auto slash = candidate.name.find('/'); inTheWay.empty() && slash != std::string::npos;
+                 slash = candidate.name.find('/', slash + 1))
+                if (ctx.gitMayFail({"rev-parse", "-q", "--verify", "refs/heads/" + candidate.name.substr(0, slash)}).ok())
+                    inTheWay = candidate.name.substr(0, slash);
+            if (!inTheWay.empty()) {
+                if (why.empty())
+                    why = "The commit is on " + shown + ", but the branch " + inTheWay + " is in the way of " + candidate.name;
+                continue;
+            }
             candidate.create = true;
             return candidate;
         }
@@ -784,11 +810,16 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             if (remote) {
                 const std::string ref = "refs/heads/" + remote->name;
                 if (remote->create) {
-                    ctx.git({"branch", "--track", remote->name, remote->ref});
+                    // The rollback (branch -D) also removes branch.<name>.*, so it covers the upstream.
+                    ctx.git({"branch", "--no-track", remote->name, remote->ref});
                     ctx.rollback.push_back([name = remote->name](MutationContext& c) {
                         const auto res = c.gitMayFail({"branch", "-D", name});
                         return res.ok() ? std::string() : firstLineOf(res.message());
                     });
+                    // Not part of the edit: a configuration that cannot be written is a notice, not an error.
+                    const auto up = ctx.gitMayFail({"branch", "--set-upstream-to=" + remote->ref, remote->name});
+                    if (!up.ok())
+                        ctx.info = "The upstream of " + remote->name + " was not set: " + firstLineOf(up.message());
                 } else {
                     const std::string oldId = gg::trim(ctx.git({"rev-parse", "--verify", ref}).out);
                     ctx.git({"branch", "-f", "--no-track", remote->name, remote->ref});
@@ -810,7 +841,11 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                     throw MutationError{Outcome::Failed, "The edit session file was not written", {}};
             }
         },
-        [this, target, detach, edit](const core::MutationFinishedEvent& e) {
+        [this, label, target, detach, edit](const core::MutationFinishedEvent& e) {
+            if (e.outcome == Outcome::Ok && !e.message.empty()) {
+                m_session.app().notify(App::Notice::Warning, label, e.message);
+                return;
+            }
             if (e.outcome == Outcome::LocalChanges) {
                 Form f;
                 f.title = "Stash and switch";

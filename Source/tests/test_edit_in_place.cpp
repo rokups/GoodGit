@@ -722,4 +722,85 @@ GG_TEST("edit-in-place", "Edit commit: a session file that cannot be written put
     unblockSessionFile(p);
 }
 
+namespace {
+
+// Edit commit on r.f2 is refused with `text`; HEAD, the refs and the session are as before.
+void refusedEdit(Scenario& s, const RemoteRepo& r, const std::string& text)
+{
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    const std::string before = repoState(s, p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK_STR_EQ(s.app.errorMessage(), text);
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK(!detached(s, p));
+    GG_CHECK(!s.session()->editSession());
+    GG_CHECK(noSessionFile(p));
+}
+
+} // namespace
+
+GG_TEST("edit-in-place", "Edit commit is refused when a branch below the new branch name exists")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    s.git(r.path, {"branch", "-q", "feature/x", "main"});
+    refusedEdit(s, r, "The commit is on origin/feature, but the branch feature/x is in the way of feature");
+}
+
+GG_TEST("edit-in-place", "Edit commit is refused when a branch at a prefix of the new branch name exists")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    s.git(p, {"push", "-q", "origin", ":feature"});
+    s.git(p, {"push", "-q", "origin", r.f2 + ":refs/heads/feature/x"});
+    s.git(p, {"branch", "-q", "feature", "main"});
+    GG_REQUIRE(s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/remotes/origin/feature/x"}).ok());
+    refusedEdit(s, r, "The commit is on origin/feature/x, but the branch feature is in the way of feature/x");
+}
+
+GG_TEST("edit-in-place", "Edit commit on a remote with a slash in its name makes the branch without the remote")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    s.git(p, {"remote", "rename", "origin", "up/stream"});
+    GG_REQUIRE(s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/remotes/up/stream/feature"}).ok());
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.f2, "feature"));
+    s.settle();
+    GG_CHECK(detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f2);
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/stream/feature"}).ok());
+    GG_CHECK_STR_EQ(s.gitOut(p, {"rev-parse", "--abbrev-ref", "feature@{upstream}"}), "up/stream/feature");
+}
+
+GG_TEST("edit-in-place", "Edit commit: an upstream that cannot be set is a notice, not an error")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    // Each write of the configuration fails while the lock file exists.
+    const fs::path lock = p / ".git" / "config.lock";
+    std::ofstream(lock).put('\n');
+    const std::uint64_t seen = lastToast(s);
+    const bool started = editCommit(s, p, r.f2, "feature");
+    std::error_code ec;
+    fs::remove(lock, ec);
+    GG_REQUIRE(started);
+    GG_CHECK(noticeSays(s, seen, "The upstream of feature was not set: "));
+    s.settle();
+    GG_CHECK(detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f2);
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), s.revParse(p, "origin/feature"));
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "--abbrev-ref", "feature@{upstream}"}).ok());
+    GG_CHECK(!noSessionFile(p));
+}
+
 } // namespace ggtest
