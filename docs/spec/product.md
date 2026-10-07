@@ -286,7 +286,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   selection can show "staged" vs "unstaged" diffs.
 - **N** Optional stash rows, shown as badges on their base commits (toggle).
 - **K** Scope follows the branch/tag/remote selection in the side panels. Search/filter by
-  message, ID, author, branch or tag. Reveal a commit (loads more history until found, cancellable).
+  message, ID, author, branch or tag. Reveal a commit (loads more history until found, cancellable; a commit that a
+  collapsed merge hides expands that merge and each nested one, which stay expanded).
   "Show more" for collapsed regions. Expand and collapse merge history. Unique shortest-prefix
   IDs.
 - **K** Keyboard: ↑/↓ navigation, N (new), Alt+N (new detached), Alt+Space (the focused row's context menu; every context menu opens this way), E (edit
@@ -299,7 +300,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   Reset \<branch\> to here… (Soft, Mixed or Hard), Interactive rebase selection… | Cherry-pick, Cherry-pick (no commit), Revert, Revert (no commit) | Edit commit (checkout detached), Duplicate, Squash…,
   Split…, Simplify parents, Drop commit… | Go to parent, Go to child, Filter by author, Copy ▸ (ID, full description), Expand / Collapse merged history.
   **N** The header has a HEAD button that reveals and selects the HEAD commit. Go to parent and Go to child
-  (a submenu for a merge or for several children) reveal and select the commit; Filter by author sets the filter
+  (a submenu for a merge or for several children) reveal and select the commit, as Reveal does; Filter by author sets the filter
   to the author's name. No keyboard shortcut.
   The menu of a branch badge has the branch actions.
 - **K** Working-tree context menu: Commit…, Discard changes….

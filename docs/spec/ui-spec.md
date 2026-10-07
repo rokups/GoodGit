@@ -242,8 +242,7 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   (Delete branch, Push): the menu of a branch badge has them (right click on the badge).
   *Go to parent* and *Go to child* (single selected commit) reveal and select the commit: one parent or child is
   a plain item, more (a merge commit; a commit with several children among the loaded rows) are a submenu with
-  an item "\<short ID\> \<subject\>" each (ids `###go_<ID>`). A parent that a collapsed merge hides (it has no
-  row) expands the merge first, then is revealed. *Go to parent* is disabled for a root commit
+  an item "\<short ID\> \<subject\>" each (ids `###go_<ID>`). *Go to parent* is disabled for a root commit
   ("The commit has no parent."), *Go to child* when no loaded row has the commit as a parent ("No child in the
   loaded history."). *Filter by author* (single selected commit) puts the author's name in the filter field and
   filters as a typed text does (the search text has name and email).
@@ -262,7 +261,8 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   badge→commit or badge (a menu `##branch_drop_chooser`: Merge into, Rebase onto, Move here; Shift = move at once),
   files from Changes→commit (move changes).
 - Reveal: loads more history until the commit is found; progress in the activity area,
-  cancellable.
+  cancellable. A commit that a collapsed merge hides (it has no row) expands that merge, and each nested collapsed
+  merge, and is selected; the merges stay expanded. The notice shows only when the commit is not in the scope.
 - Scope: branch/tag/remote visibility from the side panels.
 
 ### 2.x Drag and drop (Phase 3)

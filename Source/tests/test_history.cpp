@@ -1543,6 +1543,112 @@ GG_TEST("history", "Reveal of a visible commit below a collapsed merge is found"
     GG_CHECK(std::any_of(run.rows.begin(), run.rows.end(), [&](const auto& row) { return row.id.hex() == below; }));
 }
 
+namespace {
+
+// Whether a notice says that a commit is outside the history scope.
+bool scopeNotice(Scenario& s)
+{
+    return std::any_of(s.app.toasts().begin(), s.app.toasts().end(),
+        [](const auto& t) { return t.message.find("is not in the current history scope") != std::string::npos; });
+}
+
+} // namespace
+
+GG_TEST("history", "Reveal expands the collapsed merge that hides a commit")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string merge = s.revParse(repo, "main");
+    const std::string side = s.revParse(repo, "feature~1");
+    s.git(repo, {"branch", "-q", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
+    GG_REQUIRE(findRow(s, merge)->collapsed);
+    GG_REQUIRE(findRow(s, side) == nullptr);
+    s.session()->revealCommit(Oid::fromHex(side));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == side; }));
+    GG_CHECK(findRow(s, side) != nullptr);
+    GG_CHECK(!findRow(s, merge)->collapsed);
+    GG_CHECK(s.waitIdle());
+    GG_CHECK(!scopeNotice(s));
+}
+
+GG_TEST("history", "Reveal queued before the expand of the merge that hides its commit is sent again, not answered with a notice")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string merge = s.revParse(repo, "main");
+    const std::string side = s.revParse(repo, "feature~1");
+    s.git(repo, {"branch", "-q", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
+    GG_REQUIRE(findRow(s, merge)->collapsed);
+    // The reveal is in the queue before the reload of the expand: its answer names a merge that is expanded now.
+    s.session()->revealCommit(Oid::fromHex(side));
+    s.session()->history().toggleMerge(Oid::fromHex(merge));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == side; }));
+    GG_CHECK(findRow(s, side) != nullptr);
+    GG_CHECK(!findRow(s, merge)->collapsed);
+    GG_CHECK(s.waitIdle());
+    GG_CHECK(!scopeNotice(s));
+}
+
+GG_TEST("history", "Reveal of a commit outside the scope still shows the notice")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    // A commit that no ref reaches.
+    const std::string orphan = s.gitOut(repo, {"commit-tree", "-m", "Orphan", "HEAD^{tree}"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, s.revParse(repo, "main")) != nullptr && !s.session()->history().loading(); }));
+    const auto before = s.session()->selection();
+    s.session()->revealCommit(Oid::fromHex(orphan.substr(0, 40)));
+    GG_CHECK(s.waitUntil([&] { return scopeNotice(s); }));
+    GG_CHECK(s.session()->selection().kind == before.kind && s.session()->selection().id == before.id);
+}
+
+GG_TEST("history", "Expanded merge stays expanded after the reveal and a reload")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string merge = s.revParse(repo, "main");
+    const std::string side = s.revParse(repo, "feature~1");
+    s.git(repo, {"branch", "-q", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !s.session()->history().loading(); }));
+    s.session()->revealCommit(Oid::fromHex(side));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().id.hex() == side; }));
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "x"});
+    const std::string head = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, head) != nullptr && !s.session()->history().loading(); }));
+    GG_CHECK(findRow(s, merge) != nullptr && !findRow(s, merge)->collapsed);
+    GG_CHECK(findRow(s, side) != nullptr);
+}
+
+GG_TEST("history", "Reveal expands nested collapsed merges")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    // Branch b is merged into a, and a into main; no ref is left for a side commit.
+    s.git(repo, {"switch", "-q", "-c", "a"});
+    s.commitFile(repo, "a1.txt", "a1\n", "A 1");
+    s.git(repo, {"switch", "-q", "-c", "b"});
+    s.commitFile(repo, "b1.txt", "b1\n", "B 1");
+    const std::string target = s.revParse(repo, "b");
+    s.git(repo, {"switch", "-q", "a"});
+    s.commitFile(repo, "a2.txt", "a2\n", "A 2");
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "Merge b", "b"});
+    const std::string inner = s.revParse(repo, "a");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "main2.txt", "m2\n", "Main 2");
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "Merge a", "a"});
+    const std::string outer = s.revParse(repo, "main");
+    s.git(repo, {"branch", "-q", "-D", "a", "b"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, outer) != nullptr && !s.session()->history().loading(); }));
+    GG_REQUIRE(findRow(s, target) == nullptr);
+    s.session()->revealCommit(Oid::fromHex(target));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == target; }));
+    GG_CHECK(findRow(s, target) != nullptr);
+    GG_CHECK(findRow(s, outer) != nullptr && !findRow(s, outer)->collapsed);
+    GG_CHECK(findRow(s, inner) != nullptr && !findRow(s, inner)->collapsed);
+}
+
 GG_TEST("history", "Go to child selects the child; it is disabled without a child; two children give a submenu")
 {
     const fs::path repo = s.fixture(Recipe::Merges);

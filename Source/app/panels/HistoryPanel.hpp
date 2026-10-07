@@ -22,6 +22,7 @@ namespace ggui {
 class HistoryPanel {
 public:
     static constexpr int kPageSize = 2000;
+    static constexpr int kMaxRevealExpands = 32; // stops a reveal that expands without end
 
     explicit HistoryPanel(Session& session);
 
@@ -92,8 +93,10 @@ private:
     bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);
-    // Reveals a parent of `from`; expands `from` first when it is a collapsed merge that hides the parent.
-    void goToParent(const core::HistoryRow& from, core::Oid id);
+    // Reveals a parent; a collapsed merge that hides it is expanded (onReveal).
+    void goToParent(core::Oid id);
+    // A reveal that a collapsed merge hid: expands the merge and reveals again. False when the notice shows.
+    bool revealExpand(const core::RevealEvent& event);
     void drawGoToItems(const core::HistoryRow& from, bool single);
     // Runs the search for m_filter (typed, dropped or set by a menu item).
     void applyFilter();
@@ -112,6 +115,7 @@ private:
     std::unordered_map<core::Oid, int, core::OidHash> m_stagedIndex;
     core::RequestId m_query = 0;
     core::RequestId m_revealRequest = 0;
+    int m_revealExpands = 0; // merges that the current reveal expanded
     bool m_loading = false;
     bool m_complete = false;
     bool m_truncated = false;

@@ -184,10 +184,32 @@ void HistoryPanel::onReveal(const core::RevealEvent& event)
     if (event.found) {
         m_session.selectCommit(event.id);
         m_scrollToSelection = true;
+    } else if (revealExpand(event)) {
+        return; // the new request answers
     } else {
         m_session.app().notify(App::Notice::Warning, "Reveal", "Commit " + event.id.shortHex(kShortIdLength) + " is not in the current history scope");
     }
     m_pendingReveal.reset();
+}
+
+bool HistoryPanel::revealExpand(const core::RevealEvent& event)
+{
+    if (event.hiddenBy.isNull() || m_revealExpands >= kMaxRevealExpands)
+        return false;
+    const core::HistoryRow* merge = row(event.hiddenBy);
+    const bool expanded = std::find(m_toggledMerges.begin(), m_toggledMerges.end(), event.hiddenBy) != m_toggledMerges.end();
+    // An expanded merge that still hides the commit, or a merge with no row: the answer is from the walk before a
+    // reload, which the new request follows. Expanding an expanded merge again would collapse it.
+    const bool stale = expanded || !merge;
+    if (stale ? !m_loading : !merge->collapsed)
+        return false;
+    ++m_revealExpands;
+    if (!stale)
+        toggleMerge(event.hiddenBy);
+    // The request queues behind the reload and sees the walk with the merge expanded; a nested collapsed merge
+    // is answered the same way.
+    m_revealRequest = m_session.engine().revealCommit(event.id);
+    return true;
 }
 
 void HistoryPanel::onSearch(const core::SearchEvent& event)
@@ -214,6 +236,7 @@ void HistoryPanel::reveal(const core::Oid& id)
         return;
     }
     m_pendingReveal = id;
+    m_revealExpands = 0;
     m_revealRequest = m_session.engine().revealCommit(id);
 }
 
@@ -853,13 +876,9 @@ void HistoryPanel::applyFilter()
         m_searchRequest = m_session.engine().searchHistory(m_appliedFilter);
 }
 
-void HistoryPanel::goToParent(const core::HistoryRow& from, core::Oid id) // by value: a reload may free the row
+void HistoryPanel::goToParent(core::Oid id)
 {
-    // A collapsed merge has no row for a parent that only its side history leads to, and the walk cannot reveal a
-    // commit it dropped: expand the merge (a reload) first. The reveal request queues behind that reload.
-    // The first parent is never hidden this way: without a row it is only not loaded yet.
-    if (!m_index.count(id) && id != from.parents.front() && mergeToggle(from) && from.collapsed)
-        toggleMerge(from.id);
+    // Reveal expands a collapsed merge that hides the parent.
     m_session.revealCommit(id);
 }
 
@@ -869,7 +888,7 @@ void HistoryPanel::drawGoToItems(const core::HistoryRow& from, bool single)
     auto goTo = [&](const char* icon, const char* label, const std::vector<core::Oid>& ids, const char* none, bool parents) {
         auto go = [&](const core::Oid& id) {
             if (parents)
-                goToParent(from, id);
+                goToParent(id);
             else
                 m_session.revealCommit(id);
         };
