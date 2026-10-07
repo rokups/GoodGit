@@ -98,16 +98,27 @@ SelectionShape selectionShape(Session& s)
     SelectionShape shape;
     if (s.selection().kind != SelKind::Commit)
         return shape;
-    shape.ids.push_back(s.selection().id);
-    for (const auto& e : s.history().extraSelection())
-        if (std::find(shape.ids.begin(), shape.ids.end(), e) == shape.ids.end())
-            shape.ids.push_back(e);
     const auto& history = s.history();
-    auto position = [&](const core::Oid& id) {
+    const auto& extra = history.extraSelection();
+    // The first occurrence of each ID stays (a set of the IDs seen: linear, the extra list can hold thousands).
+    std::unordered_set<core::Oid, core::OidHash> seen;
+    seen.reserve(extra.size() + 1);
+    shape.ids.reserve(extra.size() + 1);
+    shape.ids.push_back(s.selection().id);
+    seen.insert(s.selection().id);
+    for (const auto& e : extra)
+        if (seen.insert(e).second)
+            shape.ids.push_back(e);
+    // Sorted by the position in the list; the position is looked up once for each ID.
+    std::vector<std::pair<std::ptrdiff_t, core::Oid>> byPosition;
+    byPosition.reserve(shape.ids.size());
+    for (const auto& id : shape.ids) {
         const core::HistoryRow* r = history.row(id);
-        return r ? r - history.rows().data() : std::ptrdiff_t(-1);
-    };
-    std::sort(shape.ids.begin(), shape.ids.end(), [&](const core::Oid& a, const core::Oid& b) { return position(a) < position(b); });
+        byPosition.emplace_back(r ? r - history.rows().data() : std::ptrdiff_t(-1), id);
+    }
+    std::stable_sort(byPosition.begin(), byPosition.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (size_t i = 0; i < byPosition.size(); ++i)
+        shape.ids[i] = byPosition[i].second;
     shape.contiguous = true;
     for (size_t i = 0; i + 1 < shape.ids.size(); ++i) {
         const core::HistoryRow* r = history.row(shape.ids[i]);

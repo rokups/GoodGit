@@ -2012,4 +2012,65 @@ GG_TEST("history", "Filter by author leaves the commits of that author")
         GG_CHECK(id.hex() != head);
 }
 
+GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick, with the row menu closed and open")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    constexpr int kCommits = 10000;
+    std::string stream;
+    for (int i = 1; i <= kCommits; ++i)
+        stream += importCommit("refs/heads/main", i, "c" + std::to_string(i), i - 1, 0, 1700000000 + i);
+    importMain(s, repo, stream);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    // Load the pages one after the other until all commits are in the list.
+    for (int guard = 0; guard < 20 && history.rows().size() < static_cast<size_t>(kCommits); ++guard) {
+        GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+        const size_t before = history.rows().size();
+        ctx->ScrollToBottom(s.child("//History", "##hist_table").c_str());
+        ctx->ItemClick("//History/**/###hist_load_more");
+        GG_REQUIRE(s.waitUntil([&] { return history.rows().size() > before; }, 60.0f));
+    }
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+    GG_REQUIRE(history.rows().size() >= static_cast<size_t>(kCommits));
+    const std::string last = history.rows().back().id.hex();
+    ctx->ScrollToTop(s.child("//History", "##hist_table").c_str());
+    const std::string first = history.rows().front().id.hex();
+    clickRow(s, first);
+    ctx->ScrollToBottom(s.child("//History", "##hist_table").c_str());
+    clickRow(s, last, ImGuiMod_Shift);
+    GG_CHECK_EQ(history.extraSelection().size(), history.rows().size() - 1);
+    GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), history.rows().size());
+    // The last rows are in view after the Shift-click (each of them is far in the extra list).
+    ctx->Yield(3);
+    const auto table = s.child("//History", "##hist_table");
+
+    // The average time of some frames.
+    const auto frameMs = [&](int frames) {
+        const auto start = std::chrono::steady_clock::now();
+        ctx->Yield(frames);
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames;
+    };
+    const double closedBottom = frameMs(20);
+    ctx->ScrollToTop(table.c_str());
+    ctx->Yield(3);
+    const double closedTop = frameMs(20);
+    // The row menu open on the selection: it asks for the shape of the selection in each frame.
+    ctx->ItemClick(rowRef(first).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK_EQ(history.extraSelection().size(), history.rows().size() - 1);
+    const double open = frameMs(20);
+    // The shape of the selection by itself.
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 5; ++i)
+        GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), history.rows().size());
+    const double shapeMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 5;
+    ctx->LogInfo("range timing: closed at the bottom %.2f ms, closed at the top %.2f ms, open %.2f ms, shape %.2f ms",
+        closedBottom, closedTop, open, shapeMs);
+    ctx->KeyPress(ImGuiKey_Escape);
+    GG_CHECK(closedBottom < timeBudgetMs(30));
+    GG_CHECK(closedTop < timeBudgetMs(30));
+    GG_CHECK(open < timeBudgetMs(50));
+    GG_CHECK(shapeMs < timeBudgetMs(15));
+}
+
 } // namespace ggtest
