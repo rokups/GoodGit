@@ -9,6 +9,11 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <functional>
+#include <optional>
+#include <string>
+#include <vector>
+
 namespace ggtest {
 
 GG_TEST("engine", "overlapping diff requests: only the newest result is shown")
@@ -105,6 +110,132 @@ GG_TEST("engine", "responsiveness on the large repository")
         probe.frames, probe.maxAppMs, probe.maxPresentMs, probe.maxTotalMs, probe.slowFrames);
     GG_CHECK(probe.frames > 50);
     GG_CHECK(probe.maxAppMs < timeBudgetMs(33.0));
+}
+
+namespace {
+
+bool branchExists(Scenario& s, const fs::path& repo, const std::string& name)
+{
+    return s.gitMayFail(repo, {"show-ref", "--verify", "-q", "refs/heads/" + name}).ok();
+}
+
+// Runs a custom mutation through the app and waits for its event.
+std::optional<ggui::core::MutationFinishedEvent> runMutation(
+    Scenario& s, std::function<void(ggui::core::MutationContext&)> fn)
+{
+    std::optional<ggui::core::MutationFinishedEvent> event;
+    s.session()->actions().run("rollback test", std::move(fn),
+        [&](const ggui::core::MutationFinishedEvent& e) { event = e; });
+    if (!s.waitUntil([&] { return event.has_value(); }))
+        return std::nullopt;
+    return event;
+}
+
+} // namespace
+
+GG_TEST("engine", "a mutation that fails runs its rollback steps in reverse order")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    std::vector<std::string> order;
+    const auto event = runMutation(s, [&](ggui::core::MutationContext& mc) {
+        for (const std::string name : {"rollback-a", "rollback-b"}) {
+            mc.git({"branch", name});
+            mc.rollback.push_back([name, &order](ggui::core::MutationContext& c) {
+                order.push_back(name);
+                c.gitMayFail({"branch", "-D", name});
+                return std::string();
+            });
+        }
+        throw ggui::core::MutationError{ggui::core::Outcome::Refused, "stop here", {}};
+    });
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Refused);
+    GG_CHECK_STR_EQ(event->message, "stop here");
+    GG_CHECK(!branchExists(s, repo, "rollback-a"));
+    GG_CHECK(!branchExists(s, repo, "rollback-b"));
+    GG_REQUIRE(order.size() == 2);
+    GG_CHECK_STR_EQ(order[0], "rollback-b");
+    GG_CHECK_STR_EQ(order[1], "rollback-a");
+    GG_CHECK(event->message.find("The rollback stopped") == std::string::npos);
+}
+
+GG_TEST("engine", "a mutation that is cancelled runs its rollback steps: the cancel does not stop their git commands")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const auto event = runMutation(s, [&](ggui::core::MutationContext& mc) {
+        mc.git({"branch", "rollback-a"});
+        mc.rollback.push_back([](ggui::core::MutationContext& c) {
+            const auto res = c.gitMayFail({"branch", "-D", "rollback-a"});
+            return res.ok() ? std::string() : res.message();
+        });
+        mc.token().cancel();
+        mc.git({"status"});
+    });
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Cancelled);
+    GG_CHECK(event->message.find("The rollback stopped") == std::string::npos);
+    GG_CHECK(!branchExists(s, repo, "rollback-a"));
+}
+
+GG_TEST("engine", "a rollback step that fails stops the rollback and its text is in the message")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const auto event = runMutation(s, [&](ggui::core::MutationContext& mc) {
+        mc.git({"branch", "rollback-first"});
+        mc.rollback.push_back([](ggui::core::MutationContext& c) {
+            c.gitMayFail({"branch", "-D", "rollback-first"});
+            return std::string();
+        });
+        mc.rollback.push_back([](ggui::core::MutationContext&) { return std::string("your changes are in stash@{0}"); });
+        throw ggui::core::MutationError{ggui::core::Outcome::Failed, "it failed", {}};
+    });
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Failed);
+    GG_CHECK_STR_EQ(event->message, "it failed\nThe rollback stopped: your changes are in stash@{0}");
+    GG_CHECK(branchExists(s, repo, "rollback-first"));
+}
+
+GG_TEST("engine", "a rollback step that throws stops the rollback and the error of its command is in the message")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const auto event = runMutation(s, [&](ggui::core::MutationContext& mc) {
+        mc.rollback.push_back([](ggui::core::MutationContext& c) {
+            c.git({"branch", "-D", "no-such-branch"});
+            return std::string();
+        });
+        throw ggui::core::MutationError{ggui::core::Outcome::Refused, "stop here", {}};
+    });
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Refused);
+    GG_CHECK(event->message.starts_with("stop here\nThe rollback stopped: "));
+    GG_CHECK(event->message.find("no-such-branch") != std::string::npos);
+}
+
+GG_TEST("engine", "a mutation that succeeds runs no rollback step")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    int runs = 0;
+    const auto event = runMutation(s, [&](ggui::core::MutationContext& mc) {
+        mc.git({"branch", "rollback-kept"});
+        mc.rollback.push_back([&runs](ggui::core::MutationContext&) {
+            ++runs;
+            return std::string();
+        });
+    });
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK_EQ(runs, 0);
+    GG_CHECK(branchExists(s, repo, "rollback-kept"));
 }
 
 } // namespace ggtest

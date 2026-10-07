@@ -110,6 +110,12 @@ the reconciler stops deferring to one (§4) when its `pid`/`pstart` process is g
 - **Torn or corrupt lines** (no trailing `\n`, invalid JSON, missing `op`) are skipped by readers.
   The next writer first appends a `\n` if the file does not end in one, so a torn line never
   merges with a new record.
+- **Rollback of a failed mutation.** A mutation can register rollback steps
+  (`MutationContext::rollback`). When the mutation fails or is cancelled, `Engine::mutate` runs
+  them in reverse order, before it finishes the operation, so the journal records the state after
+  the rollback. A cancel does not stop the git commands of the steps. The first step that fails
+  stops the rollback, and its text is added to the error
+  message ("The rollback stopped: …"). The outcome of the mutation does not change.
 
 ## 4. Recording plain git: the reconciler
 

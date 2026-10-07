@@ -424,7 +424,7 @@ gg::RunResult MutationContext::gitMayFail(std::vector<std::string> args, std::st
         r.args.push_back(std::move(a));
     r.cwd = m_cwd;
     r.input = std::move(input);
-    r.cancel = m_token;
+    r.cancel = m_rollingBack ? gg::CancelToken::none() : m_token;
     r.env = env;
     if (progress) {
         Engine* engine = &m_engine;
@@ -487,6 +487,29 @@ RequestId Engine::mutate(MutationSpec spec)
         } catch (const std::exception& e) {
             ev.outcome = Outcome::Failed;
             ev.message = e.what();
+        }
+        if (ev.outcome != Outcome::Ok) {
+            // Put back what the steps did, newest first; the first step that fails stops the rest.
+            ctx.m_rollingBack = true;
+            const auto steps = std::move(ctx.rollback); // a step cannot add a step to this pass
+            for (auto it = steps.rbegin(); it != steps.rend(); ++it) {
+                std::string text;
+                try {
+                    text = (*it)(ctx);
+                } catch (const MutationError& e) {
+                    text = e.message;
+                } catch (const gg::Cancelled&) {
+                    text = "Cancelled";
+                } catch (const std::exception& e) {
+                    text = e.what();
+                } catch (...) {
+                    text = "unknown error";
+                }
+                if (!text.empty()) {
+                    ev.message += "\nThe rollback stopped: " + text;
+                    break;
+                }
+            }
         }
         if (recorder) {
             for (auto& w : ctx.worktrees)

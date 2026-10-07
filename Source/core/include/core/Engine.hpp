@@ -182,7 +182,7 @@ class MutationContext {
 public:
     git_repository* repo() const { return m_repo; }
     const std::filesystem::path& cwd() const { return m_cwd; }
-    const gg::CancelToken& token() const { return m_token; }
+    const gg::CancelToken& token() const { return m_rollingBack ? gg::CancelToken::none() : m_token; }
     // Runs git; throws on failure (the mutation then finishes with its output).
     gg::RunResult git(std::vector<std::string> args, std::string input = {}, bool progress = false);
     gg::RunResult gitMayFail(std::vector<std::string> args, std::string input = {}, bool progress = false);
@@ -200,6 +200,10 @@ public:
     // Linked worktrees the mutation added, removed, locked or unlocked (journaled so Undo can
     // do the opposite).
     std::vector<gg::journal::WorktreeChange> worktrees;
+    // Steps that put things back. They run in reverse order when the mutation fails or is
+    // cancelled; a cancel does not stop their git commands. A step returns an error text, or an
+    // empty string; the first error stops the other steps.
+    std::vector<std::function<std::string(MutationContext&)>> rollback;
 
 private:
     friend class Engine;
@@ -210,6 +214,7 @@ private:
     git_repository* m_repo;
     std::filesystem::path m_cwd;
     const gg::CancelToken& m_token;
+    bool m_rollingBack = false; // the rollback steps run: their git commands ignore the cancel
 };
 
 // Thrown by MutationContext::git on failure; also usable by jobs to refuse with a message.
