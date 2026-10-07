@@ -1,7 +1,8 @@
 // History walk and lane layout, run on the history worker (product spec §3.1, §4.2).
 //
-// The walk is topological (children before parents), published in bounded batches, and keeps
-// its state between requests so "Show more", reveal and search continue where it stopped.
+// The walk is topological (children before parents; see HistoryState::kClockSkewSlack), published
+// in bounded batches, and keeps its state between requests so "Show more", reveal and search
+// continue where it stopped.
 #pragma once
 
 #include "core/Engine.hpp"
@@ -22,16 +23,30 @@ struct HistoryState {
     std::uint64_t query = 0;
     HistoryScope scope;
     SnapshotPtr snapshot;
-    // Incremental date-ordered walk (newest committer time first). libgit2's sorted revwalk
-    // walks the whole history before returning the first commit; this one does not.
+    // Incremental date-ordered walk (newest committer time first, like git's --date-order).
+    // libgit2's sorted revwalk walks the whole history before returning the first commit; this
+    // one does not. A commit comes after a child when the walk explores that child before it emits
+    // the commit. The walk explores each commit that is reachable from the tips through commits not
+    // more than kClockSkewSlack older than the commit to emit. So equal times and a small skew are
+    // safe. A child that is older than its parent by more than the slack, or that is reachable only
+    // through such an older commit (for example an old branch tip above a newer commit), can come
+    // after its parent. The layout then drops the edge.
+    static constexpr std::int64_t kClockSkewSlack = 3600;
     struct Pending {
         std::int64_t time;
         std::uint64_t order; // FIFO among equal times
         Oid id;
         bool operator<(const Pending& o) const { return time != o.time ? time < o.time : order > o.order; }
     };
-    std::priority_queue<Pending> queue;
-    std::unordered_set<Oid, OidHash> queued;
+    struct Node {
+        std::int64_t time = 0;
+        int pendingChildren = 0;  // children found by the explore step and not yet emitted
+        bool explored = false;    // the parents are known and counted
+        bool processed = false;   // emitted or dropped (also set for a commit that is missing)
+    };
+    std::unordered_map<Oid, Node, OidHash> nodes;
+    std::priority_queue<Pending> explore; // found, parents not counted yet
+    std::priority_queue<Pending> ready;   // explored, no child pending (may hold stale entries)
     std::uint64_t queueOrder = 0;
     bool started = false;
     bool complete = false;

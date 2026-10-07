@@ -74,18 +74,59 @@ int allocLane(HistoryState& st)
     return static_cast<int>(st.lanes.size() - 1);
 }
 
-void enqueue(git_repository* repo, HistoryState& st, const Oid& id)
+// Registers a commit for the walk. Does nothing when it is known already.
+void discover(git_repository* repo, HistoryState& st, const Oid& id)
 {
-    if (!st.queued.insert(id).second)
+    auto [it, inserted] = st.nodes.try_emplace(id);
+    if (!inserted)
         return;
+    HistoryState::Node& node = it->second;
     const git_oid g = toGit(id);
     git_commit* c = nullptr;
     if (git_commit_lookup(&c, repo, &g) != 0) {
-        git_error_clear(); // missing (shallow clone) or not a commit
+        git_error_clear(); // missing (shallow clone) or not a commit: it is never emitted
+        node.explored = true;
+        node.processed = true;
         return;
     }
-    st.queue.push({git_commit_time(c), st.queueOrder++, id});
+    node.time = git_commit_time(c);
     git_commit_free(c);
+    st.explore.push({node.time, st.queueOrder++, id});
+}
+
+// Takes the newest discovered commit, counts it as a pending child of each of its parents and
+// moves it to `ready` when none of its own children is pending.
+void exploreOne(git_repository* repo, HistoryState& st)
+{
+    const Oid id = st.explore.top().id;
+    st.explore.pop();
+    const git_oid oid = toGit(id);
+    git_commit* c = nullptr;
+    std::vector<Oid> parents;
+    bool found = true;
+    if (git_commit_lookup(&c, repo, &oid) == 0) {
+        const unsigned parentCount = git_commit_parentcount(c);
+        parents.reserve(parentCount);
+        for (unsigned i = 0; i < parentCount; ++i)
+            parents.push_back(toOid(*git_commit_parent_id(c, i)));
+        git_commit_free(c);
+    } else {
+        git_error_clear();
+        found = false;
+    }
+    for (const Oid& p : parents) {
+        discover(repo, st, p);
+        ++st.nodes[p].pendingChildren;
+    }
+    HistoryState::Node& node = st.nodes[id];
+    node.explored = true;
+    if (!found) {
+        // Missing commit: the walk never emits it, so it never decrements parents it did not count.
+        node.processed = true;
+        return;
+    }
+    if (node.pendingChildren == 0)
+        st.ready.push({node.time, st.queueOrder++, id});
 }
 
 // Walks until `stop` returns true, the walk ends or `limit` rows are emitted.
@@ -110,16 +151,50 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         batchLimit = kBatch;
     };
 
-    while (!st.complete && st.emitted < limit) {
-        if ((st.emitted & 63) == 0)
+    // One counter for both loops: each processed commit and each explore step counts.
+    unsigned work = 0;
+    auto checkCancel = [&] {
+        if ((work++ & 63) == 0)
             gg::throwIfCancelled(cancel);
-        if (st.queue.empty()) {
+    };
+
+    while (!st.complete && st.emitted < limit) {
+        checkCancel();
+        // Find the next commit to emit: the newest explored commit without a pending child, after
+        // the commits that are not too old are explored (see HistoryState::kClockSkewSlack).
+        bool exhausted = false;
+        for (;;) {
+            // Stale entry: the commit was emitted or got a new pending child after it was queued.
+            while (!st.ready.empty()) {
+                const HistoryState::Node& n = st.nodes[st.ready.top().id];
+                if (!n.processed && n.pendingChildren == 0)
+                    break;
+                st.ready.pop();
+            }
+            if (st.ready.empty()) {
+                if (st.explore.empty()) {
+                    exhausted = true;
+                    break;
+                }
+                checkCancel();
+                exploreOne(repo, st);
+                continue;
+            }
+            if (!st.explore.empty() && st.explore.top().time >= st.ready.top().time - HistoryState::kClockSkewSlack) {
+                checkCancel();
+                exploreOne(repo, st);
+                continue;
+            }
+            break;
+        }
+        if (exhausted) {
             st.complete = true;
             break;
         }
-        const git_oid oid = toGit(st.queue.top().id);
-        st.queue.pop();
-        const Oid id = toOid(oid);
+        const Oid id = st.ready.top().id;
+        st.ready.pop();
+        st.nodes[id].processed = true;
+        const git_oid oid = toGit(id);
         const bool inScope = st.scopeTips.count(id) || st.inScope.count(id);
         const bool published = st.remoteTips.count(id) || st.published.count(id);
         Commit commit = lookupCommit(repo, oid);
@@ -128,7 +203,12 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         parents.reserve(parentCount);
         for (unsigned i = 0; i < parentCount; ++i) {
             parents.push_back(toOid(*git_commit_parent_id(commit.get(), i)));
-            enqueue(repo, st, parents.back());
+        }
+        // The commit is done for the walk, in scope or not: its parents lose a pending child.
+        for (const auto& p : parents) {
+            HistoryState::Node& pn = st.nodes[p];
+            if (--pn.pendingChildren == 0 && pn.explored && !pn.processed)
+                st.ready.push({pn.time, st.queueOrder++, p});
         }
         for (const auto& p : parents) {
             if (inScope)
@@ -142,7 +222,7 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
             continue;
 
         // Shown when a ref points at it or a shown child leads to it; otherwise it lies on the side
-        // of a collapsed merge. Walking in time order, children come first.
+        // of a collapsed merge. Children come first (see HistoryState::kClockSkewSlack).
         const bool visible = st.scopeTips.count(id) || st.reach.count(id);
         st.reach.erase(id);
         if (!visible) {
@@ -202,7 +282,8 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         std::vector<Oid> layoutParents = parents;
         if (row.collapsed && !layoutParents.empty())
             layoutParents.resize(1);
-        // A parent already shown (clock skew in the time-ordered walk) gets no edge.
+        // A parent already shown gets no edge. The walk emitted it before this child, which the
+        // order guarantee of HistoryState::kClockSkewSlack does not exclude (large clock skew).
         layoutParents.erase(std::remove_if(layoutParents.begin(), layoutParents.end(),
                                 [&](const Oid& p) { return st.rowOf.count(p) != 0; }),
             layoutParents.end());
@@ -315,7 +396,7 @@ void historyStart(git_repository* repo, HistoryState& st, std::uint64_t query, c
             return; // not a commit (e.g. a tag on a tree)
         }
         git_object_free(obj);
-        enqueue(repo, st, id);
+        discover(repo, st, id);
         if (inScope)
             st.scopeTips.insert(id);
         if (remote)

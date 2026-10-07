@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <map>
 #include <set>
 
 namespace ggtest {
@@ -1647,6 +1648,313 @@ GG_TEST("history", "Reveal expands nested collapsed merges")
     GG_CHECK(findRow(s, target) != nullptr);
     GG_CHECK(findRow(s, outer) != nullptr && !findRow(s, outer)->collapsed);
     GG_CHECK(findRow(s, inner) != nullptr && !findRow(s, inner)->collapsed);
+}
+
+namespace {
+
+// One commit of a fast-import stream; the author and committer time is `time` (the same for all commits by default).
+std::string importCommit(const std::string& ref, int mark, const std::string& name, int from, int merge,
+    std::int64_t time = 1700000000)
+{
+    const std::string when = std::to_string(time) + " +0000\n";
+    std::string out = "commit " + ref + "\nmark :" + std::to_string(mark) + "\n";
+    out += "author Test User <test@example.com> " + when;
+    out += "committer Test User <test@example.com> " + when;
+    out += "data " + std::to_string(name.size()) + "\n" + name + "\n";
+    if (from)
+        out += "from :" + std::to_string(from) + "\n";
+    if (merge)
+        out += "merge :" + std::to_string(merge) + "\n";
+    return out + "\n";
+}
+
+} // namespace
+
+GG_TEST("history", "commits with equal times: each commit comes after all of its children")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // s <- b1 (branch x); s <- a3 <- a2 <- a1 <- m (main, second parent b1). All times are equal.
+    std::string stream = importCommit("refs/heads/main", 1, "s", 0, 0);
+    stream += importCommit("refs/heads/x", 2, "b1", 1, 0);
+    stream += importCommit("refs/heads/main", 3, "a3", 1, 0);
+    stream += importCommit("refs/heads/main", 4, "a2", 3, 0);
+    stream += importCommit("refs/heads/main", 5, "a1", 4, 0);
+    stream += importCommit("refs/heads/main", 6, "m", 5, 2);
+    s.git(repo, {"fast-import", "--quiet"}, stream);
+    s.git(repo, {"symbolic-ref", "HEAD", "refs/heads/main"});
+    s.git(repo, {"reset", "-q", "--hard"});
+    const std::string sId = s.revParse(repo, "main~4");
+    const std::string a3 = s.revParse(repo, "main~3");
+    const std::string a2 = s.revParse(repo, "main~2");
+    const std::string a1 = s.revParse(repo, "main~1");
+    const std::string m = s.revParse(repo, "main");
+    const std::string b1 = s.revParse(repo, "x");
+    s.git(repo, {"update-ref", "refs/remotes/origin/main", a1});
+    GG_REQUIRE(s.openRepository(repo));
+
+    const auto handle = gg::git2::openRepository(repo);
+    ggui::core::HistoryState state;
+    std::vector<ggui::core::HistoryRow> rows;
+    const auto emit = [&](std::shared_ptr<ggui::core::HistoryBatch> b) {
+        rows.insert(rows.end(), b->rows.begin(), b->rows.end());
+    };
+    ggui::core::HistoryScope scope;
+    scope.mergesCollapsed = false;
+    ggui::core::historyStart(handle.get(), state, 1, scope, s.session()->snapshot(), 1000, gg::CancelToken::none(), emit);
+    GG_REQUIRE(state.complete);
+
+    const std::map<std::string, std::string> names{{sId, "s"}, {a3, "a3"}, {a2, "a2"}, {a1, "a1"}, {m, "m"}, {b1, "b1"}};
+    std::string order;
+    std::map<std::string, size_t> index;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        index[rows[i].id.hex()] = i;
+        order += (names.count(rows[i].id.hex()) ? names.at(rows[i].id.hex()) : rows[i].id.hex()) + " ";
+    }
+    spdlog::info("equal times: row order {}", order);
+    GG_CHECK_EQ(rows.size(), size_t(6));
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const auto& row = rows[i];
+        size_t edges = 0;
+        for (const auto& line : row.lines)
+            if (line.fromPos == 1 && line.toPos == 2)
+                ++edges;
+        for (const auto& p : row.parents) {
+            const auto it = index.find(p.hex());
+            if (it != index.end())
+                GG_CHECK(it->second > i); // the parent comes after its child
+        }
+        GG_CHECK_EQ(edges, row.parents.size()); // one graph edge for each parent
+    }
+    for (const auto& row : rows) {
+        const std::string hex = row.id.hex();
+        const bool expected = hex == sId || hex == a3 || hex == a2 || hex == a1;
+        GG_CHECK_EQ(row.published, expected);
+    }
+}
+
+namespace {
+
+// Imports a fast-import stream into the empty repository `repo` and checks out main.
+void importMain(Scenario& s, const fs::path& repo, const std::string& stream)
+{
+    s.git(repo, {"fast-import", "--quiet"}, stream);
+    s.git(repo, {"symbolic-ref", "HEAD", "refs/heads/main"});
+    s.git(repo, {"reset", "-q", "--hard"});
+}
+
+// A walk of the open repository: all rows, in the order of the walk. The first call asks for `pageSize` rows and each
+// next call asks for `pageSize` more. Returns whether the walk reached the end of the history.
+bool walkRows(Scenario& s, const fs::path& repo, const ggui::core::HistoryScope& scope, int pageSize,
+    ggui::core::HistoryState& state, std::vector<ggui::core::HistoryRow>& rows)
+{
+    const auto handle = gg::git2::openRepository(repo);
+    const auto emit = [&](std::shared_ptr<ggui::core::HistoryBatch> b) {
+        rows.insert(rows.end(), b->rows.begin(), b->rows.end());
+    };
+    ggui::core::historyStart(handle.get(), state, 1, scope, s.session()->snapshot(), pageSize, gg::CancelToken::none(), emit);
+    for (int guard = 0; !state.complete && guard < 100; ++guard)
+        ggui::core::historyContinue(handle.get(), state, state.emitted + pageSize, gg::CancelToken::none(), emit);
+    return state.complete;
+}
+
+// The ids of `rows` as names ("c1 c2 ..."; an id without a name stays a hex string).
+std::string orderOf(const std::vector<ggui::core::HistoryRow>& rows, const std::map<std::string, std::string>& names)
+{
+    std::string order;
+    for (const auto& row : rows)
+        order += (names.count(row.id.hex()) ? names.at(row.id.hex()) : row.id.hex()) + " ";
+    return order;
+}
+
+// Each parent is below its child, and each row has one graph edge for each parent (merges are expanded).
+void checkChildrenFirst([[maybe_unused]] ImGuiTestContext* ctx, const std::vector<ggui::core::HistoryRow>& rows)
+{
+    std::map<std::string, size_t> index;
+    for (size_t i = 0; i < rows.size(); ++i)
+        index[rows[i].id.hex()] = i;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        size_t edges = 0;
+        for (const auto& line : rows[i].lines)
+            if (line.fromPos == 1 && line.toPos == 2)
+                ++edges;
+        for (const auto& p : rows[i].parents) {
+            const auto it = index.find(p.hex());
+            if (it != index.end())
+                GG_CHECK(it->second > i); // the parent comes after its child
+        }
+        GG_CHECK_EQ(edges, rows[i].parents.size());
+    }
+}
+
+// p is the parent of c and d; c is `gap` seconds older than p. Tips: main = c, y = d. The old time order puts p
+// first when d is newer than p and c is older than p.
+std::string skewStream(std::int64_t gap)
+{
+    const std::int64_t base = 1700000000;
+    std::string stream = importCommit("refs/heads/main", 1, "s", 0, 0, base);
+    stream += importCommit("refs/heads/main", 2, "p", 1, 0, base + 10000);
+    stream += importCommit("refs/heads/main", 3, "c", 2, 0, base + 10000 - gap);
+    stream += importCommit("refs/heads/y", 4, "d", 2, 0, base + 10600);
+    return stream;
+}
+
+} // namespace
+
+GG_TEST("history", "a child 10 minutes older than its parent: each commit comes after all of its children")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    importMain(s, repo, skewStream(600));
+    const std::map<std::string, std::string> names{{s.revParse(repo, "main~2"), "s"}, {s.revParse(repo, "main~1"), "p"},
+        {s.revParse(repo, "main"), "c"}, {s.revParse(repo, "y"), "d"}};
+    GG_REQUIRE(s.openRepository(repo));
+
+    ggui::core::HistoryState state;
+    std::vector<ggui::core::HistoryRow> rows;
+    ggui::core::HistoryScope scope;
+    scope.mergesCollapsed = false;
+    GG_REQUIRE(walkRows(s, repo, scope, 1000, state, rows));
+    spdlog::info("small skew: row order {}", orderOf(rows, names));
+    GG_CHECK_EQ(rows.size(), size_t(4));
+    checkChildrenFirst(ctx, rows);
+}
+
+GG_TEST("history", "a child older than the clock skew slack: the walk completes (the order is not defined)")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // The documented residual case: a child that is more than kClockSkewSlack older than its parent can come after
+    // the parent. The test checks only that the walk completes and shows each commit once; it does not check the order.
+    importMain(s, repo, skewStream(7200));
+    GG_REQUIRE(s.openRepository(repo));
+
+    ggui::core::HistoryState state;
+    std::vector<ggui::core::HistoryRow> rows;
+    ggui::core::HistoryScope scope;
+    scope.mergesCollapsed = false;
+    GG_CHECK(walkRows(s, repo, scope, 1000, state, rows));
+    GG_CHECK_EQ(rows.size(), size_t(4));
+    std::set<std::string> ids;
+    for (const auto& row : rows)
+        ids.insert(row.id.hex());
+    GG_CHECK_EQ(ids.size(), size_t(4));
+}
+
+GG_TEST("history", "commits with equal times below a collapsed merge: the merge hides them and reveal names it")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // s <- b1 <- b2 (branch x, deleted below); s <- a3 <- a2 <- a1 <- m (main, second parent b2). All times are equal.
+    std::string stream = importCommit("refs/heads/main", 1, "s", 0, 0);
+    stream += importCommit("refs/heads/x", 2, "b1", 1, 0);
+    stream += importCommit("refs/heads/x", 3, "b2", 2, 0);
+    stream += importCommit("refs/heads/main", 4, "a3", 1, 0);
+    stream += importCommit("refs/heads/main", 5, "a2", 4, 0);
+    stream += importCommit("refs/heads/main", 6, "a1", 5, 0);
+    stream += importCommit("refs/heads/main", 7, "m", 6, 3);
+    importMain(s, repo, stream);
+    const std::string b1 = s.revParse(repo, "x~1");
+    const std::string b2 = s.revParse(repo, "x");
+    const std::string m = s.revParse(repo, "main");
+    // Without its branch the side has no ref: the collapsed merge hides b1 and b2.
+    s.git(repo, {"update-ref", "-d", "refs/heads/x"});
+    GG_REQUIRE(s.openRepository(repo));
+
+    ggui::core::HistoryState state;
+    std::vector<ggui::core::HistoryRow> rows;
+    GG_REQUIRE(walkRows(s, repo, ggui::core::HistoryScope{}, 1000, state, rows));
+    GG_CHECK_EQ(rows.size(), size_t(5)); // s, a3, a2, a1, m
+    for (const auto& row : rows) {
+        GG_CHECK(row.id.hex() != b1);
+        GG_CHECK(row.id.hex() != b2);
+        if (row.id.hex() == m)
+            GG_CHECK(row.collapsed);
+    }
+    // The count of hidden commits comes after the row of the merge, in the state (and in a later batch).
+    GG_CHECK_EQ(state.collapsedCount[Oid::fromHex(m)], 2);
+    for (const std::string& hidden : {b1, b2}) {
+        const auto it = state.hiddenBy.find(Oid::fromHex(hidden));
+        GG_REQUIRE(it != state.hiddenBy.end());
+        GG_CHECK_STR_EQ(it->second.hex(), m);
+    }
+
+    for (const std::string& hidden : {b1, b2}) {
+        const RevealRun run = revealCore(s, repo, hidden);
+        GG_CHECK(!run.result.found);
+        GG_CHECK_STR_EQ(run.result.hiddenBy.hex(), m);
+        GG_CHECK(!run.again.found);
+        GG_CHECK_STR_EQ(run.again.hiddenBy.hex(), m);
+    }
+}
+
+GG_TEST("history", "many tips with equal times: each commit comes after all of its children, published follows origin/main")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // c1 <- c2 <- c3 <- c4 <- c5 (main); t1: c4 <- e1; t2: c2 <- f1 <- f2; t3: c3 <- g1; keep ref: c3 <- k1.
+    std::string stream = importCommit("refs/heads/main", 1, "c1", 0, 0);
+    stream += importCommit("refs/heads/main", 2, "c2", 1, 0);
+    stream += importCommit("refs/heads/main", 3, "c3", 2, 0);
+    stream += importCommit("refs/heads/main", 4, "c4", 3, 0);
+    stream += importCommit("refs/heads/main", 5, "c5", 4, 0);
+    stream += importCommit("refs/heads/t1", 6, "e1", 4, 0);
+    stream += importCommit("refs/heads/t2", 7, "f1", 2, 0);
+    stream += importCommit("refs/heads/t2", 8, "f2", 7, 0);
+    stream += importCommit("refs/heads/t3", 9, "g1", 3, 0);
+    stream += importCommit("refs/heads/tmpk", 10, "k1", 3, 0);
+    importMain(s, repo, stream);
+    const std::string k1 = s.revParse(repo, "tmpk");
+    // The keep ref is the only ref of k1; the default history scope shows the keep refs.
+    s.git(repo, {"update-ref", "refs/gg/keep/" + k1, k1});
+    s.git(repo, {"update-ref", "-d", "refs/heads/tmpk"});
+    const std::string c1 = s.revParse(repo, "main~4");
+    const std::string c2 = s.revParse(repo, "main~3");
+    const std::string c3 = s.revParse(repo, "main~2");
+    s.git(repo, {"update-ref", "refs/remotes/origin/main", c3});
+    const std::map<std::string, std::string> names{{c1, "c1"}, {c2, "c2"}, {c3, "c3"}, {s.revParse(repo, "main~1"), "c4"},
+        {s.revParse(repo, "main"), "c5"}, {s.revParse(repo, "t1"), "e1"}, {s.revParse(repo, "t2~1"), "f1"},
+        {s.revParse(repo, "t2"), "f2"}, {s.revParse(repo, "t3"), "g1"}, {k1, "k1"}};
+    GG_REQUIRE(s.openRepository(repo));
+
+    ggui::core::HistoryState state;
+    std::vector<ggui::core::HistoryRow> rows;
+    ggui::core::HistoryScope scope;
+    scope.mergesCollapsed = false;
+    GG_REQUIRE(walkRows(s, repo, scope, 1000, state, rows));
+    spdlog::info("many tips: row order {}", orderOf(rows, names));
+    GG_CHECK_EQ(rows.size(), size_t(10));
+    checkChildrenFirst(ctx, rows);
+    for (const auto& row : rows) {
+        const std::string hex = row.id.hex();
+        GG_CHECK_EQ(row.published, hex == c1 || hex == c2 || hex == c3);
+    }
+}
+
+GG_TEST("history", "commits with equal times: pages of 2 rows and of 1 row give the order of one large call")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // s <- b1 (branch x); s <- a3 <- a2 <- a1 <- m (main, second parent b1). All times are equal.
+    std::string stream = importCommit("refs/heads/main", 1, "s", 0, 0);
+    stream += importCommit("refs/heads/x", 2, "b1", 1, 0);
+    stream += importCommit("refs/heads/main", 3, "a3", 1, 0);
+    stream += importCommit("refs/heads/main", 4, "a2", 3, 0);
+    stream += importCommit("refs/heads/main", 5, "a1", 4, 0);
+    stream += importCommit("refs/heads/main", 6, "m", 5, 2);
+    importMain(s, repo, stream);
+    GG_REQUIRE(s.openRepository(repo));
+
+    ggui::core::HistoryScope scope;
+    scope.mergesCollapsed = false;
+    ggui::core::HistoryState wholeState;
+    std::vector<ggui::core::HistoryRow> whole;
+    GG_REQUIRE(walkRows(s, repo, scope, 1000, wholeState, whole));
+    GG_REQUIRE(whole.size() == 6);
+    for (const int pageSize : {2, 1}) {
+        ggui::core::HistoryState state;
+        std::vector<ggui::core::HistoryRow> rows;
+        GG_CHECK(walkRows(s, repo, scope, pageSize, state, rows));
+        GG_REQUIRE(rows.size() == whole.size());
+        for (size_t i = 0; i < rows.size(); ++i)
+            GG_CHECK_STR_EQ(rows[i].id.hex(), whole[i].id.hex());
+        checkChildrenFirst(ctx, rows);
+    }
 }
 
 GG_TEST("history", "Go to child selects the child; it is disabled without a child; two children give a submenu")
