@@ -482,30 +482,58 @@ GG_TEST("panels", "repositories: the context menu sets and clears an alias")
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Repositories");
     const std::string openPath = ggui::normalizeRepoPath(repo.string());
+    const std::string base = repo.filename().string();
     const std::string plainRow = repoRow(s, repo);
     GG_REQUIRE(s.itemExists(plainRow.c_str()));
     s.contextMenu(plainRow.c_str(), "Set alias...");
     GG_REQUIRE(s.dialogOpen("Set alias"));
-    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias").empty());
-    s.dialogText("Set alias", "alias", "grp/name");
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("group").empty());
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias") == base);
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias_path") == openPath);
+    // "Set" with the defaults stores nothing.
     s.dialogButton("Set alias", "Set");
     ctx->Yield(2);
     GG_REQUIRE(s.app.settings().data().repositories.size() == 1);
+    GG_CHECK(s.app.settings().data().repositories.front().alias.empty());
+    s.contextMenu(plainRow.c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    s.dialogText("Set alias", "group", "grp");
+    s.dialogText("Set alias", "alias", "name");
+    s.dialogButton("Set alias", "Set");
+    ctx->Yield(2);
     GG_CHECK_STR_EQ(s.app.settings().data().repositories.front().alias, "grp/name");
     const std::string groupRow = "//Repositories/###group_grp/repo_name/###row";
     GG_CHECK(s.itemExists(groupRow.c_str()));
-    // The dialog starts with the current alias; an empty text removes it.
+    // The dialog starts with the parts of the current alias; empty texts remove it.
     s.contextMenu(groupRow.c_str(), "Set alias...");
     GG_REQUIRE(s.dialogOpen("Set alias"));
-    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias") == "grp/name");
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("group") == "grp");
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias") == "name");
+    s.dialogText("Set alias", "group", "");
     s.dialogText("Set alias", "alias", "");
     s.dialogButton("Set alias", "Set");
     ctx->Yield(2);
     GG_CHECK(s.app.settings().data().repositories.front().alias.empty());
     GG_CHECK(s.itemExists(plainRow.c_str()));
     GG_CHECK(!s.itemExists(groupRow.c_str()));
+    // The Alias field has the focus: typed text and Enter set the alias.
+    s.contextMenu(plainRow.c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    ctx->KeyCharsReplace("typed");
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.app.settings().data().repositories.front().alias, "typed");
+    GG_CHECK(!s.dialogOpen("Set alias"));
+    // A group with an empty alias takes the base name.
+    s.contextMenu(repoRow(s, repo).c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    s.dialogText("Set alias", "group", "grp");
+    s.dialogText("Set alias", "alias", "");
+    s.dialogButton("Set alias", "Set");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.app.settings().data().repositories.front().alias, "grp/" + base);
     // Copy path puts the path of the entry on the clipboard.
-    s.contextMenu(plainRow.c_str(), "Copy path");
+    s.contextMenu(repoRow(s, repo).c_str(), "Copy path");
     GG_CHECK_STR_EQ(s.clipboard(), openPath);
 }
 
@@ -591,6 +619,38 @@ GG_TEST("panels", "repositories: a deduplicated name shows in a group")
     // A drop on the top level stores the base name as the alias: the row leaves the group.
     GG_REQUIRE(s.itemExists("//Repositories/###top_level"));
     ctx->ItemDragAndDrop(firstRow.c_str(), "//Repositories/###top_level");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(repoAlias(s, first), "dupe");
+    GG_CHECK(s.itemExists("//Repositories/repo_dupe/###row"));
+    GG_CHECK(!s.itemExists(firstRow.c_str()));
+}
+
+GG_TEST("panels", "repositories: Set alias on a repository in a prefix group starts with the prefix group")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "alpha/dupe");
+    const fs::path second = s.fixture(Recipe::Merges, "beta/dupe");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    const std::string firstRow = "//Repositories/###group_alpha/repo_dupe/###row";
+    GG_REQUIRE(s.itemExists(firstRow.c_str()));
+    s.contextMenu(firstRow.c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("group") == "alpha");
+    GG_CHECK(s.app.dialogs().current() && s.app.dialogs().current()->text("alias") == "dupe");
+    // "Set" with no change stores nothing: the row stays in the group.
+    s.dialogButton("Set alias", "Set");
+    ctx->Yield(2);
+    GG_CHECK(repoAlias(s, first).empty());
+    GG_CHECK(s.itemExists(firstRow.c_str()));
+    // An empty group with the base name stores the base name: the row goes to the top level.
+    s.contextMenu(firstRow.c_str(), "Set alias...");
+    GG_REQUIRE(s.dialogOpen("Set alias"));
+    s.dialogText("Set alias", "group", "");
+    s.dialogButton("Set alias", "Set");
     ctx->Yield(2);
     GG_CHECK_STR_EQ(repoAlias(s, first), "dupe");
     GG_CHECK(s.itemExists("//Repositories/repo_dupe/###row"));

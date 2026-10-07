@@ -110,4 +110,31 @@ std::string aliasWithGroup(const std::string& alias, const std::string& defaultN
     return normalizeAlias(target.empty() ? name : target + "/" + name);
 }
 
+AliasParts splitStoredAlias(const std::string& alias)
+{
+    auto segments = splitSegments(normalizeAlias(alias));
+    AliasParts parts;
+    parts.name = segments.back();
+    segments.pop_back();
+    for (const auto& segment : segments)
+        parts.group += (parts.group.empty() ? "" : "/") + segment;
+    return parts;
+}
+
+std::string aliasFromDialog(const std::string& groupText, const std::string& aliasText, const std::string& storedAlias,
+    const std::string& defaultGroup, const std::string& baseName)
+{
+    const std::string group = normalizeAlias(groupText);
+    std::string name = normalizeAlias(aliasText);
+    if (group.empty() && name.empty())
+        return {};
+    if (name.empty())
+        name = normalizeAlias(baseName);
+    if (name.empty())
+        return {};
+    if (normalizeAlias(storedAlias).empty() && group == normalizeAlias(defaultGroup) && name == normalizeAlias(baseName))
+        return {};
+    return normalizeAlias(group.empty() ? name : group + "/" + name);
+}
+
 } // namespace ggui

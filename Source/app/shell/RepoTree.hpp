@@ -36,4 +36,24 @@ std::string deduplicationGroup(const std::string& prefix);
 // `defaultName`, stays empty.
 std::string aliasWithGroup(const std::string& alias, const std::string& defaultName, const std::string& group);
 
+// A stored alias split for the "Set alias" dialog.
+struct AliasParts {
+    std::string group; // the part before the last "/" ("" when there is none)
+    std::string name;  // the last segment
+};
+
+// Splits a stored alias at its last "/": "work/web/app" gives the group "work/web" and the name "app";
+// "app" gives an empty group; an empty alias gives two empty strings.
+AliasParts splitStoredAlias(const std::string& alias);
+
+// The alias that "Set" of the "Set alias" dialog stores, from the group text and the alias text of the
+// dialog, `storedAlias` (the alias before the dialog), `defaultGroup` (deduplicationGroup of the prefix
+// of the repository) and `baseName` (the directory base name). The texts are normalised. Both empty
+// gives an empty result (the alias is removed). An empty alias text with a group takes `baseName`.
+// With no stored alias, a group equal to `defaultGroup` and an alias equal to `baseName` give an empty
+// result: the repository keeps following its deduplicated name. Otherwise the result is "group/alias",
+// or the alias alone when the group is empty.
+std::string aliasFromDialog(const std::string& groupText, const std::string& aliasText, const std::string& storedAlias,
+    const std::string& defaultGroup, const std::string& baseName);
+
 } // namespace ggui

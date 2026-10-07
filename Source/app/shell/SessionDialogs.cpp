@@ -4,12 +4,14 @@
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/RepoTree.hpp"
 #include "shell/RevResolve.hpp"
 #include "shell/Session.hpp"
 
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 
+#include <algorithm>
 #include <cctype>
 
 namespace ggui {
@@ -427,15 +429,39 @@ void Session::showRenameBranchDialog(const std::string& branch)
 void Session::showSetAliasDialog(const std::string& repoPath)
 {
     std::string current;
-    for (const auto& r : m_app.settings().data().repositories)
+    std::vector<std::string> paths;
+    for (const auto& r : m_app.settings().data().repositories) {
+        paths.push_back(r.path);
         if (r.path == repoPath)
             current = r.alias;
+    }
+    auto self = std::find(paths.begin(), paths.end(), repoPath);
+    if (self == paths.end())
+        self = paths.insert(paths.end(), repoPath);
+    // The deduplicated name of the repository: its group and its base name are the defaults.
+    const RecentName name = uniqueRecentNames(paths)[static_cast<size_t>(self - paths.begin())];
+    const std::string defaultGroup = deduplicationGroup(name.prefix);
+    std::string group = defaultGroup;
+    std::string alias = name.base;
+    if (!normalizeAlias(current).empty()) {
+        const AliasParts parts = splitStoredAlias(current);
+        group = parts.group;
+        alias = parts.name;
+    }
     Form f;
     f.title = "Set alias";
-    f.add(Field{Field::Text, "alias", "Alias for " + repoPath, current});
-    f.add(Field{Field::Info, "alias_note", "", "Use \"/\" for groups: group/subgroup/name. Leave empty to remove the alias."});
+    f.add(Field{Field::Info, "alias_path", "", repoPath});
+    f.add(Field{Field::Text, "group", "Group path", group});
+    // The Alias field has the focus: a typed name and Enter set the alias.
+    Field aliasField{Field::Text, "alias", "Alias", alias};
+    aliasField.focus = true;
+    f.add(std::move(aliasField));
+    f.add(Field{Field::Info, "alias_note", "",
+        "Use \"/\" in the group path for subgroups. An empty group path is the top level. Leave both empty to remove the alias."});
     // The application, not the session: another repository can open while the dialog is up.
-    f.buttons.push_back({"Set", [&app = m_app, repoPath](Form& form) { app.settings().setAlias(repoPath, form.text("alias")); }});
+    f.buttons.push_back({"Set", [&app = m_app, repoPath, current, defaultGroup, base = name.base](Form& form) {
+        app.settings().setAlias(repoPath, aliasFromDialog(form.text("group"), form.text("alias"), current, defaultGroup, base));
+    }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

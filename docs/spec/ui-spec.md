@@ -657,9 +657,14 @@ the panel without touching the repository.
   gets its base name as the alias and so goes to the top level. A drop on the own group changes nothing, also for a group
   that comes from the folder prefix. A drop on a group that normalising would change (a name with a space at an end, from a
   folder prefix) changes nothing.
-  - `Set alias`: *Alias for <path>* `##alias` (the alias now) · a note ("/" makes groups; empty removes
-    the alias) · *Set* / *Cancel*. The text is stored trimmed, also each "/" segment, without empty
-    segments.
+  - `Set alias`: the path (disabled text, form field `alias_path`) · two fields, *Group path* `##group` and *Alias* `##alias` (the Alias field has the keyboard focus: a typed name and Enter set the alias) · a note ("/" in the group path
+    makes subgroups; an empty group path is the top level; both empty removes the alias) · *Set* /
+    *Cancel*. The defaults: with an alias, the group is the part before its last "/" and the alias is the last
+    segment; without an alias, the group is the group of the folder prefix (can be empty) and the alias is
+    the base name of the folder. *Set* stores `group/alias` (the alias alone when the group is empty),
+    trimmed, also each "/" segment, without empty segments; a "/" in the Alias field adds groups. An
+    empty alias with a group takes the base name; both empty remove the alias. A repository without an alias,
+    with the group and the alias unchanged, stores nothing and so continues to follow its deduplicated name.
 - **Worktrees** `"Worktrees"` (M): header Add worktree… `###add_worktree` (disabled while HEAD
   is unborn); rows `worktree_<name>` (git's id, the directory name) with "(main)", "(bare)", a lock
   icon, "(missing)" (directory gone; dimmed), "(prunable)" (git worktree prune would remove it:

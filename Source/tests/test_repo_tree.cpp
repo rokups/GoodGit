@@ -172,4 +172,42 @@ GG_TEST("shell", "repo tree: aliasWithGroup moves the name under a group")
     GG_CHECK_STR_EQ(aliasWithGroup("work/web/app", "app", "work/web"), "work/web/app"); // the own group
 }
 
+GG_TEST("shell", "repo tree: splitStoredAlias splits at the last slash")
+{
+    using ggui::splitStoredAlias;
+    GG_CHECK_STR_EQ(splitStoredAlias("app").group, "");
+    GG_CHECK_STR_EQ(splitStoredAlias("app").name, "app");
+    GG_CHECK_STR_EQ(splitStoredAlias("work/app").group, "work");
+    GG_CHECK_STR_EQ(splitStoredAlias("work/app").name, "app");
+    GG_CHECK_STR_EQ(splitStoredAlias("a/b/c/app").group, "a/b/c");
+    GG_CHECK_STR_EQ(splitStoredAlias("a/b/c/app").name, "app");
+    GG_CHECK_STR_EQ(splitStoredAlias("").group, "");
+    GG_CHECK_STR_EQ(splitStoredAlias("").name, "");
+}
+
+GG_TEST("shell", "repo tree: aliasFromDialog gives the alias to store")
+{
+    using ggui::aliasFromDialog;
+    GG_CHECK_STR_EQ(aliasFromDialog("", "name", "", "", "base"), "name");                // no group
+    GG_CHECK_STR_EQ(aliasFromDialog("a/b", "name", "", "", "base"), "a/b/name");         // a nested group
+    GG_CHECK_STR_EQ(aliasFromDialog("", "", "old/x", "", "base"), "");                   // both empty removes
+    GG_CHECK_STR_EQ(aliasFromDialog(" / ", "  ", "", "p", "base"), "");                  // also after normalising
+    GG_CHECK_STR_EQ(aliasFromDialog("grp", "", "", "", "base"), "grp/base");             // an empty alias takes the base name
+    GG_CHECK_STR_EQ(aliasFromDialog("grp", " ", "", "", ""), "");                        // no base name: nothing
+    GG_CHECK_STR_EQ(aliasFromDialog(" g // h ", " n ", "", "", "base"), "g/h/n");        // spaces around segments
+    GG_CHECK_STR_EQ(aliasFromDialog("", "x/y", "", "", "base"), "x/y");                  // "/" in the alias adds groups
+    // Unchanged defaults with no stored alias: nothing, the repository follows its deduplicated name.
+    GG_CHECK_STR_EQ(aliasFromDialog("p/q", "base", "", "p/q", "base"), "");
+    GG_CHECK_STR_EQ(aliasFromDialog("", "base", "", "", "base"), "");
+    // An empty group on a repository in a prefix group stores the base name.
+    GG_CHECK_STR_EQ(aliasFromDialog("", "base", "", "p", "base"), "base");
+    // A prefix group that differs from its normalised form only by spaces at an end is the same group.
+    GG_CHECK_STR_EQ(aliasFromDialog(" work", "base", "", " work", "base"), "");
+    GG_CHECK_STR_EQ(aliasFromDialog("work", "base", "", " work", "base"), "");
+    // Unchanged values with a stored alias keep it, also when they equal the defaults.
+    GG_CHECK_STR_EQ(aliasFromDialog("g", "n", "g/n", "p", "base"), "g/n");
+    GG_CHECK_STR_EQ(aliasFromDialog("p", "base", "p/base", "p", "base"), "p/base");
+    GG_CHECK_STR_EQ(aliasFromDialog("", "base", "base", "", "base"), "base");
+}
+
 } // namespace ggtest

@@ -55,6 +55,7 @@ struct Field {
     CommitPreview preview;
     std::string previewFor;
     bool previewValid = false;
+    bool focus = false; // the field that gets the keyboard focus when the dialog opens (none set: the first text field)
 };
 
 struct FormButton {

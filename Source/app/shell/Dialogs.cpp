@@ -170,12 +170,14 @@ void Dialogs::draw()
         ImGui::PopID();
     }
     bool enterPressed = false;
+    const bool focusNamed = std::any_of(form.fields.begin(), form.fields.end(), [](const Field& f) { return f.focus; });
     for (size_t i = 0; i < form.fields.size(); ++i) {
         Field& f = form.fields[i];
         if (f.visible && !f.visible(form))
             continue;
         const std::string id = "##" + f.id;
-        if (m_focusFirst && (f.kind == Field::Text || f.kind == Field::Commit || f.kind == Field::Password || f.kind == Field::Multiline)) {
+        if (m_focusFirst && (!focusNamed || f.focus)
+            && (f.kind == Field::Text || f.kind == Field::Commit || f.kind == Field::Password || f.kind == Field::Multiline)) {
             ImGui::SetKeyboardFocusHere();
             m_focusFirst = false;
         }
