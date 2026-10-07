@@ -281,6 +281,12 @@ private:
 // messages typed for this rebase; stopping again further on is not an error (ctx.info says why).
 void rebaseStep(core::MutationContext& ctx, std::vector<std::string> args);
 
+// An amend replaced `before` with HEAD's commit: deletes the keep ref of `before` in the same
+// operation (Actions.cpp), so that Undo brings it back. Nothing to do without that ref or when the
+// amend made no new commit. The rule applies only when no native rebase is in progress: the finish
+// of the rebase owns that case. The new commit gets its keep ref from the operation's maintenance.
+void dropAmendedKeep(core::MutationContext& ctx, const std::string& before);
+
 // Joins paths after "--" for a git command line.
 std::vector<std::string> withPaths(std::vector<std::string> args, const std::vector<std::string>& paths);
 

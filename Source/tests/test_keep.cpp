@@ -2004,7 +2004,7 @@ std::string openOnKeptCommit(ImGuiTestContext* ctx, Scenario& s, const fs::path&
     return s.head(repo);
 }
 
-GG_TEST("keep", "amending the kept tip through the app keeps the amended commit in its own operation; Undo drops its keep ref")
+GG_TEST("keep", "amending the kept tip through the app replaces its keep ref in its own operation; Undo restores the old one, Redo the new one")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = openOnKeptCommit(ctx, s, repo);
@@ -2020,7 +2020,8 @@ GG_TEST("keep", "amending the kept tip through the app keeps the amended commit 
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != x; }));
     s.settle();
     const std::string x2 = s.head(repo);
-    GG_CHECK(keepRefs(s, repo) == names({x, x2})); // x2 does not descend from x: x stays kept
+    const std::string amended = refState(s, repo);
+    GG_CHECK(keepRefs(s, repo) == names({x2})); // the amend deletes the keep ref of x it replaced
     {
         const auto made = opsChanging(repo, gg::keep::refName(x2), true);
         GG_REQUIRE(made.size() == 1);
@@ -2032,6 +2033,9 @@ GG_TEST("keep", "amending the kept tip through the app keeps the amended commit 
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(becomes(s, repo, kept));
     GG_CHECK(keepRefs(s, repo) == names({x}));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_CHECK(becomes(s, repo, amended));
+    GG_CHECK(keepRefs(s, repo) == names({x2}));
     GG_CHECK_EQ(gitOpCount(repo), 0u);
 }
 
@@ -2141,6 +2145,30 @@ GG_TEST("keep", "a rebase of a detached HEAD stopped in an edit and continued in
     GG_CHECK_STR_EQ(s.head(repo), stopped); // the last step moved nothing: the tip is the stopped commit
     GG_CHECK(keepRefs(s, repo) == names({p, stopped}));
     GG_CHECK_EQ(housekeepingCount(repo), 0u);
+}
+
+GG_TEST("keep", "Amend and continue in a rebase of a kept detached HEAD leaves its keep ref to the rebase's operation: Undo restores it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
+    const std::string before = refState(s, repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
+    s.git(repo, {"rebase", "-i", "HEAD~1"}); // stops at p itself (fast-forwarded)
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_REQUIRE(s.head(repo) == p);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive; }));
+    s.settle();
+    s.write(repo, "p.txt", "amended\n");
+    s.git(repo, {"add", "p.txt"});
+    ctx->ItemClick("//###Toolbar/Amend and continue##tb_amend_continue");
+    GG_REQUIRE(s.waitUntil([&] { return !fs::exists(repo / ".git" / "rebase-merge"); }));
+    s.settle();
+    GG_CHECK(keepRefs(s, repo).size() >= 1); // the rebase's own rule decides which others (GG-5 part 2)
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(becomes(s, repo, before));
+    GG_CHECK(keepRefs(s, repo) == names({p}));
 }
 
 GG_TEST("keep", "a rebase of a branch stopped in a pass and finished in a terminal: the keep ref that goes with the finishing pass is housekeeping, not part of the rebase's operation")

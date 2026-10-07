@@ -215,6 +215,9 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     kept tip whose parent is on a branch leaves no keep ref; above another unreachable commit it
     keeps that commit. The deletion and the creation are the rewrite's own entries: no `keep refs`
     operation, and Undo and Redo restore them as any other keep entries (below).
+    An amend without descendants (the commit dialog), when no native rebase is in progress,
+    replaces its commit without a rewrite: it deletes `refs/gg/keep/<id>` of the amended commit itself, in the same
+    operation, and the new commit is kept as any commit that an operation creates on a detached HEAD.
   - *Undo and Redo.* A keep ref does not make an operation visible from another worktree (§5.1).
     Only a `keep refs` operation (`src` `gg`, `Operation::keepOnly()`) is passed over by Undo and
     Redo; an operation of a user that changed only keep refs is a target like any other (its

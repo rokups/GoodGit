@@ -7,8 +7,10 @@
 #include <libgg/Conflicts.hpp>
 #include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
+#include <libgg/Keep.hpp>
 #include <libgg/Outgoing.hpp>
 #include <libgg/Markers.hpp>
+#include <libgg/NativeRebase.hpp>
 #include <libgg/NewCommit.hpp>
 #include <libgg/Rewrite.hpp>
 #include <libgg/Undo.hpp>
@@ -384,6 +386,18 @@ void Actions::amend(const std::string& message, bool noVerify, bool messageOnly,
         false, false, false);
 }
 
+void dropAmendedKeep(MutationContext& ctx, const std::string& before)
+{
+    if (before.empty() || !gg::native::rebaseIdentity(ctx.repo()).empty())
+        return;
+    const std::string after = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
+    if (after == before)
+        return;
+    const auto kept = gg::keep::read(ctx.repo());
+    if (std::find(kept.begin(), kept.end(), before) != kept.end())
+        ctx.gitMayFail({"update-ref", "-d", gg::keep::refName(before), before}); // not fatal: the commit exists
+}
+
 void Actions::amendNow(const std::string& message, bool noVerify, bool messageOnly, Callback done)
 {
     const std::string label = messageOnly ? "reword HEAD" : "amend";
@@ -470,6 +484,8 @@ void Actions::amendNow(const std::string& message, bool noVerify, bool messageOn
                         + list;
                 }
             }
+            // The amended commit is replaced: a keep ref on it goes with the amend (Undo restores it).
+            dropAmendedKeep(ctx, before);
             // An edit session follows the amended commit.
             const fs::path file = editSessionFile(ctx);
             if (auto session = gg::edit::read(file); session && session->commit == before) {
