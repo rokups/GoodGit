@@ -190,9 +190,9 @@ bool Scenario::gitTransparent(const fs::path& repo, std::string* why)
             const bool dir = e.is_directory();
             // journal (+ .lock): undo history. reconcile.json: the reconciler's baseline and cursors.
             // cache/: disposable (conflict scan). rebase/: journal grouping of a native rebase in
-            // progress. edit/: Edit commit sessions (§4.3).
+            // progress. edit/: Edit commit sessions (§4.3); edit.tmp/: their temporary files.
             const bool ok = (!dir && (name == "journal" || name == "journal.lock" || name == "reconcile.json"))
-                || (dir && (name == "cache" || name == "rebase" || name == "edit"));
+                || (dir && (name == "cache" || name == "rebase" || name == "edit" || name == "edit.tmp"));
             if (!ok)
                 problems += "\n  unexpected entry in " + ggDir.generic_string() + ": " + name;
         }

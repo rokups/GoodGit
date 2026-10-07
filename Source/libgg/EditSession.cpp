@@ -1,5 +1,6 @@
 #include "libgg/EditSession.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Journal.hpp"
 
 #include <cstdlib>
@@ -46,11 +47,34 @@ bool write(const fs::path& file, const Session& session)
     fs::create_directories(file.parent_path(), ec);
     if (ec)
         return false;
-    std::ofstream out(file, std::ios::trunc);
-    out << "commit " << session.commit << "\nbranch " << session.branch << "\ndescendants " << session.descendants
-        << "\n";
-    out.flush();
-    return static_cast<bool>(out);
+    // Written in a sibling directory of the session files (gg/edit.tmp) and renamed over the target. The name
+    // of a session file is the id of a worktree, one path component, so it never names a file in another
+    // directory: no worktree id (foo, foo.tmp) can take the name of a temporary file. A write that fails
+    // leaves the earlier session.
+    const fs::path dir = file.parent_path();
+    const fs::path tmpDir = dir.parent_path() / (dir.filename().string() + ".tmp");
+    fs::create_directories(tmpDir, ec);
+    if (ec)
+        return false;
+    const fs::path tmp = tmpDir / file.filename();
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out.is_open())
+            return false; // the name is not ours to remove
+        out << "commit " << session.commit << "\nbranch " << session.branch << "\ndescendants " << session.descendants
+            << "\n";
+        out.flush();
+        if (!out) {
+            out.close();
+            fs::remove(tmp, ec);
+            return false;
+        }
+    }
+    if (replaceFile(tmp, file)) {
+        fs::remove(tmp, ec);
+        return false;
+    }
+    return true;
 }
 
 void clear(const fs::path& file)

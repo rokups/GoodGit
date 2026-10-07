@@ -5,6 +5,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <libgg/EditSession.hpp>
+
 #include <fstream>
 
 namespace ggtest {
@@ -802,5 +804,187 @@ GG_TEST("edit-in-place", "Edit commit: an upstream that cannot be set is a notic
     GG_CHECK(!s.gitMayFail(p, {"rev-parse", "--abbrev-ref", "feature@{upstream}"}).ok());
     GG_CHECK(!noSessionFile(p));
 }
+
+namespace {
+
+// ggui has the linked worktree "feature" open; origin/feature is two commits ahead of the local feature.
+// HEAD on the branch, then detached by the edit session, then a re-edit of a commit that only
+// origin/feature has: none is refused as "another worktree has the local branch".
+void editInOpenWorktree(Scenario& s, bool bare)
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    fs::path common = r.path;
+    if (bare) {
+        common = s.path("bare-common.git");
+        const std::string url = gg::trim(s.gitOut(r.path, {"remote", "get-url", "origin"}));
+        s.git(s.root(), {"clone", "-q", "--bare", url, common.string()});
+        s.git(common, {"config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"});
+        s.git(common, {"fetch", "-q", "origin"});
+        s.git(common, {"update-ref", "refs/heads/feature", r.f1});
+    } else {
+        s.git(common, {"branch", "-q", "feature", r.f1});
+    }
+    const fs::path wt = s.path("feature-wt");
+    s.git(common, {"worktree", "add", "-q", wt.string(), "feature"});
+    GG_REQUIRE(s.openRepository(wt));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    // HEAD is on the branch.
+    GG_CHECK(!detached(s, wt));
+    GG_REQUIRE(editCommit(s, wt, r.f2, "feature"));
+    s.settle();
+    GG_CHECK(s.app.errorMessage().empty());
+    GG_CHECK(detached(s, wt));
+    GG_CHECK_STR_EQ(s.revParse(wt, "feature"), r.f2);
+    // HEAD is detached by the session. A new commit on origin/feature, edited at once.
+    const std::string f3 = gg::trim(s.gitOut(wt, {"commit-tree", "-p", r.f2, "-m", "f3 feature", r.f2 + "^{tree}"}));
+    s.git(wt, {"update-ref", "refs/remotes/origin/feature", f3});
+    GG_REQUIRE(rowReady(s, f3));
+    s.settle();
+    s.contextMenu(rowRef(f3).c_str(), "Edit commit (checkout detached)");
+    GG_CHECK(editing(s, f3, "feature"));
+    s.settle();
+    GG_CHECK(s.app.errorMessage().empty());
+    GG_CHECK_STR_EQ(s.revParse(wt, "feature"), f3);
+    GG_CHECK_STR_EQ(s.head(wt), f3);
+}
+
+} // namespace
+
+GG_TEST("edit-in-place", "Edit commit in the open linked worktree of a bare repository is not refused for the branch it has")
+{
+    editInOpenWorktree(s, true);
+}
+
+GG_TEST("edit-in-place", "Edit commit in the open linked worktree of a normal repository is not refused for the branch it has")
+{
+    editInOpenWorktree(s, false);
+}
+
+namespace {
+
+// A bare repository whose HEAD names main. Its local main is one commit behind origin/main, and it has a
+// local feature. Git reports the bare path as the worktree of main, but no worktree has main checked out.
+struct BareMain {
+    fs::path common;
+    std::string tip; // origin/main, not in the local main
+};
+
+BareMain makeBareMain(Scenario& s)
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    BareMain b;
+    b.common = s.path("bare-main.git");
+    const std::string url = gg::trim(s.gitOut(r.path, {"remote", "get-url", "origin"}));
+    s.git(s.root(), {"clone", "-q", "--bare", url, b.common.string()});
+    s.git(b.common, {"config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"});
+    s.git(b.common, {"fetch", "-q", "origin"});
+    b.tip = s.revParse(b.common, "refs/remotes/origin/main");
+    s.git(b.common, {"update-ref", "refs/heads/main", b.tip + "~1"});
+    s.git(b.common, {"update-ref", "refs/heads/feature", r.f1});
+    return b;
+}
+
+} // namespace
+
+GG_TEST("edit-in-place", "Edit commit in a worktree on another branch is not refused for the main of a bare repository")
+{
+    const BareMain b = makeBareMain(s);
+    const fs::path wt = s.path("feature-wt");
+    s.git(b.common, {"worktree", "add", "-q", wt.string(), "feature"});
+    GG_REQUIRE(s.openRepository(wt));
+    GG_REQUIRE(rowReady(s, b.tip));
+    s.settle();
+    s.contextMenu(rowRef(b.tip).c_str(), "Edit commit (checkout detached)");
+    GG_CHECK(editing(s, b.tip, "main"));
+    s.settle();
+    GG_CHECK(s.app.errorMessage().empty());
+    GG_CHECK_STR_EQ(s.revParse(wt, "main"), b.tip);
+    GG_CHECK(detached(s, wt));
+}
+
+GG_TEST("edit-in-place", "a re-edit in the worktree on main of a bare repository is not refused for the bare main entry")
+{
+    const BareMain b = makeBareMain(s);
+    const fs::path wt = s.path("main-wt");
+    s.git(b.common, {"worktree", "add", "-q", wt.string(), "main"});
+    GG_REQUIRE(s.openRepository(wt));
+    GG_REQUIRE(editCommit(s, wt, b.tip, "main"));
+    s.settle();
+    GG_CHECK(detached(s, wt));
+    const std::string next = gg::trim(s.gitOut(wt, {"commit-tree", "-p", b.tip, "-m", "next main", b.tip + "^{tree}"}));
+    s.git(wt, {"update-ref", "refs/remotes/origin/main", next});
+    GG_REQUIRE(rowReady(s, next));
+    s.settle();
+    s.contextMenu(rowRef(next).c_str(), "Edit commit (checkout detached)");
+    GG_CHECK(editing(s, next, "main"));
+    s.settle();
+    GG_CHECK(s.app.errorMessage().empty());
+    GG_CHECK_STR_EQ(s.revParse(wt, "main"), next);
+}
+
+GG_TEST("edit-in-place", "Edit commit is refused in a bare repository when another linked worktree has the local branch")
+{
+    const BareMain b = makeBareMain(s);
+    const fs::path other = s.path("main-wt");
+    const fs::path wt = s.path("feature-wt");
+    s.git(b.common, {"worktree", "add", "-q", other.string(), "main"});
+    s.git(b.common, {"worktree", "add", "-q", wt.string(), "feature"});
+    GG_REQUIRE(s.openRepository(wt));
+    GG_REQUIRE(rowReady(s, b.tip));
+    s.settle();
+    const std::string before = repoState(s, wt);
+    s.contextMenu(rowRef(b.tip).c_str(), "Edit commit (checkout detached)");
+    const std::string title = "edit " + b.tip.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK(s.app.errorMessage().find("another worktree has the local branch main") != std::string::npos);
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, wt), before);
+    GG_CHECK(!s.session()->editSession());
+}
+
+GG_TEST("edit-in-place", "the session file is written beside a temp file: a write replaces the old content and leaves no temp file")
+{
+    const fs::path file = s.root() / "session-write" / "edit" / "key";
+    GG_REQUIRE(gg::edit::write(file, {"c1", "feature", 2}));
+    GG_REQUIRE(gg::edit::write(file, {"c2", "other", 3}));
+    const auto got = gg::edit::read(file);
+    GG_REQUIRE(got.has_value());
+    GG_CHECK_STR_EQ(got->commit, "c2");
+    GG_CHECK_STR_EQ(got->branch, "other");
+    GG_CHECK(got->descendants == 3);
+    GG_CHECK(!fs::exists(s.root() / "session-write" / "edit.tmp" / "key"));
+}
+
+GG_TEST("edit-in-place", "a session file write for worktree foo does not touch the session file of worktree foo.tmp")
+{
+    const fs::path dir = s.root() / "session-write-names" / "edit";
+    GG_REQUIRE(gg::edit::write(dir / "foo.tmp", {"c1", "feature", 2}));
+    GG_REQUIRE(gg::edit::write(dir / "foo", {"c2", "other", 3}));
+    const auto kept = gg::edit::read(dir / "foo.tmp");
+    GG_REQUIRE(kept.has_value());
+    GG_CHECK_STR_EQ(kept->commit, "c1");
+    const auto written = gg::edit::read(dir / "foo");
+    GG_REQUIRE(written.has_value());
+    GG_CHECK_STR_EQ(written->commit, "c2");
+}
+
+GG_TEST("edit-in-place", "a session file write that cannot make its temp file fails and leaves the old session")
+{
+    const fs::path file = s.root() / "session-write-fail" / "edit" / "key";
+    GG_REQUIRE(gg::edit::write(file, {"c1", "feature", 2}));
+    // A directory holds the name of the temp file; the failed write does not remove it.
+    const fs::path blocker = s.root() / "session-write-fail" / "edit.tmp" / "key";
+    std::error_code ec;
+    fs::create_directories(blocker, ec);
+    GG_CHECK(!gg::edit::write(file, {"c2", "other", 3}));
+    const auto got = gg::edit::read(file);
+    GG_REQUIRE(got.has_value());
+    GG_CHECK_STR_EQ(got->commit, "c1");
+    GG_CHECK_STR_EQ(got->branch, "feature");
+    GG_CHECK(fs::is_directory(blocker, ec));
+}
+
 
 } // namespace ggtest

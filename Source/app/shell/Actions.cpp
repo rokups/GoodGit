@@ -14,6 +14,7 @@
 #include <libgg/NewCommit.hpp>
 #include <libgg/Rewrite.hpp>
 #include <libgg/Undo.hpp>
+#include <libgg/Worktrees.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -651,6 +652,17 @@ struct RemoteBranch {
     bool create = false;
 };
 
+// True when a worktree other than the open one has the branch checked out. %(worktreepath) is not used: it
+// names the path of a bare repository for the branch its HEAD names, although no worktree has it.
+bool checkedOutElsewhere(MutationContext& ctx, const std::string& branchRef)
+{
+    const char* workdir = git_repository_workdir(ctx.repo());
+    for (const auto& w : gg::worktrees::parse(ctx.gitMayFail({"worktree", "list", "--porcelain", "-z"}).out))
+        if (!w.bare && w.branch == branchRef && !(workdir && gg::worktrees::samePath(w.path, fs::path(workdir))))
+            return true;
+    return false;
+}
+
 // The first usable remote-tracking branch containing `target`; none when it is on no remote branch.
 // A refusal names why the others are not usable: the local branch has diverged, another worktree has it,
 // or a branch is in the way of its name (refs/heads/a and refs/heads/a/b cannot both exist).
@@ -705,8 +717,7 @@ std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::str
                 why = "The commit is on " + shown + ", but the local branch " + candidate.name + " has diverged from it";
             continue;
         }
-        const std::string elsewhere = gg::trim(ctx.gitMayFail({"for-each-ref", "--format=%(worktreepath)", local}).out);
-        if (!elsewhere.empty() && candidate.name != headBranch) {
+        if (candidate.name != headBranch && checkedOutElsewhere(ctx, local)) {
             if (why.empty())
                 why = "The commit is on " + shown + ", but another worktree has the local branch " + candidate.name;
             continue;
