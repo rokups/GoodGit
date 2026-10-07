@@ -40,13 +40,17 @@ std::optional<Session> read(const fs::path& file)
     return s;
 }
 
-void write(const fs::path& file, const Session& session)
+bool write(const fs::path& file, const Session& session)
 {
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
+    if (ec)
+        return false;
     std::ofstream out(file, std::ios::trunc);
     out << "commit " << session.commit << "\nbranch " << session.branch << "\ndescendants " << session.descendants
         << "\n";
+    out.flush();
+    return static_cast<bool>(out);
 }
 
 void clear(const fs::path& file)

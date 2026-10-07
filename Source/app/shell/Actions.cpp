@@ -490,7 +490,7 @@ void Actions::amendNow(const std::string& message, bool noVerify, bool messageOn
             const fs::path file = editSessionFile(ctx);
             if (auto session = gg::edit::read(file); session && session->commit == before) {
                 session->commit = ctx.result;
-                gg::edit::write(file, *session);
+                (void)gg::edit::write(file, *session); // a session that is not updated stays as it was
             }
         },
         std::move(done), false, true, true, true);
@@ -692,6 +692,13 @@ std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::str
     return std::nullopt;
 }
 
+// The first line of a git error, for a rollback step that fails.
+std::string firstLineOf(const std::string& text)
+{
+    const auto lines = gg::splitLines(text);
+    return lines.empty() ? text : lines.front();
+}
+
 } // namespace
 
 void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit)
@@ -705,11 +712,15 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             // Edit commit: the branch to return to is the one HEAD is on (or the current edit
             // session's) if it contains the commit, else the first local branch that does, else
             // a local branch made (or fast-forwarded) from the first remote-tracking branch that
-            // does, after the switch, so a switch that fails leaves no branch behind.
+            // does, after the switch. The mutation is all or nothing: a step that fails after the
+            // first write runs the rollback steps, which put back the stash, HEAD and the branch.
+            const std::string headBefore = gg::trim(ctx.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out);
+            const std::string branchBefore = gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out);
             std::string branch;
+            std::string head;
             std::optional<RemoteBranch> remote;
             if (edit) {
-                std::vector<std::string> candidates{gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out)};
+                std::vector<std::string> candidates{branchBefore};
                 if (auto session = gg::edit::read(editSessionFile(ctx)))
                     candidates.push_back(session->branch);
                 for (const auto& b : candidates)
@@ -730,27 +741,73 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                         throw MutationError{Outcome::Refused, "The commit is not on a local branch", {}};
                     branch = remote->name;
                 }
+                // Read before the first write, so a target that does not resolve changes nothing.
+                head = gg::trim(ctx.git({"rev-parse", "--verify", target + "^{commit}"}).out);
             }
             collapseConflictStages(ctx);
-            if (stashFirst)
+            bool stashed = false;
+            if (stashFirst) {
+                auto stashTip = [&ctx] { return gg::trim(ctx.gitMayFail({"rev-parse", "-q", "--verify", "refs/stash"}).out); };
+                const std::string stashBefore = stashTip();
                 ctx.git({"stash", "push", "-q", "-m", "ggui: before switching to " + target});
+                stashed = stashTip() != stashBefore;
+                if (stashed)
+                    // Only on the commit it was made on; with --index, so the staged changes come back staged.
+                    ctx.rollback.push_back([headBefore](MutationContext& c) {
+                        const std::string safe = "your changes are in stash@{0}";
+                        if (gg::trim(c.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out) != headBefore)
+                            return safe;
+                        return c.gitMayFail({"stash", "pop", "-q", "--index"}).ok() ? std::string() : safe;
+                    });
+            }
+            // Pushed before the switch: a switch can fail after it moved HEAD (a post-checkout hook).
+            // Nothing when HEAD did not move: git can refuse that switch too (an unmerged index, a
+            // merge in progress).
+            if (!branchBefore.empty() || !headBefore.empty())
+                ctx.rollback.push_back([branchBefore, headBefore, stashed](MutationContext& c) {
+                    if (gg::trim(c.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out) == headBefore
+                        && gg::trim(c.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out) == branchBefore)
+                        return std::string();
+                    // The stages that expandConflictStages wrote would stop the switch.
+                    collapseConflictStages(c);
+                    const auto res = branchBefore.empty() ? c.gitMayFail({"switch", "-q", "--detach", headBefore})
+                                                          : c.gitMayFail({"switch", "-q", branchBefore});
+                    if (res.ok())
+                        return std::string();
+                    return firstLineOf(res.message()) + (stashed ? "; your changes are in stash@{0}" : "");
+                });
             if (detach)
                 ctx.git({"switch", "-q", "--detach", target});
             else
                 ctx.git({"switch", "-q", target});
-            if (expand)
-                expandConflictStages(ctx);
             ctx.worktreeFollowsIndex = true;
             if (remote) {
-                if (remote->create)
+                const std::string ref = "refs/heads/" + remote->name;
+                if (remote->create) {
                     ctx.git({"branch", "--track", remote->name, remote->ref});
-                else
+                    ctx.rollback.push_back([name = remote->name](MutationContext& c) {
+                        const auto res = c.gitMayFail({"branch", "-D", name});
+                        return res.ok() ? std::string() : firstLineOf(res.message());
+                    });
+                } else {
+                    const std::string oldId = gg::trim(ctx.git({"rev-parse", "--verify", ref}).out);
                     ctx.git({"branch", "-f", "--no-track", remote->name, remote->ref});
+                    const std::string newId = gg::trim(ctx.git({"rev-parse", "--verify", ref}).out);
+                    ctx.rollback.push_back([ref, oldId, newId](MutationContext& c) {
+                        const auto res = c.gitMayFail({"update-ref", ref, oldId, newId});
+                        return res.ok() ? std::string() : firstLineOf(res.message());
+                    });
+                }
             }
+            if (expand)
+                expandConflictStages(ctx);
             if (edit) {
-                const std::string head = gg::trim(ctx.git({"rev-parse", "HEAD"}).out);
-                const int n = static_cast<int>(gg::rewrite::descendants(ctx.repo(), {head}).size()) - 1;
-                gg::edit::write(editSessionFile(ctx), {head, branch, n});
+                // Counted after the branch step: the local branch made or moved from the
+                // remote-tracking branch is one of the branches that the edit restacks.
+                // (At least 0: a walk that stops on an error gives a short list.)
+                const int n = std::max(0, static_cast<int>(gg::rewrite::descendants(ctx.repo(), {head}).size()) - 1);
+                if (!gg::edit::write(editSessionFile(ctx), {head, branch, n}))
+                    throw MutationError{Outcome::Failed, "The edit session file was not written", {}};
             }
         },
         [this, target, detach, edit](const core::MutationFinishedEvent& e) {

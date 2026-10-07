@@ -17,7 +17,8 @@ struct Session {
 
 std::filesystem::path sessionFile(const std::filesystem::path& gitDir, const std::filesystem::path& commonDir);
 std::optional<Session> read(const std::filesystem::path& file);
-void write(const std::filesystem::path& file, const Session& session);
+// False when the directory or the file cannot be written.
+bool write(const std::filesystem::path& file, const Session& session);
 void clear(const std::filesystem::path& file);
 
 } // namespace gg::edit

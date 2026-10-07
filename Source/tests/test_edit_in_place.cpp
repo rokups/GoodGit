@@ -5,6 +5,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <fstream>
+
 namespace ggtest {
 
 namespace {
@@ -193,6 +195,36 @@ RemoteRepo makeRemoteFeature(Scenario& s)
     s.git(p, {"switch", "-q", "main"});
     s.git(p, {"branch", "-q", "-D", "feature"});
     return r;
+}
+
+// A branch step that fails after the switch: the local feature is behind origin/feature, and the
+// worktree is in the middle of a rebase of it, so "git branch -f" refuses.
+void rebasingWorktree(Scenario& s, const RemoteRepo& r)
+{
+    const fs::path& p = r.path;
+    s.git(p, {"branch", "-q", "feature", r.f1});
+    s.commitFile(p, "m.txt", "m\n", "m main");
+    const fs::path wt = p.string() + "-feature-wt";
+    s.git(p, {"worktree", "add", "-q", wt.string(), "feature"});
+    s.gitMayFail(wt, {"rebase", "-x", "false", "main"});
+}
+
+// A regular file where the directory of the session files is, so the session file cannot be
+// written (after the switch and the branch step).
+void blockSessionFile(const fs::path& repo)
+{
+    const fs::path dir = repo / ".git" / "gg";
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    fs::remove(dir / "edit", ec); // an empty directory
+    std::ofstream(dir / "edit").put('x');
+}
+
+// The harness checks the entries under <git dir>/gg at the end of a test.
+void unblockSessionFile(const fs::path& repo)
+{
+    std::error_code ec;
+    fs::remove(repo / ".git" / "gg" / "edit", ec);
 }
 
 } // namespace
@@ -562,6 +594,132 @@ GG_TEST("edit-in-place", "Edit commit is refused when another worktree has the l
     s.settle();
     GG_CHECK_STR_EQ(repoState(s, p), before);
     GG_CHECK(!s.session()->editSession());
+}
+
+GG_TEST("edit-in-place", "Edit commit rolls back when another worktree rebases the local branch")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    rebasingWorktree(s, r);
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    const std::string before = repoState(s, p);
+    const std::string headBefore = s.head(p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK(s.app.errorMessage().find("cannot force update") != std::string::npos);
+    GG_CHECK(s.app.errorMessage().find("The rollback stopped") == std::string::npos);
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK_STR_EQ(s.head(p), headBefore);
+    GG_CHECK(!detached(s, p));
+    GG_CHECK_STR_EQ(gg::trim(s.gitOut(p, {"symbolic-ref", "--short", "HEAD"})), "main");
+    GG_CHECK(!s.session()->editSession());
+    GG_CHECK(noSessionFile(p));
+    GG_CHECK(s.gitOut(p, {"stash", "list"}).empty());
+}
+
+GG_TEST("edit-in-place", "Edit commit rolls back the stash when the branch step fails after Stash and switch")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    rebasingWorktree(s, r);
+    s.write(p, "local-only.txt", "my local edit\n");
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    const std::string before = repoState(s, p);
+    const std::string headBefore = s.head(p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
+    GG_REQUIRE(s.dialogOpen("Stash and switch"));
+    s.dialogButton("Stash and switch", "Stash and switch");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK(s.app.errorMessage().find("cannot force update") != std::string::npos);
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK_STR_EQ(s.head(p), headBefore);
+    GG_CHECK(!detached(s, p));
+    GG_CHECK_STR_EQ(s.read(p, "local-only.txt"), "my local edit\n");
+    GG_CHECK(s.gitOut(p, {"stash", "list"}).empty());
+    GG_CHECK(!s.session()->editSession());
+    GG_CHECK(noSessionFile(p));
+}
+
+GG_TEST("edit-in-place", "Edit commit: a branch that a hook refuses leaves no branch")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    const fs::path hooks = p.string() + "-hooks";
+    fs::create_directories(hooks);
+    s.write(hooks, "reference-transaction",
+        "#!/bin/sh\n[ \"$1\" = prepared ] || exit 0\nwhile read old new ref; do\n  [ \"$ref\" = refs/heads/feature ] && exit 1\ndone\nexit 0\n");
+    fs::permissions(hooks / "reference-transaction", fs::perms::owner_all);
+    s.git(p, {"config", "core.hooksPath", hooks.generic_string()});
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    const std::string before = repoState(s, p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK(!s.app.errorMessage().empty());
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK(!detached(s, p));
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/feature"}).ok());
+    GG_CHECK(!s.session()->editSession());
+    GG_CHECK(noSessionFile(p));
+}
+
+GG_TEST("edit-in-place", "Edit commit: a session file that cannot be written removes the branch that it made")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    blockSessionFile(p);
+    const std::string before = repoState(s, p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK_STR_EQ(s.app.errorMessage(), "The edit session file was not written");
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK(!detached(s, p));
+    GG_CHECK(!s.gitMayFail(p, {"rev-parse", "-q", "--verify", "refs/heads/feature"}).ok());
+    GG_CHECK(!s.session()->editSession());
+    unblockSessionFile(p);
+}
+
+GG_TEST("edit-in-place", "Edit commit: a session file that cannot be written puts the fast-forwarded branch back")
+{
+    const RemoteRepo r = makeRemoteFeature(s);
+    const fs::path& p = r.path;
+    s.git(p, {"branch", "-q", "feature", r.f1});
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(rowReady(s, r.f2));
+    s.settle();
+    blockSessionFile(p);
+    const std::string before = repoState(s, p);
+    s.contextMenu(rowRef(r.f2).c_str(), "Edit commit (checkout detached)");
+    const std::string title = "edit " + r.f2.substr(0, 10);
+    GG_REQUIRE(s.dialogOpen(title.c_str()));
+    GG_CHECK_STR_EQ(s.app.errorMessage(), "The edit session file was not written");
+    s.dialogButton(title.c_str(), "OK");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, p), before);
+    GG_CHECK(!detached(s, p));
+    GG_CHECK_STR_EQ(s.revParse(p, "feature"), r.f1);
+    GG_CHECK(!s.session()->editSession());
+    unblockSessionFile(p);
 }
 
 } // namespace ggtest
