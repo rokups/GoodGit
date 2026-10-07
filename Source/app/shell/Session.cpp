@@ -215,6 +215,8 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
     m_tags->onSnapshot(m_snapshot);
     m_reflog->onSnapshot(m_snapshot);
     m_stashes->onSnapshot(m_snapshot);
+    if (refsChanged && !first)
+        m_info->onRefsChanged();
     const auto editFile = gg::edit::sessionFile(m_snapshot->gitDir, m_snapshot->commonDir);
     m_editSession = gg::edit::read(editFile);
     if (m_editSession && (!m_snapshot->headDetached || !m_snapshot->findBranch(m_editSession->branch))) {

@@ -1,5 +1,6 @@
 // Commit, amend, reword HEAD, hooks during commit (§4.3, §4.4, §4.12 A; C1 default).
 #include "panels/ChangesPanel.hpp"
+#include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
@@ -386,8 +387,6 @@ GG_TEST("commit", "reword HEAD from Change information (amend mode)")
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
     s.setText("//Change information/##message", "Better subject\n\nWith a body.");
     ctx->ItemClick("//Change information/###save_message");
-    GG_REQUIRE(s.dialogOpen("Amend HEAD"));
-    s.dialogButton("Amend HEAD", "Amend");
     GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Better subject\n\nWith a body."; }));
     s.settle();
     // An older commit cannot be reworded here yet (needs history editing): read-only.
@@ -396,7 +395,7 @@ GG_TEST("commit", "reword HEAD from Change information (amend mode)")
     GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled);
 }
 
-GG_TEST("commit", "Amend HEAD button: red, asks first; other commits keep Save message")
+GG_TEST("commit", "Save message button: an unpushed HEAD is saved without a question")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string head = s.head(repo);
@@ -404,62 +403,112 @@ GG_TEST("commit", "Amend HEAD button: red, asks first; other commits keep Save m
     GG_REQUIRE(s.openRepository(repo));
     ctx->ItemClick(("//History/**/###row_" + head).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
-    GG_CHECK(s.itemLabel("//Change information/###save_message").find("Amend HEAD###") == 0);
-    s.setText("//Change information/##message", "Amended after asking");
-    // Cancel: nothing is rewritten.
+    GG_CHECK(s.itemLabel("//Change information/###save_message").find("Save message###") == 0);
+    s.setText("//Change information/##message", "Amended without asking");
     ctx->ItemClick("//Change information/###save_message");
-    GG_REQUIRE(s.dialogOpen("Amend HEAD"));
-    GG_CHECK(s.app.dialogs().current()->message.find("Staged changes are not included") == std::string::npos);
-    s.dialogButton("Amend HEAD", "Cancel");
-    s.settle();
-    GG_CHECK_STR_EQ(s.head(repo), head);
-    // Amend: HEAD is rewritten with the new message.
-    ctx->ItemClick("//Change information/###save_message");
-    GG_REQUIRE(s.dialogOpen("Amend HEAD"));
-    GG_CHECK_STR_EQ(s.head(repo), head); // the click alone changed nothing
-    s.dialogButton("Amend HEAD", "Amend");
-    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Amended after asking"; }));
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Amended without asking"; }));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
     s.settle();
     GG_CHECK(s.head(repo) != head);
-    // Not HEAD: plain label, no dialog.
+    // Not HEAD: the same label, no dialog.
     ctx->ItemClick(("//History/**/###row_" + older).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemLabel("//Change information/###save_message").find("Save message###") == 0; }));
     s.setText("//Change information/##message", "Reworded without asking");
     ctx->ItemClick("//Change information/###save_message");
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"log", "-1", "--format=%B", "HEAD~2"}) == "Reworded without asking"; }));
-    GG_CHECK(s.app.dialogs().current() == nullptr || s.app.dialogs().current()->title != "Amend HEAD");
+    GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
-GG_TEST("commit", "Amend HEAD dialog notes that staged changes are not included, only when there are some")
+GG_TEST("commit", "Save message of a pushed HEAD asks before rewriting published history; Cancel changes nothing")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"reset", "-q", "--hard", "origin/main"}); // HEAD is on the remote now
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    s.setText("//Change information/##message", "Reworded pushed HEAD");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), head);
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Reworded pushed HEAD"; }));
+    s.settle();
+    GG_CHECK(s.head(repo) != head);
+}
+
+GG_TEST("commit", "Save message of a local HEAD above pushed commits is saved without a question")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(!s.gitOut(repo, {"log", "--format=%H", "origin/main..HEAD"}).empty()); // HEAD is not pushed
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    s.setText("//Change information/##message", "Reworded local HEAD");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Reworded local HEAD"; }));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
+GG_TEST("commit", "Save message of a pushed commit that is not HEAD asks first; Cancel changes nothing")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string pushed = s.revParse(repo, "origin/main~1");
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + pushed).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    s.setText("//Change information/##message", "Reworded pushed commit");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), head);
+    GG_CHECK_STR_EQ(s.revParse(repo, "origin/main~1"), pushed);
+    GG_CHECK(s.gitOut(repo, {"log", "-1", "--format=%B", pushed}) != "Reworded pushed commit");
+}
+
+GG_TEST("commit", "a push while HEAD is shown updates the pushed flag and keeps the edited message")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->info().details() != nullptr; }));
+    GG_CHECK(!s.session()->info().details()->published);
+    s.setText("//Change information/##message", "Typed before the push");
+    // HEAD becomes pushed from outside the application.
+    s.git(repo, {"update-ref", "refs/remotes/origin/main", "HEAD"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->info().details() && s.session()->info().details()->published; }));
+    ctx->Yield(3);
+    // The field cannot be read from a test: the message that is saved below shows that the typed text stayed.
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Typed before the push"; }));
+}
+
+GG_TEST("commit", "Save message of an unpushed HEAD leaves the staged changes staged")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string head = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
     ctx->ItemClick(("//History/**/###row_" + head).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
-    s.setText("//Change information/##message", "Amended with a note");
-    // The dialog's text as drawn (drawnText leaves the spaces out).
-    const auto noteShown = [&] {
-        for (const auto& line : s.drawnText("//Amend HEAD"))
-            if (line.find("Stagedchangesarenotincluded") != std::string::npos)
-                return true;
-        return false;
-    };
-    const auto openAndCancel = [&](bool expectNote) {
-        ctx->ItemClick("//Change information/###save_message");
-        GG_REQUIRE(s.dialogOpen("Amend HEAD"));
-        ctx->Yield(2);
-        GG_CHECK(noteShown() == expectNote);
-        s.dialogButton("Amend HEAD", "Cancel");
-        s.settle();
-        GG_CHECK_STR_EQ(s.head(repo), head);
-    };
-    openAndCancel(false);
-    // A staged change: the dialog now says it is left out.
     s.write(repo, "staged.txt", "staged\n");
     s.git(repo, {"add", "staged.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
-    openAndCancel(true);
+    s.setText("//Change information/##message", "Amended with a staged file");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo) == "Amended with a staged file"; }));
+    s.settle();
     GG_CHECK_STR_EQ(s.gitOut(repo, {"diff", "--cached", "--name-only"}), "staged.txt");
 }
 

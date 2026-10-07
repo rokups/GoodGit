@@ -115,12 +115,21 @@ void InfoPanel::revealParent(const core::Oid& id)
     m_session.revealCommit(id);
 }
 
+void InfoPanel::onRefsChanged()
+{
+    if (m_selection.kind == SelKind::Commit && m_details)
+        m_request = m_session.engine().commitDetails(m_selection.id);
+}
+
 void InfoPanel::onDetails(const core::CommitDetailsEvent& event)
 {
     if (event.request != m_request)
         return;
+    // A reload of the same commit keeps a message that the user edited.
+    const bool keepEdit = m_details && m_details->id == event.details->id && m_message != m_details->message;
     m_details = event.details;
-    m_message = m_details->message;
+    if (!keepEdit)
+        m_message = m_details->message;
 }
 
 // The rows a real commit shows, filled with what the commit would be if made now: the configured
@@ -273,7 +282,7 @@ void InfoPanel::draw(bool* open)
     const auto snap = m_session.snapshot();
     const bool isHead = snap && m_selection.kind == SelKind::Commit && d.id == snap->head;
     // Rewording HEAD is an amend (git runs the commit hooks); any other commit is rewritten in
-    // memory with its descendants.
+    // memory with its descendants. Both ask first (Rewrite published history?) only for a pushed commit.
     const bool stash = m_selection.kind == SelKind::Stash;
     const bool editable = m_selection.kind == SelKind::Commit || stash;
     messageField(m_session, "##message", &m_message, editable ? ImGuiInputTextFlags_None : ImGuiInputTextFlags_ReadOnly);
@@ -281,25 +290,16 @@ void InfoPanel::draw(bool* open)
     const auto status = m_session.status();
     const bool stagedPresent = status && !status->staged.empty();
     ImGui::BeginDisabled(!editable || !free || m_message == d.message || gg::trim(m_message).empty());
-    // HEAD: a red "Amend HEAD" that asks first; anything else is saved straight away.
-    if (isHead ? dangerButton(ICON_MS_SAVE, "Amend HEAD###save_message")
+    // Red only when the commit is pushed: saving it rewrites published history, and the rewrite asks first.
+    const bool pushed = !stash && d.published;
+    if (pushed ? dangerButton(ICON_MS_SAVE, "Save message###save_message")
                : button(ICON_MS_SAVE, "Save message###save_message")) {
-        if (stash) {
+        if (stash)
             m_session.actions().stashReword(m_selection.stashIndex, d.id, m_message);
-        } else if (isHead) {
-            Form f;
-            f.title = "Amend HEAD";
-            f.message = "This rewrites HEAD with the new message.";
-            if (stagedPresent)
-                f.message += "\n\nStaged changes are not included (tick Amend in Commit... to add them).";
-            Session* session = &m_session;
-            const std::string message = m_message;
-            f.buttons.push_back({"Amend", [session, message](Form&) { session->actions().amend(message, false, true); }});
-            f.buttons.push_back({"Cancel", {}});
-            m_session.app().dialogs().open(std::move(f));
-        } else {
+        else if (isHead)
+            m_session.actions().amend(m_message, false, true);
+        else
             m_session.actions().reword(d.id, m_message);
-        }
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
@@ -307,7 +307,7 @@ void InfoPanel::draw(bool* open)
                         : isHead ? "Reword HEAD (git commit --amend --only)"
                                  : "Reword this commit; its descendants are rebased onto it";
         if (isHead && stagedPresent)
-            tip += "\nStaged changes are not included (tick Amend in Commit... to add them)";
+            tip += "\nStaged changes are not included (tick Amend in Commit... to add them).";
         tooltip("%s", tip.c_str());
     }
 

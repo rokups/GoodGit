@@ -22,6 +22,9 @@ public:
     const std::optional<Selection>& override() const { return m_override; }
     // The selection the panel shows: the override, else the history selection.
     const Selection& selection() const { return m_selection; }
+    // The refs changed: a shown commit's details are read again (its pushed flag may differ). The edited
+    // message stays.
+    void onRefsChanged();
     void onDetails(const core::CommitDetailsEvent& event);
     void draw(bool* open);
     const core::CommitDetailsPtr& details() const { return m_details; }

@@ -475,9 +475,10 @@ the panel without touching the repository.
 - It follows the history selection, except while the Blame panel has a line selected: then it shows that line's
   change (§7). A history selection made meanwhile is shown once the Blame selection is gone. Clicking a parent
   ID reveals it in History and ends the Blame selection, so the parent is what is shown.
-- Message editor `##message` with *Save message* `###save_message`; for HEAD the button is red and reads *Amend HEAD*
-  and asks for confirmation (a dialog titled `Amend HEAD`, buttons Amend / Cancel; it notes when staged changes
-  are not included).
+- Message editor `##message` with *Save message* `###save_message`; the button is red, and the save asks for
+  confirmation (`Rewrite published history`), only when the commit is pushed (for HEAD and for any other commit).
+  An unpushed commit is saved at once. The tooltip of the button for HEAD notes when staged changes are not
+  included. The pushed flag is read again when the refs change; a message that was edited stays.
   The message fields (`##message`, `##commit_message`, `##merge_message`) have a context menu with a checkable
   *Word wrap* option (popup `<field id>_menu`, e.g. `##message_menu`); it is persistent,
   stored in imgui.ini (`[GGUIView][Info] WrapMessage`). A horizontal sizer below the message field
@@ -710,8 +711,7 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 `Create tag`, `Add remote`, `Edit remote URL`, `Clone repository`, `Initialize repository`,
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
-`Credentials` (askpass), `Rewrite published history`, `Amend HEAD` (Change information, §5:
-*Amend* / *Cancel*), `Non-text conflicts` (pre-flight, Phase
+`Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
 3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
 itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
 *Replace* / *Cancel*, §1.6), `Add worktree`, `Remove worktree`, `Remove worktree with changes`,
