@@ -58,31 +58,42 @@ std::vector<RepoNode> buildRepoTree(const std::vector<RepoEntry>& entries)
         std::vector<RepoNode>* level = &root;
         RepoNode leaf;
         leaf.path = entries[i].path;
+        std::vector<std::string> segments;
         if (alias.empty()) {
-            leaf.label = names[i].text();
+            // The folder prefix of the deduplicated name is the group path. It is not normalised: a
+            // directory name can start with a space.
+            segments = splitSegments(names[i].prefix);
+            if (!segments.empty() && segments.back().empty())
+                segments.pop_back();
+            leaf.label = names[i].base;
         } else {
-            auto segments = splitSegments(alias);
+            segments = splitSegments(alias);
             leaf.label = segments.back();
             segments.pop_back();
-            std::string groupPath;
-            for (const auto& segment : segments) {
-                groupPath += (groupPath.empty() ? "" : "/") + segment;
-                auto it = std::find_if(level->begin(), level->end(),
-                    [&](const RepoNode& n) { return n.isGroup() && n.label == segment; });
-                if (it == level->end()) {
-                    RepoNode group;
-                    group.label = segment;
-                    group.group = groupPath;
-                    level->push_back(std::move(group));
-                    it = level->end() - 1;
-                }
-                level = &it->children;
+        }
+        std::string groupPath;
+        for (const auto& segment : segments) {
+            groupPath += (groupPath.empty() ? "" : "/") + segment;
+            auto it = std::find_if(level->begin(), level->end(),
+                [&](const RepoNode& n) { return n.isGroup() && n.label == segment; });
+            if (it == level->end()) {
+                RepoNode group;
+                group.label = segment;
+                group.group = groupPath;
+                level->push_back(std::move(group));
+                it = level->end() - 1;
             }
+            level = &it->children;
         }
         level->push_back(std::move(leaf));
     }
     sortLevel(root);
     return root;
+}
+
+std::string deduplicationGroup(const std::string& prefix)
+{
+    return prefix.empty() || prefix.back() != '/' ? prefix : prefix.substr(0, prefix.size() - 1);
 }
 
 std::string aliasWithGroup(const std::string& alias, const std::string& defaultName, const std::string& group)

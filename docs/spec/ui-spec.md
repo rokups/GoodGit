@@ -628,7 +628,10 @@ the panel without touching the repository.
   `[{path, alias}]`, no limit; each opened or dropped repository is added, except a linked worktree,
   see below; a settings file without the key starts with the recent list) as a tree. An alias `group/subgroup/name` puts a repository in groups
   (tree nodes `###group_<group path, "/" as ":">`, open by default) under the label `name`; a repository
-  without an alias is at the top level with its deduplicated folder name. Each level lists the groups
+  without an alias is in the groups of the folder prefix that makes its name unique ("work/foo" gives
+  the group `work` and the label `foo`); with no prefix it is at the top level. The group of a
+  repository without an alias can appear or go away when a repository with the same folder name is
+  added or removed. Each level lists the groups
   first, then the repositories, each part by label (ignoring case). Rows `repo_<label, "/" as ":">/###row` in the
   scope of their groups (equal labels among siblings: `repo_<label>#n/###row`, n from 1 for the second); the tooltip is the full path. The alias
   shows only here: the toolbar switcher, Welcome and the title bar keep the deduplicated folder names.
@@ -650,7 +653,10 @@ the panel without touching the repository.
   Drag and drop: a repository row (not a worktree row) dragged onto a group node goes into that group:
   the alias becomes the group path plus the last segment of the alias, or plus the last "/" segment of
   the label when there is no alias. The empty area below the rows (`###top_level`) is the top level: the alias keeps only its
-  last segment, and no alias stays no alias. A drop on the own group changes nothing.
+  last segment; no alias stays no alias, except for a repository in a group of its folder prefix, which
+  gets its base name as the alias and so goes to the top level. A drop on the own group changes nothing, also for a group
+  that comes from the folder prefix. A drop on a group that normalising would change (a name with a space at an end, from a
+  folder prefix) changes nothing.
   - `Set alias`: *Alias for <path>* `##alias` (the alias now) · a note ("/" makes groups; empty removes
     the alias) · *Set* / *Cancel*. The text is stored trimmed, also each "/" segment, without empty
     segments.

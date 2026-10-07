@@ -832,8 +832,12 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
     std::map<std::string, int> seen;
     for (const auto& node : nodes) {
         if (node.isGroup()) {
-            const bool open = ImGui::TreeNodeEx((node.label + "###group_" + rowId(node.group)).c_str(),
-                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            bool open;
+            {
+                const SectionHeaderColors neutral;
+                open = ImGui::TreeNodeEx((node.label + "###group_" + rowId(node.group)).c_str(),
+                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            }
             repoDropTarget(node.group);
             if (open) {
                 drawNodes(node.children, toOpen);
@@ -914,10 +918,32 @@ void RepositoriesPanel::repoDropTarget(const std::string& group)
         const std::string path(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
         auto& settings = m_session.app().settings();
         std::string alias;
-        for (const auto& entry : settings.data().repositories)
+        std::vector<std::string> paths;
+        for (const auto& entry : settings.data().repositories) {
+            paths.push_back(entry.path);
             if (entry.path == path)
                 alias = normalizeAlias(entry.alias);
-        const std::string newAlias = aliasWithGroup(alias, m_dragLabel, group);
+        }
+        // A group that normalizeAlias would change (a prefix group with a space at an end of a name) is no target.
+        if (normalizeAlias(group) != group) {
+            ImGui::EndDragDropTarget();
+            return;
+        }
+        std::string newAlias = aliasWithGroup(alias, m_dragLabel, group);
+        if (alias.empty()) {
+            // A repository without an alias is in the group of its deduplication prefix already: a drop on
+            // that group changes nothing, a drop on the top level gives it the base name as its alias.
+            const auto names = uniqueRecentNames(paths);
+            for (size_t i = 0; i < paths.size(); ++i) {
+                if (paths[i] != path)
+                    continue;
+                const std::string own = deduplicationGroup(names[i].prefix);
+                if (group == own)
+                    newAlias = alias;
+                else if (group.empty() && !own.empty())
+                    newAlias = normalizeAlias(names[i].base);
+            }
+        }
         if (newAlias != alias)
             settings.setAlias(path, newAlias);
     }
@@ -968,7 +994,7 @@ void RepositoriesPanel::draw(bool* open)
     std::string toOpen;
     beginList();
     drawNodes(tree, toOpen);
-    // The empty area below the rows is the top level as a drop target: a repository dropped here leaves its group.
+    // The empty area below the rows is the top level as a drop target: a repository dropped here leaves its group (without an alias and in a group of its folder prefix, it gets its base name as alias).
     ImGui::InvisibleButton("###top_level", ImVec2(-FLT_MIN, std::max(ImGui::GetContentRegionAvail().y, ImGui::GetFrameHeight())));
     repoDropTarget(std::string());
     endList();

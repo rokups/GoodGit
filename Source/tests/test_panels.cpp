@@ -136,12 +136,28 @@ static std::string repoLeafLabel(const std::vector<ggui::RepoNode>& nodes, const
     return std::string();
 }
 
+// The ID path below the panel of the repository leaf: the group nodes, then the row ("" when there is none).
+static std::string repoLeafPath(const std::vector<ggui::RepoNode>& nodes, const fs::path& path)
+{
+    auto colon = [](std::string text) { // the panel writes ':' for '/' in an ID
+        std::replace(text.begin(), text.end(), '/', ':');
+        return text;
+    };
+    for (const auto& n : nodes) {
+        if (n.isGroup()) {
+            const std::string inner = repoLeafPath(n.children, path);
+            if (!inner.empty())
+                return "###group_" + colon(n.group) + "/" + inner;
+        } else if (fs::equivalent(n.path, path)) {
+            return "repo_" + colon(n.label) + "/###row";
+        }
+    }
+    return std::string();
+}
+
 static std::string repoRow(Scenario& s, const fs::path& path)
 {
-    const auto tree = ggui::buildRepoTree(s.app.settings().data().repositories);
-    std::string label = repoLeafLabel(tree, path); // the panel writes ':' for '/' in an ID
-    std::replace(label.begin(), label.end(), '/', ':');
-    return "//Repositories/repo_" + label + "/###row";
+    return "//Repositories/" + repoLeafPath(ggui::buildRepoTree(s.app.settings().data().repositories), path);
 }
 
 GG_TEST("panels", "repositories: the open repository has the mark, an alias makes a group")
@@ -514,7 +530,7 @@ GG_TEST("panels", "repositories: a drag onto a group sets the group part of the 
     s.app.settings().setAlias(ggui::normalizeRepoPath(second.string()), "grp/other");
     s.showPanel("Repositories");
     ctx->Yield(2);
-    // A repository without an alias gets "group/<label>"; the label is the deduplicated folder name.
+    // A repository without an alias gets "group/<label>"; the label is the base name.
     const std::string row = repoRow(s, first);
     const std::string label = repoLeafLabel(ggui::buildRepoTree(s.app.settings().data().repositories), first);
     GG_REQUIRE(s.itemExists(row.c_str()));
@@ -549,6 +565,59 @@ GG_TEST("panels", "repositories: a drag keeps the last segment of the alias, a d
     GG_CHECK_STR_EQ(repoAlias(s, first), "b/x");
     GG_CHECK(s.itemExists("//Repositories/###group_b/repo_x/###row"));
     GG_CHECK(!s.itemExists("//Repositories/###group_a"));
+}
+
+GG_TEST("panels", "repositories: a deduplicated name shows in a group")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "alpha/dupe");
+    const fs::path second = s.fixture(Recipe::Merges, "beta/dupe");
+    s.track(second);
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    const std::string firstRow = "//Repositories/###group_alpha/repo_dupe/###row";
+    const std::string secondRow = "//Repositories/###group_beta/repo_dupe/###row";
+    GG_CHECK(s.itemExists(firstRow.c_str()));
+    GG_CHECK(s.itemExists(secondRow.c_str()));
+    GG_CHECK(!s.itemExists("//Repositories/repo_dupe/###row"));
+    GG_CHECK_STR_EQ(repoRow(s, first), firstRow);
+    // A drop on the own group (from the folder prefix) changes nothing: no alias is stored.
+    ctx->ItemDragAndDrop(firstRow.c_str(), "//Repositories/###group_alpha");
+    ctx->Yield(2);
+    GG_CHECK(repoAlias(s, first).empty());
+    GG_CHECK(s.itemExists(firstRow.c_str()));
+    // A drop on the top level stores the base name as the alias: the row leaves the group.
+    GG_REQUIRE(s.itemExists("//Repositories/###top_level"));
+    ctx->ItemDragAndDrop(firstRow.c_str(), "//Repositories/###top_level");
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(repoAlias(s, first), "dupe");
+    GG_CHECK(s.itemExists("//Repositories/repo_dupe/###row"));
+    GG_CHECK(!s.itemExists(firstRow.c_str()));
+}
+
+GG_TEST("panels", "repositories: a drop on a group with a space at an end of its name stores nothing")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, " sp/dupe");
+    const fs::path second = s.fixture(Recipe::Merges, "beta/dupe");
+    const fs::path third = s.fixture(Recipe::Linear, "other");
+    s.track(second);
+    s.track(third);
+    GG_REQUIRE(s.openRepository(third));
+    s.app.settings().addRepository(first.string());
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    const std::string row = "//Repositories/repo_other/###row";
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_REQUIRE(s.itemExists("//Repositories/###group_ sp"));
+    ctx->ItemDragAndDrop(row.c_str(), "//Repositories/###group_ sp");
+    ctx->Yield(2);
+    GG_CHECK(repoAlias(s, third).empty());
+    GG_CHECK(s.itemExists(row.c_str()));
+    GG_CHECK(!s.itemExists("//Repositories/###group_sp"));
 }
 
 GG_TEST("panels", "repositories: a drag onto the empty area leaves the group")

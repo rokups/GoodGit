@@ -45,17 +45,76 @@ GG_TEST("shell", "repo tree: an alias nests into groups, a group with one member
     GG_CHECK_STR_EQ(dump(buildRepoTree({{"/r/a", " work // a/ "}})), "work{a}"); // normalised alias
 }
 
-GG_TEST("shell", "repo tree: no alias gives a top-level leaf with the deduplicated name")
+GG_TEST("shell", "repo tree: no alias gives a leaf with the base name, in the group of its folder prefix")
 {
     using ggui::buildRepoTree;
     GG_CHECK_STR_EQ(dump(buildRepoTree({{"/r/app", ""}, {"/r/other", ""}})), "app,other");
     auto tree = buildRepoTree({{"/w/work/app", ""}, {"/h/home/app", ""}, {"/x/solo", ""}});
-    GG_CHECK_STR_EQ(dump(tree), "home/app,solo,work/app");
+    GG_CHECK_STR_EQ(dump(tree), "home{app},work{app},solo");
     GG_REQUIRE(tree.size() == 3);
-    GG_CHECK_STR_EQ(tree[0].path, "/h/home/app");
-    GG_CHECK_STR_EQ(tree[2].path, "/w/work/app");
+    GG_CHECK_STR_EQ(tree[0].group, "home");
+    GG_REQUIRE(tree[0].children.size() == 1);
+    GG_CHECK_STR_EQ(tree[0].children[0].path, "/h/home/app");
+    GG_CHECK_STR_EQ(tree[1].group, "work");
+    GG_REQUIRE(tree[1].children.size() == 1);
+    GG_CHECK_STR_EQ(tree[1].children[0].path, "/w/work/app");
+    GG_CHECK_STR_EQ(tree[2].path, "/x/solo");
     // Paths of aliased entries count for the names of the others.
-    GG_CHECK_STR_EQ(dump(buildRepoTree({{"/w/work/app", "x/y"}, {"/h/home/app", ""}})), "x{y},home/app");
+    GG_CHECK_STR_EQ(dump(buildRepoTree({{"/w/work/app", "x/y"}, {"/h/home/app", ""}})), "home{app},x{y}");
+}
+
+GG_TEST("shell", "repo tree: a deduplicated name with a folder prefix makes groups")
+{
+    using ggui::buildRepoTree;
+    auto tree = buildRepoTree({{"/a/work/foo", ""}, {"/b/personal/foo", ""}});
+    GG_CHECK_STR_EQ(dump(tree), "personal{foo},work{foo}");
+    GG_REQUIRE(tree.size() == 2);
+    GG_CHECK(tree[0].isGroup());
+    GG_CHECK_STR_EQ(tree[0].group, "personal");
+    GG_REQUIRE(tree[0].children.size() == 1);
+    const RepoNode& leaf = tree[0].children[0];
+    GG_CHECK(!leaf.isGroup());
+    GG_CHECK_STR_EQ(leaf.label, "foo");
+    GG_CHECK_STR_EQ(leaf.path, "/b/personal/foo");
+    GG_CHECK_STR_EQ(leaf.group, "");
+    GG_REQUIRE(tree[1].children.size() == 1);
+    GG_CHECK_STR_EQ(tree[1].children[0].path, "/a/work/foo");
+    // A nested prefix makes nested groups with their full group paths.
+    tree = buildRepoTree({{"/a/p/q/foo", ""}, {"/b/r/q/foo", ""}});
+    GG_CHECK_STR_EQ(dump(tree), "p{q{foo}},r{q{foo}}");
+    GG_REQUIRE(tree.size() == 2 && tree[0].children.size() == 1 && tree[0].children[0].children.size() == 1);
+    GG_CHECK_STR_EQ(tree[0].children[0].group, "p/q");
+    GG_CHECK_STR_EQ(tree[0].children[0].children[0].path, "/a/p/q/foo");
+    GG_CHECK_STR_EQ(tree[1].children[0].group, "r/q");
+    GG_CHECK_STR_EQ(tree[1].children[0].children[0].path, "/b/r/q/foo");
+    // An alias group and a group from a prefix with one name are one group.
+    tree = buildRepoTree({{"/r/bar", "work/bar"}, {"/a/work/foo", ""}, {"/b/home/foo", ""}});
+    GG_CHECK_STR_EQ(dump(tree), "home{foo},work{bar,foo}");
+    GG_REQUIRE(tree.size() == 2 && tree[1].children.size() == 2);
+    GG_CHECK_STR_EQ(tree[1].children[0].path, "/r/bar");
+    GG_CHECK_STR_EQ(tree[1].children[1].path, "/a/work/foo");
+}
+
+GG_TEST("shell", "repo tree: unusual paths without an alias")
+{
+    using ggui::buildRepoTree;
+    auto tree = buildRepoTree({{"/", ""}});
+    GG_REQUIRE(tree.size() == 1);
+    GG_CHECK(!tree[0].isGroup());
+    GG_CHECK_STR_EQ(tree[0].path, "/");
+    // Windows paths with drive letters.
+    tree = buildRepoTree({{"C:\\a\\work\\foo", ""}, {"D:\\b\\home\\foo", ""}});
+    GG_CHECK_STR_EQ(dump(tree), "home{foo},work{foo}");
+    GG_REQUIRE(tree.size() == 2);
+    GG_CHECK_STR_EQ(tree[0].group, "home");
+    GG_REQUIRE(tree[0].children.size() == 1);
+    GG_CHECK_STR_EQ(tree[0].children[0].path, "D:\\b\\home\\foo");
+    // A space at the start of a directory name stays in the group label.
+    tree = buildRepoTree({{"/a/ work/foo", ""}, {"/b/home/foo", ""}});
+    GG_CHECK_STR_EQ(dump(tree), " work{foo},home{foo}");
+    GG_REQUIRE(tree.size() == 2);
+    GG_CHECK_STR_EQ(tree[0].label, " work");
+    GG_CHECK_STR_EQ(tree[0].group, " work");
 }
 
 GG_TEST("shell", "repo tree: groups come before leaves, case-insensitive, stable for equal labels")
