@@ -298,7 +298,13 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 - For a commit: flat list `##files` of rows `file_<path>` with status icon (A, M, D, R, C, T, U),
   renames shown `old → new`; files holding first-class conflicts are in the conflict colour with
   "N-sided conflict", and double-clicking one at HEAD opens the editor. Selecting a commit
-  selects its first file, as a click on the row does, and the diff shows it; the keyboard focus stays in History. A new compare target keeps the current file when the comparison still has it.
+  selects a file, as a click on the row does, and the diff shows it; the keyboard focus stays in History.
+  The file is the one that the user last selected (same path, or the old path of a renamed file) when
+  the commit has it and the filter shows it. Otherwise it is the first visible file. The selection of a
+  file by the panel does not change the remembered path: a commit without the file shows its first file,
+  and a later commit that has the file selects it again. The list scrolls once to the row that the panel
+  selects, so the row is visible; the panel adds no scroll for a selection by the user. A new compare
+  target keeps the current file when the comparison still has it.
 - For Working tree / Index (N): groups `Staged`, `Unstaged`, `Untracked`, `Conflicted`, each a
   collapsible header with a count and group buttons (Stage all / Unstage all). Space/Enter
   toggles staging of the selection; drag rows between Staged and Unstaged.

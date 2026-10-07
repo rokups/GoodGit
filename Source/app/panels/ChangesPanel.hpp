@@ -83,6 +83,10 @@ private:
     void rebuildFromStatus();
     void markConflicts();
     void setCurrent(const std::string& key); // a row's key: shows that file in Diff
+    // setCurrent for a selection by the user: the file is also the one a new commit selects.
+    void setCurrentByUser(const std::string& key);
+    // Scrolls the list to the row `key` once, after an automatic selection (called while the row is drawn).
+    void scrollToCurrent(const std::string& key);
     void drawGroup(FileGroup group, const char* title, int count);
     void drawFile(const FileRow& row, int flatIndex);
     void drawFileMenu(const FileRow& row);
@@ -113,6 +117,9 @@ private:
     std::set<std::string> m_selected;
     std::string m_current;
     std::string m_anchor;
+    // The path of the file that the user last selected; a new commit selects this file when it has it.
+    std::string m_wantedPath;
+    bool m_scrollToCurrent = false; // an automatic selection: the next draw scrolls to the current row
     bool m_navOnFileNow = false; // this frame: the nav cursor is on a file row
     std::string m_filter;
     std::string m_compareText;   // the "Compare with" field

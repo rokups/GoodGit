@@ -198,7 +198,7 @@ void ChangesPanel::syncPair()
     if (pair == m_pair)
         return;
     m_pair = pair;
-    // As a new "Compare with" target: the file list is read again and the first file shows.
+    // As a new "Compare with" target: the file list is read again and the file that the user last selected shows, else the first file.
     m_rows.clear();
     m_selected.clear();
     m_current.clear();
@@ -311,13 +311,31 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
         m_rows = rowsFromDiff(FileGroup::Commit, d);
         markConflicts();
         // The current file stays (a new compare target) and shows again, as the compare target
-        // clears the Diff panel; otherwise the first file is selected at once, as after a click on its row.
+        // clears the Diff panel; otherwise the file that the user last selected (m_wantedPath) is selected
+        // at once when the commit has it and the filter shows it (also as the old name of a rename), else
+        // the first file, as after a click on its row. This selection does not change m_wantedPath.
         // No keyboard focus moves: the arrows go on through the commits.
         std::string key = current() ? m_current : std::string();
         if (key.empty()) {
             const auto rows = visibleRows();
-            if (!rows.empty())
-                key = rows.front()->key();
+            const FileRow* pick = nullptr;
+            if (!m_wantedPath.empty()) {
+                for (const FileRow* r : rows)
+                    if (r->path == m_wantedPath) {
+                        pick = r;
+                        break;
+                    }
+                if (!pick)
+                    for (const FileRow* r : rows)
+                        if (r->oldPath == m_wantedPath) {
+                            pick = r;
+                            break;
+                        }
+            }
+            if (!pick && !rows.empty())
+                pick = rows.front();
+            if (pick)
+                key = pick->key();
         }
         m_current.clear();
         m_selected.clear();
@@ -326,6 +344,7 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
             m_selected = {key};
             m_anchor = key;
             setCurrent(key);
+            m_scrollToCurrent = true; // the list shows the row at its next draw (the row may be far down)
         }
     } else if (m_selection.kind == SelKind::Stash) {
         if (d.query.a != m_selection.id)
@@ -386,6 +405,21 @@ void ChangesPanel::setCurrent(const std::string& key)
     m_session.diff().showFile(effectiveSelection(), *current(), compareTarget());
 }
 
+void ChangesPanel::setCurrentByUser(const std::string& key)
+{
+    setCurrent(key);
+    m_wantedPath = current()->path;
+    m_scrollToCurrent = false; // a manual selection does not scroll
+}
+
+void ChangesPanel::scrollToCurrent(const std::string& key)
+{
+    if (!m_scrollToCurrent || key != m_current)
+        return;
+    m_scrollToCurrent = false;
+    ImGui::SetScrollHereY(0.5f); // the list draws every row (no clipper), so the row has its position now
+}
+
 void ChangesPanel::moveCurrent(int direction)
 {
     const auto rows = visibleRows();
@@ -400,7 +434,7 @@ void ChangesPanel::moveCurrent(int direction)
     const std::string key = rows[static_cast<size_t>(next)]->key();
     m_selected = {key};
     m_anchor = key;
-    setCurrent(key);
+    setCurrentByUser(key);
 }
 
 core::DiffQuery ChangesPanel::patchQuery(const FileRow& row) const
@@ -487,7 +521,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         return;
     if (!m_selected.count(row.key())) {
         m_selected = {row.key()};
-        setCurrent(row.key());
+        setCurrentByUser(row.key());
     }
     const auto snap = m_session.snapshot();
     auto& actions = m_session.actions();
@@ -832,9 +866,10 @@ void ChangesPanel::drawFile(const FileRow& row, int)
         // below act only while the cursor is on a file row (read from the previous frame).
         const ImGuiContext& g = *ImGui::GetCurrentContext();
         if (g.NavJustMovedToId == ImGui::GetItemID() && key != m_current)
-            setCurrent(key);
+            setCurrentByUser(key);
         if (g.NavId == ImGui::GetItemID())
             m_navOnFileNow = true;
+        scrollToCurrent(key);
     }
     if (pressed) {
         const ImGuiIO& io = ImGui::GetIO();
@@ -845,7 +880,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
             if (!selected) {
                 m_selected = {key};
                 m_anchor = key;
-                setCurrent(key);
+                setCurrentByUser(key);
             }
         } else if (source == PressSource::Mouse && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             openFile(row);
@@ -855,7 +890,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
             else
                 m_selected.insert(key);
             m_anchor = key;
-            setCurrent(key);
+            setCurrentByUser(key);
         } else if (shift && !m_anchor.empty()) {
             const auto rows = visibleRows();
             int a = -1, b = -1;
@@ -870,11 +905,11 @@ void ChangesPanel::drawFile(const FileRow& row, int)
                 for (int i = std::min(a, b); i <= std::max(a, b); ++i)
                     m_selected.insert(rows[static_cast<size_t>(i)]->key());
             }
-            setCurrent(key);
+            setCurrentByUser(key);
         } else {
             m_selected = {key};
             m_anchor = key;
-            setCurrent(key);
+            setCurrentByUser(key);
         }
     }
     ImGui::PopStyleColor();

@@ -210,9 +210,10 @@ GG_TEST("changes", "two selected commits: Changes and Diff show the diff between
         selectCommit(s, olderPrimary ? older : newer);
         GG_REQUIRE(s.waitUntil([&] { return !paths(s, FileGroup::Commit).empty(); }));
         clickRow(s, olderPrimary ? newer : older, ImGuiMod_Ctrl);
-        // The union of the changes between them, the first file shown at once, the typed target not used.
+        // The union of the changes between them, the file at once (the first file, or the file that the user
+        // selected in the first round), the typed target not used.
         GG_CHECK(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f4.txt", "f5.txt"}); }));
-        GG_CHECK(s.waitUntil([&] { return shows("f4.txt"); }));
+        GG_CHECK(s.waitUntil([&] { return shows(olderPrimary ? "f4.txt" : "f5.txt"); }));
         GG_CHECK(changes.compareTarget().kind == ggui::CompareTarget::Rev);
         GG_CHECK_STR_EQ(changes.compareTarget().rev, older);
         // Older to newer: f4 and f5 are added (reversed, they would be deleted).
@@ -382,6 +383,121 @@ GG_TEST("changes", "selecting a commit selects its first file and shows its diff
     GG_CHECK(changes.current() == nullptr);
     GG_CHECK(changes.selectedKeys().empty());
     ctx->ItemInputValue("//Changes/##changes_filter", "");
+}
+
+GG_TEST("changes", "a new commit selects the file that the user last selected, else its first file")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    auto commit = [&](const std::string& message, const std::vector<std::string>& files) {
+        for (const auto& f : files)
+            s.write(repo, f, message + "\n");
+        s.git(repo, {"add", "."});
+        s.git(repo, {"commit", "-q", "-m", message});
+        return s.head(repo);
+    };
+    const std::string a = commit("Commit A", {"a.txt", "b.txt"});
+    const std::string b = commit("Commit B", {"a.txt", "b.txt"});
+    const std::string c = commit("Commit C", {"c.txt"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto& changes = s.session()->changes();
+    auto shows = [&](const std::string& path) {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.path == path;
+    };
+    // No manual selection yet: the first file.
+    selectCommit(s, a);
+    GG_REQUIRE(s.waitUntil([&] { return shows("a.txt"); }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:a.txt"}));
+    // The user selects b.txt: the next commit that has it selects it.
+    ctx->ItemClick(fileRef(s, nullptr, "b.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return shows("b.txt"); }));
+    selectCommit(s, b);
+    GG_REQUIRE(s.waitUntil([&] { return shows("b.txt") && changes.rows().size() == 2; }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:b.txt"}));
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK_STR_EQ(changes.current()->path, "b.txt");
+    GG_CHECK_STR_EQ(focusedWindow(), "History");
+    // A commit without the file: its first file.
+    selectCommit(s, c);
+    GG_REQUIRE(s.waitUntil([&] { return shows("c.txt"); }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:c.txt"}));
+    // The automatic selection of c.txt did not replace the wanted path.
+    selectCommit(s, a);
+    GG_REQUIRE(s.waitUntil([&] { return shows("b.txt") && changes.rows().size() == 2; }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:b.txt"}));
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK_STR_EQ(changes.current()->path, "b.txt");
+    GG_CHECK_STR_EQ(focusedWindow(), "History");
+}
+
+GG_TEST("changes", "the remembered file: a rename selects the renamed row, a filter that hides it gives the first visible file, the list scrolls to it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    auto commit = [&](const std::string& message, const std::vector<std::string>& files) {
+        for (const auto& f : files)
+            s.write(repo, f, message + " " + f + "\nsome lines of content that stay the same\nso that a rename is found\n");
+        s.git(repo, {"add", "."});
+        s.git(repo, {"commit", "-q", "-m", message});
+        return s.head(repo);
+    };
+    const std::string a = commit("Commit A", {"a.txt", "b.txt"});
+    s.write(repo, "a.txt", "changed in the rename commit\n");
+    s.git(repo, {"mv", "b.txt", "d.txt"});
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Rename"});
+    const std::string renamed = s.head(repo);
+    const std::string c = commit("Commit C", {"c.txt"});
+    std::vector<std::string> many;
+    for (int i = 0; i < 60; ++i)
+        many.push_back("m/m" + std::string(i < 10 ? "0" : "") + std::to_string(i) + ".txt");
+    const std::string m1 = commit("Many 1", many);
+    s.write(repo, "z.txt", "z\n");
+    for (const auto& f : many)
+        s.write(repo, f, "second version of " + f + "\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Many 2"});
+    const std::string m2 = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& changes = s.session()->changes();
+    auto shows = [&](const std::string& path) {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.path == path;
+    };
+    // The user selects b.txt; the commit that renames it to d.txt selects the renamed row.
+    selectCommit(s, a);
+    GG_REQUIRE(s.waitUntil([&] { return shows("a.txt"); }));
+    ctx->ItemClick(fileRef(s, nullptr, "b.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return shows("b.txt"); }));
+    selectCommit(s, renamed);
+    GG_REQUIRE(s.waitUntil([&] { return shows("d.txt"); }));
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK_STR_EQ(changes.current()->path, "d.txt");
+    GG_CHECK_STR_EQ(changes.current()->oldPath, "b.txt");
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:d.txt"}));
+    // The filter hides b.txt: the first visible file is selected.
+    ctx->ItemInputValue("//Changes/##changes_filter", "a.txt");
+    selectCommit(s, a);
+    GG_REQUIRE(s.waitUntil([&] { return changes.rows().size() == 2 && shows("a.txt"); }));
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:a.txt"}));
+    ctx->ItemInputValue("//Changes/##changes_filter", "");
+    // A file near the end of a long list: the list scrolls to its row after a commit with one file.
+    selectCommit(s, m1);
+    GG_REQUIRE(s.waitUntil([&] { return changes.rows().size() == 60 && shows("m/m00.txt"); }));
+    ctx->ItemClick(fileRef(s, nullptr, "m/m55.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return shows("m/m55.txt"); }));
+    selectCommit(s, c);
+    GG_REQUIRE(s.waitUntil([&] { return shows("c.txt"); }));
+    ctx->Yield(3);
+    selectCommit(s, m2);
+    GG_REQUIRE(s.waitUntil([&] { return changes.rows().size() == 61 && shows("m/m55.txt"); }));
+    ctx->Yield(5);
+    GG_CHECK(changes.selectedKeys() == (std::set<std::string>{"Files:m/m55.txt"}));
+    ImGuiWindow* list = ctx->WindowInfo(s.child("//Changes", "##files").c_str()).Window;
+    GG_REQUIRE(list != nullptr);
+    const ImRect row = ctx->ItemInfo(fileRef(s, nullptr, "m/m55.txt").c_str()).RectFull;
+    GG_CHECK(list->Scroll.y > 0.0f);
+    GG_CHECK(row.Min.y >= list->InnerRect.Min.y - 1.0f && row.Max.y <= list->InnerRect.Max.y + 1.0f);
+    GG_CHECK_STR_EQ(focusedWindow(), "History");
 }
 
 GG_TEST("changes", "the title shows the ID by the ID rule: 3 characters normal, the rest dimmed")
