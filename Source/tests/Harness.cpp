@@ -380,7 +380,10 @@ std::string Scenario::itemText(const char* ref)
     if (ctx->ItemExists(ref))
         ctx->ScrollToItemY(ref);
     std::string label = itemLabel(ref);
-    const auto pos = label.find("##");
+    // The ID starts at the last "###"; a label without one is cut at its first "##". (Free text may hold "##".)
+    auto pos = label.rfind("###");
+    if (pos == std::string::npos)
+        pos = label.find("##");
     return pos == std::string::npos ? label : label.substr(0, pos);
 }
 

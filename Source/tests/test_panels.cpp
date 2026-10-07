@@ -1491,4 +1491,35 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one) a
     }));
 }
 
+GG_TEST("panels", "stashes: a message with ## is shown whole")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    s.write(repo, "a.txt", "a for the ## stash\n");
+    s.gitOut(repo, {"stash", "push", "-q", "-m", "## hd"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    // The message is short enough for fitText() and for the test engine's 31-character item label.
+    GG_CHECK_STR_EQ(s.itemText("//Stashes/stash_0/###row"), "stash@{0} On main: ## hd");
+    // ImGui cuts a label at "##": the row must still draw the message past it. The panel is narrow here, so the
+    // row's trailing ID and date overlap the text and textShown() cannot match it whole; no other text has a '#'.
+    GG_CHECK(s.waitUntil([&] {
+        size_t hashes = 0;
+        for (const std::string& line : s.drawnText("//Stashes"))
+            hashes += static_cast<size_t>(std::count(line.begin(), line.end(), '#'));
+        return hashes == 2;
+    }));
+}
+
+GG_TEST("panels", "branches: a name with ## is shown whole")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.gitOut(repo, {"branch", "topic##tail"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    // A branch row is drawn by visibilityRow(), like the kept commit, remote branch and tag rows.
+    GG_CHECK(s.waitUntil([&] { return s.textShown("//Branches", "topic##tail"); }));
+    GG_CHECK(s.itemText("//Branches/branch_topic##tail/###branch_topic##tail") == "topic##tail");
+}
+
 } // namespace ggtest

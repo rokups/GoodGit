@@ -144,7 +144,7 @@ enum class Hit { None, Lead, Rest };
 
 // Text with bytes from `dimFrom` on dimmed. With `clickable` the item takes clicks (hand cursor, no
 // highlight) and reports a press on the part before the split (Lead) or after it (Rest).
-Hit textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id, bool clickable = false)
+Hit textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id, bool clickable = false, [[maybe_unused]] const char* infoLabel = nullptr)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems)
@@ -171,7 +171,7 @@ Hit textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id, boo
             // (ImGui::SetNextItemAllowOverlap() lets a button drawn on top of the text be hovered.)
             ImGui::ItemHoverable(bb, id, ImGui::GetCurrentContext()->LastItemData.ItemFlags & ImGuiItemFlags_AllowOverlap);
         }
-        IMGUI_TEST_ENGINE_ITEM_INFO(id, label, ImGuiItemStatusFlags_None);
+        IMGUI_TEST_ENGINE_ITEM_INFO(id, infoLabel ? infoLabel : label, ImGuiItemStatusFlags_None);
     }
     ImDrawList* dl = window->DrawList;
     dl->AddText(pos, ImGui::GetColorU32(ImGuiCol_Text), label, split);
@@ -203,6 +203,14 @@ void plainText(const char* label)
 {
     const char* end = ImGui::FindRenderedTextEnd(label);
     textItem(label, end, std::string::npos, *end ? ImGui::GetID(label) : 0);
+}
+
+void plainText(const std::string& text, const std::string& id)
+{
+    const std::string idLabel = "###" + id;
+    // The test engine shows the item under "text###id", as for plainText(const char*).
+    const std::string info = text + idLabel;
+    textItem(text.c_str(), text.c_str() + text.size(), std::string::npos, ImGui::GetID(idLabel.c_str()), false, info.c_str());
 }
 
 // A short commit ID: the first kShortIdLength characters of `hex`, split after kIdPrefixLength. Registered like

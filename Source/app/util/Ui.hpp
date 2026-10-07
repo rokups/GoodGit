@@ -28,6 +28,8 @@ void drawBadge(const char* label, ImU32 color, bool outlined = false);
 // Plain text registered as an item (tests find it; tooltips and context menus attach to it) with
 // no hover or click highlight: for text whose click does nothing. label may contain ##id.
 void plainText(const char* label);
+// plainText() for free text: `text` is drawn as is (ImGui cuts a label at a "##"); the item has the ID of "text###id".
+void plainText(const std::string& text, const std::string& id);
 // Commit ID rules: a short ID is always kShortIdLength characters; wherever an ID is drawn, its first
 // kIdPrefixLength characters (a short ID) or kShortIdLength characters (a full ID) are in the text
 // colour and the rest is dimmed. Every place that shows an ID draws it with commitId or rowIdText (below), or as

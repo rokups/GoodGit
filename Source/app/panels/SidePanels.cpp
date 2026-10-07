@@ -63,7 +63,6 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     ImGui::SameLine();
     events.labelLeft = ImGui::GetCursorScreenPos().x;
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
-    const std::string item = label + "###" + id;
     if (doubleClickable) {
         // With buttons over it the row must be flagged as overlappable for IsItemHovered() too (Selectable's own
         // AllowOverlap only reaches its click handling): else a double click on a button is also the row's.
@@ -71,14 +70,14 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
             ImGui::SetNextItemAllowOverlap();
         const ImGuiSelectableFlags flags = ImGuiSelectableFlags_AllowDoubleClick | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap);
         if (dim.second > dim.first)
-            selectableDimRange(item.c_str(), dim.first, dim.second, false, flags);
+            selectableTextDimRange(label, id, dim.first, dim.second, false, flags);
         else
-            selectable(item.c_str(), false, flags);
+            selectableText(label, id, false, flags);
         events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     } else {
         if (!acts.empty())
             ImGui::SetNextItemAllowOverlap();
-        plainText(item.c_str());
+        plainText(label, id);
     }
     ImGui::PopStyleColor();
     // Space on the row toggles its visibility like a click on the eye (Ctrl+Space: only this one).
@@ -784,7 +783,7 @@ void TagsPanel::draw(bool* open)
         ImGui::TextDisabled(ICON_MS_CLOUD);
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-        plainText((name + "  (" + where + ")###" + id).c_str());
+        plainText(name + "  (" + where + ")", id);
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("Only on %s: fetch to get it here", where.c_str());
@@ -863,7 +862,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
                 m_selected = node.path;
                 m_selectedWorktree = false;
             }
-        } else if (selectable(label.c_str(), selected)) {
+        } else if (selectableText(node.label, "row", selected)) {
             m_selected = node.path;
             m_selectedWorktree = false;
         }
@@ -965,7 +964,7 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
         const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
                                         : ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        if (selectable((label + "###row").c_str(), m_selectedWorktree && path == m_selected)) {
+        if (selectableText(label, "row", m_selectedWorktree && path == m_selected)) {
             m_selected = path;
             m_selectedWorktree = true;
         }
@@ -1107,7 +1106,7 @@ void WorktreesPanel::draw(bool* open)
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         ImGui::SetNextItemAllowOverlap();
-        selectableDimRange((label + "###row").c_str(), dimFrom, dimTo, w.isCurrent, ImGuiSelectableFlags_AllowOverlap);
+        selectableTextDimRange(label, "row", dimFrom, dimTo, w.isCurrent, ImGuiSelectableFlags_AllowOverlap);
         ImGui::PopStyleColor();
         // The hover buttons do what the menu's Open here and Open directory do (Open here: not for the current one).
         const RowAction acts[] = {
@@ -1177,7 +1176,7 @@ void RemotesPanel::draw(bool* open)
         if (r.pruneOnFetch)
             label += "  (prune)";
         ImGui::SetNextItemAllowOverlap();
-        selectableDimRange((label + "###row").c_str(), dimBegin, label.size(), false, ImGuiSelectableFlags_AllowOverlap);
+        selectableTextDimRange(label, "row", dimBegin, label.size(), false, ImGuiSelectableFlags_AllowOverlap);
         // The hover buttons do what the menu's Fetch and Pull do.
         const RowAction acts[] = {
             {ICON_MS_DOWNLOAD, "act_fetch", "Fetch", free},
@@ -1288,7 +1287,7 @@ void StashesPanel::draw(bool* open)
         const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;
         // SelectOnNav: the nav cursor (arrows) and the selection are one thing; the cursor reaching a row selects it.
         ImGui::SetNextItemAllowOverlap();
-        if (selectable((label + "###row").c_str(), selected, ImGuiSelectableFlags_SelectOnNav | ImGuiSelectableFlags_AllowOverlap))
+        if (selectableText(label, "row", selected, ImGuiSelectableFlags_SelectOnNav | ImGuiSelectableFlags_AllowOverlap))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
         const ImGuiLastItemData rowItem = ImGui::GetCurrentContext()->LastItemData;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
@@ -1367,7 +1366,7 @@ void ReflogPanel::draw(bool* open)
         if (!m_snapshot->stashes.empty())
             refs.push_back("refs/stash");
         for (const auto& r : refs)
-            if (selectable((r + "###ref_" + rowId(r)).c_str(), r == m_ref))
+            if (selectableText(r, "ref_" + rowId(r), r == m_ref))
                 choose(r);
         ImGui::EndCombo();
     }

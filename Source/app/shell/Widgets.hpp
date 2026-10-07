@@ -37,6 +37,10 @@ bool smallButton(const char* icon, const char* label);
 // ImGui::Selectable that stays highlighted while hovered when selected (ImGui draws a hovered row with
 // HeaderHovered, the neutral hover overlay, which would hide the selection).
 bool selectable(const char* label, bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
+// selectable() for free text: `text` is drawn as is (ImGui cuts a label at a "##"), the item has the ID of the
+// label "text###id" and the size of the whole text. Use it where `text` is a user string (a commit summary).
+bool selectableText(const std::string& text, const std::string& id, bool selected = false, ImGuiSelectableFlags flags = 0,
+    ImVec2 size = ImVec2(0, 0));
 // One icon button of a list row's hover actions (see rowActions). `id` names the button ("act_checkout": the
 // label is `icon###id`, so tests address it as <row scope>/###act_checkout); `tip` is its tooltip.
 struct RowAction {
@@ -74,6 +78,11 @@ bool selectableDimRanges(const char* label, std::initializer_list<std::pair<size
     ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
 bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected = false, ImGuiSelectableFlags flags = 0,
     ImVec2 size = ImVec2(0, 0));
+// The two above for free text: `text` is drawn as is, the item ID is that of "text###id" (see selectableText).
+bool selectableTextDimRanges(const std::string& text, const std::string& id, std::initializer_list<std::pair<size_t, size_t>> ranges,
+    bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
+bool selectableTextDimRange(const std::string& text, const std::string& id, size_t dimBegin, size_t dimEnd, bool selected = false,
+    ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
 // Width button()/smallButton() will take for this icon and label, for right-aligning rows.
 float buttonWidth(const char* icon, const char* label);
 // Makes the item just submitted (a commit-ID/ref input) a drop target for History's commits and branch badges:

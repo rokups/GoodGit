@@ -281,9 +281,8 @@ int rowActions(std::span<const RowAction> actions, bool rowSelected, bool padded
 namespace {
 
 // Draws the visible part of `label` at `pos`: the byte ranges (ascending, disjoint) dimmed, the rest in Text.
-void drawDimRangesText(ImVec2 pos, const char* label, std::span<const std::pair<size_t, size_t>> ranges)
+void drawDimRangesText(ImVec2 pos, const char* label, const char* end, std::span<const std::pair<size_t, size_t>> ranges)
 {
-    const char* end = ImGui::FindRenderedTextEnd(label);
     const size_t total = static_cast<size_t>(end - label);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
@@ -302,6 +301,11 @@ void drawDimRangesText(ImVec2 pos, const char* label, std::span<const std::pair<
         draw(finish, dim);
     }
     draw(total, text);
+}
+
+void drawDimRangesText(ImVec2 pos, const char* label, std::span<const std::pair<size_t, size_t>> ranges)
+{
+    drawDimRangesText(pos, label, ImGui::FindRenderedTextEnd(label), ranges);
 }
 
 void drawDimRangeText(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd)
@@ -388,6 +392,45 @@ bool selectableDimRanges(const char* label, std::initializer_list<std::pair<size
 bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
 {
     return selectableDimRanges(label, {{dimBegin, dimEnd}}, selected, flags, size);
+}
+
+bool selectableTextDimRanges(const std::string& text, const std::string& id, std::initializer_list<std::pair<size_t, size_t>> ranges,
+    bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+    // Where Selectable() puts its text (see above).
+    const ImVec2 pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
+    // The item gets an ID-only label, so ImGui cannot cut `text` at a "##". It takes the layout width of the whole
+    // text (the cursor moves past it, as for a labelled selectable) and, as a labelled one does, spans the
+    // available width for its highlight and clicks.
+    if (size.x == 0.0f) {
+        size.x = ImGui::CalcTextSize(text.c_str(), text.c_str() + text.size()).x;
+        flags |= ImGuiSelectableFlags_SpanAvailWidth;
+    }
+    bool pressed;
+    {
+        HiddenText hidden;
+        pressed = selectable(("###" + id).c_str(), selected, flags, size);
+    }
+    // The test engine shows the item under its text (as for a labelled selectable), not the empty label.
+    [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext();
+    IMGUI_TEST_ENGINE_ITEM_INFO(g.LastItemData.ID, (text + "###" + id).c_str(), g.LastItemData.StatusFlags);
+    if (ImGui::IsItemVisible())
+        drawDimRangesText(pos, text.c_str(), text.c_str() + text.size(), std::span(ranges.begin(), ranges.size()));
+    return pressed;
+}
+
+bool selectableTextDimRange(const std::string& text, const std::string& id, size_t dimBegin, size_t dimEnd, bool selected,
+    ImGuiSelectableFlags flags, ImVec2 size)
+{
+    return selectableTextDimRanges(text, id, {{dimBegin, dimEnd}}, selected, flags, size);
+}
+
+bool selectableText(const std::string& text, const std::string& id, bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+{
+    return selectableTextDimRanges(text, id, {}, selected, flags, size);
 }
 
 bool acceptCommitDrop(std::string& text)
