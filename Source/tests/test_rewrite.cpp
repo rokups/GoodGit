@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 
 namespace ggtest {
 
@@ -68,6 +69,25 @@ void rebaseTip(Scenario& s, const std::string& tip, const std::string& dest)
     s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 1.0f);
     s.waitUntil([&] { return s.session()->actions().busy().empty(); });
     s.settle();
+}
+
+// The parent ids of a revision, in order.
+std::vector<std::string> parentIds(Scenario& s, const fs::path& repo, const std::string& rev)
+{
+    std::istringstream in(gg::trim(s.gitOut(repo, {"rev-list", "--parents", "-n", "1", rev})));
+    std::vector<std::string> ids;
+    std::string word;
+    while (in >> word)
+        ids.push_back(word);
+    if (!ids.empty())
+        ids.erase(ids.begin());
+    return ids;
+}
+
+bool hasFile(Scenario& s, const fs::path& repo, const std::string& rev, const std::string& file)
+{
+    const auto files = gg::splitLines(s.gitOut(repo, {"ls-tree", "-r", "--name-only", rev}));
+    return std::find(files.begin(), files.end(), file) != files.end();
 }
 
 } // namespace
@@ -544,6 +564,139 @@ GG_TEST("rewrite", "rewrite: a merge step that makes no commit maps its source t
     GG_CHECK_STR_EQ(s.revParse(repo, "onm"), n);
     GG_CHECK(s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"}).find("refs/heads/onm " + n) != std::string::npos);
     GG_CHECK(branches.find("refs/heads/onm " + m) != std::string::npos);
+}
+
+GG_TEST("rewrite", "rebase tip onto: a merge inside the set keeps its two parents")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string c = s.revParse(repo, "main");
+    s.git(repo, {"checkout", "-q", "-b", "topic", "main~1"});
+    s.commitFile(repo, "d.txt", "d\n", "D");
+    s.git(repo, {"checkout", "-q", "-b", "feat", "main~1"});
+    s.commitFile(repo, "f.txt", "f\n", "F");
+    s.git(repo, {"checkout", "-q", "topic"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "M", "feat"});
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    rebaseTip(s, "topic", "main");
+    const auto merge = parentIds(s, repo, "topic");
+    GG_REQUIRE(merge.size() == 2);
+    GG_CHECK_STR_EQ(info(s, repo, merge[0], "%s"), "D");
+    GG_CHECK_STR_EQ(info(s, repo, merge[1], "%s"), "F");
+    GG_CHECK_STR_EQ(parentIds(s, repo, merge[0]).at(0), c);
+    GG_CHECK_STR_EQ(parentIds(s, repo, merge[1]).at(0), c);
+    for (const auto& file : gg::splitLines(s.gitOut(repo, {"ls-tree", "-r", "--name-only", "main"})))
+        GG_CHECK(hasFile(s, repo, "topic", file));
+    for (const char* file : {"d.txt", "f.txt"})
+        GG_CHECK(hasFile(s, repo, "topic", file));
+}
+
+GG_TEST("rewrite", "rebase tip onto: a merge of a commit that the destination contains makes no commit")
+{
+    // topic is B-D-M-E where M merges lib (L, from A); dest is C plus a merge of lib.
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "lib", "main~2"});
+    s.git(repo, {"checkout", "-q", "lib"});
+    s.commitFile(repo, "l.txt", "l\n", "L");
+    s.git(repo, {"checkout", "-q", "-b", "dest", "main"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "X", "lib"});
+    const std::string dest = s.head(repo);
+    s.git(repo, {"checkout", "-q", "-b", "topic", "main~1"});
+    s.commitFile(repo, "d.txt", "d\n", "D");
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "M", "lib"});
+    s.commitFile(repo, "e.txt", "e\n", "E");
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    rebaseTip(s, "topic", "dest");
+    GG_CHECK_STR_EQ(s.revParse(repo, "dest"), dest);
+    GG_CHECK_STR_EQ(info(s, repo, "topic", "%s"), "E");
+    // M's first parent D is in the set and the destination already holds L: no merge is left.
+    GG_CHECK(s.gitOut(repo, {"rev-list", "--merges", "dest..topic"}).empty());
+    GG_CHECK_STR_EQ(info(s, repo, "topic~1", "%s"), "D");
+    GG_CHECK_STR_EQ(s.revParse(repo, "topic~2"), dest);
+    for (const char* file : {"d.txt", "e.txt", "l.txt"})
+        GG_CHECK(hasFile(s, repo, "topic", file));
+    for (const auto& file : gg::splitLines(s.gitOut(repo, {"ls-tree", "-r", "--name-only", "dest"})))
+        GG_CHECK(hasFile(s, repo, "topic", file));
+}
+
+namespace {
+
+// Topic is B-D-E-M-G, where M merges main (C) into topic; main then gets F. HEAD ends on main.
+struct MergedFork {
+    ForkRepo fork;
+    std::string m, f;
+};
+
+MergedFork makeMergedFork(Scenario& s)
+{
+    MergedFork r;
+    r.fork = makeFork(s);
+    const fs::path& repo = r.fork.path;
+    s.git(repo, {"checkout", "-q", "topic"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "M", "main"});
+    r.m = s.head(repo);
+    s.commitFile(repo, "g.txt", "g\n", "G");
+    s.git(repo, {"checkout", "-q", "main"});
+    s.commitFile(repo, "f.txt", "f\n", "F");
+    r.f = s.head(repo);
+    return r;
+}
+
+} // namespace
+
+GG_TEST("rewrite", "rebase tip onto: a merge of the destination line into the tip makes no commit")
+{
+    const MergedFork r = makeMergedFork(s);
+    const fs::path repo = r.fork.path;
+    GG_REQUIRE(s.openRepository(repo));
+    rebaseTip(s, "topic", "main");
+    GG_CHECK(s.gitOut(repo, {"rev-list", "--merges", "main..topic"}).empty());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "--reverse", "--format=%s", "main..topic"}), "D\nE\nG");
+    GG_CHECK_STR_EQ(s.revParse(repo, "topic~3"), r.f);
+    GG_CHECK_STR_EQ(s.revParse(repo, "mid"), s.revParse(repo, "topic~2"));
+    for (const auto& file : gg::splitLines(s.gitOut(repo, {"ls-tree", "-r", "--name-only", "main"})))
+        GG_CHECK(hasFile(s, repo, "topic", file));
+    for (const char* file : {"d.txt", "e.txt", "g.txt"})
+        GG_CHECK(hasFile(s, repo, "topic", file));
+}
+
+GG_TEST("rewrite", "rebase tip onto: a branch and HEAD on such a merge move to the commit that replaces it")
+{
+    const MergedFork r = makeMergedFork(s);
+    const fs::path repo = r.fork.path;
+    s.git(repo, {"branch", "onm", r.m});
+    s.git(repo, {"checkout", "-q", "--detach", r.m});
+    GG_REQUIRE(s.openRepository(repo));
+    rebaseTip(s, "topic", "main");
+    const std::string e2 = s.revParse(repo, "topic~1");
+    GG_CHECK_STR_EQ(info(s, repo, e2, "%s"), "E");
+    GG_CHECK_STR_EQ(s.revParse(repo, "onm"), e2);
+    GG_CHECK_STR_EQ(s.head(repo), e2);
+    GG_CHECK(s.statusPorcelain(repo).empty());
+}
+
+GG_TEST("rewrite", "rebase tip onto: a merge with its first parent outside the set stays a merge on the destination")
+{
+    // topic is the merge M of feat (S, from B) into B; main is A-B-C.
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string c = s.revParse(repo, "main");
+    s.git(repo, {"checkout", "-q", "-b", "feat", "main~1"});
+    s.commitFile(repo, "s.txt", "s\n", "S");
+    s.git(repo, {"checkout", "-q", "-b", "topic", "main~1"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "M", "feat"});
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    rebaseTip(s, "topic", "main");
+    const auto merge = parentIds(s, repo, "topic");
+    GG_REQUIRE(merge.size() == 2);
+    GG_CHECK_STR_EQ(merge[0], c);
+    GG_CHECK_STR_EQ(info(s, repo, "topic", "%s"), "M");
+    GG_CHECK_STR_EQ(info(s, repo, merge[1], "%s"), "S");
+    GG_CHECK_STR_EQ(parentIds(s, repo, merge[1]).at(0), c);
+    for (const auto& file : gg::splitLines(s.gitOut(repo, {"ls-tree", "-r", "--name-only", "main"})))
+        GG_CHECK(hasFile(s, repo, "topic", file));
+    GG_CHECK(hasFile(s, repo, "topic", "s.txt"));
 }
 
 } // namespace ggtest

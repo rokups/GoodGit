@@ -1257,9 +1257,24 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
                 continue;
             s.sourceParents = false;
             s.parents.clear();
-            for (const auto& p : parentsOf(repo, s.source))
-                if (mine.count(p))
-                    s.parents.push_back(p);
+            // As git rebase --rebase-merges: a parent in the set maps to its copy, a first parent outside
+            // the set becomes the destination, any other parent outside the set stays as it was.
+            // A merge with a parent outside the set is a git merge step: a parent that the new first
+            // parent already contains is left out, and with none left no commit is made.
+            const auto original = parentsOf(repo, s.source);
+            bool first = true;
+            bool outside = false;
+            for (const auto& p : original) {
+                outside = outside || !mine.count(p);
+                const std::string parent = mine.count(p) ? p : first ? "=" + dest : "=" + p;
+                first = false;
+                if (std::find(s.parents.begin(), s.parents.end(), parent) == s.parents.end())
+                    s.parents.push_back(parent);
+            }
+            if (original.size() > 1 && outside) {
+                s.kind = rw::Step::Kind::Merge;
+                s.gitMerge = true;
+            }
             if (s.parents.empty())
                 s.parents.push_back("=" + dest);
         }
