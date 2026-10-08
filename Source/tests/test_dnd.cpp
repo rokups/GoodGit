@@ -347,6 +347,54 @@ GG_TEST("dnd", "a branch badge onto a branch badge: Rebase uses the branch when 
     GG_CHECK_STR_EQ(s.revParse(r.path, "refs/heads/main"), r.c[3]);
 }
 
+GG_TEST("dnd", "a branch badge onto a branch badge: Rebase lands on the destination branch when a tag has its name")
+{
+    const Chain r = makeChain(s);
+    // The tag main is on c1; the branch topic has two own commits on c2; the branch main is on c4.
+    s.git(r.path, {"tag", "main", r.c[0]});
+    s.git(r.path, {"switch", "-q", "-c", "topic", r.c[1]});
+    s.commitFile(r.path, "t1.txt", "1\n", "topic1");
+    s.commitFile(r.path, "t2.txt", "2\n", "topic2");
+    const std::string topic = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(topic, "topic").c_str()); }));
+    drag(s, badgeRef(topic, "topic"), badgeRef(r.c[3], "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(!itemDisabled(s, "###rebase"));
+    ctx->ItemClick("//$FOCUSED/###rebase");
+    // The short name is ambiguous: full ref names.
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "refs/heads/topic~2") == s.revParse(r.path, "refs/heads/main"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/heads/main"), r.c[3]);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/tags/main"), r.c[0]);
+}
+
+GG_TEST("dnd", "a branch badge onto a branch badge: Merge uses the branch when a tag has the same name")
+{
+    const Chain r = makeChain(s);
+    // The tag feat is on c1; the branch feat has one own commit on c2.
+    s.git(r.path, {"tag", "feat", r.c[0]});
+    s.git(r.path, {"switch", "-q", "-c", "feat", "side"});
+    s.commitFile(r.path, "feat.txt", "x\n", "feat1");
+    const std::string feat = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(feat, "feat").c_str()); }));
+    drag(s, badgeRef(feat, "feat"), badgeRef(r.c[3], "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    ctx->ItemClick("//$FOCUSED/###merge");
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Merge into HEAD"); }));
+    // The native merge hands the operand to git, which prefers a tag to a branch of the same name.
+    s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");
+    s.dialogButton("Merge into HEAD", "Merge");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(r.path, {"rev-parse", "-q", "--verify", "HEAD^2"}).ok(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^1"), r.c[3]);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), feat);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s"}), "Merge branch 'feat'");
+}
+
 GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working tree files into any commit")
 {
     const Chain r = makeChain(s);

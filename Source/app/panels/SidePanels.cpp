@@ -327,9 +327,9 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
         actions.checkout(b.name, false);
     const bool headAttached = !snap.headDetached && !snap.headUnborn;
     if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !b.isHead && !snap.headUnborn))
-        showMergeDialog(session, b.name);
+        showMergeDialog(session, "refs/heads/" + b.name);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && !b.isHead && headAttached))
-        actions.rebaseHeadOnto(b.name);
+        actions.rebaseHeadOnto("refs/heads/" + b.name);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Interactive rebase onto...", nullptr, false, free))
         showInteractiveRebaseDialog(session, b.name);
     if (b.isHead)
@@ -414,9 +414,9 @@ void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const c
     if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
         session.showCreateBranchDialog(r.name, shortName);
     if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !snap.headUnborn))
-        showMergeDialog(session, r.name);
+        showMergeDialog(session, "refs/remotes/" + r.name);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
-        actions.rebaseHeadOnto(r.name);
+        actions.rebaseHeadOnto("refs/remotes/" + r.name);
     ImGui::Separator();
     if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
         session.showDeleteRemoteBranchDialog(r.name);

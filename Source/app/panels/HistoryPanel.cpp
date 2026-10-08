@@ -763,9 +763,9 @@ void HistoryPanel::drawBranchDropChooser()
     const std::string moveReason = src->target == m_branchDrop->row ? x + " is already there." : std::string();
     bool chosen = true;
     if (item(ICON_MS_MERGE, "Merge " + x + " into " + y + "###merge", nullptr, mergeReason))
-        showMergeDialog(m_session, x);
+        showMergeDialog(m_session, "refs/heads/" + x);
     else if (item(ICON_MS_LOW_PRIORITY, "Rebase " + x + " onto " + y + "###rebase", nullptr, rebaseReason))
-        actions.rebaseTipOnto("refs/heads/" + x, dst ? to : commit);
+        actions.rebaseTipOnto("refs/heads/" + x, dst ? "refs/heads/" + to : commit);
     else if (item(ICON_MS_SWAP_HORIZ, "Move " + x + " here###move", "Shift", moveReason))
         moveBranchHere(*src, commit);
     else

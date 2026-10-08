@@ -587,6 +587,23 @@ GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a br
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), s.revParse(r.path, "side"));
 }
 
+GG_TEST("edit", "Branches panel: Rebase HEAD onto a local branch uses the branch when a tag has the same name")
+{
+    const EditRepo r = makeRepo(s);
+    // The tag side is on c1; the branch side is on s1, a child of c2.
+    s.git(r.path, {"tag", "side", r.c1});
+    GG_REQUIRE(s.openRepository(r.path));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.contextMenu("//Branches/branch_side/###branch_side", "Rebase HEAD onto branch");
+    GG_CHECK(changed(s, r.path, r.c4));
+    s.settle();
+    // The short name is ambiguous: full ref names. main's own commits c3 and c4 sit on s1.
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/heads/main~2"), r.s1);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/heads/side"), r.s1);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/tags/side"), r.c1);
+}
+
 GG_TEST("edit", "History and Commit menus: merge a commit into HEAD, rebase HEAD onto a commit")
 {
     const EditRepo r = makeRepo(s);

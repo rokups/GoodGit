@@ -576,17 +576,26 @@ void showMergeDialog(Session& session, const std::string& branch, bool commit)
     f.add(commitInfo(session, "Into HEAD", std::string("HEAD")));
     f.add(commitField(session, "rev", "Merge (branch, tag or commit)", branch));
     const std::string quote = commit ? "Merge commit '" : "Merge branch '";
-    f.add(Field{Field::Text, "message", "Message", quote + branch + "'"});
+    // A full ref name is the operand, the message names the short branch.
+    auto plain = [](const std::string& rev) {
+        for (const char* prefix : {"refs/heads/", "refs/remotes/"})
+            if (rev.rfind(prefix, 0) == 0)
+                return rev.substr(std::string(prefix).size());
+        return rev;
+    };
+    f.add(Field{Field::Text, "message", "Message", quote + plain(branch) + "'"});
     f.add(Field{Field::Check, "native", "Use native git merge (stops with index conflicts)"});
     Session* s = &session;
     f.buttons.push_back({"Merge",
-        [s, branch, quote](Form& form) {
+        [s, branch, quote, plain](Form& form) {
             const std::string rev = gg::trim(form.text("rev"));
+            // The default message names the commit it was made for.
+            const std::string typed = form.text("message");
+            const std::string message = typed.empty() || typed == quote + plain(branch) + "'" ? quote + plain(rev) + "'" : typed;
             if (form.checked("native"))
-                s->actions().mergeNative(rev);
+                s->actions().mergeNative(rev, message);
             else
-                // The default message names the commit it was made for.
-                s->actions().mergeIntoHead(rev, form.text("message") == quote + branch + "'" ? quote + rev + "'" : form.text("message"));
+                s->actions().mergeIntoHead(rev, message);
         },
         [](const Form& form) { return !gg::trim(form.text("rev")).empty(); }});
     f.buttons.push_back({"Cancel", {}});

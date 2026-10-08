@@ -170,7 +170,7 @@ public:
     void restorePaths(const core::Oid& commit, const std::string& from, const std::vector<std::string>& paths);
     // `git restore --source=<from> --staged --worktree -- paths` (plain git).
     void restoreWorktree(const std::string& from, const std::vector<std::string>& paths);
-    void mergeNative(const std::string& branch);
+    void mergeNative(const std::string& branch, const std::string& message = {});
     // HEAD's own commits (not on `branch`) replayed onto it.
     void rebaseHeadOnto(const std::string& branch);
     // `tipRev` (a branch, "HEAD" or a commit id) and its commits not on `destination` replayed onto it;

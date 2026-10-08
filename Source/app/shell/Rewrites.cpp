@@ -666,12 +666,28 @@ void Actions::simplifyParents(const core::Oid& commit)
     });
 }
 
+namespace {
+
+// A full branch name reads as the short name, a full commit id as its short form: in the label, the reflog
+// message and the refusals.
+std::string shownRev(const std::string& rev)
+{
+    if (rev.rfind("refs/heads/", 0) == 0)
+        return rev.substr(11);
+    if (rev.rfind("refs/remotes/", 0) == 0)
+        return rev.substr(13);
+    const bool fullId = rev.size() == 40 && rev.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+    return fullId ? rev.substr(0, 10) : rev;
+}
+
+} // namespace
+
 void Actions::mergeIntoHead(const std::string& branch, const std::string& message)
 {
-    std::string msg = message.empty() ? "Merge branch '" + branch + "'\n" : message;
+    std::string msg = message.empty() ? "Merge branch '" + shownRev(branch) + "'\n" : message;
     if (msg.back() != '\n')
         msg.push_back('\n');
-    rewrite("merge " + branch + " into HEAD", [branch, msg](git_repository* repo) {
+    rewrite("merge " + shownRev(branch) + " into HEAD", [branch, msg](git_repository* repo) {
         git_oid head, other;
         if (git_reference_name_to_id(&head, repo, "HEAD") != 0)
             refuse("HEAD has no commit to merge into");
@@ -681,7 +697,7 @@ void Actions::mergeIntoHead(const std::string& branch, const std::string& messag
             other = *fromHex(resolveCommit(repo, branch));
         git_error_clear();
         if (isAncestor(repo, toHex(other), toHex(head)))
-            refuse(branch + " is already merged");
+            refuse(shownRev(branch) + " is already merged");
         rw::Plan plan;
         rw::Step merge;
         merge.kind = rw::Step::Kind::Merge;
@@ -691,7 +707,7 @@ void Actions::mergeIntoHead(const std::string& branch, const std::string& messag
         merge.parents = {"=" + toHex(head), "=" + toHex(other)};
         merge.message = msg;
         plan.steps.push_back(merge);
-        plan.reflogMessage = "ggui: merge " + branch;
+        plan.reflogMessage = "ggui: merge " + shownRev(branch);
         if (const std::string target = gg::git2::headTarget(repo); !target.empty())
             plan.refsToSteps[target] = "merge";
         else
@@ -1153,33 +1169,24 @@ void Actions::restoreWorktree(const std::string& from, const std::vector<std::st
     });
 }
 
-void Actions::mergeNative(const std::string& branch)
+void Actions::mergeNative(const std::string& branch, const std::string& message)
 {
     // Plain git merge: may stop with index conflicts (then the native conflict flow takes over).
-    run("merge " + branch, [branch](MutationContext& ctx) {
+    run("merge " + shownRev(branch), [branch, message](MutationContext& ctx) {
         ctx.env.emplace_back("GIT_EDITOR", "true");
         ctx.worktreeFollowsIndex = true;
-        const auto r = ctx.gitMayFail({"merge", "--no-edit", branch});
+        // An empty message leaves git to word it; a full ref name would read as "Merge branch 'refs/heads/x'".
+        std::vector<std::string> args{"merge", "--no-edit"};
+        if (!message.empty())
+            args.insert(args.end(), {"-m", message});
+        args.push_back(branch);
+        const auto r = ctx.gitMayFail(args);
         if (!r.ok() && !std::filesystem::exists(ctx.cwd() / ".git" / "MERGE_HEAD"))
             throw MutationError{Outcome::Failed, r.message(), r.message()};
     }, {}, false, true, true, true);
 }
 
 void Actions::rebaseHeadOnto(const std::string& branch) { rebaseTipOnto("HEAD", branch); }
-
-namespace {
-
-// A full branch name reads as the short name, a full commit id as its short form: in the label, the reflog
-// message and the refusals.
-std::string shownRev(const std::string& rev)
-{
-    if (rev.rfind("refs/heads/", 0) == 0)
-        return rev.substr(11);
-    const bool fullId = rev.size() == 40 && rev.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
-    return fullId ? rev.substr(0, 10) : rev;
-}
-
-} // namespace
 
 void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destination)
 {
@@ -1225,7 +1232,7 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
         if (own.empty()) {
             // An empty range means the destination holds the tip; isAncestor is false only after a walk error.
             if (tip == dest || !isAncestor(repo, tip, dest))
-                refuse(shown + " is already on " + destination);
+                refuse(shown + " is already on " + shownDest);
             // The tip is behind the destination: nothing is replayed, the branch (or detached HEAD) fast-forwards.
             rw::Plan forward;
             forward.rebaseLike = true;
@@ -1243,7 +1250,7 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
             const bool isBranch = git_reference_name_to_id(&local, repo, name.c_str()) == 0 && toHex(local) == tip;
             git_error_clear();
             if (!isBranch)
-                refuse(destination + " already contains " + shown);
+                refuse(shownDest + " already contains " + shown);
             forward.refsToSteps[name] = "=" + dest;
             return forward;
         }
