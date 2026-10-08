@@ -1090,7 +1090,8 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
     for (const auto& c : changed) {
         Commit commit = lookupCommit(repo, *fromHex(c));
         for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)
-            git_revwalk_hide(walk.get(), git_commit_parent_id(commit.get(), i));
+            if (!affected.count(toHex(*git_commit_parent_id(commit.get(), i)))) // (a changed parent stays in)
+                git_revwalk_hide(walk.get(), git_commit_parent_id(commit.get(), i));
         git_revwalk_push(walk.get(), git_commit_id(commit.get())); // included even when unreachable
     }
     git_error_clear();
