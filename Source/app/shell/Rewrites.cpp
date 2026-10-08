@@ -1255,12 +1255,36 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
         }
         // The tip's own commits: reachable from it, not from the destination (oldest first).
         const std::vector<std::string> own = rw::rangeToMove(repo, tip, dest);
-        if (own.empty())
-            refuse(tipRev + " is already on " + destination);
+        const std::string reflogMessage = isHead ? "ggui: rebase onto " + destination : "ggui: rebase " + tipRev + " onto " + destination;
+        if (own.empty()) {
+            // An empty range means the destination holds the tip; isAncestor is false only after a walk error.
+            if (tip == dest || !isAncestor(repo, tip, dest))
+                refuse(tipRev + " is already on " + destination);
+            // The tip is behind the destination: nothing is replayed, the branch (or detached HEAD) fast-forwards.
+            rw::Plan forward;
+            forward.rebaseLike = true;
+            forward.upstream = dest;
+            forward.reflogMessage = reflogMessage;
+            if (isHead) {
+                if (const std::string branch = gg::git2::headTarget(repo); !branch.empty())
+                    forward.refsToSteps[branch] = "=" + dest;
+                else
+                    forward.detachHeadAt = "=" + dest;
+                return forward;
+            }
+            const std::string name = tipRev.rfind("refs/heads/", 0) == 0 ? tipRev : "refs/heads/" + tipRev;
+            git_oid local;
+            const bool isBranch = git_reference_name_to_id(&local, repo, name.c_str()) == 0 && toHex(local) == tip;
+            git_error_clear();
+            if (!isBranch)
+                refuse(destination + " already contains " + tipRev);
+            forward.refsToSteps[name] = "=" + dest;
+            return forward;
+        }
         rw::Plan plan = rw::replayPlan(repo, own);
         plan.rebaseLike = true;
         plan.upstream = dest;
-        plan.reflogMessage = isHead ? "ggui: rebase onto " + destination : "ggui: rebase " + tipRev + " onto " + destination;
+        plan.reflogMessage = reflogMessage;
         std::set<std::string> mine(own.begin(), own.end());
         for (auto& s : plan.steps) {
             if (!mine.count(s.source))

@@ -432,4 +432,71 @@ GG_TEST("rewrite", "rebase tip onto: refuses a tip that no local branch, HEAD or
     }
 }
 
+GG_TEST("rewrite", "rebase tip onto: a branch behind the destination fast-forwards")
+{
+    const ForkRepo r = makeFork(s);
+    const std::string refsBefore = s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"});
+    const std::string head = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "mid", "topic");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "mid"), r.e);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), r.e);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c);
+    GG_CHECK_STR_EQ(s.head(r.path), head);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    // No other ref changed: only mid differs from before.
+    std::string expected = refsBefore;
+    const std::string was = "refs/heads/mid " + r.d;
+    const size_t at = expected.find(was);
+    GG_REQUIRE(at != std::string::npos);
+    expected.replace(at, was.size(), "refs/heads/mid " + r.e);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"}), expected);
+}
+
+GG_TEST("rewrite", "rebase tip onto: HEAD behind the destination fast-forwards with the working tree")
+{
+    const ForkRepo r = makeFork(s);
+    s.git(r.path, {"checkout", "-q", "mid"});
+    const std::string before = everything(s, r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "HEAD", "topic");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "mid"), r.e);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "mid");
+    GG_CHECK(fs::exists(r.path / "e.txt"));
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return everything(s, r.path) == before; }));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "mid"), r.d);
+    GG_CHECK(!fs::exists(r.path / "e.txt"));
+}
+
+GG_TEST("rewrite", "rebase tip onto: a detached HEAD behind the destination fast-forwards")
+{
+    const ForkRepo r = makeFork(s);
+    s.git(r.path, {"checkout", "-q", "--detach", r.d});
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "HEAD", "topic");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "");
+    GG_CHECK_STR_EQ(s.head(r.path), r.e);
+    GG_CHECK(fs::exists(r.path / "e.txt"));
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+    GG_CHECK_STR_EQ(s.revParse(r.path, "mid"), r.d);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), r.e);
+}
+
+GG_TEST("rewrite", "rebase tip onto: a tip on the destination, and a commit id behind it, are refused")
+{
+    const ForkRepo r = makeFork(s);
+    const std::string before = everything(s, r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "mid", "mid");
+    GG_CHECK(s.app.errorMessage().find("mid is already on mid") != std::string::npos);
+    GG_CHECK(everything(s, r.path) == before);
+    s.dismissError();
+    rebaseTip(s, r.d, "topic");
+    GG_CHECK(s.app.errorMessage().find("topic already contains " + r.d) != std::string::npos);
+    GG_CHECK(everything(s, r.path) == before);
+}
+
 } // namespace ggtest

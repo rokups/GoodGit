@@ -763,16 +763,14 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
                 return true;
         return false;
     }));
-    // A commit ahead of HEAD: HEAD is already on its line.
-    const std::string a1 = s.gitOut(r.path, {"commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Ahead"});
-    s.git(r.path, {"branch", "ahead", a1});
-    GG_REQUIRE(rowReady(s, a1));
-    const std::string withAhead = s.gitOut(r.path, {"for-each-ref"});
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_ahead/###branch_ahead"); }));
-    s.contextMenu("//Branches/branch_ahead/###branch_ahead", "Rebase HEAD onto branch");
+    // Another branch on HEAD's own commit: HEAD is already on it. (A branch ahead of HEAD fast-forwards.)
+    s.git(r.path, {"branch", "same", "HEAD"});
+    const std::string withSame = s.gitOut(r.path, {"for-each-ref"});
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_same/###branch_same"); }));
+    s.contextMenu("//Branches/branch_same/###branch_same", "Rebase HEAD onto branch");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("HEAD is already on") != std::string::npos);
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withAhead);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), withSame);
 
     // A real merge (plain git): its parents are not redundant; the line below it is not single.
     s.git(r.path, {"merge", "-q", "--no-ff", "-m", "Merge side", "side"});
