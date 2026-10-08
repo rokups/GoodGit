@@ -133,6 +133,11 @@ struct Context {
     std::map<std::string, CommitInfo> commits;    // every commit the todo refers to
     std::map<std::string, std::vector<std::string>> branchesAt; // commit → local branch refs
     std::set<std::string> checkedOutElsewhere;    // branch refs checked out in other worktrees
+    // Short names (in name order) of the local branches that stay on the old commits: not the tip
+    // ref, tip outside the range, but built on a commit of the range. read() fills it once; it
+    // does not follow later edits of the todo (a dropped row does not change it). A branch at a
+    // merge commit of the range is not here: the editor adds it while Rebase merges is off.
+    std::vector<std::string> leftBehind;
     Todo initial;                                 // the todo Git would start with
     // --rebase-merges: the merge commits of the range (oldest first; not in `range`, but in
     // `commits`), and the todo `git rebase -i --rebase-merges` starts with (label/reset/merge rows,

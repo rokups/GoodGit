@@ -741,6 +741,48 @@ Context read(git_repository* repo, const ReadOptions& options)
     for (const auto& [ref, worktree] : branchesInOtherWorktrees(repo))
         context.checkedOutElsewhere.insert(ref);
 
+    // Branches built on a commit of the range with their tip outside of it stay on the old commits.
+    // A branch is built on a commit of the range if and only if it is built on a root of the range
+    // (a commit with no parent in the range). One graph call for each root finds the roots that any
+    // candidate branch is built on. Then only these roots are tested against each branch.
+    {
+        std::vector<git_oid> roots;
+        for (const auto& [id, info] : context.commits) {
+            const bool inner = std::any_of(info.parents.begin(), info.parents.end(),
+                [&](const std::string& parent) { return context.commits.count(parent) != 0; });
+            if (!inner)
+                roots.push_back(*fromHex(id));
+        }
+        std::vector<std::string> names; // candidate branches (short names) and their branchTips
+        std::vector<git_oid> branchTips;
+        forEachReference(repo, [&](git_reference* ref) {
+            const std::string name = git_reference_name(ref);
+            if (!startsWith(name, "refs/heads/") || git_reference_type(ref) != GIT_REFERENCE_DIRECT || name == context.tipRef)
+                return true;
+            const git_oid branchTip = *git_reference_target(ref);
+            if (context.commits.count(toHex(branchTip)))
+                return true;
+            names.push_back(name.substr(std::string_view("refs/heads/").size()));
+            branchTips.push_back(branchTip);
+            return true;
+        });
+        if (!branchTips.empty()) {
+            std::erase_if(roots, [&](const git_oid& root) {
+                return git_graph_reachable_from_any(repo, &root, branchTips.data(), branchTips.size()) != 1;
+            });
+            git_error_clear();
+            if (!roots.empty())
+                for (size_t i = 0; i < branchTips.size(); ++i)
+                    for (const git_oid& root : roots)
+                        if (git_graph_descendant_of(repo, &branchTips[i], &root) == 1) {
+                            context.leftBehind.push_back(names[i]);
+                            break;
+                        }
+            git_error_clear();
+            std::sort(context.leftBehind.begin(), context.leftBehind.end());
+        }
+    }
+
     // The starting todo: a pick per commit, then update-ref lines for the other branches at it
     // (Git lists them in reverse name order and skips branches checked out elsewhere).
     auto addUpdateRefs = [&](Todo& todo, const std::string& id) {

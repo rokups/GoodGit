@@ -354,6 +354,12 @@ the panel without touching the repository.
   A warning line `###ir_keep_warning` follows them when the rebase is of a detached HEAD, Onto differs from the
   upstream and no branch, tag, Onto commit or kept commit outside the replayed range reaches the upstream: it names the
   upstream and its ancestors, which have no keep ref after this rebase, and suggests a branch there. It does not block Start.
+  A warning line `###ir_merges_warning` shows while the range has merge commits and *Rebase merges* is off: "N merge
+  commit(s) are left out: the result is linear. Turn on Rebase merges to keep them." A warning line
+  `###ir_left_behind_warning` names the local branches that stay on the old commits: the branches with their tip
+  outside the range that are built on a commit of it, and, while *Rebase merges* is off, the branches at a merge
+  commit of the range: "These branches stay on the old commits: a, b." It shows the first 5 names and "and N more".
+  It comes from the read and does not follow edits of the list. Neither line blocks Start or changes an option.
 - **Options:** *Onto* `###ir_onto` (Enter applies; empty = the upstream; an unknown revision is an
   error and the list stays), *Autosquash* `###ir_autosquash` (on: `fixup!`/`squash!`/`amend!`
   rows are placed and marked; off: back to Git's starting list), *Update refs* `###ir_update_refs`

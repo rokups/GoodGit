@@ -1113,6 +1113,114 @@ GG_TEST("rebase-i", "interactive rebase from here: the first branch by name that
     ctx->ItemClick(irWidget("ir_cancel").c_str());
 }
 
+GG_TEST("rebase-i", "the editor warns that merge commits are left out")
+{
+    const Repo r = makeRepo(s);
+    // feat forks from c2 and is merged into main after c5: the range from c2 holds one merge commit.
+    s.git(r.path, {"switch", "-q", "-c", "feat", r.c[2]});
+    s.commitFile(r.path, "f.txt", "f\n", "f1 add f");
+    s.git(r.path, {"switch", "-q", "main"});
+    s.git(r.path, {"-c", "user.name=Mona Merger", "-c", "user.email=mona@example.com", "merge", "-q", "--no-ff", "feat", "-m", "m1 merge feat"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(editor(s).context()->merges.size() == 1);
+    GG_CHECK(!editor(s).options().rebaseMerges);
+    const std::string id = irWidget("ir_merges_warning");
+    GG_REQUIRE(s.itemExists(id.c_str()));
+    // The label is cut at the panel's edge in the test engine: the drawn text is the whole line.
+    GG_CHECK(s.textShown("//Interactive rebase", "1 merge commit(s) are left out: the result is linear. Turn on Rebase merges to keep them."));
+    ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
+    GG_REQUIRE(editor(s).options().rebaseMerges);
+    s.ctx->Yield(2);
+    GG_CHECK(!s.itemExists(id.c_str()));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+}
+
+GG_TEST("rebase-i", "the editor names the branches that stay on the old commits")
+{
+    const Repo r = makeRepo(s);
+    // side has one commit of its own and forks from c3 (part1 is at c3, so it gets an update-ref row).
+    s.git(r.path, {"switch", "-q", "-c", "side", r.c[3]});
+    s.commitFile(r.path, "s.txt", "s\n", "s1 add s");
+    // alpha forks from c2 (the first commit of the range); it comes first by name.
+    s.git(r.path, {"switch", "-q", "-c", "alpha", r.c[2]});
+    s.commitFile(r.path, "al.txt", "al\n", "a1 add al");
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "update-ref refs/heads/part1", "pick c4", "pick c5"}));
+    GG_CHECK(editor(s).context()->leftBehind == (std::vector<std::string>{"alpha", "side"}));
+    const std::string id = irWidget("ir_left_behind_warning");
+    GG_REQUIRE(s.itemExists(id.c_str()));
+    GG_CHECK(s.textShown("//Interactive rebase", "These branches stay on the old commits: alpha, side."));
+    GG_CHECK(!s.itemExists(irWidget("ir_merges_warning").c_str()));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+
+    // A diverged destination: dest is not built on the range, so it is not in the list.
+    s.git(r.path, {"switch", "-q", "-c", "dest", r.c[1]});
+    s.commitFile(r.path, "x.txt", "x\n", "d1 add x");
+    s.git(r.path, {"switch", "-q", "main"});
+    s.contextMenu(historyRow(r.c[3]).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "dest");
+    s.dialogButton("Rebase onto", "Open as interactive rebase...");
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK_STR_EQ(editor(s).context()->onto, s.revParse(r.path, "dest"));
+    GG_CHECK(editor(s).context()->leftBehind == (std::vector<std::string>{"alpha", "side"}));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+}
+
+GG_TEST("rebase-i", "the editor names at most five branches that stay on the old commits")
+{
+    const Repo r = makeRepo(s);
+    // Seven branches, each with one commit of its own on c3.
+    for (int i = 1; i <= 7; ++i) {
+        const std::string name = "n" + std::to_string(i);
+        s.git(r.path, {"switch", "-q", "-c", name, r.c[3]});
+        s.commitFile(r.path, name + ".txt", name + "\n", name + " add");
+    }
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(editor(s).context()->leftBehind.size() == 7);
+    GG_CHECK(s.textShown("//Interactive rebase", "These branches stay on the old commits: n1, n2, n3, n4, n5 and 2 more."));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+}
+
+GG_TEST("rebase-i", "the editor names a branch at a merge commit while Rebase merges is off")
+{
+    const Repo r = makeRepo(s);
+    // feat forks from c2 and is merged into main; rel is at the merge commit and c6 follows it.
+    s.git(r.path, {"switch", "-q", "-c", "feat", r.c[2]});
+    s.commitFile(r.path, "f.txt", "f\n", "f1 add f");
+    s.git(r.path, {"switch", "-q", "main"});
+    s.git(r.path, {"-c", "user.name=Mona Merger", "-c", "user.email=mona@example.com", "merge", "-q", "--no-ff", "feat", "-m", "m1 merge feat"});
+    s.git(r.path, {"branch", "rel"});
+    s.commitFile(r.path, "g.txt", "g\n", "c6 add g");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(editor(s).context()->leftBehind.empty());
+    GG_CHECK(s.itemExists(irWidget("ir_left_behind_warning").c_str()));
+    GG_CHECK(s.textShown("//Interactive rebase", "These branches stay on the old commits: rel."));
+    ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
+    GG_REQUIRE(editor(s).options().rebaseMerges);
+    s.ctx->Yield(2);
+    GG_CHECK(!s.itemExists(irWidget("ir_left_behind_warning").c_str()));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+}
+
 GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch")
 {
     const Repo r = makeRepo(s);

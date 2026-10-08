@@ -973,6 +973,40 @@ void RebasePanel::drawHeader()
         if (hovered)
             tooltip("%s", text.c_str()); // the line is cut at the panel's edge, like an issue line
     }
+
+    // Two results of Start that the list does not show. A new rebase only: a stopped rebase has no such options.
+    if (!m_remaining && !m_sequence) {
+        auto warn = [&](const std::string& text, const char* id) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
+            plainText(std::string(ICON_MS_WARNING " ") + text, id);
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopStyleColor();
+            if (hovered)
+                tooltip("%s", text.c_str()); // the line is cut at the panel's edge
+        };
+        if (!c.merges.empty() && !m_state.rebaseMerges)
+            warn(std::to_string(c.merges.size()) + " merge commit(s) are left out: the result is linear. "
+                "Turn on Rebase merges to keep them.", "ir_merges_warning");
+        // Branches built on the range, and (the merge commits are left out) branches at a merge commit.
+        std::vector<std::string> stay = c.leftBehind;
+        if (!m_state.rebaseMerges)
+            for (const auto& id : c.merges)
+                if (const auto it = c.branchesAt.find(id); it != c.branchesAt.end())
+                    for (const auto& ref : it->second)
+                        if (ref != c.tipRef)
+                            stay.push_back(branchName(ref));
+        std::sort(stay.begin(), stay.end());
+        stay.erase(std::unique(stay.begin(), stay.end()), stay.end());
+        if (!stay.empty()) {
+            constexpr size_t kShown = 5;
+            std::string names;
+            for (size_t i = 0; i < stay.size() && i < kShown; ++i)
+                names += (i ? ", " : "") + stay[i];
+            if (stay.size() > kShown)
+                names += " and " + std::to_string(stay.size() - kShown) + " more";
+            warn("These branches stay on the old commits: " + names + ".", "ir_left_behind_warning");
+        }
+    }
 }
 
 void RebasePanel::drawOptions()
