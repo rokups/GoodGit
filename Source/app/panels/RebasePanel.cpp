@@ -77,8 +77,10 @@ std::string shortHex(const std::string& id, size_t n) { return id.substr(0, n); 
 
 std::string branchName(const std::string& ref) { return ref.rfind("refs/heads/", 0) == 0 ? ref.substr(11) : ref; }
 
-// HEAD when it is (or descends from) `commit`, else the first local branch (by name) that does.
-std::string tipContaining(git_repository* repo, const std::string& commit)
+// HEAD when it is (or descends from) `commit`, else the first local branch (by name) that does. With
+// `tipOnCommitFirst`, a local branch whose tip is `commit` comes before the branches that only contain it
+// (name order in each group). A commit on neither is an error.
+std::string tipContaining(git_repository* repo, const std::string& commit, bool tipOnCommitFirst)
 {
     const git_oid target = *gg::git2::fromHex(commit);
     auto contains = [&](const git_oid& tip) {
@@ -98,10 +100,40 @@ std::string tipContaining(git_repository* repo, const std::string& commit)
         return true;
     });
     std::sort(branches.begin(), branches.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    if (tipOnCommitFirst)
+        for (const auto& [name, tip] : branches)
+            if (git_oid_equal(&tip, &target) == 1)
+                return name;
     for (const auto& [name, tip] : branches)
         if (contains(tip))
             return name;
     throw std::runtime_error("commit " + commit.substr(0, 10) + " is not on HEAD or a local branch");
+}
+
+// Refuses when `onto` is `commit` or contains it: the commit is not in the list, and the editor would
+// open for other commits. The texts are the same as the ones of Actions::rebaseTipOnto.
+void refuseIfOntoContains(git_repository* repo, const std::string& commit, const std::string& onto)
+{
+    const auto target = gg::git2::fromHex(commit);
+    const auto dest = gg::git2::resolve(repo, onto);
+    git_error_clear();
+    if (!target || !dest)
+        return; // an unknown revision is reported by the read
+    // The shown name as in Actions::rebaseTipOnto: no ref prefix, a full id as 10 characters.
+    const bool fullId = onto.size() == 40 && onto.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+    std::string shownDest = onto;
+    if (onto.rfind("refs/heads/", 0) == 0)
+        shownDest = onto.substr(11);
+    else if (onto.rfind("refs/remotes/", 0) == 0)
+        shownDest = onto.substr(13);
+    else if (fullId)
+        shownDest = onto.substr(0, 10);
+    if (git_oid_equal(&*dest, &*target) == 1)
+        throw std::runtime_error(commit.substr(0, 10) + " is already on " + shownDest);
+    const bool contains = git_graph_descendant_of(repo, &*dest, &*target) == 1;
+    git_error_clear();
+    if (contains)
+        throw std::runtime_error(shownDest + " already contains " + commit.substr(0, 10));
 }
 
 // What identifies a squash group for its typed message: its rows' actions and commits.
@@ -243,10 +275,14 @@ void RebasePanel::read(const Request& request, bool keepTodo)
     options.onto = request.onto;
     const std::string from = request.from;
     const std::string tipOf = request.tipContaining;
+    const std::string mustMove = request.mustMove;
+    const bool tipFirst = request.tipOnCommitFirst;
     m_session.actions().run(
         "read the interactive rebase range",
-        [result, options, from, tipOf](core::MutationContext& ctx) mutable {
+        [result, options, from, tipOf, mustMove, tipFirst](core::MutationContext& ctx) mutable {
             git_repository* repo = ctx.repo();
+            if (!mustMove.empty())
+                refuseIfOntoContains(repo, mustMove, options.onto.empty() ? options.upstream : options.onto);
             if (!from.empty()) {
                 const auto oid = gg::git2::resolve(repo, from);
                 git_error_clear();
@@ -255,10 +291,10 @@ void RebasePanel::read(const Request& request, bool keepTodo)
                 gg::git2::Commit c = gg::git2::lookupCommit(repo, *oid);
                 options.upstream = git_commit_parentcount(c.get()) > 0 ? gg::git2::toHex(*git_commit_parent_id(c.get(), 0)) : "";
                 if (tipOf.empty())
-                    options.tip = tipContaining(repo, gg::git2::toHex(*oid));
+                    options.tip = tipContaining(repo, gg::git2::toHex(*oid), false);
             }
             if (!tipOf.empty())
-                options.tip = tipContaining(repo, tipOf);
+                options.tip = tipContaining(repo, tipOf, tipFirst);
             // Read with update-ref lines and without autosquash: the options apply them to the list.
             result->context = std::make_shared<const todo::Context>(todo::read(repo, options));
             result->used = options;

@@ -1040,6 +1040,79 @@ GG_TEST("rebase-i", "open as interactive rebase from the Rebase onto dialog: a d
     GG_CHECK_STR_EQ(s.revParse(r.path, "dest"), d1);
 }
 
+GG_TEST("rebase-i", "open as interactive rebase from the Rebase onto dialog: a destination that contains the commit is refused")
+{
+    const Repo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[3]));
+    const auto refsBefore = s.refs(r.path);
+    const std::string shortC3 = r.c[3].substr(0, 10);
+    // main contains c3: the commit is not in the range, so no editor opens for the other commits.
+    s.contextMenu(historyRow(r.c[3]).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "main");
+    s.dialogButton("Rebase onto", "Open as interactive rebase...");
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
+    GG_CHECK(s.app.errorMessage().find("main already contains " + shortC3) != std::string::npos);
+    GG_CHECK(!editor(s).isOpen());
+    GG_CHECK(s.dismissError());
+    // The destination is the commit itself.
+    s.contextMenu(historyRow(r.c[3]).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "part1");
+    s.dialogButton("Rebase onto", "Open as interactive rebase...");
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
+    GG_CHECK(s.app.errorMessage().find(shortC3 + " is already on part1") != std::string::npos);
+    GG_CHECK(!editor(s).isOpen());
+    GG_CHECK(s.dismissError());
+    s.settle();
+    GG_CHECK(s.refs(r.path) == refsBefore);
+}
+
+GG_TEST("rebase-i", "interactive rebase tip: a branch on the commit comes before a branch that contains it")
+{
+    const Repo r = makeRepo(s);
+    // topic ends on t1; alpha (first by name) is built on t1. HEAD (dest) does not contain t1.
+    s.git(r.path, {"switch", "-q", "-c", "topic", r.c[1]});
+    s.commitFile(r.path, "t.txt", "t\n", "t1 add t");
+    const std::string t1 = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "-c", "alpha"});
+    s.commitFile(r.path, "u.txt", "u\n", "a1 add u");
+    s.git(r.path, {"switch", "-q", "-c", "dest", r.c[1]});
+    s.commitFile(r.path, "x.txt", "x\n", "d1 add x");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, t1));
+    s.contextMenu(historyRow(t1).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "dest");
+    s.dialogButton("Rebase onto", "Open as interactive rebase...");
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK_STR_EQ(editor(s).context()->tipRef, "refs/heads/topic");
+    GG_CHECK(rows(s) == (Rows{"pick t1"}));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+}
+
+GG_TEST("rebase-i", "interactive rebase from here: the first branch by name that contains the commit is the tip")
+{
+    const Repo r = makeRepo(s);
+    // topic ends on t1; alpha (first by name) is built on t1. HEAD (dest) does not contain t1.
+    s.git(r.path, {"switch", "-q", "-c", "topic", r.c[1]});
+    s.commitFile(r.path, "t.txt", "t\n", "t1 add t");
+    const std::string t1 = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "-c", "alpha"});
+    s.commitFile(r.path, "u.txt", "u\n", "a1 add u");
+    s.git(r.path, {"switch", "-q", "-c", "dest", r.c[1]});
+    s.commitFile(r.path, "x.txt", "x\n", "d1 add x");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, t1));
+    ctx->ItemClick(historyRow(t1).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK_STR_EQ(editor(s).context()->tipRef, "refs/heads/alpha");
+    GG_CHECK(rows(s) == (Rows{"pick t1", "update-ref refs/heads/topic", "pick a1"}));
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+}
+
 GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch")
 {
     const Repo r = makeRepo(s);

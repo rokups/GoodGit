@@ -333,7 +333,10 @@ them follow. The *Squash* and *Rebase onto* dialogs have
 *Open as interactive rebase…*: the editor opens with the action as its starting todo. For *Squash*,
 the commit moves after the target as squash or fixup. For *Rebase onto*, the editor lists the commits
 from the divergence point with the destination up to the tip of the branch that holds the commit
-(HEAD, or the first local branch that contains it), with the destination as *Onto*.
+(HEAD, else a local branch whose tip is the commit, else the first local branch by name that contains
+it), with the destination as *Onto*. The button is refused with an error, and no editor opens, when the
+destination is the commit ("<id> is already on <destination>") or contains it ("<destination> already
+contains <id>").
 *Merge into HEAD…* and *Rebase HEAD onto this* in the shared commit actions act on the selected commit
 (disabled on HEAD itself; Rebase needs an attached HEAD); a commit is merged with Git's default message
 "Merge commit '<full ID>'" (the dialogs' revision fields are prefilled with the full ID, which Git

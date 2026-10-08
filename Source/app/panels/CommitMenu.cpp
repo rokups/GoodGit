@@ -323,6 +323,8 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const std::stri
             r.upstream = dest;
             r.onto = dest;
             r.tipContaining = commit.hex();
+            r.tipOnCommitFirst = true;
+            r.mustMove = commit.hex();
             r.selected = {commit.hex()};
             s->rebase().open(std::move(r));
         },

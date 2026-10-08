@@ -51,8 +51,14 @@ public:
         std::string onto;            // new base ("" = upstream)
         // Instead of `upstream`: this commit and its descendants (upstream = its parent).
         std::string from;
-        // Instead of `tip`: HEAD when it contains this commit, else the first local branch that does.
+        // Instead of `tip`: HEAD when it contains this commit, else the first local branch (by name) that
+        // does (with `tipOnCommitFirst`, a branch whose tip is this commit comes first).
         std::string tipContaining;
+        // For "Rebase onto", where the commit is the tip: a local branch on the commit comes before the
+        // branches that only contain it. Other openers keep the plain rule (the commit and its descendants).
+        bool tipOnCommitFirst = false;
+        // Refuse (an error, no editor) when `onto` (or `upstream`) is this commit or contains it.
+        std::string mustMove;
         std::vector<std::string> selected; // commits selected when the editor opens
         // Adjusts the starting todo ("Open as interactive rebase…" from single actions).
         std::function<void(gg::todo::Todo&, const gg::todo::Context&)> adjust;
