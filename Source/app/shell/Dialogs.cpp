@@ -266,8 +266,12 @@ void Dialogs::draw()
             ImGui::SameLine();
         ImGui::BeginDisabled(!enabled);
         const char* icon = dialogButtonIcon(button, label);
+        if (button.danger)
+            pushDangerColors();
         if (icon ? ggui::button(icon, label.c_str()) : ImGui::Button(label.c_str()))
             clicked = static_cast<int>(b);
+        if (button.danger)
+            popDangerColors();
         ImGui::EndDisabled();
         // Enter on a single-line field activates the first (primary) button.
         if (b == 0 && enabled && enterPressed)

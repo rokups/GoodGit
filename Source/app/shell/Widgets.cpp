@@ -98,7 +98,7 @@ bool button(const char* icon, const char* label, ImVec2 size)
     return iconButtonEx(icon, label, size, ImGuiButtonFlags_None);
 }
 
-bool dangerButton(const char* icon, const char* label, ImVec2 size)
+void pushDangerColors()
 {
     // errorBg is the palette's solid red and `error` the text colour meant for it; hover lightens, press darkens.
     const Palette& p = theme().palette();
@@ -111,8 +111,18 @@ bool dangerButton(const char* icon, const char* label, ImVec2 size)
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, shade(p.errorBg, 1.0f, 0.15f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, shade(p.errorBg, 0.0f, 0.2f));
     ImGui::PushStyleColor(ImGuiCol_Text, p.error);
-    const bool pressed = button(icon, label, size);
+}
+
+void popDangerColors()
+{
     ImGui::PopStyleColor(4);
+}
+
+bool dangerButton(const char* icon, const char* label, ImVec2 size)
+{
+    pushDangerColors();
+    const bool pressed = button(icon, label, size);
+    popDangerColors();
     return pressed;
 }
 

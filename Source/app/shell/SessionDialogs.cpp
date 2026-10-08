@@ -466,6 +466,11 @@ void Session::showSetAliasDialog(const std::string& repoPath)
     m_app.dialogs().open(std::move(f));
 }
 
+Session::MergedState Session::branchMerged(core::RequestId request) const
+{
+    return request == m_branchMergedRequest ? m_branchMerged : MergedState::Failed;
+}
+
 void Session::showDeleteBranchDialog(const std::string& branch, int mode)
 {
     std::vector<std::string> remotes;
@@ -483,20 +488,52 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
     f.message = "Delete " + where + " '" + branch + "'?";
     if (mode > 0 && remotes.empty())
         f.message += "\n\nNo remote branch with that name was found.";
-    {
-        // The commit that goes away: the local branch's tip, or (remote only) its upstream's.
-        const auto* b = m_snapshot->findBranch(branch);
-        const bool upstreamOk = b && !b->upstream.empty() && !b->upstreamGone;
-        f.add(commitInfo(*this, mode == 1 ? "Remote branch" : "Branch", mode == 1 && upstreamOk ? b->upstream : branch));
-        // `git branch -d` refuses unless the tip is merged into its upstream (else HEAD).
-        if (mode != 1)
-            f.add(commitInfo(*this, "Must be merged into (unless -D)", upstreamOk ? b->upstream : std::string("HEAD")));
+    // The commit that goes away: the local branch's tip, or (remote only) its upstream's.
+    const auto* b = m_snapshot->findBranch(branch);
+    const bool upstreamOk = b && !b->upstream.empty() && !b->upstreamGone;
+    f.add(commitInfo(*this, mode == 1 ? "Remote branch" : "Branch", mode == 1 && upstreamOk ? b->upstream : branch));
+    core::RequestId request = 0;
+    if (mode != 1) {
+        // `git branch -d` refuses unless the tip is merged into its upstream (else HEAD). A remote branch
+        // that this operation deletes first is gone by then: git checks against HEAD.
+        // A local upstream has its full name (refs/heads/...), a remote-tracking one has none.
+        const std::string localPrefix = "refs/heads/";
+        bool useUpstream = upstreamOk;
+        for (const auto& r : remotes)
+            if (upstreamOk && b->upstream == r + "/" + branch)
+                useUpstream = false;
+        std::string target = "HEAD";
+        std::string shown = "HEAD";
+        if (useUpstream) {
+            target = b->upstream.rfind("refs/", 0) == 0 ? b->upstream : "refs/remotes/" + b->upstream;
+            shown = b->upstream.rfind(localPrefix, 0) == 0 ? b->upstream.substr(localPrefix.size()) : b->upstream;
+        }
+        // The engine reads the answer off the UI thread; the dialog shows it when it arrives.
+        m_branchMerged = MergedState::Unknown;
+        request = m_branchMergedRequest = m_engine->readBranchMerged(branch, target);
+        Field mergedInto = commitInfo(*this, "Merged into", shown);
+        mergedInto.visible = [this, request](const Form&) { return branchMerged(request) == MergedState::Merged; };
+        f.add(std::move(mergedInto));
+        Field warning;
+        warning.kind = Field::Warning;
+        warning.id = "unmerged_warning";
+        warning.live = [this, request, branch, shown] {
+            return branchMerged(request) == MergedState::NotMerged
+                ? "The branch '" + branch + "' is not merged into " + shown + ". The delete operation can lose its commits."
+                : std::string();
+        };
+        f.add(std::move(warning));
     }
+    // Not merged: `git branch -d` would refuse, so the action uses -D; the warning above says so. When
+    // git could not tell, it decides (-d) and reports its own error.
+    FormButton del{"Delete", [this, branch, remotes, mode, request](Form&) {
+                       m_actions->deleteBranch(branch, mode != 1 && branchMerged(request) == MergedState::NotMerged, remotes, mode != 1);
+                   }};
+    del.danger = true;
+    // Whether the branch is merged decides how it is deleted: wait for the answer.
     if (mode != 1)
-        f.add(Field{Field::Check, "force", "Delete even if not merged (-D)"});
-    f.buttons.push_back({"Delete", [this, branch, remotes, mode](Form& form) {
-                             m_actions->deleteBranch(branch, form.checked("force"), remotes, mode != 1);
-                         }});
+        del.enabled = [this, request](const Form&) { return branchMerged(request) != MergedState::Unknown; };
+    f.buttons.push_back(std::move(del));
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -514,7 +551,9 @@ void Session::showDeleteRemoteBranchDialog(const std::string& remoteBranch)
     f.title = "Delete branch";
     f.message = "Delete the branch '" + branch + "' on the remote '" + remote + "'?";
     f.add(commitInfo(*this, "Remote branch", remoteBranch));
-    f.buttons.push_back({"Delete", [this, branch, remote](Form&) { m_actions->deleteBranch(branch, false, {remote}, false); }});
+    FormButton del{"Delete", [this, branch, remote](Form&) { m_actions->deleteBranch(branch, false, {remote}, false); }};
+    del.danger = true;
+    f.buttons.push_back(std::move(del));
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

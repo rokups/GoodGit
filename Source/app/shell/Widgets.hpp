@@ -29,6 +29,9 @@ bool button(const char* icon, const char* label, ImVec2 size = ImVec2(0, 0));
 // button() drawn in the palette's error red (errorBg, text `error`) for actions that rewrite or destroy
 // history; fades like any button inside BeginDisabled.
 bool dangerButton(const char* icon, const char* label, ImVec2 size = ImVec2(0, 0));
+// The colors of dangerButton() for a button drawn another way: pair the two calls around it.
+void pushDangerColors();
+void popDangerColors();
 // Icon-only square-ish button (`id` like "##name", ID = ImGui::GetID(id)) that centres the
 // glyph's drawn bounds in the frame, ignoring the icon font's baseline GlyphOffset and advance.
 bool iconButton(const char* icon, const char* id, ImVec2 size);

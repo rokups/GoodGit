@@ -34,6 +34,7 @@ constexpr int kSlotMessages = 41;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotCommitWarnings = 7;
+constexpr int kSlotBranchMerged = 8;
 constexpr int kSlotReconcile = 6;
 constexpr int kSlotRebasePreview = 1;
 constexpr int kSlotRemoteTags = 1;
@@ -665,6 +666,23 @@ RequestId Engine::readCommitWarnings()
     return submit(Queue::Snapshot, "Checking the staged files for conflicts", kSlotCommitWarnings, true, [this](Job& job) {
         emit(CommitWarningsEvent{job.id, gg::outgoing::stagedConflictWarnings(job.repo())});
     });
+}
+
+RequestId Engine::readBranchMerged(std::string branch, std::string target)
+{
+    return submit(Queue::Snapshot, "Checking whether the branch is merged", kSlotBranchMerged, true,
+        [this, branch = std::move(branch), target = std::move(target)](Job& job) {
+            gg::RunRequest r;
+            r.args = {"git", "merge-base", "--is-ancestor", "refs/heads/" + branch, target};
+            r.cwd = path();
+            r.cancel = job.token;
+            const gg::RunResult res = gg::run(r);
+            gg::throwIfCancelled(job.token);
+            // Exit code 1 is "not an ancestor"; anything else that is not 0 (128, no git) is an error.
+            using Result = BranchMergedEvent::Result;
+            const bool answered = !res.cancelled && !res.startFailed;
+            emit(BranchMergedEvent{job.id, res.ok() ? Result::Merged : answered && res.exitCode == 1 ? Result::NotMerged : Result::Failed});
+        });
 }
 
 RequestId Engine::rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::todo::Context> context,

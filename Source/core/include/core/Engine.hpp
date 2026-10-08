@@ -166,6 +166,14 @@ struct CommitWarningsEvent {
     std::vector<gg::outgoing::StagedWarning> warnings;
 };
 
+// Whether a local branch's tip is merged into a target (git branch -d's check). Failed: git could not
+// tell (an error, not "no").
+struct BranchMergedEvent {
+    enum class Result { Merged, NotMerged, Failed };
+    RequestId request = 0;
+    Result result = Result::Failed;
+};
+
 struct RebasePreviewEvent {
     RequestId request = 0;
     RebasePreviewPtr preview;
@@ -174,7 +182,7 @@ struct RebasePreviewEvent {
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, CommitMessagesEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
     MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, RebasePreviewEvent,
-    RemoteTagsEvent, CommitWarningsEvent>;
+    RemoteTagsEvent, CommitWarningsEvent, BranchMergedEvent>;
 
 class Engine;
 
@@ -296,6 +304,8 @@ public:
     // The warnings the commit dialog shows for what is staged (CommitWarningsEvent; a newer
     // request replaces an older one).
     RequestId readCommitWarnings();
+    // Whether the local `branch` is merged into `target` (a revision), as BranchMergedEvent.
+    RequestId readBranchMerged(std::string branch, std::string target);
     // The result of an interactive rebase todo, computed in memory (RebasePreviewEvent; nothing
     // is written). A newer request cancels the older one.
     RequestId rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::todo::Context> context,

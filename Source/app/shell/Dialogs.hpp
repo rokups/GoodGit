@@ -66,6 +66,7 @@ struct FormButton {
     std::function<std::string(const Form&)> labelFn;
     // Icon shown before the label; nullptr: chosen from the label's verb (Cancel, Delete, Push...).
     const char* icon = nullptr;
+    bool danger = false; // drawn in the destructive (red) colors
 };
 
 struct Form {

@@ -429,7 +429,10 @@ void Scenario::dialogCheck(const char* title, const char* field, const char* lab
 
 void Scenario::dialogButton(const char* title, const char* button)
 {
-    ctx->ItemClick((std::string("//") + title + "/" + button).c_str());
+    const std::string ref = std::string("//") + title + "/" + button;
+    // A button can be disabled for a moment while the dialog reads something (Delete branch).
+    waitUntil([&] { return !(ctx->ItemInfo(ref.c_str()).ItemFlags & ImGuiItemFlags_Disabled); }, 3.0f);
+    ctx->ItemClick(ref.c_str());
     ctx->Yield(2);
 }
 

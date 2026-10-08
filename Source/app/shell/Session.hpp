@@ -140,6 +140,10 @@ public:
     // detached, or its branch gone) is cleared.
     const std::optional<gg::edit::Session>& editSession() const { return m_editSession; }
     void stopEditing();
+    // The answer to the readBranchMerged request `request`: Unknown until it arrives; Failed when git
+    // could not tell, or a newer request replaced it (the caller then lets git decide).
+    enum class MergedState { Unknown, Merged, NotMerged, Failed };
+    MergedState branchMerged(core::RequestId request) const;
     // What committing the staged files would make or leave conflicted (read off the UI thread on every
     // status change and when the commit dialog opens); never blocks.
     const std::vector<gg::outgoing::StagedWarning>& commitWarnings() const { return m_commitWarnings; }
@@ -255,6 +259,9 @@ private:
     std::vector<gg::journal::Operation> m_operations;
     std::optional<gg::edit::Session> m_editSession;
     std::vector<gg::outgoing::StagedWarning> m_commitWarnings;
+    // The merged state the Delete branch dialog asked for (BranchMergedEvent): none until it arrives.
+    core::RequestId m_branchMergedRequest = 0;
+    MergedState m_branchMerged = MergedState::Unknown;
     std::map<std::string, std::map<std::string, std::string>> m_config;
     std::map<std::string, RemoteTags> m_remoteTags;
     std::string m_journalError; // the undo journal's problem last reported ("" = none)

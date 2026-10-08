@@ -31,6 +31,25 @@ std::string symbolicHead(Scenario& s, const fs::path& repo)
 
 fs::path origin(Scenario& s, const fs::path& repo) { return s.root() / (repo.filename().string() + "-origin.git"); }
 
+// The Delete branch dialog's warning ("" for none), and whether its "Merged into" row is shown: both
+// follow the answer of the merged check, which arrives a moment after the dialog opens.
+std::string deleteWarning(Scenario& s)
+{
+    const ggui::Form* form = s.app.dialogs().current();
+    const ggui::Field* w = form ? form->field("unmerged_warning") : nullptr;
+    return w && w->live ? w->live() : std::string();
+}
+
+bool mergedRowShown(Scenario& s)
+{
+    const ggui::Form* form = s.app.dialogs().current();
+    if (form)
+        for (const auto& f : form->fields)
+            if (f.text.find("Merged into:") == 0)
+                return !f.visible || f.visible(*form);
+    return false;
+}
+
 } // namespace
 
 GG_TEST("refs", "create, check out, rename and delete branches")
@@ -244,7 +263,7 @@ GG_TEST("refs", "Create branch and Delete branch name their commits: the start c
     GG_REQUIRE(form() && form()->fields.size() >= 2);
     GG_CHECK(form()->fields[0].text.find("Branch: at-field") == 0);
     GG_CHECK(form()->fields[0].text.find(subjectOf("at-field")) != std::string::npos);
-    GG_CHECK(form()->fields[1].text.find("Must be merged into (unless -D): HEAD") == 0);
+    GG_CHECK(form()->fields[1].text.find("Merged into: HEAD") == 0);
     s.dialogButton("Delete branch", "Cancel");
     s.settle();
 }
@@ -267,6 +286,72 @@ GG_TEST("refs", "Move branch is disabled on a row where every branch already poi
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
+GG_TEST("refs", "Delete branch warns about an unmerged branch and deletes it anyway; a merged branch gets no warning")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "merged-one", "HEAD~1"});
+    s.git(repo, {"switch", "-q", "-c", "unmerged-one", "HEAD~1"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "only here"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto form = [&]() -> const ggui::Form* { return s.app.dialogs().current(); };
+    auto warning = [&] { return deleteWarning(s); };
+    auto mergedShown = [&] { return mergedRowShown(s); };
+    // Merged: the row names what it is merged into, and there is no warning.
+    s.contextMenu(branchRow("merged-one").c_str(), "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK(s.waitUntil([&] { return mergedShown(); }, 5.0f));
+    GG_CHECK(warning().empty());
+    GG_CHECK(!form()->field("force"));
+    s.dialogButton("Delete branch", "Cancel");
+    s.settle();
+    // Not merged: the warning shows, the row is gone, and Delete removes the branch.
+    s.contextMenu(branchRow("unmerged-one").c_str(), "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK(s.waitUntil([&] { return !warning().empty(); }, 5.0f));
+    GG_CHECK(warning().find("'unmerged-one' is not merged into HEAD") != std::string::npos);
+    GG_CHECK(!mergedShown());
+    GG_CHECK(!form()->field("force"));
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/unmerged-one"); }));
+    s.settle();
+}
+
+GG_TEST("refs", "Delete branch: a branch merged into its local upstream has no warning and is deleted")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "--track", "tracked", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    s.contextMenu(branchRow("tracked").c_str(), "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK(s.waitUntil([&] { return mergedRowShown(s); }, 5.0f));
+    GG_CHECK(deleteWarning(s).empty());
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/tracked"); }));
+    s.settle();
+}
+
+GG_TEST("refs", "Delete branch: Local and all remotes checks an unmerged branch against HEAD, not its remote branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"switch", "-q", "-c", "ahead", "HEAD~1"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "only on ahead"});
+    s.git(repo, {"push", "-q", "-u", "origin", "ahead"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    s.contextMenu(branchRow("ahead").c_str(), "Delete/Local and all remotes");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK(s.waitUntil([&] { return !deleteWarning(s).empty(); }, 5.0f));
+    GG_CHECK(deleteWarning(s).find("is not merged into HEAD") != std::string::npos);
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/ahead"); }));
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "ahead"}).empty(); }));
+    s.settle();
+}
+
 GG_TEST("refs", "delete a branch on its remote, and everywhere")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
@@ -284,7 +369,6 @@ GG_TEST("refs", "delete a branch on its remote, and everywhere")
     GG_CHECK(refExists(s, repo, "refs/heads/remote-only")); // local stays
     s.contextMenu(branchRow("both").c_str(), "Delete/Local and all remotes");
     GG_REQUIRE(s.dialogOpen("Delete branch"));
-    s.dialogCheck("Delete branch", "force", "Delete even if not merged (-D)");
     s.dialogButton("Delete branch", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/both"); }));
     s.settle();
