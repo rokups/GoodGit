@@ -37,6 +37,39 @@ void selectCommit(Scenario& s, const std::string& hex)
     s.waitUntil([&] { return s.itemExists("//Change information/##message"); });
 }
 
+// Main is A-B-C; topic is B-D-E; side is D-S; mid is on D. HEAD ends on main.
+struct ForkRepo {
+    fs::path path;
+    std::string c, d, e, s;
+};
+
+ForkRepo makeFork(Scenario& s)
+{
+    ForkRepo r;
+    r.path = s.fixture(Recipe::Linear);
+    r.c = s.revParse(r.path, "main");
+    s.git(r.path, {"checkout", "-q", "-b", "topic", "main~1"});
+    s.commitFile(r.path, "d.txt", "d\n", "D");
+    r.d = s.head(r.path);
+    s.git(r.path, {"branch", "mid", r.d});
+    s.commitFile(r.path, "e.txt", "e\n", "E");
+    r.e = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "-b", "side", r.d});
+    s.commitFile(r.path, "s.txt", "s\n", "S");
+    r.s = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "main"});
+    return r;
+}
+
+// Starts the action and waits until the worker has finished.
+void rebaseTip(Scenario& s, const std::string& tip, const std::string& dest)
+{
+    s.session()->actions().rebaseTipOnto(tip, dest);
+    s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 1.0f);
+    s.waitUntil([&] { return s.session()->actions().busy().empty(); });
+    s.settle();
+}
+
 } // namespace
 
 GG_TEST("rewrite", "reword a commit in the middle: descendants rebased, the rest untouched, one Undo")
@@ -289,6 +322,114 @@ GG_TEST("rewrite", "rangeToMove: dest..tip oldest first on a line, a fork, a mer
     const std::string h = s.head(repo);
     GG_CHECK(range(h, e) == (Ids{c, g, h}));
     GG_CHECK(range(h, c) == (Ids{g, h}));
+}
+
+GG_TEST("rewrite", "rebase tip onto: the commits from the divergence point move, other branches on them restack")
+{
+    const ForkRepo r = makeFork(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "topic", "main");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic~2"), r.c);
+    GG_CHECK_STR_EQ(info(s, r.path, "topic~1", "%s"), "D");
+    GG_CHECK_STR_EQ(info(s, r.path, "topic", "%s"), "E");
+    GG_CHECK(s.revParse(r.path, "topic~1") != r.d);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "mid"), s.revParse(r.path, "topic~1"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), s.revParse(r.path, "topic~1"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~2"), r.c);
+    GG_CHECK_STR_EQ(info(s, r.path, "side", "%s"), "S");
+    GG_CHECK(s.revParse(r.path, "side") != r.s);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+GG_TEST("rewrite", "rebase tip onto: a tip in the middle of a branch moves, its children restack")
+{
+    const ForkRepo r = makeFork(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, r.d, "main");
+    const std::string d2 = s.revParse(r.path, "mid");
+    GG_CHECK(d2 != r.d);
+    GG_CHECK_STR_EQ(s.revParse(r.path, d2 + "^"), r.c);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic~1"), d2);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), d2);
+    GG_CHECK_STR_EQ(info(s, r.path, "topic", "%s"), "E");
+    GG_CHECK_STR_EQ(info(s, r.path, "side", "%s"), "S");
+    GG_CHECK(s.revParse(r.path, "topic") != r.e);
+    GG_CHECK(s.revParse(r.path, "side") != r.s);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c);
+}
+
+GG_TEST("rewrite", "rebase tip onto: a branch that is not checked out leaves the working tree and HEAD alone")
+{
+    const ForkRepo r = makeFork(s);
+    const auto tracked = gg::splitLines(s.gitOut(r.path, {"ls-files"}));
+    GG_REQUIRE(!tracked.empty());
+    const std::string file = tracked[0];
+    s.write(r.path, file, "unstaged change\n");
+    const std::string head = s.head(r.path);
+    const std::string status = s.statusPorcelain(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "topic", "main");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic~2"), r.c);
+    GG_CHECK_STR_EQ(s.head(r.path), head);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "main");
+    GG_CHECK_STR_EQ(s.read(r.path, file), "unstaged change\n");
+    GG_CHECK_STR_EQ(s.statusPorcelain(r.path), status);
+}
+
+GG_TEST("rewrite", "rebase tip onto: refuses a branch that is checked out in a different worktree")
+{
+    const ForkRepo r = makeFork(s);
+    const fs::path wt = s.root() / "linked";
+    s.git(r.path, {"worktree", "add", "-q", wt.string(), "topic"});
+    s.track(wt);
+    const std::string before = everything(s, r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "topic", "main");
+    GG_CHECK(s.app.errorMessage().find("is checked out in the worktree") != std::string::npos);
+    GG_CHECK(everything(s, r.path) == before);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), r.e);
+    s.dismissError();
+    rebaseTip(s, "refs/heads/topic", "main"); // the full ref name is refused too
+    GG_CHECK(s.app.errorMessage().find("refs/heads/topic is checked out in the worktree") != std::string::npos);
+    GG_CHECK(everything(s, r.path) == before);
+    s.git(r.path, {"worktree", "remove", "--force", wt.string()});
+}
+
+GG_TEST("rewrite", "rebase tip onto: the working tree follows when HEAD is on a restacked branch")
+{
+    const ForkRepo r = makeFork(s);
+    s.git(r.path, {"checkout", "-q", "side"});
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "topic", "main");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"branch", "--show-current"}), "side");
+    GG_CHECK_STR_EQ(info(s, r.path, "side~1", "%s"), "D");
+    GG_CHECK(s.revParse(r.path, "side~1") != r.d);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~2"), r.c);
+    GG_CHECK_STR_EQ(s.read(r.path, "d.txt"), "d\n");
+    GG_CHECK_STR_EQ(s.read(r.path, "s.txt"), "s\n");
+    const auto fromC = gg::splitLines(s.gitOut(r.path, {"diff", "--name-only", "main~1", "main"}));
+    GG_REQUIRE(!fromC.empty());
+    GG_CHECK(fs::exists(r.path / fromC[0]));
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
+GG_TEST("rewrite", "rebase tip onto: refuses a tip that no local branch, HEAD or keep ref reaches")
+{
+    const ForkRepo r = makeFork(s);
+    // A commit only a remote-tracking ref and a tag hold.
+    const std::string lone = gg::trim(s.gitOut(r.path, {"commit-tree", "main^{tree}", "-p", "main~1", "-m", "Lone"}));
+    s.git(r.path, {"update-ref", "refs/remotes/origin/lone", lone});
+    s.git(r.path, {"tag", "lone-tag", lone});
+    const std::string before = everything(s, r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    for (const char* name : {"origin/lone", "lone-tag", lone.c_str()}) {
+        rebaseTip(s, name, "main");
+        GG_CHECK(s.app.errorMessage().find(std::string(name) + " is on no local branch") != std::string::npos);
+        GG_CHECK(everything(s, r.path) == before);
+        s.dismissError();
+    }
 }
 
 } // namespace ggtest

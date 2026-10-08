@@ -6,6 +6,7 @@
 
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
+#include <libgg/Keep.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -1214,43 +1215,63 @@ void Actions::mergeNative(const std::string& branch)
     }, {}, false, true, true, true);
 }
 
-void Actions::rebaseHeadOnto(const std::string& branch)
+void Actions::rebaseHeadOnto(const std::string& branch) { rebaseTipOnto("HEAD", branch); }
+
+void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destination)
 {
-    rewrite("rebase HEAD onto " + branch, [branch](git_repository* repo) {
-        const std::string dest = resolveCommit(repo, branch);
-        git_oid head;
-        if (git_reference_name_to_id(&head, repo, "HEAD") != 0)
-            refuse("HEAD has no commit");
-        // HEAD's own commits: reachable from HEAD, not from the destination (oldest first).
-        git_revwalk* raw = nullptr;
-        gg::git2::check(git_revwalk_new(&raw, repo), "git_revwalk_new");
-        gg::git2::Revwalk walk(raw);
-        git_revwalk_sorting(walk.get(), GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE);
-        git_revwalk_push(walk.get(), &head);
-        const git_oid d = *fromHex(dest);
-        git_revwalk_hide(walk.get(), &d);
-        std::vector<std::string> own;
-        git_oid id;
-        while (git_revwalk_next(&id, walk.get()) == 0)
-            own.push_back(toHex(id));
-        git_error_clear();
+    rewrite("rebase " + tipRev + " onto " + destination, [tipRev, destination](git_repository* repo) {
+        const std::string dest = resolveCommit(repo, destination);
+        const bool isHead = tipRev == "HEAD";
+        std::string tip;
+        if (isHead) {
+            git_oid head;
+            if (git_reference_name_to_id(&head, repo, "HEAD") != 0)
+                refuse("HEAD has no commit");
+            tip = toHex(head);
+        } else {
+            tip = resolveCommit(repo, tipRev);
+            // A branch checked out elsewhere would move under that worktree's files.
+            const std::string shortName = tipRev.rfind("refs/heads/", 0) == 0 ? tipRev.substr(11) : tipRev;
+            const auto elsewhere = gg::git2::branchesInOtherWorktrees(repo);
+            const auto it = elsewhere.find("refs/heads/" + shortName);
+            if (it != elsewhere.end())
+                refuse(tipRev + " is checked out in the worktree " + it->second);
+            // The new commits need a ref to hold them: a local branch, HEAD or a keep ref reaching the tip.
+            bool held = false;
+            git_oid head;
+            if (git_reference_name_to_id(&head, repo, "HEAD") == 0)
+                held = isAncestor(repo, tip, toHex(head));
+            git_error_clear();
+            for (const auto& kept : gg::keep::read(repo))
+                held = held || isAncestor(repo, tip, kept);
+            gg::git2::forEachReference(repo, [&](git_reference* ref) {
+                if (!held && std::string(git_reference_name(ref)).rfind("refs/heads/", 0) == 0
+                    && git_reference_type(ref) == GIT_REFERENCE_DIRECT)
+                    held = isAncestor(repo, tip, toHex(*git_reference_target(ref)));
+                return true;
+            });
+            if (!held)
+                refuse(tipRev + " is on no local branch");
+        }
+        // The tip's own commits: reachable from it, not from the destination (oldest first).
+        const std::vector<std::string> own = rw::rangeToMove(repo, tip, dest);
         if (own.empty())
-            refuse("HEAD is already on " + branch);
-        rw::Plan plan;
+            refuse(tipRev + " is already on " + destination);
+        rw::Plan plan = rw::replayPlan(repo, own);
         plan.rebaseLike = true;
         plan.upstream = dest;
-        plan.reflogMessage = "ggui: rebase onto " + branch;
+        plan.reflogMessage = isHead ? "ggui: rebase onto " + destination : "ggui: rebase " + tipRev + " onto " + destination;
         std::set<std::string> mine(own.begin(), own.end());
-        for (const auto& c : own) {
-            rw::Step s;
-            s.source = c;
+        for (auto& s : plan.steps) {
+            if (!mine.count(s.source))
+                continue;
             s.sourceParents = false;
-            for (const auto& p : parentsOf(repo, c))
+            s.parents.clear();
+            for (const auto& p : parentsOf(repo, s.source))
                 if (mine.count(p))
                     s.parents.push_back(p);
             if (s.parents.empty())
                 s.parents.push_back("=" + dest);
-            plan.steps.push_back(s);
         }
         return plan;
     });
