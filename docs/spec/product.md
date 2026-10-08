@@ -310,7 +310,9 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
     otherwise a chooser pops up). Rebase treats the dragged commit as the tip: the commits from the
     first divergence point with the target up to it move, and other branches on them follow.
   - branch badge → commit or badge: a menu with Merge X into Y (Y is the current branch), Rebase X onto Y
-    (X is the current branch) and Move X here; Shift at the drop moves the branch at once
+    (X is a local branch: one that is not checked out is rebased with no change of the working tree, one
+    behind Y fast-forwards, one that another worktree has checked out is refused) and Move X here;
+    Shift at the drop moves the branch at once
   - file(s) from Changes → commit: move the file changes into that commit
 - **K** Warn before rewriting published history (commits reachable from remote-tracking refs).
 

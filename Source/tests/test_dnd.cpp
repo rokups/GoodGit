@@ -5,6 +5,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <fstream>
+
 namespace ggtest {
 
 namespace {
@@ -143,7 +145,7 @@ GG_TEST("dnd", "a branch badge onto a commit opens a menu; Escape changes nothin
     GG_CHECK(s.itemExists("//$FOCUSED/###merge"));
     GG_CHECK(s.itemExists("//$FOCUSED/###rebase"));
     GG_CHECK(!itemDisabled(s, "###merge"));
-    GG_CHECK(itemDisabled(s, "###rebase")); // side is not the current branch
+    GG_CHECK(!itemDisabled(s, "###rebase")); // side is not the current branch, and still rebases (it is behind main)
     GG_CHECK(!itemDisabled(s, "###move"));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
@@ -192,11 +194,11 @@ GG_TEST("dnd", "a branch badge onto a branch badge: Merge into the current branc
     s.git(r.path, {"checkout", "-q", "main"});
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(feat, "feat").c_str()); }));
-    // Onto side's badge: side is not the current branch, so Merge is off.
+    // Onto side's badge: side is not the current branch, so Merge is off. Rebase is on for any local branch.
     drag(s, badgeRef(feat, "feat"), badgeRef(r.c[1], "side"));
     GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
     GG_CHECK(itemDisabled(s, "###merge"));
-    GG_CHECK(itemDisabled(s, "###rebase"));
+    GG_CHECK(!itemDisabled(s, "###rebase"));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
     GG_CHECK(!menuOpen(s));
@@ -257,6 +259,17 @@ GG_TEST("dnd", "a branch of another worktree moves through the Move branch dialo
     s.git(r.path, {"worktree", "add", "-q", (r.path.parent_path() / "wt_side").string(), "side"});
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(r.c[1], "side").c_str()); }));
+    // The menu: Rebase is off for a branch that another worktree has checked out.
+    drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[3]));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(itemDisabled(s, "###rebase"));
+    GG_CHECK(!itemDisabled(s, "###move"));
+    ctx->MouseMove("//$FOCUSED/###rebase");
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(s.textShown("//##Tooltip_00", "side is checked out in the worktree"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    GG_CHECK(!menuOpen(s));
     // Shift: the dialog with the warning, not the move.
     drag(s, badgeRef(r.c[1], "side"), rowRef(r.c[3]), ImGuiMod_Shift);
     GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Move branch"); }));
@@ -283,6 +296,55 @@ GG_TEST("dnd", "a branch badge onto a branch badge: Rebase of the current branch
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "feat~1") == r.c[3]; }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
+}
+
+GG_TEST("dnd", "a branch badge onto a branch badge: Rebase of a branch that is not checked out")
+{
+    const Chain r = makeChain(s);
+    // topic: two own commits on c2, an older commit of main. main stays the current branch.
+    s.git(r.path, {"checkout", "-q", "-b", "topic", r.c[1]});
+    s.commitFile(r.path, "t1.txt", "1\n", "topic1");
+    s.commitFile(r.path, "t2.txt", "2\n", "topic2");
+    const std::string topic = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "main"});
+    std::ofstream(r.path / "f1.txt") << "changed\n"; // an unstaged change in a tracked file
+    const std::string status = s.statusPorcelain(r.path);
+    GG_CHECK(!status.empty());
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(topic, "topic").c_str()); }));
+    drag(s, badgeRef(topic, "topic"), badgeRef(r.c[3], "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(!itemDisabled(s, "###rebase"));
+    ctx->ItemClick("//$FOCUSED/###rebase");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "topic~2") == r.c[3]; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
+    GG_CHECK_STR_EQ(s.head(r.path), r.c[3]);
+    GG_CHECK_STR_EQ(gg::trim(s.gitOut(r.path, {"symbolic-ref", "HEAD"})), "refs/heads/main");
+    GG_CHECK(s.statusPorcelain(r.path) == status);
+}
+
+GG_TEST("dnd", "a branch badge onto a branch badge: Rebase uses the branch when a tag has the same name")
+{
+    const Chain r = makeChain(s);
+    // The tag topic is on c1; the branch topic has two own commits on c2.
+    s.git(r.path, {"tag", "topic", r.c[0]});
+    s.git(r.path, {"checkout", "-q", "-b", "topic", r.c[1]});
+    s.commitFile(r.path, "t1.txt", "1\n", "topic1");
+    s.commitFile(r.path, "t2.txt", "2\n", "topic2");
+    const std::string topic = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(topic, "topic").c_str()); }));
+    drag(s, badgeRef(topic, "topic"), badgeRef(r.c[3], "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    GG_CHECK(!itemDisabled(s, "###rebase"));
+    ctx->ItemClick("//$FOCUSED/###rebase");
+    // The short name is ambiguous: full ref names.
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "refs/heads/topic~2") == r.c[3]; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/tags/topic"), r.c[0]);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "refs/heads/main"), r.c[3]);
 }
 
 GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working tree files into any commit")

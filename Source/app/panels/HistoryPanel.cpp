@@ -758,14 +758,14 @@ void HistoryPanel::drawBranchDropChooser()
     else if (!dst->isHead || snap.headUnborn)
         mergeReason = y + " is not the current branch.";
     std::string rebaseReason;
-    if (!src->isHead)
-        rebaseReason = x + " is not the current branch.";
+    if (!src->worktree.empty())
+        rebaseReason = x + " is checked out in the worktree " + src->worktree + ".";
     const std::string moveReason = src->target == m_branchDrop->row ? x + " is already there." : std::string();
     bool chosen = true;
     if (item(ICON_MS_MERGE, "Merge " + x + " into " + y + "###merge", nullptr, mergeReason))
         showMergeDialog(m_session, x);
     else if (item(ICON_MS_LOW_PRIORITY, "Rebase " + x + " onto " + y + "###rebase", nullptr, rebaseReason))
-        actions.rebaseHeadOnto(dst ? to : commit);
+        actions.rebaseTipOnto("refs/heads/" + x, dst ? to : commit);
     else if (item(ICON_MS_SWAP_HORIZ, "Move " + x + " here###move", "Shift", moveReason))
         moveBranchHere(*src, commit);
     else

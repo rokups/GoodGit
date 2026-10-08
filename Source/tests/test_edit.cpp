@@ -754,7 +754,7 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "main");
     s.dialogButton("Rebase onto", "Rebase");
-    refused(("main already contains " + r.c2).c_str());
+    refused(("main already contains " + r.c2.substr(0, 10)).c_str());
     // HEAD already contains c2: merging it or rebasing HEAD onto it changes nothing.
     s.contextMenu(rowRef(r.c2).c_str(), "Merge into HEAD...");
     GG_REQUIRE(s.dialogOpen("Merge into HEAD"));

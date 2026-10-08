@@ -393,9 +393,19 @@ GG_TEST("rewrite", "rebase tip onto: refuses a branch that is checked out in a d
     GG_CHECK(s.app.errorMessage().find("is checked out in the worktree") != std::string::npos);
     GG_CHECK(everything(s, r.path) == before);
     GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), r.e);
-    s.dismissError();
-    rebaseTip(s, "refs/heads/topic", "main"); // the full ref name is refused too
-    GG_CHECK(s.app.errorMessage().find("refs/heads/topic is checked out in the worktree") != std::string::npos);
+    s.git(r.path, {"worktree", "remove", "--force", wt.string()});
+}
+
+GG_TEST("rewrite", "rebase tip onto: the full ref name of a branch that is checked out in a different worktree is refused too")
+{
+    const ForkRepo r = makeFork(s);
+    const fs::path wt = s.root() / "linked";
+    s.git(r.path, {"worktree", "add", "-q", wt.string(), "topic"});
+    s.track(wt);
+    const std::string before = everything(s, r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rebaseTip(s, "refs/heads/topic", "main");
+    GG_CHECK(s.app.errorMessage().find("topic is checked out in the worktree") != std::string::npos);
     GG_CHECK(everything(s, r.path) == before);
     s.git(r.path, {"worktree", "remove", "--force", wt.string()});
 }
@@ -429,7 +439,9 @@ GG_TEST("rewrite", "rebase tip onto: refuses a tip that no local branch, HEAD or
     GG_REQUIRE(s.openRepository(r.path));
     for (const char* name : {"origin/lone", "lone-tag", lone.c_str()}) {
         rebaseTip(s, name, "main");
-        GG_CHECK(s.app.errorMessage().find(std::string(name) + " is on no local branch") != std::string::npos);
+        // A full commit id reads as its first 10 characters.
+        const std::string shown = std::string(name).size() == 40 ? std::string(name).substr(0, 10) : std::string(name);
+        GG_CHECK(s.app.errorMessage().find(shown + " is on no local branch") != std::string::npos);
         GG_CHECK(everything(s, r.path) == before);
         s.dismissError();
     }
@@ -498,7 +510,7 @@ GG_TEST("rewrite", "rebase tip onto: a tip on the destination, and a commit id b
     GG_CHECK(everything(s, r.path) == before);
     s.dismissError();
     rebaseTip(s, r.d, "topic");
-    GG_CHECK(s.app.errorMessage().find("topic already contains " + r.d) != std::string::npos);
+    GG_CHECK(s.app.errorMessage().find("topic already contains " + r.d.substr(0, 10)) != std::string::npos);
     GG_CHECK(everything(s, r.path) == before);
 }
 

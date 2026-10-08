@@ -276,8 +276,10 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   "Merge X into Y" (`###merge`), "Rebase X onto Y" (`###rebase`) and "Move X here" (`###move`, shortcut text
   "Shift"). Y is the target: the local branch of the badge the drop is on; else the only local branch at the
   commit; else the short ID of the commit. Merge X into Y is enabled when Y is the current branch: it opens
-  the "Merge into HEAD" dialog with X. Rebase X onto Y is enabled when X is the current branch: it replays
-  the commits of X onto Y (the branch or the commit). Move X here moves X to the commit; when another worktree has X checked out, it opens the "Move branch" dialog (with the warning) instead. A disabled item has
+  the "Merge into HEAD" dialog with X. Rebase X onto Y is enabled for each local branch X: it replays
+  the commits of X onto Y (the branch or the commit). A branch that is not checked out is rebased with no
+  change of the working tree; the current branch is rebased with the working tree following; a branch behind
+  Y fast-forwards. It is disabled, with a hint, when another worktree has X checked out. Move X here moves X to the commit; when another worktree has X checked out, it opens the "Move branch" dialog (with the warning) instead. A disabled item has
   a hint with the reason. Shift at the drop moves the branch at once, without the menu (the same rule for a branch of another worktree). A drop on the commit of
   X, or on its badge, does nothing. The menu closes without an action when X or the target goes away (a
   reload); its items are off while a task runs.

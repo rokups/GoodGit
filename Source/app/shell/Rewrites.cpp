@@ -1167,12 +1167,25 @@ void Actions::mergeNative(const std::string& branch)
 
 void Actions::rebaseHeadOnto(const std::string& branch) { rebaseTipOnto("HEAD", branch); }
 
+namespace {
+
+// A full branch name reads as the short name, a full commit id as its short form: in the label, the reflog
+// message and the refusals.
+std::string shownRev(const std::string& rev)
+{
+    if (rev.rfind("refs/heads/", 0) == 0)
+        return rev.substr(11);
+    const bool fullId = rev.size() == 40 && rev.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+    return fullId ? rev.substr(0, 10) : rev;
+}
+
+} // namespace
+
 void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destination)
 {
-    // A full commit id reads as its short form in the label and the reflog message.
-    const bool fullId = tipRev.size() == 40 && tipRev.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
-    const std::string shown = fullId ? tipRev.substr(0, 10) : tipRev;
-    rewrite("rebase " + shown + " onto " + destination, [tipRev, shown, destination](git_repository* repo) {
+    const std::string shown = shownRev(tipRev);
+    const std::string shownDest = shownRev(destination);
+    rewrite("rebase " + shown + " onto " + shownDest, [tipRev, shown, shownDest, destination](git_repository* repo) {
         const std::string dest = resolveCommit(repo, destination);
         const bool isHead = tipRev == "HEAD";
         std::string tip;
@@ -1188,7 +1201,7 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
             const auto elsewhere = gg::git2::branchesInOtherWorktrees(repo);
             const auto it = elsewhere.find("refs/heads/" + shortName);
             if (it != elsewhere.end())
-                refuse(tipRev + " is checked out in the worktree " + it->second);
+                refuse(shown + " is checked out in the worktree " + it->second);
             // The new commits need a ref to hold them: a local branch, HEAD or a keep ref reaching the tip.
             bool held = false;
             git_oid head;
@@ -1204,15 +1217,15 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
                 return true;
             });
             if (!held)
-                refuse(tipRev + " is on no local branch");
+                refuse(shown + " is on no local branch");
         }
         // The tip's own commits: reachable from it, not from the destination (oldest first).
         const std::vector<std::string> own = rw::rangeToMove(repo, tip, dest);
-        const std::string reflogMessage = isHead ? "ggui: rebase onto " + destination : "ggui: rebase " + shown + " onto " + destination;
+        const std::string reflogMessage = isHead ? "ggui: rebase onto " + shownDest : "ggui: rebase " + shown + " onto " + shownDest;
         if (own.empty()) {
             // An empty range means the destination holds the tip; isAncestor is false only after a walk error.
             if (tip == dest || !isAncestor(repo, tip, dest))
-                refuse(tipRev + " is already on " + destination);
+                refuse(shown + " is already on " + destination);
             // The tip is behind the destination: nothing is replayed, the branch (or detached HEAD) fast-forwards.
             rw::Plan forward;
             forward.rebaseLike = true;
@@ -1230,7 +1243,7 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
             const bool isBranch = git_reference_name_to_id(&local, repo, name.c_str()) == 0 && toHex(local) == tip;
             git_error_clear();
             if (!isBranch)
-                refuse(destination + " already contains " + tipRev);
+                refuse(destination + " already contains " + shown);
             forward.refsToSteps[name] = "=" + dest;
             return forward;
         }
