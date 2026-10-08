@@ -355,9 +355,12 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
         how.options = {"Rebase my commits onto it", "Merge it in"};
         f.add(how);
         Session* s = &session;
+        // A short name can also be a tag, which git prefers: an unchanged prefill is used by its full ref name.
         f.buttons.push_back({"Reconcile",
-            [s](Form& form) {
-                const std::string with = gg::trim(form.text("with"));
+            [s, upstream = b.upstream, gone = b.upstreamGone](Form& form) {
+                std::string with = gg::trim(form.text("with"));
+                if (!upstream.empty() && !gone && with == upstream)
+                    with = upstreamRef(upstream);
                 if (form.choice("how") == 0)
                     s->actions().rebaseHeadOnto(with);
                 else

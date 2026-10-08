@@ -63,5 +63,8 @@ void showMergeDialog(Session& session, const std::string& rev, bool commit = fal
 void openInteractiveRebase(Session& session, const core::Oid& commit);
 void openInteractiveRebaseSelection(Session& session, const std::vector<core::Oid>& commits);
 void showInteractiveRebaseDialog(Session& session, const std::string& tip);
+// The full ref name of a branch's upstream (BranchInfo::upstream: a remote-tracking branch without
+// its refs/remotes/ prefix, or a local branch as refs/heads/...). Empty stays empty.
+std::string upstreamRef(const std::string& upstream);
 
 } // namespace ggui

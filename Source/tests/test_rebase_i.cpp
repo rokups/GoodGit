@@ -333,6 +333,47 @@ GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
+GG_TEST("rebase-i", "Branches panel: Interactive rebase onto uses the branch when a tag has the same name")
+{
+    const Repo r = makeRepo(s);
+    // The tag part1 is on c1; the branch part1 is on c3.
+    s.git(r.path, {"tag", "part1", r.c[1]});
+    GG_REQUIRE(s.openRepository(r.path));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_part1/###branch_part1"); }));
+    // The prefill (the commit before the tip) is read from the branch, not from the tag.
+    s.contextMenu("//Branches/branch_part1/###branch_part1", "Interactive rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Interactive rebase onto"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("base"), "part1~1");
+    s.dialogButton("Interactive rebase onto", "Open");
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s) == (Rows{"pick c3"}));
+    GG_CHECK_STR_EQ(editor(s).context()->tip, r.c[3]);
+    GG_CHECK_STR_EQ(editor(s).context()->tipRef, "refs/heads/part1");
+    GG_CHECK_STR_EQ(editor(s).context()->upstream, r.c[2]);
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    GG_CHECK(!editor(s).isOpen());
+}
+
+GG_TEST("rebase-i", "Branches panel: Interactive rebase onto uses the upstream branch when a tag has the same name")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote); // main is ahead 1, behind 1
+    const std::string upstream = s.revParse(repo, "refs/remotes/origin/main");
+    // The tag origin/main is on the local tip, not on the remote-tracking branch.
+    s.git(repo, {"tag", "origin/main", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_main/###branch_main"); }));
+    s.contextMenu("//Branches/branch_main/###branch_main", "Interactive rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Interactive rebase onto"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("base"), "origin/main");
+    s.dialogButton("Interactive rebase onto", "Open");
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK_STR_EQ(editor(s).context()->upstream, upstream);
+    ctx->ItemClick(irWidget("ir_cancel").c_str());
+    GG_CHECK(!editor(s).isOpen());
+}
+
 GG_TEST("rebase-i", "edit the list: Alt+arrows, drag, newest first, multi-select, keys, undo/redo, engine")
 {
     const Repo r = makeRepo(s);

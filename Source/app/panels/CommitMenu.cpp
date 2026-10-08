@@ -630,26 +630,37 @@ void openInteractiveRebaseSelection(Session& session, const std::vector<core::Oi
     session.rebase().open(std::move(r));
 }
 
+std::string upstreamRef(const std::string& upstream)
+{
+    return upstream.empty() || upstream.rfind("refs/", 0) == 0 ? upstream : "refs/remotes/" + upstream;
+}
+
 void showInteractiveRebaseDialog(Session& session, const std::string& tip)
 {
     Form f;
     f.title = "Interactive rebase onto";
     f.message = "The commits not on the base are listed in the todo editor.";
     f.add(commitInfo(session, "Rebase", tip));
-    // The branch's upstream, else the commit before the tip.
+    // The branch's upstream, else the commit before the tip. A short name can also be a tag, which
+    // git prefers: an unchanged prefill is opened by its full ref name.
     std::string prefill = tip + "~1";
+    std::string prefillRef = (tip == "HEAD" ? tip : "refs/heads/" + tip) + "~1";
     const auto snap = session.snapshot();
     if (snap) {
         const core::BranchInfo* b = tip == "HEAD" ? snap->currentBranch() : snap->findBranch(tip);
-        if (b && !b->upstream.empty() && !b->upstreamGone)
+        if (b && !b->upstream.empty() && !b->upstreamGone) {
             prefill = b->upstream;
+            prefillRef = upstreamRef(b->upstream);
+        }
     }
     f.add(commitField(session, "base", "Onto base (branch, tag or commit)", prefill));
     Session* s = &session;
     f.buttons.push_back({"Open",
-        [s, tip](Form& form) {
+        [s, tip, prefill, prefillRef](Form& form) {
             RebasePanel::Request r;
             r.upstream = gg::trim(form.text("base"));
+            if (r.upstream == prefill)
+                r.upstream = prefillRef;
             r.tip = tip;
             s->rebase().open(std::move(r));
         },

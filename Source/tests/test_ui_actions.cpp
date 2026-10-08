@@ -164,6 +164,24 @@ GG_TEST("ui", "Reconcile by rebasing onto the upstream")
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
+GG_TEST("ui", "Reconcile uses the upstream branch when a tag has the same name")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote); // main is ahead 1, behind 1
+    const std::string upstream = s.revParse(repo, "origin/main");
+    // The tag origin/main is on the local tip, not on the remote-tracking branch.
+    s.git(repo, {"tag", "origin/main", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    s.contextMenu(branchRow("main").c_str(), "Reconcile with remote or branch...");
+    GG_REQUIRE(s.dialogOpen("Reconcile"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->text("with"), "origin/main");
+    s.comboSelect("//Reconcile/How##how", "Rebase my commits onto it");
+    s.dialogButton("Reconcile", "Reconcile");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "main^") == upstream; }));
+    s.settle();
+    GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
+}
+
 GG_TEST("ui", "Redo that would overwrite local changes offers Stash and redo")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
