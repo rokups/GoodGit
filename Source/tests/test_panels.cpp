@@ -715,7 +715,7 @@ GG_TEST("panels", "repositories: the alias does not show in the toolbar switcher
     ctx->Yield(2);
     ctx->ItemClick("//###Toolbar/##tb_repo");
     ctx->Yield(2);
-    const std::string label = s.itemLabel("//$FOCUSED/###switch_0");
+    const std::string label = s.itemLabel("//##Combo_00/###switch_0");
     GG_CHECK(label.find(repo.filename().string()) != std::string::npos);
     GG_CHECK(label.find("aliased") == std::string::npos);
     ctx->KeyPress(ImGuiKey_Escape);

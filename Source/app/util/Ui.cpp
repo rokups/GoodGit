@@ -85,13 +85,14 @@ bool containsNoCase(const std::string& haystack, const std::string& needle)
     return it != haystack.end();
 }
 
-std::string summaryText(const core::RepoSummary& s)
+std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSuffix)
 {
     if (!s.exists)
         return "missing";
-    std::string text = s.detached ? std::string("detached") : s.branch;
+    const auto shorten = [&](const std::string& name) { return elidePrefix > 0 ? elideMiddle(name, elidePrefix, elideSuffix) : name; };
+    std::string text = s.detached ? std::string("detached") : shorten(s.branch);
     if (!s.upstream.empty()) {
-        text += " " ICON_MS_ARROW_RIGHT_ALT " " + s.upstream;
+        text += " " ICON_MS_ARROW_RIGHT_ALT " " + shorten(s.upstream);
         if (s.ahead)
             text += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(s.ahead);
         if (s.behind)

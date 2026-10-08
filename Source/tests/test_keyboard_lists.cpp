@@ -393,7 +393,7 @@ GG_TEST("keyboard", "main menu bar: an Alt tap focuses it, Right/Down walk menus
     const std::string current = s.session()->path().string();
     int victim = -1, entries = 0;
     for (size_t i = 0; i < st.data().recent.size(); ++i) {
-        if (idOf(ctx, "//$FOCUSED/###recent_menu_" + std::to_string(i)) != 0)
+        if (idOf(ctx, "//###Menu_01/###recent_menu_" + std::to_string(i)) != 0)
             ++entries;
         if (victim < 0 && !fs::equivalent(st.data().recent[i], current))
             victim = int(i);
@@ -401,7 +401,7 @@ GG_TEST("keyboard", "main menu bar: an Alt tap focuses it, Right/Down walk menus
     GG_REQUIRE(victim >= 0);
     GG_REQUIRE(entries >= 3);
     const std::string victimPath = st.data().recent[size_t(victim)];
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###recent_menu_" + std::to_string(victim)));
+    GG_REQUIRE(navTo(ctx, "//###Menu_01/###recent_menu_" + std::to_string(victim)));
     press(ctx, ImGuiKey_Delete);
     GG_CHECK(s.waitUntil([&] { return std::ranges::find(st.data().recent, victimPath) == st.data().recent.end(); }));
     GG_CHECK_EQ(st.data().recent.size(), size_t(2));
@@ -430,14 +430,14 @@ GG_TEST("keyboard", "toolbar: the repository switcher opens by Enter, Down walks
     GG_REQUIRE(navThrough(s, "//###Toolbar", {combo}));
     press(ctx, ImGuiKey_Enter);
     GG_REQUIRE(g.OpenPopupStack.Size == 1);
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###switch_0"));
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###switch_1"));
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###switch_2"));
+    GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_0"));
+    GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_1"));
+    GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_2"));
     // Delete on the current repository does nothing.
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###switch_0"));
+    GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_0"));
     press(ctx, ImGuiKey_Delete);
     GG_CHECK_EQ(st.data().recent.size(), size_t(3));
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###switch_2"));
+    GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_2"));
     press(ctx, ImGuiKey_Enter);
     GG_CHECK(g.OpenPopupStack.Size == 0);
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), a); }));
@@ -447,7 +447,7 @@ GG_TEST("keyboard", "toolbar: the repository switcher opens by Enter, Down walks
     GG_REQUIRE(navTo(ctx, combo));
     press(ctx, ImGuiKey_Enter);
     GG_REQUIRE(g.OpenPopupStack.Size == 1);
-    GG_REQUIRE(navTo(ctx, "//$FOCUSED/###switch_1"));
+    GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_1"));
     press(ctx, ImGuiKey_Delete);
     GG_CHECK(s.waitUntil([&] { return st.data().recent.size() == 2; }));
     ctx->KeyPress(ImGuiKey_Escape);

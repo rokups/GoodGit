@@ -62,6 +62,8 @@ public:
     int quitRequests() const { return m_quitRequests; }
     // Text of recent row `i` as shown on the Welcome screen (path + summary).
     std::string recentRowText(size_t i) const;
+    // The text of recent repository `i` in the Recent menu and the switcher: the name, two spaces, the detail.
+    std::string recentMenuText(size_t i) const;
     // Normalised path of the open repository (as stored in Recent), or empty.
     std::string currentRepoKey() const;
 
@@ -133,6 +135,13 @@ private:
     void handleMenuBarKey();
     void snapshotNavToggle();
     void drawRecentMenu();
+    const core::RepoSummary* recentInfo(size_t i) const;
+    // recentInfo() of every recent repository (null where there is none), found in one pass over the summaries.
+    std::vector<const core::RepoSummary*> recentInfos() const;
+    // The detail of a recent repository (branch, upstream, ahead/behind; the names elided as History badges are);
+    // `elided` tells whether a name was shortened.
+    std::string recentDetail(const core::RepoSummary* info, bool& elided) const;
+    void drawRecentList(const char* filterId, const char* idPrefix, float minWidth, bool focusRow, int rowFlags); // rowFlags: ImGuiSelectableFlags
     void drawToolbar();
     void drawRepositoryButtons();
     void drawStateBadge();

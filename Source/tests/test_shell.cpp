@@ -310,13 +310,13 @@ GG_TEST("shell", "permanent repositories: add, remove and alias")
     GG_CHECK(repos.size() == 1);
     st.removeRepository("/a/b");
     GG_CHECK(repos.empty());
-    // No limit, while recent stops at 20.
+    // No limit for either list.
     for (int i = 0; i < 30; ++i) {
         st.addRecent("/many/r" + std::to_string(i));
         st.addRepository("/many/r" + std::to_string(i));
     }
     GG_CHECK_EQ(st.data().repositories.size(), size_t(30));
-    GG_CHECK_EQ(st.data().recent.size(), size_t(20));
+    GG_CHECK_EQ(st.data().recent.size(), size_t(30));
     st.data().repositories.clear();
     st.data().recent.clear();
 }
@@ -424,7 +424,7 @@ GG_TEST("shell", "recent repositories: toolbar switcher shows unique names; Dele
     ggui::Settings& st = s.app.settings();
     GG_REQUIRE(st.data().recent.size() >= 3);
     // Most recent first: c, b, a.
-    auto comboItem = [&](size_t i) { return std::string("//$FOCUSED/###switch_") + std::to_string(i); };
+    auto comboItem = [&](size_t i) { return std::string("//##Combo_00/###switch_") + std::to_string(i); };
     auto y = [&](size_t i) { return ctx->ItemInfo(comboItem(i).c_str()).RectFull.Min.y; };
     ctx->ItemClick("//###Toolbar/##tb_repo");
     ctx->Yield(2);
@@ -501,7 +501,8 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
     s.waitIdle();
 
     // Toolbar switcher: back to the other repository.
-    s.comboSelect("//###Toolbar/##tb_repo", "###switch_1");
+    ctx->ItemClick("//###Toolbar/##tb_repo");
+    ctx->ItemClick("//##Combo_00/###switch_1"); // the rows are in a child window: the focused window is not the popup
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && s.session()->path() == linear; }));
     s.waitIdle();
 
@@ -1265,6 +1266,262 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
     GG_CHECK(s.app.recentRowText(1).rfind(notRepo.filename().string(), 0) != std::string::npos);
     GG_CHECK(s.app.recentRowText(2).find("  \xe2\x80\x94  main") != std::string::npos);
     fs::rename(s.path("was-a-repo.git"), notRepo / ".git");
+}
+
+// Closes the open popups with Escape, no mouse click. The pointer leaves the screen, else it reopens a submenu
+// it hovers (an Escape ends the editing of a text field first).
+static bool closePopups(ImGuiTestContext* ctx, int maxPresses = 4)
+{
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    for (int i = 0; i < maxPresses && ImGui::GetCurrentContext()->OpenPopupStack.Size > 0; ++i) {
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+    }
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    return ImGui::GetCurrentContext()->OpenPopupStack.Size == 0;
+}
+
+GG_TEST("shell", "recent repositories: the switcher shows the detail, elides long names, filters, and the field is as wide as the longest row")
+{
+    const std::string longBranch = "feature/a-very-long-branch-name-for-the-switcher";
+    const std::string hashBranch = "fix##123-a-very-long-branch-name-for-the-switcher"; // "##" is part of the name
+    const fs::path a = s.fixture(Recipe::Linear, "elided-repository-with-a-long-name");
+    const fs::path b = s.fixture(Recipe::WithRemote, "plain-b");
+    const fs::path c = s.fixture(Recipe::Linear, "c");
+    s.git(a, {"branch", "-m", "main", longBranch});
+    s.git(c, {"branch", "-m", "main", hashBranch});
+    for (const fs::path& repo : {a, b, c})
+        GG_REQUIRE(s.openRepository(repo));
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitIdle());
+    const auto& settings = s.app.settings().data();
+    // Most recent first: c (0), b (1), a (2).
+    GG_REQUIRE(s.waitUntil([&] {
+        return s.app.recentMenuText(0).find("  ") != std::string::npos && s.app.recentMenuText(1).find("origin/main") != std::string::npos
+            && s.app.recentMenuText(2).find("  ") != std::string::npos;
+    }));
+    const std::string shortName = ggui::elideMiddle(longBranch, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+    const std::string shortHash = ggui::elideMiddle(hashBranch, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+    GG_REQUIRE(shortName != longBranch);
+    GG_REQUIRE(shortHash != hashBranch);
+    const std::string textC = s.app.recentMenuText(0), textB = s.app.recentMenuText(1), textA = s.app.recentMenuText(2);
+    GG_CHECK(textA.find(shortName) != std::string::npos);
+    GG_CHECK(textA.find(longBranch) == std::string::npos);
+    GG_CHECK(textB.find("  main " ICON_MS_ARROW_RIGHT_ALT " origin/main") != std::string::npos);
+    GG_CHECK_STR_EQ(textC, "c  " + shortHash);
+
+    // The switcher has the rows and a filter field, as wide as the longest row of all.
+    ctx->ItemClick("//###Toolbar/##tb_repo");
+    ctx->Yield(2);
+    for (const char* row : {"0", "1", "2"})
+        GG_CHECK(s.itemExists((std::string("//##Combo_00/###switch_") + row).c_str()));
+    // The whole text shows, also after a "##" in the branch name (the label is cut at 31 characters).
+    GG_CHECK(s.itemLabel("//##Combo_00/###switch_0").find("123-a-v") != std::string::npos);
+    const float widest = std::max({ImGui::CalcTextSize(textA.c_str()).x, ImGui::CalcTextSize(textB.c_str()).x, ImGui::CalcTextSize(textC.c_str()).x});
+    GG_REQUIRE(widest > ImGui::GetFontSize() * 16.0f);
+    const float field = ctx->ItemInfo("//##Combo_00/##tb_repo_filter").RectFull.GetWidth();
+    GG_CHECK(std::abs(field - widest) < 1.5f);
+    // The filter hides the rows that do not match; the field keeps its width.
+    ctx->ItemInputValue("//##Combo_00/##tb_repo_filter", "plain-b");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//##Combo_00/###switch_1"));
+    GG_CHECK(!s.itemExists("//##Combo_00/###switch_0"));
+    GG_CHECK(!s.itemExists("//##Combo_00/###switch_2"));
+    GG_CHECK(std::abs(ctx->ItemInfo("//##Combo_00/##tb_repo_filter").RectFull.GetWidth() - field) < 0.5f);
+    // A filter belongs to one opening: the Recent menu starts with all rows and an empty field.
+    GG_REQUIRE(closePopups(ctx, 2)); // the first Escape ends the editing of the field
+    ctx->MenuClick("//##MainMenuBar/Repository/Recent");
+    for (const char* row : {"0", "1", "2"})
+        GG_CHECK(s.itemExists((std::string("//###Menu_01/###recent_menu_") + row).c_str()));
+    GG_CHECK(std::abs(ctx->ItemInfo("//###Menu_01/##recent_filter").RectFull.GetWidth() - field) < 1.5f);
+    GG_CHECK(s.itemLabel("//###Menu_01/###recent_menu_0").find("123-a-v") != std::string::npos);
+    // No popup stays open for the next test.
+    GG_REQUIRE(closePopups(ctx));
+
+    // Many entries: the rows scroll in their own area, the field stays in view.
+    for (int i = 0; i < 30; ++i)
+        s.app.settings().addRecent(s.path("many/r" + std::to_string(i) + (i == 29 ? "-with-a-name-that-needs-the-whole-width" : "")).string());
+    ctx->Yield(2);
+    ctx->ItemClick("//###Toolbar/##tb_repo");
+    ctx->Yield(2);
+    ImGuiWindow* popup = ctx->GetWindowByRef("//##Combo_00");
+    GG_REQUIRE(popup != nullptr);
+    GG_CHECK(popup->ScrollMax.y == 0.0f);
+    GG_CHECK(popup->Size.y < ImGui::GetTextLineHeightWithSpacing() * 20.0f);
+    GG_CHECK(ctx->ItemInfo("//##Combo_00/##tb_repo_filter").RectFull.Min.y >= popup->Pos.y);
+    // The scrollbar of the rows does not clip the widest row.
+    const ImGuiWindow* rowsWindow = nullptr;
+    for (const ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (w->ParentWindow == popup && std::string(w->Name).find("recent_rows") != std::string::npos)
+            rowsWindow = w;
+    GG_REQUIRE(rowsWindow != nullptr);
+    GG_CHECK(rowsWindow->ScrollMax.y > 0.0f);
+    float widestNow = 0.0f;
+    for (size_t i = 0; i < s.app.settings().data().recent.size(); ++i)
+        widestNow = std::max(widestNow, ImGui::CalcTextSize(s.app.recentMenuText(i).c_str()).x);
+    GG_REQUIRE(widestNow > ImGui::GetFontSize() * 16.0f);
+    GG_CHECK(rowsWindow->WorkRect.GetWidth() >= widestNow);
+    // Down on the last row goes to the first row.
+    ImGuiID firstRow = 0, lastRow = 0;
+    float top = FLT_MAX, bottom = -FLT_MAX;
+    for (size_t i = 0; i < s.app.settings().data().recent.size(); ++i) {
+        const ImGuiTestItemInfo info = ctx->ItemInfo(("//##Combo_00/###switch_" + std::to_string(i)).c_str(), ImGuiTestOpFlags_NoError);
+        if (info.ID == 0)
+            continue;
+        if (info.RectFull.Min.y < top) {
+            top = info.RectFull.Min.y;
+            firstRow = info.ID;
+        }
+        if (info.RectFull.Min.y > bottom) {
+            bottom = info.RectFull.Min.y;
+            lastRow = info.ID;
+        }
+    }
+    GG_REQUIRE(firstRow != 0 && lastRow != firstRow);
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo(lastRow);
+    ctx->Yield(2);
+    GG_REQUIRE(ImGui::GetCurrentContext()->NavId == lastRow);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK(ImGui::GetCurrentContext()->NavId == firstRow);
+    // Hover and Delete forget a row of the scroll area.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    const size_t before = s.app.settings().data().recent.size();
+    ctx->MouseMove("//##Combo_00/###switch_5");
+    ctx->KeyPress(ImGuiKey_Delete);
+    GG_CHECK(s.waitUntil([&] { return s.app.settings().data().recent.size() == before - 1; }, 5.0f));
+    GG_REQUIRE(closePopups(ctx));
+
+    // The Recent menu scrolls the same way: the field stays in view and the widest row is not clipped.
+    ctx->MenuClick("//##MainMenuBar/Repository/Recent");
+    ctx->Yield(2);
+    const ImGuiWindow* menu = ctx->GetWindowByRef("//###Menu_01");
+    GG_REQUIRE(menu != nullptr);
+    GG_CHECK(menu->ScrollMax.y == 0.0f);
+    GG_CHECK(ctx->ItemInfo("//###Menu_01/##recent_filter").RectFull.Min.y >= menu->Pos.y);
+    const ImGuiWindow* menuRows = nullptr;
+    for (const ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (w->ParentWindow == menu && std::string(w->Name).find("recent_rows") != std::string::npos)
+            menuRows = w;
+    GG_REQUIRE(menuRows != nullptr);
+    GG_CHECK(menuRows->ScrollMax.y > 0.0f);
+    GG_CHECK(menuRows->WorkRect.GetWidth() >= widestNow);
+    // Right on a row of the scroll area leaves the menu for the next top menu.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo("//###Menu_01/###recent_menu_6");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_RightArrow);
+    ctx->Yield(3);
+    GG_REQUIRE(ImGui::GetCurrentContext()->NavWindow != nullptr);
+    GG_CHECK_STR_EQ(std::string(ImGui::GetCurrentContext()->NavWindow->Name), "##MainMenuBar");
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->MenuClick("//##MainMenuBar/Repository/Recent");
+    ctx->Yield(2);
+    // Hover and Delete forget a row here too.
+    const size_t beforeMenu = s.app.settings().data().recent.size();
+    ctx->MouseMove("//###Menu_01/###recent_menu_6");
+    ctx->KeyPress(ImGuiKey_Delete);
+    GG_CHECK(s.waitUntil([&] { return s.app.settings().data().recent.size() == beforeMenu - 1; }, 5.0f));
+    GG_REQUIRE(closePopups(ctx));
+}
+
+GG_TEST("shell", "recent repositories: 300 recent repositories draw the Welcome list and the switcher within a frame budget")
+{
+    const fs::path repo = s.fixture(Recipe::Linear, "budget-repository");
+    GG_REQUIRE(s.openRepository(repo));
+    for (int i = 0; i < 300; ++i)
+        s.app.settings().addRecent(s.path("budget/r" + std::to_string(i)).string());
+    const auto& recent = s.app.settings().data().recent;
+    GG_REQUIRE(recent.size() >= 300);
+    const auto names = ggui::uniqueRecentNames(recent);
+    const auto frameMs = [&](int frames) {
+        const auto start = std::chrono::steady_clock::now();
+        ctx->Yield(frames);
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames;
+    };
+    // The switcher popup.
+    ctx->ItemClick("//###Toolbar/##tb_repo");
+    ctx->Yield(4);
+    const double switcherMs = frameMs(10);
+    ctx->LogInfo("switcher with %zu recents: %.2f ms for each frame", recent.size(), switcherMs);
+    GG_CHECK(switcherMs < timeBudgetMs(60.0));
+    GG_REQUIRE(closePopups(ctx));
+    // The Welcome list.
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitIdle());
+    ctx->Yield(4);
+    const double welcomeMs = frameMs(10);
+    ctx->LogInfo("Welcome with %zu recents: %.2f ms for each frame", recent.size(), welcomeMs);
+    GG_CHECK(welcomeMs < timeBudgetMs(60.0));
+    for (size_t i : {size_t(0), recent.size() - 1})
+        GG_CHECK(s.app.recentRowText(i).rfind(names[i].text(), 0) == 0);
+}
+
+GG_TEST("shell", "recent repositories: each opening of the switcher shows the current row, also below the first rows")
+{
+    const fs::path last = s.fixture(Recipe::Linear, "zzz-sorts-last");
+    GG_REQUIRE(s.openRepository(last));
+    s.app.settings().data().recentOrder = ggui::RecentOrder::Alphabetical;
+    for (int i = 0; i < 15; ++i)
+        s.app.settings().addRecent(s.path("many/r" + std::to_string(i)).string());
+    ctx->Yield(2);
+    for (int opening = 0; opening < 3; ++opening) {
+        ctx->ItemClick("//###Toolbar/##tb_repo");
+        ctx->Yield(4);
+        const ImGuiContext& g = *ImGui::GetCurrentContext();
+        const ImGuiWindow* popup = ctx->GetWindowByRef("//##Combo_00");
+        GG_REQUIRE(popup != nullptr);
+        const ImGuiWindow* rowsWindow = nullptr;
+        for (const ImGuiWindow* w : g.Windows)
+            if (w->ParentWindow == popup && std::string(w->Name).find("recent_rows") != std::string::npos)
+                rowsWindow = w;
+        GG_REQUIRE(rowsWindow != nullptr);
+        GG_CHECK(rowsWindow->ScrollMax.y > 0.0f);
+        const ImGuiTestItemInfo row = ctx->ItemInfo(g.NavId, ImGuiTestOpFlags_NoError);
+        GG_REQUIRE(row.ID != 0);
+        // The row shows whole (its item rect holds the spacing below the text).
+        GG_CHECK(row.RectFull.Min.y >= rowsWindow->InnerRect.Min.y - 0.5f);
+        GG_CHECK(row.RectFull.Min.y + ImGui::GetTextLineHeight() <= rowsWindow->InnerRect.Max.y + 0.5f);
+        GG_REQUIRE(closePopups(ctx));
+        // The next opening finds the list scrolled to the top, as after the user scrolled it there.
+        ImGuiWindow* kept = ImGui::FindWindowByName(rowsWindow->Name);
+        GG_REQUIRE(kept != nullptr);
+        kept->Scroll.y = 0.0f;
+        kept->ScrollTarget.y = FLT_MAX;
+    }
+}
+
+GG_TEST("shell", "recent repositories: in the Recent menu the Left key closes the submenu and the Right key moves to the next top menu")
+{
+    const fs::path a = s.fixture(Recipe::Linear, "menu-keys-a");
+    const fs::path b = s.fixture(Recipe::Linear, "menu-keys-b");
+    for (const fs::path& repo : {a, b})
+        GG_REQUIRE(s.openRepository(repo));
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    ctx->MenuClick("//##MainMenuBar/Repository/Recent");
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo("//###Menu_01/###recent_menu_1");
+    ctx->Yield(2);
+    GG_REQUIRE(g.OpenPopupStack.Size == 2);
+    // Left closes the submenu only.
+    ctx->KeyPress(ImGuiKey_LeftArrow);
+    ctx->Yield(2);
+    GG_CHECK(g.OpenPopupStack.Size == 1);
+    // Right on a row leaves the menu for the next top menu, as it did with the former menu items.
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->MenuClick("//##MainMenuBar/Repository/Recent");
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    ctx->NavMoveTo("//###Menu_01/###recent_menu_1");
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_RightArrow);
+    ctx->Yield(3);
+    GG_REQUIRE(g.NavWindow != nullptr);
+    GG_CHECK_STR_EQ(std::string(g.NavWindow->Name), "##MainMenuBar");
+    GG_CHECK_STR_EQ(std::string(ctx->ItemInfo(g.NavId, ImGuiTestOpFlags_NoError).DebugLabel), "Commit");
+    GG_REQUIRE(closePopups(ctx));
 }
 
 } // namespace ggtest

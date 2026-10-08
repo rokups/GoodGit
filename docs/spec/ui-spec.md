@@ -54,8 +54,11 @@ Auto-open (K): argv[1] if given, otherwise the most recent repository that still
 
 ### 1.3 Main menu
 **Repository** (K): Open… `Ctrl+O` · Initialize… · Clone… · Recent ▸ (filter field
-`##recent_filter`, entries show branch, upstream and ahead/behind; Delete forgets the hovered or
-focused entry other than the current repository) · Open working directory ·
+`##recent_filter` and the rows `recent_menu_<n>`, drawn by the same code as the switcher list: each row is the
+name, then its branch, upstream and ahead/behind directly after it, dimmed; the branch and upstream names are
+shortened in the middle as History badges are, and the tooltip gives the path and the full names; the field is as
+wide as the longest row of all, at least 16 font sizes, so the width does not change while the user types a filter;
+the current repository is marked; the number of recent repositories has no limit; up to 12 rows are drawn in the menu itself, so Left and Right reach the menu bar as on any menu item, and more rows scroll in a child area `##recent_rows` of 12 rows, so the field stays in view and the scrollbar does not clip the widest row (Right on a row of the child also moves to the next top menu; the layout follows the number of all rows, not of the rows the filter leaves); with no match the list shows "No match"; the filter is empty at each opening; Delete forgets the hovered or focused entry other than the current repository, also inside the scroll area) · Open working directory ·
 Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · Pull · Push · — ·
 Settings… · Quit `Ctrl+Q`.
 
@@ -77,7 +80,7 @@ New `##tb_new` · Commit `##tb_commit` (always "Commit", whatever is selected; t
 Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` ·
 Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
-recent repositories, as wide as the name it shows (12 to 28 font sizes; a longer name loses its start to an ellipsis, so its base name stays, and a tooltip on the closed combo gives the whole name; the list is as wide as its longest row); Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
+recent repositories, as wide as the name it shows (12 to 28 font sizes; a longer name loses its start to an ellipsis, so its base name stays, and a tooltip on the closed combo gives the whole name; the list is the Recent menu list: rows `switch_<n>`, filter field `##tb_repo_filter`, the same detail, "No match" text and filter, which is empty at each opening; with more than 12 recent repositories (no limit; the rows of a shorter list are drawn directly in the popup) the rows scroll in a child area of 12 rows, so the field stays in view, the scrollbar does not clip the widest row, the area starts at the top at each opening (a popup that starts on the current row keeps its scroll) and Down on the last row goes to the first row; the list is as wide as its longest row and the field fills it; the current repository is shown selected; the popup starts on the current row, not on the field); Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
 current branch label `##tb_branch` (plain text: branch name or "detached") · HEAD ID `##tb_head`
 (short ID, clickable text; right-click: the Copy ID item) ·
 **N** repository-state badge `##tb_state` (MERGING, REBASING, CHERRY-PICKING, REVERTING,

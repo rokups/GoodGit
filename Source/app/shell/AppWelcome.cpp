@@ -19,6 +19,12 @@ namespace fs = std::filesystem;
 
 namespace {
 const char* kTagline = "A Git client with undo and first-class conflicts";
+
+std::string welcomeRowText(const RecentName& name, const core::RepoSummary* info)
+{
+    const std::string detail = info ? summaryText(*info) : std::string();
+    return name.text() + (detail.empty() ? std::string() : "  \xe2\x80\x94  " + detail);
+}
 }
 
 void App::initializeRepository()
@@ -70,11 +76,7 @@ std::string App::recentRowText(size_t i) const
     const auto& recent = m_settings.data().recent;
     if (i >= recent.size())
         return {};
-    std::string detail;
-    for (const auto& info : m_recentInfo)
-        if (info.path == fs::path(recent[i]))
-            detail = summaryText(info);
-    return uniqueRecentNames(recent)[i].text() + (detail.empty() ? std::string() : "  \xe2\x80\x94  " + detail);
+    return welcomeRowText(uniqueRecentNames(recent)[i], recentInfo(i));
 }
 
 void App::drawWelcome()
@@ -146,12 +148,13 @@ void App::drawWelcome()
     if (recent.empty())
         ImGui::TextDisabled("No recent repositories");
     const auto names = uniqueRecentNames(recent);
+    const auto infos = recentInfos();
     const std::string currentKey = currentRepoKey();
     std::string forget;
     for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
         const std::string& path = recent[i];
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
-        const std::string label = recentRowText(i) + "###row";
+        const std::string label = welcomeRowText(names[i], infos[i]) + "###row";
         if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), m_recentFocus == static_cast<int>(i),
                 ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0)))
             post([this, path] { openRepository(path); });

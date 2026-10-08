@@ -471,8 +471,6 @@ void Settings::addRecent(const std::string& rawPath)
     auto& r = m_data.recent;
     std::erase(r, path);
     r.insert(r.begin(), path);
-    if (r.size() > 20)
-        r.resize(20);
     save();
 }
 

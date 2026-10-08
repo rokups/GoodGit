@@ -25,6 +25,7 @@ namespace {
 // Width of the toolbar's repository switcher: it fits the name shown, from the least to the most, in font sizes.
 constexpr float kRepoComboMinEm = 12.0f;
 constexpr float kRepoComboMaxEm = 28.0f;
+constexpr size_t kRecentListMaxRows = 12; // the Recent lists scroll past this many rows
 
 constexpr const char* kNewDetachedOnly =
     "New needs a commit that is HEAD's branch tip or has exactly one branch; here it can only be detached.";
@@ -194,37 +195,168 @@ void App::snapshotNavToggle()
     m_navPrev.layer = g.NavLayer;
 }
 
+const core::RepoSummary* App::recentInfo(size_t i) const
+{
+    const auto& recent = m_settings.data().recent;
+    const core::RepoSummary* found = nullptr;
+    if (i < recent.size())
+        for (const auto& info : m_recentInfo)
+            if (info.path == fs::path(recent[i]))
+                found = &info;
+    return found;
+}
+
+std::vector<const core::RepoSummary*> App::recentInfos() const
+{
+    const auto& recent = m_settings.data().recent;
+    // The paths compare as in recentInfo(): the last summary of a path wins.
+    std::map<fs::path, const core::RepoSummary*> byPath;
+    for (const auto& info : m_recentInfo)
+        byPath[info.path] = &info;
+    std::vector<const core::RepoSummary*> infos(recent.size(), nullptr);
+    if (byPath.empty())
+        return infos;
+    for (size_t i = 0; i < recent.size(); ++i) {
+        const auto it = byPath.find(fs::path(recent[i]));
+        if (it != byPath.end())
+            infos[i] = it->second;
+    }
+    return infos;
+}
+
+std::string App::recentDetail(const core::RepoSummary* info, bool& elided) const
+{
+    elided = false;
+    if (!info)
+        return {};
+    const std::string detail = summaryText(*info, m_settings.data().historyBadgePrefix, m_settings.data().historyBadgeSuffix);
+    elided = detail != summaryText(*info);
+    return detail;
+}
+
+std::string App::recentMenuText(size_t i) const
+{
+    const auto& recent = m_settings.data().recent;
+    if (i >= recent.size())
+        return {};
+    bool elided = false;
+    const std::string detail = recentDetail(recentInfo(i), elided);
+    return uniqueRecentNames(recent)[i].text() + (detail.empty() ? std::string() : "  " + detail);
+}
+
 void App::drawRecentMenu()
 {
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16);
-    ImGui::InputTextWithHint("##recent_filter", "Filter", &m_recentFilter);
+    // A menu item acts when the mouse button is released on it (also after a press on "Repository").
+    drawRecentList("##recent_filter", "recent_menu_", 0.0f, false, ImGuiSelectableFlags_SelectOnRelease | ImGuiSelectableFlags_SetNavIdOnHover);
+}
+
+// The Recent submenu and the toolbar switcher: the filter field and one row for each recent repository (the
+// name, then its branch and upstream, dimmed). The field is as wide as the longest row of all, so the list keeps
+// its width while the user types. `minWidth` is the least width of a row (the combo's own width in the switcher);
+// `focusRow` makes the current row (else the first) the one a popup opened by keyboard starts on, not the field.
+// Past `kRecentListMaxRows` recent repositories the rows scroll in a child window, so the field stays in view; the
+// item IDs are those of the popup window. A shorter list has no child: the nav window stays the menu, so Left and
+// Right reach the menu bar as they do on menu items.
+void App::drawRecentList(const char* filterId, const char* idPrefix, float minWidth, bool focusRow, int rowFlags)
+{
+    // The filter belongs to one opening of a list: the other place does not inherit it.
+    if (ImGui::IsWindowAppearing())
+        m_recentFilter.clear();
     const auto& recent = m_settings.data().recent;
     const auto names = uniqueRecentNames(recent);
-    int shown = 0;
+    const auto infos = recentInfos();
     const std::string currentKey = currentRepoKey();
-    std::string forget;
+    struct Row {
+        size_t index;
+        std::string text; // the name, two spaces and the detail
+        size_t nameLength;
+        const core::RepoSummary* info;
+        bool elided;
+    };
+    std::vector<Row> rows;
+    float widest = 0.0f;
     for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
-        const std::string& path = recent[i];
-        if (!m_recentFilter.empty() && !containsNoCase(path, m_recentFilter))
-            continue;
-        std::string detail;
-        for (const auto& info : m_recentInfo)
-            if (info.path == fs::path(path))
-                detail = summaryText(info);
-        const std::string label = names[i].text() + "###recent_menu_" + std::to_string(i);
-        if (menuItemDimPrefix(ICON_MS_FOLDER, label.c_str(), names[i].prefix.size(), detail.c_str()))
-            post([this, path] { openRepository(path); });
-        const bool current = path == currentKey;
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            tooltip(current ? "%s" : "%s\nDel removes", path.c_str());
-        if (!current && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
-            forget = path;
-        ++shown;
+        Row row{i, names[i].text(), 0, infos[i], false};
+        row.nameLength = row.text.size();
+        const std::string detail = recentDetail(row.info, row.elided);
+        if (!detail.empty())
+            row.text += "  " + detail;
+        widest = std::max(widest, ImGui::CalcTextSize(row.text.c_str()).x);
+        rows.push_back(std::move(row));
+    }
+    // Past the row limit the child has a scrollbar, which takes its width from the rows.
+    const bool scrollArea = rows.size() > kRecentListMaxRows; // all rows, not the visible ones: the layout holds while the user types
+    const float bar = scrollArea ? ImGui::GetStyle().ScrollbarSize : 0.0f;
+    const float width = std::max({ImGui::GetFontSize() * 16, minWidth, widest + bar});
+    ImGui::SetNextItemWidth(width);
+    ImGui::InputTextWithHint(filterId, "Filter", &m_recentFilter);
+
+    std::vector<const Row*> visible;
+    for (const Row& row : rows)
+        if (m_recentFilter.empty() || containsNoCase(recent[row.index], m_recentFilter))
+            visible.push_back(&row);
+    const bool hasCurrent = std::any_of(visible.begin(), visible.end(), [&](const Row* r) { return recent[r->index] == currentKey; });
+    std::string forget;
+    if (!visible.empty()) {
+        const ImGuiID popupId = ImGui::GetCurrentWindow()->ID;
+        if (scrollArea) {
+            const float height = static_cast<float>(std::min(visible.size(), kRecentListMaxRows)) * ImGui::GetTextLineHeightWithSpacing();
+            ImGui::BeginChild("##recent_rows", ImVec2(width, height), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground);
+            // Each opening starts at the top. A list that starts on its current row keeps its scroll: SetScrollY() would
+            // move the list away from the row that SetItemDefaultFocus() scrolls to or leaves in view.
+            if (ImGui::IsWindowAppearing() && !(focusRow && hasCurrent))
+                ImGui::SetScrollY(0.0f);
+            ImGui::PushOverrideID(popupId); // the rows keep the IDs they would have in the popup itself
+        }
+        for (const Row* row : visible) {
+            const std::string& path = recent[row->index];
+            const bool current = path == currentKey;
+            const std::string id = idPrefix + std::to_string(row->index);
+            // The child is not a popup: the click closes the popup here, not in Selectable(). In the menu, Selectable()
+            // closes the whole menu chain.
+            const auto selectFlags = static_cast<ImGuiSelectableFlags>(rowFlags) | (scrollArea ? ImGuiSelectableFlags_NoAutoClosePopups : 0);
+            if (selectableTextDimRanges(row->text, id, {{0, names[row->index].prefix.size()}, {row->nameLength, row->text.size()}}, current,
+                    selectFlags)) {
+                if (!current)
+                    post([this, path] { openRepository(path); });
+                if (scrollArea)
+                    ImGui::CloseCurrentPopup();
+            }
+            if (focusRow && (current || (!hasCurrent && row == visible.front())))
+                ImGui::SetItemDefaultFocus();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+                std::string text = path;
+                if (row->elided) {
+                    if (!row->info->detached)
+                        text += "\nBranch: " + row->info->branch;
+                    if (!row->info->upstream.empty())
+                        text += "\nUpstream: " + row->info->upstream;
+                }
+                if (!current)
+                    text += "\nDel removes";
+                tooltip("%s", text.c_str());
+            }
+            if (!current && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
+                forget = path;
+        }
+        if (scrollArea) {
+            ImGui::NavMoveRequestTryWrapping(ImGui::GetCurrentWindow(), ImGuiNavMoveFlags_LoopY); // the child is the nav window
+            ImGui::PopID();
+            const ImGuiWindow* rowsWindow = ImGui::GetCurrentWindow();
+            ImGui::EndChild();
+            // In the menu the menu bar moves to the next top menu on Right only when the nav window is a menu: the child is
+            // not, so the nav window is the menu while the move request has no result.
+            ImGuiContext& imgui = *ImGui::GetCurrentContext();
+            ImGuiWindow* menu = ImGui::GetCurrentWindow();
+            if ((menu->Flags & ImGuiWindowFlags_ChildMenu) && imgui.NavWindow == rowsWindow && imgui.NavMoveDir == ImGuiDir_Right
+                && ImGui::NavMoveRequestButNoResultYet())
+                imgui.NavWindow = menu;
+        }
     }
     if (!forget.empty())
         m_settings.forgetRecent(forget);
-    if (shown == 0)
-        ImGui::TextDisabled("No recent repositories");
+    if (visible.empty())
+        ImGui::TextDisabled(recent.empty() ? "No recent repositories" : "No match");
 }
 
 void App::drawMenuBar()
@@ -601,25 +733,14 @@ void App::drawToolbar()
     const float chrome = style.FramePadding.x * 2 + ImGui::GetFrameHeight();
     const float fontSize = ImGui::GetFontSize();
     const std::string shown = elideStart(current, fontSize * kRepoComboMaxEm - chrome);
-    ImGui::SetNextItemWidth(std::max(fontSize * kRepoComboMinEm, ImGui::CalcTextSize(shown.c_str()).x + chrome));
-    const bool popup = ImGui::BeginCombo("##tb_repo", shown.c_str());
+    const float comboWidth = std::max(fontSize * kRepoComboMinEm, ImGui::CalcTextSize(shown.c_str()).x + chrome);
+    ImGui::SetNextItemWidth(comboWidth);
+    const bool popup = ImGui::BeginCombo("##tb_repo", shown.c_str(), ImGuiComboFlags_HeightLarge); // the list scrolls inside, not the popup
     if (!popup && shown != current && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
         tooltip("%s", current.c_str());
     if (popup) {
-        std::string forget;
-        for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
-            const std::string& path = recent[i];
-            const bool selected = path == currentKey;
-            const std::string label = names[i].text() + "###switch_" + std::to_string(i);
-            if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), selected, 0, ImVec2(0, 0)) && !selected)
-                post([this, path] { openRepository(path); });
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                tooltip(selected ? "%s" : "%s\nDel removes", path.c_str());
-            if (!selected && (hoveredDeletePressed() || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))))
-                forget = path;
-        }
-        if (!forget.empty())
-            m_settings.forgetRecent(forget);
+        // The popup is at least as wide as the combo: the field fills the content width.
+        drawRecentList("##tb_repo_filter", "switch_", comboWidth - style.WindowPadding.x * 2, true, 0);
         ImGui::EndCombo();
     }
     ImGui::SameLine();
