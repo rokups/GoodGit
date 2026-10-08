@@ -30,6 +30,16 @@ Chain makeChain(Scenario& s, const std::string& name = {})
     return r;
 }
 
+// A branch "dest" with one own commit on c1: a base that main's commits do not contain.
+std::string addDest(Scenario& s, const Chain& r)
+{
+    s.git(r.path, {"switch", "-q", "-c", "dest", r.c[0]});
+    s.commitFile(r.path, "d.txt", "d\n", "dest commit");
+    const std::string id = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    return id;
+}
+
 std::vector<std::string> subjects(Scenario& s, const fs::path& repo)
 {
     std::vector<std::string> out;
@@ -62,6 +72,7 @@ void drag(Scenario& s, const std::string& from, const std::string& to, ImGuiKeyC
 GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise a chooser")
 {
     const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
     GG_REQUIRE(s.openRepository(r.path));
     // Shift: c4 after c1.
     std::string tip = s.revParse(r.path, "main");
@@ -79,18 +90,21 @@ GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise
     GG_CHECK(changedFrom(s, r.path, tip));
     GG_CHECK(subjects(s, r.path).size() == 3);
     GG_CHECK(s.gitOut(r.path, {"show", "--name-only", "--format=", "main~1"}).find("f2.txt") != std::string::npos);
-    // Alt: the tip (c3) rebased onto c1 (with descendants): main = c1, c3.
+    // Alt: the tip (c3) is the tip to rebase onto dest; its 2 own commits since c1 both move: main = c1, dest commit, squashed, c3.
     tip = s.revParse(r.path, "main");
-    drag(s, rowRef(tip), rowRef(r.c[0]), ImGuiMod_Alt);
+    drag(s, rowRef(tip), rowRef(dest), ImGuiMod_Alt);
     GG_CHECK(changedFrom(s, r.path, tip));
-    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c1"}));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~2"), dest);
+    GG_CHECK(subjects(s, r.path).size() == 4);
+    GG_CHECK(subjects(s, r.path).front() == "c3" && subjects(s, r.path)[2] == "dest commit");
     // No modifier: the chooser; Copy after.
     tip = s.revParse(r.path, "main");
     drag(s, rowRef(tip), rowRef(r.c[0]));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Copy after"); }));
     ctx->ItemClick("//$FOCUSED/Copy after");
     GG_CHECK(changedFrom(s, r.path, tip));
-    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c3", "c1"}));
+    GG_CHECK(subjects(s, r.path).size() == 5);
+    GG_CHECK(subjects(s, r.path).front() == "c3" && subjects(s, r.path)[3] == "c3");
 }
 
 namespace {
@@ -299,6 +313,7 @@ GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working t
 GG_TEST("dnd", "the chooser's choices and Escape; a commit's files onto its child, HEAD or elsewhere; a commit onto itself")
 {
     const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
     GG_REQUIRE(s.openRepository(r.path));
     auto choose = [&](const std::string& from, const std::string& to, const char* item) {
         const std::string tip = s.revParse(r.path, "main");
@@ -326,8 +341,10 @@ GG_TEST("dnd", "the chooser's choices and Escape; a commit's files onto its chil
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c2", "c4", "c3", "c1"}));
     choose(s.revParse(r.path, "main"), s.revParse(r.path, "main~1"), "Squash into");
     GG_CHECK(subjects(s, r.path).size() == 3u);
-    choose(s.revParse(r.path, "main"), s.revParse(r.path, "main~2"), "Rebase onto");
-    GG_CHECK(subjects(s, r.path).size() == 2u);
+    // The tip and its parent, the 2 commits since c1, move onto dest.
+    choose(s.revParse(r.path, "main"), dest, "Rebase onto");
+    GG_CHECK(subjects(s, r.path).size() == 4u);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~2"), dest);
 
     // A commit's files: onto its child, onto HEAD further up, and anywhere else (refused).
     const Chain q = makeChain(s, "files");

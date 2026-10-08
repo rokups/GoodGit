@@ -267,9 +267,10 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 
 ### 2.x Drag and drop (Phase 3)
 - **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,
-  Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (with
-  descendants). Without a modifier a chooser pops up: Move before / Move after / Copy after /
-  Squash into / Rebase onto.
+  Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (the
+  dragged commit is the tip: the commits from its first divergence point with the target up to it move,
+  and other branches on them follow). Without a modifier a chooser pops up: Move before / Move after /
+  Copy after / Squash into / Rebase onto.
 - **Branch badge X → commit row or badge:** (the drag starts on the badge of a local branch; the tooltip
   shows the name of X.) Without a modifier a small menu `##branch_drop_chooser` pops up, with the items
   "Merge X into Y" (`###merge`), "Rebase X onto Y" (`###rebase`) and "Move X here" (`###move`, shortcut text
@@ -324,7 +325,9 @@ Drop commit…/Drop commit and descendants…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it
-when HEAD does not; a commit on neither is refused. The *Squash* and *Rebase onto* dialogs have
+when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field, no other choice) treats the selected commit as the tip:
+the commits from its first divergence point with the destination up to it move, and other branches on
+them follow. The *Squash* and *Rebase onto* dialogs have
 *Open as interactive rebase…*: the editor opens with the action as its starting todo (the commit
 moved after the target as squash or fixup; the new base as *Onto*).
 *Merge into HEAD…* and *Rebase HEAD onto this* in the shared commit actions act on the selected commit

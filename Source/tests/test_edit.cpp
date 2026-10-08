@@ -271,36 +271,43 @@ GG_TEST("edit", "commit fields preview the commit they name: prefilled, live, an
     s.dialogButton("Squash", "Cancel");
 }
 
-GG_TEST("edit", "rebase one commit, and a commit with its descendants, onto another branch")
+namespace {
+const ggui::Form* currentForm(Scenario& s) { return s.session()->app().dialogs().current(); }
+} // namespace
+
+GG_TEST("edit", "rebase onto: the commits up to the selected commit move onto another branch")
 {
     const EditRepo r = makeRepo(s);
+    // A child branch on c4: it restacks with the moved commits.
+    s.git(r.path, {"switch", "-q", "-c", "child"});
+    s.commitFile(r.path, "e.txt", "e\n", "c5 add e");
+    const std::string c5 = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
     GG_REQUIRE(s.openRepository(r.path));
-    GG_REQUIRE(rowReady(s, r.c3));
-    // c3 and its descendant c4 onto side.
-    s.contextMenu(rowRef(r.c3).c_str(), "Rebase onto...");
+    GG_REQUIRE(rowReady(s, r.c4));
+    // c4 is the tip: its 2 own commits since side (c3, c4) move onto side (s1); c5 follows.
+    s.contextMenu(rowRef(r.c4).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "side");
     s.dialogButton("Rebase onto", "Rebase");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main~2"), r.s1);
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    GG_CHECK(subjects(s, r.path, "child") == (std::vector<std::string>{"c5 add e", "c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    GG_CHECK(s.revParse(r.path, "child") != c5);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "child~1"), s.revParse(r.path, "main"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.s1);
     GG_CHECK(s.statusPorcelain(r.path).empty());
     GG_CHECK_STR_EQ(s.read(r.path, "s.txt"), "s\n"); // the working tree followed
-    // Only the tip commit (c4') onto c1: main follows it, c3 drops out of main.
+    // The dialog has no "with its descendants" choice.
     const std::string tip = s.head(r.path);
     GG_REQUIRE(rowReady(s, tip));
     s.contextMenu(rowRef(tip).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
-    s.dialogText("Rebase onto", "destination", r.c1);
-    s.dialogCheck("Rebase onto", "with_descendants", "With its descendants");
-    s.dialogButton("Rebase onto", "Rebase");
-    GG_CHECK(changed(s, r.path, tip));
-    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c1 add a"}));
+    for (const auto& f : currentForm(s)->fields)
+        GG_CHECK(f.kind != ggui::Field::Check);
+    s.dialogButton("Rebase onto", "Cancel");
 }
-
-namespace {
-const ggui::Form* currentForm(Scenario& s) { return s.session()->app().dialogs().current(); }
-} // namespace
 
 GG_TEST("edit", "squash a commit into its parent (S) with the concatenated message, and descendants into a commit (Shift+S)")
 {
@@ -737,7 +744,7 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     // The root commit has no parent to take changes.
     fileMenu(r.c1, "a.txt", 1, "Move to parent");
     refused("moving changes needs a commit with exactly one parent");
-    // Rebase onto an unknown revision, or onto the commit's own descendant.
+    // Rebase onto an unknown revision, or a commit that the destination already contains.
     s.contextMenu(rowRef(r.c2).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "no-such-branch");
@@ -747,7 +754,7 @@ GG_TEST("edit", "refusals: nothing to squash or move, unknown or descendant dest
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "main");
     s.dialogButton("Rebase onto", "Rebase");
-    refused("cannot rebase onto the commit's own descendant");
+    refused(("main already contains " + r.c2).c_str());
     // HEAD already contains c2: merging it or rebasing HEAD onto it changes nothing.
     s.contextMenu(rowRef(r.c2).c_str(), "Merge into HEAD...");
     GG_REQUIRE(s.dialogOpen("Merge into HEAD"));

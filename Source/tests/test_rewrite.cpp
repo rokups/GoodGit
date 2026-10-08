@@ -177,7 +177,10 @@ namespace ggtest {
 GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD moves")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    s.git(repo, {"branch", "dest", "HEAD~3"});
+    // dest diverges from HEAD~3, so HEAD's 3 own commits have a new base.
+    s.git(repo, {"switch", "-q", "-c", "dest", "HEAD~3"});
+    s.commitFile(repo, "dest.txt", "d\n", "dest commit");
+    s.git(repo, {"switch", "-q", "-"});
     const fs::path hooks = repo / ".git" / "hooks";
     s.write(hooks, "pre-rebase", "#!/bin/sh\necho \"pre-rebase says no to $1\" >&2\nexit 1\n");
     fs::permissions(hooks / "pre-rebase", fs::perms::owner_all);
@@ -202,7 +205,7 @@ GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD m
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "dest");
     s.dialogButton("Rebase onto", "Rebase");
-    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "HEAD~1") == s.revParse(repo, "dest"); }));
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "HEAD~3") == s.revParse(repo, "dest"); }));
     s.settle();
     GG_CHECK_STR_EQ(s.read(checkoutLog.parent_path(), checkoutLog.filename().string()), tip + " " + s.head(repo) + " 1\n");
 }

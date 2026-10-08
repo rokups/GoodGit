@@ -308,15 +308,12 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const std::stri
 {
     Form f;
     f.title = "Rebase onto";
-    f.message = "Move this commit onto another commit.";
+    f.message = "Move the commits up to this one onto another commit. Commits that the destination already contains stay.";
     f.add(commitInfo(session, "Rebase", commit));
     f.add(commitField(session, "destination", "Onto (branch, tag or commit)", prefill));
-    Field with{Field::Check, "with_descendants", "With its descendants"};
-    with.checked = true;
-    f.add(with);
     Session* s = &session;
     f.buttons.push_back({"Rebase",
-        [s, commit](Form& form) { s->actions().rebaseOnto(commit, gg::trim(form.text("destination")), form.checked("with_descendants")); },
+        [s, commit](Form& form) { s->actions().rebaseTipOnto(commit.hex(), gg::trim(form.text("destination"))); },
         [](const Form& form) { return !gg::trim(form.text("destination")).empty(); }});
     // The commit and its descendants onto the destination, as a starting todo.
     f.buttons.push_back({"Open as interactive rebase...",
@@ -327,7 +324,7 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const std::stri
             r.selected = {commit.hex()};
             s->rebase().open(std::move(r));
         },
-        [](const Form& form) { return !gg::trim(form.text("destination")).empty() && form.checked("with_descendants"); }});
+        [](const Form& form) { return !gg::trim(form.text("destination")).empty(); }});
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }

@@ -158,8 +158,6 @@ public:
     void editAuthor(const core::Oid& commit, const std::string& name, const std::string& email);
     // A detached copy of the commit (or of it and its descendants) on its parent.
     void duplicate(const core::Oid& commit, bool withDescendants);
-    // The commit alone, or with its descendants, onto `destination`.
-    void rebaseOnto(const core::Oid& commit, const std::string& destination, bool withDescendants);
     // Folds `commit` into `target` (its parent by default); combine or keep the target's message.
     void squash(const core::Oid& commit, const std::string& target, bool combineMessages); // target "" = parent
     // Folds the commit's descendants (a linear chain) into it.

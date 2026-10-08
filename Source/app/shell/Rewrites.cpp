@@ -440,56 +440,6 @@ static std::string resolveCommit(git_repository* repo, const std::string& rev)
     return toHex(*oid);
 }
 
-void Actions::rebaseOnto(const core::Oid& commit, const std::string& destination, bool withDescendants)
-{
-    const std::string id = commit.hex();
-    rewrite(std::string("rebase ") + (withDescendants ? "branch from " : "") + id.substr(0, 10) + " onto " + destination,
-        [id, destination, withDescendants](git_repository* repo) {
-            const std::string dest = resolveCommit(repo, destination);
-            if (isAncestor(repo, id, dest))
-                refuse("cannot rebase onto the commit's own descendant");
-            rw::Plan plan;
-            plan.rebaseLike = true;
-            plan.upstream = dest;
-            plan.reflogMessage = "ggui: rebase";
-            if (withDescendants) {
-                plan = [&] {
-                    rw::Plan p = rw::replayPlan(repo, {id});
-                    p.rebaseLike = true;
-                    p.upstream = dest;
-                    p.reflogMessage = "ggui: rebase";
-                    return p;
-                }();
-                for (auto& s : plan.steps)
-                    if (s.source == id) {
-                        s.sourceParents = false;
-                        s.parents = {"=" + dest};
-                    }
-                return plan;
-            }
-            // Only this commit moves; its children close the gap on its parent.
-            rw::Step moved;
-            moved.source = id;
-            moved.key = "moved";
-            moved.mapSource = false;
-            moved.sourceParents = false;
-            moved.parents = {"=" + dest};
-            plan.steps.push_back(moved);
-            rw::Plan rest = replayWithout(repo, {id}, {id});
-            plan.steps.insert(plan.steps.end(), rest.steps.begin(), rest.steps.end());
-            plan.dropped = {id};
-            // Branches at the commit follow it.
-            gg::git2::forEachReference(repo, [&](git_reference* ref) {
-                const std::string name = git_reference_name(ref);
-                if (name.rfind("refs/heads/", 0) == 0 && git_reference_type(ref) == GIT_REFERENCE_DIRECT
-                    && toHex(*git_reference_target(ref)) == id)
-                    plan.refsToSteps[name] = "moved";
-                return true;
-            });
-            return plan;
-        });
-}
-
 void Actions::squash(const core::Oid& commit, const std::string& target, bool combineMessages)
 {
     const std::string id = commit.hex();
@@ -1219,7 +1169,10 @@ void Actions::rebaseHeadOnto(const std::string& branch) { rebaseTipOnto("HEAD", 
 
 void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destination)
 {
-    rewrite("rebase " + tipRev + " onto " + destination, [tipRev, destination](git_repository* repo) {
+    // A full commit id reads as its short form in the label and the reflog message.
+    const bool fullId = tipRev.size() == 40 && tipRev.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+    const std::string shown = fullId ? tipRev.substr(0, 10) : tipRev;
+    rewrite("rebase " + shown + " onto " + destination, [tipRev, shown, destination](git_repository* repo) {
         const std::string dest = resolveCommit(repo, destination);
         const bool isHead = tipRev == "HEAD";
         std::string tip;
@@ -1255,7 +1208,7 @@ void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destin
         }
         // The tip's own commits: reachable from it, not from the destination (oldest first).
         const std::vector<std::string> own = rw::rangeToMove(repo, tip, dest);
-        const std::string reflogMessage = isHead ? "ggui: rebase onto " + destination : "ggui: rebase " + tipRev + " onto " + destination;
+        const std::string reflogMessage = isHead ? "ggui: rebase onto " + destination : "ggui: rebase " + shown + " onto " + destination;
         if (own.empty()) {
             // An empty range means the destination holds the tip; isAncestor is false only after a walk error.
             if (tip == dest || !isAncestor(repo, tip, dest))

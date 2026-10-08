@@ -421,7 +421,7 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
             else if (io.KeyCtrl)
                 actions.squash(source, row.id.hex(), true);
             else if (io.KeyAlt)
-                actions.rebaseOnto(source, row.id.hex(), true);
+                actions.rebaseTipOnto(source.hex(), row.id.hex());
             else {
                 m_pendingDrop = std::make_pair(source, row.id);
                 m_openChooser = true;
@@ -702,7 +702,7 @@ void HistoryPanel::drawDropChooser()
     else if (menuItem(ICON_MS_JOIN_INNER, "Squash into", "Ctrl"))
         actions.squash(source, target.hex(), true);
     else if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt"))
-        actions.rebaseOnto(source, target.hex(), true);
+        actions.rebaseTipOnto(source.hex(), target.hex());
     else
         chosen = false;
     if (chosen) {

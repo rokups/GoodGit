@@ -307,7 +307,8 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   **N** Stash changes…, Stage all, Unstage all.
 - **K** Drag and drop:
   - commit → commit: Move before, Move after, Squash, Rebase (modifier keys pick the default;
-    otherwise a chooser pops up)
+    otherwise a chooser pops up). Rebase treats the dragged commit as the tip: the commits from the
+    first divergence point with the target up to it move, and other branches on them follow.
   - branch badge → commit or badge: a menu with Merge X into Y (Y is the current branch), Rebase X onto Y
     (X is the current branch) and Move X here; Shift at the drop moves the branch at once
   - file(s) from Changes → commit: move the file changes into that commit
@@ -333,7 +334,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Describe (Save message, Change information panel) | **M** | Reword any commit. Rebases descendants. For HEAD it is an amend. The button always reads *Save message*. It is red, and asks for confirmation (*Rewrite published history?*), only when the commit is pushed; an unpushed commit is saved at once. The tooltip of the button for HEAD notes when staged changes are not included |
 | Edit author | **M** | Change the author of any commit |
 | Duplicate commit / branch | **M** | Cherry-pick one commit or a range onto its parent, making a detached copy |
-| Rebase… | **K** | Rebase one commit or the whole branch onto a destination |
+| Rebase… | **K** | Rebase onto a destination with the selected commit as the tip: the commits from the first divergence point with the destination up to it move, and other branches on them follow |
 | Interactive rebase… | **N** | Open the rebase todo editor for a range: from the selected commit to HEAD or the branch tip, optionally onto a new base (§4.13) |
 | Squash… / with descendants | **M** | Fold into a parent or a chosen target (fixup/squash) |
 | Split… | **M** | Split a commit by selected files into two commits |
