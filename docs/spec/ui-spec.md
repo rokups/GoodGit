@@ -330,8 +330,10 @@ commit and its descendants up to HEAD, or up to the first local branch (by name)
 when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field, no other choice) treats the selected commit as the tip:
 the commits from its first divergence point with the destination up to it move, and other branches on
 them follow. The *Squash* and *Rebase onto* dialogs have
-*Open as interactive rebase…*: the editor opens with the action as its starting todo (the commit
-moved after the target as squash or fixup; the new base as *Onto*).
+*Open as interactive rebase…*: the editor opens with the action as its starting todo. For *Squash*,
+the commit moves after the target as squash or fixup. For *Rebase onto*, the editor lists the commits
+from the divergence point with the destination up to the tip of the branch that holds the commit
+(HEAD, or the first local branch that contains it), with the destination as *Onto*.
 *Merge into HEAD…* and *Rebase HEAD onto this* in the shared commit actions act on the selected commit
 (disabled on HEAD itself; Rebase needs an attached HEAD); a commit is merged with Git's default message
 "Merge commit '<full ID>'" (the dialogs' revision fields are prefilled with the full ID, which Git

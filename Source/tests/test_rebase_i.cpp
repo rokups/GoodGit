@@ -990,14 +990,16 @@ GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto 
     s.git(r.path, {"branch", "other", r.c[1]});
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c[4]));
-    // Rebase onto other: the starting todo has the new base.
+    // Rebase onto other: the starting todo is the range from the divergence point up to main.
     s.contextMenu(historyRow(r.c[4]).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "other");
     s.dialogButton("Rebase onto", "Open as interactive rebase...");
     GG_REQUIRE(editorReady(s));
-    GG_CHECK(rows(s) == (Rows{"pick c4", "pick c5"}));
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "update-ref refs/heads/part1", "pick c4", "pick c5"}));
     GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
+    GG_CHECK_STR_EQ(editor(s).context()->upstream, r.c[1]);
+    GG_CHECK_STR_EQ(editor(s).context()->tipRef, "refs/heads/main");
     ctx->ItemClick(irWidget("ir_cancel").c_str());
     // Squash c4 into its parent c3 as an interactive rebase: c4 becomes a squash row.
     s.contextMenu(historyRow(r.c[4]).c_str(), "Squash...");
@@ -1008,6 +1010,34 @@ GG_TEST("rebase-i", "open as interactive rebase from the Squash and Rebase onto 
     GG_REQUIRE(start(s));
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c3", "c2", "c1"}));
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%B", "main~1"}), "c3 add c\n\nc4 add d");
+}
+
+GG_TEST("rebase-i", "open as interactive rebase from the Rebase onto dialog: a diverged destination")
+{
+    const Repo r = makeRepo(s);
+    // dest has one commit of its own and forks from c1.
+    s.git(r.path, {"switch", "-q", "-c", "dest", r.c[1]});
+    s.commitFile(r.path, "x.txt", "x\n", "d1 add x");
+    const std::string d1 = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[3]));
+    // The dialog opens on c3, in the middle of main. The range is every commit of main after c1.
+    s.contextMenu(historyRow(r.c[3]).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "dest");
+    s.dialogButton("Rebase onto", "Open as interactive rebase...");
+    GG_REQUIRE(editorReady(s));
+    GG_CHECK(rows(s) == (Rows{"pick c2", "pick c3", "update-ref refs/heads/part1", "pick c4", "pick c5"}));
+    GG_CHECK_STR_EQ(editor(s).context()->onto, d1);
+    GG_CHECK_STR_EQ(editor(s).context()->upstream, d1);
+    GG_REQUIRE(start(s));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c4", "c3", "c2", "d1", "c1"}));
+    // The oldest moved commit (c2) has dest as its parent.
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~3^"), d1);
+    // part1 follows through its update-ref row.
+    GG_CHECK_STR_EQ(s.revParse(r.path, "part1"), s.revParse(r.path, "main~2"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "dest"), d1);
 }
 
 GG_TEST("rebase-i", "a detached HEAD follows the rebase; update-ref moves a branch")

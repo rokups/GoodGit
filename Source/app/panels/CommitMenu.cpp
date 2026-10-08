@@ -315,12 +315,14 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const std::stri
     f.buttons.push_back({"Rebase",
         [s, commit](Form& form) { s->actions().rebaseTipOnto(commit.hex(), gg::trim(form.text("destination"))); },
         [](const Form& form) { return !gg::trim(form.text("destination")).empty(); }});
-    // The commit and its descendants onto the destination, as a starting todo.
+    // The same range as Rebase: from the divergence point with the destination up to the tip.
     f.buttons.push_back({"Open as interactive rebase...",
         [s, commit](Form& form) {
             RebasePanel::Request r;
-            r.from = commit.hex();
-            r.onto = gg::trim(form.text("destination"));
+            const std::string dest = gg::trim(form.text("destination"));
+            r.upstream = dest;
+            r.onto = dest;
+            r.tipContaining = commit.hex();
             r.selected = {commit.hex()};
             s->rebase().open(std::move(r));
         },
