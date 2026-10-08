@@ -323,6 +323,8 @@ void App::openNow(const fs::path& path)
         m_closing.push_back(std::move(m_session));
         // Refuse git-gg hand-overs for the old repository now, not on the next frame.
         m_sequenceEditor.setRepository({});
+        // The stored summary of the old repository is read anew: a push or a commit changed it while it was open.
+        requestSummaries();
     }
     clearError();
     std::error_code ec;

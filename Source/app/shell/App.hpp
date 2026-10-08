@@ -67,8 +67,9 @@ public:
     // Normalised path of the open repository (as stored in Recent), or empty.
     std::string currentRepoKey() const;
     // The summary of a repository for a recent or listed row: the live state of the open repository (a checkout or
-    // a commit changes it at once, where a stored summary is read at start-up and when a repository closes; for a
-    // linked worktree that is the worktree, not its main repository), else the stored one. Null when there is none yet.
+    // a commit changes it at once, where a stored summary is read at start-up and when a repository closes or another
+    // one opens; for a linked worktree that is the worktree, not its main repository), else the stored one. Null when
+    // there is none yet.
     const core::RepoSummary* repoSummary(const std::filesystem::path& path) const;
     // The detail of a repository row (branch, upstream, ahead/behind; the names elided as History badges are);
     // `elided` tells whether a name was shortened. Empty for no summary.

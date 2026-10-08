@@ -1268,6 +1268,27 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
     fs::rename(s.path("was-a-repo.git"), notRepo / ".git");
 }
 
+GG_TEST("shell", "recent repositories: a switch to another repository reads the summary of the old one anew")
+{
+    const fs::path a = s.fixture(Recipe::WithRemote, "switch-a");
+    const fs::path b = s.fixture(Recipe::Linear, "switch-b");
+    const std::string ahead1 = "origin/main " ICON_MS_ARROW_UPWARD_ALT "1 " ICON_MS_ARROW_DOWNWARD_ALT "1";
+    const std::string ahead2 = "origin/main " ICON_MS_ARROW_UPWARD_ALT "2 " ICON_MS_ARROW_DOWNWARD_ALT "1";
+    // Closing A stores its summary: ahead 1, behind 1.
+    GG_REQUIRE(s.openRepository(a));
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.app.recentRowText(0).find(ahead1) != std::string::npos; }));
+    // A commit while A is open makes the stored summary old; B opens in its place, without a close (as a click on
+    // the switcher does).
+    GG_REQUIRE(s.openRepository(a));
+    s.commitFile(a, "switch.txt", "x\n", "ahead by two");
+    s.app.openRepository(b);
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && s.session()->path() == b; }));
+    // Most recent first: B (0), A (1).
+    GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(1).find(ahead2) != std::string::npos; }));
+}
+
 // Closes the open popups with Escape, no mouse click. The pointer leaves the screen, else it reopens a submenu
 // it hovers (an Escape ends the editing of a text field first).
 static bool closePopups(ImGuiTestContext* ctx, int maxPresses = 4)
