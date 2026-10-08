@@ -21,6 +21,8 @@ bool containsNoCase(const std::string& haystack, const std::string& needle);
 // "main → origin/main ↑1 ↓2" style summary of a recent repository. With `elidePrefix` > 0 the branch and the
 // upstream name are shortened in the middle (see elideMiddle).
 std::string summaryText(const core::RepoSummary& s, int elidePrefix = 0, int elideSuffix = 0);
+// The tooltip lines with the full names that summaryText() elides: "\nBranch: ..." and "\nUpstream: ..." (empty parts left out).
+std::string summaryNamesText(const core::RepoSummary& s);
 // A disabled menu item with a tooltip explaining why. `icon` should match the icon used by the
 // enabled counterpart of this item so disabled entries line up with enabled ones.
 void disabledMenuItem(const char* icon, const char* label, const char* reason, const char* shortcut = nullptr);

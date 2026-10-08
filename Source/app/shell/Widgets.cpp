@@ -333,6 +333,12 @@ void drawDimRange(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd)
     drawDimRangeText(pos, label, dimBegin, dimEnd);
 }
 
+void drawDimRange(ImVec2 pos, const char* label, const char* end, size_t dimBegin, size_t dimEnd)
+{
+    const std::pair<size_t, size_t> range(dimBegin, dimEnd);
+    drawDimRangesText(pos, label, end, std::span(&range, 1));
+}
+
 bool menuItemDimPrefix(const char* icon, const char* label, size_t dimLen, const char* shortcut)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();

@@ -73,6 +73,8 @@ bool selectableDimPrefix(const char* label, size_t dimLen, bool selected, ImGuiS
 // Draws the visible part of `label` (up to its ###) at `pos` with bytes [dimBegin, dimEnd) dimmed, the
 // rest in the Text colour: the overlay for a widget whose own text is drawn transparent.
 void drawDimRange(ImVec2 pos, const char* label, size_t dimBegin, size_t dimEnd);
+// The same for the text [label, end): a "##" in it is text, not the end of the visible part.
+void drawDimRange(ImVec2 pos, const char* label, const char* end, size_t dimBegin, size_t dimEnd);
 // selectableDimRange() with several (ascending, disjoint) dimmed byte ranges.
 bool selectableDimRanges(const char* label, std::initializer_list<std::pair<size_t, size_t>> ranges, bool selected = false,
     ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));

@@ -8,6 +8,7 @@
 
 #include <core/Engine.hpp>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -59,6 +60,12 @@ public:
     // The normalised list path of the repository the window shows, as of the last frame drawn: the main
     // repository when the window shows a linked worktree (Session::repositoryListPath, GG-15).
     const std::string& openPath() const { return m_openPath; }
+    // The text of the row of a repository as of the last frame drawn: the label, two spaces, the detail ("" for no row).
+    std::string rowText(const std::string& path) const
+    {
+        const auto it = m_rowTexts.find(path);
+        return it == m_rowTexts.end() ? std::string() : it->second;
+    }
 
 private:
     void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
@@ -71,6 +78,7 @@ private:
     std::string m_selected;
     bool m_selectedWorktree = false;
     std::string m_openPath;
+    std::map<std::string, std::string> m_rowTexts;
 };
 
 class WorktreesPanel {

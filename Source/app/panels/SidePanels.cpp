@@ -807,8 +807,8 @@ void TagsPanel::draw(bool* open)
 
 // A tree node with the look of a selected row: the selection colours of selectable(). The arrow opens
 // it, so a click or a double-click on the label does not toggle it (the keyboard does: Enter or Space
-// on the focused node, and the arrow keys, as on any tree node).
-static bool selectableTreeNode(const char* label, bool selected)
+// on the focused node, and the arrow keys, as on any tree node). `detail` follows the label, dimmed.
+static bool selectableTreeNode(const char* label, const std::string& detail, bool selected)
 {
     if (selected) {
         const Palette& p = theme().palette();
@@ -820,6 +820,14 @@ static bool selectableTreeNode(const char* label, bool selected)
         ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | (selected ? ImGuiTreeNodeFlags_Selected : 0));
     if (selected)
         ImGui::PopStyleColor(3);
+    if (!detail.empty() && ImGui::IsItemVisible()) {
+        // Where TreeNodeEx puts its text: after the arrow, in the item's line.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const float x = min.x + ImGui::GetFontSize() + style.FramePadding.x * 2 + ImGui::CalcTextSize(label, ImGui::FindRenderedTextEnd(label)).x;
+        const std::string text = "  " + detail;
+        drawDimRange(ImVec2(x, min.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f), text.c_str(), text.c_str() + text.size(), 0, text.size());
+    }
     return open;
 }
 
@@ -857,15 +865,21 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             && (snap->worktrees.size() > 1 || (snap->worktrees.size() == 1 && !snap->worktrees.front().isMain));
         const bool selected = !m_selectedWorktree && node.path == m_selected;
         const std::string label = node.label + "###row";
+        // The detail after the label, dimmed, as in the Recent menu (a group has none).
+        const core::RepoSummary* info = m_session.app().repoSummary(std::filesystem::path(node.path));
+        bool elided = false;
+        const std::string detail = m_session.app().recentDetail(info, elided);
+        const std::string rowText = detail.empty() ? node.label : node.label + "  " + detail;
+        m_rowTexts[node.path] = rowText;
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
         bool nodeOpen = false;
         if (hasWorktrees) {
-            nodeOpen = selectableTreeNode(label.c_str(), selected);
+            nodeOpen = selectableTreeNode(label.c_str(), detail, selected);
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
                 m_selected = node.path;
                 m_selectedWorktree = false;
             }
-        } else if (selectableText(node.label, "row", selected)) {
+        } else if (selectableTextDimRanges(rowText, "row", {{node.label.size(), rowText.size()}}, selected)) {
             m_selected = node.path;
             m_selectedWorktree = false;
         }
@@ -880,7 +894,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !isOpen)
             toOpen = node.path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("%s", node.path.c_str());
+            tooltip("%s", (elided ? node.path + summaryNamesText(*info) : node.path).c_str());
         // `node` is part of the tree copy that draw made, so removing the entry from the settings keeps the loop valid.
         if (beginContextMenu("##repo_menu")) {
             if (isOpen)
@@ -992,6 +1006,7 @@ void RepositoriesPanel::draw(bool* open)
     m_openPath = m_session.repositoryListPath();
     if (m_openPath.empty())
         m_openPath = sessionPath; // before the first snapshot
+    m_rowTexts.clear();
     const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
     std::string toOpen;
     beginList();

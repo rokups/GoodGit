@@ -655,7 +655,13 @@ the panel without touching the repository.
   repository without an alias can appear or go away when a repository with the same folder name is
   added or removed. Each level lists the groups
   first, then the repositories, each part by label (ignoring case). Rows `repo_<label, "/" as ":">/###row` in the
-  scope of their groups (equal labels among siblings: `repo_<label>#n/###row`, n from 1 for the second); the tooltip is the full path. The alias
+  scope of their groups (equal labels among siblings: `repo_<label>#n/###row`, n from 1 for the second); the tooltip is the full path. A repository row shows, after the label
+  and two spaces, the dimmed detail of a row of the Recent menu: the branch ("detached"), the upstream, ahead and behind
+  counts, names elided as the History badges are; the tooltip then adds the full `Branch:` and `Upstream:` lines. A group
+  row has none, nor has a row with no summary yet; "missing" shows for a path that is gone (also on the tree node
+  row of the open repository). The detail of the open repository is its live state (also in the Recent menu and the switcher), so it follows a checkout or a
+  commit; the others come from summaries read at start-up and when a repository closes, for the recent repositories
+  and, in a second request that the automatic opening does not wait for, for the other listed ones. The alias
   shows only here: the toolbar switcher, Welcome and the title bar keep the deduplicated folder names.
   A click selects a row; a double-click, or Enter while the panel has the focus, opens the repository in
   this window. The open repository has the text colour of the current branch and is not opened again.

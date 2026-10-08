@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <set>
 #include <thread>
 
 namespace ggui {
@@ -143,7 +144,7 @@ void App::shutdown()
 
 bool App::idle() const
 {
-    if (!m_settings.loaded() || !m_io.idle() || !m_summaries.idle() || m_pickersRunning > 0 || m_pendingOpens > 0)
+    if (!m_settings.loaded() || !m_io.idle() || !m_summaries.idle() || !m_listSummaries.idle() || m_pickersRunning > 0 || m_pendingOpens > 0)
         return false;
     if (m_clone.state() == core::CloneService::State::Running)
         return false;
@@ -177,6 +178,9 @@ void App::resetForTest()
     m_configEdit.clear();
     m_configSeen.clear();
     m_recentInfo.clear();
+    m_listInfo.clear();
+    m_liveValid = false;
+    indexSummaries();
     m_recentFilter.clear();
     m_welcomePath.clear();
     m_autoOpenDone = true;
@@ -206,8 +210,7 @@ void App::onSettingsLoaded(const std::string& iniText)
         if (d.windowMaximized)
             SDL_MaximizeWindow(m_platform.window());
     }
-    std::vector<fs::path> paths(d.recent.begin(), d.recent.end());
-    m_summaries.request(paths);
+    requestSummaries();
     if (!m_autoOpenDone && m_options.autoOpen && !m_options.initialPath.empty()) {
         m_autoOpenDone = true;
         openRepository(m_options.initialPath);
@@ -220,12 +223,53 @@ void App::applyTheme()
     theme().apply(d.theme, d.uiScale);
 }
 
+void App::requestSummaries()
+{
+    const auto& d = m_settings.data();
+    m_summaries.request(std::vector<fs::path>(d.recent.begin(), d.recent.end()));
+    // The listed repositories that are recent are read by the request above.
+    const std::set<std::string> recent(d.recent.begin(), d.recent.end());
+    std::set<std::string> seen;
+    std::vector<fs::path> others;
+    for (const auto& entry : d.repositories)
+        if (!recent.count(entry.path) && seen.insert(entry.path).second)
+            others.emplace_back(entry.path);
+    // A row keeps its detail until the new result comes: only the entries of repositories that left the list go.
+    std::erase_if(m_listInfo, [&](const core::RepoSummary& info) {
+        const std::string path = info.path.string();
+        return !recent.count(path) && std::none_of(d.repositories.begin(), d.repositories.end(), [&](const auto& entry) { return entry.path == path; });
+    });
+    indexSummaries();
+    if (!others.empty())
+        m_listSummaries.request(others);
+}
+
+void App::indexSummaries()
+{
+    m_summaryIndex.clear();
+    for (const auto* infos : {&m_listInfo, &m_recentInfo})
+        for (const auto& info : *infos)
+            m_summaryIndex[info.path] = &info;
+}
+
 void App::pumpSummaries()
 {
+    const auto listed = m_listSummaries.poll();
+    for (const auto& info : listed) {
+        const auto it = std::find_if(m_listInfo.begin(), m_listInfo.end(), [&](const core::RepoSummary& old) { return old.path == info.path; });
+        if (it == m_listInfo.end())
+            m_listInfo.push_back(info);
+        else
+            *it = info;
+    }
     auto results = m_summaries.poll();
-    if (results.empty())
+    const bool recentRead = !results.empty();
+    if (recentRead)
+        m_recentInfo = std::move(results);
+    if (!listed.empty() || recentRead)
+        indexSummaries();
+    if (!recentRead)
         return;
-    m_recentInfo = std::move(results);
     // Auto-open the most recent repository that still exists (§4.1).
     if (!m_autoOpenDone && m_options.autoOpen && m_options.initialPath.empty() && !m_session) {
         m_autoOpenDone = true;
@@ -235,6 +279,25 @@ void App::pumpSummaries()
                 break;
             }
     }
+}
+
+void App::updateLiveSummary()
+{
+    m_liveValid = false;
+    if (!m_session || !m_session->opened() || !m_session->snapshot())
+        return;
+    const core::Snapshot& snap = *m_session->snapshot();
+    m_liveSummary = core::RepoSummary();
+    m_liveSummary.path = currentRepoKey();
+    m_liveSummary.exists = true;
+    m_liveSummary.detached = snap.headDetached;
+    m_liveSummary.branch = snap.headDetached ? std::string() : snap.headBranch;
+    if (const core::BranchInfo* b = snap.currentBranch()) {
+        m_liveSummary.upstream = b->upstream;
+        m_liveSummary.ahead = b->ahead;
+        m_liveSummary.behind = b->behind;
+    }
+    m_liveValid = true;
 }
 
 void App::openRepository(const fs::path& path)
@@ -320,8 +383,7 @@ void App::closeRepository()
     m_closing.push_back(std::move(m_session));
     // Refuse git-gg hand-overs for this repository now, not on the next frame.
     m_sequenceEditor.setRepository({});
-    std::vector<fs::path> paths(m_settings.data().recent.begin(), m_settings.data().recent.end());
-    m_summaries.request(paths);
+    requestSummaries();
 }
 
 void App::pickFolder(const std::string& title, std::function<void(std::string)> done)
@@ -482,7 +544,7 @@ void App::openDropped(const std::vector<std::string>& paths)
     for (const auto& folder : folders)
         if (isRepository(folder) && !isLinkedWorktree(folder))
             m_settings.addRepository(folder.string());
-    m_summaries.request(std::vector<fs::path>(m_settings.data().recent.begin(), m_settings.data().recent.end()));
+    requestSummaries();
     openRepository(folders.front());
 }
 
@@ -515,10 +577,13 @@ void App::frame()
                 if (!listPath.empty()) {
                     m_recordedRepository = m_session->path().string();
                     m_settings.addRepository(listPath);
+                    if (listPath != currentRepoKey())
+                        requestSummaries();
                 }
             }
         }
     }
+    updateLiveSummary();
     if (!m_session || !m_session->opened()) {
         m_recordedRecent.clear(); // reopening the same repository moves it to the front again
         m_recordedRepository.clear();

@@ -195,32 +195,26 @@ void App::snapshotNavToggle()
     m_navPrev.layer = g.NavLayer;
 }
 
+const core::RepoSummary* App::repoSummary(const fs::path& path) const
+{
+    if (m_liveValid && m_liveSummary.path == path)
+        return &m_liveSummary;
+    const auto it = m_summaryIndex.find(path);
+    return it == m_summaryIndex.end() ? nullptr : it->second;
+}
+
 const core::RepoSummary* App::recentInfo(size_t i) const
 {
     const auto& recent = m_settings.data().recent;
-    const core::RepoSummary* found = nullptr;
-    if (i < recent.size())
-        for (const auto& info : m_recentInfo)
-            if (info.path == fs::path(recent[i]))
-                found = &info;
-    return found;
+    return i < recent.size() ? repoSummary(fs::path(recent[i])) : nullptr;
 }
 
 std::vector<const core::RepoSummary*> App::recentInfos() const
 {
     const auto& recent = m_settings.data().recent;
-    // The paths compare as in recentInfo(): the last summary of a path wins.
-    std::map<fs::path, const core::RepoSummary*> byPath;
-    for (const auto& info : m_recentInfo)
-        byPath[info.path] = &info;
     std::vector<const core::RepoSummary*> infos(recent.size(), nullptr);
-    if (byPath.empty())
-        return infos;
-    for (size_t i = 0; i < recent.size(); ++i) {
-        const auto it = byPath.find(fs::path(recent[i]));
-        if (it != byPath.end())
-            infos[i] = it->second;
-    }
+    for (size_t i = 0; i < recent.size(); ++i)
+        infos[i] = repoSummary(fs::path(recent[i]));
     return infos;
 }
 
@@ -326,12 +320,8 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
                 ImGui::SetItemDefaultFocus();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
                 std::string text = path;
-                if (row->elided) {
-                    if (!row->info->detached)
-                        text += "\nBranch: " + row->info->branch;
-                    if (!row->info->upstream.empty())
-                        text += "\nUpstream: " + row->info->upstream;
-                }
+                if (row->elided)
+                    text += summaryNamesText(*row->info);
                 if (!current)
                     text += "\nDel removes";
                 tooltip("%s", text.c_str());

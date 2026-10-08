@@ -3,11 +3,14 @@
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
 
 #include "util/Ui.hpp"
 
 #include <libgg/Worktrees.hpp>
+
+#include <IconsMaterialSymbols.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -192,6 +195,80 @@ GG_TEST("panels", "repositories: the open repository has the mark, an alias make
     s.app.settings().setAlias(ggui::normalizeRepoPath(repo.string()), "grp/sub/name");
     ctx->Yield(2);
     GG_CHECK(s.itemExists("//Repositories/###group_grp/###group_grp:sub/repo_name/###row"));
+}
+
+GG_TEST("panels", "repositories: a row shows the detail of the recent menu, also for a repository that is not recent")
+{
+    s.app.settings().data().repositories.clear();
+    const std::string longBranch = "feature/a-very-long-branch-name-for-the-repositories";
+    const fs::path a = s.fixture(Recipe::Linear, "detail-a");
+    const fs::path b = s.fixture(Recipe::WithRemote, "detail-b");
+    const fs::path c = s.fixture(Recipe::Linear, "detail-c");
+    // The detail of a row: the text after the label and two spaces.
+    const auto detailOf = [](const std::string& text) {
+        const size_t at = text.find("  ");
+        return at == std::string::npos ? std::string() : text.substr(at + 2);
+    };
+    const auto recentDetailOf = [&](const std::string& key) {
+        const auto& list = s.app.settings().data().recent;
+        const auto it = std::find(list.begin(), list.end(), key);
+        return it == list.end() ? std::string("<not recent>") : detailOf(s.app.recentMenuText(static_cast<size_t>(it - list.begin())));
+    };
+    s.git(a, {"branch", "-m", "main", longBranch});
+    GG_REQUIRE(s.openRepository(a));
+    GG_REQUIRE(s.openRepository(b));
+    const std::string keyA = ggui::normalizeRepoPath(a.string());
+    const std::string keyB = ggui::normalizeRepoPath(b.string());
+    const std::string keyC = ggui::normalizeRepoPath(c.string());
+    // A is listed but no longer recent; the summary requests that opening C starts cover it.
+    s.app.settings().forgetRecent(keyA);
+    const auto& recent = s.app.settings().data().recent;
+    GG_REQUIRE(std::find(recent.begin(), recent.end(), keyA) == recent.end());
+    s.app.settings().setAlias(keyB, "grp/bee");
+    GG_REQUIRE(s.openRepository(c));
+    s.showPanel("Repositories");
+    const auto& panel = s.session()->repositories();
+    const auto& settings = s.app.settings().data();
+    const std::string shortName = ggui::elideMiddle(longBranch, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+    GG_REQUIRE(shortName != longBranch);
+    GG_REQUIRE(s.waitUntil([&] { return panel.rowText(keyA).find(shortName) != std::string::npos; }));
+    GG_CHECK_STR_EQ(panel.rowText(keyA), "detail-a  " + shortName);
+    GG_CHECK(panel.rowText(keyA).find(longBranch) == std::string::npos);
+    // B has an upstream; it is in a group, whose row has no detail.
+    GG_REQUIRE(s.waitUntil([&] { return panel.rowText(keyB).find("origin/main") != std::string::npos; }));
+    GG_CHECK(panel.rowText(keyB).starts_with("bee  main " ICON_MS_ARROW_RIGHT_ALT " origin/main"));
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//Repositories/###group_grp/repo_bee/###row"));
+    // A recent repository shows the detail of its row in the Recent menu.
+    GG_CHECK(!detailOf(panel.rowText(keyB)).empty());
+    GG_CHECK_STR_EQ(detailOf(panel.rowText(keyB)), recentDetailOf(keyB));
+    // The open repository: the state of its session, so a checkout shows at once, in the panel and in the menu.
+    GG_CHECK_STR_EQ(panel.rowText(keyC), "detail-c  main");
+    GG_CHECK_STR_EQ(detailOf(panel.rowText(keyC)), recentDetailOf(keyC));
+    s.git(c, {"checkout", "-b", "topic"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "topic"; }));
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(panel.rowText(keyC), "detail-c  topic");
+    GG_CHECK_STR_EQ(recentDetailOf(keyC), "topic");
+}
+
+GG_TEST("panels", "repositories: the tree node row of the open repository with a linked worktree shows the detail")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    const std::string key = ggui::normalizeRepoPath(repo.string());
+    const auto& panel = s.session()->repositories();
+    ctx->Yield(2);
+    const std::string text = panel.rowText(key);
+    GG_CHECK(text.starts_with(repo.filename().string() + "  "));
+    GG_CHECK(text.size() > repo.filename().string().size() + 2);
+    GG_CHECK(text.find(s.session()->snapshot()->headBranch) != std::string::npos);
 }
 
 GG_TEST("panels", "repositories: a click selects, a double-click opens")

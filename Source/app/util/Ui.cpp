@@ -101,6 +101,16 @@ std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSu
     return text;
 }
 
+std::string summaryNamesText(const core::RepoSummary& s)
+{
+    std::string text;
+    if (!s.detached)
+        text += "\nBranch: " + s.branch;
+    if (!s.upstream.empty())
+        text += "\nUpstream: " + s.upstream;
+    return text;
+}
+
 void disabledMenuItem(const char* icon, const char* label, const char* reason, const char* shortcut)
 {
     ImGui::MenuItemEx(label, icon, shortcut, false, false);
