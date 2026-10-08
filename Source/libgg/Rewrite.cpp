@@ -1113,6 +1113,26 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
     return out;
 }
 
+std::vector<std::string> rangeToMove(git_repository* repo, const std::string& tip, const std::string& dest)
+{
+    assertNotUiThread("rewrite::rangeToMove");
+    const git_oid tipId = *git_commit_id(lookupCommit(repo, *fromHex(tip)).get()); // (fails on a bad id)
+    const git_oid destId = *git_commit_id(lookupCommit(repo, *fromHex(dest)).get());
+    git_revwalk* raw = nullptr;
+    check(git_revwalk_new(&raw, repo), "git_revwalk_new");
+    Revwalk walk(raw);
+    git_revwalk_sorting(walk.get(), GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE);
+    git_revwalk_push(walk.get(), &tipId);
+    git_revwalk_hide(walk.get(), &destId);
+    git_error_clear();
+    std::vector<std::string> out;
+    git_oid id;
+    while (git_revwalk_next(&id, walk.get()) == 0)
+        out.push_back(toHex(id));
+    git_error_clear();
+    return out;
+}
+
 Plan replayPlan(git_repository* repo, const std::vector<std::string>& changed)
 {
     Plan plan;

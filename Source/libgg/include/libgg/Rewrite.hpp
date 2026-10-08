@@ -224,6 +224,10 @@ private:
 // included, parents first.
 std::vector<std::string> descendants(git_repository* repo, const std::vector<std::string>& changed);
 
+// The commits a rebase of `tip` onto `dest` moves: reachable from `tip`, not from `dest`
+// (`dest..tip`), parents first. Empty when `dest` already contains `tip`.
+std::vector<std::string> rangeToMove(git_repository* repo, const std::string& tip, const std::string& dest);
+
 // A Plan that replays `changed` and their descendants with the given per-commit edits.
 Plan replayPlan(git_repository* repo, const std::vector<std::string>& changed);
 

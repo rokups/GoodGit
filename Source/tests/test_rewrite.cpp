@@ -5,8 +5,11 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <libgg/Git2.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/Rewrite.hpp>
 
+#include <algorithm>
 #include <fstream>
 
 namespace ggtest {
@@ -235,6 +238,57 @@ GG_TEST("rewrite", "in a bare repository, and at the root: reword, drop the root
     GG_CHECK(s.gitOut(repo, {"rev-list", "--max-parents=0", "HEAD"}) != second); // the old second commit, re-rooted
     GG_CHECK_STR_EQ(info(s, repo, "HEAD~3", "%s"), info(s, repo, second, "%s"));
     GG_CHECK(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "HEAD~4"}).out.empty());
+}
+
+GG_TEST("rewrite", "rangeToMove: dest..tip oldest first on a line, a fork, a merge, a detached tip and empty ranges")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    using Ids = std::vector<std::string>;
+    const auto range = [&](const std::string& tip, const std::string& dest) {
+        return gg::rewrite::rangeToMove(r.get(), tip, dest);
+    };
+    const auto at = [&](const std::string& rev) { return s.revParse(repo, rev); };
+    // Linear: A-B-C are the last three commits of main.
+    const std::string a = at("main~2");
+    const std::string b = at("main~1");
+    const std::string c = at("main");
+    GG_CHECK(range(c, a) == (Ids{b, c}));
+    // Fork: topic is B-D-E next to main's B-C.
+    s.git(repo, {"checkout", "-q", "-b", "topic", b});
+    s.commitFile(repo, "d.txt", "d\n", "D");
+    const std::string d = s.head(repo);
+    s.commitFile(repo, "e.txt", "e\n", "E");
+    const std::string e = s.head(repo);
+    GG_CHECK(range(e, c) == (Ids{d, e}));
+    GG_CHECK(range(d, c) == (Ids{d}));
+    GG_CHECK(range(e, a) == (Ids{b, d, e}));
+    // Empty: the destination contains the tip, or is the tip.
+    GG_CHECK(range(a, c).empty());
+    GG_CHECK(range(d, e).empty());
+    GG_CHECK(range(e, e).empty());
+    // Merge: M merges the side F (from B) into main; parents come before children.
+    s.git(repo, {"checkout", "-q", "-b", "side", b});
+    s.commitFile(repo, "f.txt", "f\n", "F");
+    const std::string f = s.head(repo);
+    s.git(repo, {"checkout", "-q", "main"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "M", "side"});
+    const std::string m = s.head(repo);
+    const Ids viaMerge = range(m, a);
+    GG_REQUIRE(viaMerge.size() == 4u);
+    GG_CHECK(std::find(viaMerge.begin(), viaMerge.end(), b) == viaMerge.begin());
+    GG_CHECK(viaMerge.back() == m);
+    GG_CHECK(std::find(viaMerge.begin(), viaMerge.end(), c) != viaMerge.end());
+    GG_CHECK(std::find(viaMerge.begin(), viaMerge.end(), f) != viaMerge.end());
+    GG_CHECK(range(m, c) == (Ids{f, m})); // the side F is not reachable from C
+    // A detached tip with no ref on it.
+    s.git(repo, {"checkout", "-q", "--detach", c});
+    s.commitFile(repo, "g.txt", "g\n", "G");
+    const std::string g = s.head(repo);
+    s.commitFile(repo, "h.txt", "h\n", "H");
+    const std::string h = s.head(repo);
+    GG_CHECK(range(h, e) == (Ids{c, g, h}));
+    GG_CHECK(range(h, c) == (Ids{g, h}));
 }
 
 } // namespace ggtest
