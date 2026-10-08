@@ -700,6 +700,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     // Nothing to merge: no commit, HEAD stays.
                     byKey[key] = p.parents.front();
                     result.steps[key] = p.parents.front();
+                    if (!step.source.empty() && step.mapSource)
+                        newOf[step.source] = p.parents.front(); // branches and HEAD on the merge follow
                     continue;
                 }
             }

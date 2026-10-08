@@ -514,4 +514,36 @@ GG_TEST("rewrite", "rebase tip onto: a tip on the destination, and a commit id b
     GG_CHECK(everything(s, r.path) == before);
 }
 
+GG_TEST("rewrite", "rewrite: a merge step that makes no commit maps its source to the first parent")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"checkout", "-q", "-b", "x", "main"});
+    s.commitFile(repo, "x.txt", "x\n", "X");
+    const std::string x = s.head(repo);
+    s.git(repo, {"checkout", "-q", "-b", "n", "x"});
+    s.commitFile(repo, "n.txt", "n\n", "N");
+    const std::string n = s.head(repo);
+    s.git(repo, {"checkout", "-q", "-b", "onm", "main"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "M", "x"});
+    const std::string m = s.head(repo);
+    s.git(repo, {"checkout", "-q", "main"});
+    const std::string branches = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"});
+    gg::rewrite::Plan plan;
+    gg::rewrite::Step step;
+    step.kind = gg::rewrite::Step::Kind::Merge;
+    step.gitMerge = true;
+    step.source = m;
+    step.sourceParents = false;
+    step.parents = {"=" + n, "=" + x};
+    plan.steps.push_back(step);
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.unresolved.empty());
+    std::string error;
+    GG_REQUIRE(rewriter.apply(plan, result, error));
+    GG_CHECK_STR_EQ(s.revParse(repo, "onm"), n);
+    GG_CHECK(s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"}).find("refs/heads/onm " + n) != std::string::npos);
+    GG_CHECK(branches.find("refs/heads/onm " + m) != std::string::npos);
+}
+
 } // namespace ggtest
