@@ -612,6 +612,27 @@ void Session::showBranchFromStashDialog(int index)
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showRenameStashDialog(int index)
+{
+    if (!m_snapshot)
+        return;
+    for (const auto& st : m_snapshot->stashes) {
+        if (st.index != index)
+            continue;
+        const core::Oid commit = st.commit;
+        const std::string current = st.message;
+        Form f;
+        f.title = "Rename stash";
+        f.add(Field{Field::Text, "name", "New name for stash@{" + std::to_string(index) + "}", current});
+        f.buttons.push_back({"Rename",
+            [this, index, commit](Form& form) { m_actions->stashRename(index, commit, gg::trim(form.text("name"))); },
+            [current](const Form& form) { return nonEmpty(form, "name") && gg::trim(form.text("name")) != current; }});
+        f.buttons.push_back({"Cancel", {}});
+        m_app.dialogs().open(std::move(f));
+        return;
+    }
+}
+
 void Session::showDropStashDialog(int index)
 {
     Form f;

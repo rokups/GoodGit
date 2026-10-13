@@ -204,6 +204,7 @@ public:
     void showMoveBranchDialog(const std::string& branch, const std::string& to);
     void showSetUpstreamDialog(const std::string& branch);
     void showBranchFromStashDialog(int index);
+    void showRenameStashDialog(int index);
     void showDropStashDialog(int index);
     void showClearStashesDialog();
     void showDeleteFilesDialog(std::vector<std::string> paths);

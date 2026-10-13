@@ -270,6 +270,58 @@ GG_TEST("stash", "Change information edits a stash message in place: same index,
     s.settle();
 }
 
+GG_TEST("stash", "Rename (menu and F2) stores the same commit again with a new message: same position and content")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRow(2).c_str()); }));
+    // git briefly fails while refs/stash is being rewritten: no lines then.
+    auto lines = [&] {
+        const auto r = s.gitMayFail(repo, {"stash", "list", "--format=%gs"});
+        return r.ok() ? gg::splitLines(r.out) : std::vector<std::string>{};
+    };
+    const auto before = lines();
+    GG_REQUIRE(before.size() == 3);
+    const std::string top = s.revParse(repo, "stash@{0}");
+    const std::string middle = s.revParse(repo, "stash@{1}");
+    const std::string bottom = s.revParse(repo, "stash@{2}");
+
+    // The context menu of the middle stash.
+    s.contextMenu(stashRow(1).c_str(), "Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename stash"));
+    s.dialogText("Rename stash", "name", "Renamed by menu");
+    s.dialogButton("Rename stash", "Rename");
+    GG_CHECK(s.waitUntil([&] { return lines().size() == 3 && lines()[1] == "Renamed by menu"; }));
+    s.settle();
+    auto after = lines();
+    GG_REQUIRE(after.size() == 3);
+    GG_CHECK_STR_EQ(after[0], before[0]);
+    GG_CHECK_STR_EQ(after[2], before[2]);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{0}"), top);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{1}"), middle); // the same commit
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{2}"), bottom);
+
+    // F2 with the bottom stash selected.
+    ctx->ItemClick(stashRow(2).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->selection().kind == ggui::SelKind::Stash && s.session()->selection().stashIndex == 2; }));
+    ctx->KeyPress(ImGuiKey_F2);
+    GG_REQUIRE(s.dialogOpen("Rename stash"));
+    s.dialogText("Rename stash", "name", "Renamed by F2");
+    s.dialogButton("Rename stash", "Rename");
+    GG_CHECK(s.waitUntil([&] { return lines().size() == 3 && lines()[2] == "Renamed by F2"; }));
+    s.settle();
+    after = lines();
+    GG_REQUIRE(after.size() == 3);
+    GG_CHECK_STR_EQ(after[0], before[0]);
+    GG_CHECK_STR_EQ(after[1], "Renamed by menu");
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{0}"), top);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{1}"), middle);
+    GG_CHECK_STR_EQ(s.revParse(repo, "stash@{2}"), bottom);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::Stash);
+    GG_CHECK_EQ(s.session()->selection().stashIndex, 2);
+}
+
 GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflicts")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);

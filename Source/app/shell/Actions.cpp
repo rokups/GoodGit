@@ -1290,6 +1290,53 @@ void Actions::stashDrop(int index)
     run("stash drop " + ref, [ref](MutationContext& ctx) { ctx.git({"stash", "drop", "-q", ref}); });
 }
 
+namespace {
+
+// Replaces stash@{index} (commit `oldId`) with commit `newSha` and reflog subject `subject`. Drops
+// stash@{0}..stash@{index} and stores them back oldest first, so the order stays. On a failure the
+// original list is restored.
+void restoreStashAt(MutationContext& ctx, int index, const std::string& oldId, const std::string& newSha,
+    const std::string& subject)
+{
+    // The stash list, newest first: sha and reflog subject.
+    struct Entry {
+        std::string sha, subject;
+    };
+    std::vector<Entry> entries;
+    for (const auto& line : gg::splitLines(ctx.git({"stash", "list", "--format=%H%x00%gs"}).out)) {
+        const auto nul = line.find('\0');
+        if (nul != std::string::npos)
+            entries.push_back({line.substr(0, nul), gg::trim(line.substr(nul + 1))});
+    }
+    if (index < 0 || static_cast<size_t>(index) >= entries.size() || entries[index].sha != oldId)
+        throw MutationError{Outcome::Refused, "The stash list changed; select the stash again", {}};
+    std::vector<Entry> removed(entries.begin(), entries.begin() + index + 1);
+    removed[index] = {newSha, subject};
+    size_t stored = 0;
+    auto restore = [&](const std::vector<Entry>& list) {
+        stored = 0;
+        for (size_t i = list.size(); i-- > 0;) {
+            const auto r = ctx.gitMayFail({"stash", "store", "-m", list[i].subject, list[i].sha});
+            if (!r.ok())
+                return r.message();
+            ++stored;
+        }
+        return std::string();
+    };
+    for (int i = 0; i <= index; ++i)
+        ctx.git({"stash", "drop", "-q"});
+    const std::string failure = restore(removed);
+    if (!failure.empty()) {
+        // Undo the partial rewrite: drop what was stored, then store the originals back.
+        for (size_t i = 0; i < stored; ++i)
+            ctx.gitMayFail({"stash", "drop", "-q"});
+        restore(std::vector<Entry>(entries.begin(), entries.begin() + index + 1));
+        throw MutationError{Outcome::Failed, "Could not rewrite the stash list", failure};
+    }
+}
+
+} // namespace
+
 void Actions::stashReword(int index, const core::Oid& commit, const std::string& message)
 {
     const std::string oldId = commit.hex();
@@ -1326,43 +1373,7 @@ void Actions::stashReword(int index, const core::Oid& commit, const std::string&
             const std::string fresh = gg::trim(ctx.git(args, text).out);
             ctx.env.clear();
 
-            // The stash list, newest first: sha and reflog subject.
-            struct Entry {
-                std::string sha, subject;
-            };
-            std::vector<Entry> entries;
-            for (const auto& line : gg::splitLines(ctx.git({"stash", "list", "--format=%H%x00%gs"}).out)) {
-                const auto nul = line.find('\0');
-                if (nul != std::string::npos)
-                    entries.push_back({line.substr(0, nul), gg::trim(line.substr(nul + 1))});
-            }
-            if (index < 0 || static_cast<size_t>(index) >= entries.size() || entries[index].sha != oldId)
-                throw MutationError{Outcome::Refused, "The stash list changed; select the stash again", {}};
-            std::string subject = text.substr(0, text.find('\n'));
-            // Drop stash@{0}..stash@{index} and store them back oldest first, so the order stays.
-            std::vector<Entry> removed(entries.begin(), entries.begin() + index + 1);
-            removed[index] = {fresh, subject};
-            size_t stored = 0;
-            auto restore = [&](const std::vector<Entry>& list) {
-                stored = 0;
-                for (size_t i = list.size(); i-- > 0;) {
-                    const auto r = ctx.gitMayFail({"stash", "store", "-m", list[i].subject, list[i].sha});
-                    if (!r.ok())
-                        return r.message();
-                    ++stored;
-                }
-                return std::string();
-            };
-            for (int i = 0; i <= index; ++i)
-                ctx.git({"stash", "drop", "-q"});
-            const std::string failure = restore(removed);
-            if (!failure.empty()) {
-                // Undo the partial rewrite: drop what was stored, then store the originals back.
-                for (size_t i = 0; i < stored; ++i)
-                    ctx.gitMayFail({"stash", "drop", "-q"});
-                restore(std::vector<Entry>(entries.begin(), entries.begin() + index + 1));
-                throw MutationError{Outcome::Failed, "Could not rewrite the stash list", failure};
-            }
+            restoreStashAt(ctx, index, oldId, fresh, text.substr(0, text.find('\n')));
             ctx.result = fresh;
         },
         [session, oldId, index](const core::MutationFinishedEvent& e) {
@@ -1374,6 +1385,15 @@ void Actions::stashReword(int index, const core::Oid& commit, const std::string&
             if (e.outcome != core::Outcome::Cancelled)
                 session->app().showError(e.label, e.detail.empty() ? e.message : e.detail);
         });
+}
+
+void Actions::stashRename(int index, const core::Oid& commit, const std::string& subject)
+{
+    const std::string oldId = commit.hex();
+    run("rename stash@{" + std::to_string(index) + "}", [index, oldId, subject](MutationContext& ctx) {
+        // The same commit is stored again: only the stash list message changes.
+        restoreStashAt(ctx, index, oldId, oldId, subject);
+    });
 }
 
 void Actions::stashClear()

@@ -1244,6 +1244,8 @@ void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& ba
     ImGui::Separator();
     if (menuItem(ICON_MS_FORK_RIGHT, "Branch from stash...", nullptr, false, free))
         session.showBranchFromStashDialog(s.index);
+    if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Rename...", "F2", false, free))
+        session.showRenameStashDialog(s.index);
     if (menuItem(ICON_MS_DELETE, "Drop...", nullptr, false, free))
         session.showDropStashDialog(s.index);
     ImGui::Separator();
@@ -1339,6 +1341,9 @@ void StashesPanel::draw(bool* open)
     if (m_snapshot->stashes.empty())
         ImGui::TextDisabled("No stashes");
     endList();
+    // F2 renames the selected stash.
+    if (free && sel.kind == SelKind::Stash && ImGui::Shortcut(ImGuiKey_F2, ImGuiInputFlags_RouteFocused))
+        m_session.showRenameStashDialog(popIndex);
     ImGui::End();
 }
 

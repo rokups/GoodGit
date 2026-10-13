@@ -217,6 +217,8 @@ public:
     void stashDrop(int index);
     // Rewrites the message of stash@{index} (a new stash commit, same content and position).
     void stashReword(int index, const core::Oid& commit, const std::string& message);
+    // Renames stash@{index}: the same commit is stored again with `subject` as the stash list message.
+    void stashRename(int index, const core::Oid& commit, const std::string& subject);
     void stashClear();
     void stashBranch(int index, const std::string& branch);
     void stashApplyFile(int index, const std::string& path);
