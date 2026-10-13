@@ -82,6 +82,7 @@ private:
     void requestFiles();
     void rebuildFromStatus();
     void markConflicts();
+    const FileRow* defaultRow() const; // the row that a new file list selects
     void setCurrent(const std::string& key); // a row's key: shows that file in Diff
     // setCurrent for a selection by the user: the file is also the one a new commit selects.
     void setCurrentByUser(const std::string& key);

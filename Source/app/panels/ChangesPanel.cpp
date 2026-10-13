@@ -245,6 +245,7 @@ void ChangesPanel::rebuildFromStatus()
 {
     const auto status = m_session.status();
     const std::string keepCurrent = m_current;
+    const bool hadSelection = !m_current.empty() || !m_selected.empty();
     m_rows.clear();
     if (!status)
         return;
@@ -272,6 +273,38 @@ void ChangesPanel::rebuildFromStatus()
         m_current.clear();
     else if (!keepCurrent.empty())
         m_session.diff().refreshIfShowing();
+    // A change of the file list (for example a discard) that removes every selected row leaves no
+    // selection: the default selection of a new commit applies (the file that the user last selected, else the first file).
+    if (hadSelection && !current()) {
+        m_selected.clear();
+        m_anchor.clear();
+        if (const FileRow* pick = defaultRow()) {
+            m_selected = {pick->key()};
+            m_anchor = pick->key();
+            setCurrent(pick->key());
+            m_scrollToCurrent = true;
+        } else {
+            m_session.diff().clear();
+        }
+    } else if (m_selected.empty() && current()) {
+        m_selected = {m_current};
+    }
+}
+
+// The row that is selected by default: the file that the user last selected (m_wantedPath) when the list and
+// the filter have it (also as the old name of a rename), else the first visible row; null when no row shows.
+const FileRow* ChangesPanel::defaultRow() const
+{
+    const auto rows = visibleRows();
+    if (!m_wantedPath.empty()) {
+        for (const FileRow* r : rows)
+            if (r->path == m_wantedPath)
+                return r;
+        for (const FileRow* r : rows)
+            if (r->oldPath == m_wantedPath)
+                return r;
+    }
+    return rows.empty() ? nullptr : rows.front();
 }
 
 void ChangesPanel::onStatus(const core::StatusPtr&)
@@ -316,27 +349,9 @@ void ChangesPanel::onDiff(const core::DiffEvent& event)
         // the first file, as after a click on its row. This selection does not change m_wantedPath.
         // No keyboard focus moves: the arrows go on through the commits.
         std::string key = current() ? m_current : std::string();
-        if (key.empty()) {
-            const auto rows = visibleRows();
-            const FileRow* pick = nullptr;
-            if (!m_wantedPath.empty()) {
-                for (const FileRow* r : rows)
-                    if (r->path == m_wantedPath) {
-                        pick = r;
-                        break;
-                    }
-                if (!pick)
-                    for (const FileRow* r : rows)
-                        if (r->oldPath == m_wantedPath) {
-                            pick = r;
-                            break;
-                        }
-            }
-            if (!pick && !rows.empty())
-                pick = rows.front();
-            if (pick)
+        if (key.empty())
+            if (const FileRow* pick = defaultRow())
                 key = pick->key();
-        }
         m_current.clear();
         m_selected.clear();
         m_anchor.clear();

@@ -713,6 +713,38 @@ GG_TEST("changes", "keys act on the nav cursor: Ctrl+Up then Space toggles only 
     GG_CHECK(s.itemExists(fileRef(s, "Staged", "b.txt").c_str()) || s.itemExists(fileRef(s, "Staged", "a.txt").c_str()));
 }
 
+GG_TEST("changes", "discarding the selected files selects the default file: the panel never has no selection")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 7; }));
+    auto& changes = s.session()->changes();
+    // The user selects the unstaged b.txt (the remembered path), then discards it with the D key.
+    ctx->ItemClick(fileRef(s, "Unstaged", "b.txt").c_str());
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_REQUIRE(changes.current()->path == "b.txt");
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_REQUIRE(s.waitUntil([&] { return rowFor(s, "b.txt") == nullptr; }));
+    s.settle();
+    // The file is gone, and the first file of the list is selected, as for a new commit.
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK(changes.current()->key() == changes.rows().front().key());
+    GG_CHECK_EQ(changes.selectedKeys().size(), size_t(1));
+    GG_CHECK(changes.selectedKeys().count(changes.current()->key()) == 1);
+    // The same for an untracked file.
+    ctx->ItemClick(fileRef(s, "Untracked", "u.txt").c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_REQUIRE(s.waitUntil([&] { return rowFor(s, "u.txt") == nullptr; }));
+    s.settle();
+    GG_REQUIRE(changes.current() != nullptr);
+    GG_CHECK_EQ(changes.selectedKeys().size(), size_t(1));
+    GG_CHECK(changes.selectedKeys().count(changes.current()->key()) == 1);
+}
+
 GG_TEST("changes", "file context menu: copy, patch, save patch, blame")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
