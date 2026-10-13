@@ -292,8 +292,17 @@ void DiffPanel::buildRows()
         const auto& hunk = f.hunks[h];
         const int newStart = hunk.newLines == 0 ? hunk.newStart + 1 : hunk.newStart;
         addGap(prevNewEnd + 1, newStart - 1, prevOldEnd - prevNewEnd);
+        // The hunk row (with its buttons) sits directly above the first changed line, after the
+        // leading context lines.
+        size_t lead = 0;
+        while (lead < hunk.lines.size() && hunk.lines[lead].origin == ' ')
+            ++lead;
+        if (lead == hunk.lines.size())
+            lead = 0;
+        for (size_t l = 0; l < lead; ++l)
+            m_rows.push_back(Row{Row::Line, static_cast<int>(h), static_cast<int>(l)});
         m_rows.push_back(Row{Row::Hunk, static_cast<int>(h)});
-        for (size_t l = 0; l < hunk.lines.size(); ++l)
+        for (size_t l = lead; l < hunk.lines.size(); ++l)
             m_rows.push_back(Row{Row::Line, static_cast<int>(h), static_cast<int>(l)});
         prevNewEnd = hunk.newStart + hunk.newLines - (hunk.newLines == 0 ? 0 : 1);
         prevOldEnd = hunk.oldStart + hunk.oldLines - (hunk.oldLines == 0 ? 0 : 1);
@@ -341,8 +350,8 @@ bool DiffPanel::sideBySideShown() const
 
 std::vector<int> DiffPanel::hunkStarts() const
 {
-    // Per hunk: its first editor line (the header row in unified; the first code line, on either
-    // side, in side by side).
+    // Per hunk: its first editor line (its first context or changed line; in side by side the
+    // first code line on either side).
     std::vector<int> starts(m_diff && !m_diff->files.empty() ? m_diff->files.front().hunks.size() : 0, -1);
     auto scan = [&](const View& v) {
         for (size_t i = 0; i < v.lines.size(); ++i) {

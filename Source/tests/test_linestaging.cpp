@@ -153,6 +153,12 @@ GG_TEST("linestaging", "stage, discard and unstage hunks")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
     GG_REQUIRE(diffFile(s)->hunks.size() == 2);
+    // The hunk buttons sit directly above the first changed line (rows: 0-1 context, 2 hunk, 3 change).
+    {
+        const ImRect button = ctx->ItemInfo((body(s) + "/###discard_hunk_0").c_str()).RectFull;
+        const ImRect change = ctx->ItemInfo((body(s) + "/###line_3").c_str()).RectFull;
+        GG_CHECK(button.Max.y <= change.Min.y && change.Min.y - button.Max.y < 8.0f);
+    }
     // Stage the second hunk only.
     ctx->ItemClick((body(s) + "/###stage_hunk_1").c_str());
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"show", ":f.txt"}).find("LINE 27") != std::string::npos; }));
@@ -276,12 +282,22 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
             break;
         const ggui::core::DiffFile file = *diffFile(s);
         const std::string base = s.git(repo, {"show", unstage ? ":r.txt" : ":r.txt"}).out;
-        // Rows as the Diff panel lays them out: per hunk a header row, then its lines.
+        // Rows as the Diff panel lays them out: per hunk its lines, with the header row directly
+        // above the first changed line.
+        auto leadOf = [](const ggui::core::DiffHunk& hk) {
+            size_t lead = 0;
+            while (lead < hk.lines.size() && hk.lines[lead].origin == ' ')
+                ++lead;
+            return lead == hk.lines.size() ? size_t(0) : lead;
+        };
         std::vector<std::pair<int, int>> rows; // (hunk, line) with line = -1 for the header
         for (size_t h = 0; h < file.hunks.size(); ++h) {
-            rows.emplace_back(static_cast<int>(h), -1);
-            for (size_t l = 0; l < file.hunks[h].lines.size(); ++l)
+            const size_t lead = leadOf(file.hunks[h]);
+            for (size_t l = 0; l < file.hunks[h].lines.size(); ++l) {
+                if (l == lead)
+                    rows.emplace_back(static_cast<int>(h), -1);
                 rows.emplace_back(static_cast<int>(h), static_cast<int>(l));
+            }
         }
         // Find visual row indexes (gap rows come before hunks when context is expandable).
         std::vector<int> rowIndex;
@@ -293,9 +309,12 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
                 const int newStart = hk.newLines == 0 ? hk.newStart + 1 : hk.newStart;
                 if (file.newText && newStart - 1 >= prevNewEnd + 1)
                     ++visual; // gap row
-                rowIndex.push_back(visual++);
-                for (size_t l = 0; l < hk.lines.size(); ++l)
+                const size_t lead = leadOf(hk);
+                for (size_t l = 0; l < hk.lines.size(); ++l) {
+                    if (l == lead)
+                        rowIndex.push_back(visual++);
                     rowIndex.push_back(visual++);
+                }
                 prevNewEnd = hk.newStart + hk.newLines - (hk.newLines == 0 ? 0 : 1);
             }
         }

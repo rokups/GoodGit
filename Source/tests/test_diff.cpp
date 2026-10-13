@@ -197,9 +197,9 @@ GG_TEST("diff", "text is selectable with the mouse in both views")
             return {};
         }
         const float line = ImGui::GetFontSize() + ImGui::GetStyle().ItemSpacing.y;
-        // From the middle of the text on the 3rd line to the middle of the 5th line.
+        // From the middle of the text on the 3rd line to the middle of the 4th line (code lines in both views).
         const ImVec2 from(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.45f, w->InnerRect.Min.y + line * 2.5f);
-        const ImVec2 to(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.35f, w->InnerRect.Min.y + line * 4.5f);
+        const ImVec2 to(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.35f, w->InnerRect.Min.y + line * 3.5f);
         ctx->MouseMoveToPos(from);
         ctx->MouseDown(ImGuiMouseButton_Left);
         ctx->MouseMoveToPos(to);
@@ -329,8 +329,8 @@ GG_TEST("diff", "select lines, Ctrl+C and the context menu")
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     showFile(s, r.change, "code.cpp");
-    // Rows: 0 = gap, 1 = hunk header, 2.. = lines of the first hunk.
-    ctx->ItemClick((body(s) + "/###line_4").c_str());
+    // Rows: 0 = gap, 1-3 = context, 4 = hunk header (above the first change), 5.. = the changes and the rest.
+    ctx->ItemClick((body(s) + "/###line_3").c_str());
     ctx->KeyDown(ImGuiMod_Shift);
     ctx->ItemClick((body(s) + "/###line_6").c_str());
     ctx->KeyUp(ImGuiMod_Shift);
@@ -339,12 +339,12 @@ GG_TEST("diff", "select lines, Ctrl+C and the context menu")
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
     GG_CHECK_STR_EQ(s.clipboard(), expected);
     ImGui::SetClipboardText("");
-    s.contextMenu((body(s) + "/###line_4").c_str(), "Copy");
+    s.contextMenu((body(s) + "/###line_3").c_str(), "Copy");
     GG_CHECK_STR_EQ(s.clipboard(), expected);
     // Right-click outside the selection selects that line first.
-    s.contextMenu((body(s) + "/###line_2").c_str(), "Copy");
+    s.contextMenu((body(s) + "/###line_1").c_str(), "Copy");
     GG_CHECK_STR_EQ(s.clipboard(), "int line2 = 0;\n");
-    s.contextMenu((body(s) + "/###line_4").c_str(), "Blame file");
+    s.contextMenu((body(s) + "/###line_3").c_str(), "Blame file");
     GG_CHECK(s.waitUntil([&] {
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "code.cpp" && b->query.commit.hex() == r.change;
@@ -367,11 +367,11 @@ GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code")
     for (const auto& line : lines)
         GG_CHECK(line.find("@@") == std::string::npos);
     GG_CHECK(s.textShown(body(s).c_str(), "int line31 = 0;"));
-    // Rows: 0 = gap, 1 = hunk 0, 2..9 = its lines, 10 = the gap between the hunks (collapsed),
-    // 11 = hunk 1, 12.. = its lines. Select from line 7 (hunk 0) to line 33 (hunk 1).
+    // Rows: 0 = gap, 1-9 = hunk 0 (its header is row 4), 10 = the gap between the hunks (collapsed),
+    // 11.. = hunk 1 (line 32 is row 11, its header lies above the first change). Select from line 7 (hunk 0) to line 33 (hunk 1).
     ctx->ItemClick((body(s) + "/###line_8").c_str());
     ctx->KeyDown(ImGuiMod_Shift);
-    ctx->ItemClick((body(s) + "/###line_13").c_str());
+    ctx->ItemClick((body(s) + "/###line_12").c_str());
     ctx->KeyUp(ImGuiMod_Shift);
     const std::string expected = "int line7 = 0;\nint line8 = 0;\nint line32 = 0;\nint line33 = 0;\n";
     GG_CHECK_STR_EQ(s.session()->diff().selectedText(), expected);
@@ -411,7 +411,7 @@ GG_TEST("diff", "Ctrl+C in the editor's find box copies the find text, not the c
     const DiffRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     showFile(s, r.change, "code.cpp");
-    ctx->ItemClick((body(s) + "/###line_4").c_str());
+    ctx->ItemClick((body(s) + "/###line_3").c_str());
     GG_CHECK(!s.session()->diff().selectedText().empty());
     ImGui::SetClipboardText("keep");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_F);
@@ -437,7 +437,7 @@ GG_TEST("diff", "Ctrl+X and Shift+Delete copy the selection and delete nothing, 
         GG_REQUIRE(w);
         const float line = ImGui::GetFontSize() + ImGui::GetStyle().ItemSpacing.y;
         const ImVec2 from(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.45f, w->InnerRect.Min.y + line * 2.5f);
-        const ImVec2 to(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.35f, w->InnerRect.Min.y + line * 4.5f);
+        const ImVec2 to(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.35f, w->InnerRect.Min.y + line * 3.5f);
         ctx->MouseMoveToPos(from);
         ctx->MouseDown(ImGuiMouseButton_Left);
         ctx->MouseMoveToPos(to);
@@ -704,9 +704,9 @@ GG_TEST("diff", "side by side across files: switching, a binary file, Shift+clic
     s.comboSelect("//Diff/##diff_view", "Unified");
     // Shift+click with nothing selected yet selects from that line.
     showFile(s, r.change, "code.cpp");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_4").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_3").c_str()); }));
     ctx->KeyDown(ImGuiMod_Shift);
-    ctx->ItemClick((body(s) + "/###line_4").c_str());
+    ctx->ItemClick((body(s) + "/###line_3").c_str());
     ctx->KeyUp(ImGuiMod_Shift);
     GG_CHECK(!s.session()->diff().selectedText().empty());
     // Blame from a working tree file's diff: the working tree version.
@@ -714,8 +714,8 @@ GG_TEST("diff", "side by side across files: switching, a binary file, Shift+clic
     const std::string wtFile = s.child("//Changes", "##files") + "/Unstaged/code.cpp/###file_code.cpp";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile.c_str()); }));
     ctx->ItemClick(wtFile.c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_2").c_str()); }));
-    s.contextMenu((body(s) + "/###line_2").c_str(), "Blame file");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_1").c_str()); }));
+    s.contextMenu((body(s) + "/###line_1").c_str(), "Blame file");
     GG_CHECK(s.waitUntil([&] {
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "code.cpp" && b->query.commit.isNull();

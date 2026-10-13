@@ -1102,8 +1102,8 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
     ctx->KeyPress(ImGuiKey_Space);
     ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
-    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Stage line(s)");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_0").c_str()); }));
+    menu(s.child("//Diff", "##diff_body") + "/###line_0", "Stage line(s)");
     ctx->ItemClick(fileRef("Staged", "staged.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
