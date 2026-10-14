@@ -14,9 +14,11 @@
 #include "platform/Platform.hpp"
 #include "shell/App.hpp"
 #include "util/FrameProbe.hpp"
+#include "util/Env.hpp"
 #include "util/Logging.hpp"
 
 #include <libgg/Git2.hpp>
+#include <libgg/SequenceEditorLink.hpp>
 #include <libgg/Thread.hpp>
 
 #define SDL_MAIN_HANDLED
@@ -28,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 #ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
@@ -152,6 +155,17 @@ int main(int argc, char** argv)
     }
 
     ggui::initLogging();
+    // A repository that another ggui has open: that window is raised, this process ends (no window of its own).
+    if (!options.test && !options.repoPath.empty()) {
+        std::error_code ec;
+        const std::filesystem::path abs = std::filesystem::absolute(options.repoPath, ec);
+        const std::filesystem::path gitDir = gg::seqlink::resolveGitDir(ec ? std::filesystem::path(options.repoPath) : abs.lexically_normal());
+        if (!gitDir.empty() && gg::seqlink::raiseOther(gg::seqlink::gitDirKey(gitDir), ggui::processId())) {
+            spdlog::info("{} is open in another ggui window", options.repoPath);
+            spdlog::shutdown();
+            return 0;
+        }
+    }
     gg::registerUiThread();
     gg::git2::initLibrary();
 

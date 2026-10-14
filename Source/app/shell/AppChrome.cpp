@@ -795,6 +795,16 @@ void App::pumpSequenceEditor()
     Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
     const std::string gitDir = s ? s->snapshot()->gitDir.string() : std::string();
     m_sequenceEditor.setRepository(gitDir);
+    // Another ggui was started for this repository: show this window.
+    if (m_sequenceEditor.takeRaise()) {
+        m_platform.raise();
+        m_platform.attention();
+    }
+    // The claim of an open that is over (opened: the session names the repository; failed: nothing).
+    if (!m_claimedGitDir.empty() && m_pendingOpens == 0 && !(m_session && m_session->opening())) {
+        m_sequenceEditor.claim({});
+        m_claimedGitDir.clear();
+    }
     if (m_sequenceOpen != 0 && !m_sequenceEditor.waiting(m_sequenceOpen)) {
         // git-gg went away (the rebase was interrupted in its terminal).
         m_sequenceOpen = 0;

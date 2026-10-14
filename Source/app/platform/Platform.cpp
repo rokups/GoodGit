@@ -276,4 +276,11 @@ void Platform::raise()
     SDL_RaiseWindow(m_window);
 }
 
+void Platform::attention()
+{
+    if (!m_window || m_headless)
+        return;
+    SDL_FlashWindow(m_window, SDL_FLASH_UNTIL_FOCUSED);
+}
+
 } // namespace ggui

@@ -1,6 +1,7 @@
 #include "libgg/SequenceEditorLink.hpp"
 
 #include "libgg/Files.hpp"
+#include "libgg/Git2.hpp"
 #include "libgg/LocalSocket.hpp"
 
 #include <cctype>
@@ -118,6 +119,16 @@ bool raiseOther(const std::string& key, long long ownPid)
             return true;
     }
     return false;
+}
+
+fs::path resolveGitDir(const fs::path& path)
+{
+    try {
+        const git2::Repository repo = git2::openRepository(path);
+        return fs::path(git_repository_path(repo.get())).lexically_normal();
+    } catch (const std::exception&) {
+        return {};
+    }
 }
 
 } // namespace gg::seqlink

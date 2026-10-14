@@ -57,6 +57,8 @@ public:
     void setTitle(const std::string& title);
     // Brings the window to the front (a request from git needs the user's attention).
     void raise();
+    // Flashes the window until it has focus (a compositor may refuse raise()).
+    void attention();
 
 private:
     bool ensureOffscreen(std::uint32_t w, std::uint32_t h);

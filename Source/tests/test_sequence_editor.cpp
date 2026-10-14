@@ -674,4 +674,31 @@ GG_TEST("sequence-editor", "a second ggui asks the one with the same git dir to 
     GG_CHECK(!fs::exists(gg::seqlink::registryDir() / (std::to_string(stale) + ".instance")));
 }
 
+GG_TEST("sequence-editor", "opening a repository that another ggui has open raises that window and opens nothing here; once it is gone the repository opens")
+{
+    const Repo r = makeRepo(s);
+    const OwnRegistry registry(s.root() / "run");
+    const std::string key = gg::seqlink::gitDirKey(r.path / ".git");
+    const long long other = ggui::processId() + 1;
+    ggui::core::SequenceEditorServer server;
+    server.setInstancePid(other);
+    GG_REQUIRE(server.start());
+    server.claim((r.path / ".git").string());
+    GG_REQUIRE(serverRegistered(s, other, key));
+    if (s.app.session())
+        s.app.closeRepository();
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.session(); }));
+    s.track(r.path);
+    s.app.openRepository(r.path);
+    s.waitIdle();
+    GG_CHECK(s.app.session() == nullptr);
+    GG_CHECK(server.takeRaise());
+    // The other ggui closes the repository: the open goes through.
+    server.claim("");
+    GG_REQUIRE(serverRegistered(s, other, ""));
+    s.app.openRepository(r.path);
+    GG_CHECK(s.waitUntil([&] { return s.app.session() && s.app.session()->opened(); }, 30.0f));
+    GG_CHECK(!server.takeRaise());
+}
+
 } // namespace ggtest

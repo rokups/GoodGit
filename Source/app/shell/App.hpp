@@ -81,7 +81,7 @@ public:
 
     // ---- actions (menus, toolbar, Welcome) --------------------------------------------------
     // Checks git first (G2), then opens.
-    void openRepository(const std::filesystem::path& path);
+    void openRepository(const std::filesystem::path& path, bool quiet = false);
     // Folders dropped on the window: every repository among them joins the recent list, the
     // first folder opens. Files are ignored.
     void openDropped(const std::vector<std::string>& paths);
@@ -174,6 +174,9 @@ private:
     // blocking prompt offers Retry (calls `retry`) and Quit.
     void checkGit(std::function<void(bool ok)> done, std::function<void()> retry);
     void openNow(const std::filesystem::path& path);
+    // Opens `path` unless another ggui has its repository open (that window is raised instead).
+    // `quiet`: no notice then (the automatic opening of the recent repository).
+    void openUnlessOpenElsewhere(const std::filesystem::path& path, bool quiet);
 
     Platform& m_platform;
     AppOptions m_options;
@@ -196,6 +199,7 @@ private:
     std::vector<std::function<void()>> m_posted;
     std::uint64_t m_askpassShown = 0;
     std::uint64_t m_sequenceOpen = 0;    // the request the todo editor shows (0 = none)
+    std::string m_claimedGitDir;         // named in the registry for the open that is under way ("" = none)
     std::uint64_t m_sequenceNoticed = 0; // the request told to wait for the open todo editor
 
     bool m_quit = false;

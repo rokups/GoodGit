@@ -56,4 +56,8 @@ inline constexpr const char* kRaiseCommand = "raise";
 // window; true when one answered OK. A registration nobody answers on is stale and removed.
 bool raiseOther(const std::string& key, long long ownPid);
 
+// The git dir of the repository that contains `path` (as a session names it); empty when `path`
+// is no repository. Reads the disk: not for the UI thread.
+std::filesystem::path resolveGitDir(const std::filesystem::path& path);
+
 } // namespace gg::seqlink

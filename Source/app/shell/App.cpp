@@ -8,6 +8,7 @@
 #include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/SequenceEditorLink.hpp>
 
 #include <SDL3/SDL.h>
 #include "shell/Widgets.hpp"
@@ -275,7 +276,7 @@ void App::pumpSummaries()
         m_autoOpenDone = true;
         for (const auto& r : m_recentInfo)
             if (r.exists) {
-                openRepository(r.path);
+                openRepository(r.path, true);
                 break;
             }
     }
@@ -300,7 +301,7 @@ void App::updateLiveSummary()
     m_liveValid = true;
 }
 
-void App::openRepository(const fs::path& path)
+void App::openRepository(const fs::path& path, bool quiet)
 {
     if (path.empty())
         return;
@@ -308,12 +309,46 @@ void App::openRepository(const fs::path& path)
     // The open is pending until the check ends either way (Retry starts a new open).
     ++m_pendingOpens;
     checkGit(
-        [this, path](bool ok) {
+        [this, path, quiet](bool ok) {
+            if (ok) {
+                openUnlessOpenElsewhere(path, quiet); // the open stays pending until it is decided
+                return;
+            }
             --m_pendingOpens;
-            if (ok)
-                openNow(path);
         },
-        [this, path] { openRepository(path); });
+        [this, path, quiet] { openRepository(path, quiet); });
+}
+
+void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
+{
+    const std::string own = (m_session && m_session->opened()) ? m_session->snapshot()->gitDir.string() : std::string();
+    m_io.post([this, path, quiet, own]() -> std::function<void()> {
+        std::error_code ec;
+        fs::path abs = fs::absolute(path, ec);
+        if (ec)
+            abs = path;
+        // Not a repository: the normal open reports it.
+        const fs::path gitDir = gg::seqlink::resolveGitDir(abs.lexically_normal());
+        bool elsewhere = false;
+        if (!gitDir.empty()) {
+            const std::string key = gg::seqlink::gitDirKey(gitDir);
+            // The repository this process has open stays as it was (it is reopened here).
+            if (own.empty() || gg::seqlink::gitDirKey(own) != key)
+                elsewhere = gg::seqlink::raiseOther(key, processId());
+        }
+        return [this, path, quiet, gitDir, elsewhere] {
+            --m_pendingOpens;
+            if (elsewhere) {
+                if (!quiet)
+                    notify(Notice::Info, "Open", "Already open in another ggui window");
+                return;
+            }
+            // The registry names the repository before its session exists.
+            m_claimedGitDir = gitDir.string();
+            m_sequenceEditor.claim(m_claimedGitDir);
+            openNow(path);
+        };
+    });
 }
 
 void App::openNow(const fs::path& path)
