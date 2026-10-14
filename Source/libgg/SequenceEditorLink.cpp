@@ -20,15 +20,18 @@ namespace fs = std::filesystem;
 fs::path registryDir()
 {
     fs::path dir;
+    std::error_code ec;
 #ifdef _WIN32
-    dir = fs::temp_directory_path() / "ggui"; // the user's own temp directory
+    // The user's own temp directory. libstdc++ throws when it does not exist: use the error_code form.
+    dir = fs::temp_directory_path(ec) / "ggui";
+    ec.clear();
 #else
     if (const char* runtime = std::getenv("XDG_RUNTIME_DIR"); runtime && *runtime)
         dir = fs::path(runtime) / "ggui";
     else
-        dir = fs::temp_directory_path() / ("ggui-" + std::to_string(static_cast<long long>(getuid())));
+        dir = fs::temp_directory_path(ec) / ("ggui-" + std::to_string(static_cast<long long>(getuid())));
 #endif
-    std::error_code ec;
+    ec.clear();
     if (fs::create_directories(dir, ec))
         fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
     return dir;

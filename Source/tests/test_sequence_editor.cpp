@@ -215,6 +215,8 @@ class OwnRegistry {
 public:
     explicit OwnRegistry(const fs::path& dir)
     {
+        std::error_code ec;
+        fs::create_directories(dir, ec); // libstdc++ on Windows throws from temp_directory_path() without it
         for (const char* name : {"XDG_RUNTIME_DIR", "TMP", "TEMP"}) {
             m_saved.emplace_back(name, ggui::getEnv(name));
             ggui::setEnv(name, dir.string());

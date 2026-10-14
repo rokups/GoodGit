@@ -41,7 +41,12 @@ bool AskpassServer::start(const fs::path& gitGgProgram)
     m_token = buf;
     gg::setAskpassProgram(gitGgProgram.string(), std::to_string(m_port) + ":" + m_token);
     m_stop = false;
-    m_thread = std::thread([this] { loop(); });
+    m_thread = std::thread([this] {
+        try {
+            loop();
+        } catch (const std::exception&) { // a throw in a thread would end the process
+        }
+    });
     return true;
 }
 
@@ -169,7 +174,12 @@ bool SequenceEditorServer::start()
     std::snprintf(buf, sizeof(buf), "%08x%08x%08x", rd(), rd(), rd());
     m_token = buf;
     m_stop = false;
-    m_thread = std::thread([this] { loop(); });
+    m_thread = std::thread([this] {
+        try {
+            loop();
+        } catch (const std::exception&) { // a throw in a thread would end the process
+        }
+    });
     return true;
 }
 
@@ -233,7 +243,11 @@ void SequenceEditorServer::loop()
             continue;
         auto finished = std::make_shared<std::atomic<bool>>(false);
         m_clients.push_back({std::thread([this, client, finished] {
-                                 serve(client);
+                                 try {
+                                     serve(client);
+                                 } catch (const std::exception&) { // a throw in a thread would end the process
+                                     gg::net::closeSocket(client);
+                                 }
                                  finished->store(true);
                              }),
             finished});
