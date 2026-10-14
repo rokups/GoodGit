@@ -193,21 +193,33 @@ void SequenceEditorServer::setRepository(const std::string& gitDir)
     m_gitDir = gitDir;
 }
 
+void SequenceEditorServer::claim(const std::string& gitDir)
+{
+    std::lock_guard lock(m_mutex);
+    m_claimedGitDir = gitDir;
+}
+
+long long SequenceEditorServer::instancePid() const { return m_pid ? m_pid : ownPid(); }
+
 void SequenceEditorServer::loop()
 {
     while (!m_stop) {
-        // Keep the registration current (file I/O stays off the UI thread).
+        // Keep the registration current (file I/O stays off the UI thread). A claimed git dir shows
+        // in the registry while no session is open; only m_gitDir (a session) lets a todo list in.
         std::string gitDir;
         {
             std::lock_guard lock(m_mutex);
-            gitDir = m_gitDir;
+            gitDir = m_gitDir.empty() ? m_claimedGitDir : m_gitDir;
         }
         if (!m_registered || gitDir != m_registeredGitDir) {
             const std::string key = gitDir.empty() ? std::string() : gg::seqlink::gitDirKey(gitDir);
-            const bool written = gg::seqlink::writeInstance({ownPid(), m_port, m_token, key});
+            {
+                std::lock_guard lock(m_mutex);
+                m_gitDirKey = key; // before the registry shows it
+            }
+            const bool written = gg::seqlink::writeInstance({instancePid(), m_port, m_token, key});
             std::lock_guard lock(m_mutex);
             m_registered = written;
-            m_gitDirKey = key;
             m_registeredGitDir = gitDir;
         }
         std::erase_if(m_clients, [](Client& c) {
@@ -226,15 +238,32 @@ void SequenceEditorServer::loop()
                              }),
             finished});
     }
-    gg::seqlink::removeInstance(ownPid());
+    gg::seqlink::removeInstance(instancePid());
 }
 
 void SequenceEditorServer::serve(std::intptr_t client)
 {
     std::string token, command, gitDir, file;
     if (!gg::net::recvLine(client, token, 2000) || token != m_token || !gg::net::recvLine(client, command, 2000)
-        || command != gg::seqlink::kCommand || !gg::net::recvLine(client, gitDir, 2000)
-        || !gg::net::recvLine(client, file, 2000)) {
+        || (command != gg::seqlink::kCommand && command != gg::seqlink::kRaiseCommand)
+        || !gg::net::recvLine(client, gitDir, 2000)) {
+        gg::net::closeSocket(client);
+        return;
+    }
+    if (command == gg::seqlink::kRaiseCommand) {
+        // Another ggui for the same repository: the UI thread raises the window (no SDL here).
+        bool same = false;
+        {
+            std::lock_guard lock(m_mutex);
+            same = !gitDir.empty() && gitDir == m_gitDirKey && !m_stop;
+        }
+        if (same)
+            m_raiseRequested = true;
+        gg::net::sendAll(client, same ? "OK\n" : "NO\n");
+        gg::net::closeSocket(client);
+        return;
+    }
+    if (!gg::net::recvLine(client, file, 2000)) {
         gg::net::closeSocket(client);
         return;
     }

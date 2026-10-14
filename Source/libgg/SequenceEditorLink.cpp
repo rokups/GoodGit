@@ -1,6 +1,7 @@
 #include "libgg/SequenceEditorLink.hpp"
 
 #include "libgg/Files.hpp"
+#include "libgg/LocalSocket.hpp"
 
 #include <cctype>
 #include <cstdlib>
@@ -95,6 +96,28 @@ std::vector<Instance> instances()
             out.push_back(std::move(i));
     }
     return out;
+}
+
+bool raiseOther(const std::string& key, long long ownPid)
+{
+    if (key.empty())
+        return false;
+    for (const auto& instance : instances()) {
+        if (instance.pid == ownPid || instance.gitDir != key)
+            continue;
+        const auto s = net::connectLoopback(instance.port);
+        if (s == net::kInvalid) {
+            removeInstance(instance.pid); // a stale registration
+            continue;
+        }
+        std::string reply;
+        const bool raised = net::sendAll(s, instance.token + "\n" + kRaiseCommand + "\n" + key + "\n")
+            && net::recvLine(s, reply, 2000) && reply == "OK";
+        net::closeSocket(s);
+        if (raised)
+            return true;
+    }
+    return false;
 }
 
 } // namespace gg::seqlink

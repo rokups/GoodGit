@@ -85,6 +85,15 @@ public:
     void stop();
     // UI thread: the git dir of the repository requests are accepted for ("" = none).
     void setRepository(const std::string& gitDir);
+    // UI thread: names `gitDir` in the registry before a session is open ("" = no claim), so a
+    // second ggui for it finds this one. The loop thread writes the registry within about 50 ms.
+    // The claim only names the repository while no session is open (setRepository() wins) and
+    // never lets a todo list in; setRepository() does not clear it.
+    void claim(const std::string& gitDir);
+    // Tests: register under another pid than the process's (before start()).
+    void setInstancePid(long long pid) { m_pid = pid; }
+    // UI thread: another ggui asked this one to raise its window (cleared by the call).
+    bool takeRaise() { return m_raiseRequested.exchange(false); }
     // UI thread: the oldest request not yet shown; `shown` marks it as taken.
     std::optional<Request> pending();
     void shown(std::uint64_t id);
@@ -103,6 +112,7 @@ private:
         std::string text;
     };
     void loop();
+    long long instancePid() const;
     void serve(std::intptr_t client);
     void answer(std::uint64_t id, bool saved, const std::string& text);
 
@@ -110,11 +120,14 @@ private:
     int m_port = 0;
     std::string m_token;
     std::atomic<bool> m_stop{false};
+    std::atomic<bool> m_raiseRequested{false};
     std::thread m_thread;
     std::mutex m_mutex;
     std::condition_variable m_cv;
     std::string m_gitDir;           // as named by the UI
-    std::string m_gitDirKey;        // its gitDirKey (computed on the loop thread)
+    std::string m_claimedGitDir;    // claim(): shown in the registry only
+    long long m_pid = 0;            // 0 = this process
+    std::string m_gitDirKey;        // the registry's key (computed on the loop thread)
     bool m_registered = false;
     std::string m_registeredGitDir;
     std::vector<std::shared_ptr<Slot>> m_slots;

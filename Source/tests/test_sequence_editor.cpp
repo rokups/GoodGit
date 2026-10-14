@@ -8,10 +8,12 @@
 #include "panels/RebasePanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
+#include "core/Services.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/LocalSocket.hpp>
 #include <libgg/SequenceEditorLink.hpp>
 #include <libgg/Todo.hpp>
 
@@ -207,6 +209,43 @@ fs::path gguiStub(Scenario& s, const std::string& name, const std::string& body)
 }
 
 bool disabled(Scenario& s, const char* ref) { return (s.ctx->ItemInfo(ref).ItemFlags & ImGuiItemFlags_Disabled) != 0; }
+
+// The registry in a directory of the test (not the user's), for as long as this object lives.
+class OwnRegistry {
+public:
+    explicit OwnRegistry(const fs::path& dir)
+    {
+        for (const char* name : {"XDG_RUNTIME_DIR", "TMP", "TEMP"}) {
+            m_saved.emplace_back(name, ggui::getEnv(name));
+            ggui::setEnv(name, dir.string());
+        }
+    }
+    ~OwnRegistry()
+    {
+        for (const auto& [name, value] : m_saved) {
+            if (value.empty())
+                ggui::unsetEnv(name);
+            else
+                ggui::setEnv(name, value);
+        }
+    }
+    OwnRegistry(const OwnRegistry&) = delete;
+    OwnRegistry& operator=(const OwnRegistry&) = delete;
+
+private:
+    std::vector<std::pair<std::string, std::string>> m_saved;
+};
+
+// The registry shows `key` for the instance `pid` (within 1 s).
+bool serverRegistered(Scenario& s, long long pid, const std::string& key)
+{
+    return s.waitUntil([&] {
+        for (const auto& i : gg::seqlink::instances())
+            if (i.pid == pid && i.gitDir == key)
+                return true;
+        return false;
+    }, 1.0f);
+}
 
 } // namespace
 
@@ -563,6 +602,76 @@ GG_TEST("sequence-editor", "no ggui has the repository open: git gg starts ggui 
     GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c5", "c1"}));
 #endif
     GG_CHECK(s.fsck(r.path));
+}
+
+GG_TEST("sequence-editor", "a second ggui asks the one with the same git dir to raise its window; a claim shows in the registry but takes no todo list; a stale registration is removed")
+{
+    const Repo r = makeRepo(s);
+    const OwnRegistry registry(s.root() / "run");
+    const std::string key = gg::seqlink::gitDirKey(r.path / ".git");
+    const long long target = ggui::processId() + 1; // the registered process (not the App's own server)
+    const long long asker = ggui::processId();
+    {
+        ggui::core::SequenceEditorServer server;
+        server.setInstancePid(target);
+        GG_REQUIRE(server.start());
+        GG_REQUIRE(serverRegistered(s, target, ""));
+        GG_CHECK(!gg::seqlink::raiseOther(key, asker));
+        // A claim names the repository in the registry; setRepository() does not clear it.
+        server.claim((r.path / ".git").string());
+        GG_REQUIRE(serverRegistered(s, target, key));
+        server.setRepository({});
+        s.ctx->SleepNoSkip(0.3f, 0.1f);
+        GG_CHECK(serverRegistered(s, target, key));
+        GG_CHECK(!server.takeRaise());
+        // No session is open: the claim lets no todo list in.
+        const auto request = [&] {
+            std::string reply;
+            for (const auto& i : gg::seqlink::instances()) {
+                if (i.pid != target)
+                    continue;
+                const auto c = gg::net::connectLoopback(i.port);
+                if (c == gg::net::kInvalid)
+                    break;
+                gg::net::sendAll(c, i.token + "\nsequence-editor\n" + key + "\n"
+                        + (r.path / ".git" / "rebase-merge" / "git-rebase-todo").string() + "\n");
+                gg::net::recvLine(c, reply, 5000);
+                gg::net::closeSocket(c);
+            }
+            return reply;
+        };
+        GG_CHECK_STR_EQ(request(), "NO");
+        // Another repository, the empty key and the own process do not raise it.
+        GG_CHECK(!gg::seqlink::raiseOther(gg::seqlink::gitDirKey(s.root() / "elsewhere" / ".git"), asker));
+        GG_CHECK(!gg::seqlink::raiseOther("", asker));
+        GG_CHECK(!gg::seqlink::raiseOther(key, target));
+        GG_CHECK(!server.takeRaise());
+        // The same repository does, once for each request.
+        GG_CHECK(gg::seqlink::raiseOther(key, asker));
+        GG_CHECK(server.takeRaise());
+        GG_CHECK(!server.takeRaise());
+        server.claim("");
+        GG_REQUIRE(serverRegistered(s, target, ""));
+        GG_CHECK(!gg::seqlink::raiseOther(key, asker));
+        GG_CHECK(!server.takeRaise());
+        // A session wins over the claim: with the repository open, a todo list is accepted.
+        server.claim((r.path / ".git").string() + "/");
+        server.setRepository((r.path / ".git").string());
+        GG_CHECK(s.waitUntil([&] { return request() != "NO"; }, 1.0f));
+        GG_CHECK_STR_EQ(request(), "OK");
+    }
+    GG_CHECK(!fs::exists(gg::seqlink::registryDir() / (std::to_string(target) + ".instance")));
+
+    // A registration nobody answers on (its process is gone) is removed and does not count.
+    int port = 0;
+    const auto listener = gg::net::listenLoopback(port);
+    GG_REQUIRE(listener != gg::net::kInvalid);
+    gg::net::closeSocket(listener);
+    const long long stale = ggui::processId() + 2;
+    GG_REQUIRE(gg::seqlink::writeInstance({stale, port, "token", key}));
+    GG_CHECK(fs::exists(gg::seqlink::registryDir() / (std::to_string(stale) + ".instance")));
+    GG_CHECK(!gg::seqlink::raiseOther(key, asker));
+    GG_CHECK(!fs::exists(gg::seqlink::registryDir() / (std::to_string(stale) + ".instance")));
 }
 
 } // namespace ggtest

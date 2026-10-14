@@ -14,6 +14,13 @@
 //                                          starting rebase, FILE unchanged for --edit-todo
 //                   ERROR <message>\n      the list could not be read
 //
+// Another ggui with the same git dir open is asked to raise its window (a second start for a
+// repository that is already open):
+//
+//   ggui → ggui     <token>\n  raise\n  <git dir>\n
+//   answer          OK\n   the other ggui has the repository open and raises its window
+//                   NO\n   not this repository
+//
 // The registry files are disposable: a stale one (the process is gone) only makes git-gg try a
 // port nobody answers on. Nothing here is written into the repository.
 #pragma once
@@ -43,5 +50,10 @@ std::vector<Instance> instances();
 
 // Protocol words (see the file comment).
 inline constexpr const char* kCommand = "sequence-editor";
+inline constexpr const char* kRaiseCommand = "raise";
+
+// Asks another registered instance (pid != ownPid) that has `key` (gitDirKey) open to raise its
+// window; true when one answered OK. A registration nobody answers on is stale and removed.
+bool raiseOther(const std::string& key, long long ownPid);
 
 } // namespace gg::seqlink
