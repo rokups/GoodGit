@@ -1333,8 +1333,35 @@ void Actions::mergeNative(const std::string& branch, const std::string& message)
 
 void Actions::rebaseHeadOnto(const std::string& branch) { rebaseTipOnto("HEAD", branch); }
 
+void Actions::rebaseTipOntoNative(const std::string& tipRev, const std::string& destination)
+{
+    // Plain git rebase: it replays dest..tip onto dest and stops at a conflict (Continue and Abort take over).
+    run("rebase " + shownRev(tipRev) + " onto " + shownRev(destination), [tipRev, destination](MutationContext& ctx) {
+        ctx.env.emplace_back("GIT_EDITOR", "true");
+        ctx.worktreeFollowsIndex = true;
+        std::vector<std::string> args{"rebase", "--onto", destination, destination};
+        if (tipRev != "HEAD")
+            args.push_back(tipRev.rfind("refs/heads/", 0) == 0 ? tipRev.substr(11) : tipRev);
+        const auto r = ctx.gitMayFail(args);
+        if (!gg::native::rebaseIdentity(ctx.repo()).empty()) {
+            ctx.result = "stopped";
+            ctx.info = r.message();
+            return;
+        }
+        if (!r.ok()) {
+            const std::string all = r.err + r.out;
+            throw MutationError{core::classifyFailure(all), r.message(), all};
+        }
+    }, {}, false, true, true, true);
+}
+
 void Actions::rebaseTipOnto(const std::string& tipRev, const std::string& destination)
 {
+    // Without first-class conflicts a rebase is plain git: it stops at conflicts like any native rebase.
+    if (!m_session.firstClassConflicts()) {
+        rebaseTipOntoNative(tipRev, destination);
+        return;
+    }
     const std::string shown = shownRev(tipRev);
     const std::string shownDest = shownRev(destination);
     rewrite("rebase " + shown + " onto " + shownDest, [tipRev, shown, shownDest, destination](git_repository* repo) {

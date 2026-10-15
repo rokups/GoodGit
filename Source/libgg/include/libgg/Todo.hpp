@@ -271,6 +271,8 @@ struct Options {
     // Commits that become empty (git rebase --empty): Ask = Start asks (Git's interactive
     // default, --empty=stop), Keep or Drop.
     gg::rewrite::Emptied emptied = gg::rewrite::Emptied::Ask;
+    // gg.firstClassConflicts: off means git rebase runs the list and a conflict stops it.
+    bool firstClassConflicts = true;
 };
 
 enum class Engine { InMemory, Native };

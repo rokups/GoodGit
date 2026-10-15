@@ -1540,6 +1540,8 @@ bool hasErrors(const std::vector<Issue>& issues)
 
 EngineChoice chooseEngine(const Todo& todo, const Options& options)
 {
+    if (!options.firstClassConflicts)
+        return {Engine::Native, "first-class conflicts are off: conflicts stop the rebase"};
     if (options.runAsGitRebase)
         return {Engine::Native, "you chose to run it as git rebase"};
     if (!options.execEach.empty())

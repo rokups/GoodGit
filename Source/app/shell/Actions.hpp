@@ -176,6 +176,8 @@ public:
     // `tipRev` (a branch, "HEAD" or a commit id) and its commits not on `destination` replayed onto it;
     // the other branches on the moved commits follow.
     void rebaseTipOnto(const std::string& tipRev, const std::string& destination);
+    // Plain git rebase --onto: stops at conflicts (used when gg.firstClassConflicts is off).
+    void rebaseTipOntoNative(const std::string& tipRev, const std::string& destination);
     void simplifyParents(const core::Oid& commit);
     void mergeIntoHead(const std::string& branch, const std::string& message);
     // Revert (`revert`) or cherry-pick the commits (History order, newest first) onto HEAD (a merge

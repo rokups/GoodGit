@@ -374,6 +374,7 @@ void RebasePanel::onTodoChanged()
     m_options.updateRefs = m_state.updateRefs;
     m_options.autosquash = m_state.autosquash;
     m_options.rebaseMerges = m_state.rebaseMerges;
+    m_options.firstClassConflicts = m_session.firstClassConflicts();
     m_issues = todo::validate(m_state.todo, *m_state.context);
     if (m_sequence)
         m_engine = {todo::Engine::Native,
