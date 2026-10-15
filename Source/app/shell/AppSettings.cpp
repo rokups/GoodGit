@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <set>
 
 namespace ggui {
@@ -376,6 +377,108 @@ void App::drawPathSetting()
         fix(false);
 }
 
+// "Updates": check for a newer build, download it and restart to install it (platform/SelfUpdater.hpp).
+// The updater is made here, the first time the tab is drawn: no thread and no disk access before.
+void App::drawUpdateSetting()
+{
+    using update::SelfUpdater;
+    using State = SelfUpdater::State;
+    if (!m_updater) {
+        SelfUpdater::Config config = m_updaterConfig ? *m_updaterConfig : SelfUpdater::defaultConfig();
+        m_updateBuild = config.buildInfo;
+        m_updater = std::make_unique<SelfUpdater>(std::move(config));
+    }
+    SelfUpdater& up = *m_updater;
+    ImGui::TextUnformatted("Updates");
+    const std::string build = shortCommit(m_updateBuild.commit);
+    ImGui::TextDisabled("%s", build.empty() ? "This build: local build" : ("This build: " + build).c_str());
+
+    const State state = up.state();
+    const auto release = up.release();
+    const std::string newBuild = release ? release->shortCommit : std::string();
+    switch (state) {
+    case State::Off:
+        ImGui::BeginDisabled();
+        ImGui::Button("Check for updates##update_check");
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            tooltip("%s", up.offReason().c_str());
+        break;
+    case State::Idle:
+    case State::UpToDate:
+    case State::Failed:
+        if (ImGui::Button("Check for updates##update_check"))
+            up.check();
+        break;
+    case State::Checking:
+        if (ImGui::Button("Cancel##update_cancel"))
+            up.cancel();
+        break;
+    case State::Available:
+        if (ImGui::Button("Download and install##update_download"))
+            up.download();
+        ImGui::SameLine();
+        if (ImGui::Button("Check for updates##update_check"))
+            up.check();
+        break;
+    case State::Downloading:
+        if (ImGui::Button("Cancel##update_cancel"))
+            up.cancel();
+        break;
+    case State::Ready:
+        if (ImGui::Button("Restart to update##update_restart")) {
+            Form f;
+            f.title = "Restart ggui";
+            f.message = "ggui closes, installs the update and starts again.";
+            f.buttons.push_back({"Restart now", [this](Form&) {
+                // The updater may have left Ready while the form was open.
+                if (m_updater && m_updater->restartPending()) {
+                    m_restartForUpdate = true;
+                    requestQuit();
+                }
+            }});
+            f.buttons.push_back({"Later", {}});
+            m_dialogs.open(std::move(f));
+        }
+        break;
+    }
+
+    switch (state) {
+    case State::Checking:
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Checking...");
+        break;
+    case State::UpToDate:
+        ImGui::SameLine();
+        ImGui::TextUnformatted("ggui is up to date.");
+        break;
+    case State::Available:
+        ImGui::TextWrapped("A newer build is available: %s", newBuild.c_str());
+        break;
+    case State::Downloading: {
+        const SelfUpdater::Progress progress = up.progress();
+        const auto mib = [](std::uint64_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); };
+        char text[96];
+        std::snprintf(text, sizeof text, "%.1f / %.1f MiB", mib(progress.done), mib(progress.total));
+        ImGui::SameLine();
+        ImGui::ProgressBar(static_cast<float>(progress.fraction()), ImVec2(ImGui::GetFontSize() * 16, 0), text);
+        break;
+    }
+    case State::Ready:
+        ImGui::SameLine();
+        ImGui::TextUnformatted("The update is ready.");
+        break;
+    case State::Failed:
+        ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().errorText);
+        ImGui::TextWrapped("%s", up.error().c_str());
+        ImGui::PopStyleColor();
+        break;
+    case State::Off:
+    case State::Idle:
+        break;
+    }
+}
+
 // "Add "Open in GoodGit" to file manager menus": the state is the managed files on disk
 // (platform/ContextMenu.hpp).
 void App::drawContextMenuSetting()
@@ -482,6 +585,8 @@ void App::drawSettingsWindow()
             drawPathSetting();
             ImGui::Separator();
             drawContextMenuSetting();
+            ImGui::Separator();
+            drawUpdateSetting();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Git")) {

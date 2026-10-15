@@ -18,6 +18,7 @@
 #include "util/Logging.hpp"
 
 #include <libgg/Git2.hpp>
+#include <libgg/Launch.hpp>
 #include <libgg/SequenceEditorLink.hpp>
 #include <libgg/Thread.hpp>
 
@@ -30,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <filesystem>
 #include <string>
 
@@ -245,8 +247,27 @@ int main(int argc, char** argv)
         exitCode = tests->exitCode();
     }
 #endif
+    // A staged update that the user chose to install: the script waits for this process to end.
+    std::filesystem::path updateScript;
+    if (!options.test && app->restartForUpdate()) {
+        if (const auto script = app->updateScript())
+            updateScript = *script;
+    }
     app.reset();
     platform.shutdown();
+    if (!updateScript.empty()) {
+        gg::DetachedProcess child;
+        std::string spawnError;
+        if (gg::spawnScriptDetached(updateScript, {std::to_string(ggui::processId())}, child, spawnError)) {
+            spdlog::info("started the update script {}", updateScript.string());
+            gg::release(child);
+        } else {
+            spdlog::error("cannot start the update script {}: {}", updateScript.string(), spawnError);
+            // takeResult reads this file at the next start and tells the user.
+            std::ofstream result(updateScript.parent_path() / "result.txt", std::ios::binary | std::ios::trunc);
+            result << "failed: cannot start the update script\n";
+        }
+    }
 #ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
     tests.reset(); // destroys the test engine context after ImGui's
 #endif

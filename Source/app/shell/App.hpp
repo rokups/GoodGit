@@ -5,6 +5,7 @@
 
 #include "platform/ContextMenu.hpp"
 #include "platform/PathSetup.hpp"
+#include "platform/SelfUpdater.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Settings.hpp"
 
@@ -128,6 +129,21 @@ public:
     // Picks a file to save to; `done` receives "" when cancelled.
     void pickSaveFile(const std::string& title, const std::string& defaultName, std::function<void(std::string)> done);
 
+    // Self-update (Settings > General > Updates). The updater is made the first time that tab is drawn, from
+    // `config` when a test set one (call before that), else from SelfUpdater::defaultConfig().
+    void setUpdaterConfig(update::SelfUpdater::Config config)
+    {
+        m_updater.reset();
+        m_updaterConfig = std::move(config);
+    }
+    // True after "Restart now": main() starts the update script once ggui has shut down.
+    bool restartForUpdate() const { return m_restartForUpdate; }
+    // The update script of a staged update (the updater is Ready), else nothing.
+    std::optional<std::filesystem::path> updateScript() const
+    {
+        return m_updater ? m_updater->readyScript() : std::nullopt;
+    }
+
     // Runs `fn` on the UI thread at the start of the next frame.
     void post(std::function<void()> fn) { m_posted.push_back(std::move(fn)); }
 
@@ -159,6 +175,9 @@ private:
     void drawSettingsWindow();
     void drawPathSetting();
     void drawContextMenuSetting();
+    void drawUpdateSetting();
+    // Reads and shows the result of the last update (once, at start-up).
+    void showUpdateResult();
     // Reads the summaries of the recent repositories (one request), and of the others in the permanent list (another,
     // so that the automatic opening does not wait for them).
     void requestSummaries();
@@ -208,6 +227,11 @@ private:
     bool m_settingsFreshOpen = false;
     PathSetupState m_pathSetup; // "Add GoodGit to PATH", read from disk when Settings opens
     ContextMenuState m_contextMenu; // "Add "Open in GoodGit" to file manager menus", read from disk when Settings opens
+    std::optional<update::SelfUpdater::Config> m_updaterConfig; // set by tests; else the real config
+    std::unique_ptr<update::SelfUpdater> m_updater;             // made when Settings > General is first drawn
+    BuildInfo m_updateBuild;                                    // the build the updater compares with
+    bool m_restartForUpdate = false;
+    bool m_updateResultTaken = false;
     bool m_autoOpenDone = false;
     bool m_layoutPending = false;
     float m_zoomWheel = 0.0f; // Ctrl+wheel notches not yet turned into whole percents

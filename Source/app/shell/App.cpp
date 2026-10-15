@@ -8,6 +8,7 @@
 #include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/Launch.hpp>
 #include <libgg/SequenceEditorLink.hpp>
 
 #include <SDL3/SDL.h>
@@ -174,6 +175,9 @@ void App::resetForTest()
     m_toasts.clear();
     m_showSettings = false;
     m_dialogs.closeAll();
+    m_updater.reset();
+    m_updaterConfig.reset();
+    m_restartForUpdate = false;
     m_clone.reset();
     m_configLoaded = false;
     m_configEdit.clear();
@@ -212,10 +216,36 @@ void App::onSettingsLoaded(const std::string& iniText)
             SDL_MaximizeWindow(m_platform.window());
     }
     requestSummaries();
+    showUpdateResult();
     if (!m_autoOpenDone && m_options.autoOpen && !m_options.initialPath.empty()) {
         m_autoOpenDone = true;
         openRepository(m_options.initialPath);
     }
+}
+
+void App::showUpdateResult()
+{
+    // Only a real start (autoOpen): a test run must not delete the files of an update.
+    if (m_updateResultTaken || !m_options.autoOpen)
+        return;
+    m_updateResultTaken = true;
+    const auto result = update::takeResult(gg::selfExecutable().parent_path());
+    if (!result)
+        return;
+    if (*result == "ok") {
+        const std::string commit = shortCommit(buildInfo().commit);
+        notify(Notice::Info, "Update", commit.empty() ? std::string("Updated ggui") : "Updated to " + commit);
+        return;
+    }
+    // "failed: <step>", with a second line "failed: undo" when the old files could not be put back.
+    std::string text = *result;
+    std::replace(text.begin(), text.end(), '\n', ';');
+    std::erase(text, '\r');
+    if (text.find("failed: undo") != std::string::npos) {
+        notify(Notice::Warning, "Update failed", text + ". The install is incomplete. Reinstall ggui.");
+        return;
+    }
+    notify(Notice::Warning, "Update failed", text + ". ggui runs the previous build.");
 }
 
 void App::applyTheme()
