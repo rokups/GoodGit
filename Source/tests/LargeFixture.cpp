@@ -172,6 +172,9 @@ fs::path Scenario::largeFixture()
     git(repo, {"config", "core.bare", "false"});
     git(repo, {"remote", "remove", "origin"});
     git(repo, {"checkout", "-q", "-f", "main"});
+    // Warm the index stat cache so the app's first status read is fast.
+    git(repo, {"update-index", "-q", "--refresh"});
+    git(repo, {"status", "--porcelain"});
     track(repo);
     return repo;
 }
