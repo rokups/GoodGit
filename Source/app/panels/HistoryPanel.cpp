@@ -922,8 +922,9 @@ void HistoryPanel::drawGoToItems(const core::HistoryRow& from, bool single)
         for (const auto& r : m_rows)
             if (std::find(r.parents.begin(), r.parents.end(), from.id) != r.parents.end())
                 children.push_back(r.id);
-    goTo(ICON_MS_ARROW_DOWNWARD, "Go to parent", from.parents, "The commit has no parent.", true);
+    // The newest commit is on top: the child item with the up arrow is above the parent item with the down arrow.
     goTo(ICON_MS_ARROW_UPWARD, "Go to child", children, "No child in the loaded history.", false);
+    goTo(ICON_MS_ARROW_DOWNWARD, "Go to parent", from.parents, "The commit has no parent.", true);
 }
 
 void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
