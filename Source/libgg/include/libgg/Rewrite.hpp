@@ -33,6 +33,7 @@ struct Person {
     std::string email;
     std::int64_t time = 0;   // seconds since the epoch
     int offset = 0;          // minutes east of UTC
+    bool operator==(const Person&) const = default;
 };
 
 struct Step {
@@ -77,6 +78,7 @@ struct Step {
     // Revert only: side B is this tree instead of the source's first parent's (a revert of part
     // of the source's change: the source with that part taken out).
     std::optional<std::string> revertTree;
+    bool operator==(const Step&) const = default;
 };
 
 enum class Choice { Ours, Theirs, Base, File, Delete };
@@ -87,6 +89,7 @@ struct Resolution {
     Choice choice = Choice::Theirs;
     std::string file;                       // Choice::File: content taken from this path on disk
     std::optional<std::uint32_t> mode;      // mode conflicts: the mode to keep
+    bool operator==(const Resolution&) const = default;
 };
 
 struct NonTextConflict {
@@ -151,6 +154,7 @@ struct Plan {
     // for the picks it fast-forwards, except `unreported` ones (the leading picks Git skips).
     bool reportUnchanged = false;
     std::set<std::string> unreported;
+    bool operator==(const Plan&) const = default;
 };
 
 struct RefMove {
@@ -220,6 +224,9 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m;
 };
+
+// Test hook: how many times compute() started in this process (all threads).
+std::uint64_t computeCount();
 
 // Commits to replay when `changed` are rewritten: every commit reachable from a local branch
 // (or the detached HEAD) or kept by a keep ref that has one of them as an ancestor, `changed`

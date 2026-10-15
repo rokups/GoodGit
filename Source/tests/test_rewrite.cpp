@@ -190,6 +190,72 @@ GG_TEST("rewrite", "published history asks first; a locked ref leaves everything
     GG_CHECK_STR_EQ(s.revParse(repo, "origin/main"), remote);
 }
 
+GG_TEST("rewrite", "a confirmed rewrite uses the computed preview when nothing changed: one compute")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string published = s.revParse(repo, "origin/main~1");
+    const std::string remote = s.revParse(repo, "origin/main");
+    const std::string tipTree = s.revParse(repo, "HEAD^{tree}");
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, published);
+    const std::uint64_t before = gg::rewrite::computeCount();
+    s.setText("//Change information/##message", "Reworded once");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    GG_CHECK_EQ(gg::rewrite::computeCount(), before + 1);
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "HEAD~1", "%s") == "Reworded once"; }));
+    s.settle();
+    GG_CHECK_EQ(gg::rewrite::computeCount(), before + 1); // the apply job did not compute again
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
+    GG_CHECK_STR_EQ(s.revParse(repo, "origin/main"), remote);
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    GG_CHECK(s.fsck(repo));
+}
+
+GG_TEST("rewrite", "a ref that moves while the rewrite asks: the rewrite is computed again on the new history")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string published = s.revParse(repo, "origin/main~1");
+    GG_REQUIRE(s.openRepository(repo));
+    // main moves (a new commit) while the dialog is open.
+    selectCommit(s, published);
+    std::uint64_t before = gg::rewrite::computeCount();
+    s.setText("//Change information/##message", "Reworded after a commit");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.git(repo, {"commit", "--allow-empty", "-q", "-m", "Made while deciding"});
+    const std::string made = s.head(repo);
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "HEAD~2", "%s") == "Reworded after a commit"; }));
+    s.settle();
+    GG_CHECK_EQ(gg::rewrite::computeCount(), before + 2);
+    GG_CHECK_STR_EQ(info(s, repo, "HEAD", "%s"), "Made while deciding"); // rebased, not lost
+    GG_CHECK(s.head(repo) != made);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "main");
+    GG_CHECK(s.fsck(repo));
+    // HEAD goes to another branch while the dialog is open: computed again, that branch is not touched.
+    const std::string tip = s.head(repo);
+    const std::string target = s.revParse(repo, "origin/main~2"); // published, an ancestor of main
+    const std::string root = s.revParse(repo, "origin/main~3");
+    selectCommit(s, target);
+    before = gg::rewrite::computeCount();
+    s.setText("//Change information/##message", "Reworded after a checkout");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.git(repo, {"checkout", "-q", "-b", "other", root});
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.waitUntil([&] { return info(s, repo, "main~3", "%s") == "Reworded after a checkout"; }));
+    s.settle();
+    GG_CHECK_EQ(gg::rewrite::computeCount(), before + 2);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "other");
+    GG_CHECK_STR_EQ(s.head(repo), root);
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    GG_CHECK(s.revParse(repo, "main") != tip);
+    GG_CHECK_STR_EQ(info(s, repo, "main", "%s"), "Made while deciding");
+    GG_CHECK(s.fsck(repo));
+}
+
 } // namespace ggtest
 
 namespace ggtest {

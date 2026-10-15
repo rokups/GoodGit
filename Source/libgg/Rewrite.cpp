@@ -14,6 +14,7 @@
 #include <git2/sys/odb_backend.h>
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -41,7 +42,11 @@ std::string firstLine(const std::string& message)
     return message.substr(0, message.find('\n'));
 }
 
+std::atomic<std::uint64_t> g_computeCount{0};
+
 } // namespace
+
+std::uint64_t computeCount() { return g_computeCount.load(); }
 
 struct Rewriter::Impl {
     Repository repo;
@@ -482,6 +487,7 @@ git_repository* Rewriter::repository() { return m->repo.get(); }
 Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
 {
     assertNotUiThread("Rewriter::compute");
+    ++g_computeCount;
     Result result;
     try {
         std::map<std::string, std::string> byKey;     // step key → new commit

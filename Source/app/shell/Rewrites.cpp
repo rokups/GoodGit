@@ -12,9 +12,11 @@
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <sstream>
 #include <fstream>
 #include <set>
+#include <utility>
 
 namespace ggui {
 
@@ -33,6 +35,8 @@ struct Actions::RewriteState {
     bool askEmpty = false;
     std::optional<rw::Emptied> emptied;
     rw::Result preview;
+    // The Prepared computation behind `preview` (0 = none): mutation thread only.
+    std::uint64_t prepared = 0;
     // Pre-flight: the resolution behind each combo entry, per conflict.
     std::vector<std::vector<rw::Resolution>> choices;
 };
@@ -47,6 +51,81 @@ std::string modeText(std::uint32_t mode)
     std::snprintf(buf, sizeof(buf), "%06o", mode);
     return buf;
 }
+
+// "<size> <hash>" of a file's bytes, "-" when it cannot be read.
+std::string fileStamp(const std::filesystem::path& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return "-";
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    const std::string bytes = ss.str();
+    return std::to_string(bytes.size()) + " " + std::to_string(std::hash<std::string>{}(bytes));
+}
+
+// What Rewriter::compute() reads besides the plan and the objects (an object never changes):
+// every ref, HEAD, the identity of the new commits, the top-level attributes files (merges read
+// them) and the files that resolutions take. With equal inputs an equal plan computes the same
+// result (the committer date aside).
+std::string rewriteInputs(git_repository* repo, const std::map<std::string, rw::Resolution>& resolutions)
+{
+    std::string text;
+    gg::git2::forEachReference(repo, [&](git_reference* ref) {
+        text += git_reference_name(ref);
+        if (git_reference_type(ref) == GIT_REFERENCE_SYMBOLIC)
+            text += std::string(" -> ") + git_reference_symbolic_target(ref);
+        else
+            text += " " + gg::git2::toHex(*git_reference_target(ref));
+        text += "\n";
+        return true;
+    });
+    text += "HEAD -> " + gg::git2::headTarget(repo);
+    git_oid head;
+    if (git_reference_name_to_id(&head, repo, "HEAD") == 0)
+        text += " " + gg::git2::toHex(head);
+    git_error_clear();
+    git_signature* rawAuthor = nullptr;
+    git_signature* rawCommitter = nullptr;
+    if (git_signature_default_from_env(&rawAuthor, &rawCommitter, repo) == 0) {
+        gg::git2::Signature author(rawAuthor);
+        gg::git2::Signature committer(rawCommitter);
+        text += std::string("\nauthor ") + author->name + " <" + author->email + ">";
+        text += std::string("\ncommitter ") + committer->name + " <" + committer->email + ">";
+    }
+    git_error_clear();
+    if (const char* wd = git_repository_workdir(repo))
+        text += "\n.gitattributes " + fileStamp(std::filesystem::path(wd) / ".gitattributes");
+    text += "\ninfo/attributes " + fileStamp(std::filesystem::path(git_repository_commondir(repo)) / "info" / "attributes");
+    for (const auto& [key, res] : resolutions)
+        if (res.choice == rw::Choice::File)
+            text += "\nfile " + res.file + " " + fileStamp(res.file);
+    return text;
+}
+
+// The plan as compute() sees it: Emptied::Ask keeps the commits that become empty as Keep does.
+rw::Plan comparablePlan(rw::Plan plan)
+{
+    if (plan.emptied == rw::Emptied::Ask)
+        plan.emptied = rw::Emptied::Keep;
+    return plan;
+}
+
+// A computed rewrite that the apply job can use instead of computing it again. The rewriter
+// holds the new objects in its in-memory store, so apply() needs this same instance.
+struct Prepared {
+    std::uint64_t id = 0;
+    std::filesystem::path cwd;
+    std::string inputs; // rewriteInputs() before the plan was built
+    rw::Plan plan;      // comparablePlan()
+    rw::Result result;
+    std::unique_ptr<rw::Rewriter> rewriter;
+};
+
+// One for each mutation thread: both jobs of a rewrite run on that thread, so the rewriter's
+// repository handle never crosses threads, and it is freed there (at the latest when the thread ends).
+thread_local std::optional<Prepared> t_prepared;
+thread_local std::uint64_t t_preparedCount = 0;
 
 } // namespace
 
@@ -66,15 +145,24 @@ void Actions::rewritePrepare(const std::shared_ptr<RewriteState>& state)
     run(
         state->label + " (preparing)",
         [state](MutationContext& ctx) {
+            t_prepared.reset(); // a rewrite that was not applied: its objects go
+            state->prepared = 0;
+            // Before the plan is built: a change after this point shows when the rewrite applies.
+            std::string inputs = rewriteInputs(ctx.repo(), state->resolutions);
             rw::Plan plan = state->build(ctx.repo());
             plan.resolutions = state->resolutions;
             state->askEmpty = plan.emptied == rw::Emptied::Ask;
             if (state->emptied)
                 plan.emptied = *state->emptied;
-            rw::Rewriter rewriter(ctx.cwd());
-            state->preview = rewriter.compute(plan, ctx.token()); // throws gg::Cancelled
+            auto rewriter = std::make_unique<rw::Rewriter>(ctx.cwd());
+            state->preview = rewriter->compute(plan, ctx.token()); // throws gg::Cancelled
             if (!state->preview.ok && state->preview.unresolved.empty())
                 throw MutationError{Outcome::Failed, state->preview.error, {}};
+            if (state->preview.ok && state->preview.changed()) {
+                t_prepared = Prepared{++t_preparedCount, ctx.cwd(), std::move(inputs), comparablePlan(std::move(plan)),
+                    state->preview, std::move(rewriter)};
+                state->prepared = t_prepared->id;
+            }
         },
         [this, state](const core::MutationFinishedEvent& e) {
             if (e.outcome != Outcome::Ok) {
@@ -213,12 +301,26 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
     run(
         state->label,
         [state](MutationContext& ctx) {
+            // Taken in any case: it is freed on this thread when the job ends.
+            std::optional<Prepared> prepared = std::exchange(t_prepared, std::nullopt);
+            if (prepared && (prepared->id != state->prepared || prepared->cwd != ctx.cwd()))
+                prepared.reset();
+            const std::string inputs = prepared ? rewriteInputs(ctx.repo(), state->resolutions) : std::string();
             rw::Plan plan = state->build(ctx.repo());
             plan.resolutions = state->resolutions;
             if (state->emptied)
                 plan.emptied = *state->emptied;
-            rw::Rewriter rewriter(ctx.cwd());
-            rw::Result r = rewriter.compute(plan, ctx.token()); // throws gg::Cancelled
+            std::unique_ptr<rw::Rewriter> rewriter;
+            rw::Result r;
+            if (prepared && prepared->inputs == inputs && prepared->plan == comparablePlan(plan)) {
+                // Nothing that compute() reads changed since the preview: its result still holds.
+                gg::throwIfCancelled(ctx.token());
+                rewriter = std::move(prepared->rewriter);
+                r = std::move(prepared->result);
+            } else {
+                rewriter = std::make_unique<rw::Rewriter>(ctx.cwd());
+                r = rewriter->compute(plan, ctx.token()); // throws gg::Cancelled
+            }
             if (!r.ok)
                 throw MutationError{Outcome::Refused,
                     r.unresolved.empty() ? r.error : "the history changed while deciding; try again", {}};
@@ -248,7 +350,7 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
             std::string error;
             bool applied = false;
             try {
-                applied = rewriter.apply(plan, r, error, ctx.token());
+                applied = rewriter->apply(plan, r, error, ctx.token());
             } catch (const gg::Cancelled&) {
                 // Cancelled before the refs changed: nothing is rewritten, so give the stash back.
                 if (stashed && !plainGit({"stash", "pop", "-q", "--index"}).ok())
