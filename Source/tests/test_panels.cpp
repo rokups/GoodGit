@@ -1304,6 +1304,44 @@ GG_TEST("panels", "branches: a remote-tracking row's hover Check out opens Creat
     GG_CHECK_STR_EQ(side->upstream, "origin/side");
 }
 
+GG_TEST("panels", "branches: Create branch... in a local branch's menu starts at that branch, not at HEAD")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = "//Branches/branch_side/###branch_side";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    s.contextMenu(row.c_str(), "Create branch...");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    s.dialogText("Create branch", "name", "from-side");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
+    s.dialogButton("Create branch", "Create");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->findBranch("from-side") != nullptr; }));
+    GG_CHECK_STR_EQ(s.revParse(repo, "from-side"), s.revParse(repo, "side"));
+    GG_CHECK(s.revParse(repo, "from-side") != s.revParse(repo, "HEAD"));
+}
+
+GG_TEST("panels", "branches: Create branch... in a remote-tracking branch's menu starts at that branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "-f", "side", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "side"});
+    s.git(repo, {"branch", "-D", "side"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = "//Branches/remote_group_origin/origin/rbranch_origin:side/###rbranch_origin:side";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    s.contextMenu(row.c_str(), "Create branch...");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    s.dialogText("Create branch", "name", "from-remote");
+    s.dialogCheck("Create branch", "checkout", "Check out after creating", false);
+    s.dialogButton("Create branch", "Create");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->findBranch("from-remote") != nullptr; }));
+    GG_CHECK_STR_EQ(s.revParse(repo, "from-remote"), s.revParse(repo, "origin/side"));
+    GG_CHECK(s.revParse(repo, "from-remote") != s.revParse(repo, "HEAD"));
+}
+
 GG_TEST("panels", "branches: a folder group's eye hides and shows all its branches; Ctrl-click shows only them")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

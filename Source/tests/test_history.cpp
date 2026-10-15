@@ -1103,7 +1103,8 @@ GG_TEST("history", "a right click on a local branch badge shows the branch menu 
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rename..."); }));
     // The items of the branch menu, not the commit menu.
     GG_CHECK(s.itemExists("//$FOCUSED/Merge into HEAD..."));
-    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    GG_CHECK(s.itemExists("//$FOCUSED/Create branch..."));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create tag..."));
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), tip);
     ctx->KeyPress(ImGuiKey_Escape);
     // A left click on the badge selects its row.
@@ -1143,7 +1144,8 @@ GG_TEST("history", "a right click on a remote branch badge and on a tag badge sh
     clickBadge(s, remoteTip, "origin/main", ImGuiMouseButton_Right);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Delete on remote..."); }));
     GG_CHECK(s.itemExists("//$FOCUSED/Create local branch..."));
-    GG_CHECK(!s.itemExists("//$FOCUSED/Create branch..."));
+    GG_CHECK(s.itemExists("//$FOCUSED/Create branch..."));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Create tag..."));
     ctx->KeyPress(ImGuiKey_Escape);
     clickBadge(s, tagTip, "v1.0", ImGuiMouseButton_Right);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Push tag"); }));

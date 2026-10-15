@@ -325,6 +325,8 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
     ImGui::Separator();
     if (menuItem(ICON_MS_SWAP_HORIZ, "Check out", nullptr, false, free && !b.isHead))
         actions.checkout(b.name, false);
+    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free))
+        session.showCreateBranchDialog(b.name);
     const bool headAttached = !snap.headDetached && !snap.headUnborn;
     if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !b.isHead && !snap.headUnborn))
         showMergeDialog(session, "refs/heads/" + b.name);
@@ -416,6 +418,8 @@ void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const c
         checkoutRemoteBranch(session, snap, r);
     if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
         session.showCreateBranchDialog(r.name, shortName);
+    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free))
+        session.showCreateBranchDialog(r.name);
     if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !snap.headUnborn))
         showMergeDialog(session, "refs/remotes/" + r.name);
     if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
