@@ -749,12 +749,13 @@ GG_TEST("shell", "view settings persist across a restart")
     // The interactive rebase editor is not opened here: its "Newest first" is set as the checkbox does.
     s.app.settings().data().rebaseNewestFirst = true;
     s.app.settings().data().branchesHideNew = true;
+    s.app.settings().data().tagsHideNew = true;
     ggui::Settings::markViewDirty();
     ctx->Yield(2);
     size_t n = 0;
     const char* raw = ImGui::SaveIniSettingsToMemory(&n);
     const std::string ini(raw, n);
-    for (const char* want : {"[GGUIView][History]", "Stashes=0", "ConflictedOnly=1", "[GGUIView][Diff]", "SideBySide=1", "Whitespace=2", "Context=5", "[GGUIView][Rebase]", "NewestFirst=1", "[GGUIView][Branches]", "HideNew=1"})
+    for (const char* want : {"[GGUIView][History]", "Stashes=0", "ConflictedOnly=1", "[GGUIView][Diff]", "SideBySide=1", "Whitespace=2", "Context=5", "[GGUIView][Rebase]", "NewestFirst=1", "[GGUIView][Branches]", "HideNew=1", "[GGUIView][Tags]"})
         if (ini.find(want) == std::string::npos)
             ctx->LogError("imgui.ini lacks %s:\n%s", want, ini.c_str());
     // The imgui.ini write is requested by MarkIniSettingsDirty (WantSaveIniSettings): force it here.
@@ -773,6 +774,7 @@ GG_TEST("shell", "view settings persist across a restart")
     GG_CHECK(d.historyConflictedOnly);
     GG_CHECK(d.rebaseNewestFirst);
     GG_CHECK(d.branchesHideNew);
+    GG_CHECK(d.tagsHideNew);
     GG_REQUIRE(s.openRepository(repo));
     ctx->Yield(2);
     const ImGuiTestItemInfo stashes = ctx->ItemInfo("//History/Stashes##hist_stashes");

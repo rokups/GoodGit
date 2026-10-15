@@ -108,6 +108,8 @@ GG_TEST("fixed headers", "tags: the add button and filter stay while the list sc
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/##tag_filter"); }));
     checkFixedHeader(s, "Tags", "//Tags/##tag_filter");
     checkFixedHeader(s, "Tags", "//Tags/###create_tag");
+    checkFixedHeader(s, "Tags", "//Tags/###show_all_tags");
+    checkFixedHeader(s, "Tags", "//Tags/###hide_all_tags");
 }
 
 GG_TEST("fixed headers", "remotes: the buttons stay while the list scrolls")

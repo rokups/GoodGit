@@ -128,6 +128,15 @@ bool HistoryPanel::hideNewRefs(const core::Snapshot& before, const core::Snapsho
         if (hidden)
             hide.push_back(n.full);
     }
+    // Tags have no groups: only the setting applies.
+    if (m_session.app().settings().data().tagsHideNew) {
+        std::set<std::string> knownTags;
+        for (const auto& t : before.tags)
+            knownTags.insert(t.name);
+        for (const auto& t : now.tags)
+            if (!knownTags.count(t.name))
+                hide.push_back("refs/tags/" + t.name);
+    }
     for (const auto& name : hide)
         m_hidden.insert(name);
     return !hide.empty();

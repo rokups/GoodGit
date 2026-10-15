@@ -644,7 +644,11 @@ the panel without touching the repository.
   Context: Check out (detached; disabled on the current row) · Create branch here… · Reveal · Copy <ID> (as in
   History) · Drop commit… (History's `Drop commit` dialog). The filter matches the commit ID or the summary,
   ignoring case. Show all / Hide all at the top include the kept commits.
-- **Tags** `"Tags"`: filter, Create tag… (N annotated with message), rows `tag_<name>` (the
+- **Tags** `"Tags"`: Create tag… `###create_tag`, Show all `###show_all_tags` and Hide all `###hide_all_tags`
+  (every tag in History; a right-click on either opens a menu *Show new tags* / *Hide new tags*: whether a tag that
+  appears later, after a fetch say, is shown or hidden in History; stored in `[GGUIView][Tags] HideNew`, default shown;
+  tags have no groups, so only this setting applies), filter (N annotated with message). These controls stay
+  while the list scrolls. Rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)
   (visibility toggle, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
 - **Repositories** `"Repositories"` (N): the permanent repository list of the settings (`repositories`:

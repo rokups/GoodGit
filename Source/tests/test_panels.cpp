@@ -1525,6 +1525,46 @@ GG_TEST("panels", "tags: the hover action reveals a tag; there is no Delete butt
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~3"); }));
 }
 
+GG_TEST("panels", "tags: show all and hide all; the menu of the buttons sets whether new tags are hidden")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1.0", "HEAD~3"});
+    s.git(repo, {"tag", "v2.0", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    auto& history = s.session()->history();
+    auto create = [&](const std::string& name) {
+        s.git(repo, {"tag", name, "HEAD~2"});
+        s.session()->refresh();
+        GG_REQUIRE(s.waitUntil([&] {
+            const auto snap = s.session()->snapshot();
+            return snap && std::any_of(snap->tags.begin(), snap->tags.end(), [&](const auto& t) { return t.name == name; });
+        }));
+    };
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/###hide_all_tags") && s.itemExists("//Tags/###show_all_tags"); }));
+    GG_CHECK(!s.session()->app().settings().data().tagsHideNew);
+    GG_CHECK(history.refVisible("refs/tags/v1.0") && history.refVisible("refs/tags/v2.0"));
+    ctx->ItemClick("//Tags/###hide_all_tags");
+    GG_CHECK(!history.refVisible("refs/tags/v1.0") && !history.refVisible("refs/tags/v2.0"));
+    ctx->ItemClick("//Tags/###show_all_tags");
+    GG_CHECK(history.refVisible("refs/tags/v1.0") && history.refVisible("refs/tags/v2.0"));
+    // By default a new tag is shown.
+    create("v3.0");
+    GG_CHECK(history.refVisible("refs/tags/v3.0"));
+    // "Hide new tags": from the menu of either button; a new tag is hidden, the others keep their state.
+    s.contextMenu("//Tags/###hide_all_tags", "Hide new tags");
+    GG_CHECK(s.session()->app().settings().data().tagsHideNew);
+    create("v4.0");
+    GG_CHECK(!history.refVisible("refs/tags/v4.0"));
+    GG_CHECK(history.refVisible("refs/tags/v1.0") && history.refVisible("refs/tags/v3.0"));
+    // New branches are not affected.
+    GG_CHECK(!s.session()->app().settings().data().branchesHideNew);
+    s.contextMenu("//Tags/###show_all_tags", "Show new tags");
+    GG_CHECK(!s.session()->app().settings().data().tagsHideNew);
+    create("v5.0");
+    GG_CHECK(history.refVisible("refs/tags/v5.0"));
+}
+
 GG_TEST("panels", "remotes: hover actions Fetch and Pull on the hovered row only")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

@@ -28,7 +28,8 @@ public:
 
     void onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged);
     // Hides the branches in `now` that `before` lacks, where a category or group of hidden branches holds them or
-    // the "hide new branches" setting says so. The checked-out branch stays shown. Returns whether it hid any.
+    // the "hide new branches" setting says so, and the tags in `now` that `before` lacks when the "hide new tags"
+    // setting says so. The checked-out branch stays shown. Returns whether it hid any.
     bool hideNewRefs(const core::Snapshot& before, const core::Snapshot& now);
     void onStatus(const core::StatusPtr& status);
     void onHistory(core::HistoryEvent& event);

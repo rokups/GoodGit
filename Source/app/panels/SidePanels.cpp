@@ -759,12 +759,43 @@ void TagsPanel::draw(bool* open)
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Create tag at HEAD...");
+    auto& history = m_session.history();
+    // Show all / Hide all: every tag in History.
+    std::vector<std::string> all;
+    for (const auto& t : m_snapshot->tags)
+        all.push_back("refs/tags/" + t.name);
+    // The menu of both buttons: what to do with a tag that appears later (after a fetch, say).
+    auto newTagMenu = [&](const char* id) {
+        if (!beginContextMenu(id))
+            return;
+        bool& hideNew = m_session.app().settings().data().tagsHideNew;
+        if (menuItem(ICON_MS_VISIBILITY, "Show new tags", nullptr, !hideNew) && hideNew) {
+            hideNew = false;
+            Settings::markViewDirty();
+        }
+        if (menuItem(ICON_MS_VISIBILITY_OFF, "Hide new tags", nullptr, hideNew) && !hideNew) {
+            hideNew = true;
+            Settings::markViewDirty();
+        }
+        ImGui::EndPopup();
+    };
+    sameLineIfFits(ImGui::GetFrameHeight());
+    if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_tags"))
+        history.setRefsVisible(all, true);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Show all tags in History (right-click: new tags)");
+    newTagMenu("##show_all_menu");
+    sameLineIfFits(ImGui::GetFrameHeight());
+    if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_tags"))
+        history.setRefsVisible(all, false);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Hide all tags in History (right-click: new tags)");
+    newTagMenu("##hide_all_menu");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
     // Only the list scrolls: the controls above stay put.
     beginList();
-    auto& history = m_session.history();
     // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
     m_session.requestRemoteTagsIfStale();
     const auto& remoteTags = m_session.remoteTags();

@@ -75,6 +75,7 @@ struct SettingsData {
     bool historyShowStashes = true;
     bool historyConflictedOnly = false;
     bool branchesHideNew = false; // Branches: a new branch is hidden in History (top level, mixed groups); a group of hidden branches always hides it
+    bool tagsHideNew = false; // Tags: a new tag is hidden in History
     bool diffSideBySide = false;
     int diffContext = 3;
     int diffWhitespace = 0;
