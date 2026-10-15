@@ -619,7 +619,7 @@ void App::drawSettingsWindow()
                     const std::string v = firstClass ? "true" : "false";
                     s->actions().run("set gg.firstClassConflicts", [v](core::MutationContext& ctx) {
                         ctx.git({"config", "--local", "gg.firstClassConflicts", v});
-                    }, [this, session = s](const core::MutationFinishedEvent& e) {
+                    }, [session = s](const core::MutationFinishedEvent& e) {
                         if (e.outcome != core::Outcome::Ok)
                             session->app().showError(e.label, e.message);
                         session->requestConfig();
