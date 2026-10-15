@@ -181,6 +181,20 @@ void Actions::rewriteDecide(const std::shared_ptr<RewriteState>& state)
 {
     const rw::Result& r = state->preview;
     auto& dialogs = m_session.app().dialogs();
+    // 0. Text conflicts (first-class conflicts are off): the in-memory rewrite cannot stop inside itself.
+    {
+        std::string where;
+        for (const auto& c : r.unresolved)
+            if (c.kind == "text")
+                where += shortId(c.commit) + " " + c.subject + ": " + c.path + "\n";
+        if (!where.empty()) {
+            m_session.app().showError(state->label,
+                state->label + " would conflict in:\n" + where
+                    + "First-class conflicts are off (Settings > Git). ggui cannot stop inside this rewrite. "
+                      "Use a native interactive rebase, or turn first-class conflicts on.");
+            return;
+        }
+    }
     // 1. Non-text conflicts: every one needs a decision before anything is written.
     if (!r.unresolved.empty()) {
         Form f;
@@ -810,6 +824,11 @@ std::string shownRev(const std::string& rev)
 
 void Actions::mergeIntoHead(const std::string& branch, const std::string& message)
 {
+    // Without first-class conflicts a merge is plain git: it stops at conflicts like any native merge.
+    if (!m_session.firstClassConflicts()) {
+        mergeNative(branch, message);
+        return;
+    }
     std::string msg = message.empty() ? "Merge branch '" + shownRev(branch) + "'\n" : message;
     if (msg.back() != '\n')
         msg.push_back('\n');

@@ -155,6 +155,8 @@ public:
     std::string commitWarningText() const;
     const std::map<std::string, std::map<std::string, std::string>>& config() const { return m_config; }
     void requestConfig();
+    // gg.firstClassConflicts (repository config, off by default). Before the config is read it asks git.
+    bool firstClassConflicts() const;
 
     // Tags on each remote (git ls-remote), read while the Tags panel is shown and again after the
     // remotes change or a network operation (fetch, pull, push) finishes. A remote missing from

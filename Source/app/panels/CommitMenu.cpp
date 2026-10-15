@@ -586,7 +586,9 @@ void showMergeDialog(Session& session, const std::string& branch, bool commit)
         return rev;
     };
     f.add(Field{Field::Text, "message", "Message", quote + plain(branch) + "'"});
-    f.add(Field{Field::Check, "native", "Use native git merge (stops with index conflicts)"});
+    // Without first-class conflicts the merge is always native.
+    if (session.firstClassConflicts())
+        f.add(Field{Field::Check, "native", "Use native git merge (stops with index conflicts)"});
     Session* s = &session;
     f.buttons.push_back({"Merge",
         [s, branch, quote, plain](Form& form) {

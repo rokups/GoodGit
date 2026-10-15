@@ -15,6 +15,8 @@
 #include <imgui_internal.h>
 #include <spdlog/spdlog.h>
 
+#include <libgg/GitRunner.hpp>
+
 #include <chrono>
 
 namespace ggui {
@@ -341,6 +343,22 @@ void Session::requestConfig()
     m_engine->readConfig({"user.name", "user.email", "core.editor", "merge.tool", "diff.tool", "pull.rebase", "pull.ff",
         "extensions.worktreeConfig", "sequence.editor", "gg.previousSequenceEditor", "gg.sameChange",
         "gg.firstClassConflicts"});
+}
+
+bool Session::firstClassConflicts() const
+{
+    std::string value;
+    if (const auto eff = m_config.find("effective"); eff != m_config.end()) {
+        if (const auto k = eff->second.find("gg.firstClassConflicts"); k != eff->second.end())
+            value = k->second;
+    } else {
+        gg::RunRequest r;
+        r.args = {"git", "config", "--type=bool", "--get", "gg.firstClassConflicts"};
+        r.cwd = m_path;
+        value = gg::trim(gg::run(r).out);
+    }
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value == "true" || value == "yes" || value == "on" || value == "1";
 }
 
 std::string Session::shortId(const core::Oid& id) const
