@@ -641,6 +641,14 @@ the panel without touching the repository.
   the remote has the Remotes panel's context menu, and each remote-tracking branch has Reveal ·
   Copy name · Remote <name> ▸ (the same menu). Set upstream… has a filter field (Enter picks
   the first match).
+  A name too long for the panel is elided at its start, so the end stays visible ("…ature/long-name"): a row's
+  name (local or remote-tracking), and a group row's name. It is measured against the room from the label to the
+  list's edge, so it fits any panel width and font size, and is cut at a code point border. A local row's
+  upstream is cut the same way when the name and the upstream together do not fit (they share the room; each
+  keeps at least 3 font sizes); the arrow, the "(gone)" note, the ahead/behind counters and the worktree stay
+  whole, and so do the eye and the hover buttons. A row or group that is elided shows a tooltip with the whole
+  name (a local row also its upstream); the tooltip a nested row already has stays. History's badges are not
+  affected.
   Check out on a remote-tracking branch (the menu item, the row's `act_checkout` button and the double click on its
   badge in History) has one result: a local branch of the short name is checked out; without one, the *Create branch*
   dialog opens (name: the short name, at: the remote-tracking branch, *Check out after creating* on), and nothing is

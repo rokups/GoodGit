@@ -1823,4 +1823,68 @@ GG_TEST("panels", "branches: a name with ## is shown whole")
     GG_CHECK(s.itemText("//Branches/branch_topic##tail/###branch_topic##tail") == "topic##tail");
 }
 
+GG_TEST("panels", "branches: a name too long for the panel is cut at its start; the tooltip has the whole name")
+{
+    const std::string dots = "\xE2\x80\xA6";
+    const std::string tail = "the-end-of-the-name";
+    const std::string longName = "a-very-long-branch-name-that-cannot-fit-in-the-narrow-panel-at-any-font-" + tail;
+    const std::string groupName = "a-very-long-group-name-that-cannot-fit-in-the-narrow-panel-at-any-font-size";
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", longName});
+    s.git(repo, {"branch", groupName + "/one"});
+    s.git(repo, {"branch", groupName + "/two"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string id = "branch_" + longName;
+    const std::string row = "//Branches/" + id + "/###" + id;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->Yield(2);
+    // The row's text starts with an ellipsis, ends with the end of the name, and fits the panel with its eye.
+    // (The test engine keeps 31 characters of an item's label: the drawn text is read instead.)
+    const auto drawnWith = [&](const std::string& end) {
+        for (const std::string& line : s.drawnText("//Branches"))
+            if (line.size() > end.size() && line.compare(line.size() - end.size(), end.size(), end) == 0)
+                return line.substr(line.rfind("<icon> ") + 7); // (a line starts with the eye)
+        return std::string();
+    };
+    // The eye stays; the group row is there.
+    GG_CHECK(s.itemExists(("//Branches/" + id + "/###eye").c_str()));
+    const std::string group = "//Branches/###group_local:" + groupName + ":";
+    GG_REQUIRE(s.itemExists(group.c_str()));
+    // A long name wraps in the tooltip: the lines together have it.
+    const auto tooltipHas = [&](const std::string& name) {
+        std::string all;
+        for (const std::string& line : s.drawnText("//##Tooltip_00"))
+            all += line;
+        all.erase(std::remove(all.begin(), all.end(), ' '), all.end());
+        return all.find(name) != std::string::npos;
+    };
+    const std::string shown = drawnWith(tail);
+    GG_REQUIRE(!shown.empty());
+    GG_CHECK(shown.compare(0, dots.size(), dots) == 0);
+    GG_CHECK(longName.find(shown.substr(dots.size())) != std::string::npos);
+    GG_CHECK(ImGui::CalcTextSize(shown.c_str()).x < ImGui::CalcTextSize(longName.c_str()).x);
+    const ImGuiTestItemInfo item = ctx->ItemInfo(row.c_str());
+    const ImGuiTestItemInfo list = ctx->ItemInfo("//Branches");
+    GG_CHECK(item.RectFull.Max.x <= list.RectFull.Max.x + 0.5f);
+    // The tooltip has the whole name.
+    ctx->MouseMove(row.c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tooltipHas(longName));
+
+    // A group of long names is cut the same way and has a tooltip too.
+    const std::string groupEnd = groupName.substr(groupName.size() - 12);
+    const std::string groupShown = drawnWith(groupEnd);
+    GG_REQUIRE(!groupShown.empty());
+    GG_CHECK(groupShown.compare(0, dots.size(), dots) == 0);
+    ctx->MouseMove(group.c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tooltipHas(groupName));
+
+    // A short name is not cut and has no tooltip.
+    ctx->MouseMove("//Branches/branch_main/###branch_main");
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(!tooltipHas("main"));
+}
+
 } // namespace ggtest

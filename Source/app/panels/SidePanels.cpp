@@ -17,6 +17,7 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <cassert>
 #include <functional>
 #include <map>
 #include <span>
@@ -38,14 +39,58 @@ struct RowEvents {
     bool doubleClicked = false; // the row itself (only rows with a double-click action react)
     int action = -1;            // the index of the hover button clicked in `acts`
     float labelLeft = 0;        // screen X where the label's text starts
+    bool elided = false;        // the label is cut to fit (see BranchLabelParts)
 };
+
+// A branch row's label in pieces. Where the whole label does not fit the row, the name and the upstream are cut
+// at their start (their ends stay); the link, the counters and the worktree (`link`, `tail`) always stay.
+struct BranchLabelParts {
+    std::string_view name, link, upstream, tail;
+};
+
+float textWidth(std::string_view text)
+{
+    return text.empty() ? 0.0f : ImGui::CalcTextSize(text.data(), text.data() + text.size()).x;
+}
+
+// Cuts the name and the upstream of `parts` to `room` pixels into `out`. False (and `out` as it was) when the
+// label fits as it is, or when cutting the two would not shorten it. Each of the two keeps at least 3 font sizes.
+bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out)
+{
+    const float nameWidth = textWidth(parts.name), upstreamWidth = textWidth(parts.upstream);
+    const float avail = room - textWidth(parts.link) - textWidth(parts.tail);
+    if (nameWidth + upstreamWidth <= avail)
+        return false;
+    // A part that is at most half of the room stays whole; the other takes the rest. Else they share it.
+    float nameRoom = avail * 0.5f, upstreamRoom = avail * 0.5f;
+    if (nameWidth <= avail * 0.5f) {
+        nameRoom = nameWidth;
+        upstreamRoom = avail - nameWidth;
+    } else if (upstreamWidth <= avail * 0.5f) {
+        upstreamRoom = upstreamWidth;
+        nameRoom = avail - upstreamWidth;
+    }
+    const float least = ImGui::GetFontSize() * 3.0f;
+    const std::string name = elideStart(std::string(parts.name), std::max(nameRoom, least));
+    const std::string upstream = elideStart(std::string(parts.upstream), std::max(upstreamRoom, least));
+    if (name.size() == parts.name.size() && upstream.size() == parts.upstream.size())
+        return false;
+    out.clear();
+    out.reserve(name.size() + parts.link.size() + upstream.size() + parts.tail.size());
+    out.append(name).append(parts.link).append(upstream).append(parts.tail);
+    return true;
+}
 
 // A ref row: the eye icon toggles visibility in History; the label is the row's item (menus and
 // tooltips attach to it). Rows without a double-click action are plain text. `acts` are the row's hover buttons.
 // `dim` is a byte range of the label drawn dimmed (the tail of a short ID); only on a row with a double-click action.
+// `parts` (the pieces of `label`): the label is cut at the start of its name where it does not fit the row (`elided`);
+// only for a row in view (the others are clipped anyway). `dim` is a range of the whole label: not with `parts`.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
-    bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {})
+    bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {},
+    const BranchLabelParts* parts = nullptr)
 {
+    assert(!(parts && dim.second > dim.first) && "dim is a range of the whole label, not of a cut one");
     RowEvents events;
     const std::string id = rowId(rawId);
     ImGui::PushID(id.c_str());
@@ -62,6 +107,18 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         tooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
     ImGui::SameLine();
     events.labelLeft = ImGui::GetCursorScreenPos().x;
+    // The room from the label to the list's edge; nothing is built while the label fits.
+    std::string fitted;
+    const std::string* shown = &label;
+    if (parts) {
+        const float room = ImGui::GetContentRegionAvail().x;
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        if (ImGui::IsRectVisible(at, ImVec2(at.x + room, at.y + ImGui::GetTextLineHeight()))
+            && ImGui::CalcTextSize(label.c_str()).x > room && fitBranchLabel(*parts, room, fitted)) {
+            shown = &fitted;
+            events.elided = true;
+        }
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
     if (doubleClickable) {
         // With buttons over it the row must be flagged as overlappable for IsItemHovered() too (Selectable's own
@@ -70,14 +127,14 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
             ImGui::SetNextItemAllowOverlap();
         const ImGuiSelectableFlags flags = ImGuiSelectableFlags_AllowDoubleClick | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap);
         if (dim.second > dim.first)
-            selectableTextDimRange(label, id, dim.first, dim.second, false, flags);
+            selectableTextDimRange(*shown, id, dim.first, dim.second, false, flags);
         else
-            selectableText(label, id, false, flags);
+            selectableText(*shown, id, false, flags);
         events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     } else {
         if (!acts.empty())
             ImGui::SetNextItemAllowOverlap();
-        plainText(label, id);
+        plainText(*shown, id);
     }
     ImGui::PopStyleColor();
     // Space on the row toggles its visibility like a click on the eye (Ctrl+Space: only this one).
@@ -232,12 +289,24 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
         }
         if (filtering) // after the eye: any item consumes the next-item data
             ImGui::SetNextItemOpen(true);
+        // A group's name is cut at its start where it does not fit; the tooltip has the whole name.
+        std::string fitted;
+        const float room = ImGui::GetContentRegionAvail().x - ImGui::GetTreeNodeToLabelSpacing();
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        if (ImGui::IsRectVisible(at, ImVec2(at.x + std::max(room, 1.0f), at.y + ImGui::GetTextLineHeight()))
+            && ImGui::CalcTextSize(e.label.c_str()).x > room) {
+            fitted = elideStart(e.label, std::max(room, ImGui::GetFontSize() * 3.0f));
+            if (fitted.size() == e.label.size())
+                fitted.clear();
+        }
         bool open;
         {
             const SectionHeaderColors neutral;
-            open = ImGui::TreeNodeEx((e.label + "###group_" + rowId(id)).c_str(),
+            open = ImGui::TreeNodeEx(((fitted.empty() ? e.label : fitted) + "###group_" + rowId(id)).c_str(),
                 ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
         }
+        if (!fitted.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            tooltip("%s", e.label.c_str());
         if (open) {
             drawTree(e.children, id, filtering, leaf, eyes, below);
             ImGui::TreePop();
@@ -531,18 +600,20 @@ void BranchesPanel::draw(bool* open)
     const GroupEyes localEyes{history, [&](size_t index) { return "refs/heads/" + m_snapshot->branches[index].name; }};
     drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
-        std::string label = shortName;
+        std::string link, tail;
         if (!b.upstream.empty()) {
-            label += "  " ICON_MS_ARROW_RIGHT_ALT " " + b.upstream;
+            link = "  " ICON_MS_ARROW_RIGHT_ALT " ";
             if (b.upstreamGone)
-                label += " (gone)";
+                tail += " (gone)";
             if (b.ahead)
-                label += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(b.ahead);
+                tail += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(b.ahead);
             if (b.behind)
-                label += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(b.behind);
+                tail += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(b.behind);
         }
         if (!b.worktree.empty())
-            label += "  [" + b.worktree + "]";
+            tail += "  [" + b.worktree + "]";
+        const std::string label = shortName + link + b.upstream + tail;
+        const BranchLabelParts parts{shortName, link, b.upstream, tail};
         const std::string full = "refs/heads/" + b.name;
         ImGui::PushOverrideID(windowId);
         // The hover buttons do what the menu's Check out and Push do.
@@ -551,9 +622,13 @@ void BranchesPanel::draw(bool* open)
             {ICON_MS_UPLOAD, "act_push", "Push", free && !m_snapshot->remotes.empty()},
         };
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
-            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts);
-        if (shortName != b.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("%s", b.name.c_str());
+            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts, {}, &parts);
+        if ((shortName != b.name || events.elided) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            if (events.elided && !b.upstream.empty())
+                tooltip("%s\n%s %s", b.name.c_str(), ICON_MS_ARROW_RIGHT_ALT, b.upstream.c_str());
+            else
+                tooltip("%s", b.name.c_str());
+        }
         if (events.toggle)
             history.toggleRef(full, ImGui::GetIO().KeyCtrl);
         // Double-click checks the branch out.
@@ -667,8 +742,11 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PushID(remote.c_str());
                 const bool hasLocal = m_snapshot->findBranch(r.name.substr(std::min(r.name.size(), r.remote.size() + 1))) != nullptr;
                 const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", hasLocal ? "Check out" : "Check out...", free}};
+                const BranchLabelParts parts{shortName, {}, {}, {}};
                 const RowEvents events = visibilityRow("rbranch_" + r.name, shortName,
-                    history.refVisible(full), false, p.remoteText, false, acts);
+                    history.refVisible(full), false, p.remoteText, false, acts, {}, &parts);
+                if (events.elided && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                    tooltip("%s", r.name.c_str());
                 if (events.toggle)
                     history.toggleRef(full, ImGui::GetIO().KeyCtrl);
                 if (events.action == 0)
