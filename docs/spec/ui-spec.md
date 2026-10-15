@@ -162,6 +162,41 @@ conflicts (experimental)", the repository's `gg.firstClassConflicts`, off by def
 that starts "Experimental, non-standard git behavior."; changing it refreshes status and badges;
 "Expand to index stages on checkout", disabled while it is off). **D** max-new-file-size.
 
+### 1.6.1 Updates (Settings ▸ General, N; product spec §4.14)
+The last group of the General tab, below *Add "Open in GoodGit" to file manager menus*, separated
+by a line. The updater and its threads start the first time the tab is drawn, not at startup.
+- Title `Updates`. Below it a disabled line: `This build: <7-character commit>` or
+  `This build: local build`.
+- One button row and one status line, by state:
+
+  | State | Buttons | Status |
+  |---|---|---|
+  | Off | `Check for updates##update_check`, disabled; the tooltip gives the reason | none |
+  | Idle, up to date, failed | `Check for updates##update_check` | "ggui is up to date." (up to date); the error in the error colour, wrapped (failed) |
+  | Checking | `Cancel##update_cancel` | "Checking..." |
+  | Available | `Download and install##update_download`, `Check for updates##update_check` | "A newer build is available: <7-character commit>" |
+  | Downloading | `Cancel##update_cancel` | a progress bar with "<done> / <total> MiB" |
+  | Ready | `Restart to update##update_restart` | "The update is ready." |
+
+  While the first probe of the install folder and the download backend runs, the state is Idle and
+  *Check for updates* works: the check waits for the probe. *Cancel* in Checking goes back to
+  Idle, in Downloading back to Available.
+- *Restart to update* opens the form `Restart ggui`: "ggui closes, installs the update and starts
+  again." Buttons `Restart now` (closes ggui, which starts the update script on exit; it does
+  nothing when the update has left Ready meanwhile) and `Later` (keeps the update staged).
+- Disabled reasons (tooltip): "This build does not come from a release package."; "This is not an
+  installed ggui."; "Installed by the package manager. Update it with apt."; "The install folder is
+  not writable."; "Self-update needs curl, wget or libcurl on Linux. None of them works here." (on
+  Windows: "Self-update needs WinHTTP, which is not available."); "The update folder is blocked by
+  a file: <path>".
+- Result notice at the next start (§1.5 notifications): "Update" / "Updated to <commit>"
+  (information); "Update failed" / "<failed: step>. ggui runs the previous build." (warning); after
+  "failed: undo": "...The install is incomplete. Reinstall ggui." (warning). Lines of the result
+  are joined with `;`.
+- Security and limits: see product spec §4.14 (HTTPS only, SHA-256 digest checked before unpack,
+  safe unpack, `git-gg --version` probe; the rolling `latest` pre-release; the same install folder
+  only; no downgrade check beyond the commit compare).
+
 ### 1.7 One-time prompts on open (N)
 - "git not found / too old" (blocking modal `Git required`): shows the found version and the
   minimum 2.36; buttons *Retry*, *Quit*.

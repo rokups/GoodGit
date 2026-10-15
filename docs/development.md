@@ -40,6 +40,29 @@ look after a theme or layout change. `--test=readme` writes the README screensho
 <https://github.com/ocornut/imgui> (with its remote-tracking branches, e.g. `docking`). The test
 clones it into its temp directory, pins the copy to a fixed commit and never modifies the original.
 
+## Build identity and self-update
+
+Three settings control self-update (see `docs/spec/product.md` §4.14):
+
+- `GGUI_BUILD_COMMIT` — a CMake cache variable, the commit of the build. It defaults to the
+  environment variable `GITHUB_SHA`, so CI sets it. A local build has an empty value, and
+  self-update is then off ("This build does not come from a release package."). Pass
+  `-DGGUI_BUILD_COMMIT=<40 hex characters>` to test the update path in a local build.
+- `GGUI_PACKAGE_SYSTEM` — set in the top-level `CMakeLists.txt`, not by the user:
+  `windows-x64-msvc`, `windows-x64-mingw` or `linux-<CMAKE_SYSTEM_PROCESSOR>`. It names the
+  release asset that matches the build, and it is part of the package file name.
+- `GGUI_FETCH_BACKEND` — an environment variable read at run time, not by CMake. Values: `curl`,
+  `wget`, `libcurl` (Linux) and `none`. It forces one download backend. The backend gives `none`
+  when it does not work. Any other value is ignored. Without it, ggui tries WinHTTP (Windows) or
+  curl, wget, libcurl in this order (Linux).
+
+The self-update tests (`selfupdate` and `selfupdate/ui`) use a fake fetch function and local ZIP
+files. They never use the network. The tests of the updater and of the Settings form never run the
+update script: the restart hook is off in a test run. Only the script tests in
+`Source/tests/test_selfupdate_install.cpp` run the script, in a temporary folder with the
+argument `nostart`, so that no ggui starts. A test run does not read or delete the result of an
+earlier update.
+
 ## Docs map
 
 - `docs/spec/product.md` — the specification

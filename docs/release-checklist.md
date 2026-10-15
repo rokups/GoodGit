@@ -33,14 +33,46 @@ with the current release), for the MinGW ZIP and the MSVC ZIP each.
    unchanged. Untick it: a new terminal no longer finds `ggui`, and the entry is gone from the value.
 5. Delete the folder: nothing else is left besides ggui's settings.
 
-## 2. Outside the build
+## 2. Self-update
+
+Self-update downloads the ZIP asset of the `latest` pre-release for the build (`linux-x86_64`,
+`windows-x64-mingw` or `windows-x64-msvc`; the tar.gz and the deb are not update assets). Install
+an older CI build, then use Settings ▸ General ▸ Updates ▸ *Check for updates*, *Download and
+install* and *Restart to update*. After the restart, the notice "Updated to <commit>" shows and
+*This build* shows the new commit.
+
+Windows, for the MinGW ZIP and the MSVC ZIP each:
+1. Unzip to a path with a space and non-ASCII characters. Update from there. The new build starts
+   and the notice shows.
+2. No console window flashes during the restart.
+3. A copy in `C:\Program Files` shows *Check for updates* disabled. The tooltip says that the
+   install folder is not writable.
+4. Rollback: run `icacls git-gg.exe /deny "%USERNAME%:(W,D)"` in the install folder, then update.
+   The notice "Update failed" shows and the old build runs. Remove the rule with
+   `icacls git-gg.exe /remove:d "%USERNAME%"`.
+
+Linux:
+1. Update from an unpacked package in `$HOME` (the tar.gz or the ZIP). Do it once for each fetch
+   backend: `GGUI_FETCH_BACKEND=curl`, `wget` and `libcurl` (a machine or container where only that backend works, or the variable).
+2. The deb install (`/usr/bin/ggui`) shows *Check for updates* disabled. The tooltip says
+   "Installed by the package manager. Update it with apt."
+3. A system with no curl, no wget and no libcurl (or `GGUI_FETCH_BACKEND=none`) shows the button
+   disabled. The tooltip names curl, wget and libcurl.
+
+Release metadata, after CI moves `latest`:
+- `gh api repos/rokups/GoodGit/releases/tags/latest -q .target_commitish` equals the commit of
+  `master`.
+- `gh api repos/rokups/GoodGit/releases/tags/latest -q '.assets[] | [.name, .digest]'` lists a
+  `sha256:` digest for every asset. Without a digest, self-update does not offer the asset.
+
+## 3. Outside the build
 
 - Pull `gg` and `ggui` upstream with SSH access, diff against the analysed commits used for the
   clean-room rebuild, and fold any behaviour change into the checks above.
 - The owner reviews and freezes the UI spec and the M1/U1 specs.
 - Retire the `gg` repository (archive it, note it in its README).
 
-## 3. How to run each check
+## 4. How to run each check
 
 ```sh
 # Clean build and the suite (4 shards; run every shard I = 0..3)

@@ -769,6 +769,56 @@ the drag-and-drop actions in §4.2/§4.3 are one-step shortcuts for the in-memor
 can be opened in the editor as a starting todo ("Open as interactive rebase…") when the
 user wants to adjust more.
 
+### 4.14 Self-update (N)
+Self-update replaces `ggui` and `git-gg` in the install folder with a newer CI build. It runs only
+when the user asks: there is **no check at startup** and no timer. The UI is Settings ▸ General ▸
+Updates (UI spec §1.6.1).
+- **What it does.** *Check for updates* reads the GitHub release `latest` and compares its
+  `target_commitish` with the commit of this build. When the commit differs, *Download and install*
+  downloads the ZIP asset for this build (`ggui-<version>-<package system>.zip`; the package
+  system is `linux-<arch>`, `windows-x64-mingw` or `windows-x64-msvc`) and stages it in
+  `<install>/.ggui-update`. The update is then *ready*. Nothing changes in the install folder
+  until the user restarts.
+- **Restart.** *Restart to update* opens a form with *Restart now* and *Later*. *Restart now* closes
+  ggui. On the way out, ggui starts the update script from the stage folder as a detached process
+  and passes its own process id. The script waits for ggui to end, swaps `ggui` and `git-gg` for the
+  staged files, and starts the installed ggui again. When a step fails, the script puts the old
+  files back. It writes `ok` or `failed: <step>` (and `failed: undo` when the old files cannot
+  be put back) to `result.txt`.
+- **Result.** At the next start, ggui reads `result.txt`, deletes the stage folder and the `.old`
+  files, and shows one notice: "Update" with "Updated to <commit>" (information), or "Update
+  failed" with the failed step (warning). After "failed: undo" the notice says that the install is
+  incomplete and that the user must reinstall. A test run does not read the result.
+- **Disabled.** The button is disabled with a tooltip, and no thread or download starts, when:
+  the build has no commit (a local build); the exe is not `ggui` or `ggui.exe` or has no `git-gg`
+  next to it; the install is under `/usr` but not `/usr/local` on Linux ("Installed by the package
+  manager. Update it with apt."); the install folder is not writable (for example Program Files);
+  no download backend works (WinHTTP on Windows; curl, wget or libcurl on Linux); or a file blocks
+  the stage path.
+- **Security.**
+  - HTTPS only. Every backend refuses other schemes, follows at most 5 redirects and only to
+    HTTPS, has timeouts and a byte limit, and can be cancelled.
+  - The asset URL must start with `https://github.com/rokups/GoodGit/releases/download/`. The
+    release must give a `sha256:` digest and a size for the asset; an asset without them is not
+    offered.
+  - The size and the SHA-256 of the downloaded file must equal the release metadata **before**
+    anything is unpacked.
+  - Safe unpack: plain relative names only (no `..`, no absolute path, no backslash, no `:`, no
+    control or non-ASCII character, no duplicate), regular files and folders only (no link is
+    made), at most 1000 entries and 1 GiB, one top folder, CRC checked.
+  - The staged `git-gg --version` must run within 20 s and print `git gg ...` before the update
+    is *ready*.
+  - The work folder `<install>/.ggui-download` is private (mode 0700 on Linux) and is deleted at
+    the end of each job. A failed or cancelled job leaves the install unchanged.
+- **Limits.**
+  - The release is the rolling `latest` pre-release: CI moves its tag and replaces its assets
+    after each green build of `master`. There is no version history to choose from.
+  - ggui updates only the install folder it runs from. It does not install, move or elevate.
+  - There is no downgrade protection beyond the commit compare: a different commit is "newer",
+    also when it is older. A release without a valid 40-hex commit gives an error.
+  - The update is not signed. Trust rests on HTTPS to GitHub and the digest from the release
+    metadata.
+
 ---
 
 ## 5. Design decisions the plan depends on
