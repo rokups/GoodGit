@@ -1020,6 +1020,48 @@ GG_TEST("history", "a long branch or tag name is elided in its badge, the ID kee
     GG_CHECK_EQ(s.app.settings().data().historyBadgeSuffix, 3);
 }
 
+GG_TEST("history", "the row tooltip lists every shown ref as a badge with its whole name, wrapped onto several lines")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string longName = "a-very-long-branch-name-for-elision";
+    const std::string longTag = "a-very-long-tag-name-for-the-elision";
+    s.git(repo, {"branch", longName, "main"});
+    s.git(repo, {"tag", longTag, "main"});
+    s.git(repo, {"branch", "hiddenone", "main"});
+    for (int i = 0; i < 8; ++i)
+        s.git(repo, {"branch", "another-long-branch-name-number-" + std::to_string(i), "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "main");
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, tip) != nullptr && !s.session()->history().loading(); }));
+    ctx->Yield(2);
+    // The branch "hiddenone" is hidden: the row and the tooltip leave its badge out.
+    ctx->ItemClick("//Branches/branch_hiddenone/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->history().loading() && findRow(s, tip) != nullptr; }));
+    ctx->Yield(2);
+    ctx->MouseMove(rowRef(tip).c_str());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    const std::string tipRef = "//##Tooltip_00/###badge_";
+    GG_REQUIRE(s.itemExists((tipRef + "main").c_str()));
+    GG_CHECK(!s.itemExists((tipRef + "hiddenone").c_str()));
+    // The tooltip shows the whole name where the row elides it.
+    const ImGuiTestItemInfo row = ctx->ItemInfo(("//History/**/" + tip + "/###badge_" + longName).c_str());
+    const ImGuiTestItemInfo whole = ctx->ItemInfo((tipRef + longName).c_str());
+    const ImGuiTestItemInfo wholeTag = ctx->ItemInfo((tipRef + longTag).c_str());
+    GG_REQUIRE(whole.ID != 0 && wholeTag.ID != 0 && row.ID != 0);
+    GG_CHECK(whole.RectFull.GetWidth() > row.RectFull.GetWidth());
+    GG_CHECK(whole.RectFull.GetWidth() > ImGui::CalcTextSize(longName.c_str()).x);
+    GG_CHECK(wholeTag.RectFull.GetWidth() > ImGui::CalcTextSize(longTag.c_str()).x);
+    // Many badges wrap: they sit on more than one line, and none is wider than the tooltip's wrap width.
+    float minY = whole.RectFull.Min.y, maxY = whole.RectFull.Min.y;
+    for (int i = 0; i < 8; ++i) {
+        const ImGuiTestItemInfo info = ctx->ItemInfo((tipRef + "another-long-branch-name-number-" + std::to_string(i)).c_str());
+        GG_REQUIRE(info.ID != 0);
+        minY = std::min(minY, info.RectFull.Min.y);
+        maxY = std::max(maxY, info.RectFull.Min.y);
+    }
+    GG_CHECK(maxY - minY > ImGui::GetTextLineHeight());
+}
+
 GG_TEST("history", "first rows of a large history appear quickly")
 {
     // GGUI_PERF_REPO measures another repository as well (a real one, opened read-only).

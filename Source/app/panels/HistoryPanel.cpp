@@ -1218,6 +1218,61 @@ bool HistoryPanel::selectRange(const core::Oid& id)
     return true;
 }
 
+bool HistoryPanel::refShown(const core::RefBadge& ref) const
+{
+    if (ref.kind == core::RefKind::Stash && !m_session.app().settings().data().historyShowStashes)
+        return false;
+    // A hidden ref loses its badge even where other refs keep the commit in view.
+    switch (ref.kind) {
+    case core::RefKind::LocalBranch: return refVisible("refs/heads/" + ref.name);
+    case core::RefKind::RemoteBranch: return refVisible("refs/remotes/" + ref.name);
+    case core::RefKind::Tag: return refVisible("refs/tags/" + ref.name);
+    case core::RefKind::Keep: return refVisible(gg::keep::refName(ref.name));
+    case core::RefKind::Head:
+    case core::RefKind::Worktree:
+    case core::RefKind::Stash: break;
+    }
+    return true;
+}
+
+std::string HistoryPanel::badgeLabel(const core::RefBadge& ref, bool full) const
+{
+    const char* icon = "";
+    switch (ref.kind) {
+    case core::RefKind::LocalBranch: icon = ICON_MS_CALL_SPLIT; break;
+    case core::RefKind::RemoteBranch: icon = ICON_MS_CLOUD_DOWNLOAD; break;
+    case core::RefKind::Tag: icon = ICON_MS_SELL; break;
+    case core::RefKind::Head: break;
+    case core::RefKind::Worktree: icon = ICON_MS_FOLDER; break;
+    case core::RefKind::Stash: icon = ICON_MS_INVENTORY_2; break;
+    case core::RefKind::Keep: icon = ICON_MS_PUSH_PIN; break;
+    }
+    // A long name is shortened in the middle; the ID keeps the full name. A kept commit shows its short ID.
+    // `full` (the tooltip) shows every name whole.
+    const auto& settings = m_session.app().settings().data();
+    std::string shown = ref.name;
+    if (!full)
+        shown = ref.kind == core::RefKind::Keep ? ref.name.substr(0, core::kShortIdLength)
+                                                : elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+    return std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
+}
+
+void HistoryPanel::drawRefBadge(const core::RefBadge& ref, const std::string& label) const
+{
+    const Palette& p = theme().palette();
+    ImU32 color = p.branch;
+    switch (ref.kind) {
+    case core::RefKind::LocalBranch: color = ref.current ? p.branchCurrent : p.branch; break;
+    case core::RefKind::RemoteBranch: color = p.remote; break;
+    case core::RefKind::Tag: color = p.tag; break;
+    case core::RefKind::Head: color = p.head; break;
+    case core::RefKind::Worktree: color = p.worktree; break;
+    case core::RefKind::Stash: color = p.stash; break;
+    case core::RefKind::Keep: color = p.head; break;
+    }
+    drawBadge(label.c_str(), color, ref.current);
+}
+
 void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWidth)
 {
     const Palette& p = theme().palette();
@@ -1291,9 +1346,23 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     }
     if (!m_scrolling && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         // The row's ID is its commit's, and a commit does not change: no revision.
-        idTooltip(row.id.hex(), cachedTooltipText(ImGui::GetItemID(), 0, [&] {
-            return row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true);
-        }));
+        idTooltip(
+            row.id.hex(),
+            cachedTooltipText(ImGui::GetItemID(), 0,
+                [&] { return row.author + " <" + row.authorEmail + ">\n" + core::formatTime(row.time, true); }),
+            [&] {
+                // Every ref the row shows, whole names (no elision), in the row's colors; wrapping onto more lines.
+                bool first = true;
+                for (const auto& ref : row.refs) {
+                    if (!refShown(ref))
+                        continue;
+                    const std::string full = badgeLabel(ref, true);
+                    if (!first)
+                        badgeSameLineIfFits(full.c_str());
+                    first = false;
+                    drawRefBadge(ref, full);
+                }
+            });
     // A double click checks out (not with Ctrl or Shift: those clicks select). Its first click selected the row:
     // a first click that closed a popup or a dialog, or that was on a row that a reload moved, does not count.
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left] == 1)
@@ -1334,35 +1403,11 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     else // the row's Selectable shares the first column
         ImGui::SetCursorScreenPos(ImVec2(cellStart.x + (m_graphShown ? graph::textOffset(row, laneWidth) : 0.0f), cellStart.y));
     m_idSlot = rowIdText(row.id.hex());
-    const bool showStashes = m_session.app().settings().data().historyShowStashes;
     for (const auto& ref : row.refs) {
-        if (ref.kind == core::RefKind::Stash && !showStashes)
-            continue;
-        // A hidden ref loses its badge even where other refs keep the commit in view.
-        if ((ref.kind == core::RefKind::LocalBranch && !refVisible("refs/heads/" + ref.name))
-            || (ref.kind == core::RefKind::RemoteBranch && !refVisible("refs/remotes/" + ref.name))
-            || (ref.kind == core::RefKind::Tag && !refVisible("refs/tags/" + ref.name))
-            || (ref.kind == core::RefKind::Keep && !refVisible(gg::keep::refName(ref.name))))
+        if (!refShown(ref))
             continue;
         ImGui::SameLine();
-        ImU32 color = p.branch;
-        const char* icon = "";
-        switch (ref.kind) {
-        case core::RefKind::LocalBranch: color = ref.current ? p.branchCurrent : p.branch; icon = ICON_MS_CALL_SPLIT; break;
-        case core::RefKind::RemoteBranch: color = p.remote; icon = ICON_MS_CLOUD_DOWNLOAD; break;
-        case core::RefKind::Tag: color = p.tag; icon = ICON_MS_SELL; break;
-        case core::RefKind::Head: color = p.head; icon = ""; break;
-        case core::RefKind::Worktree: color = p.worktree; icon = ICON_MS_FOLDER; break;
-        case core::RefKind::Stash: color = p.stash; icon = ICON_MS_INVENTORY_2; break;
-        case core::RefKind::Keep: color = p.head; icon = ICON_MS_PUSH_PIN; break;
-        }
-        // A long name is shortened in the middle; the ID keeps the full name. A kept commit shows its short ID.
-        const auto& settings = m_session.app().settings().data();
-        const std::string shown = ref.kind == core::RefKind::Keep
-            ? ref.name.substr(0, core::kShortIdLength)
-            : elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
-        const std::string badge = std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
-        drawBadge(badge.c_str(), color, ref.current);
+        drawRefBadge(ref, badgeLabel(ref, false));
         // Only the part inside the column counts: a badge that does not fit is clipped, and its hidden part lies
         // under the cells to the right (a right click there is on the row).
         ImRect shownRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());

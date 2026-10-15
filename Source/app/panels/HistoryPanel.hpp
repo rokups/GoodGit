@@ -100,6 +100,12 @@ public:
 private:
     core::HistoryScope buildScope() const;
     void drawRow(const core::HistoryRow& row, int index, float laneWidth);
+    // Whether a row draws the badge of `ref` (stashes shown, ref not hidden).
+    bool refShown(const core::RefBadge& ref) const;
+    // The badge's label: icon, name (elided to the settings' prefix and suffix unless `full`) and the ID "###badge_<name>".
+    std::string badgeLabel(const core::RefBadge& ref, bool full) const;
+    // Draws the badge of `ref` in the color of its kind (the row and its tooltip both use it).
+    void drawRefBadge(const core::RefBadge& ref, const std::string& label) const;
     bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);

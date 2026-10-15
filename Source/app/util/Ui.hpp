@@ -59,7 +59,11 @@ const std::string& cachedTooltipText(ImGuiID key, uint64_t revision, const std::
 // Tests: how many times cachedTooltipText has called its `build`.
 int tooltipTextBuilds();
 // A tooltip that starts with a full commit ID (split after kShortIdLength) followed by more lines.
-void idTooltip(const std::string& hex, const std::string& rest);
+// `extra`, when set, draws more content (badges) below the text, inside the tooltip.
+void idTooltip(const std::string& hex, const std::string& rest, const std::function<void()>& extra = {});
+// In a tooltip, before drawBadge(label) of a badge that is not the first: continues on the line of the previous
+// item when the badge fits within the tooltip's wrap width, else leaves the cursor on the next line.
+void badgeSameLineIfFits(const char* label);
 // Text inside an open tooltip: word-wrapped at 40 font sizes and cut with "…" after 10 lines
 // ('\n' in the text ends a line too). Every tooltip with text goes through this.
 void tooltipText(std::string_view text);

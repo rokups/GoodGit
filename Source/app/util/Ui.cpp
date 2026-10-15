@@ -384,14 +384,26 @@ void tooltip(const char* fmt, ...)
     ImGui::EndTooltip();
 }
 
-void idTooltip(const std::string& hex, const std::string& rest)
+void idTooltip(const std::string& hex, const std::string& rest, const std::function<void()>& extra)
 {
     if (!beginTooltip())
         return;
     fullIdText(hex);
     if (!rest.empty())
         tooltipText(rest);
+    if (extra)
+        extra();
     ImGui::EndTooltip();
+}
+
+void badgeSameLineIfFits(const char* label)
+{
+    const char* end = ImGui::FindRenderedTextEnd(label);
+    // The width drawBadge gives the item: the text and a padding on each side.
+    const float width = ImGui::CalcTextSize(label, end).x + ImGui::GetFontSize() * 0.6f;
+    const float lineStart = ImGui::GetWindowPos().x + ImGui::GetCursorStartPos().x;
+    if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <= lineStart + tooltipWrapWidth())
+        ImGui::SameLine();
 }
 
 IdCopyChoice idCopyChoice(const std::string& hex, bool longId, bool onPrefix, bool shift)

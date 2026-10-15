@@ -212,6 +212,11 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
   default 12 + 12) is shown as its first prefix characters, "…" and its last suffix characters, for
   every kind of badge but keep; the badge's ID (`###badge_<name>`) keeps the full name. Published commits (reachable from a remote-tracking ref) use the normal text colour;
   unpublished commits are highlighted. Conflicted commits: conflict colour and ⚠ icon.
+- Row tooltip: the full commit ID, the author with the email, the date, and below them every ref the row
+  shows as a badge (same icon, colors and `###badge_<name>` IDs as in the row, in the tooltip window), with
+  the whole name (no elision, also a keep badge: the full commit ID). A ref that the row does not show (a hidden
+  ref, a stash while stashes are hidden) is not in the tooltip. The badges wrap onto more lines at the
+  tooltip's wrap width (40 font sizes).
 - Selection: a click selects one commit; the row is the anchor. Ctrl-click adds a commit or removes it (it
   selects the commit as the primary one when nothing, the Working tree row or the Index row is selected).
   Shift-click selects the commits from the anchor to the clicked row, both included, in the order of the
