@@ -24,7 +24,14 @@ using graph::laneX;
 
 HistoryPanel::HistoryPanel(Session& session) : m_session(session) { }
 
-bool HistoryPanel::conflictedOnly() const { return m_session.app().settings().data().historyConflictedOnly; }
+bool HistoryPanel::conflictedOnly() const
+{
+    // Off, the filter has no effect and no control; the stored setting stays.
+    return firstClassOn() && m_session.app().settings().data().historyConflictedOnly;
+}
+
+// Never runs git (the session returns the last known value on the UI thread).
+bool HistoryPanel::firstClassOn() const { return m_session.firstClassConflicts(); }
 
 core::HistoryScope HistoryPanel::buildScope() const
 {
@@ -1531,12 +1538,14 @@ void HistoryPanel::draw(bool* open)
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
         tooltip("Go to the HEAD commit");
-    sameLineIfFits(checkboxWidth("Conflicted only"));
-    bool only = conflictedOnly();
-    if (ImGui::Checkbox("Conflicted only##hist_conflicted", &only)) {
-        m_session.app().settings().data().historyConflictedOnly = only;
-        Settings::markViewDirty();
-        m_visibleDirty = true;
+    if (firstClassOn()) {
+        sameLineIfFits(checkboxWidth("Conflicted only"));
+        bool only = conflictedOnly();
+        if (ImGui::Checkbox("Conflicted only##hist_conflicted", &only)) {
+            m_session.app().settings().data().historyConflictedOnly = only;
+            Settings::markViewDirty();
+            m_visibleDirty = true;
+        }
     }
     sameLineIfFits(checkboxWidth("Stashes"));
     bool showStashes = m_session.app().settings().data().historyShowStashes;
@@ -1556,6 +1565,10 @@ void HistoryPanel::draw(bool* open)
         ImGui::TextDisabled("Loading... %zu", m_rows.size());
     }
 
+    if (const bool only = conflictedOnly(); only != m_lastConflictedOnly) { // the config arrived or changed
+        m_lastConflictedOnly = only;
+        m_visibleDirty = true;
+    }
     if (m_visibleDirty) {
         m_visible = visibleIndexes();
         m_visibleDirty = false;

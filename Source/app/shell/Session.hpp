@@ -10,6 +10,7 @@
 #include <libgg/Outgoing.hpp>
 
 #include <filesystem>
+#include <atomic>
 #include <map>
 #include <optional>
 #include <set>
@@ -155,7 +156,8 @@ public:
     std::string commitWarningText() const;
     const std::map<std::string, std::map<std::string, std::string>>& config() const { return m_config; }
     void requestConfig();
-    // gg.firstClassConflicts (repository config, off by default). Before the config is read it asks git.
+    // gg.firstClassConflicts (repository config, off by default). Before the config is read it asks git off the
+    // UI thread; on the UI thread it returns the last known value (false at first) and never runs git.
     bool firstClassConflicts() const;
 
     // Tags on each remote (git ls-remote), read while the Tags panel is shown and again after the
@@ -270,6 +272,7 @@ private:
     core::RequestId m_branchMergedRequest = 0;
     MergedState m_branchMerged = MergedState::Unknown;
     std::map<std::string, std::map<std::string, std::string>> m_config;
+    mutable std::atomic<bool> m_firstClassKnown{false}; // gg.firstClassConflicts as last read (for the UI thread)
     std::map<std::string, RemoteTags> m_remoteTags;
     std::string m_journalError; // the undo journal's problem last reported ("" = none)
     std::vector<std::string> m_remoteTagsFor; // the remotes last asked about

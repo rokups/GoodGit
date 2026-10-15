@@ -522,7 +522,9 @@ commit is conflicted is a pure function of its tree.
   when absent): turns first-class conflicts on. Off, `gg::conflicts::ineligibleReason()`
   returns `"text"` for every path, so no conflict badge, status entry or marker write exists:
   merge, rebase, cherry-pick and revert run as plain git, and other rewrites that would
-  conflict are refused. Settings, Git tab: "First-class conflicts (experimental)".
+  conflict are refused. Markers already in files are plain text. The History filter
+  "Conflicted only" is hidden and has no effect (its stored value stays), and the Merge
+  dialog has no native checkbox. Settings, Git tab: "First-class conflicts (experimental)".
 - **`gg.sameChange`** (repo config: `accept`, the default, or `keep`): whether a hunk every
   side changed the same way resolves (Git's rule) or stays a first-class conflict (the
   exact term algebra). Read per write, together with the `conflict-marker-size` attribute,
@@ -716,6 +718,8 @@ Undo, and in `git gg op log`. Format and rules: `docs/spec/undo-journal.md` §4.
 1. **In-memory engine (default).** Used when the todo has only `pick`, `reword`, `squash`,
    `fixup`, `drop`, `update-ref`, and reorders.
    - Runs entirely in memory with libgit2, like every other ggui rewrite (R1).
+   - Only while `gg.firstClassConflicts` is on. Off (the default), every interactive rebase
+     uses the native engine, as plain `git rebase -i`, and the editor shows that engine.
      - Text conflicts become first-class conflicts in the file.
      - Non-text conflicts go through the pre-flight dialog.
    - Everything is then applied with **one `git update-ref --stdin` transaction**, and the
@@ -759,7 +763,7 @@ user wants to adjust more.
 | ID | Decision | Recommendation |
 |---|---|---|
 | U1 (confirmed) | How Undo/Redo and the Operations panel work without the gg operation log | Scope: **refs plus index; worktree updated only when lossless**, otherwise refuse or offer to stash. A **ref-state journal** in `.git/gg/journal` (per worktree for HEAD, shared for other refs). Each entry is one operation: its source (ggui / git-gg / plain git via the reconciler), the before and after values of every ref it touched (HEAD, branches, tags, `refs/stash` and other reflog-backed refs), and the index tree when known. **Undo** is itself a new operation that restores the before values, like jj and gg, so Redo = undo the undo. Undo refuses if the refs no longer match the entry's after values (moved outside the journal, for example by a tool that changed refs since the last pass). It also refuses if the working tree would lose data, and offers to stash first. Commits that are only reachable from the journal are protected from `gc` by using the refs' reflogs (Git's `gc` keeps reflog entries until they expire), so the only private refs are the keep refs (K2). The journal is history only: deleting it disables past Undo and nothing else |
-| R1 | Rewriting history that conflicts | Do rewrites in memory. **Text conflicts** become in-file first-class conflicts and the rewrite continues. **Non-text conflicts** are resolved in the pre-flight dialog before anything is written (§4.10). A ggui rewrite never leaves a native sequencer state, **except** an interactive rebase the user runs with the native engine (R3). Only failures outside content conflicts abort the rewrite with nothing changed: locked refs, worktree collisions, hook rejection, I/O errors |
+| R1 | Rewriting history that conflicts | Do rewrites in memory. **Text conflicts** become in-file first-class conflicts and the rewrite continues. **Non-text conflicts** are resolved in the pre-flight dialog before anything is written (§4.10). A ggui rewrite never leaves a native sequencer state, **except** an interactive rebase the user runs with the native engine (R3). Only failures outside content conflicts abort the rewrite with nothing changed: locked refs, worktree collisions, hook rejection, I/O errors. **Experimental:** all of this applies only when `gg.firstClassConflicts` is on (off by default). Off, merge, rebase, interactive rebase, cherry-pick and revert run as plain git; any other rewrite that would conflict is refused, with nothing changed (§4.10) |
 | K1 (confirmed) | Which conflicts may be first-class | Text content only. Binary, filtered (LFS), mode, type, delete and rename conflicts must be resolved immediately (§4.10 table) |
 | M1 | Marker format | Standard Git diff3 markers for two-sided conflicts, with the base always present. Extended alternating side and base sections for N sides. Marker length grows to avoid ambiguity. Edge cases (final newline, CRLF, empty sides) are encoded in-band. The spec defines the grammar formally; there is **no** separate storage |
 | H1 (confirmed) | Hooks | The user's hooks run through git natively (G2). **No managed hooks**: plain git is journaled from reflogs and ref snapshots by the reconciler (§4.12 B, undo-journal §4). Older installs' hooks are removed silently on open |

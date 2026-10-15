@@ -207,7 +207,8 @@ stays as it is (it is only limited to 50–300 % on load).
   toggle *Conflicted only*
   `##hist_conflicted` (N; a view setting like *Stashes*, stored in imgui.ini as
   `[GGUIView][History] ConflictedOnly`, so it stays on across repositories and restarts; in the next
-  repository the graph is hidden at once and the conflicted commits appear as the scan finds them),
+  repository the graph is hidden at once and the conflicted commits appear as the scan finds them;
+  hidden while `gg.firstClassConflicts` is off: the filter then has no effect, the stored value stays),
   toggle *Stashes* `##hist_stashes` (N), *Show more* when truncated.
 - Table `##hist_table`: columns Graph, Description (ID prefix, badges, subject), Author, Date.
   While a filter is active (text or *Conflicted only*) the graph column is hidden
@@ -366,6 +367,8 @@ contains <id>").
 (disabled on HEAD itself; Rebase needs an attached HEAD); a commit is merged with Git's default message
 "Merge commit '<full ID>'" (the dialogs' revision fields are prefilled with the full ID, which Git
 runs as typed). Branches offers the same two for a branch (§8).
+The *Merge into HEAD* dialog has the checkbox `native` ("Use native git merge (stops with index conflicts)")
+only while `gg.firstClassConflicts` is on; off, the merge is always plain git and the checkbox is not shown.
 
 ## 4.x Interactive rebase todo editor — window `"Interactive rebase"` (N, Phase 3)
 Dockable; opens as a tab next to History while a todo is open and closes on Start (after success)

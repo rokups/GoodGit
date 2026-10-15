@@ -16,6 +16,7 @@
 #include <spdlog/spdlog.h>
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/Thread.hpp>
 
 #include <chrono>
 
@@ -351,6 +352,9 @@ bool Session::firstClassConflicts() const
     if (const auto eff = m_config.find("effective"); eff != m_config.end()) {
         if (const auto k = eff->second.find("gg.firstClassConflicts"); k != eff->second.end())
             value = k->second;
+    } else if (gg::isUiThread()) {
+        // Never runs git on the UI thread: the last known value until the config is read.
+        return m_firstClassKnown;
     } else {
         gg::RunRequest r;
         r.args = {"git", "config", "--type=bool", "--get", "gg.firstClassConflicts"};
@@ -358,7 +362,9 @@ bool Session::firstClassConflicts() const
         value = gg::trim(gg::run(r).out);
     }
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return value == "true" || value == "yes" || value == "on" || value == "1";
+    const bool on = value == "true" || value == "yes" || value == "on" || value == "1";
+    m_firstClassKnown = on;
+    return on;
 }
 
 std::string Session::shortId(const core::Oid& id) const

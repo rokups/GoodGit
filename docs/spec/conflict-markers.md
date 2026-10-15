@@ -160,6 +160,18 @@ For an ineligible path the parser reports "not conflicted" regardless of content
 that would produce a text conflict there treats it as a **non-text conflict** (pre-flight
 dialog, §4.10 of the plan).
 
+### 6.1 Switch `gg.firstClassConflicts` (experimental)
+
+First-class conflicts are experimental and not standard git. The repo config key
+`gg.firstClassConflicts` (boolean) turns them on; it is off by default.
+
+- Off, every path is ineligible (`ineligibleReason()` returns `"text"`). The parser reports "not
+  conflicted" for every file, so existing ggui markers are plain text: no badge, status entry
+  or "Conflicted only" filter, and no marker is ever written.
+- Off, merge, rebase, interactive rebase, cherry-pick and revert run as plain git and stop with
+  native conflicts (index stages, §8).
+- Off, any other rewrite that would conflict is refused with an error and changes nothing.
+
 ## 7. Term algebra (N-way merge)
 
 A *merge value* `M = a₀ − r₁ + a₁ − r₂ + … − rₙ + aₙ` has `n+1` adds and `n` removes (terms

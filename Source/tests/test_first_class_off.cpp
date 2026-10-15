@@ -377,4 +377,21 @@ GG_TEST("first_class", "off: Abort of a conflicting single Cherry-pick restores 
     GG_CHECK_STR_EQ(s.read(b.repo, "a.txt"), "one\nMAIN\nthree\n");
 }
 
+GG_TEST("first_class", "off: the Conflicted only control is hidden and a stored filter is ignored")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    s.setFirstClassConflicts(repo, false);
+    s.app.settings().data().historyConflictedOnly = true;
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_CHECK(s.waitUntil([&] { return !history.rows().empty() && !history.loading(); }));
+    ctx->Yield(3);
+    GG_CHECK(!history.conflictedOnly());
+    GG_CHECK(history.visibleIds().size() == history.rows().size());
+    GG_CHECK(ctx->ItemInfo("//History/Conflicted only##hist_conflicted", ImGuiTestOpFlags_NoError).ID == 0);
+    // The stored value stays.
+    GG_CHECK(s.app.settings().data().historyConflictedOnly);
+    s.app.settings().data().historyConflictedOnly = false;
+}
+
 } // namespace ggtest

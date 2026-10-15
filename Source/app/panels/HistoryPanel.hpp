@@ -81,7 +81,7 @@ public:
     std::vector<core::Oid> visibleIds() const;
     bool searchActive() const { return !m_appliedFilter.empty(); }
     const std::string& filterText() const { return m_filter; }
-    bool conflictedOnly() const; // the "Conflicted only" filter (a view setting, kept in imgui.ini)
+    bool conflictedOnly() const; // the "Conflicted only" filter (a view setting, kept in imgui.ini); false while gg.firstClassConflicts is off
     // Selects the next (+1) / previous (-1) conflicted commit (F7 / Shift+F7).
     void selectConflicted(int direction);
     bool loading() const { return m_loading; }
@@ -98,6 +98,7 @@ public:
     ImVec2 idPrefixRange() const { return m_idSlot.prefix; }
 
 private:
+    bool firstClassOn() const; // gg.firstClassConflicts, false until the config is read
     core::HistoryScope buildScope() const;
     void drawRow(const core::HistoryRow& row, int index, float laneWidth);
     // Whether a row draws the badge of `ref` (stashes shown, ref not hidden).
@@ -156,6 +157,7 @@ private:
     bool m_scrollToSelection = false;
     std::vector<int> m_visible; // indexes into m_rows (filtered)
     bool m_visibleDirty = true;
+    bool m_lastConflictedOnly = false; // conflictedOnly() when m_visible was last built
     std::vector<std::pair<int, float>> m_rowTops; // (display index, top y) drawn this frame
     // Where the badges of a row were (last frame): a drag of a branch badge and a right click on a badge find
     // theirs here.
