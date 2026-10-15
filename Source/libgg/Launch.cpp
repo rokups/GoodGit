@@ -128,6 +128,58 @@ bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child,
 #endif
 }
 
+bool spawnScriptDetached(const fs::path& script, const std::vector<std::string>& args, DetachedProcess& child,
+    std::string& error)
+{
+    for (const auto& a : args) {
+        bool ok = !a.empty();
+        for (const unsigned char c : a)
+            ok = ok && c > 0x20 && c < 0x7f && std::strchr("\"%^&|<>()!", c) == nullptr;
+        if (!ok) {
+            error = "bad script argument";
+            return false;
+        }
+    }
+#ifdef _WIN32
+    // cmd.exe needs its own quoting: spawnDetached's CommandLineToArgv quoting is wrong for it.
+    std::wstring comspec;
+    wchar_t buf[MAX_PATH * 4];
+    DWORD n = GetEnvironmentVariableW(L"ComSpec", buf, static_cast<DWORD>(std::size(buf)));
+    if (n > 0 && n < std::size(buf)) {
+        comspec.assign(buf, n);
+    } else {
+        n = GetEnvironmentVariableW(L"SystemRoot", buf, static_cast<DWORD>(std::size(buf)));
+        if (n > 0 && n < std::size(buf))
+            comspec = std::wstring(buf, n) + L"\\System32\\cmd.exe";
+    }
+    if (comspec.empty()) {
+        error = "cannot find cmd.exe";
+        return false;
+    }
+    std::wstring cmd = L"\"" + comspec + L"\" /d /s /c \"\"" + script.native() + L"\"";
+    for (const auto& a : args) {
+        cmd += L' ';
+        cmd.append(a.begin(), a.end()); // ASCII only
+    }
+    cmd += L'"';
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(comspec.c_str(), cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+            nullptr, nullptr, &si, &pi)) {
+        error = "cannot start the update script";
+        return false;
+    }
+    CloseHandle(pi.hThread);
+    child.process = pi.hProcess;
+    return true;
+#else
+    std::vector<std::string> argv{"/bin/sh", script.string()};
+    argv.insert(argv.end(), args.begin(), args.end());
+    return spawnDetached(argv, child, error);
+#endif
+}
+
 bool stillRunning(DetachedProcess& child)
 {
 #ifdef _WIN32
