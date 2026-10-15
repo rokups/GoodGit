@@ -31,7 +31,7 @@ std::string fileRef(Scenario& s, const char* group, const std::string& path)
 bool inProgress(Scenario&, const fs::path& repo)
 {
     for (const char* f : {"MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"})
-        if (fs::exists(repo / ".git" / f))
+        if (existsQuiet(repo / ".git" / f))
             return true;
     return false;
 }

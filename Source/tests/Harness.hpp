@@ -66,6 +66,15 @@ std::vector<TestInfo>& registry();
 // Like fs::remove_all (errors ignored), but it also removes read-only files: git's objects are
 // read-only, and Windows refuses to delete those.
 void removeAll(const fs::path& path);
+// Whether `path` exists, for a test that polls a path git is deleting (for example
+// .git/rebase-merge). On Windows fs::exists throws "Access is denied" while the path is being
+// deleted. A check that gives an error therefore counts as "exists": the path is not gone yet.
+inline bool existsQuiet(const fs::path& path)
+{
+    std::error_code ec;
+    const bool found = fs::exists(path, ec);
+    return found || ec;
+}
 // Directory for cached fixtures, resolved before the test environment is isolated.
 fs::path fixtureCacheDir();
 // Directory for failure output and explicit screenshots (--artifacts, default ./test-artifacts).
@@ -190,7 +199,10 @@ public:
     fs::path fixture(Recipe recipe, const std::string& name = {});
     // The large read-only fixture (>= 100k commits, >= 5k refs, >= 50k files), generated once
     // with git fast-import into the fixture cache (GGUI_FIXTURE_CACHE, default
-    // ~/.cache/ggui-fixtures) and reused by later runs. Tests must not modify it.
+    // ~/.cache/ggui-fixtures) and reused by later runs. The cache is built atomically, so
+    // parallel test processes can share it. The call returns a local clone of the cache (made once per test)
+    // under root() (same branches, tags and HEAD, checked out, no remote), so a test can open
+    // it in the app without clashing with another process. The clone is tracked for the fsck.
     fs::path largeFixture();
     // ---- transport fixtures (no network) ---------------------------------------------------
     // Starts `git daemon` on 127.0.0.1 serving `baseDir` (export-all, receive-pack enabled)

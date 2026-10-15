@@ -303,7 +303,7 @@ std::map<std::string, std::string> hookFiles(Scenario& s, const fs::path& dir)
 bool legacyGone(Scenario& s, const fs::path& repo)
 {
     return s.gitMayFail(repo, {"config", "--get-regexp", "^hook\\."}).out.empty()
-        && !fs::exists(repo / ".git" / "gg" / "hooks");
+        && !existsQuiet(repo / ".git" / "gg" / "hooks");
 }
 
 } // namespace
