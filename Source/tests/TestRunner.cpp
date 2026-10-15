@@ -222,7 +222,8 @@ void writeGlobalGitConfig(const fs::path& home)
          "[tag]\n\tgpgsign = false\n"
          "[protocol \"file\"]\n\tallow = always\n"
          "[gc]\n\tauto = 0\n"
-         "[maintenance]\n\tauto = false\n";
+         "[maintenance]\n\tauto = false\n"
+         "[gg]\n\tfirstClassConflicts = true\n";
 }
 
 // Isolates HOME, XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL and the preferences dir under `dir`.

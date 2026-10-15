@@ -167,6 +167,9 @@ public:
     gg::RunResult gitMayFail(const fs::path& cwd, std::vector<std::string> args, std::string input = {});
     // stdout of a successful git command, trimmed.
     std::string gitOut(const fs::path& cwd, std::vector<std::string> args);
+    // Sets gg.firstClassConflicts in the repository's own config. Every test repository has it on
+    // through the isolated global config; `false` writes an explicit override that turns it off.
+    void setFirstClassConflicts(const fs::path& repo, bool on);
     // `git gg …` through PATH (the git-gg under test).
     gg::RunResult gitgg(const fs::path& cwd, std::vector<std::string> args, std::string input = {});
     // Any program.

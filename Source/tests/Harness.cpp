@@ -87,6 +87,11 @@ std::string Scenario::gitOut(const fs::path& cwd, std::vector<std::string> args)
     return gg::trim(git(cwd, std::move(args)).out);
 }
 
+void Scenario::setFirstClassConflicts(const fs::path& repo, bool on)
+{
+    git(repo, {"config", "--local", "gg.firstClassConflicts", on ? "true" : "false"});
+}
+
 gg::RunResult Scenario::gitgg(const fs::path& cwd, std::vector<std::string> args, std::string input)
 {
     args.insert(args.begin(), "gg");

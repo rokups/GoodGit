@@ -339,7 +339,8 @@ void Session::requestRemoteTagsIfStale()
 void Session::requestConfig()
 {
     m_engine->readConfig({"user.name", "user.email", "core.editor", "merge.tool", "diff.tool", "pull.rebase", "pull.ff",
-        "extensions.worktreeConfig", "sequence.editor", "gg.previousSequenceEditor", "gg.sameChange"});
+        "extensions.worktreeConfig", "sequence.editor", "gg.previousSequenceEditor", "gg.sameChange",
+        "gg.firstClassConflicts"});
 }
 
 std::string Session::shortId(const core::Oid& id) const

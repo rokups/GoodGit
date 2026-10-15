@@ -157,8 +157,10 @@ has a `sequence.editor` of the user's own, the dialog `Replace sequence.editor` 
 *Replace* (keeps it in `gg.previousSequenceEditor` at the same scope) / *Cancel*; off removes only
 ggui's value and puts a kept one back. Below it, dimmed: "git rebase -i here uses: ggui's todo
 editor | '<command>' | git's editor (sequence.editor is not set)" and the scope it comes from.),
-**Conflicts** (N, Phase 3: "Expand to
-index stages on checkout"). **D** max-new-file-size.
+**Conflicts** (N, Phase 3: "First-class
+conflicts (experimental)", the repository's `gg.firstClassConflicts`, off by default, with a tooltip
+that starts "Experimental, non-standard git behavior."; changing it refreshes status and badges;
+"Expand to index stages on checkout", disabled while it is off). **D** max-new-file-size.
 
 ### 1.7 One-time prompts on open (N)
 - "git not found / too old" (blocking modal `Git required`): shows the found version and the

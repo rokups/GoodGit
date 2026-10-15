@@ -518,6 +518,11 @@ commit is conflicted is a pure function of its tree.
 - **No nesting:** markers never nest in files written by ggui.
 - **Automatic resolution:** reordering back, dropping the change that caused the conflict,
   or fixing a parent makes the conflict disappear in descendants.
+- **`gg.firstClassConflicts`** (repo config, boolean, experimental and not standard git; off
+  when absent): turns first-class conflicts on. Off, `gg::conflicts::ineligibleReason()`
+  returns `"text"` for every path, so no conflict badge, status entry or marker write exists:
+  merge, rebase, cherry-pick and revert run as plain git, and other rewrites that would
+  conflict are refused. Settings, Git tab: "First-class conflicts (experimental)".
 - **`gg.sameChange`** (repo config: `accept`, the default, or `keep`): whether a hunk every
   side changed the same way resolves (Git's rule) or stays a first-class conflict (the
   exact term algebra). Read per write, together with the `conflict-marker-size` attribute,

@@ -55,8 +55,9 @@ std::vector<ConflictedFile> commitConflicts(git_repository* repo, const git_oid&
 
 // Eligibility of `path` (K1). With `commit` null the working tree / index attributes are used.
 bool eligible(git_repository* repo, const git_oid* commit, const std::string& path);
-// Why a path may not hold first-class conflicts: "" (it may), "opt-out" (gg-conflicts=false)
-// or "filtered" (filter=, binary, -text, -diff).
+// Why a path may not hold first-class conflicts: "" (it may), "text" (the repository config
+// gg.firstClassConflicts is not true; it is off by default, so this is checked first),
+// "opt-out" (gg-conflicts=false) or "filtered" (filter=, binary, -text, -diff).
 std::string ineligibleReason(git_repository* repo, const git_oid* commit, const std::string& path);
 
 // Marker write options for `path`, from repo config and gitattributes: gg.sameChange

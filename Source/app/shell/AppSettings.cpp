@@ -1,4 +1,5 @@
 // Settings window (product spec §4.1 Settings).
+#include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
@@ -488,11 +489,49 @@ void App::drawSettingsWindow()
             ImGui::SameLine();
             helpMarker("What Commit does when no changes are staged: ask in the Commit dialog, stage every change to "
                        "tracked files first (like git commit -a), or stage the files selected in Changes first.");
-            if (ImGui::Checkbox("Expand to index stages on checkout##expand_stages", &d.expandConflictStages))
-                m_settings.save();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                tooltip("Two-sided first-class conflicts also get index stages 1-3 (git mergetool works on them); "
-                        "ggui collapses them again before switching away.");
+            // gg.firstClassConflicts (repository config, off by default): the effective value is shown
+            // and the checkbox writes the repository's own config.
+            {
+                std::string effective;
+                if (s) {
+                    const auto eff = s->config().find("effective");
+                    if (eff != s->config().end())
+                        if (auto k = eff->second.find("gg.firstClassConflicts"); k != eff->second.end())
+                            effective = k->second;
+                }
+                std::transform(effective.begin(), effective.end(), effective.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                bool firstClass = effective == "true" || effective == "yes" || effective == "on" || effective == "1";
+                const bool ready = s && !s->config().empty() && s->actions().busy().empty();
+                ImGui::BeginDisabled(!ready);
+                if (ImGui::Checkbox("First-class conflicts (experimental)##first_class", &firstClass)) {
+                    const std::string v = firstClass ? "true" : "false";
+                    s->actions().run("set gg.firstClassConflicts", [v](core::MutationContext& ctx) {
+                        ctx.git({"config", "--local", "gg.firstClassConflicts", v});
+                    }, [this, session = s](const core::MutationFinishedEvent& e) {
+                        if (e.outcome != core::Outcome::Ok)
+                            session->app().showError(e.label, e.message);
+                        session->requestConfig();
+                        session->refresh(); // status follows the new setting
+                        session->history().reload(); // so do the conflict badges (scanned with the history)
+                    }, false, false);
+                }
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                    tooltip("Experimental, non-standard git behavior. "
+                            "Rewrites write text conflicts into the files as first-class conflicts and continue. "
+                            "Off: merge, rebase, cherry-pick and revert run as plain git and stop at the first conflict; "
+                            "other rewrites that would conflict are refused.");
+                // The stages exist only for first-class conflicts (a setting of the repository, so it
+                // is not disabled while no repository is open).
+                ImGui::BeginDisabled(s && !firstClass);
+                if (ImGui::Checkbox("Expand to index stages on checkout##expand_stages", &d.expandConflictStages))
+                    m_settings.save();
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                    tooltip("Two-sided first-class conflicts also get index stages 1-3 (git mergetool works on them); "
+                            "ggui collapses them again before switching away.");
+            }
             ImGui::Separator();
             if (!s) {
                 ImGui::TextDisabled("Open a repository to edit its git configuration.");

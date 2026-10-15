@@ -204,6 +204,12 @@ gg::markers::WriteOptions writeOptions(git_repository* repo, const std::string& 
 
 std::string ineligibleReason(git_repository* repo, const git_oid* commit, const std::string& path)
 {
+    // gg.firstClassConflicts (default off): without it no path holds a first-class conflict.
+    {
+        const Config cfg = git2::repositoryConfig(repo);
+        if (!git2::configBool(cfg.get(), "gg.firstClassConflicts").value_or(false))
+            return "text";
+    }
     git_attr_options opts = GIT_ATTR_OPTIONS_INIT;
     if (commit) {
         opts.flags = GIT_ATTR_CHECK_INCLUDE_COMMIT | GIT_ATTR_CHECK_NO_SYSTEM | GIT_ATTR_CHECK_INDEX_ONLY;
