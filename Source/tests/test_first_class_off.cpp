@@ -255,4 +255,126 @@ GG_TEST("first_class", "off: the interactive rebase editor uses git rebase and a
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
+namespace {
+
+// main: c1 adds a.txt, c4 adds c.txt. side (from c1): p1 and p2 add their own files; p3 changes a.txt.
+// main also changes a.txt (m2), so p3 conflicts on it.
+struct PickBranches {
+    fs::path repo;
+    std::string p1, p2, p3, mainHead;
+};
+
+PickBranches makePickBranches(Scenario& s)
+{
+    PickBranches b;
+    b.repo = s.fixture(Recipe::Empty);
+    s.commitFile(b.repo, "a.txt", "one\ntwo\nthree\n", "c1 add a");
+    s.git(b.repo, {"branch", "side"});
+    s.commitFile(b.repo, "a.txt", "one\nMAIN\nthree\n", "m2 change a");
+    b.mainHead = s.head(b.repo);
+    s.git(b.repo, {"switch", "-q", "side"});
+    s.commitFile(b.repo, "p1.txt", "p1\n", "p1 add file\n\nWith a body.");
+    b.p1 = s.head(b.repo);
+    s.commitFile(b.repo, "p2.txt", "p2\n", "p2 add file");
+    b.p2 = s.head(b.repo);
+    s.commitFile(b.repo, "a.txt", "one\nSIDE\nthree\n", "p3 change a");
+    b.p3 = s.head(b.repo);
+    s.git(b.repo, {"switch", "-q", "main"});
+    return b;
+}
+
+void selectCommits(Scenario& s, const std::vector<std::string>& ids)
+{
+    for (const auto& id : ids)
+        GG_CHECK(s.waitUntil([&] { return s.session()->history().row(Oid::fromHex(id)) != nullptr; }));
+    s.settle();
+}
+
+} // namespace
+
+GG_TEST("first_class", "off: Cherry-pick of two commits makes two commits with the original messages")
+{
+    const PickBranches b = makePickBranches(s);
+    s.setFirstClassConflicts(b.repo, false);
+    GG_REQUIRE(s.openRepository(b.repo));
+    selectCommits(s, {b.p1, b.p2});
+    s.session()->actions().revertOrPick({Oid::fromHex(b.p2), Oid::fromHex(b.p1)}, false, true);
+    GG_CHECK(s.waitUntil([&] { return s.head(b.repo) != b.mainHead; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(b.repo, "HEAD~2"), b.mainHead);
+    GG_CHECK_STR_EQ(s.gitOut(b.repo, {"log", "-1", "--format=%s"}), "p2 add file");
+    GG_CHECK_STR_EQ(s.gitOut(b.repo, {"log", "-2", "--format=%s", "--reverse"}), "p1 add file\np2 add file");
+    GG_CHECK_STR_EQ(s.gitOut(b.repo, {"log", "-1", "--format=%b", "HEAD~1"}), "With a body.");
+    GG_CHECK_STR_EQ(s.revParse(b.repo, "main"), s.head(b.repo));
+    GG_CHECK(s.statusPorcelain(b.repo).empty());
+    GG_CHECK(!fs::exists(b.repo / ".git" / "CHERRY_PICK_HEAD"));
+}
+
+GG_TEST("first_class", "off: Revert makes a Revert commit")
+{
+    const PickBranches b = makePickBranches(s);
+    s.setFirstClassConflicts(b.repo, false);
+    GG_REQUIRE(s.openRepository(b.repo));
+    selectCommits(s, {b.mainHead});
+    s.session()->actions().revertOrPick({Oid::fromHex(b.mainHead)}, true, true);
+    GG_CHECK(s.waitUntil([&] { return s.head(b.repo) != b.mainHead; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(b.repo, "HEAD~1"), b.mainHead);
+    GG_CHECK_STR_EQ(s.gitOut(b.repo, {"log", "-1", "--format=%s"}), "Revert \"m2 change a\"");
+    GG_CHECK_STR_EQ(s.read(b.repo, "a.txt"), "one\ntwo\nthree\n");
+    GG_CHECK(s.statusPorcelain(b.repo).empty());
+}
+
+GG_TEST("first_class", "off: a conflicting Cherry-pick stops with CHERRY_PICK_HEAD; Continue commits, Abort restores HEAD")
+{
+    const PickBranches b = makePickBranches(s);
+    s.setFirstClassConflicts(b.repo, false);
+    GG_REQUIRE(s.openRepository(b.repo));
+    selectCommits(s, {b.p1, b.p2, b.p3});
+    s.session()->actions().revertOrPick({Oid::fromHex(b.p3), Oid::fromHex(b.p2)}, false, true);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::CherryPicking; }));
+    s.settle();
+    // p2 is in; p3 stopped.
+    GG_CHECK_STR_EQ(s.gitOut(b.repo, {"log", "-1", "--format=%s"}), "p2 add file");
+    GG_CHECK_STR_EQ(s.revParse(b.repo, "CHERRY_PICK_HEAD"), b.p3);
+    GG_CHECK(!s.gitOut(b.repo, {"ls-files", "-u"}).empty());
+    GG_CHECK(s.read(b.repo, "a.txt").find("<<<<<<<") != std::string::npos);
+    const std::string stopped = s.head(b.repo);
+    // Resolve the conflict and stage it.
+    s.write(b.repo, "a.txt", "one\nRESOLVED\nthree\n");
+    s.git(b.repo, {"add", "a.txt"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->conflicted.empty(); }));
+    s.settle();
+    ctx->ItemClick("//###Toolbar/Continue##tb_continue");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::None; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(b.repo, "HEAD~1"), stopped);
+    GG_CHECK_STR_EQ(s.gitOut(b.repo, {"log", "-1", "--format=%s"}), "p3 change a");
+    GG_CHECK_STR_EQ(s.read(b.repo, "a.txt"), "one\nRESOLVED\nthree\n");
+    GG_CHECK(!fs::exists(b.repo / ".git" / "CHERRY_PICK_HEAD"));
+    GG_CHECK(s.statusPorcelain(b.repo).empty());
+}
+
+GG_TEST("first_class", "off: Abort of a conflicting single Cherry-pick restores HEAD and the tree")
+{
+    const PickBranches b = makePickBranches(s);
+    s.setFirstClassConflicts(b.repo, false);
+    GG_REQUIRE(s.openRepository(b.repo));
+    selectCommits(s, {b.p3});
+    s.session()->actions().revertOrPick({Oid::fromHex(b.p3)}, false, true);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::CherryPicking; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(b.repo), b.mainHead);
+    GG_CHECK(fs::exists(b.repo / ".git" / "CHERRY_PICK_HEAD"));
+    GG_CHECK(!s.gitOut(b.repo, {"ls-files", "-u"}).empty());
+    ctx->ItemClick("//###Toolbar/Abort##tb_abort");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::None; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(b.repo), b.mainHead);
+    GG_CHECK(!fs::exists(b.repo / ".git" / "CHERRY_PICK_HEAD"));
+    GG_CHECK(s.gitOut(b.repo, {"ls-files", "-u"}).empty());
+    GG_CHECK(s.statusPorcelain(b.repo).empty());
+    GG_CHECK_STR_EQ(s.read(b.repo, "a.txt"), "one\nMAIN\nthree\n");
+}
+
 } // namespace ggtest

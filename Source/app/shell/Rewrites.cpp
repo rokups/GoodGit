@@ -1030,7 +1030,7 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
     const std::vector<std::string> ids = pickOrder(commits, revert);
     const std::string label = std::string(revert ? "revert " : "cherry-pick ")
         + (ids.size() == 1 ? ids.front().substr(0, 10) : std::to_string(ids.size()) + " commits");
-    if (commitIt) {
+    if (commitIt && m_session.firstClassConflicts()) {
         // In memory, like Merge into HEAD: new commits on HEAD (each on the one before), one ref update, one Undo.
         rewrite(label, [ids, revert](git_repository* repo) {
             const std::string head = pickAllOnto(repo, ids, revert);
@@ -1058,10 +1058,12 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
         });
         return;
     }
-    // Plain git into the index and working tree, one commit after the other (a merge commit needs
-    // -m 1, a plain commit rejects it); conflicts stop natively, at the commit that has them.
-    run(label + " (no commit)",
-        [ids, revert](MutationContext& ctx) {
+    // Plain git, one commit after the other (a merge commit needs -m 1, a plain commit rejects it);
+    // conflicts stop natively, at the commit that has them. Without commitIt the changes go into the
+    // index and working tree only. With commitIt (first-class conflicts off) git makes each commit
+    // and leaves CHERRY_PICK_HEAD or REVERT_HEAD itself when it stops.
+    run(commitIt ? label : label + " (no commit)",
+        [ids, revert, commitIt](MutationContext& ctx) {
             git_repository* repo = ctx.repo();
             pickAllOnto(repo, ids, revert);
             // Abort (git reset --merge) would drop staged changes along with the pick's.
@@ -1075,7 +1077,9 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
             size_t stoppedIndex = 0;
             for (size_t i = 0; i < ids.size() && !conflicts; ++i) {
                 const std::string& id = ids[i];
-                std::vector<std::string> args{revert ? "revert" : "cherry-pick", "--no-commit"};
+                std::vector<std::string> args{revert ? "revert" : "cherry-pick"};
+                if (!commitIt)
+                    args.emplace_back("--no-commit");
                 if (parentsOf(repo, id).size() > 1) {
                     args.emplace_back("-m");
                     args.emplace_back("1");
@@ -1083,28 +1087,35 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
                 args.push_back(id);
                 const auto r = ctx.gitMayFail(args);
                 conflicts = !gg::trim(ctx.gitMayFail({"ls-files", "-u"}).out).empty();
+                // A commit that becomes empty stops git without conflicts but with its state left.
+                if (commitIt && !r.ok() && !conflicts)
+                    conflicts = ctx.gitMayFail({"rev-parse", "-q", "--verify", revert ? "REVERT_HEAD" : "CHERRY_PICK_HEAD"}).ok();
                 if (!r.ok() && !conflicts) {
                     const std::string all = r.err + r.out;
                     std::string message = r.message();
                     std::string detail = all;
                     if (ids.size() > 1) {
                         // Nothing of an earlier commit stays: the index was clean, so reset --merge restores it.
-                        const bool undone = i == 0 || ctx.gitMayFail({"reset", "--merge"}).ok();
+                        const bool undone = !commitIt && (i == 0 || ctx.gitMayFail({"reset", "--merge"}).ok());
                         const std::string which = "commit " + id.substr(0, 10) + " (" + std::to_string(i + 1) + " of "
                             + std::to_string(ids.size()) + ") failed: ";
-                        const std::string after = i == 0 ? "" : undone ? "The earlier commits are undone." : "The changes of the earlier commits stay in the index.";
+                        const std::string after = i == 0 ? ""
+                            : commitIt ? "The earlier commits stay."
+                            : undone ? "The earlier commits are undone."
+                                     : "The changes of the earlier commits stay in the index.";
                         message = which + message + (after.empty() ? "" : ". " + after);
                         // The error dialog shows the detail when there is one.
                         detail = which + gg::trim(all) + (after.empty() ? "" : "\n" + after);
                     }
                     throw MutationError{core::classifyFailure(all), message, detail};
                 }
-                pending += (pending.empty() ? "" : "\n\n") + pickMessage(repo, id, revert);
+                if (!commitIt)
+                    pending += (pending.empty() ? "" : "\n\n") + pickMessage(repo, id, revert);
                 stoppedAt = id;
                 stoppedIndex = i;
             }
             // The pending message (git commit and --continue take it from MERGE_MSG).
-            {
+            if (!commitIt) {
                 std::ofstream out(std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG", std::ios::binary | std::ios::trunc);
                 out << pending << "\n";
             }
@@ -1112,7 +1123,7 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
                 return;
             // git revert leaves REVERT_HEAD; cherry-pick --no-commit leaves no state: the
             // pick in progress (Continue/Abort) as a plain cherry-pick would leave it.
-            if (!revert)
+            if (!revert && !commitIt)
                 ctx.git({"update-ref", "CHERRY_PICK_HEAD", stoppedAt});
             const std::string what = revert ? "revert" : "cherry-pick";
             if (ids.size() == 1) {
