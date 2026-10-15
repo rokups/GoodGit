@@ -814,4 +814,53 @@ GG_TEST("rewrite", "a cancel before the refs change leaves refs, index and worki
     GG_CHECK(everything(s, repo) != before);
 }
 
+GG_TEST("rewrite", "rewrite: a pick packs only the objects it creates, not the whole tree of the new commit")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int d = 0; d < 8; ++d)
+        for (const char* sub : {"", "/sub"}) {
+            const fs::path dir = repo / ("d" + std::to_string(d) + sub);
+            fs::create_directories(dir);
+            for (int f = 0; f < 5; ++f)
+                std::ofstream(dir / ("f" + std::to_string(f) + ".txt")) << "file " << d << sub << " " << f << "\n";
+        }
+    s.git(repo, {"add", "-A"});
+    s.git(repo, {"commit", "-q", "-m", "Tree"});
+    s.git(repo, {"checkout", "-q", "-b", "side"});
+    s.commitFile(repo, "d3/sub/f1.txt", "side\n", "Side");
+    const std::string side = s.head(repo);
+    s.git(repo, {"checkout", "-q", "main"});
+    s.commitFile(repo, "d3/f0.txt", "main\n", "Main");
+    const std::string head = s.head(repo);
+    s.git(repo, {"repack", "-a", "-d", "-q"});
+    auto packed = [&] {
+        for (const auto& line : gg::splitLines(s.gitOut(repo, {"count-objects", "-v"})))
+            if (line.rfind("in-pack: ", 0) == 0)
+                return std::stoi(line.substr(9));
+        return -1;
+    };
+    const int before = packed();
+    GG_REQUIRE(before > 0);
+    gg::rewrite::Plan plan;
+    gg::rewrite::Step step;
+    step.source = side;
+    step.key = "pick0";
+    step.forceNew = true;
+    step.mapSource = false;
+    step.sourceParents = false;
+    step.parents = {"=" + head};
+    step.message = "Side again\n";
+    plan.steps.push_back(step);
+    plan.refsToSteps["refs/heads/main"] = "pick0";
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    std::string error;
+    GG_REQUIRE(result.ok && rewriter.apply(plan, result, error));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "main:d3/sub/f1.txt"}), "side");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "main:d3/f0.txt"}), "main");
+    // New: the commit, the root tree and d3 (d3/sub is the side commit's own tree).
+    GG_CHECK(packed() - before == 3);
+    GG_CHECK(s.gitOut(repo, {"fsck", "--no-dangling"}).find("missing") == std::string::npos);
+}
+
 } // namespace ggtest

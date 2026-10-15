@@ -9,6 +9,7 @@
 #include "libgg/Thread.hpp"
 
 #include <git2/apply.h>
+#include <git2/pack.h>
 #include <git2/sys/index.h>
 #include <git2/sys/mempack.h>
 #include <git2/sys/odb_backend.h>
@@ -984,8 +985,21 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error, const
     }
     // 2. Objects: the in-memory store becomes one pack.
     try {
+        // Only the objects in the store: git_mempack_dump() packs the whole tree of every new
+        // commit (all objects reachable from it), although the store only holds what the
+        // rewrite created (a write of an object that exists already is skipped by the odb).
+        size_t count = 0;
+        check(git_mempack_object_count(&count, m->mempack), "git_mempack_object_count");
         git_buf pack = GIT_BUF_INIT;
-        check(git_mempack_dump(&pack, m->repo.get(), m->mempack), "git_mempack_dump");
+        std::unique_ptr<git_buf, decltype(&git_buf_dispose)> packOwner(&pack, &git_buf_dispose);
+        if (count > 0) {
+            git_packbuilder* rawBuilder = nullptr;
+            check(git_packbuilder_new(&rawBuilder, m->repo.get()), "git_packbuilder_new");
+            std::unique_ptr<git_packbuilder, decltype(&git_packbuilder_free)> builder(rawBuilder, &git_packbuilder_free);
+            git_packbuilder_set_threads(builder.get(), 0);
+            check(git_mempack_write_thin_pack(m->mempack, builder.get()), "git_mempack_write_thin_pack");
+            check(git_packbuilder_write_buf(&pack, builder.get()), "git_packbuilder_write_buf");
+        }
         if (pack.size > 0) {
             git_odb* rawOdb = nullptr;
             check(git_repository_odb(&rawOdb, m->repo.get()), "git_repository_odb");
@@ -996,10 +1010,7 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error, const
             const int a = wp->append(wp, pack.ptr, pack.size, &stats);
             const int c = a == 0 ? wp->commit(wp, &stats) : a;
             wp->free(wp);
-            git_buf_dispose(&pack);
             check(c, "writing the rewritten objects");
-        } else {
-            git_buf_dispose(&pack);
         }
     } catch (const std::exception& e) {
         error = e.what();
