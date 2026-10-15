@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <thread>
 
 namespace gg::reconcile {
 
@@ -31,6 +32,39 @@ std::int64_t nowMs()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+// A lock file of git that is younger than this is a command still running. An older one is left
+// behind by a crashed command and is not waited for (a pass would defer for ever).
+constexpr std::chrono::seconds kStaleLockAge{5};
+
+bool freshLockFile(const fs::path& file)
+{
+    std::error_code ec;
+    if (!fs::is_regular_file(file, ec) || ec)
+        return false;
+    const auto written = fs::last_write_time(file, ec);
+    if (ec)
+        return false; // gone since the check: git has finished with it
+    return fs::file_time_type::clock::now() - written < kStaleLockAge;
+}
+
+// True while git is in the middle of a ref update: it writes the reflog entries first and renames
+// refs/heads/<b>.lock onto the ref last, so a pass in between sees a new reflog and an old ref.
+// Looks at every ref lock (a new ref has no value yet to look up), packed-refs.lock and the
+// worktree's HEAD.lock. Its rename event runs the next pass.
+bool refUpdateRunning(git_repository* repo)
+{
+    const fs::path common = git_repository_commondir(repo);
+    if (freshLockFile(common / "packed-refs.lock") || freshLockFile(fs::path(git_repository_path(repo)) / "HEAD.lock"))
+        return true;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(common / "refs", fs::directory_options::skip_permission_denied, ec);
+    const fs::recursive_directory_iterator end;
+    for (; !ec && it != end; it.increment(ec))
+        if (it->path().extension() == fs::path(".lock") && freshLockFile(it->path()))
+            return true;
+    return false;
 }
 
 struct State {
@@ -751,13 +785,20 @@ Result run(git_repository* repo, std::string* error)
     bool stable = false;
     for (int attempt = 0; attempt < 3 && !stable; ++attempt) {
         HeadLog before(repo);
+        // A ref lock is looked for right after the first reflog read and before the refs are read.
+        // Git creates the lock before it writes the reflog, so an entry that this read saw has its
+        // lock on disk now, or the ref is renamed already and the read below sees its final value.
+        if (refUpdateRunning(repo)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            continue;
+        }
         current = readRefValues(repo);
         headLog = std::make_unique<HeadLog>(repo);
         stable = before.tipJson() == headLog->tipJson();
     }
     if (!stable) {
-        // Git is writing right now: nothing is decided on a half-written picture. Its own change
-        // events run the next pass.
+        // Git is writing right now (tips that move, or a ref lock that is held): nothing is decided
+        // on a half-written picture. Its own change events run the next pass.
         result.deferred = true;
         return result;
     }

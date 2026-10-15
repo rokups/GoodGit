@@ -1509,4 +1509,112 @@ GG_TEST("reconcile", "git branch -c copies the reflog: one op creating the copy,
     GG_CHECK(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/main"}).ok());
 }
 
+namespace {
+
+// The files git leaves between the reflog write and the ref rename of `git commit`: staged by hand,
+// with no watcher (the repository is closed) to run a pass in between.
+struct RefLockWindow {
+    fs::path ref;  // refs/heads/<b>
+    std::string oldValue, newValue;
+
+    static void write(const fs::path& file, const std::string& text)
+    {
+        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+    void rollBack() const { write(ref, oldValue + "\n"); }
+    void forward() const { write(ref, newValue + "\n"); }
+    fs::path lock() const { return fs::path(ref.string() + ".lock"); }
+};
+
+// Makes one plain commit in a repository that is closed in ggui (no watcher).
+RefLockWindow commitWithoutWatcher(Scenario& s, const fs::path& repo)
+{
+    RefLockWindow w;
+    const std::string branch = gg::trim(s.gitOut(repo, {"symbolic-ref", "HEAD"}));
+    w.ref = repo / ".git" / branch;
+    w.oldValue = gg::trim(s.gitOut(repo, {"rev-parse", "HEAD"}));
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "locked window"});
+    w.newValue = gg::trim(s.gitOut(repo, {"rev-parse", "HEAD"}));
+    return w;
+}
+
+} // namespace
+
+GG_TEST("reconcile", "a pass defers while git holds the ref lock between its reflog write and the ref rename")
+{
+    // git commit: HEAD.lock and refs/heads/<b>.lock are created, the reflogs are appended, the lock
+    // is renamed onto the ref. A pass in between saw the new reflog entry with the old ref value
+    // and wrote a bogus "external changes" operation after the commit's own.
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    const RefLockWindow w = commitWithoutWatcher(s, repo);
+    GG_REQUIRE(w.oldValue != w.newValue);
+    const size_t gitBefore = countOps(repo, "git");
+    const size_t allBefore = journalOps(repo).size();
+
+    w.rollBack();
+    RefLockWindow::write(w.lock(), w.newValue + "\n");
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    gg::reconcile::Result pass = gg::reconcile::run(r.get(), &error);
+    GG_CHECK(error.empty());
+    GG_CHECK(pass.deferred);
+    GG_CHECK_EQ(pass.appended, 0u);
+    GG_CHECK_EQ(journalOps(repo).size(), allBefore);
+
+    // git is done: the ref has its value, the lock is gone.
+    w.forward();
+    std::error_code ec;
+    fs::remove(w.lock(), ec);
+    // Any other fresh lock of a ref update defers as well.
+    for (const fs::path& lock : {repo / ".git" / "HEAD.lock", repo / ".git" / "packed-refs.lock",
+             repo / ".git" / "refs" / "heads" / "new-branch.lock"}) {
+        RefLockWindow::write(lock, "x\n");
+        pass = gg::reconcile::run(r.get(), &error);
+        GG_CHECK(pass.deferred);
+        GG_CHECK_EQ(pass.appended, 0u);
+        fs::remove(lock, ec);
+    }
+    GG_CHECK_EQ(journalOps(repo).size(), allBefore);
+
+    pass = gg::reconcile::run(r.get(), &error);
+    GG_CHECK(error.empty());
+    GG_CHECK(!pass.deferred);
+    GG_CHECK_EQ(countOps(repo, "git"), gitBefore + 1);
+    GG_CHECK_EQ(countOps(repo, "git", "external changes"), 0u);
+    GG_CHECK_EQ(journalOps(repo).size(), allBefore + 1);
+}
+
+GG_TEST("reconcile", "a stale ref lock left by a crashed git does not stall the pass")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    ctx->Yield(3);
+    const RefLockWindow w = commitWithoutWatcher(s, repo);
+    GG_REQUIRE(w.oldValue != w.newValue);
+    const size_t gitBefore = countOps(repo, "git");
+
+    // The ref has its value; the lock files are leftovers, written a minute ago.
+    std::error_code ec;
+    const auto old = fs::file_time_type::clock::now() - std::chrono::minutes(1);
+    for (const fs::path& lock : {w.lock(), repo / ".git" / "HEAD.lock", repo / ".git" / "packed-refs.lock"}) {
+        RefLockWindow::write(lock, "x\n");
+        fs::last_write_time(lock, old, ec);
+        GG_REQUIRE(!ec);
+    }
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    std::string error;
+    const gg::reconcile::Result pass = gg::reconcile::run(r.get(), &error);
+    GG_CHECK(error.empty());
+    GG_CHECK(!pass.deferred);
+    GG_CHECK_EQ(countOps(repo, "git"), gitBefore + 1);
+    GG_CHECK_EQ(countOps(repo, "git", "external changes"), 0u);
+}
+
 } // namespace ggtest
