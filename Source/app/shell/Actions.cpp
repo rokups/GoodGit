@@ -900,8 +900,27 @@ void Actions::deleteBranch(const std::string& name, bool force, const std::vecto
 {
     run("delete branch " + name,
         [name, force, remotes, local](MutationContext& ctx) {
-            for (const auto& r : remotes)
+            for (const auto& r : remotes) {
                 ctx.git({"push", "--progress", r, "--delete", name}, {}, true);
+                // The remote branch is gone: a local branch that tracked it tracks nothing now. (%(upstream)
+                // comes from the config, so it names the deleted ref still.) The branch that this operation
+                // deletes too is left alone.
+                const std::string gone = "refs/remotes/" + r + "/" + name;
+                const auto heads = ctx.gitMayFail({"for-each-ref", "--format=%(refname:lstrip=2)%00%(upstream)", "refs/heads"});
+                for (size_t from = 0; from < heads.out.size();) {
+                    size_t end = heads.out.find('\n', from);
+                    if (end == std::string::npos)
+                        end = heads.out.size();
+                    const std::string line = heads.out.substr(from, end - from);
+                    from = end + 1;
+                    const size_t nul = line.find('\0');
+                    if (nul == std::string::npos || line.compare(nul + 1, std::string::npos, gone) != 0)
+                        continue;
+                    const std::string tracker = line.substr(0, nul);
+                    if (!(local && tracker == name))
+                        ctx.git({"branch", "--unset-upstream", tracker});
+                }
+            }
             if (local)
                 ctx.git({"branch", force ? "-D" : "-d", name});
         },

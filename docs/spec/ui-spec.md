@@ -632,7 +632,8 @@ the panel without touching the repository.
   Reveal · Copy name · Check out · Create branch… (the `Create branch` dialog with this branch as the start point; a
   remote-tracking branch has it too, next to Create local branch…) · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
-  remotes) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
+  remotes; a delete on a remote, here or by Delete on remote…, also unsets the upstream of every local branch that
+  tracked the deleted remote branch, after each successful remote delete; a failed delete changes nothing) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
   Interactive rebase onto… (Phase 3: the `Interactive rebase onto` dialog asks for the base; the
   branch is the tip and only it and its update-ref branches move, HEAD stays) · Check out in new
   worktree… (Phase 4: the `Add worktree` dialog with *An existing branch* and this branch; disabled

@@ -375,6 +375,59 @@ GG_TEST("refs", "delete a branch on its remote, and everywhere")
     GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "both"}).empty());
 }
 
+GG_TEST("refs", "deleting a remote branch unsets the upstream of the local branches that track it")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "remote-only", "HEAD~1"});
+    s.git(repo, {"push", "-q", "-u", "origin", "remote-only"});
+    s.git(repo, {"branch", "both", "HEAD~1"});
+    s.git(repo, {"push", "-q", "-u", "origin", "both"});
+    s.git(repo, {"branch", "other-name", "HEAD~1"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/both", "other-name"}); // a second branch tracks origin/both
+    s.git(repo, {"branch", "keeper", "HEAD~1"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/main", "keeper"}); // tracks another remote branch
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto upstream = [&](const char* b) { return gg::trim(s.gitMayFail(repo, {"rev-parse", "--abbrev-ref", std::string(b) + "@{upstream}"}).out); };
+    GG_CHECK_STR_EQ(upstream("remote-only"), "origin/remote-only");
+    // On its remote: the local branch stays, without an upstream.
+    s.contextMenu(branchRow("remote-only").c_str(), "Delete/On its remote");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "remote-only"}).empty(); }));
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "--get", "branch.remote-only.merge"}).out.empty(); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/remote-only"));
+    GG_CHECK(s.gitMayFail(repo, {"config", "--get", "branch.remote-only.remote"}).out.empty());
+    // Local and all remotes: another local branch that tracks the remote branch loses its upstream too.
+    s.contextMenu(branchRow("both").c_str(), "Delete/Local and all remotes");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/both"); }));
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "--get", "branch.other-name.merge"}).out.empty(); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/other-name"));
+    // A branch that tracks something else is untouched.
+    GG_CHECK_STR_EQ(upstream("keeper"), "origin/main");
+}
+
+GG_TEST("refs", "a failed delete of a remote branch keeps the upstream of the local branches")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "topic", "HEAD~1"});
+    s.git(repo, {"push", "-q", "-u", "origin", "topic"});
+    // The remote refuses the delete.
+    s.git(origin(s, repo), {"config", "receive.denyDeletes", "true"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    s.contextMenu(branchRow("topic").c_str(), "Delete/On its remote");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    s.dialogButton("Delete branch", "Delete");
+    s.settle();
+    GG_CHECK(!s.gitOut(origin(s, repo), {"branch", "--list", "topic"}).empty());
+    GG_CHECK_STR_EQ(gg::trim(s.gitMayFail(repo, {"config", "--get", "branch.topic.merge"}).out), "refs/heads/topic");
+}
+
 GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch have their own menus")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
