@@ -699,4 +699,53 @@ GG_TEST("rewrite", "rebase tip onto: a merge with its first parent outside the s
     GG_CHECK(hasFile(s, repo, "topic", "s.txt"));
 }
 
+GG_TEST("rewrite", "a cancel before the refs change leaves refs, index and working tree as they were")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string before = everything(s, repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const std::string target = s.revParse(repo, "HEAD~2");
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {target});
+    for (auto& step : plan.steps)
+        if (step.source == target)
+            step.message = "Cancelled rewrite\n";
+    plan.reflogMessage = "test: cancel";
+    // A token that is cancelled before compute: no step runs.
+    {
+        gg::CancelToken token;
+        token.cancel();
+        gg::rewrite::Rewriter rewriter(repo);
+        bool thrown = false;
+        try {
+            rewriter.compute(plan, token);
+        } catch (const gg::Cancelled&) {
+            thrown = true;
+        }
+        GG_CHECK(thrown);
+    }
+    // A token that is cancelled after compute: apply stops before it changes the refs.
+    {
+        gg::CancelToken token;
+        gg::rewrite::Rewriter rewriter(repo);
+        gg::rewrite::Result result = rewriter.compute(plan, token);
+        GG_REQUIRE(result.ok && result.changed());
+        token.cancel();
+        std::string error;
+        bool thrown = false;
+        try {
+            rewriter.apply(plan, result, error, token);
+        } catch (const gg::Cancelled&) {
+            thrown = true;
+        }
+        GG_CHECK(thrown);
+    }
+    GG_CHECK_STR_EQ(everything(s, repo), before);
+    // The same plan without a cancel still applies.
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    std::string error;
+    GG_REQUIRE(result.ok && rewriter.apply(plan, result, error, gg::CancelToken()));
+    GG_CHECK(everything(s, repo) != before);
+}
+
 } // namespace ggtest

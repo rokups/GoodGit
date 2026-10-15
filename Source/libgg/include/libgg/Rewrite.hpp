@@ -211,8 +211,10 @@ public:
     // thread only): reading the new commits' trees and files before (or instead of) applying.
     git_repository* repository();
     // Writes the computed rewrite (see the file comment). False with `error` on failure, in
-    // which case refs, HEAD, index and working tree are unchanged.
-    bool apply(const Plan& plan, Result& result, std::string& error);
+    // which case refs, HEAD, index and working tree are unchanged. Throws gg::Cancelled when
+    // `cancel` is set before the refs change (the same state then). After that point the
+    // token is not checked: the rewrite always finishes.
+    bool apply(const Plan& plan, Result& result, std::string& error, const gg::CancelToken& cancel = gg::CancelToken::none());
 
 private:
     struct Impl;

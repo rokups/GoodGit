@@ -72,7 +72,7 @@ void Actions::rewritePrepare(const std::shared_ptr<RewriteState>& state)
             if (state->emptied)
                 plan.emptied = *state->emptied;
             rw::Rewriter rewriter(ctx.cwd());
-            state->preview = rewriter.compute(plan);
+            state->preview = rewriter.compute(plan, ctx.token()); // throws gg::Cancelled
             if (!state->preview.ok && state->preview.unresolved.empty())
                 throw MutationError{Outcome::Failed, state->preview.error, {}};
         },
@@ -218,27 +218,51 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
             if (state->emptied)
                 plan.emptied = *state->emptied;
             rw::Rewriter rewriter(ctx.cwd());
-            rw::Result r = rewriter.compute(plan);
+            rw::Result r = rewriter.compute(plan, ctx.token()); // throws gg::Cancelled
             if (!r.ok)
                 throw MutationError{Outcome::Refused,
                     r.unresolved.empty() ? r.error : "the history changed while deciding; try again", {}};
+            // From here on a cancel must not leave the autostash behind: these git calls ignore it.
+            auto plainGit = [&](std::vector<std::string> args) {
+                gg::RunRequest request;
+                request.args.emplace_back("git");
+                for (auto& a : args)
+                    request.args.push_back(std::move(a));
+                request.cwd = ctx.cwd();
+                request.env = ctx.env;
+                return gg::run(request);
+            };
             // Autostash (git rebase --autostash): tracked changes out of the way, back after.
-            auto stashTip = [&] { return ctx.gitMayFail({"rev-parse", "-q", "--verify", "refs/stash"}).out; };
+            auto stashTip = [&] { return plainGit({"rev-parse", "-q", "--verify", "refs/stash"}).out; };
             bool stashed = false;
             if (state->autostash) {
+                gg::throwIfCancelled(ctx.token());
                 const std::string before = stashTip();
-                ctx.git({"stash", "push", "-q", "-m", "ggui: autostash"});
+                const gg::RunResult pushed = plainGit({"stash", "push", "-q", "-m", "ggui: autostash"});
+                if (!pushed.ok()) {
+                    const std::string all = pushed.err + pushed.out;
+                    throw MutationError{core::classifyFailure(all), pushed.message(), all};
+                }
                 stashed = stashTip() != before;
             }
             std::string error;
-            if (!rewriter.apply(plan, r, error)) {
+            bool applied = false;
+            try {
+                applied = rewriter.apply(plan, r, error, ctx.token());
+            } catch (const gg::Cancelled&) {
+                // Cancelled before the refs changed: nothing is rewritten, so give the stash back.
+                if (stashed && !plainGit({"stash", "pop", "-q", "--index"}).ok())
+                    throw MutationError{Outcome::Failed, "Cancelled; your changes are safe in the stash.", {}};
+                throw;
+            }
+            if (!applied) {
                 if (stashed)
-                    ctx.gitMayFail({"stash", "pop", "-q", "--index"});
+                    plainGit({"stash", "pop", "-q", "--index"});
                 throw MutationError{Outcome::Failed, error, error};
             }
             // Before anything that can throw: apply deleted the keep refs of the rewritten commits.
             ctx.keepExtra = r.keepExtra;
-            if (stashed && !ctx.gitMayFail({"stash", "pop", "-q", "--index"}).ok())
+            if (stashed && !plainGit({"stash", "pop", "-q", "--index"}).ok())
                 ctx.info = "Applying the autostash gave conflicts; your changes are safe in the stash.";
             ctx.worktreeFollowsIndex = r.headAfter != r.headBefore || stashed;
             state->preview = std::move(r);

@@ -941,7 +941,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
     return result;
 }
 
-bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
+bool Rewriter::apply(const Plan& plan, Result& result, std::string& error, const gg::CancelToken& cancel)
 {
     assertNotUiThread("Rewriter::apply");
     if (!result.ok) {
@@ -950,10 +950,27 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
     }
     if (!result.changed())
         return true;
+    // Until the refs change a cancel leaves everything as it was. Only the pre-rebase hook is
+    // killed by a cancel: update-index and read-tree take index.lock, and a hard kill (Windows)
+    // would leave it stale, so they only check the token before they start. The steps after the
+    // ref update never check it (they would leave refs and index apart).
+    auto cancellableGit = [&](std::vector<std::string> args) {
+        throwIfCancelled(cancel);
+        RunRequest request;
+        request.args.emplace_back("git");
+        for (auto& a : args)
+            request.args.push_back(std::move(a));
+        request.cwd = m->cwd;
+        request.cancel = cancel;
+        RunResult r = run(request);
+        if (r.cancelled)
+            throw gg::Cancelled{};
+        return r;
+    };
     // 1. pre-rebase may veto a rebase-like rewrite (before anything is written).
     if (plan.rebaseLike && !m->bare) {
         std::vector<std::string> args{"hook", "run", "--ignore-missing", "pre-rebase", "--", plan.upstream};
-        const RunResult r = git(m->cwd, args);
+        const RunResult r = cancellableGit(args);
         if (!r.ok()) {
             error = "the pre-rebase hook refused the rewrite: " + r.message();
             return false;
@@ -987,9 +1004,11 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
     const bool moveWorktree = headMoved && !plan.keepWorktree;
     std::string oldTree, newTree;
     if (moveWorktree) {
+        throwIfCancelled(cancel);
         git(m->cwd, {"update-index", "-q", "--refresh"}); // stat data, so unchanged files count as unchanged
         oldTree = result.headBefore + "^{tree}";
         newTree = result.headAfter + "^{tree}";
+        throwIfCancelled(cancel);
         const RunResult dry = git(m->cwd, {"read-tree", "-m", "-u", "-n", oldTree, newTree});
         if (!dry.ok()) {
             error = "local changes would be overwritten: " + dry.message();
@@ -1013,6 +1032,7 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error)
             input += std::string(forward ? "delete " : "create ") + keep::refName(kept) + " " + kept + "\n";
         return git(m->cwd, {"update-ref", "--create-reflog", "-m", plan.reflogMessage, "--stdin"}, input);
     };
+    throwIfCancelled(cancel); // the last point to stop: the next step changes the refs
     const RunResult refs = transaction(true);
     if (!refs.ok()) {
         error = refs.message();
