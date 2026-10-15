@@ -180,8 +180,6 @@ bool programWorks(const std::string& program)
 namespace curlc {
 constexpr int kOk = 0;
 constexpr int kUnknownOption = 48;       // CURLE_UNKNOWN_OPTION
-constexpr int kWriteError = 23;          // CURLE_WRITE_ERROR
-constexpr int kAbortedByCallback = 42;   // CURLE_ABORTED_BY_CALLBACK
 constexpr int kGlobalDefault = 3;        // CURL_GLOBAL_DEFAULT
 constexpr int kWriteData = 10001;        // CURLOPT_WRITEDATA
 constexpr int kUrl = 10002;              // CURLOPT_URL

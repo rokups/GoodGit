@@ -44,7 +44,7 @@ imports() {
         dumpbin //nologo //dependents "$(cygpath -w "$1" 2>/dev/null || echo "$1")" | grep -iE '^ +[^ ]+\.dll' | tr -d ' \r'
     fi
 }
-system_dll='^(kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|imm32|winmm|version|setupapi|ws2_32|secur32|crypt32|bcrypt|shlwapi|comdlg32|dwmapi|uxtheme|dbghelp|ntdll|rpcrt4|hid|cfgmgr32|dinput8|dxgi|d3d11|d3d12|d3dcompiler_47|xinput1_4|api-ms-win-[a-z0-9-]+|ucrtbase|msvcrt)\.dll$'
+system_dll='^(kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|imm32|winmm|version|setupapi|ws2_32|secur32|crypt32|bcrypt|shlwapi|winhttp|comdlg32|dwmapi|uxtheme|dbghelp|ntdll|rpcrt4|hid|cfgmgr32|dinput8|dxgi|d3d11|d3d12|d3dcompiler_47|xinput1_4|api-ms-win-[a-z0-9-]+|ucrtbase|msvcrt)\.dll$'
 names=$(mktemp)
 grep -rhoE 'GG_TEST\("[^"]+", *"[^"]+"' "$root/Source/tests" | sed -E 's/.*, *"([^"]+)"$/\1/' | sort -u > "$names"
 for exe in ggui.exe git-gg.exe; do
