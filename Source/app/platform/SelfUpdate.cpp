@@ -1,13 +1,21 @@
 #include "platform/SelfUpdate.hpp"
 
+#include "libgg/GitRunner.hpp"
+#include "util/Sha256.hpp"
+
+#include <miniz.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <condition_variable>
 #include <fstream>
 #include <iterator>
+#include <mutex>
+#include <set>
 #include <system_error>
+#include <thread>
 
 namespace ggui::update {
 
@@ -103,8 +111,7 @@ const Asset* selectAsset(const Release& release, std::string_view packageSystem)
     if (packageSystem.empty()) {
         return nullptr;
     }
-    const std::string suffix =
-        "-" + std::string(packageSystem) + (startsWith(packageSystem, "windows-") ? ".zip" : ".tar.gz");
+    const std::string suffix = "-" + std::string(packageSystem) + ".zip";
     for (const Asset& asset : release.assets) {
         if (!startsWith(asset.name, "ggui-") || !endsWith(asset.name, suffix)) {
             continue;
@@ -437,6 +444,395 @@ std::optional<std::string> takeResult(const fs::path& installDir)
         removeOldFile(installDir, kGitGgName);
     }
     return result;
+}
+
+namespace {
+
+constexpr size_t kMaxEntries = 1000;
+constexpr std::uint64_t kMaxTotalBytes = std::uint64_t(1) << 30; // 1 GiB
+constexpr mz_uint kUnixHost = 3;                                 // "version made by" host: Unix
+constexpr mz_uint kModeTypeMask = 0170000;
+constexpr mz_uint kModeFile = 0100000;
+constexpr mz_uint kModeDir = 0040000;
+constexpr auto kVersionTimeout = std::chrono::seconds(20);
+
+// gg::run reads its arguments as UTF-8.
+std::string pathUtf8(const fs::path& path)
+{
+    const auto text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
+
+std::string lowerCase(std::string text)
+{
+    for (char& c : text) {
+        c = lower(c);
+    }
+    return text;
+}
+
+// Splits a ZIP entry name into its parts when it is a plain relative path. A folder entry may end
+// in one "/".
+bool splitEntryName(const std::string& name, std::vector<std::string>& parts)
+{
+    parts.clear();
+    std::string text = name;
+    if (!text.empty() && text.back() == '/') {
+        text.pop_back();
+    }
+    size_t start = 0;
+    while (true) {
+        const size_t end = text.find('/', start);
+        const std::string part = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (part.empty() || part == "." || part == ".." || part.back() == '.' || part.back() == ' ') {
+            return false;
+        }
+        for (const char c : part) {
+            const unsigned char u = static_cast<unsigned char>(c);
+            if (u < 0x20 || u >= 0x7f || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' ||
+                c == '>' || c == '|') {
+                return false;
+            }
+        }
+        parts.push_back(part);
+        if (end == std::string::npos) {
+            return true;
+        }
+        start = end + 1;
+    }
+}
+
+size_t readZipBlock(void* opaque, mz_uint64 offset, void* buffer, size_t count)
+{
+    std::ifstream& file = *static_cast<std::ifstream*>(opaque);
+    file.clear();
+    file.seekg(static_cast<std::streamoff>(offset));
+    if (!file) {
+        return 0;
+    }
+    file.read(static_cast<char*>(buffer), static_cast<std::streamsize>(count));
+    return static_cast<size_t>(file.gcount());
+}
+
+struct ZipReader {
+    mz_zip_archive zip;
+    bool open = false;
+
+    ZipReader() { mz_zip_zero_struct(&zip); }
+    ZipReader(const ZipReader&) = delete;
+    ZipReader& operator=(const ZipReader&) = delete;
+    ~ZipReader()
+    {
+        if (open) {
+            mz_zip_reader_end(&zip);
+        }
+    }
+};
+
+struct PlannedEntry {
+    mz_uint index = 0;
+    std::vector<std::string> parts;
+    bool isDir = false;
+    std::uint64_t size = 0;
+};
+
+fs::path joinParts(const fs::path& root, const std::vector<std::string>& parts)
+{
+    fs::path out = root;
+    for (const std::string& part : parts) {
+        out /= part;
+    }
+    return out;
+}
+
+// Checks every entry and lists the ones to write. Returns "" or an error text.
+std::string planEntries(ZipReader& reader, std::vector<PlannedEntry>& plan)
+{
+    const mz_uint count = mz_zip_reader_get_num_files(&reader.zip);
+    if (count == 0) {
+        return "The update is empty.";
+    }
+    if (count > kMaxEntries) {
+        return "The update has too many files.";
+    }
+    std::set<std::string> seen;
+    std::set<std::string> tops;
+    std::uint64_t total = 0;
+    for (mz_uint i = 0; i < count; ++i) {
+        mz_zip_archive_file_stat st;
+        if (!mz_zip_reader_file_stat(&reader.zip, i, &st)) {
+            return "The update is damaged.";
+        }
+        const std::string name = st.m_filename;
+        PlannedEntry entry;
+        entry.index = i;
+        entry.isDir = mz_zip_reader_is_file_a_directory(&reader.zip, i) != 0;
+        if (!splitEntryName(name, entry.parts)) {
+            return "The update has an unsafe file name: " + name;
+        }
+        std::string key;
+        for (const std::string& part : entry.parts) {
+            key += lowerCase(part) + '/';
+        }
+        if (!seen.insert(key).second) {
+            return "The update has a duplicate file name: " + name;
+        }
+        if (!st.m_is_supported || st.m_is_encrypted) {
+            return "The update has an unsupported entry: " + name;
+        }
+        if (static_cast<mz_uint>(st.m_version_made_by >> 8) == kUnixHost) {
+            const mz_uint type = (st.m_external_attr >> 16) & kModeTypeMask;
+            if (type != 0 && type != (entry.isDir ? kModeDir : kModeFile)) {
+                return "The update has a link or a special file: " + name;
+            }
+        }
+        if (entry.isDir) {
+            if (st.m_uncomp_size != 0) {
+                return "The update has a folder with data: " + name;
+            }
+        } else if (entry.parts.size() < 2) {
+            return "The update must hold exactly one top folder.";
+        }
+        entry.size = st.m_uncomp_size;
+        if (entry.size > kMaxTotalBytes - total) {
+            return "The update is too big.";
+        }
+        total += entry.size;
+        tops.insert(lowerCase(entry.parts.front()));
+        plan.push_back(std::move(entry));
+    }
+    if (tops.size() != 1) {
+        return "The update must hold exactly one top folder.";
+    }
+    return {};
+}
+
+// Writes one file entry. `budget` is the number of bytes still allowed in total.
+std::string writeEntry(ZipReader& reader, const PlannedEntry& entry, const fs::path& path, std::uint64_t& budget)
+{
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    if (ec) {
+        return "Cannot create a folder for the update: " + ec.message();
+    }
+    mz_zip_reader_extract_iter_state* iter = mz_zip_reader_extract_iter_new(&reader.zip, entry.index, 0);
+    if (iter == nullptr) {
+        return "The update is damaged.";
+    }
+    std::string error;
+    std::uint64_t written = 0;
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            error = "Cannot write a file of the update.";
+        }
+        std::vector<char> buffer(64 * 1024);
+        while (error.empty()) {
+            const size_t got = mz_zip_reader_extract_iter_read(iter, buffer.data(), buffer.size());
+            if (got == 0) {
+                break;
+            }
+            if (got > budget || written + got > entry.size) {
+                error = "The update holds more data than it announces.";
+                break;
+            }
+            budget -= got;
+            written += got;
+            out.write(buffer.data(), static_cast<std::streamsize>(got));
+            if (!out) {
+                error = "Cannot write a file of the update.";
+            }
+        }
+        out.flush();
+        if (error.empty() && !out) {
+            error = "Cannot write a file of the update.";
+        }
+    }
+    // The call checks the CRC when all data was read.
+    const bool crcOk = mz_zip_reader_extract_iter_free(iter) != 0;
+    if (error.empty() && (!crcOk || written != entry.size)) {
+        error = "The update is damaged (a file does not match its checksum).";
+    }
+    return error;
+}
+
+std::string unpackZip(const fs::path& zipFile, std::uint64_t zipSize, const fs::path& unpackDir)
+{
+    std::ifstream file(zipFile, std::ios::binary);
+    if (!file) {
+        return "Cannot open the downloaded update.";
+    }
+    ZipReader reader;
+    reader.zip.m_pRead = readZipBlock;
+    reader.zip.m_pIO_opaque = &file;
+    if (!mz_zip_reader_init(&reader.zip, zipSize, 0)) {
+        return "The downloaded update is not a valid ZIP file.";
+    }
+    reader.open = true;
+    std::vector<PlannedEntry> plan;
+    if (std::string error = planEntries(reader, plan); !error.empty()) {
+        return error;
+    }
+    std::error_code ec;
+    fs::create_directories(unpackDir, ec);
+    if (ec) {
+        return "Cannot create the update folder: " + ec.message();
+    }
+    std::uint64_t budget = kMaxTotalBytes;
+    for (const PlannedEntry& entry : plan) {
+        const fs::path path = joinParts(unpackDir, entry.parts);
+        if (entry.isDir) {
+            fs::create_directories(path, ec);
+            if (ec) {
+                return "Cannot create a folder for the update: " + ec.message();
+            }
+        } else if (std::string error = writeEntry(reader, entry, path, budget); !error.empty()) {
+            return error;
+        }
+    }
+    return {};
+}
+
+// Moves `from` to `to` when `from` is a regular file (never a link). A `required` file gives an
+// error when it is missing.
+std::string moveFile(const fs::path& from, const fs::path& to, const char* what, bool required)
+{
+    std::error_code ec;
+    if (!fs::is_regular_file(fs::symlink_status(from, ec))) {
+        return required ? std::string("The update has no ") + what + "." : std::string();
+    }
+    fs::rename(from, to, ec);
+    return ec ? std::string("Cannot move ") + what + ": " + ec.message() : std::string();
+}
+
+// Moves the program files from the single top folder of `unpackDir` into `newDir`.
+std::string collectFiles(const fs::path& unpackDir, const fs::path& newDir)
+{
+    std::error_code ec;
+    fs::path top;
+    int count = 0;
+    for (fs::directory_iterator it(unpackDir, ec), end; !ec && it != end; it.increment(ec)) {
+        top = it->path();
+        ++count;
+    }
+    if (ec || count != 1 || !fs::is_directory(fs::symlink_status(top, ec))) {
+        return "The update must hold exactly one top folder.";
+    }
+    fs::create_directories(newDir, ec);
+    if (ec) {
+        return "Cannot create the update folder: " + ec.message();
+    }
+#ifdef _WIN32
+    const fs::path programs = top;
+#else
+    const fs::path programs = top / "bin";
+#endif
+    if (std::string error = moveFile(programs / kGguiName, newDir / kGguiName, kGguiName, true); !error.empty()) {
+        return error;
+    }
+    if (std::string error = moveFile(programs / kGitGgName, newDir / kGitGgName, kGitGgName, true); !error.empty()) {
+        return error;
+    }
+#ifdef _WIN32
+    return moveFile(top / "LICENSE.txt", newDir / "LICENSE.txt", "LICENSE.txt", false);
+#else
+    return {};
+#endif
+}
+
+// Runs `git-gg --version` with a time limit; "" when it prints "git gg ...".
+std::string checkVersion(const fs::path& gitGg)
+{
+    gg::RunRequest request;
+    request.args = {pathUtf8(gitGg), "--version"};
+    request.gitEnvironment = false;
+    std::mutex mutex;
+    std::condition_variable wake;
+    bool done = false;
+    const gg::CancelToken cancel = request.cancel;
+    std::thread watchdog([&] {
+        std::unique_lock lock(mutex);
+        if (!wake.wait_for(lock, kVersionTimeout, [&] { return done; })) {
+            cancel.cancel();
+        }
+    });
+    const gg::RunResult result = gg::run(request);
+    {
+        std::lock_guard lock(mutex);
+        done = true;
+    }
+    wake.notify_all();
+    watchdog.join();
+    if (result.startFailed) {
+        return "The new git-gg does not start.";
+    }
+    if (result.cancelled) {
+        return "The new git-gg did not answer in time.";
+    }
+    if (!result.ok() || !startsWith(result.out, "git gg ")) {
+        return "The new git-gg gives a wrong version answer.";
+    }
+    return {};
+}
+
+} // namespace
+
+std::string stageUpdate(const fs::path& installDir, const fs::path& zipFile, const Asset& asset)
+{
+    std::error_code ec;
+    const std::uintmax_t size = fs::file_size(zipFile, ec);
+    if (ec) {
+        return "Cannot read the downloaded update: " + ec.message();
+    }
+    if (size != asset.size) {
+        return "The downloaded update has the wrong size.";
+    }
+    std::string hashError;
+    const std::string digest = sha256File(zipFile, hashError);
+    if (digest.empty()) {
+        return "Cannot read the downloaded update: " + hashError;
+    }
+    if (digest != lowerCase(asset.sha256)) {
+        return "The downloaded update has the wrong checksum.";
+    }
+
+    const fs::path stage = stageDir(installDir);
+    const auto fail = [&](const std::string& error) {
+        std::error_code ignored;
+        fs::remove_all(stage, ignored);
+        return error;
+    };
+    fs::remove_all(stage, ec);
+    if (ec) {
+        return fail("Cannot remove the old update folder: " + ec.message());
+    }
+    const fs::path unpackDir = stage / "unpack";
+    const fs::path newDir = stage / "new";
+    if (std::string error = unpackZip(zipFile, size, unpackDir); !error.empty()) {
+        return fail(error);
+    }
+    if (std::string error = collectFiles(unpackDir, newDir); !error.empty()) {
+        return fail(error);
+    }
+#ifndef _WIN32
+    for (const char* name : {kGguiName, kGitGgName}) {
+        fs::permissions(newDir / name,
+            fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec | fs::perms::others_read |
+                fs::perms::others_exec,
+            fs::perm_options::replace, ec);
+        if (ec) {
+            return fail(std::string("Cannot make ") + name + " executable: " + ec.message());
+        }
+    }
+#endif
+    if (std::string error = checkVersion(newDir / kGitGgName); !error.empty()) {
+        return fail(error);
+    }
+    fs::remove_all(unpackDir, ec);
+    if (ec) {
+        return fail("Cannot remove the unpacked files: " + ec.message());
+    }
+    return {};
 }
 
 } // namespace ggui::update

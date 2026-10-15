@@ -57,6 +57,19 @@ if(NOT GGUI_BUILD_APP)
 endif()
 
 # ---------------------------------------------------------------------------------------------
+# miniz 3.1.2: unpacks the self-update ZIP (ggui only). Only the library is built.
+# ---------------------------------------------------------------------------------------------
+CPMAddPackage(NAME miniz GITHUB_REPOSITORY richgel999/miniz GIT_TAG 3.1.2
+    OPTIONS "BUILD_SHARED_LIBS OFF" "BUILD_EXAMPLES OFF" "BUILD_TESTS OFF" "BUILD_FUZZERS OFF"
+            "BUILD_HEADER_ONLY OFF" "AMALGAMATE_SOURCES OFF" "INSTALL_PROJECT OFF")
+# miniz.h and the generated miniz_export.h as SYSTEM includes: no first-party warnings in them.
+add_library(ggui_miniz INTERFACE)
+target_link_libraries(ggui_miniz INTERFACE miniz)
+# Without the zlib-compatible names (inflate, crc32, ...) the header has no unused static functions.
+target_compile_definitions(ggui_miniz INTERFACE MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+target_include_directories(ggui_miniz SYSTEM INTERFACE ${miniz_SOURCE_DIR} ${miniz_BINARY_DIR})
+
+# ---------------------------------------------------------------------------------------------
 # SDL3 (static), efsw, nativefiledialog-extended
 # ---------------------------------------------------------------------------------------------
 CPMAddPackage(NAME SDL3 GITHUB_REPOSITORY libsdl-org/SDL GIT_TAG release-3.4.4

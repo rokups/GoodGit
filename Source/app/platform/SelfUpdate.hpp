@@ -66,4 +66,23 @@ std::string writeScript(const std::filesystem::path& stage);
 // minutes by mtime: a younger stage may belong to a running update and stays. No stage gives nullopt.
 std::optional<std::string> takeResult(const std::filesystem::path& installDir);
 
+// Checks, unpacks and tests a downloaded update ZIP (the format on every platform). Steps:
+//  1. The size of `zipFile` equals asset.size and its SHA-256 equals asset.sha256 (hex, any case).
+//  2. The old stage folder is removed and the ZIP is unpacked into <stage>/unpack. An entry is
+//     refused when its name is not a plain relative path (".." or empty parts, a leading "/", a
+//     backslash, ":", control or non-ASCII characters, a duplicate, a name that ends in "." or space)
+//     or when its Unix mode is not a regular file or a folder. The ZIP has at most 1000 entries and
+//     1 GiB of data in total; the bytes written are counted, not only the sizes in the headers.
+//     A CRC error is an error. Nothing follows a link: links are not created.
+//  3. The ZIP holds exactly one top folder. ggui and git-gg are moved into <stage>/new: from
+//     <top>/bin/ on Linux, from <top>/ on Windows, where LICENSE.txt is moved too (when present).
+//  4. Linux: both files get mode 0755.
+//  5. `<stage>/new/git-gg --version` runs (it is killed after 20 s) and must print "git gg ...".
+//  6. <stage>/unpack is deleted.
+// Returns "" or an error text. After an error from step 2 on, the whole stage is deleted. A failed
+// step 1 leaves the stage as it was. `zipFile` must not be inside the stage.
+// Blocks (disk work, a child process): call it from a worker thread, never from the UI thread.
+std::string stageUpdate(const std::filesystem::path& installDir, const std::filesystem::path& zipFile,
+                        const Asset& asset);
+
 } // namespace ggui::update

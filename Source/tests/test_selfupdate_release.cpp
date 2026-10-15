@@ -82,22 +82,22 @@ GG_TEST("selfupdate", "selectAsset picks the asset for each package system")
     const ggui::update::Asset* linuxAsset = ggui::update::selectAsset(release, "linux-x86_64");
     GG_CHECK(mingw != nullptr && mingw->name == "ggui-1-windows-mingw.zip");
     GG_CHECK(msvc != nullptr && msvc->name == "ggui-1-windows-msvc.zip");
-    GG_CHECK(linuxAsset != nullptr && linuxAsset->name == "ggui-1-linux-x86_64.tar.gz");
+    GG_CHECK(linuxAsset != nullptr && linuxAsset->name == "ggui-1-linux-x86_64.zip");
     GG_CHECK(ggui::update::selectAsset(release, "linux-aarch64") == nullptr);
     GG_CHECK(ggui::update::selectAsset(release, "") == nullptr);
 }
 
-GG_TEST("selfupdate", "selectAsset ignores .deb and .zip on Linux")
+GG_TEST("selfupdate", "selectAsset ignores .deb and .tar.gz on Linux")
 {
     ggui::update::Release release;
-    GG_CHECK(parse(releaseJson(assetJson("ggui-1-linux-x86_64.deb") + "," + assetJson("ggui-1-linux-x86_64.zip")),
+    GG_CHECK(parse(releaseJson(assetJson("ggui-1-linux-x86_64.deb") + "," + assetJson("ggui-1-linux-x86_64.tar.gz")),
                    release));
     GG_CHECK(ggui::update::selectAsset(release, "linux-x86_64") == nullptr);
 }
 
 GG_TEST("selfupdate", "selectAsset refuses untrusted assets")
 {
-    const std::string name = "ggui-1-linux-x86_64.tar.gz";
+    const std::string name = "ggui-1-linux-x86_64.zip";
     ggui::update::Release release;
     // Bad digest: wrong length, uppercase, missing.
     GG_CHECK(parse(releaseJson(assetJson(name, "uploaded", "sha256:abc")), release));

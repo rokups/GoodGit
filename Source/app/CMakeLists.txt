@@ -10,7 +10,7 @@ set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/util/BuildInfo.cpp PROPE
     COMPILE_DEFINITIONS "GGUI_BUILD_COMMIT=\"${GGUI_BUILD_COMMIT}\";GGUI_PACKAGE_SYSTEM=\"${GGUI_PACKAGE_SYSTEM}\"")
 target_include_directories(ggui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/Source)
 target_link_libraries(ggui PRIVATE ggui_core imgui imgui_color_text_edit icon_font_headers
-    nfd nlohmann_json::nlohmann_json spdlog::spdlog)
+    nfd nlohmann_json::nlohmann_json spdlog::spdlog ggui_miniz)
 target_compile_definitions(ggui PRIVATE GGUI_VERSION="${PROJECT_VERSION}")
 if(WIN32)
     target_link_libraries(ggui PRIVATE advapi32 user32) # PathSetup: user PATH in the registry
