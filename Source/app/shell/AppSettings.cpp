@@ -467,6 +467,11 @@ void App::drawSettingsWindow()
             ImGui::SameLine();
             helpMarker("A name longer than these two lengths in a History badge is shortened in the middle: "
                        "this many characters are kept at its start and at its end.");
+            if (ImGui::Checkbox("Draw the graph in the Description column##graph_in_description", &d.historyGraphInDescription))
+                m_settings.save();
+            ImGui::SameLine();
+            helpMarker("The History graph is drawn inside the Description column. The text of a row starts "
+                       "after the lanes of that row, not after the widest lane of the whole graph.");
             drawPathSetting();
             ImGui::Separator();
             drawContextMenuSetting();

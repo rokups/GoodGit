@@ -1,5 +1,6 @@
 // History panel (§4.2).
 #include "panels/CommitMenu.hpp"
+#include "panels/Graph.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
 #include "shell/App.hpp"
@@ -249,6 +250,36 @@ GG_TEST("history", "search by message, ID, branch and tag; no graph while filter
     ctx->ItemClick("//History/Conflicted only##hist_conflicted");
     ctx->Yield(2);
     GG_CHECK(history.graphShown());
+}
+
+GG_TEST("history", "graph in the description column: no graph column, text follows each row's own lanes")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(s.revParse(repo, "main")));
+    auto& history = s.session()->history();
+    ctx->Yield(2);
+    GG_CHECK(history.graphColumnShown());
+    ImGuiTable* separate = ImGui::TableFindByID(ctx->GetID("//History/##hist_table"));
+    GG_CHECK(separate != nullptr && separate->ColumnsCount == 4);
+    s.app.settings().data().historyGraphInDescription = true;
+    ctx->Yield(3);
+    GG_CHECK(history.graphShown());
+    GG_CHECK(!history.graphColumnShown());
+    ImGuiTable* inlined = ImGui::TableFindByID(ctx->GetID("//History/##hist_table_inline"));
+    GG_CHECK(inlined != nullptr && inlined->ColumnsCount == 3);
+    // The text of a row starts after that row's lanes: rows with fewer lanes start nearer.
+    const float laneWidth = ImGui::GetFontSize() * 0.9f;
+    float lo = 1e9f, hi = 0.0f;
+    for (const auto& row : history.rows()) {
+        const float offset = ggui::graph::textOffset(row, laneWidth);
+        lo = std::min(lo, offset);
+        hi = std::max(hi, offset);
+    }
+    GG_CHECK(lo < hi);
+    s.app.settings().data().historyGraphInDescription = false;
+    ctx->Yield(3);
+    GG_CHECK(history.graphColumnShown());
 }
 
 GG_TEST("history", "merges start collapsed; expand and collapse merged history")

@@ -82,6 +82,7 @@ public:
     // Last frame: every drawn row started exactly one row height below the previous one.
     bool rowPitchConsistent() const { return m_rowPitchOk; }
     bool graphShown() const { return m_graphShown; }
+    bool graphColumnShown() const { return m_graphColumn; }
     // Whether the list scrolled within the last moment (tooltips are held back meanwhile).
     bool scrolling() const { return m_scrolling; }
     // The X range of the highlighted prefix of the ID column, from the last drawn row.
@@ -183,7 +184,9 @@ private:
     bool m_graphShown = true;
     IdSlot m_idSlot{}; // the ID column of the last drawn row (the row's menu is drawn before the ID, so it uses the previous one)
     ImVec2 m_menuItemSpacing{}; // the style's ItemSpacing, before the table zeroes it (for the row context menu)
-    int column(int c) const { return m_graphShown ? c : c - 1; }
+    // With the graph in the Description column (setting historyGraphInDescription) there is no graph column.
+    bool m_graphColumn = true;
+    int column(int c) const { return m_graphColumn ? c : c - 1; }
 
     // Scroll anchoring: the rows in view (top first) and their slots (Working tree / Index rows
     // count), captured each frame; when the rows change the scroll moves so the first of them

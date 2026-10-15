@@ -15,6 +15,9 @@ inline float dotRadius(float rowHeight) { return rowHeight * 0.18f; }
 float inset(float laneWidth);
 // Centre of `lane` in a cell starting at `cellX`.
 float laneX(float cellX, int lane, float laneWidth);
+// Where the text of `row` starts in a cell that holds the graph: right after the row's own last lane
+// (the same gap as after the graph column when every row has the widest layout).
+float textOffset(const core::HistoryRow& row, float laneWidth);
 // Edges, the commit dot (conflicted commits in the conflict colour; merges as a hollow ring) and,
 // for `head`, the outline of the checked-out commit.
 void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head);

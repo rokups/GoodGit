@@ -170,6 +170,7 @@ nlohmann::json toJson(const SettingsData& d)
     j["expandConflictStages"] = d.expandConflictStages;
     j["historyBadgePrefix"] = d.historyBadgePrefix;
     j["historyBadgeSuffix"] = d.historyBadgeSuffix;
+    j["historyGraphInDescription"] = d.historyGraphInDescription;
     return j;
 }
 
@@ -228,6 +229,7 @@ SettingsData fromJson(const nlohmann::json& j)
                                         : NothingStaged::Ask;
     d.expandStagesOnCheckout = j.value("expandStagesOnCheckout", false);
     d.expandConflictStages = j.value("expandConflictStages", false);
+    d.historyGraphInDescription = j.value("historyGraphInDescription", false);
     if (j.contains("window") && j["window"].is_object()) {
         const auto& w = j["window"];
         d.windowX = w.value("x", -1);

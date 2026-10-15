@@ -18,6 +18,14 @@ float laneX(float cellX, int lane, float laneWidth)
     return cellX + inset(laneWidth) + laneWidth * (static_cast<float>(lane) + 0.5f);
 }
 
+float textOffset(const core::HistoryRow& row, float laneWidth)
+{
+    int last = row.lane;
+    for (const auto& l : row.lines)
+        last = std::max({last, static_cast<int>(l.fromLane), static_cast<int>(l.toLane)});
+    return inset(laneWidth) + laneWidth * (static_cast<float>(last) + 1.0f) + laneWidth * 0.5f;
+}
+
 void drawCell(const core::HistoryRow& row, float laneWidth, float rowHeight, ImVec2 origin, bool head)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();

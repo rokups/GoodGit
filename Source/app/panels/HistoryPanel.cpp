@@ -851,7 +851,12 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
         dl->AddLine(ImVec2(c.x, min.y - pad), ImVec2(c.x, c.y - r), col, thickness);
     dl->AddCircle(c, r, col, 0, thickness);
     dl->AddLine(ImVec2(c.x, c.y + r), ImVec2(c.x, min.y + h + pad), col, thickness);
-    ImGui::TableSetColumnIndex(1);
+    if (m_graphColumn) {
+        ImGui::TableSetColumnIndex(1);
+    } else {
+        // In the Description column: the text follows the node (lane 0).
+        ImGui::SetCursorScreenPos(ImVec2(laneX(cellStart.x, 0, laneWidth) + laneWidth, cellStart.y));
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, text);
     ImGui::TextUnformatted(label);
     ImGui::PopStyleColor();
@@ -1207,10 +1212,10 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     if (m_graphShown)
         graph::drawCell(row, laneWidth, rowHeight, cellStart, row.id == m_session.snapshot()->head);
 
-    if (m_graphShown)
+    if (m_graphColumn)
         ImGui::TableSetColumnIndex(1);
-    else
-        ImGui::SetCursorScreenPos(cellStart); // the row's Selectable shares the first column
+    else // the row's Selectable shares the first column
+        ImGui::SetCursorScreenPos(ImVec2(cellStart.x + (m_graphShown ? graph::textOffset(row, laneWidth) : 0.0f), cellStart.y));
     m_idSlot = rowIdText(row.id.hex());
     const bool showStashes = m_session.app().settings().data().historyShowStashes;
     for (const auto& ref : row.refs) {
@@ -1424,13 +1429,14 @@ void HistoryPanel::draw(bool* open)
     }
 
     const float laneWidth = ImGui::GetFontSize() * 0.9f;
+    m_graphShown = m_appliedFilter.empty() && !conflictedOnly();
+    m_graphColumn = m_graphShown && !m_session.app().settings().data().historyGraphInDescription;
     const float graphWidth = std::min(inset(laneWidth) + laneWidth * static_cast<float>(std::max(1, m_maxLanes)) + laneWidth * 0.5f,
         ImGui::GetContentRegionAvail().x * 0.4f);
     const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable
         | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
     m_menuItemSpacing = ImGui::GetStyle().ItemSpacing;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(m_menuItemSpacing.x, 0));
-    m_graphShown = m_appliedFilter.empty() && !conflictedOnly();
     const float pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().CellPadding.y * 2;
     const int virtualRows = !m_snapshot->bare ? (m_hasStaged ? 2 : 1) : 0;
     restoreScrollAnchor(virtualRows, pitch);
@@ -1438,9 +1444,9 @@ void HistoryPanel::draw(bool* open)
     ImGuiContext& g = *ImGui::GetCurrentContext();
     g.NextWindowData.HasFlags |= ImGuiNextWindowDataFlags_HasChildFlags;
     g.NextWindowData.ChildFlags = ImGuiChildFlags_NavFlattened;
-    if (ImGui::BeginTable(m_graphShown ? "##hist_table" : "##hist_table_filtered", m_graphShown ? 4 : 3, flags)) {
+    if (ImGui::BeginTable(m_graphColumn ? "##hist_table" : m_graphShown ? "##hist_table_inline" : "##hist_table_filtered", m_graphColumn ? 4 : 3, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        if (m_graphShown)
+        if (m_graphColumn)
             ImGui::TableSetupColumn("##graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, graphWidth);
         ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Author", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 9);
@@ -1449,7 +1455,7 @@ void HistoryPanel::draw(bool* open)
         // saved width). Only before the first row (the layout is locked after that) and once the
         // table has been laid out (on its first frame the setup width applies).
         ImGuiTable* table = ImGui::GetCurrentTable();
-        if (m_graphShown && table->MinColumnWidth > 0.0f && std::abs(table->Columns[0].WidthRequest - graphWidth) > 0.5f)
+        if (m_graphColumn && table->MinColumnWidth > 0.0f && std::abs(table->Columns[0].WidthRequest - graphWidth) > 0.5f)
             ImGui::TableSetColumnWidth(0, graphWidth);
         ImGui::TableHeadersRow();
         // Wheel, scrollbar or keyboard: any change of the scroll position this frame.

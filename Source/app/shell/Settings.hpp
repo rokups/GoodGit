@@ -67,6 +67,7 @@ struct SettingsData {
     bool expandStagesOnCheckout = false;
     int historyBadgePrefix = 12; // History: characters kept at the start of an elided badge (1 – 100)
     int historyBadgeSuffix = 12; // ... and at its end
+    bool historyGraphInDescription = false; // History: the graph is drawn in the Description column; each row's text follows its own lanes
     // Main window placement (imgui.ini [GGUIWindow])
     int windowX = -1, windowY = -1, windowW = 0, windowH = 0;
     bool windowMaximized = false;
