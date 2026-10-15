@@ -259,6 +259,7 @@ struct ViewSetting {
 const ViewSetting kViewSettings[] = {
     {"History", "Stashes", &SettingsData::historyShowStashes, nullptr, 0, 1},
     {"History", "ConflictedOnly", &SettingsData::historyConflictedOnly, nullptr, 0, 1},
+    {"Branches", "HideNew", &SettingsData::branchesHideNew, nullptr, 0, 1},
     {"Diff", "SideBySide", &SettingsData::diffSideBySide, nullptr, 0, 1},
     {"Diff", "Whitespace", nullptr, &SettingsData::diffWhitespace, 0, 2},
     {"Diff", "Context", nullptr, &SettingsData::diffContext, 0, 100},

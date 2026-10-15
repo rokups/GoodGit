@@ -61,9 +61,84 @@ void HistoryPanel::reload()
     m_loading = true;
 }
 
+namespace {
+
+// One branch of a snapshot: its full ref, its category ("heads", "remotes/<remote>", "kept") and its name
+// below the category (the part that groups split at '/').
+struct BranchRef {
+    std::string full;
+    std::string category;
+    std::string rest;
+};
+
+std::vector<BranchRef> branchRefs(const core::Snapshot& s)
+{
+    std::vector<BranchRef> out;
+    for (const auto& b : s.branches)
+        out.push_back({"refs/heads/" + b.name, "heads", b.name});
+    for (const auto& r : s.remoteBranches)
+        out.push_back({"refs/remotes/" + r.name, "remotes/" + r.remote, r.name.substr(std::min(r.name.size(), r.remote.size() + 1))});
+    for (const auto& k : s.kept)
+        out.push_back({gg::keep::refName(k.id.hex()), "kept", k.id.hex()});
+    return out;
+}
+
+} // namespace
+
+bool HistoryPanel::hideNewRefs(const core::Snapshot& before, const core::Snapshot& now)
+{
+    // The scopes holding a branch: its category, then each folder prefix of its name ("a/", "a/b/"). A key is
+    // the category, a NUL and the prefix.
+    auto scopes = [](const BranchRef& r) {
+        std::vector<std::string> keys{r.category + '\0'};
+        for (size_t slash = r.rest.find('/'); slash != std::string::npos; slash = r.rest.find('/', slash + 1))
+            keys.push_back(r.category + '\0' + r.rest.substr(0, slash + 1));
+        return keys;
+    };
+    // One pass over the existing branches: how many each scope holds, and how many of them are shown.
+    struct Tally {
+        size_t count = 0, shown = 0;
+    };
+    std::unordered_map<std::string, Tally> tally;
+    std::set<std::string> known;
+    for (const auto& r : branchRefs(before)) {
+        known.insert(r.full);
+        const bool shown = refVisible(r.full);
+        for (const auto& key : scopes(r)) {
+            Tally& t = tally[key];
+            ++t.count;
+            t.shown += shown ? 1 : 0;
+        }
+    }
+    const bool hideByDefault = m_session.app().settings().data().branchesHideNew;
+    std::vector<std::string> hide;
+    for (const auto& n : branchRefs(now)) {
+        if (known.count(n.full) || (!now.headDetached && n.full == "refs/heads/" + now.headBranch))
+            continue;
+        // A scope whose existing branches are all hidden hides the new one as well. The setting does not
+        // apply to kept commits.
+        bool hidden = hideByDefault && n.category != "kept";
+        for (const auto& key : scopes(n)) {
+            const auto it = tally.find(key);
+            if (it != tally.end() && it->second.count > 0 && it->second.shown == 0) {
+                hidden = true;
+                break;
+            }
+        }
+        if (hidden)
+            hide.push_back(n.full);
+    }
+    for (const auto& name : hide)
+        m_hidden.insert(name);
+    return !hide.empty();
+}
+
 void HistoryPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged)
 {
+    const core::SnapshotPtr before = m_snapshot;
     m_snapshot = snapshot;
+    if (before && refsChanged)
+        hideNewRefs(*before, *snapshot);
     // Drop hidden refs that no longer exist.
     if (refsChanged)
         reload();

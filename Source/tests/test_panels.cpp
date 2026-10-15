@@ -1373,6 +1373,61 @@ GG_TEST("panels", "branches: a remote node's eye hides and shows all its remote-
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/heads/feature/one"));
 }
 
+GG_TEST("panels", "branches: a new branch is hidden in a group of hidden branches and by the hide-new setting")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    auto create = [&](const std::string& name) {
+        s.git(repo, {"branch", name, "HEAD~1"});
+        s.session()->refresh();
+        GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->findBranch(name); }));
+    };
+    const std::string groupEye = "//Branches/group_local:feature:/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()); }));
+    GG_CHECK(!s.session()->app().settings().data().branchesHideNew);
+    // A group whose branches are all hidden hides a new branch; the top level shows it (the default).
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible("refs/heads/feature/two"));
+    create("feature/three");
+    create("top-one");
+    GG_CHECK(!history.refVisible("refs/heads/feature/three"));
+    GG_CHECK(history.refVisible("refs/heads/top-one"));
+    // The top level follows the setting; choose "hide" from the menu of the global button.
+    ctx->ItemClick("//Branches/###hide_all_branches");
+    GG_CHECK(!history.refVisible("refs/heads/main"));
+    s.contextMenu("//Branches/###hide_all_branches", "Hide new branches");
+    GG_CHECK(s.session()->app().settings().data().branchesHideNew);
+    ctx->ItemClick("//Branches/branch_main/###eye");
+    GG_CHECK(history.refVisible("refs/heads/main"));
+    create("top-two");
+    GG_CHECK(!history.refVisible("refs/heads/top-two"));
+    GG_CHECK(history.refVisible("refs/heads/main"));
+    // A mixed set shows new branches again with "show".
+    s.contextMenu("//Branches/###show_all_branches", "Show new branches");
+    GG_CHECK(!s.session()->app().settings().data().branchesHideNew);
+    create("top-three");
+    GG_CHECK(history.refVisible("refs/heads/top-three"));
+    // A category with every branch hidden hides new branches, whatever the setting says.
+    ctx->ItemClick("//Branches/###hide_all_branches");
+    create("top-four");
+    GG_CHECK(!history.refVisible("refs/heads/top-four"));
+    // The remote's category is all hidden as well: a branch that a fetch brings is hidden.
+    GG_CHECK(!history.refVisible("refs/remotes/origin/main"));
+    const auto pushed = s.git(repo, {"push", "-q", "origin", "top-one"});
+    GG_CHECK(pushed.ok());
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto snap = s.session()->snapshot();
+        return snap && std::any_of(snap->remoteBranches.begin(), snap->remoteBranches.end(),
+                           [](const auto& r) { return r.name == "origin/top-one"; });
+    }));
+    GG_CHECK(!history.refVisible("refs/remotes/origin/top-one"));
+}
+
 GG_TEST("panels", "branches: with a filter typed a group's eye changes only the listed branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

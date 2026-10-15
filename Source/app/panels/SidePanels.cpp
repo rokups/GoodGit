@@ -482,16 +482,34 @@ void BranchesPanel::draw(bool* open)
         all.push_back("refs/remotes/" + r.name);
     for (const auto& k : m_snapshot->kept)
         all.push_back(gg::keep::refName(k.id.hex()));
+    // The menu of both buttons: what to do with a branch that appears later (after a fetch, say). A group of
+    // hidden branches hides its new branches whatever this says.
+    auto newBranchMenu = [&](const char* id) {
+        if (!beginContextMenu(id))
+            return;
+        bool& hideNew = m_session.app().settings().data().branchesHideNew;
+        if (menuItem(ICON_MS_VISIBILITY, "Show new branches", nullptr, !hideNew) && hideNew) {
+            hideNew = false;
+            Settings::markViewDirty();
+        }
+        if (menuItem(ICON_MS_VISIBILITY_OFF, "Hide new branches", nullptr, hideNew) && !hideNew) {
+            hideNew = true;
+            Settings::markViewDirty();
+        }
+        ImGui::EndPopup();
+    };
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_branches"))
         history.setRefsVisible(all, true);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Show all branches in History");
+        tooltip("Show all branches in History (right-click: new branches)");
+    newBranchMenu("##show_all_menu");
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_branches"))
         history.setRefsVisible(all, false);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Hide all branches in History");
+        tooltip("Hide all branches in History (right-click: new branches)");
+    newBranchMenu("##hide_all_menu");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter);

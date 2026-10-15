@@ -74,6 +74,7 @@ struct SettingsData {
     // View state (imgui.ini [GGUIView]; kViewSettings in Settings.cpp lists what is stored)
     bool historyShowStashes = true;
     bool historyConflictedOnly = false;
+    bool branchesHideNew = false; // Branches: a new branch is hidden in History (top level, mixed groups); a group of hidden branches always hides it
     bool diffSideBySide = false;
     int diffContext = 3;
     int diffWhitespace = 0;
