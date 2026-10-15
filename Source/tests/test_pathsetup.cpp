@@ -1,4 +1,5 @@
-// "Add GoodGit to PATH" (Settings > General): the systemd environment.d file (platform/PathSetup.hpp).
+// "Add GoodGit to PATH" (Settings > General): the systemd environment.d file and the Windows user
+// PATH editing (platform/PathSetup.hpp). The registry itself is never touched by tests.
 #include "shell/App.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
@@ -83,9 +84,13 @@ GG_TEST("pathsetup", "unavailable without systemd or off Linux: nothing is writt
     const std::string home = s.path("xdg").string();
     for (auto support : {PathSetupSupport::NoSystemd, PathSetupSupport::Unsupported}) {
         GG_CHECK(!ggui::pathSetupUnavailableReason(support).empty());
+        GG_CHECK(!ggui::pathSetupUsable(support));
         GG_CHECK(!ggui::writePathSetup(support, home, "/opt/bin", true).empty());
         GG_CHECK(!fs::exists(home));
     }
+    GG_CHECK(ggui::pathSetupUsable(PathSetupSupport::Available));
+    GG_CHECK(ggui::pathSetupUsable(PathSetupSupport::Registry));
+    GG_CHECK(ggui::pathSetupUnavailableReason(PathSetupSupport::Registry).empty());
     GG_CHECK(ggui::pathSetupUnavailableReason(PathSetupSupport::NoSystemd).find("systemd") != std::string::npos);
     // Detection: <root>/run/systemd/system must be a directory.
     const fs::path root = s.path("fakeroot");
@@ -98,9 +103,76 @@ GG_TEST("pathsetup", "unavailable without systemd or off Linux: nothing is writt
     fs::remove(root / "run" / "systemd" / "system");
     fs::create_directories(root / "run" / "systemd" / "system");
     GG_CHECK(ggui::pathSetupSupport(root.string()) == PathSetupSupport::Available);
+    // Registry mode is Windows only: elsewhere it refuses and writes nothing.
+    GG_CHECK(!ggui::writePathSetup(PathSetupSupport::Registry, home, "/opt/bin", true).empty());
+    GG_CHECK(!fs::exists(home));
+#elif defined(_WIN32)
+    GG_CHECK(without == PathSetupSupport::Registry);
 #else
     GG_CHECK(without == PathSetupSupport::Unsupported);
 #endif
+}
+
+GG_TEST("pathsetup", "PATH list: add, remove and idempotence")
+{
+    using ggui::pathListAdd;
+    using ggui::pathListContains;
+    using ggui::pathListRemove;
+    const std::string dir = "C:\\Tools\\GoodGit";
+    // Add appends, keeps every other entry, and is idempotent.
+    GG_CHECK_STR_EQ(pathListAdd("C:\\Windows;D:\\bin", dir), "C:\\Windows;D:\\bin;C:\\Tools\\GoodGit");
+    GG_CHECK_STR_EQ(pathListAdd("C:\\Windows;C:\\Tools\\GoodGit;D:\\bin", dir), "C:\\Windows;C:\\Tools\\GoodGit;D:\\bin");
+    const std::string once = pathListAdd("C:\\Windows", dir);
+    GG_CHECK_STR_EQ(pathListAdd(once, dir), once);
+    // Empty value, and a value that already ends with ';'.
+    GG_CHECK_STR_EQ(pathListAdd("", dir), dir);
+    GG_CHECK_STR_EQ(pathListAdd("C:\\Windows;", dir), "C:\\Windows;C:\\Tools\\GoodGit");
+    // Remove drops only matching entries, keeps order, empty entries and the rest as written.
+    GG_CHECK_STR_EQ(pathListRemove("C:\\Windows;C:\\Tools\\GoodGit;D:\\bin", dir), "C:\\Windows;D:\\bin");
+    GG_CHECK_STR_EQ(pathListRemove("C:\\Tools\\GoodGit;D:\\bin", dir), "D:\\bin");
+    GG_CHECK_STR_EQ(pathListRemove("C:\\Windows;C:\\Tools\\GoodGit", dir), "C:\\Windows");
+    GG_CHECK_STR_EQ(pathListRemove("C:\\Tools\\GoodGit", dir), "");
+    GG_CHECK_STR_EQ(pathListRemove("", dir), "");
+    GG_CHECK_STR_EQ(pathListRemove("A;;B; C ", dir), "A;;B; C ");
+    GG_CHECK_STR_EQ(pathListRemove("A;C:\\Tools\\GoodGit;B;C:\\Tools\\GoodGit", dir), "A;B");
+    // Add then remove gives the original back.
+    GG_CHECK_STR_EQ(pathListRemove(pathListAdd("C:\\Windows;D:\\bin", dir), dir), "C:\\Windows;D:\\bin");
+    // An empty directory is never added, listed or removed.
+    GG_CHECK_STR_EQ(pathListAdd("A", ""), "A");
+    GG_CHECK(!pathListContains("A;;B", ""));
+    GG_CHECK_STR_EQ(pathListRemove("A;;B", ""), "A;;B");
+}
+
+GG_TEST("pathsetup", "PATH list: entries match ignoring case, trailing backslash, quotes and spaces")
+{
+    using ggui::pathListAdd;
+    using ggui::pathListContains;
+    using ggui::pathListRemove;
+    const std::string dir = "C:\\Tools\\GoodGit";
+    GG_CHECK(pathListContains("X;c:\\tools\\goodgit", dir));
+    GG_CHECK(pathListContains("X;C:\\TOOLS\\GOODGIT\\", dir));
+    GG_CHECK(pathListContains("X;C:\\Tools\\GoodGit\\\\", dir));
+    GG_CHECK(pathListContains("X;C:/Tools/GoodGit/", "C:\\Tools/GoodGit"));
+    GG_CHECK(pathListContains("X;\"C:\\Tools\\GoodGit\"", dir));
+    GG_CHECK(pathListContains("X; C:\\Tools\\GoodGit ", dir));
+    GG_CHECK(pathListContains("X;C:\\Tools\\GoodGit", "C:\\Tools\\GoodGit\\"));
+    // Not a match: a prefix, a parent, a sub directory.
+    GG_CHECK(!pathListContains("C:\\Tools\\GoodGit2", dir));
+    GG_CHECK(!pathListContains("C:\\Tools", dir));
+    GG_CHECK(!pathListContains("C:\\Tools\\GoodGit\\bin", dir));
+    GG_CHECK(!pathListContains("", dir));
+    // A matching entry written another way is not added a second time, and is removed.
+    GG_CHECK_STR_EQ(pathListAdd("X;c:\\tools\\goodgit\\", dir), "X;c:\\tools\\goodgit\\");
+    GG_CHECK_STR_EQ(pathListRemove("X;c:\\tools\\goodgit\\;Y", dir), "X;Y");
+    // Entries with %VAR% are kept and compared as text, never expanded.
+    GG_CHECK_STR_EQ(pathListAdd("%SystemRoot%\\system32;%USERPROFILE%\\bin", dir),
+        "%SystemRoot%\\system32;%USERPROFILE%\\bin;C:\\Tools\\GoodGit");
+    GG_CHECK_STR_EQ(pathListRemove("%SystemRoot%\\system32;C:\\Tools\\GoodGit;%USERPROFILE%\\bin", dir),
+        "%SystemRoot%\\system32;%USERPROFILE%\\bin");
+    GG_CHECK(pathListContains("%USERPROFILE%\\GoodGit;D", "%USERPROFILE%\\goodgit"));
+    GG_CHECK(!pathListContains("%USERPROFILE%\\GoodGit", "C:\\Users\\me\\GoodGit"));
+    // A directory with spaces and non-ASCII characters is matched byte for byte (ASCII case folding).
+    GG_CHECK(pathListContains("X;D:\\M\xc3\xbcnchen Tools\\GOODGIT", "D:\\M\xc3\xbcnchen tools\\goodgit"));
 }
 
 GG_TEST("pathsetup", "config home follows XDG_CONFIG_HOME, else ~/.config")
@@ -127,7 +199,10 @@ GG_TEST("pathsetup", "Settings toggles the file (needs systemd, else the control
     s.app.openSettings();
     ctx->Yield(2);
     const char* box = "//Settings/##settings_tabs/General/Add GoodGit to PATH##add_to_path";
-    if (ggui::pathSetupSupport() != PathSetupSupport::Available) {
+    if (ggui::pathSetupSupport() == PathSetupSupport::Registry) {
+        // Clicking would edit the real user PATH: only check the control is usable.
+        GG_CHECK(!(ctx->ItemInfo(box).ItemFlags & ImGuiItemFlags_Disabled));
+    } else if (ggui::pathSetupSupport() != PathSetupSupport::Available) {
         GG_CHECK(ctx->ItemInfo(box).ItemFlags & ImGuiItemFlags_Disabled);
     } else {
         const std::string dir = ggui::executableDir();

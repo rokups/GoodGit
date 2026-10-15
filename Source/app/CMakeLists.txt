@@ -9,6 +9,9 @@ target_include_directories(ggui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SO
 target_link_libraries(ggui PRIVATE ggui_core imgui imgui_color_text_edit icon_font_headers
     nfd nlohmann_json::nlohmann_json spdlog::spdlog)
 target_compile_definitions(ggui PRIVATE GGUI_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+    target_link_libraries(ggui PRIVATE advapi32 user32) # PathSetup: user PATH in the registry
+endif()
 if(WIN32 AND GGUI_ENABLE_IMGUI_TEST_ENGINE)
     target_link_libraries(ggui PRIVATE dbghelp) # the test runner's crash report
 endif()

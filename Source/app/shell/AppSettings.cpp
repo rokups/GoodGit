@@ -322,7 +322,8 @@ void App::drawGitConfigSettings(Session& s)
     ImGui::EndTabBar();
 }
 
-// "Add GoodGit to PATH": the state is the environment.d file on disk (platform/PathSetup.hpp).
+// "Add GoodGit to PATH": the state is the environment.d file on disk, or on Windows the user PATH
+// in the registry (platform/PathSetup.hpp).
 void App::drawPathSetting()
 {
     const PathSetupSupport support = pathSetupSupport();
@@ -330,22 +331,27 @@ void App::drawPathSetting()
     const std::string home = pathSetupConfigHome();
     bool on = m_pathSetup.enabled;
     ImGui::Separator();
-    ImGui::BeginDisabled(support != PathSetupSupport::Available);
+    ImGui::BeginDisabled(!pathSetupUsable(support));
     if (ImGui::Checkbox("Add GoodGit to PATH##add_to_path", &on)) {
         const std::string err = writePathSetup(support, home, dir, on);
         if (!err.empty())
             showError("Add GoodGit to PATH", err);
-        m_pathSetup = readPathSetup(home, dir);
+        m_pathSetup = readPathSetup(support, home, dir);
     }
     ImGui::EndDisabled();
-    if (support != PathSetupSupport::Available) {
+    if (!pathSetupUsable(support)) {
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", pathSetupUnavailableReason(support).c_str());
         return;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        tooltip("Puts %s, which holds git-gg, on your login PATH (systemd environment.d). "
-                "Takes effect at next login.", dir.c_str());
+        if (support == PathSetupSupport::Registry) {
+            tooltip("Puts %s, which holds git-gg, on your user PATH. "
+                    "Takes effect in new terminals; already open ones keep the old PATH.", dir.c_str());
+        } else {
+            tooltip("Puts %s, which holds git-gg, on your login PATH (systemd environment.d). "
+                    "Takes effect at next login.", dir.c_str());
+        }
     }
     if (!m_pathSetup.present || m_pathSetup.enabled)
         return;
@@ -361,7 +367,7 @@ void App::drawPathSetting()
         const std::string err = writePathSetup(support, home, dir, enable);
         if (!err.empty())
             showError("Add GoodGit to PATH", err);
-        m_pathSetup = readPathSetup(home, dir);
+        m_pathSetup = readPathSetup(support, home, dir);
     };
     if (ImGui::Button("Point to this GoodGit##path_repoint"))
         fix(true);
@@ -425,7 +431,7 @@ void App::drawSettingsWindow()
     Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
     if (ImGui::BeginTabBar("##settings_tabs")) {
         if (m_settingsFreshOpen) {
-            m_pathSetup = readPathSetup(pathSetupConfigHome(), executableDir());
+            m_pathSetup = readPathSetup(pathSetupSupport(), pathSetupConfigHome(), executableDir());
             m_contextMenu = readContextMenu(contextMenuDataHome(), executablePath());
         }
         const ImGuiTabItemFlags first = m_settingsFreshOpen ? ImGuiTabItemFlags_SetSelected : 0;

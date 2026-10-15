@@ -241,16 +241,29 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   (User / Repository / Workspace). **D** max-new-file-size. **N** merge tool and diff tool
   selection (`merge.tool`, `diff.tool`), pull strategy (`pull.rebase`), and the default for
   "commit all when nothing is staged".
-- **N** Settings > General "Add GoodGit to PATH" (Linux with systemd only): puts the ggui
-  executable directory, which holds `git-gg` (so `git gg` works in a terminal), on the login PATH by
-  writing `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` (default `~/.config`; one line
-  `PATH=<dir>:${PATH}` under a comment saying ggui manages it); unchecking deletes the file. The
-  state is read from the file, not stored: checked iff it exists and names the current
-  directory. A file naming another directory (or no PATH entry) shows a warning, in the warning
-  colour, that the git-gg found there may be stale or missing, with **Point to this GoodGit**
-  (rewrites it; checking does the same) and **Remove the file**. Written atomically; a directory containing `$ \ " ' :` or a line break is refused with an
-  error. Takes effect at next login. Systemd is detected as `/run/systemd/system` being a
-  directory; elsewhere the control is disabled with an explanatory tooltip.
+- **N** Settings > General "Add GoodGit to PATH" (Linux with systemd, and Windows): puts the ggui
+  executable directory, which holds `git-gg` (so `git gg` works in a terminal), on the PATH. The
+  state is read from the system, not stored.
+  - **Linux:** writes `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` (default `~/.config`; one line
+    `PATH=<dir>:${PATH}` under a comment saying ggui manages it); unchecking deletes the file.
+    Checked iff the file exists and names the current directory. A file naming another directory
+    (or no PATH entry) shows a warning, in the warning colour, that the git-gg found there may be
+    stale or missing, with **Point to this GoodGit** (rewrites it; checking does the same) and
+    **Remove the file**. Written atomically; a directory containing `$ \ " ' :` or a line break is
+    refused with an error. Takes effect at next login. Systemd is detected as `/run/systemd/system`
+    being a directory; elsewhere the control is disabled with an explanatory tooltip.
+  - **Windows:** edits the per-user PATH, the registry value `Path` in `HKEY_CURRENT_USER\Environment`;
+    the machine PATH is never touched. Checking appends the directory unless it is listed;
+    unchecking removes every entry that matches it. Entries match ignoring ASCII case, spaces
+    around them, surrounding double quotes and a trailing `\` or `/`; `%VAR%` is not expanded.
+    All other entries, their order and the value type (`REG_SZ` or `REG_EXPAND_SZ`) stay as they
+    are; a missing value is created as `REG_EXPAND_SZ`. Nothing is written when nothing changes.
+    After a write ggui broadcasts `WM_SETTINGCHANGE` with `"Environment"` (5 s timeout, hung
+    windows skipped) so new terminals see the change; terminals already open keep the old PATH.
+    Checked iff the user PATH lists the directory. A directory containing `;`, `"` or a line break
+    is refused with an error. There is no "other directory" warning.
+  - The PATH-list editing is plain string logic (`pathListContains`, `pathListAdd`,
+    `pathListRemove`) with unit tests on every platform; the registry is not touched by tests.
 - **N** Settings > General "Add "Open in GoodGit" to file manager menus" `##context_menu` (Linux
   only): adds an "Open in GoodGit" item for folders to Dolphin, Nemo and Nautilus, for the current
   user, by writing three files under `$XDG_DATA_HOME` (default `~/.local/share`), each running the

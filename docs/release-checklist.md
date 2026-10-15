@@ -27,7 +27,11 @@ with the current release), for the MinGW ZIP and the MSVC ZIP each.
 3. A repository on another drive and in a path with spaces and non-ASCII characters; Worktrees ▸
    Open in new window (the `GetModuleFileNameW`/`CreateProcessW` path); ggui as
    `sequence.editor` for a `git rebase -i` started in Git Bash.
-4. Delete the folder: nothing else is left besides ggui's settings.
+4. Settings ▸ General ▸ Add GoodGit to PATH: tick it, then open a new cmd and a new PowerShell
+   (not a running one): `ggui --version` and `git gg --version` work from any folder, and
+   `reg query HKCU\Environment /v Path` lists the folder with its other entries and type
+   unchanged. Untick it: a new terminal no longer finds `ggui`, and the entry is gone from the value.
+5. Delete the folder: nothing else is left besides ggui's settings.
 
 ## 2. Outside the build
 
