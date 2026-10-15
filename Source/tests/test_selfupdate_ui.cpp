@@ -165,6 +165,18 @@ GG_TEST("selfupdate/ui", "check, download and restart prompt")
     s.ctx->WindowClose("//Settings");
 }
 
+// The tests share one App: the Quit requests of an earlier test (the shell tests press Ctrl+Q) must
+// not show in the count of a later one. The order of the tests differs between toolchains.
+GG_TEST("selfupdate/ui", "the quit request count starts at zero in each test")
+{
+    s.app.requestQuit();
+    s.app.requestQuit();
+    GG_CHECK_EQ(s.app.quitRequests(), 2);
+    s.app.resetForTest();
+    GG_CHECK_EQ(s.app.quitRequests(), 0);
+    GG_CHECK(!s.app.quitRequested());
+}
+
 GG_TEST("selfupdate/ui", "a failed check shows the error and allows a new check")
 {
     UpdateFixture f(kNewCommit);

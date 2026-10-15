@@ -178,6 +178,9 @@ void App::resetForTest()
     m_updater.reset();
     m_updaterConfig.reset();
     m_restartForUpdate = false;
+    // The App outlives the tests: a Quit request of an earlier test must not show in the next one.
+    m_quit = false;
+    m_quitRequests = 0;
     m_clone.reset();
     m_configLoaded = false;
     m_configEdit.clear();
