@@ -5,6 +5,7 @@
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Settings.hpp"
+#include "shell/Theme.hpp"
 #include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
@@ -800,6 +801,79 @@ GG_TEST("shell", "settings persist across restarts")
     GG_CHECK(r.ok());
     const std::string text = s.read(log.parent_path(), log.filename().string());
     GG_CHECK(text.find("scale=1.50 theme=light") != std::string::npos);
+}
+
+GG_TEST("shell", "UI scale is 100 percent by default")
+{
+    GG_CHECK_EQ(s.app.settings().data().uiScale, 1.0f);
+    GG_CHECK_EQ(ggui::theme().scale(), 1.0f);
+    GG_CHECK_EQ(ImGui::GetStyle().FontScaleMain, 1.0f);
+}
+
+GG_TEST("shell", "Ctrl+wheel anywhere changes the UI scale")
+{
+    ggui::SettingsData& d = s.app.settings().data();
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    ctx->Yield(2);
+    // The middle of the main viewport: no window of the test takes the wheel there.
+    ctx->MouseMoveToPos(ImGui::GetMainViewport()->GetCenter());
+    // The wheel alone scrolls, it does not zoom.
+    ctx->MouseWheelY(1.0f);
+    ctx->Yield(2);
+    GG_CHECK_EQ(d.uiScale, 1.0f);
+    // One notch is 10 %; up zooms in, down zooms out.
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->MouseWheelY(1.0f);
+    ctx->Yield(2);
+    GG_CHECK(d.uiScale > 1.099f && d.uiScale < 1.101f);
+    GG_CHECK_EQ(ggui::theme().scale(), d.uiScale);
+    GG_CHECK_EQ(ImGui::GetStyle().FontScaleMain, d.uiScale);
+    ctx->MouseWheelY(-3.0f);
+    ctx->Yield(2);
+    GG_CHECK(d.uiScale > 0.799f && d.uiScale < 0.801f);
+    // The limits are those of the Settings slider.
+    ctx->MouseWheelY(-20.0f);
+    ctx->Yield(2);
+    GG_CHECK(d.uiScale > 0.499f && d.uiScale < 0.501f);
+    ctx->MouseWheelY(40.0f);
+    ctx->Yield(2);
+    GG_CHECK(d.uiScale > 2.999f && d.uiScale < 3.001f);
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    // The change is saved: a fresh process reads it back.
+    GG_REQUIRE(s.waitIdle());
+    const fs::path log = s.path("zoom.log");
+    auto r = s.runGgui({"--smoke"}, {{"GGUI_LOG_FILE", log.string()}});
+    GG_CHECK(r.ok());
+    GG_CHECK(s.read(log.parent_path(), log.filename().string()).find("scale=3.00") != std::string::npos);
+}
+
+GG_TEST("shell", "Ctrl+wheel over a window that takes the wheel does not change the UI scale")
+{
+    ggui::SettingsData& d = s.app.settings().data();
+    ctx->SetInputMode(ImGuiInputSource_Mouse);
+    // A window of its own, drawn each frame while the test runs: its button takes the wheel.
+    ctx->Test->GuiFunc = [](ImGuiTestContext*) {
+        ImGui::SetNextWindowPos(ImVec2(200.0f, 200.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(240.0f, 120.0f), ImGuiCond_Always);
+        ImGui::Begin("ZoomCatcher", nullptr, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking);
+        ImGui::Button("Catcher##zoom_catcher", ImVec2(200.0f, 60.0f));
+        ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+        ImGui::End();
+    };
+    ctx->Yield(3);
+    ctx->MouseMove("//ZoomCatcher/Catcher##zoom_catcher");
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->MouseWheelY(2.0f);
+    ctx->Yield(2);
+    GG_CHECK_EQ(d.uiScale, 1.0f);
+    // The same wheel turn away from the window zooms.
+    ctx->MouseMoveToPos(ImVec2(ImGui::GetMainViewport()->GetCenter().x + 300.0f, ImGui::GetMainViewport()->GetCenter().y));
+    ctx->MouseWheelY(2.0f);
+    ctx->Yield(2);
+    GG_CHECK(d.uiScale > 1.199f && d.uiScale < 1.201f);
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->Test->GuiFunc = nullptr;
+    ctx->Yield(2);
 }
 
 GG_TEST("shell", "view settings persist across a restart")

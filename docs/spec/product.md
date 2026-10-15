@@ -237,7 +237,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **K** Default dock layout: a left column with Branches|Tags on top and Workspaces|Remotes
   below. History in the centre. Changes and Change information top right. Diff, Blame,
   Reflog and Operations tabbed bottom right. **N** Stashes docks with Workspaces|Remotes.
-- **K** Settings window: UI scale (50–300%), theme (dark/light), `core.editor` per scope
+- **K** Settings window: UI scale (50–300%, default 100%; Ctrl+wheel anywhere changes it by 10% a notch), theme (dark/light), `core.editor` per scope
   (User / Repository / Workspace). **D** max-new-file-size. **N** merge tool and diff tool
   selection (`merge.tool`, `diff.tool`), pull strategy (`pull.rebase`), and the default for
   "commit all when nothing is staged".

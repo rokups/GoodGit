@@ -12,6 +12,7 @@
 
 #include <IconsMaterialSymbols.h>
 #include <imgui.h>
+#include <cmath>
 #include <algorithm>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -121,6 +122,33 @@ void App::handleShortcuts()
         s.actions().undo(false);
     else if (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, global) && free)
         s.actions().undo(true);
+}
+
+// Ctrl+wheel anywhere changes the UI scale by 10 % a notch (GG-46). It runs at the end of the frame, after
+// every window has been drawn: a window that wants Ctrl+wheel for itself takes the wheel with
+// ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY) (or SetKeyOwner) while it is hovered or active, the same way
+// ImGui's own scrolling asks for the wheel, and the wheel is then not ours.
+void App::handleZoomWheel()
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    if (!io.KeyCtrl || io.KeyShift || io.KeyAlt || io.MouseWheel == 0.0f)
+        return;
+    if (!ImGui::TestKeyOwner(ImGuiKey_MouseWheelY, ImGuiKeyOwner_NoOwner))
+        return;
+    // A touchpad sends fractions of a notch: they add up, and whole percents are applied.
+    m_zoomWheel += io.MouseWheel;
+    const int delta = static_cast<int>(std::lround(m_zoomWheel * 10.0f));
+    if (delta == 0)
+        return;
+    m_zoomWheel -= static_cast<float>(delta) / 10.0f;
+    SettingsData& d = m_settings.data();
+    const int before = static_cast<int>(std::lround(d.uiScale * 100.0f));
+    const int percent = std::clamp(before + delta, kUiScaleMinPercent, kUiScaleMaxPercent);
+    if (percent == before)
+        return;
+    d.uiScale = static_cast<float>(percent) / 100.0f;
+    applyTheme(); // only the style changes (FontScaleMain): no font reload, so it is safe mid-frame
+    m_settings.save();
 }
 
 // A clean Alt tap (ImGui's own toggle: no other key, text or modifier in between) normally switches the

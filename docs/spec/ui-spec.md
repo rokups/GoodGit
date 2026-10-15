@@ -142,7 +142,7 @@ the whole window (keyboard navigation still crosses between the controls and the
   replaces the older one.
 
 ### 1.6 Settings window `"Settings"` (K/N)
-Tabs: **General** (UI scale slider `##scale` 50–300 %, theme combo `##theme` Dark/Light, *History badge prefix* `##badge_prefix` and *History badge suffix* `##badge_suffix` (number fields, 1–100, default 12, stored in settings.json: the characters kept at the start and at the end of an elided badge in History), *Add GoodGit to PATH* `##add_to_path` (N, Linux with systemd: checked iff `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` names the executable directory; a warning when it names another directory or no PATH entry, with buttons `Point to this GoodGit##path_repoint` and `Remove the file##path_remove`; "Takes effect at next login"; disabled with a tooltip without systemd or off Linux; errors in the `Add GoodGit to PATH` error popup), *Add "Open in GoodGit" to file manager menus* `##context_menu` (N, Linux: checked iff the Dolphin, Nemo and Nautilus files below `$XDG_DATA_HOME` exist with the content for this executable (the Dolphin file and the Nautilus script executable); a warning when they exist but point to another GoodGit or are incomplete, with buttons `Update##context_menu_update` and `Remove##context_menu_remove`; disabled with a tooltip off Linux; errors in the `File manager context menu` error popup)),
+Tabs: **General** (UI scale slider `##scale` 50–300 %, default 100 %, also changed by Ctrl+wheel anywhere in the application (below), theme combo `##theme` Dark/Light, *History badge prefix* `##badge_prefix` and *History badge suffix* `##badge_suffix` (number fields, 1–100, default 12, stored in settings.json: the characters kept at the start and at the end of an elided badge in History), *Add GoodGit to PATH* `##add_to_path` (N, Linux with systemd: checked iff `$XDG_CONFIG_HOME/environment.d/60-goodgit.conf` names the executable directory; a warning when it names another directory or no PATH entry, with buttons `Point to this GoodGit##path_repoint` and `Remove the file##path_remove`; "Takes effect at next login"; disabled with a tooltip without systemd or off Linux; errors in the `Add GoodGit to PATH` error popup), *Add "Open in GoodGit" to file manager menus* `##context_menu` (N, Linux: checked iff the Dolphin, Nemo and Nautilus files below `$XDG_DATA_HOME` exist with the content for this executable (the Dolphin file and the Nautilus script executable); a warning when they exist but point to another GoodGit or are incomplete, with buttons `Update##context_menu_update` and `Remove##context_menu_remove`; disabled with a tooltip off Linux; errors in the `File manager context menu` error popup)),
 **Git** (N: "When nothing is staged" default: Ask / Stage all tracked / Stage selected; git
 configuration with scope tabs `##config_scope` User / Repository / Worktree, one field per option:
 `user.name`, `user.email`, `core.editor`, `merge.tool`, `diff.tool`, *Pull method*
@@ -184,6 +184,15 @@ Remotes/Stashes/Worktrees ≈ 15 % of the left column, at its bottom; Repositori
 part above it, between Branches/Tags and Remotes/Stashes/Worktrees. The layout is built when
 imgui.ini has no docking data and on *View ▸ Reset layout*; a saved layout is left as it is, so
 there a panel that is new (Repositories) shows floating until a reset or a manual dock.
+
+### 1.9 Zoom: Ctrl+wheel (N, GG-46)
+The UI scale (`uiScale` in settings.json, 1.0 = 100 %, default 100 %) is also changed with Ctrl+mouse wheel
+anywhere in the application: 10 % a notch (wheel up zooms in), limited to 50–300 % like the Settings slider
+`##scale`; fractions of a notch from a touchpad add up to whole percents. Shift or Alt with Ctrl: no zoom. The
+change applies at once (no font reload) and is saved. The key is handled at the end of the frame, after every
+window is drawn: a window that wants Ctrl+wheel for itself takes it with `ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY)`
+(or `SetKeyOwner`) while it is hovered, and then the scale does not change. No window takes it now. A stored value
+stays as it is (it is only limited to 50–300 % on load).
 
 ---
 

@@ -61,8 +61,12 @@ struct RepoState {
     std::vector<std::string> hiddenRefs; // full ref names hidden in History; sorted, unique
 };
 
+// The UI scale in percent: the limits of the Settings slider, of Ctrl+wheel and of a stored value.
+constexpr int kUiScaleMinPercent = 50;
+constexpr int kUiScaleMaxPercent = 300;
+
 struct SettingsData {
-    float uiScale = 1.0f;          // 0.5 – 3.0
+    float uiScale = 1.0f;          // 1.0 = 100 %; kUiScaleMinPercent – kUiScaleMaxPercent as a fraction (0.5 – 3.0)
     Theme theme = Theme::Dark;
     std::vector<std::string> recent; // most recent first, unique (normalised paths)
     std::vector<RepoEntry> repositories; // in the order added, unique paths, no limit

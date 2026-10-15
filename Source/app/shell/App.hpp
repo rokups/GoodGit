@@ -139,6 +139,7 @@ private:
     void onSettingsLoaded(const std::string& iniText);
     void applyTheme();
     void handleShortcuts();
+    void handleZoomWheel();
     void drawMenuBar();
     void handleMenuBarKey();
     void snapshotNavToggle();
@@ -209,6 +210,7 @@ private:
     ContextMenuState m_contextMenu; // "Add "Open in GoodGit" to file manager menus", read from disk when Settings opens
     bool m_autoOpenDone = false;
     bool m_layoutPending = false;
+    float m_zoomWheel = 0.0f; // Ctrl+wheel notches not yet turned into whole percents
     bool m_iniApplied = false;
     int m_pendingOpens = 0;
     std::string m_welcomePath;

@@ -214,7 +214,8 @@ SettingsData fromJson(const nlohmann::json& j)
     SettingsData d;
     if (!j.is_object())
         return d;
-    d.uiScale = std::clamp(j.value("uiScale", 1.0f), 0.5f, 3.0f);
+    d.uiScale = std::clamp(j.value("uiScale", 1.0f), static_cast<float>(kUiScaleMinPercent) / 100.0f,
+        static_cast<float>(kUiScaleMaxPercent) / 100.0f);
     d.theme = j.value("theme", std::string("dark")) == "light" ? Theme::Light : Theme::Dark;
     d.historyBadgePrefix = std::clamp(j.value("historyBadgePrefix", 12), 1, 100);
     d.historyBadgeSuffix = std::clamp(j.value("historyBadgeSuffix", 12), 1, 100);

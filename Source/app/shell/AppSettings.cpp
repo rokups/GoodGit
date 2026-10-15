@@ -431,7 +431,7 @@ void App::drawSettingsWindow()
         m_settingsFreshOpen = false;
         if (ImGui::BeginTabItem("General", nullptr, first)) {
             int percent = static_cast<int>(d.uiScale * 100.0f + 0.5f);
-            if (ImGui::SliderInt("UI scale##scale", &percent, 50, 300, "%d%%", ImGuiSliderFlags_AlwaysClamp))
+            if (ImGui::SliderInt("UI scale##scale", &percent, kUiScaleMinPercent, kUiScaleMaxPercent, "%d%%", ImGuiSliderFlags_AlwaysClamp))
                 d.uiScale = static_cast<float>(percent) / 100.0f;
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 applyTheme();

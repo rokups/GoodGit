@@ -641,6 +641,7 @@ void App::frame()
         drawSettingsWindow();
     m_dialogs.draw();
     drawToasts();
+    handleZoomWheel(); // last: every window above has had the chance to take the wheel
     saveIniIfNeeded();
     updateTitle();
     snapshotNavToggle();
