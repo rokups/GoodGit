@@ -9,10 +9,40 @@
 #include <SDL3/SDL.h>
 #include <imgui_internal.h>
 #include <fstream>
+#include <functional>
 
 namespace ggtest {
 
 namespace {
+
+// Waits until no active window changes its position, size or scroll range for several frames in a row: the layout
+// takes as many frames as the machine needs. With `w` and `h` ImGui must also have this display size.
+bool waitLayoutSettled(Scenario& s, int w = 0, int h = 0)
+{
+    ImGuiContext* ui = s.ctx->UiContext;
+    constexpr int settledFrames = 4;
+    int settled = 0;
+    bool have = false;
+    std::size_t last = 0;
+    return s.waitUntil([&] {
+        if (w > 0 && (ui->IO.DisplaySize.x != static_cast<float>(w) || ui->IO.DisplaySize.y != static_cast<float>(h))) {
+            settled = 0;
+            return false;
+        }
+        std::size_t hash = 0;
+        for (const ImGuiWindow* win : ui->Windows) {
+            if (!win->Active)
+                continue;
+            const float values[] = {win->Pos.x, win->Pos.y, win->Size.x, win->Size.y, win->ScrollMax.x, win->ScrollMax.y};
+            for (const float v : values)
+                hash = hash * 1000003u ^ std::hash<float>()(v);
+        }
+        settled = have && hash == last ? settled + 1 : 0;
+        have = true;
+        last = hash;
+        return settled >= settledFrames;
+    });
+}
 
 // With more rows than fit: scroll the list (the "##list" child of `window`) to the bottom and check that
 // the header control `header` has not moved, is fully inside the window, the window itself does not
@@ -26,12 +56,11 @@ void checkFixedHeader(Scenario& s, const char* window, const std::string& header
     const std::string listRef = s.child((std::string("//") + window).c_str(), "##list");
     ImGuiWindow* list = ctx->WindowInfo(listRef.c_str(), ImGuiTestOpFlags_NoError).Window;
     GG_REQUIRE(list != nullptr);
-    ctx->Yield(2);
-    GG_REQUIRE(list->ScrollMax.y > 0.0f); // the fixture has more rows than fit
+    // The fixture has more rows than fit.
+    GG_REQUIRE(s.waitUntil([&] { return list->ScrollMax.y > 0.0f; }));
     const ImRect before = ctx->ItemInfo(header.c_str()).RectFull;
     ctx->ScrollToBottom(listRef.c_str());
-    ctx->Yield(3);
-    GG_CHECK(list->Scroll.y > 0.0f);
+    GG_CHECK(s.waitUntil([&] { return list->Scroll.y > 0.0f && list->Scroll.y >= list->ScrollMax.y - 0.5f; }));
     GG_CHECK_EQ(win->Scroll.y, 0.0f);
     GG_CHECK_EQ(win->ScrollMax.y, 0.0f);
     const ImRect after = ctx->ItemInfo(header.c_str()).RectFull;
@@ -39,11 +68,10 @@ void checkFixedHeader(Scenario& s, const char* window, const std::string& header
     GG_CHECK(win->InnerClipRect.Contains(after));
     // A wheel turn over the list scrolls the list too.
     ctx->ScrollToTop(listRef.c_str());
-    ctx->Yield(2);
+    GG_CHECK(s.waitUntil([&] { return list->Scroll.y <= 0.5f; }));
     ctx->MouseMoveToPos(list->InnerClipRect.GetCenter());
     ctx->MouseWheelY(-5.0f);
-    ctx->Yield(3);
-    GG_CHECK(list->Scroll.y > 0.0f);
+    GG_CHECK(s.waitUntil([&] { return list->Scroll.y > 0.0f; }));
     GG_CHECK_EQ(win->Scroll.y, 0.0f);
 }
 
@@ -61,6 +89,7 @@ void resizeAppWindow(Scenario& s, int w, int h)
     SDL_GetWindowSize(window, &cw, &ch);
     GG_CHECK_EQ(cw, w);
     GG_CHECK_EQ(ch, h);
+    GG_CHECK(waitLayoutSettled(s, w, h));
 }
 
 // Window `window` (content that fits) never scrolls itself while the app window is reduced in steps and
@@ -79,7 +108,6 @@ void checkWindowStaysUnscrollable(Scenario& s, const char* window, bool list)
         int w, h;
         ~Restore() { resizeAppWindow(s, w, h); }
     } restore{s, w, h};
-    ctx->Yield(3);
     const int heights[] = {h, h - 40, h - 120, h - 121, h - 200, h - 330, h - 120, h - 20, h - 350, h};
     for (const int height : heights) {
         resizeAppWindow(s, w, height);
@@ -160,8 +188,8 @@ GG_TEST("fixed headers", "welcome: the buttons and the path field stay while the
         ~Restore() { ggui::theme().apply(theme, scale); }
     } restore;
     ggui::theme().apply(restore.theme, 2.0f);
-    s.ctx->Yield(3);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Welcome/recent_19/###row"); }));
+    GG_REQUIRE(waitLayoutSettled(s));
     checkFixedHeader(s, "Welcome", "//Welcome/###welcome_open");
     checkFixedHeader(s, "Welcome", "//Welcome/##welcome_path");
 }
@@ -212,7 +240,7 @@ GG_TEST("fixed headers", "rows keep clear of the list's edge: outlines and highl
     for (const Case& c : cases) {
         s.showPanel(c.window);
         GG_REQUIRE(s.waitUntil([&] { return s.itemExists(c.row); }));
-        s.ctx->Yield(3);
+        GG_REQUIRE(waitLayoutSettled(s));
         ImGuiWindow* win = s.ctx->WindowInfo((std::string("//") + c.window).c_str()).Window;
         ImGuiWindow* list = s.ctx->WindowInfo(s.child((std::string("//") + c.window).c_str(), "##list").c_str()).Window;
         const ImRect header = s.ctx->ItemInfo(c.header).RectFull;

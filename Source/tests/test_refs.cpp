@@ -720,18 +720,16 @@ GG_TEST("refs", "tooltips wait until scrolling stops")
     };
     // A branch in a group has its full name in the tooltip.
     ctx->MouseMove(row.c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
-    GG_CHECK(tipShown());
-    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse).
-    ctx->MouseWheelY(-1.0f);
-    ctx->Yield(1);
-    GG_CHECK(!tipShown());
-    ctx->MouseWheelY(-1.0f);
-    ctx->SleepNoSkip(0.15f, 0.05f);
-    GG_CHECK(!tipShown());
+    GG_CHECK(s.waitUntil([&] { return tipShown(); }, 5.0f));
+    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse). The wheel turns in every
+    // frame, so the scroll position changes in every frame: a slow frame cannot let the quiet time pass.
+    for (int i = 0; i < 6; ++i) {
+        ctx->MouseWheelY(i % 2 == 0 ? -1.0f : 1.0f);
+        ctx->Yield(1);
+        GG_CHECK(!tipShown());
+    }
     // Once it stops, tooltips come back.
-    ctx->SleepNoSkip(1.2f, 0.1f);
-    GG_CHECK(tipShown());
+    GG_CHECK(s.waitUntil([&] { return tipShown(); }, 5.0f));
 }
 
 GG_TEST("refs", "tooltips wait until scrolling stops also when the hover delay has passed on another row")
@@ -755,20 +753,16 @@ GG_TEST("refs", "tooltips wait until scrolling stops also when the hover delay h
     const ImVec2 mainPos = ctx->ItemInfo(plain.c_str()).RectFull.GetCenter();
     ctx->MouseMoveToPos(mainPos);
     ctx->MouseWheelY(-1.0f);
-    ctx->SleepNoSkip(0.5f, 0.1f);
-    ctx->SleepNoSkip(1.0f, 0.1f);
-    GG_REQUIRE(tipShown());
-    // One notch back up: `main` is under the mouse, and one down again: a row with a tooltip, at once. Not while it moves.
-    ctx->MouseWheelY(1.0f);
-    ctx->Yield(1);
-    GG_CHECK(!tipShown());
-    ctx->MouseWheelY(-1.0f);
-    ctx->Yield(1);
-    GG_CHECK(!tipShown());
-    ctx->SleepNoSkip(0.15f, 0.05f);
-    GG_CHECK(!tipShown());
-    ctx->SleepNoSkip(1.2f, 0.1f);
-    GG_CHECK(tipShown());
+    GG_REQUIRE(s.waitUntil([&] { return tipShown(); }, 5.0f));
+    // One notch back up: `main` is under the mouse, and one down again: a row with a tooltip, at once. Not while it
+    // moves. The wheel turns in every frame, so the scroll position changes in every frame: a slow frame cannot let
+    // the quiet time pass. The last notch is down.
+    for (int i = 0; i < 6; ++i) {
+        ctx->MouseWheelY(i % 2 == 0 ? 1.0f : -1.0f);
+        ctx->Yield(1);
+        GG_CHECK(!tipShown());
+    }
+    GG_CHECK(s.waitUntil([&] { return tipShown(); }, 5.0f));
 }
 
 } // namespace ggtest

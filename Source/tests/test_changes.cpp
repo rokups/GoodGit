@@ -920,18 +920,16 @@ GG_TEST("changes", "file tooltips wait until scrolling stops")
         return tip != nullptr && tip->Active;
     };
     ctx->MouseMove(row.c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
-    GG_CHECK(tipShown());
-    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse).
-    ctx->MouseWheelY(-1.0f);
-    ctx->Yield(1);
-    GG_CHECK(!tipShown());
-    ctx->MouseWheelY(-1.0f);
-    ctx->SleepNoSkip(0.15f, 0.05f);
-    GG_CHECK(!tipShown());
+    GG_CHECK(s.waitUntil([&] { return tipShown(); }, 5.0f));
+    // While the wheel scrolls the list, no tooltip (whatever row is under the mouse). The wheel turns in every
+    // frame, so the scroll position changes in every frame: a slow frame cannot let the quiet time pass.
+    for (int i = 0; i < 6; ++i) {
+        ctx->MouseWheelY(i % 2 == 0 ? -1.0f : 1.0f);
+        ctx->Yield(1);
+        GG_CHECK(!tipShown());
+    }
     // Once it stops, tooltips come back.
-    ctx->SleepNoSkip(1.2f, 0.1f);
-    GG_CHECK(tipShown());
+    GG_CHECK(s.waitUntil([&] { return tipShown(); }, 5.0f));
 }
 
 } // namespace ggtest
