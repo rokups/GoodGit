@@ -88,6 +88,19 @@ function(ggui_executable target description)
     endif()
 endfunction()
 
+# Build identity (Source/app/util/BuildInfo.cpp): the package flavour names the release asset that
+# matches this build; the commit is set by CI only.
+if(WIN32)
+    if(MSVC)
+        set(GGUI_PACKAGE_SYSTEM windows-x64-msvc)
+    else()
+        set(GGUI_PACKAGE_SYSTEM windows-x64-mingw)
+    endif()
+else()
+    set(GGUI_PACKAGE_SYSTEM linux-${CMAKE_SYSTEM_PROCESSOR})
+endif()
+set(GGUI_BUILD_COMMIT "$ENV{GITHUB_SHA}" CACHE STRING "Commit of a CI build; empty for local builds")
+
 add_subdirectory(Source/libgg)
 add_subdirectory(Source/gitgg)
 if(GGUI_BUILD_APP)
