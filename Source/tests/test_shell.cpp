@@ -15,7 +15,11 @@
 #include <SDL3/SDL_events.h>
 #include <imgui_internal.h>
 
+#include <atomic>
+#include <chrono>
 #include <fstream>
+#include <set>
+#include <thread>
 
 namespace ggtest {
 
@@ -333,6 +337,68 @@ GG_TEST("shell", "permanent repositories: normalizeAlias")
     GG_CHECK_STR_EQ(normalizeAlias(" a / b "), "a/b");
     GG_CHECK_STR_EQ(normalizeAlias("a/ /b"), "a/b");
     GG_CHECK_STR_EQ(normalizeAlias("my app"), "my app");
+}
+
+GG_TEST("shell", "repository state: JSON round trip and loading")
+{
+    using namespace ggui;
+    SettingsData d;
+    d.repoState["/a/.git"].hiddenRefs = {"refs/heads/x", "refs/tags/v1"};
+    d.repoState["/b/.git"] = {}; // empty: not written
+    const nlohmann::json j = toJson(d);
+    GG_REQUIRE(j["repoState"].is_object());
+    GG_CHECK_EQ(j["repoState"].size(), size_t{1});
+    const SettingsData back = fromJson(j);
+    GG_REQUIRE(back.repoState.count("/a/.git") == 1);
+    GG_CHECK(back.repoState.at("/a/.git").hiddenRefs == std::vector<std::string>({"refs/heads/x", "refs/tags/v1"}));
+    // A file from before the key, and malformed entries, load fine.
+    GG_CHECK(fromJson(nlohmann::json::parse(R"({"recent":[]})")).repoState.empty());
+    GG_CHECK(fromJson(nlohmann::json::parse(R"({"repoState":[1,2]})")).repoState.empty());
+    const SettingsData bad = fromJson(nlohmann::json::parse(
+        R"({"repoState":{"/x":3,"/y":{"hiddenRefs":"no"},"/z":{"hiddenRefs":[1,"refs/heads/b","","refs/heads/a","refs/heads/b"]},"/w":{}}})"));
+    GG_REQUIRE(bad.repoState.size() == 1);
+    GG_CHECK(bad.repoState.at("/z").hiddenRefs == std::vector<std::string>({"refs/heads/a", "refs/heads/b"}));
+    // The key is the common directory without a trailing separator.
+    GG_CHECK_STR_EQ(repoStateKey(""), "");
+    GG_CHECK_STR_EQ(repoStateKey(s.root() / "r" / ".git" / ""), repoStateKey(s.root() / "r" / ".git"));
+}
+
+GG_TEST("shell", "repository state: an older save does not undo a newer change in memory")
+{
+    using namespace ggui;
+    // A Settings of its own, on its own I/O thread and directory.
+    const fs::path dir = s.root() / "prefs-state";
+    fs::create_directories(dir);
+    AsyncIo io;
+    Settings settings(io);
+    setEnv("GGUI_PREF_PATH", dir.string());
+    settings.load(nullptr);
+    setEnv("GGUI_PREF_PATH", (s.root() / "prefs").string());
+    io.flush();
+    io.pump();
+    GG_REQUIRE(settings.loaded());
+    // Hide X (save 1), then hold the I/O thread so that save 2 (show X) is not finished yet.
+    settings.setHiddenRefs("k", {"refs/heads/x"});
+    std::atomic<bool> holding{false}, release{false};
+    io.post([&]() -> std::function<void()> {
+        holding = true;
+        while (!release)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return {};
+    });
+    settings.setHiddenRefs("k", {});
+    while (!holding)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    io.pump(); // save 1 finishes: its file has X, but save 2 is on its way
+    GG_CHECK(settings.hiddenRefs("k").empty());
+    // Hide X again: a change, so a save.
+    settings.setHiddenRefs("k", {"refs/heads/x"});
+    release = true;
+    io.flush();
+    io.pump();
+    GG_CHECK(settings.hiddenRefs("k") == std::set<std::string>({"refs/heads/x"}));
+    const nlohmann::json stored = nlohmann::json::parse(s.read(dir, "settings.json"));
+    GG_CHECK(stored["repoState"]["k"]["hiddenRefs"] == nlohmann::json({"refs/heads/x"}));
 }
 
 GG_TEST("shell", "permanent repositories: JSON round trip and loading")

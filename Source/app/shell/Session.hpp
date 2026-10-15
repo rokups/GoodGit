@@ -90,6 +90,9 @@ public:
     // repository, or a --separate-git-dir or submodule one, has none there), else the session path; both
     // normalised. Empty until the first snapshot is there. The disk is read once for each snapshot.
     std::string repositoryListPath() const;
+    // The key of the state that all worktrees of this repository share (repoStateKey of the common
+    // directory); "" before the repository is open.
+    const std::string& repoStateKey() const;
 
     // Applies engine events, bounded per frame (§3.1).
     void pump();
@@ -253,6 +256,7 @@ private:
     core::SnapshotPtr m_snapshot;
     mutable core::SnapshotPtr m_listPathSnapshot; // the snapshot m_listPath was computed for
     mutable std::string m_listPath;
+    mutable std::string m_repoStateKey; // computed once, from the first snapshot
     core::StatusPtr m_status;
     Selection m_selection;
     bool m_stashRewordPending = false;

@@ -146,12 +146,40 @@ void HistoryPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChange
 {
     const core::SnapshotPtr before = m_snapshot;
     m_snapshot = snapshot;
-    if (before && refsChanged)
-        hideNewRefs(*before, *snapshot);
-    // Drop hidden refs that no longer exist.
+    if (!before)
+        loadHidden();
+    if (before && refsChanged && hideNewRefs(*before, *snapshot))
+        storeHidden();
+    // Hidden refs that no longer exist leave the scope (buildScope).
     if (refsChanged)
         reload();
 }
+
+void HistoryPanel::loadHidden()
+{
+    const std::string& key = m_session.repoStateKey();
+    if (key.empty() || !m_snapshot)
+        return;
+    const std::set<std::string> stored = m_session.app().settings().hiddenRefs(key);
+    const auto& s = *m_snapshot;
+    std::set<std::string> existing;
+    for (const auto& b : s.branches)
+        existing.insert("refs/heads/" + b.name);
+    for (const auto& r : s.remoteBranches)
+        existing.insert("refs/remotes/" + r.name);
+    for (const auto& t : s.tags)
+        existing.insert("refs/tags/" + t.name);
+    for (const auto& k : s.kept)
+        existing.insert(gg::keep::refName(k.id.hex()));
+    m_hidden.clear();
+    for (const auto& name : stored)
+        if (existing.count(name))
+            m_hidden.insert(name);
+    if (m_hidden.size() != stored.size())
+        storeHidden();
+}
+
+void HistoryPanel::storeHidden() { m_session.app().settings().setHiddenRefs(m_session.repoStateKey(), m_hidden); }
 
 void HistoryPanel::onStatus(const core::StatusPtr& status)
 {
@@ -341,6 +369,7 @@ void HistoryPanel::toggleRef(const std::string& fullName, bool only)
         m_hidden.erase(fullName);
     else
         m_hidden.insert(fullName);
+    storeHidden();
     reload();
 }
 
@@ -358,12 +387,14 @@ void HistoryPanel::showOnlyRefs(const std::vector<std::string>& fullNames)
         m_hidden.insert(gg::keep::refName(k.id.hex()));
     for (const auto& name : fullNames)
         m_hidden.erase(name);
+    storeHidden();
     reload();
 }
 
 void HistoryPanel::showAllRefs()
 {
     m_hidden.clear();
+    storeHidden();
     reload();
 }
 
@@ -375,6 +406,7 @@ void HistoryPanel::setRefsVisible(const std::vector<std::string>& fullNames, boo
         else
             m_hidden.insert(name);
     }
+    storeHidden();
     reload();
 }
 

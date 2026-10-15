@@ -77,6 +77,13 @@ std::string Session::repositoryListPath() const
     return m_listPath;
 }
 
+const std::string& Session::repoStateKey() const
+{
+    if (m_repoStateKey.empty() && m_snapshot)
+        m_repoStateKey = ggui::repoStateKey(m_snapshot->commonDir);
+    return m_repoStateKey;
+}
+
 void Session::cancelOpen() { m_engine->cancel(m_openRequest); }
 
 bool Session::idle() const { return m_engine->idle(); }

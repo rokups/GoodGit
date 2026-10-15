@@ -266,7 +266,13 @@ there a panel that is new (Repositories) shows floating until a reset or a manua
 - Reveal: loads more history until the commit is found; progress in the activity area,
   cancellable. A commit that a collapsed merge hides (it has no row) expands that merge, and each nested collapsed
   merge, and is selected; the merges stay expanded. The notice shows only when the commit is not in the scope.
-- Scope: branch/tag/remote visibility from the side panels.
+- Scope: branch/tag/remote visibility from the side panels. The hidden refs are stored per repository in
+  settings.json (`repoState`, keyed by the git common directory), so all worktrees of a repository and a restart
+  show the same hidden refs. Each change writes them; opening a worktree reads them and drops names of refs that
+  no longer exist. A save writes only the repositories this process changed and keeps the file's state of the others
+  (another ggui process). A running ggui reads the state that other processes stored when it starts and after each of
+  its own saves; an open History panel does not follow a change made in another process. Two processes that write
+  settings.json at the same moment can lose the change of one repository from the other process (an accepted limit).
 
 ### 2.x Drag and drop (Phase 3)
 - **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,

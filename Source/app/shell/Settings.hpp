@@ -12,6 +12,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -55,6 +56,11 @@ struct RepoEntry {
     std::string alias; // empty: the entry has no alias
 };
 
+// The state of one repository, shared by all its worktrees (settings.json "repoState", keyed by repoStateKey).
+struct RepoState {
+    std::vector<std::string> hiddenRefs; // full ref names hidden in History; sorted, unique
+};
+
 struct SettingsData {
     float uiScale = 1.0f;          // 0.5 – 3.0
     Theme theme = Theme::Dark;
@@ -62,6 +68,7 @@ struct SettingsData {
     std::vector<RepoEntry> repositories; // in the order added, unique paths, no limit
     RecentOrder recentOrder = RecentOrder::MostRecent;
     std::map<std::string, bool> panels; // window name → visible
+    std::map<std::string, RepoState> repoState; // repoStateKey → state; no empty entries
     NothingStaged nothingStaged = NothingStaged::Ask;
     bool expandConflictStages = false; // §4.10: index stages 1–3 for two-sided first-class conflicts on checkout
     bool expandStagesOnCheckout = false;
@@ -118,15 +125,30 @@ public:
     // changes nothing.
     void setAlias(const std::string& path, const std::string& alias);
 
+    // The hidden refs stored for the repository `key` (repoStateKey); empty when none are stored.
+    std::set<std::string> hiddenRefs(const std::string& key) const;
+    // Stores the hidden refs of `key` and saves settings.json when they changed.
+    void setHiddenRefs(const std::string& key, const std::set<std::string>& names);
+
 private:
     AsyncIo& m_io;
     SettingsData m_data;
+    // Repositories whose state changed since the last save. A save writes only their state from memory;
+    // the state of the others comes from the file, so another ggui process does not lose its changes.
+    std::set<std::string> m_pendingRepoKeys;
+    // Saves posted and not yet finished, per repository key. A finished save does not copy the file's state of
+    // a key into memory while a later save of that key is still on its way: the file then holds an older value.
+    std::map<std::string, int> m_savingRepoKeys;
     bool m_loaded = false;
     std::filesystem::path m_dir;
 };
 
 nlohmann::json toJson(const SettingsData& d);
 SettingsData fromJson(const nlohmann::json& j);
+
+// The key of a repository's shared state: its git common directory (one for all its worktrees), absolute,
+// symlinks resolved, no trailing separator, lower case on Windows (as gg::seqlink::gitDirKey). "" for "".
+std::string repoStateKey(const std::filesystem::path& commonDir);
 
 // A repository path as stored in Recent: absolute, symlinks resolved where the path exists, no
 // trailing separator ("/a/b/" and "/a/b" are the same entry).

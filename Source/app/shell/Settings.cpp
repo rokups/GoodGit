@@ -3,6 +3,7 @@
 #include "util/Env.hpp"
 
 #include <libgg/Files.hpp>
+#include <libgg/SequenceEditorLink.hpp>
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
@@ -144,6 +145,39 @@ void writeAtomically(const fs::path& p, const std::string& text)
     fs::remove(tmp, ec); // not left behind
 }
 
+// "repoState": {key: {"hiddenRefs": [names]}}. Entries without a hidden ref are not written.
+nlohmann::json repoStateToJson(const std::map<std::string, RepoState>& states)
+{
+    nlohmann::json j = nlohmann::json::object();
+    for (const auto& [key, state] : states)
+        if (!key.empty() && !state.hiddenRefs.empty())
+            j[key] = {{"hiddenRefs", state.hiddenRefs}};
+    return j;
+}
+
+// Reads what repoStateToJson writes; what is not an object, an array or a string is skipped.
+std::map<std::string, RepoState> repoStateFromJson(const nlohmann::json& j)
+{
+    std::map<std::string, RepoState> states;
+    const auto it = j.is_object() ? j.find("repoState") : j.end();
+    if (it == j.end() || !it->is_object())
+        return states;
+    for (auto entry = it->begin(); entry != it->end(); ++entry) {
+        if (entry.key().empty() || !entry.value().is_object())
+            continue;
+        const auto refs = entry.value().find("hiddenRefs");
+        if (refs == entry.value().end() || !refs->is_array())
+            continue;
+        std::set<std::string> names;
+        for (const auto& name : *refs)
+            if (name.is_string() && !name.get<std::string>().empty())
+                names.insert(name.get<std::string>());
+        if (!names.empty())
+            states[entry.key()].hiddenRefs.assign(names.begin(), names.end());
+    }
+    return states;
+}
+
 } // namespace
 
 nlohmann::json toJson(const SettingsData& d)
@@ -171,6 +205,7 @@ nlohmann::json toJson(const SettingsData& d)
     j["historyBadgePrefix"] = d.historyBadgePrefix;
     j["historyBadgeSuffix"] = d.historyBadgeSuffix;
     j["historyGraphInDescription"] = d.historyGraphInDescription;
+    j["repoState"] = repoStateToJson(d.repoState);
     return j;
 }
 
@@ -230,6 +265,7 @@ SettingsData fromJson(const nlohmann::json& j)
     d.expandStagesOnCheckout = j.value("expandStagesOnCheckout", false);
     d.expandConflictStages = j.value("expandConflictStages", false);
     d.historyGraphInDescription = j.value("historyGraphInDescription", false);
+    d.repoState = repoStateFromJson(j);
     if (j.contains("window") && j["window"].is_object()) {
         const auto& w = j["window"];
         d.windowX = w.value("x", -1);
@@ -353,6 +389,7 @@ void Settings::load(std::function<void(const std::string& iniText)> onLoaded)
 {
     m_dir = prefDir();
     m_loaded = false;
+    m_pendingRepoKeys.clear();
     const fs::path dir = m_dir;
     m_io.post([this, dir, onLoaded = std::move(onLoaded)]() -> std::function<void()> {
         SettingsData data;
@@ -376,12 +413,87 @@ void Settings::load(std::function<void(const std::string& iniText)> onLoaded)
 
 void Settings::save()
 {
-    const std::string text = toJson(m_data).dump(2);
+    nlohmann::json j = toJson(m_data);
+    std::map<std::string, RepoState> own;
+    for (const auto& key : m_pendingRepoKeys)
+        if (const auto it = m_data.repoState.find(key); it != m_data.repoState.end())
+            own.emplace(key, it->second);
+    std::set<std::string> ownKeys;
+    ownKeys.swap(m_pendingRepoKeys);
+    for (const auto& key : ownKeys)
+        ++m_savingRepoKeys[key];
     const fs::path file = m_dir / "settings.json";
-    m_io.post([file, text]() -> std::function<void()> {
-        writeAtomically(file, text);
-        return {};
+    m_io.post([this, file, j = std::move(j), own = std::move(own), ownKeys = std::move(ownKeys)]() mutable
+              -> std::function<void()> {
+        // Another ggui process (another worktree, another repository) may have stored repository state since
+        // this one read the file: the file's state is kept, except for the repositories this save changes.
+        std::map<std::string, RepoState> merged;
+        bool fromFile = false;
+        if (const std::string old = readAll(file); !old.empty()) {
+            try {
+                merged = repoStateFromJson(nlohmann::json::parse(old));
+                fromFile = true;
+            } catch (const std::exception&) {
+            }
+        }
+        if (!fromFile)
+            merged = repoStateFromJson(j); // no readable file: this process's state
+        for (const auto& key : ownKeys)
+            merged.erase(key);
+        for (auto& [key, state] : own)
+            merged[key] = std::move(state);
+        j["repoState"] = repoStateToJson(merged);
+        writeAtomically(file, j.dump(2));
+        // Memory takes the file's state, except for repositories changed after this save was posted (pending, or
+        // in a later save that is not finished: this file has an older value for them).
+        return [this, merged = std::move(merged), ownKeys = std::move(ownKeys)]() {
+            for (const auto& key : ownKeys)
+                if (const auto it = m_savingRepoKeys.find(key); it != m_savingRepoKeys.end() && --it->second <= 0)
+                    m_savingRepoKeys.erase(it);
+            const auto keep = [this](const std::string& key) {
+                return m_pendingRepoKeys.count(key) || m_savingRepoKeys.count(key);
+            };
+            auto& states = m_data.repoState;
+            for (auto it = states.begin(); it != states.end();)
+                it = !keep(it->first) && !merged.count(it->first) ? states.erase(it) : std::next(it);
+            for (const auto& [key, state] : merged)
+                if (!keep(key))
+                    states[key] = state;
+        };
     });
+}
+
+std::set<std::string> Settings::hiddenRefs(const std::string& key) const
+{
+    const auto it = m_data.repoState.find(key);
+    if (it == m_data.repoState.end())
+        return {};
+    return {it->second.hiddenRefs.begin(), it->second.hiddenRefs.end()};
+}
+
+void Settings::setHiddenRefs(const std::string& key, const std::set<std::string>& names)
+{
+    if (key.empty())
+        return;
+    std::vector<std::string> sorted(names.begin(), names.end());
+    sorted.erase(std::remove(sorted.begin(), sorted.end(), std::string()), sorted.end());
+    const auto it = m_data.repoState.find(key);
+    const std::vector<std::string> before = it != m_data.repoState.end() ? it->second.hiddenRefs : std::vector<std::string>{};
+    if (sorted == before)
+        return;
+    if (sorted.empty())
+        m_data.repoState.erase(key);
+    else
+        m_data.repoState[key].hiddenRefs = std::move(sorted);
+    m_pendingRepoKeys.insert(key);
+    save();
+}
+
+std::string repoStateKey(const fs::path& commonDir)
+{
+    if (commonDir.empty())
+        return {};
+    return gg::seqlink::gitDirKey(commonDir);
 }
 
 void Settings::saveIni(std::string text)

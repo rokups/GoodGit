@@ -52,6 +52,11 @@ public:
     // Shows or hides every ref in `fullNames` at once (Branches: Show all / Hide all).
     void setRefsVisible(const std::vector<std::string>& fullNames, bool visible);
 
+    // Reads m_hidden from the settings for the first snapshot; names of refs that no longer exist are dropped.
+    void loadHidden();
+    // Writes m_hidden to the settings (after each change).
+    void storeHidden();
+
     void toggleMerge(const core::Oid& id);
     void drawMergeIcon(const core::HistoryRow& row);
     // A merge row offers Collapse/Expand only when collapsing hides commits.
@@ -130,6 +135,7 @@ private:
     bool m_hasWorktreeChanges = false;
     bool m_nativeConflicts = false;
 
+    // Full names of the hidden refs. All worktrees of a repository share them (settings.json, Settings::hiddenRefs).
     std::set<std::string> m_hidden;
     std::vector<core::Oid> m_toggledMerges; // differ from the default (collapsed)
 
