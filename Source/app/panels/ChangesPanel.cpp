@@ -275,15 +275,39 @@ void ChangesPanel::rebuildFromStatus()
         for (const auto& e : status->untracked)
             m_rows.push_back(rowFromStatus(FileGroup::Untracked, e));
     }
-    // Keep selection for rows that still exist.
+    // Keep the selection for rows that still exist. A row whose file moved to another group (staged or unstaged by
+    // an update of the working tree) is followed by its path.
     std::set<std::string> keys;
     for (const auto& r : m_rows)
         keys.insert(r.key());
-    std::erase_if(m_selected, [&](const std::string& k) { return !keys.count(k); });
-    if (!keepCurrent.empty() && !keys.count(keepCurrent))
-        m_current.clear();
-    else if (!keepCurrent.empty())
+    const auto follow = [&](const std::string& key) {
+        const std::string path = key.substr(key.find(':') + 1);
+        for (const auto& r : m_rows)
+            if (r.path == path)
+                return r.key();
+        return std::string();
+    };
+    std::set<std::string> kept;
+    for (const auto& k : m_selected) {
+        const std::string now = keys.count(k) ? k : follow(k);
+        if (!now.empty())
+            kept.insert(now);
+    }
+    m_selected = std::move(kept);
+    if (!m_anchor.empty() && !keys.count(m_anchor))
+        m_anchor = follow(m_anchor);
+    const bool currentMoved = !keepCurrent.empty() && !keys.count(keepCurrent);
+    if (currentMoved)
+        m_current = follow(keepCurrent);
+    if (m_current.empty() && !keepCurrent.empty() && !m_selected.empty()) {
+        // The current file is gone but others stay selected: one of them becomes the current file.
+        setCurrent(m_selected.count(m_anchor) ? m_anchor : *m_selected.begin());
+    } else if (currentMoved && !m_current.empty()) {
+        setCurrent(m_current);
+        m_selected.insert(m_current);
+    } else if (!keepCurrent.empty() && !m_current.empty()) {
         m_session.diff().refreshIfShowing();
+    }
     // A change of the file list (for example a discard) that removes every selected row leaves no
     // selection: the default selection of a new commit applies (the file that the user last selected, else the first file).
     if (hadSelection && !current()) {
