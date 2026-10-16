@@ -275,6 +275,10 @@ void ChangesPanel::rebuildFromStatus()
         for (const auto& e : status->untracked)
             m_rows.push_back(rowFromStatus(FileGroup::Untracked, e));
     }
+    // A scan in progress lists only the files met so far: the selection waits for the complete list, else the rows
+    // not yet met would lose it.
+    if (status->partial)
+        return;
     // Keep the selection for rows that still exist. A row whose file moved to another group (staged or unstaged by
     // an update of the working tree) is followed by its path.
     std::set<std::string> keys;
