@@ -107,12 +107,12 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         tooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
     ImGui::SameLine();
     events.labelLeft = ImGui::GetCursorScreenPos().x;
-    // The room from the label to the list's edge, less the hover buttons' (always, so the label does not move
-    // on hover); nothing is built while the label fits.
+    // The room from the label to the list's edge, less the hover buttons' while the row is hovered;
+    // nothing is built while the label fits.
     std::string fitted;
     const std::string* shown = &label;
     if (parts) {
-        const float room = ImGui::GetContentRegionAvail().x - rowActionsWidth(acts);
+        const float room = ImGui::GetContentRegionAvail().x - rowActionsReserve(acts);
         const ImVec2 at = ImGui::GetCursorScreenPos();
         if (ImGui::IsRectVisible(at, ImVec2(at.x + room, at.y + ImGui::GetTextLineHeight()))
             && ImGui::CalcTextSize(label.c_str()).x > room && fitBranchLabel(*parts, room, fitted)) {
@@ -1264,7 +1264,7 @@ void WorktreesPanel::draw(bool* open)
         };
         label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength))
                                   : elideMiddleToWidth(w.branch,
-                                      ImGui::GetContentRegionAvail().x - textWidth(label) - rowActionsWidth(acts));
+                                      ImGui::GetContentRegionAvail().x - textWidth(label) - rowActionsReserve(acts));
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         ImGui::SetNextItemAllowOverlap();
@@ -1439,13 +1439,13 @@ void StashesPanel::draw(bool* open)
         // in a panel too narrow for both the message keeps a minimum and the trailing text is clipped.
         const std::string prefix = "stash@{" + std::to_string(s.index) + "} ";
         const std::string trailing = s.base.shortHex(kShortIdLength) + "  " + core::formatTime(s.time);
-        // The hover buttons do what the menu's Apply and Pop do; their strip is left free, shown or not.
+        // The hover buttons do what the menu's Apply and Pop do; their strip is left free while the row is hovered.
         const RowAction acts[] = {
             {ICON_MS_UNARCHIVE, "act_apply", "Apply", free},
             {ICON_MS_OUTBOX, "act_pop", "Pop", free},
         };
         const float room = std::max(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(prefix.c_str()).x
-                - ImGui::CalcTextSize(trailing.c_str()).x - ImGui::GetStyle().ItemSpacing.x - rowActionsWidth(acts),
+                - ImGui::CalcTextSize(trailing.c_str()).x - ImGui::GetStyle().ItemSpacing.x - rowActionsReserve(acts),
             ImGui::GetFontSize() * 8);
         const std::string label = prefix + fitText(std::string(firstLine(s.message)), room);
         const bool selected = m_session.selection().kind == SelKind::Stash && m_session.selection().id == s.commit;

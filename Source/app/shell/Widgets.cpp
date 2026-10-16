@@ -193,10 +193,25 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
     return pressed;
 }
 
-float rowActionsWidth(std::span<const RowAction> actions)
+float rowActionsReserve(std::span<const RowAction> actions)
 {
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems || actions.empty())
+        return 0.0f;
+    // The row about to be built starts at the cursor: its band is the one rowActions finds from the built row
+    // (a row's item includes half the item spacing on each side), and the hover test is rowActions' too.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float spacingUp = std::trunc(style.ItemSpacing.y * 0.5f);
+    const float top = ImGui::GetCursorScreenPos().y - spacingUp;
+    const float bottom = top + ImGui::GetTextLineHeight() + style.ItemSpacing.y;
+    const bool hovered = g.HoveredWindow == window && (g.ActiveId == 0 || g.ActiveIdAllowOverlap)
+        && ImGui::IsMouseHoveringRect(ImVec2(window->InnerRect.Min.x, top), ImVec2(window->InnerRect.Max.x, bottom))
+        && ImGui::IsWindowContentHoverable(window, ImGuiHoveredFlags_None);
+    if (!hovered)
+        return 0.0f;
     // The same widths as rowActions' buttons: the glyph and a gap each.
-    const float gap = std::trunc(ImGui::GetStyle().ItemSpacing.x * 0.5f);
+    const float gap = std::trunc(style.ItemSpacing.x * 0.5f);
     float total = 0.0f;
     for (const RowAction& a : actions) {
         if (a.visible)
