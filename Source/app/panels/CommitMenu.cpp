@@ -193,13 +193,11 @@ void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row)
         showRebaseDialog(session, row.id, other.ref);
     if (c.one(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I"))
         openInteractiveRebase(session, row.id);
-    // The label names the branch; the ID stays the same. Enabled on HEAD too (Mixed unstages, Hard discards).
+    // The label does not name the branch (a long name widens the menu); the dialog does. Enabled on HEAD too (Mixed unstages, Hard discards).
     const auto snap = session.snapshot();
     const bool onBranch = !snap->headDetached && !snap->headUnborn && !snap->headBranch.empty();
     const bool idle = snap->state == core::RepoState::None;
-    const std::string label = (onBranch ? "Reset " + snap->headBranch + " to here..." : std::string("Reset to here..."))
-        + "###reset_here";
-    if (c.one(ICON_MS_RESTART_ALT, label.c_str(), nullptr, onBranch && idle,
+    if (c.one(ICON_MS_RESTART_ALT, "Reset to here...###reset_here", nullptr, onBranch && idle,
             onBranch ? "An operation is in progress." : "HEAD is not on a branch."))
         showResetDialog(session, row.id);
 }
