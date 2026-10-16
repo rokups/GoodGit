@@ -64,6 +64,9 @@ struct RowAction {
 // selection's hover colour); false: a plain text row, as tall as its text. Returns the index of the button
 // clicked, or -1.
 int rowActions(std::span<const RowAction> actions, bool rowSelected = false, bool paddedRow = true);
+// The width of rowActions' strip for `actions`, whether it is shown or not: what a row's label leaves free at
+// the right edge so that it does not run under the buttons.
+float rowActionsWidth(std::span<const RowAction> actions);
 // menuItem()/selectable() whose visible label starts with `dimLen` bytes (a folder prefix) drawn in
 // the dimmed text colour; the rest keeps the normal colour. The widget is laid out, identified and
 // registered exactly like the plain call with the same `label`.

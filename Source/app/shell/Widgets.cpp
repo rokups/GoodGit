@@ -193,6 +193,18 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
     return pressed;
 }
 
+float rowActionsWidth(std::span<const RowAction> actions)
+{
+    // The same widths as rowActions' buttons: the glyph and a gap each.
+    const float gap = std::trunc(ImGui::GetStyle().ItemSpacing.x * 0.5f);
+    float total = 0.0f;
+    for (const RowAction& a : actions) {
+        if (a.visible)
+            total += ImGui::CalcTextSize((std::string(a.icon) + "###" + a.id).c_str(), nullptr, true).x + gap;
+    }
+    return total;
+}
+
 int rowActions(std::span<const RowAction> actions, bool rowSelected, bool paddedRow)
 {
     ImGuiContext& g = *GImGui;
