@@ -15,6 +15,11 @@ on:
     branches: ["**"] # not tags: the release job moves the "latest" tag
   pull_request:
 
+# A newer push to the same ref cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
   GGUI_FIXTURE_CACHE: ${{ github.workspace }}/.cache/ggui-fixtures

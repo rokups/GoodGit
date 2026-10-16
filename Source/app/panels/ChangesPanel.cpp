@@ -177,6 +177,17 @@ CompareTarget ChangesPanel::compareTarget() const
     return target;
 }
 
+std::vector<std::string> ChangesPanel::commitDiffRevs(const std::string& id) const
+{
+    if (m_pair)
+        return {m_pair->older.hex(), m_pair->newer.hex()};
+    switch (m_compare.kind) {
+    case CompareTarget::Rev: return {m_compare.rev, id};
+    case CompareTarget::WorkTree: return {"-R", id}; // the working tree is the old side, as in the Diff window
+    default: return {id + "^", id};
+    }
+}
+
 Selection ChangesPanel::effectiveSelection() const
 {
     Selection sel = m_selection;
@@ -720,16 +731,17 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         }
         if (canMenu && row.group == FileGroup::Commit && compare.kind != CompareTarget::None) {
             const bool rev = compare.kind == CompareTarget::Rev;
-            // Two selected commits: the file in the lower one against the file in the upper one, as the panels show.
-            if (menuItem(ICON_MS_OPEN_IN_NEW, "Compare", nullptr, false, menuOn && hasBefore))
-                actions.externalDiff(row.path, m_pair ? V{compare.rev, id} : rev ? V{compare.rev, id + "^"} : V{id + "^"});
+            // As the Diff window shows it: the "Compare with" target against the commit's file (two selected commits:
+            // the lower one against the upper one).
+            if (menuItem(ICON_MS_OPEN_IN_NEW, "Compare", nullptr, false, menuOn))
+                actions.externalDiff(row.path, commitDiffRevs(id));
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
                 if (m_pair)
                     tooltip("Compare the file in the lower selected commit with the file in the upper one");
                 else if (rev)
-                    tooltip("Compare the file before this commit with %s", compare.rev.c_str());
+                    tooltip("Compare the file in this commit with %s", compare.rev.c_str());
                 else
-                    tooltip("Compare the file before this commit with the working tree");
+                    tooltip("Compare the file in this commit with the working tree");
             }
         } else if (beginMenu(ICON_MS_OPEN_IN_NEW, "Compare", menuOn && canMenu)) {
             if (menuItem(ICON_MS_COMPARE_ARROWS, "Show diff", nullptr, false, hasShow && hasBefore))
@@ -846,10 +858,7 @@ void ChangesPanel::openFile(const FileRow& row)
     case FileGroup::Staged: actions.externalDiff(row.path, {"--cached", "HEAD"}); break;
     case FileGroup::Unstaged: actions.externalDiff(row.path, {}); break;
     case FileGroup::Commit:
-        if (m_pair) // two selected commits: the file in the lower one against the upper one, as the panels show
-            actions.externalDiff(row.path, {m_pair->older.hex(), m_pair->newer.hex()});
-        else
-            actions.externalDiff(row.path, {id + "^", id});
+        actions.externalDiff(row.path, commitDiffRevs(id));
         break;
     case FileGroup::StashWorktree: actions.externalDiff(row.path, {id + "^", id}); break;
     case FileGroup::StashIndex: actions.externalDiff(row.path, {id + "^1", id + "^2"}); break;

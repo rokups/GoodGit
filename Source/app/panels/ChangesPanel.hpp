@@ -74,6 +74,9 @@ public:
     const std::vector<FileRow>& rows() const { return m_rows; }
     // The target in use: the other commit while two commits are selected, else the "Compare with" one.
     CompareTarget compareTarget() const;
+    // The `git difftool` revisions that show a commit's file as the Diff window does: the parent against the commit,
+    // the "Compare with" revision against it, the working tree against it, or the lower of two commits against the upper.
+    std::vector<std::string> commitDiffRevs(const std::string& id) const;
     const std::set<std::string>& selectedKeys() const { return m_selected; }
     bool scanning() const { return m_scanning; }
     bool everScanned() const { return m_everScanned; }
