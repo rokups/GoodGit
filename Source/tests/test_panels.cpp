@@ -34,7 +34,7 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
     GG_CHECK_STR_EQ(main->upstream, "origin/main");
     GG_CHECK_EQ(main->ahead, 1);
     GG_CHECK_EQ(main->behind, 1);
-    GG_CHECK(s.itemText("//Branches/branch_main/###branch_main").find("origin/main") != std::string::npos);
+    GG_CHECK(s.itemText("//Branches/branch_main/###branch_main").find("main@origin") != std::string::npos);
     // Nested names are addressable; filter narrows the list.
     GG_CHECK(s.itemExists("//Branches/branch_feature:one/###branch_feature:one"));
     ctx->ItemInputValue("//Branches/##branch_filter", "feat");

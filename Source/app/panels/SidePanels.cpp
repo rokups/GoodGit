@@ -141,7 +141,10 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     if (ImGui::IsItemFocused() && (ImGui::GetIO().KeyMods & ~ImGuiMod_Ctrl) == 0 && ImGui::IsKeyPressed(ImGuiKey_Space, false))
         events.toggle = true;
     if (outlined) {
-        ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+        // Around the text itself: the item spans the row, and is cut at its edge where the text does not fit.
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max(min.x + ImGui::CalcTextSize(shown->c_str()).x, ImGui::GetItemRectMax().y);
+        ImGui::GetWindowDrawList()->AddRect(ImVec2(min.x - 2.0f, min.y), ImVec2(max.x + 2.0f, max.y),
             ImGui::GetColorU32(ImGuiCol_Text), 2.0f, 0, 1.5f);
     }
     if (!acts.empty())
@@ -600,9 +603,14 @@ void BranchesPanel::draw(bool* open)
     const GroupEyes localEyes{history, [&](size_t index) { return "refs/heads/" + m_snapshot->branches[index].name; }};
     drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
-        std::string link, tail;
+        std::string link, tail, remote;
         if (!b.upstream.empty()) {
-            link = "  " ICON_MS_ARROW_RIGHT_ALT " ";
+            // "branch@remote"; the tracked branch follows only where its name differs from the local one.
+            const size_t slash = b.upstream.find('/');
+            const std::string_view tracked = slash == std::string::npos ? std::string_view() : std::string_view(b.upstream).substr(slash + 1);
+            remote = slash == std::string::npos ? b.upstream
+                : tracked == b.name ? b.upstream.substr(0, slash) : b.upstream;
+            link = "@";
             if (b.upstreamGone)
                 tail += " (gone)";
             if (b.ahead)
@@ -612,8 +620,8 @@ void BranchesPanel::draw(bool* open)
         }
         if (!b.worktree.empty())
             tail += "  [" + b.worktree + "]";
-        const std::string label = shortName + link + b.upstream + tail;
-        const BranchLabelParts parts{shortName, link, b.upstream, tail};
+        const std::string label = shortName + link + remote + tail;
+        const BranchLabelParts parts{shortName, link, remote, tail};
         const std::string full = "refs/heads/" + b.name;
         ImGui::PushOverrideID(windowId);
         // The hover buttons do what the menu's Check out and Push do.
