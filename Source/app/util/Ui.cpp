@@ -85,6 +85,14 @@ bool containsNoCase(const std::string& haystack, const std::string& needle)
     return it != haystack.end();
 }
 
+std::string trackedName(const std::string& branch, const std::string& upstream)
+{
+    const size_t slash = upstream.find('/');
+    if (slash == std::string::npos || upstream.compare(slash + 1, std::string::npos, branch) == 0)
+        return slash == std::string::npos ? upstream : upstream.substr(0, slash);
+    return upstream;
+}
+
 std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSuffix)
 {
     if (!s.exists)
@@ -92,7 +100,7 @@ std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSu
     const auto shorten = [&](const std::string& name) { return elidePrefix > 0 ? elideMiddle(name, elidePrefix, elideSuffix) : name; };
     std::string text = s.detached ? std::string("detached") : shorten(s.branch);
     if (!s.upstream.empty()) {
-        text += " " ICON_MS_ARROW_RIGHT_ALT " " + shorten(s.upstream);
+        text += "@" + shorten(trackedName(s.branch, s.upstream));
         if (s.ahead)
             text += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(s.ahead);
         if (s.behind)

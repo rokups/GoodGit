@@ -560,7 +560,7 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
     GG_CHECK(names[1].base == remote.filename().string());
     GG_CHECK_STR_EQ(s.app.recentRowText(0), names[0].text() + "  \xe2\x80\x94  main");
     GG_CHECK_STR_EQ(s.app.recentRowText(1),
-        names[1].text() + "  \xe2\x80\x94  main " ICON_MS_ARROW_RIGHT_ALT " origin/main " ICON_MS_ARROW_UPWARD_ALT "1 " ICON_MS_ARROW_DOWNWARD_ALT "1");
+        names[1].text() + "  \xe2\x80\x94  main@origin " ICON_MS_ARROW_UPWARD_ALT "1 " ICON_MS_ARROW_DOWNWARD_ALT "1");
 
     // Click a recent entry.
     ctx->ItemClick("//Welcome/recent_1/###row");
@@ -1405,7 +1405,7 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
     GG_REQUIRE(s.waitIdle());
-    GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main " ICON_MS_ARROW_RIGHT_ALT " origin/main") != std::string::npos; }));
+    GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main@origin") != std::string::npos; }));
     GG_CHECK(s.app.recentRowText(0).find(ICON_MS_ARROW_UPWARD_ALT) == std::string::npos); // no ahead/behind without the ref
     GG_CHECK(s.app.recentRowText(1).rfind(notRepo.filename().string(), 0) != std::string::npos);
     GG_CHECK(s.app.recentRowText(2).find("  \xe2\x80\x94  main") != std::string::npos);
@@ -1416,8 +1416,8 @@ GG_TEST("shell", "recent repositories: a switch to another repository reads the 
 {
     const fs::path a = s.fixture(Recipe::WithRemote, "switch-a");
     const fs::path b = s.fixture(Recipe::Linear, "switch-b");
-    const std::string ahead1 = "origin/main " ICON_MS_ARROW_UPWARD_ALT "1 " ICON_MS_ARROW_DOWNWARD_ALT "1";
-    const std::string ahead2 = "origin/main " ICON_MS_ARROW_UPWARD_ALT "2 " ICON_MS_ARROW_DOWNWARD_ALT "1";
+    const std::string ahead1 = "main@origin " ICON_MS_ARROW_UPWARD_ALT "1 " ICON_MS_ARROW_DOWNWARD_ALT "1";
+    const std::string ahead2 = "main@origin " ICON_MS_ARROW_UPWARD_ALT "2 " ICON_MS_ARROW_DOWNWARD_ALT "1";
     // Closing A stores its summary: ahead 1, behind 1.
     GG_REQUIRE(s.openRepository(a));
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
@@ -1463,7 +1463,7 @@ GG_TEST("shell", "recent repositories: the switcher shows the detail, elides lon
     const auto& settings = s.app.settings().data();
     // Most recent first: c (0), b (1), a (2).
     GG_REQUIRE(s.waitUntil([&] {
-        return s.app.recentMenuText(0).find("  ") != std::string::npos && s.app.recentMenuText(1).find("origin/main") != std::string::npos
+        return s.app.recentMenuText(0).find("  ") != std::string::npos && s.app.recentMenuText(1).find("main@origin") != std::string::npos
             && s.app.recentMenuText(2).find("  ") != std::string::npos;
     }));
     const std::string shortName = ggui::elideMiddle(longBranch, settings.historyBadgePrefix, settings.historyBadgeSuffix);
@@ -1473,7 +1473,7 @@ GG_TEST("shell", "recent repositories: the switcher shows the detail, elides lon
     const std::string textC = s.app.recentMenuText(0), textB = s.app.recentMenuText(1), textA = s.app.recentMenuText(2);
     GG_CHECK(textA.find(shortName) != std::string::npos);
     GG_CHECK(textA.find(longBranch) == std::string::npos);
-    GG_CHECK(textB.find("  main " ICON_MS_ARROW_RIGHT_ALT " origin/main") != std::string::npos);
+    GG_CHECK(textB.find("  main@origin") != std::string::npos);
     GG_CHECK_STR_EQ(textC, "c  " + shortHash);
 
     // The switcher has the rows and a filter field, as wide as the longest row of all.

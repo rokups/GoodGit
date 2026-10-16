@@ -18,7 +18,9 @@ namespace ggui {
 // and git@github.com:o/r.git), without user or port; empty for local paths and file:// URLs.
 std::string remoteHost(const std::string& url);
 bool containsNoCase(const std::string& haystack, const std::string& needle);
-// "main → origin/main ↑1 ↓2" style summary of a recent repository. With `elidePrefix` > 0 the branch and the
+// How a branch row names the branch it tracks: "origin" for origin/main on main, else the whole "origin/other".
+std::string trackedName(const std::string& branch, const std::string& upstream);
+// "main@origin ↑1 ↓2" style summary of a recent repository. With `elidePrefix` > 0 the branch and the
 // upstream name are shortened in the middle (see elideMiddle).
 std::string summaryText(const core::RepoSummary& s, int elidePrefix = 0, int elideSuffix = 0);
 // The tooltip lines with the full names that summaryText() elides: "\nBranch: ..." and "\nUpstream: ..." (empty parts left out).

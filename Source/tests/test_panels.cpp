@@ -326,8 +326,8 @@ GG_TEST("panels", "repositories: a row shows the detail of the recent menu, also
     GG_CHECK_STR_EQ(panel.rowText(keyA), "detail-a  " + shortName);
     GG_CHECK(panel.rowText(keyA).find(longBranch) == std::string::npos);
     // B has an upstream; it is in a group, whose row has no detail.
-    GG_REQUIRE(s.waitUntil([&] { return panel.rowText(keyB).find("origin/main") != std::string::npos; }));
-    GG_CHECK(panel.rowText(keyB).starts_with("bee  main " ICON_MS_ARROW_RIGHT_ALT " origin/main"));
+    GG_REQUIRE(s.waitUntil([&] { return panel.rowText(keyB).find("main@origin") != std::string::npos; }));
+    GG_CHECK(panel.rowText(keyB).starts_with("bee  main@origin"));
     ctx->Yield(2);
     GG_CHECK(s.itemExists("//Repositories/###group_grp/repo_bee/###row"));
     // A recent repository shows the detail of its row in the Recent menu.

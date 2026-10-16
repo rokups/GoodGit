@@ -520,6 +520,22 @@ std::string elideMiddle(std::string_view text, int prefix, int suffix)
     return std::string(text.substr(0, starts[head])) + "\xE2\x80\xA6" + std::string(text.substr(tailStart));
 }
 
+std::string elideMiddleToWidth(const std::string& text, float width)
+{
+    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+        return text;
+    // Keep n codepoints in all (the head one more than the tail), fewer until the cut text fits.
+    size_t count = 0;
+    for (const char c : text)
+        count += (static_cast<unsigned char>(c) & 0xC0) != 0x80;
+    for (size_t keep = count; keep > 2; --keep) {
+        const std::string cut = elideMiddle(text, static_cast<int>((keep + 1) / 2), static_cast<int>(keep / 2));
+        if (ImGui::CalcTextSize(cut.c_str()).x <= width)
+            return cut;
+    }
+    return elideMiddle(text, 1, 1);
+}
+
 bool textElided(std::string_view text, const char* id, bool tooltip, float width)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();

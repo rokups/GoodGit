@@ -142,9 +142,9 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         events.toggle = true;
     if (outlined) {
         // Around the text itself: the item spans the row, and is cut at its edge where the text does not fit.
-        const ImVec2 min = ImGui::GetItemRectMin();
-        const ImVec2 max(min.x + ImGui::CalcTextSize(shown->c_str()).x, ImGui::GetItemRectMax().y);
-        ImGui::GetWindowDrawList()->AddRect(ImVec2(min.x - 2.0f, min.y), ImVec2(max.x + 2.0f, max.y),
+        // The item reaches left of the text by half the item spacing, so the text's own left is used.
+        const float left = events.labelLeft, right = left + ImGui::CalcTextSize(shown->c_str()).x;
+        ImGui::GetWindowDrawList()->AddRect(ImVec2(left - 2.0f, ImGui::GetItemRectMin().y), ImVec2(right + 2.0f, ImGui::GetItemRectMax().y),
             ImGui::GetColorU32(ImGuiCol_Text), 2.0f, 0, 1.5f);
     }
     if (!acts.empty())
@@ -605,11 +605,7 @@ void BranchesPanel::draw(bool* open)
         const auto& b = m_snapshot->branches[index];
         std::string link, tail, remote;
         if (!b.upstream.empty()) {
-            // "branch@remote"; the tracked branch follows only where its name differs from the local one.
-            const size_t slash = b.upstream.find('/');
-            const std::string_view tracked = slash == std::string::npos ? std::string_view() : std::string_view(b.upstream).substr(slash + 1);
-            remote = slash == std::string::npos ? b.upstream
-                : tracked == b.name ? b.upstream.substr(0, slash) : b.upstream;
+            remote = trackedName(b.name, b.upstream);
             link = "@";
             if (b.upstreamGone)
                 tail += " (gone)";
@@ -1114,7 +1110,8 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
         if (w.isMain)
             label += " (main)";
         label += "  ";
-        label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength)) : w.branch;
+        label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength))
+                                  : elideMiddleToWidth(w.branch, ImGui::GetContentRegionAvail().x - textWidth(label));
         const std::string path = w.path.string();
         ImGui::PushID(("worktree_" + w.name).c_str());
         const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
@@ -1259,7 +1256,8 @@ void WorktreesPanel::draw(bool* open)
             dimFrom = label.size() + kIdPrefixLength;
             dimTo = label.size() + kShortIdLength;
         }
-        label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength)) : w.branch;
+        label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength))
+                                  : elideMiddleToWidth(w.branch, ImGui::GetContentRegionAvail().x - textWidth(label));
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         ImGui::SetNextItemAllowOverlap();
