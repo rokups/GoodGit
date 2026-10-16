@@ -373,7 +373,7 @@ stays as it is (it is only limited to 50–300 % on load).
   collapsible header with a count and group buttons (Stage all / Unstage all). Space/Enter
   toggles staging of the selection; drag rows between Staged and Unstaged.
 - Double-click opens a file: new files in the editor, other files in the diff tool against the
-  parent (HEAD for the working tree and index).
+  parent (Staged: HEAD against the index; Unstaged: the index against the working tree).
 - Multi-select: Ctrl-click, Shift-click, Ctrl+A. ↑/↓ navigation.
 - File context menu: Open working-copy file · Open containing folder · Copy ▸ (Name, Relative
   path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Resolve with merge

@@ -303,7 +303,7 @@ GG_TEST("staging", "double-click opens new files in the editor, others in the di
     s.settle();
     GG_CHECK_STR_EQ(xy(s, repo, "new.txt"), "??");
     GG_CHECK(lines(diffLog).empty());
-    // A modified file opens in the diff tool: HEAD's version against the working tree.
+    // A modified file opens in the diff tool: the index against the working tree.
     ctx->ItemDoubleClick(fileRef(s, "Unstaged", "f1.txt").c_str());
     GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= 2; }));
     s.settle();

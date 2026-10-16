@@ -842,8 +842,9 @@ void ChangesPanel::openFile(const FileRow& row)
     }
     const std::string id = m_selection.id.hex();
     switch (row.group) {
-    case FileGroup::Staged:
-    case FileGroup::Unstaged: actions.externalDiff(row.path, {"HEAD"}); break;
+    // As the panels show them: staged is HEAD against the index, unstaged is the index against the working tree.
+    case FileGroup::Staged: actions.externalDiff(row.path, {"--cached", "HEAD"}); break;
+    case FileGroup::Unstaged: actions.externalDiff(row.path, {}); break;
     case FileGroup::Commit:
         if (m_pair) // two selected commits: the file in the lower one against the upper one, as the panels show
             actions.externalDiff(row.path, {m_pair->older.hex(), m_pair->newer.hex()});
