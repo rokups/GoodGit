@@ -1449,6 +1449,80 @@ GG_TEST("history", "a remote branch shows as one pill: the short name and @remot
     GG_CHECK(std::string(badgeItem(s, tip, "origin/main").DebugLabel).find("main@origin") != std::string::npos);
 }
 
+namespace {
+
+// The text of a badge: its label without the ID.
+std::string badgeText(Scenario& s, const std::string& hex, const std::string& name)
+{
+    const std::string label = badgeItem(s, hex, name).DebugLabel;
+    return label.substr(0, label.find("###"));
+}
+
+bool endsWith(const std::string& text, const std::string& tail)
+{
+    return text.size() >= tail.size() && text.compare(text.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+} // namespace
+
+GG_TEST("history", "a branch and its remotes on one commit share one pill")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "upstream", "file:///nonexistent/upstream.git"});
+    const std::string tip = s.revParse(repo, "main");
+    s.git(repo, {"update-ref", "refs/remotes/origin/main", tip});
+    s.git(repo, {"update-ref", "refs/remotes/upstream/main", tip});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "main"); }));
+    // One pill, with the local branch as its target.
+    GG_CHECK(!badgeShown(s, tip, "origin/main"));
+    GG_CHECK(!badgeShown(s, tip, "upstream/main"));
+    GG_CHECK(endsWith(badgeText(s, tip, "main"), "main@origin@upstream"));
+    // Without the local branch the pill stays and the tracked remote branch is its target.
+    ctx->ItemClick("//Branches/branch_main/###eye");
+    GG_CHECK(s.waitUntil([&] { return badgeShown(s, tip, "origin/main"); }));
+    GG_CHECK(!badgeShown(s, tip, "main"));
+    GG_CHECK(!badgeShown(s, tip, "upstream/main"));
+    GG_CHECK(endsWith(badgeText(s, tip, "origin/main"), "main@origin@upstream"));
+}
+
+GG_TEST("history", "a remote-only pill acts as the tracked remote branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "upstream", "file:///nonexistent/upstream.git"});
+    const std::string remoteTip = s.revParse(repo, "origin/main");
+    s.git(repo, {"update-ref", "refs/remotes/upstream/main", remoteTip});
+    GG_REQUIRE(s.openRepository(repo));
+    // The local branch is ahead, elsewhere, and tracks origin/main.
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, remoteTip, "origin/main"); }));
+    GG_CHECK(!badgeShown(s, remoteTip, "upstream/main"));
+    GG_CHECK(endsWith(badgeText(s, remoteTip, "origin/main"), "main@origin@upstream"));
+    // Another tracked branch moves the target.
+    s.git(repo, {"branch", "-u", "upstream/main", "main"});
+    GG_CHECK(s.waitUntil([&] { return badgeShown(s, remoteTip, "upstream/main"); }));
+    GG_CHECK(!badgeShown(s, remoteTip, "origin/main"));
+    GG_CHECK(endsWith(badgeText(s, remoteTip, "upstream/main"), "main@origin@upstream"));
+}
+
+GG_TEST("history", "a click on a merged pill acts on the local branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "topic", "main~1"});
+    s.git(repo, {"update-ref", "refs/remotes/origin/topic", s.revParse(repo, "main~1")});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.revParse(repo, "topic");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "topic"); }));
+    clickBadge(s, tip, "topic", ImGuiMouseButton_Right);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rename..."); }));
+    GG_CHECK(!s.itemExists("//$FOCUSED/Delete on remote..."));
+    ctx->KeyPress(ImGuiKey_Escape);
+    waitOutDoubleClick(s);
+    GG_CHECK(!onBranch(s, "topic"));
+    doubleClickBadge(s, tip, "topic");
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "topic"); }));
+}
+
 GG_TEST("history", "a double click on a tag badge asks, then detaches")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
