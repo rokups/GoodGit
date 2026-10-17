@@ -126,7 +126,7 @@ void disabledMenuItem(const char* icon, const char* label, const char* reason, c
         tooltip("%s", reason);
 }
 
-void drawBadge(const char* label, ImU32 color, bool outlined)
+void drawBadge(const char* label, ImU32 color, bool outlined, size_t dimFrom)
 {
     const char* end = ImGui::FindRenderedTextEnd(label);
     const ImVec2 textSize = ImGui::CalcTextSize(label, end);
@@ -153,7 +153,15 @@ void drawBadge(const char* label, ImU32 color, bool outlined)
     dl->AddRectFilled(a, b, color, rounding);
     if (outlined)
         dl->AddRect(a, b, IM_COL32(255, 255, 255, 220), rounding, 0, 1.5f);
-    dl->AddText(ImVec2(pos.x + padX, pos.y), theme().palette().badgeText, label, end);
+    const ImU32 textColor = theme().palette().badgeText;
+    const char* split = dimFrom < static_cast<size_t>(end - label) ? label + dimFrom : end;
+    dl->AddText(ImVec2(pos.x + padX, pos.y), textColor, label, split);
+    if (split != end) {
+        // The rest (a pill's "@remote" parts) is the same color at 60% alpha.
+        const ImU32 alpha = static_cast<ImU32>(static_cast<float>((textColor >> IM_COL32_A_SHIFT) & 0xFF) * 0.6f);
+        const ImU32 dimmed = (textColor & ~IM_COL32_A_MASK) | (alpha << IM_COL32_A_SHIFT);
+        dl->AddText(ImVec2(pos.x + padX + ImGui::CalcTextSize(label, split).x, pos.y), dimmed, split, end);
+    }
 }
 
 namespace {

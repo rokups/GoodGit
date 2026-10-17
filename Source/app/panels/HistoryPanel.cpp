@@ -1242,8 +1242,60 @@ bool HistoryPanel::refShown(const core::RefBadge& ref) const
     return true;
 }
 
-std::string HistoryPanel::badgeLabel(const core::RefBadge& ref, bool full) const
+std::vector<RefPill> refPills(const std::vector<core::RefBadge>& refs,
+    const std::function<bool(const core::RefBadge&)>& shown, const core::Snapshot& snap)
 {
+    std::vector<RefPill> pills;
+    std::unordered_map<std::string, size_t> byShortName;
+    for (const auto& ref : refs) {
+        if (!shown(ref))
+            continue;
+        if (ref.kind == core::RefKind::LocalBranch) {
+            byShortName[ref.name] = pills.size();
+            pills.push_back({ref, ref.name, {}, true});
+        } else if (ref.kind == core::RefKind::RemoteBranch && !ref.remote.empty()) {
+            const std::string shortName = ref.name.substr(std::min(ref.name.size(), ref.remote.size() + 1));
+            const auto found = byShortName.find(shortName);
+            if (found != byShortName.end()) {
+                pills[found->second].remotes.push_back(ref);
+            } else {
+                byShortName[shortName] = pills.size();
+                pills.push_back({ref, shortName, {ref}, false});
+            }
+        } else {
+            pills.push_back({ref, ref.name, {}, false});
+        }
+    }
+    // A remote-only pill acts on the remote branch that the local branch of its short name tracks.
+    for (auto& pill : pills) {
+        if (pill.hasLocal || pill.remotes.size() < 2)
+            continue;
+        const auto* branch = snap.findBranch(pill.shortName);
+        if (!branch)
+            continue;
+        for (const auto& remote : pill.remotes)
+            if (remote.name == branch->upstream) {
+                pill.target = remote;
+                break;
+            }
+    }
+    return pills;
+}
+
+// The byte of badgeLabel(pill, ...) where its "@remote" parts start (npos: the pill has none).
+static size_t remotesOffset(const RefPill& pill, const std::string& label)
+{
+    if (pill.remotes.empty())
+        return std::string::npos;
+    size_t tail = std::string("###badge_").size() + pill.target.name.size();
+    for (const auto& r : pill.remotes)
+        tail += 1 + r.remote.size();
+    return label.size() - tail;
+}
+
+std::string HistoryPanel::badgeLabel(const RefPill& pill, bool full) const
+{
+    const core::RefBadge& ref = pill.target;
     const char* icon = "";
     switch (ref.kind) {
     case core::RefKind::LocalBranch: icon = ICON_MS_CALL_SPLIT; break;
@@ -1257,14 +1309,17 @@ std::string HistoryPanel::badgeLabel(const core::RefBadge& ref, bool full) const
     // A long name is shortened in the middle; the ID keeps the full name. A kept commit shows its short ID.
     // `full` (the tooltip) shows every name whole.
     const auto& settings = m_session.app().settings().data();
-    std::string shown = ref.name;
+    std::string shown = pill.shortName;
     if (!full)
-        shown = ref.kind == core::RefKind::Keep ? ref.name.substr(0, core::kShortIdLength)
-                                                : elideMiddle(ref.name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+        shown = ref.kind == core::RefKind::Keep
+            ? pill.shortName.substr(0, core::kShortIdLength)
+            : elideMiddle(pill.shortName, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+    for (const auto& r : pill.remotes)
+        shown += "@" + r.remote;
     return std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
 }
 
-void HistoryPanel::drawRefBadge(const core::RefBadge& ref, const std::string& label) const
+void HistoryPanel::drawRefBadge(const core::RefBadge& ref, const std::string& label, size_t dimFrom) const
 {
     const Palette& p = theme().palette();
     ImU32 color = p.branch;
@@ -1277,7 +1332,7 @@ void HistoryPanel::drawRefBadge(const core::RefBadge& ref, const std::string& la
     case core::RefKind::Stash: color = p.stash; break;
     case core::RefKind::Keep: color = p.head; break;
     }
-    drawBadge(label.c_str(), color, ref.current);
+    drawBadge(label.c_str(), color, ref.current, dimFrom);
 }
 
 void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWidth)
@@ -1351,6 +1406,8 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
             root->NavRectRel[ImGuiNavLayer_Main] = ImGui::WindowRectAbsToRel(root, g.LastItemData.NavRect);
         }
     }
+    // One pill per branch (with its remotes of the same short name) and one for every other shown ref.
+    const auto pills = refPills(row.refs, [this](const core::RefBadge& r) { return refShown(r); }, *m_snapshot);
     if (!m_scrolling && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         // The row's ID is its commit's, and a commit does not change: no revision.
         idTooltip(
@@ -1360,14 +1417,12 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
             [&] {
                 // Every ref the row shows, whole names (no elision), in the row's colors; wrapping onto more lines.
                 bool first = true;
-                for (const auto& ref : row.refs) {
-                    if (!refShown(ref))
-                        continue;
-                    const std::string full = badgeLabel(ref, true);
+                for (const auto& pill : pills) {
+                    const std::string full = badgeLabel(pill, true);
                     if (!first)
                         badgeSameLineIfFits(full.c_str());
                     first = false;
-                    drawRefBadge(ref, full);
+                    drawRefBadge(pill.target, full, remotesOffset(pill, full));
                 }
             });
     // A double click checks out (not with Ctrl or Shift: those clicks select). Its first click selected the row:
@@ -1410,17 +1465,16 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     else // the row's Selectable shares the first column
         ImGui::SetCursorScreenPos(ImVec2(cellStart.x + (m_graphShown ? graph::textOffset(row, laneWidth) : 0.0f), cellStart.y));
     m_idSlot = rowIdText(row.id.hex());
-    for (const auto& ref : row.refs) {
-        if (!refShown(ref))
-            continue;
+    for (const auto& pill : pills) {
         ImGui::SameLine();
-        drawRefBadge(ref, badgeLabel(ref, false));
+        const std::string pillLabel = badgeLabel(pill, false);
+        drawRefBadge(pill.target, pillLabel, remotesOffset(pill, pillLabel));
         // Only the part inside the column counts: a badge that does not fit is clipped, and its hidden part lies
         // under the cells to the right (a right click there is on the row).
         ImRect shownRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         shownRect.ClipWithFull(ImGui::GetCurrentWindow()->ClipRect);
         if (shownRect.GetWidth() > 0 && shownRect.GetHeight() > 0)
-            m_badgeRects[row.id].push_back({shownRect, ref.kind, ref.name});
+            m_badgeRects[row.id].push_back({shownRect, pill.target.kind, pill.target.name});
     }
     ImGui::SameLine();
     drawMergeIcon(row);

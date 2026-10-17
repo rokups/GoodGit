@@ -29,7 +29,8 @@ std::string summaryNamesText(const core::RepoSummary& s);
 // enabled counterpart of this item so disabled entries line up with enabled ones.
 void disabledMenuItem(const char* icon, const char* label, const char* reason, const char* shortcut = nullptr);
 // A small coloured badge (label may contain ##id); hover and clicks go to what it sits on.
-void drawBadge(const char* label, ImU32 color, bool outlined = false);
+// The text from byte `dimFrom` of the label on is drawn dimmed (the width and the item ID still use the whole label).
+void drawBadge(const char* label, ImU32 color, bool outlined = false, size_t dimFrom = std::string::npos);
 // Plain text registered as an item (tests find it; tooltips and context menus attach to it) with
 // no hover or click highlight: for text whose click does nothing. label may contain ##id.
 void plainText(const char* label);

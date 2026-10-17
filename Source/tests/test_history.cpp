@@ -1424,7 +1424,8 @@ GG_TEST("history", "a double click on a remote branch badge makes or checks out 
     const std::string second = s.revParse(repo, "origin/main~2");
     s.git(repo, {"update-ref", "refs/remotes/origin/topic", first});
     s.git(repo, {"update-ref", "refs/remotes/origin/other", second});
-    s.git(repo, {"branch", "other", second});
+    // The local branch sits elsewhere: on the same commit it would share one pill with origin/other.
+    s.git(repo, {"branch", "other", first});
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, first, "origin/topic") && badgeShown(s, second, "origin/other"); }));
     // With a local branch of the short name: it is checked out.
@@ -1437,6 +1438,15 @@ GG_TEST("history", "a double click on a remote branch badge makes or checks out 
     s.dialogButton("Create branch", "Create");
     GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->findBranch("topic") != nullptr; }));
     GG_CHECK_STR_EQ(s.revParse(repo, "topic"), first);
+}
+
+GG_TEST("history", "a remote branch shows as one pill: the short name and @remote")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string tip = s.revParse(repo, "origin/main");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "origin/main"); }));
+    GG_CHECK(std::string(badgeItem(s, tip, "origin/main").DebugLabel).find("main@origin") != std::string::npos);
 }
 
 GG_TEST("history", "a double click on a tag badge asks, then detaches")

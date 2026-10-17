@@ -10,6 +10,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <functional>
 #include <optional>
 #include <set>
 #include <string>
@@ -18,6 +19,16 @@
 #include <vector>
 
 namespace ggui {
+
+// One History pill: a branch with its remotes of the same short name ("main@origin@upstream"), or one other ref.
+struct RefPill {
+    core::RefBadge target;               // the ref that clicks, menus, drags and drops use
+    std::string shortName;               // the shown name: the branch's short name, or the ref's name
+    std::vector<core::RefBadge> remotes; // the "@remote" parts, snapshot order
+    bool hasLocal = false;
+};
+std::vector<RefPill> refPills(const std::vector<core::RefBadge>& refs,
+    const std::function<bool(const core::RefBadge&)>& shown, const core::Snapshot& snap);
 
 class HistoryPanel {
 public:
@@ -103,10 +114,12 @@ private:
     void drawRow(const core::HistoryRow& row, int index, float laneWidth);
     // Whether a row draws the badge of `ref` (stashes shown, ref not hidden).
     bool refShown(const core::RefBadge& ref) const;
-    // The badge's label: icon, name (elided to the settings' prefix and suffix unless `full`) and the ID "###badge_<name>".
-    std::string badgeLabel(const core::RefBadge& ref, bool full) const;
+    // The pill's label: icon, name (elided to the settings' prefix and suffix unless `full`), the "@remote" parts
+    // and the ID "###badge_<target name>".
+    std::string badgeLabel(const RefPill& pill, bool full) const;
     // Draws the badge of `ref` in the color of its kind (the row and its tooltip both use it).
-    void drawRefBadge(const core::RefBadge& ref, const std::string& label) const;
+    // `dimFrom`: the byte of `label` where the dimmed "@remote" parts start (npos: none).
+    void drawRefBadge(const core::RefBadge& ref, const std::string& label, size_t dimFrom = std::string::npos) const;
     bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);
