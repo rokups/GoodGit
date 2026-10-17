@@ -228,6 +228,7 @@ struct RefBadge {
     RefKind kind;
     std::string name;                // Keep: the kept commit's full ID (the ref is refs/gg/keep/<name>)
     bool current = false;            // checked-out branch
+    std::string remote;              // RemoteBranch: "origin"; otherwise empty
 };
 
 // A line segment drawn in one history row, in lane units.

@@ -26,11 +26,12 @@ std::string lower(std::string s)
     return s;
 }
 
-void addBadge(HistoryState& st, const Oid& id, RefKind kind, std::string name, bool current = false)
+void addBadge(HistoryState& st, const Oid& id, RefKind kind, std::string name, bool current = false,
+              std::string remote = {})
 {
     if (id.isNull())
         return;
-    st.badges[id].push_back(RefBadge{kind, std::move(name), current});
+    st.badges[id].push_back(RefBadge{kind, std::move(name), current, std::move(remote)});
 }
 
 void buildBadges(HistoryState& st)
@@ -41,7 +42,7 @@ void buildBadges(HistoryState& st)
     for (const auto& b : s.branches)
         addBadge(st, b.target, RefKind::LocalBranch, b.name, b.isHead);
     for (const auto& r : s.remoteBranches)
-        addBadge(st, r.target, RefKind::RemoteBranch, r.name);
+        addBadge(st, r.target, RefKind::RemoteBranch, r.name, false, r.remote);
     for (const auto& t : s.tags)
         addBadge(st, t.target, RefKind::Tag, t.name);
     // When the detached HEAD's own commit is kept, its Head badge says so already.

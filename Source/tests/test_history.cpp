@@ -96,6 +96,9 @@ GG_TEST("history", "published vs unpublished commits")
     GG_CHECK(remote->published);
     GG_CHECK(shared->published);
     GG_CHECK(hasBadge(remote, ggui::core::RefKind::RemoteBranch, "origin/main"));
+    for (const auto& b : remote->refs)
+        if (b.kind == ggui::core::RefKind::RemoteBranch && b.name == "origin/main")
+            GG_CHECK(b.remote == "origin");
     // Change information agrees.
     ctx->ItemClick(rowRef(local->id.hex()).c_str());
     GG_CHECK(s.waitUntil([&] { return s.session()->info().details() && s.session()->info().details()->id == local->id; }));
