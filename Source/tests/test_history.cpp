@@ -1500,9 +1500,11 @@ GG_TEST("history", "a remote-only pill acts as the tracked remote branch")
     GG_CHECK(endsWith(badgeText(s, remoteTip, "origin/main"), "main@origin@upstream"));
     // Another tracked branch moves the target.
     s.git(repo, {"branch", "-u", "upstream/main", "main"});
-    GG_CHECK(s.waitUntil([&] { return badgeShown(s, remoteTip, "upstream/main"); }));
-    GG_CHECK(!badgeShown(s, remoteTip, "origin/main"));
-    GG_CHECK(endsWith(badgeText(s, remoteTip, "upstream/main"), "main@origin@upstream"));
+    // The test engine still reports a removed item for a frame or two: wait for the whole new state.
+    GG_CHECK(s.waitUntil([&] {
+        return badgeShown(s, remoteTip, "upstream/main") && !badgeShown(s, remoteTip, "origin/main") &&
+            endsWith(badgeText(s, remoteTip, "upstream/main"), "main@origin@upstream");
+    }));
 }
 
 GG_TEST("history", "a click on a merged pill acts on the local branch")
