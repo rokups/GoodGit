@@ -11,15 +11,12 @@
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "panels/RebasePanel.hpp"
-#include "platform/Platform.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
 #include "tests/Harness.hpp"
 
 #include <cstdlib>
-
-#include <SDL3/SDL.h>
 
 namespace ggtest {
 
@@ -176,8 +173,6 @@ GG_MANUAL_TEST("readme", "screenshots of the imgui repository for the README")
 {
     const Imgui t = prepareImgui(s);
     GG_REQUIRE(!t.path.empty());
-    // A fixed window size, so the shots do not depend on the screen. The next test run restores it.
-    GG_REQUIRE(setAppWindowSize(ctx, s.app.platform().window(), 1600, 1000));
     GG_REQUIRE(s.openRepository(t.path));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 2; }));
     // The history of ~10k commits loads in the background: wait for all of it.
