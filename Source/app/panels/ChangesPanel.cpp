@@ -15,6 +15,7 @@
 #include <imgui_stdlib.h>
 
 #include <libgg/GitRunner.hpp>
+#include <libgg/Ignore.hpp>
 #include <libgg/Markers.hpp>
 
 #include <algorithm>
@@ -633,6 +634,25 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             discard(discardPlanForRows);
         if (menuItem(ICON_MS_PLAYLIST_ADD, "Intent to add", nullptr, false, free && !untracked.empty()))
             actions.intentToAdd(untracked);
+        // Ignore: only when every selected row is untracked. A tracked file stays tracked by an ignore line.
+        const bool allUntracked = !untracked.empty() && untracked.size() == rows.size();
+        if (beginMenu(ICON_MS_VISIBILITY_OFF, "Ignore", free && allUntracked && !snap->bare)) {
+            const bool single = untracked.size() == 1;
+            std::vector<std::string> lines;
+            for (const auto& p : untracked)
+                lines.push_back(gg::ignore::anchored(p));
+            if (menuItem(ICON_MS_VISIBILITY_OFF, single ? "Ignore this file" : "Ignore these files"))
+                actions.addIgnore(lines, false);
+            const std::string ext = single ? gg::ignore::extensionPattern(untracked[0]) : std::string();
+            if (!ext.empty() && menuItem(ICON_MS_VISIBILITY_OFF, ("Ignore all " + ext).c_str()))
+                actions.addIgnore({ext}, false);
+            const std::string folder = single ? gg::ignore::folderPattern(untracked[0]) : std::string();
+            if (!folder.empty() && menuItem(ICON_MS_VISIBILITY_OFF, "Ignore folder"))
+                actions.addIgnore({folder}, false);
+            if (menuItem(ICON_MS_VISIBILITY_OFF, "Add to .git/info/exclude"))
+                actions.addIgnore(lines, true);
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         const bool firstClassRow = row.group == FileGroup::Conflicted && row.firstClass;
         const bool firstClassPairEligible = firstClassRow && row.sides >= 2 && conflicts.size() == 1;

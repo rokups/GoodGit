@@ -7,6 +7,7 @@
 #include <libgg/Conflicts.hpp>
 #include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
+#include <libgg/Ignore.hpp>
 #include <libgg/Keep.hpp>
 #include <libgg/Outgoing.hpp>
 #include <libgg/Markers.hpp>
@@ -189,6 +190,21 @@ void Actions::stageModified()
 void Actions::intentToAdd(const std::vector<std::string>& paths)
 {
     run("intent to add", [paths](MutationContext& ctx) { ctx.git(withPaths({"add", "-N"}, paths)); });
+}
+
+void Actions::addIgnore(const std::vector<std::string>& lines, bool exclude)
+{
+    run(
+        exclude ? "add to .git/info/exclude" : "add to .gitignore",
+        [lines, exclude](MutationContext& ctx) {
+            const fs::path file = exclude ? fs::path(git_repository_commondir(ctx.repo())) / "info" / "exclude"
+                                          : ctx.cwd() / ".gitignore";
+            std::error_code ec;
+            gg::ignore::addLines(file, lines, ec);
+            if (ec)
+                throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
+        },
+        {}, false, false);
 }
 
 void Actions::markResolved(const std::vector<std::string>& paths)

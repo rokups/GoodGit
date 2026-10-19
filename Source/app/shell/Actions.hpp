@@ -66,6 +66,10 @@ public:
     void unstageAll();
     void stageModified();
     void intentToAdd(const std::vector<std::string>& paths);
+    // Adds the pattern lines (see libgg/Ignore.hpp) to the .gitignore in the root of the working tree, or to
+    // .git/info/exclude when `exclude` is set. Lines that the file has already are skipped. Undo does not
+    // restore the file.
+    void addIgnore(const std::vector<std::string>& lines, bool exclude);
     void markResolved(const std::vector<std::string>& paths);
     // First-class conflicts in working tree files: side `side` (0-based) for every region, or
     // only region `region` (0-based).

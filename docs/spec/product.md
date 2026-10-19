@@ -389,6 +389,9 @@ the History panel list newly conflicted commits. See §5, decision R1.
   Revert (commit files: a new commit on HEAD), Revert (no commit) (undo the change to the selected files in the index and working tree), Discard (**D**; commit files: rewrites the commit so it no longer changes the files, descendants
   rebased, one Undo; published commits ask "Rewrite published history?" first; no other confirmation
   since Undo restores it; discarding every change may leave an empty commit), Delete file.
+- **K** Ignore ▸ (untracked files only): ignore this file / these files (a line in the `.gitignore` at the repository
+  root), all files with this extension, the folder of the file, or add to `.git/info/exclude`. A line that the file
+  has already is not added. Undo does not restore the file.
 - **M** Track → `git add` for untracked files. Untrack → `git rm --cached`, with an optional
   "add to .gitignore" (**N**).
 - **K** Change information: editable message with *Save message*, author (copy name/email,
