@@ -1574,7 +1574,19 @@ void Actions::absorb(const core::Oid& commit, const std::vector<std::string>& pa
             if (st.source == id)
                 for (const auto& p : paths) {
                     const std::filesystem::path file = std::filesystem::path(wd) / p;
-                    if (std::filesystem::exists(file)) {
+                    if (std::filesystem::symlink_status(file).type() == std::filesystem::file_type::directory) {
+                        // A submodule: the gitlink points at the commit that is checked out in it.
+                        git_oid sub{};
+                        bool ok = false;
+                        try {
+                            const auto subRepo = gg::git2::openRepositoryExact(file);
+                            ok = git_reference_name_to_id(&sub, subRepo.get(), "HEAD") == 0;
+                        } catch (const gg::git2::Error&) {
+                        }
+                        if (!ok)
+                            refuse(p + " is a folder with no commit checked out");
+                        st.setGitlinks.emplace_back(p, toHex(sub));
+                    } else if (std::filesystem::exists(file)) {
                         std::ifstream in(file, std::ios::binary);
                         std::ostringstream ss;
                         ss << in.rdbuf();

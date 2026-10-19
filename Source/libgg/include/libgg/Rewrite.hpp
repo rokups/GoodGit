@@ -60,6 +60,8 @@ struct Step {
     // Files set in the result (bytes; nullopt = removed), e.g. working tree files absorbed
     // into the commit. Blobs go to the in-memory store like everything else.
     std::vector<std::pair<std::string, std::optional<std::string>>> setFiles;
+    // Submodules set in the result: the path and the commit id (hex) the gitlink points at.
+    std::vector<std::pair<std::string, std::string>> setGitlinks;
     bool forceNew = false;   // a new commit even when nothing changed (duplicates)
     bool mapSource = true;   // the result replaces the source (children and branches follow it)
     // Squash only: the previous step's commit is finished first (a ref can point at it) and this

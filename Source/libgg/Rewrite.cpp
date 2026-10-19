@@ -780,7 +780,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     }
                 }
             }
-            if (!step.setFiles.empty()) {
+            if (!step.setFiles.empty() || !step.setGitlinks.empty()) {
                 Tree t = lookupTree(m->repo.get(), *fromHex(p.tree));
                 std::vector<git_tree_update> updates;
                 for (const auto& [path, content] : step.setFiles) {
@@ -800,6 +800,14 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                             git_error_clear();
                         }
                     }
+                    updates.push_back(u);
+                }
+                for (const auto& [path, commit] : step.setGitlinks) {
+                    git_tree_update u{};
+                    u.path = path.c_str();
+                    u.action = GIT_TREE_UPDATE_UPSERT;
+                    u.id = *fromHex(commit);
+                    u.filemode = GIT_FILEMODE_COMMIT;
                     updates.push_back(u);
                 }
                 git_oid out;
