@@ -34,6 +34,8 @@ public:
     void cancel(std::uint64_t id);
     void cancelAll();
     bool busy() const;
+    // A task runs now. Queued tasks do not count.
+    bool running() const;
     void stop();
 
     // Worker thread only: the repository handle, opened on first use.

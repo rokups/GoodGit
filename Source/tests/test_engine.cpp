@@ -12,6 +12,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace ggtest {
@@ -261,6 +262,40 @@ GG_TEST("engine", "a mutation that succeeds runs no rollback step")
     GG_CHECK(event->outcome == ggui::core::Outcome::Ok);
     GG_CHECK_EQ(runs, 0);
     GG_CHECK(branchExists(s, repo, "rollback-kept"));
+}
+
+GG_TEST("engine", "a long content job does not delay a diff")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine engine(ggui::core::Engine::Options{repo, false});
+    // The blame job sleeps on the Content queue for 5 s unless the test cancels it.
+    gg::setSlowGitLatency(std::chrono::milliseconds(5000));
+    ggui::core::BlameQuery blame;
+    blame.path = "f1.txt";
+    const auto blameId = engine.blame(blame);
+    const bool started = s.waitUntil([&] { return engine.running(ggui::core::Queue::Content); }, 10.0f);
+    GG_REQUIRE(started);
+    // The job reads the latency a short time after it starts. Wait until it is in its sleep.
+    // Then a new job does not sleep.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
+    ggui::core::DiffQuery query;
+    query.kind = ggui::core::DiffKind::Unstaged;
+    const auto diffId = engine.diff(query, 1);
+    bool gotDiff = false;
+    const bool done = s.waitUntil([&] {
+        for (auto& event : engine.poll(64))
+            if (const auto* d = std::get_if<ggui::core::DiffEvent>(&event); d && d->request == diffId)
+                gotDiff = true;
+        return gotDiff;
+    }, 4.0f);
+    // The blame job is still in its sleep: the diff did not wait for it.
+    bool blamePending = false;
+    for (const auto& a : engine.activities())
+        blamePending = blamePending || a.id == blameId;
+    engine.cancelAll();
+    GG_CHECK(done);
+    GG_CHECK(blamePending);
 }
 
 } // namespace ggtest

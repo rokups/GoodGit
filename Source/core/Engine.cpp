@@ -61,6 +61,7 @@ const char* queueName(Queue q)
     case Queue::Network: return "network";
     case Queue::Preview: return "preview";
     case Queue::Remote: return "remote";
+    case Queue::Diff: return "diff";
     }
     return "?";
 }
@@ -117,14 +118,16 @@ RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancella
         m_activities.push_back(Activity{id, std::move(label), -1, cancellable, std::chrono::steady_clock::now()});
         m_tokens.emplace_back(id, token);
     }
+    const auto queued = std::chrono::steady_clock::now();
     Worker::Task task;
     task.id = id;
     task.slot = slot;
     task.token = token;
-    task.fn = [this, id, name = m_activities.back().label, fn = std::move(fn)](Worker& worker,
+    task.fn = [this, id, queued, name = m_activities.back().label, fn = std::move(fn)](Worker& worker,
                   const gg::CancelToken& tok) {
         Job job{*this, worker, id, tok};
         const auto started = std::chrono::steady_clock::now();
+        const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(started - queued);
         bool cancelled = false;
         bool failed = false;
         try {
@@ -144,8 +147,10 @@ RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancella
             emit(ErrorEvent{id, "Error", e.what()});
         }
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
-        if (ms.count() >= 100)
-            spdlog::info("slow task: {} took {} ms{}", name, ms.count(), cancelled ? " (cancelled)" : "");
+        // A task is slow when it runs long or waits long in its queue.
+        if (ms.count() >= 100 || waited.count() >= 50)
+            spdlog::info("slow task: {} waited {} ms, took {} ms{}", name, waited.count(), ms.count(),
+                cancelled ? " (cancelled)" : "");
         finish(id, cancelled, failed);
     };
     m_workers[static_cast<int>(queue)]->post(std::move(task));
@@ -303,7 +308,7 @@ RequestId Engine::searchHistory(const std::string& text)
 
 RequestId Engine::diff(const DiffQuery& query, int slot)
 {
-    return submit(Queue::Content, "Computing diff", kSlotDiffBase + slot, true, [this, query, slot](Job& job) {
+    return submit(Queue::Diff, "Computing diff", kSlotDiffBase + slot, true, [this, query, slot](Job& job) {
         simulateLatency(job.token);
         DiffPtr d = readDiff(job.repo(), query, job.token);
         emit(DiffEvent{job.id, slot, std::move(d)});
@@ -393,6 +398,8 @@ bool Engine::idle() const
     std::lock_guard lock(m_mutex);
     return m_events.empty() && m_activities.empty();
 }
+
+bool Engine::running(Queue queue) const { return m_workers[static_cast<int>(queue)]->running(); }
 
 std::vector<Activity> Engine::activities() const
 {

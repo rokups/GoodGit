@@ -254,8 +254,9 @@ struct Activity {
     std::chrono::steady_clock::time_point started;
 };
 
-enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5, Remote = 6 };
-constexpr int kQueueCount = 7;
+// Diff has its own queue: blame, reflog, commit details and messages (Content) never delay a diff.
+enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5, Remote = 6, Diff = 7 };
+constexpr int kQueueCount = 8;
 
 class Worker;
 class Watcher;
@@ -319,6 +320,8 @@ public:
     // No queued or running work and no undelivered events.
     bool idle() const;
     std::vector<Activity> activities() const;
+    // A job of `queue` is running now (queued jobs do not count). Used by tests.
+    bool running(Queue queue) const;
 
     const std::filesystem::path& path() const { return m_options.path; }
 

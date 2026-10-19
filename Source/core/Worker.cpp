@@ -94,6 +94,12 @@ bool Worker::busy() const
     return m_runningId != 0 || !m_queue.empty();
 }
 
+bool Worker::running() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_runningId != 0;
+}
+
 git_repository* Worker::repo()
 {
     if (!m_repo)
