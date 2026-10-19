@@ -765,7 +765,8 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             // Edit commit: the branch to return to is the one HEAD is on (or the current edit
             // session's) if it contains the commit, else the first local branch that does, else
             // a local branch made (or fast-forwarded) from the first remote-tracking branch that
-            // does, after the switch. The mutation is all or nothing: a step that fails after the
+            // does, after the switch. When there is none, HEAD detaches and no session is saved.
+            // The mutation is all or nothing: a step that fails after the
             // first write runs the rollback steps, which put back the stash, HEAD and the branch.
             const std::string headBefore = gg::trim(ctx.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out);
             const std::string branchBefore = gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out);
@@ -789,10 +790,10 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                             break;
                         }
                 if (branch.empty()) {
+                    // No branch at all: the edit detaches like Check out > Detached, with no session.
                     remote = remoteBranchFor(ctx, target, candidates.front());
-                    if (!remote)
-                        throw MutationError{Outcome::Refused, "The commit is not on a local branch", {}};
-                    branch = remote->name;
+                    if (remote)
+                        branch = remote->name;
                 }
                 // Read before the first write, so a target that does not resolve changes nothing.
                 head = gg::trim(ctx.git({"rev-parse", "--verify", target + "^{commit}"}).out);
@@ -859,7 +860,10 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             }
             if (expand)
                 expandConflictStages(ctx);
-            if (edit) {
+            if (edit && branch.empty()) {
+                // No local branch to return to: an old session must not show a wrong commit.
+                gg::edit::clear(editSessionFile(ctx));
+            } else if (edit) {
                 // Counted after the branch step: the local branch made or moved from the
                 // remote-tracking branch is one of the branches that the edit restacks.
                 // (At least 0: a walk that stops on an error gives a short list.)

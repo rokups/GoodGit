@@ -372,6 +372,29 @@ GG_TEST("edit-in-place", "the session is cleared when HEAD is no longer detached
 }
 
 
+GG_TEST("edit-in-place", "Edit commit on a commit that no branch contains detaches, clears the old session and shows no error")
+{
+    const StackRepo r = makeStack(s);
+    const fs::path& p = r.path;
+    GG_REQUIRE(s.openRepository(p));
+    GG_REQUIRE(editCommit(s, p, r.b, "main"));
+    GG_CHECK(!noSessionFile(p));
+    // Two commits on the detached HEAD: no branch contains them.
+    s.commitFile(p, "x.txt", "x\n", "x orphan");
+    const std::string x = s.head(p);
+    s.commitFile(p, "y.txt", "y\n", "y orphan");
+    GG_REQUIRE(rowReady(s, x));
+    s.settle();
+    GG_REQUIRE(s.session()->editSession());
+    s.contextMenu(rowRef(x).c_str(), "Edit commit (checkout detached)");
+    GG_CHECK(s.waitUntil([&] { return s.head(p) == x; }));
+    GG_CHECK(s.waitUntil([&] { return !s.session()->editSession(); }));
+    GG_CHECK(detached(s, p));
+    GG_CHECK(noSessionFile(p));
+    GG_CHECK(s.app.errorMessage().empty());
+    GG_CHECK(!s.itemExists("//###Toolbar/###tb_edit"));
+}
+
 GG_TEST("edit-in-place", "amending a commit on a merged branch carries the change through the merge")
 {
     const MergeRepo r = makeMerge(s, {{3, "F1"}}, {{8, "A"}});
