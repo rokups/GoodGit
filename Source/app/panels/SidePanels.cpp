@@ -971,7 +971,8 @@ static bool selectableTreeNode(const char* label, const std::string& detail, boo
 // double-clicked. Both ids come from the group path or the label ('/' becomes ':'); equal labels
 // among siblings get a "#n" suffix. The row of the open repository (for a linked worktree: of its main
 // repository, GG-15; a worktree entry in the list is a plain row) is a node, closed by default, with
-// its worktrees below it when it has more than the main one. A repository row is a drag source and a
+// its worktrees below it when it has more than the main one. A repository with submodules is a node too:
+// its submodules follow the worktrees (GG-50). A repository row is a drag source and a
 // group node a drop target (repoDropTarget): the drop puts the repository in the group.
 void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen)
 {
@@ -999,6 +1000,8 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         const auto& snap = m_session.snapshot();
         const bool hasWorktrees = isOpen && snap
             && (snap->worktrees.size() > 1 || (snap->worktrees.size() == 1 && !snap->worktrees.front().isMain));
+        const auto* submodules = submodulesOf(node.path);
+        const bool hasChildren = hasWorktrees || (submodules && !submodules->empty());
         const bool selected = !m_selectedWorktree && node.path == m_selected;
         const std::string label = node.label + "###row";
         // The detail after the label, dimmed, as in the Recent menu (a group has none).
@@ -1009,7 +1012,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         m_rowTexts[node.path] = rowText;
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
         bool nodeOpen = false;
-        if (hasWorktrees) {
+        if (hasChildren) {
             nodeOpen = selectableTreeNode(label.c_str(), detail, selected);
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
                 m_selected = node.path;
@@ -1053,7 +1056,10 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             ImGui::EndPopup();
         }
         if (nodeOpen) {
-            drawWorktrees(toOpen);
+            if (hasWorktrees)
+                drawWorktrees(toOpen);
+            if (submodules)
+                drawSubmodules(*submodules, toOpen);
             ImGui::TreePop();
         }
         ImGui::PopID();
@@ -1131,6 +1137,65 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
     }
 }
 
+const std::vector<core::SubmoduleInfo>* RepositoriesPanel::submodulesOf(const std::string& path) const
+{
+    // `path` is a list key already: no file system call in the draw loop.
+    const auto& snap = m_session.snapshot();
+    if (snap && path == m_sessionPath)
+        return &snap->submodules;
+    const core::RepoSummary* info = m_session.app().repoSummary(std::filesystem::path(path));
+    return info ? &info->submodules : nullptr;
+}
+
+// The submodules as rows, with the look of the worktree rows. The detail is the branch, else the short id of
+// HEAD. The open one has the text colour of the current branch and one that is not initialized is dimmed.
+// A submodule with submodules is a node. A double-click opens a submodule, not the open one or an
+// uninitialized one.
+void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& list, std::string& toOpen)
+{
+    for (const auto& sm : list) {
+        const std::string path = sm.path.string();
+        const bool isSession = sm.key == m_sessionPath;
+        const bool canOpen = sm.initialized && !isSession;
+        std::string detail = sm.branch.empty() ? (sm.head.isNull() ? std::string("-") : sm.head.shortHex(kShortIdLength)) : sm.branch;
+        // The nested submodules: those of the data, else (a listed repository) those of its own summary.
+        const std::vector<core::SubmoduleInfo>* inner = sm.children.empty() ? submodulesOf(sm.key) : &sm.children;
+        const bool isNode = inner && !inner->empty();
+        const bool selected = m_selectedWorktree && path == m_selected;
+        ImGui::PushID(("submodule_" + rowId(sm.name)).c_str());
+        const ImU32 color = isSession ? theme().palette().branchCurrentText
+                                      : ImGui::GetColorU32(sm.initialized ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        bool nodeOpen = false;
+        if (isNode) {
+            nodeOpen = selectableTreeNode((sm.name + "###row").c_str(), detail, selected);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+                m_selected = path;
+                m_selectedWorktree = true;
+            }
+        } else {
+            const std::string label = sm.name + "  ";
+            detail = elideMiddleToWidth(detail, ImGui::GetContentRegionAvail().x - textWidth(label));
+            if (selectableText(label + detail, "row", selected)) {
+                m_selected = path;
+                m_selectedWorktree = true;
+            }
+        }
+        ImGui::PopStyleColor();
+        if (canOpen)
+            m_openableSubmodules.insert(path);
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && canOpen)
+            toOpen = path;
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            tooltip("%s", sm.initialized ? path.c_str() : "Not initialized");
+        if (nodeOpen) {
+            drawSubmodules(*inner, toOpen);
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+}
+
 void RepositoriesPanel::draw(bool* open)
 {
     if (!ImGui::Begin(panel::Repositories, open)) {
@@ -1144,6 +1209,8 @@ void RepositoriesPanel::draw(bool* open)
     if (m_openPath.empty())
         m_openPath = sessionPath; // before the first snapshot
     m_rowTexts.clear();
+    m_openableSubmodules.clear();
+    m_sessionPath = sessionPath;
     const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
     std::string toOpen;
     beginList();
@@ -1156,6 +1223,8 @@ void RepositoriesPanel::draw(bool* open)
         if (!m_selectedWorktree) {
             if (m_selected != m_openPath)
                 toOpen = m_selected;
+        } else if (m_openableSubmodules.count(m_selected)) {
+            toOpen = m_selected; // an initialized submodule that is not open, as with a double-click
         } else if (const auto& snap = m_session.snapshot()) {
             // The current worktree and a missing one do not open, as with a double-click.
             for (const auto& w : snap->worktrees)

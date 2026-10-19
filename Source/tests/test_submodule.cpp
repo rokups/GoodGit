@@ -2,6 +2,7 @@
 #include "panels/ChangesPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
+#include "core/Readers.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
@@ -141,6 +142,44 @@ GG_TEST("submodule", "Moving a committed submodule row to the parent commit")
     GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "HEAD~1:sub"}), sub);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "HEAD~2:sub"}), older);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "--name-only", "--format=", "HEAD"}), "x.txt");
+}
+
+GG_TEST("submodule", "Submodule list of the snapshot and the summary")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->snapshot()->submodules.empty(); }));
+    const auto& list = s.session()->snapshot()->submodules;
+    GG_REQUIRE(list.size() == 1);
+    GG_CHECK_STR_EQ(list[0].name, "sub");
+    GG_CHECK(list[0].initialized);
+    GG_CHECK_STR_EQ(list[0].branch, "main");
+    GG_CHECK_STR_EQ(list[0].head.hex(), s.head(repo / "sub"));
+    GG_CHECK_STR_EQ(list[0].path.string(), (repo / "sub").lexically_normal().string());
+    auto summary = ggui::core::readSummary(repo);
+    GG_REQUIRE(summary.submodules.size() == 1);
+    GG_CHECK_STR_EQ(summary.submodules[0].name, "sub");
+    GG_CHECK(summary.submodules[0].initialized);
+    GG_CHECK_STR_EQ(summary.submodules[0].branch, "main");
+    s.git(repo, {"submodule", "deinit", "-f", "sub"});
+    summary = ggui::core::readSummary(repo);
+    GG_REQUIRE(summary.submodules.size() == 1);
+    GG_CHECK(!summary.submodules[0].initialized);
+}
+
+GG_TEST("submodule", "Nested submodules nest in the list")
+{
+    const fs::path repo = s.fixture(Recipe::NestedSubmodules);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->snapshot()->submodules.empty(); }));
+    const auto& list = s.session()->snapshot()->submodules;
+    GG_REQUIRE(list.size() == 1);
+    GG_CHECK_STR_EQ(list[0].name, "sub");
+    GG_CHECK(list[0].initialized);
+    GG_REQUIRE(list[0].children.size() == 1);
+    GG_CHECK_STR_EQ(list[0].children[0].name, "inner");
+    GG_CHECK(list[0].children[0].initialized);
+    GG_CHECK(list[0].children[0].children.empty());
 }
 
 } // namespace ggtest

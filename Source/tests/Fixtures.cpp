@@ -22,6 +22,7 @@ const char* recipeName(Recipe r)
     case Recipe::MidRevert: return "mid-revert";
     case Recipe::Bisecting: return "bisecting";
     case Recipe::Submodules: return "submodules";
+    case Recipe::NestedSubmodules: return "nested-submodules";
     case Recipe::Lfs: return "lfs";
     case Recipe::TextEdgeCases: return "text-edge-cases";
     case Recipe::Conflicted2: return "conflicted-2";
@@ -37,8 +38,8 @@ std::vector<Recipe> allRecipes()
     return {Recipe::Empty, Recipe::Linear, Recipe::Merges, Recipe::ManyRefs, Recipe::LinkedWorktrees,
         Recipe::WithRemote, Recipe::Bare, Recipe::Sha256, Recipe::Unborn, Recipe::MidMerge, Recipe::MidRebase,
         Recipe::MidRebaseApply, Recipe::MidCherryPick, Recipe::MidRevert, Recipe::Bisecting, Recipe::Submodules,
-        Recipe::Lfs, Recipe::TextEdgeCases, Recipe::Conflicted2, Recipe::ConflictedN, Recipe::WorkingChanges,
-        Recipe::Stashes};
+        Recipe::NestedSubmodules, Recipe::Lfs, Recipe::TextEdgeCases, Recipe::Conflicted2, Recipe::ConflictedN,
+        Recipe::WorkingChanges, Recipe::Stashes};
 }
 
 namespace {
@@ -215,6 +216,27 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         commitFile(sub, "s3.txt", "s3\n", "Sub 3");
         git(repo / "sub", {"-c", "protocol.file.allow=always", "pull", "-q", "origin", "main"});
         git(repo, {"commit", "-q", "-am", "Update submodule"});
+        track(sub);
+        break;
+    }
+    case Recipe::NestedSubmodules: {
+        const std::string leaf = repo.filename().string();
+        const fs::path inner = m_root / (leaf + "-inner");
+        const fs::path sub = m_root / (leaf + "-sub");
+        fs::create_directories(inner);
+        fs::create_directories(sub);
+        git(m_root, {"init", "-q", "-b", "main", inner.string()});
+        linear(*this, inner, 2, "i");
+        git(m_root, {"init", "-q", "-b", "main", sub.string()});
+        commitFile(sub, "readme.txt", "sub\n", "Sub");
+        git(sub, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", inner.string(), "inner"});
+        git(sub, {"commit", "-q", "-m", "Add inner"});
+        init();
+        commitFile(repo, "readme.txt", "super\n", "Super");
+        git(repo, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", sub.string(), "sub"});
+        git(repo, {"commit", "-q", "-m", "Add submodule"});
+        git(repo / "sub", {"-c", "protocol.file.allow=always", "submodule", "update", "--init", "-q"});
+        track(inner);
         track(sub);
         break;
     }

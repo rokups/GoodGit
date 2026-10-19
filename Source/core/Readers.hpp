@@ -30,6 +30,10 @@ ReflogPtr readReflog(git_repository* repo, const std::string& ref);
 CommitDetailsPtr readCommitDetails(git_repository* repo, const Oid& id);
 RepoSummary readSummary(const std::filesystem::path& path);
 
+// The submodules of `repo`, sorted by name, with nested submodules in `children` (to a depth of 8).
+// Never throws. A broken .gitmodules or a libgit2 error gives a partial list.
+std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, int depth = 0);
+
 // Repository state from Git's state files in the (per-worktree) git dir.
 RepoState detectState(git_repository* repo, std::string& detail);
 

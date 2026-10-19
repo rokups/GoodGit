@@ -277,6 +277,9 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         }
     }
 
+    if (!snap->bare)
+        snap->submodules = readSubmodules(repo);
+
     // References
     std::vector<std::pair<std::string, git_oid>> localBranches;
     forEachReference(repo, [&](git_reference* ref) {
@@ -1377,8 +1380,82 @@ RepoSummary readSummary(const fs::path& path)
             }
         }
     }
+    s.submodules = readSubmodules(repo.get());
     git_error_clear();
     return s;
+}
+
+// The form of a repository path in the repository list (as normalizeRepoPath in the app), made on the worker.
+static std::string submoduleKey(const fs::path& path)
+{
+    std::error_code ec;
+    fs::path p = fs::weakly_canonical(fs::absolute(path, ec), ec);
+    if (ec)
+        p = path.lexically_normal();
+    std::string out = p.string();
+    const size_t root = std::max<size_t>(p.root_path().string().size(), 1);
+    while (out.size() > root && (out.back() == '/' || out.back() == '\\'))
+        out.pop_back();
+    return out;
+}
+
+std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, int depth)
+{
+    struct Context {
+        git_repository* repo;
+        int depth;
+        std::vector<SubmoduleInfo>* out;
+    };
+    std::vector<SubmoduleInfo> result;
+    try {
+        if (!repo || !git_repository_workdir(repo))
+            return result; // bare repository
+        // No .gitmodules file: no submodules, so the (costly) walk over the index is not needed.
+        std::error_code exists;
+        if (!fs::exists(fs::path(git_repository_workdir(repo)) / ".gitmodules", exists))
+            return result;
+        Context context{repo, depth, &result};
+        auto callback = [](git_submodule* sm, const char* name, void* payload) -> int {
+            auto* ctx = static_cast<Context*>(payload);
+            try {
+                const char* subPath = git_submodule_path(sm);
+                SubmoduleInfo info;
+                info.name = subPath ? subPath : (name ? name : "");
+                if (info.name.empty())
+                    return 0;
+                info.path = (fs::path(git_repository_workdir(ctx->repo)) / info.name).lexically_normal();
+                std::error_code ec;
+                info.key = submoduleKey(info.path);
+                info.initialized = fs::exists(info.path / ".git", ec);
+                if (info.initialized) {
+                    git_repository* rawSub = nullptr;
+                    if (git_submodule_open(&rawSub, sm) == 0) {
+                        Repository sub(rawSub);
+                        try {
+                            // Throws when the lookup of HEAD fails: the row stays, without a branch.
+                            if (const std::string target = headTarget(sub.get()); !target.empty())
+                                info.branch = stripPrefix(target, "refs/heads/");
+                        } catch (...) {
+                        }
+                        git_oid oid;
+                        if (git_reference_name_to_id(&oid, sub.get(), "HEAD") == 0)
+                            info.head = toOid(oid);
+                        if (ctx->depth < 8)
+                            info.children = readSubmodules(sub.get(), ctx->depth + 1);
+                    }
+                }
+                ctx->out->push_back(std::move(info));
+            } catch (...) {
+            }
+            return 0;
+        };
+        git_submodule_foreach(repo, callback, &context); // on failure the list stays partial
+    } catch (...) {
+    }
+    std::sort(result.begin(), result.end(),
+        [](const SubmoduleInfo& a, const SubmoduleInfo& b) { return a.name < b.name; });
+    git_error_clear();
+    return result;
 }
 
 } // namespace ggui::core

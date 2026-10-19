@@ -147,6 +147,7 @@ enum class Recipe {
     MidRevert,        // revert stopped with a conflict
     Bisecting,        // bisect in progress
     Submodules,       // superproject with one submodule
+    NestedSubmodules, // superproject with a submodule "sub" that has a submodule "inner"
     Lfs,              // LFS-like clean/smudge filter (local test filter, no git-lfs needed)
     TextEdgeCases,    // CRLF, no final newline, binary, marker-like text
     Conflicted2,      // commit containing a two-sided first-class conflict

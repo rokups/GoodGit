@@ -9,6 +9,7 @@
 #include <core/Engine.hpp>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -70,14 +71,20 @@ public:
 private:
     void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
     void drawWorktrees(std::string& toOpen);
+    // The submodules of a repository (`path` is a list key): the snapshot list of the open one, else the summary list of a listed one, else null.
+    const std::vector<core::SubmoduleInfo>* submodulesOf(const std::string& path) const;
+    // The submodules as rows (nested ones as nodes). `toOpen` gets the path of the one that is double-clicked.
+    void drawSubmodules(const std::vector<core::SubmoduleInfo>& list, std::string& toOpen);
     void repoDropTarget(const std::string& group);
     Session& m_session;
     // The label of the repository row that is dragged now: the default name of its alias after a drop.
     std::string m_dragLabel;
-    // The selected row: a repository (its path) or a worktree of the open one (m_selectedWorktree, its path).
+    // The selected row: a repository (its path), or a worktree or a submodule row (m_selectedWorktree, its path).
     std::string m_selected;
     bool m_selectedWorktree = false;
     std::string m_openPath;
+    std::string m_sessionPath;                  // the normalised path of the session, as of the last frame drawn
+    std::set<std::string> m_openableSubmodules; // the paths of the submodule rows that open, as of the last frame drawn
     std::map<std::string, std::string> m_rowTexts;
 };
 

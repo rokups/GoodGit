@@ -120,6 +120,17 @@ struct WorktreeInfo {
     bool prunable = false;       // git worktree prune would remove it (invalid and not locked)
 };
 
+// A submodule of a repository. `children` holds the submodules of this submodule (nested).
+struct SubmoduleInfo {
+    std::string name;                // the submodule path in the parent repository
+    std::filesystem::path path;      // absolute working directory path
+    std::string key;                 // `path` as a repository list key (symlinks resolved, no trailing separator)
+    Oid head;
+    std::string branch;              // short branch name, "" when detached or not initialized
+    bool initialized = false;        // the working directory has a .git entry
+    std::vector<SubmoduleInfo> children;
+};
+
 struct StashInfo {
     int index = 0;               // stash@{index}
     std::string message;
@@ -169,6 +180,7 @@ struct Snapshot {
     std::vector<KeptInfo> kept;                // one per well-formed keep ref, by ref name
     std::vector<RemoteInfo> remotes;
     std::vector<WorktreeInfo> worktrees;
+    std::vector<SubmoduleInfo> submodules;     // empty for a bare repository
     std::vector<StashInfo> stashes;
 
     const BranchInfo* currentBranch() const;
@@ -485,6 +497,7 @@ struct RepoSummary {
     bool detached = false;
     std::string upstream;
     int ahead = 0, behind = 0;
+    std::vector<SubmoduleInfo> submodules;
 };
 
 // ---- Formatting helpers ------------------------------------------------------------------------

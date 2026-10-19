@@ -500,6 +500,147 @@ GG_TEST("panels", "repositories: a worktree row selects on a click and opens on 
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
 }
 
+// The reference of the row of a submodule below the row of its repository (or of its parent submodule).
+static std::string submoduleRow(const std::string& parentRef, const std::string& name)
+{
+    return parentRef + "/submodule_" + name + "/###row";
+}
+
+GG_TEST("panels", "repositories: a submodule row of the open repository opens on a double-click")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    // The repository has a node because of its submodule.
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    ctx->ItemClick(subRow.c_str());
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), (repo / "sub").string());
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    ctx->ItemDoubleClick(subRow.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+    // A double-click on the row of the open submodule keeps the session.
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.itemExists(repoRow(s, repo).c_str()));
+    const auto* session = s.session();
+    ctx->ItemDoubleClick(subRow.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    GG_CHECK(fs::equivalent(s.session()->path(), repo / "sub"));
+}
+
+GG_TEST("panels", "repositories: a closed repository shows its submodules")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::Submodules, "closed");
+    // The repository is listed and recent once opened; the next opening closes it.
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto* info = s.app.repoSummary(fs::path(ggui::normalizeRepoPath(repo.string())));
+        return info && !info->submodules.empty();
+    }));
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    ctx->ItemDoubleClick(subRow.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+}
+
+GG_TEST("panels", "repositories: a nested submodule row nests")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::NestedSubmodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    GG_CHECK(ctx->ItemInfo(subRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    const std::string innerRow = submoduleRow(subRow, "inner");
+    GG_CHECK(!s.itemExists(innerRow.c_str()));
+    openRepoNode(ctx, subRow);
+    GG_CHECK(s.itemExists(innerRow.c_str()));
+}
+
+GG_TEST("panels", "repositories: an uninitialized submodule does not open")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo, {"submodule", "deinit", "-f", "sub"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    const auto* session = s.session();
+    ctx->ItemDoubleClick(subRow.c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+}
+
+GG_TEST("panels", "repositories: Enter opens the selected submodule row")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    ctx->ItemClick(subRow.c_str());
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+}
+
+GG_TEST("panels", "repositories: Enter on an uninitialized submodule row does nothing")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo, {"submodule", "deinit", "-f", "sub"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    const auto* session = s.session();
+    ctx->ItemClick(subRow.c_str());
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), (repo / "sub").string());
+    ctx->KeyPress(ImGuiKey_Enter);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+}
+
 // The paths in the permanent repository list, as they are stored.
 static std::vector<std::string> listedRepositories(Scenario& s)
 {
