@@ -113,6 +113,57 @@ GG_TEST("frames", "scheduler waits when idle")
     }
 }
 
+GG_TEST("frames", "scheduler handles focus, minimize and text input")
+{
+    using Clock = std::chrono::steady_clock;
+    using ggui::FrameScheduler;
+    const Clock::time_point t0 = Clock::now();
+    const auto at = [&](int ms) { return t0 + std::chrono::milliseconds(ms); };
+    const auto input = [&](int ms, bool event, bool frames, bool text, bool focused, bool minimized,
+                           bool mouseDown = false) {
+        FrameScheduler::Input in;
+        in.eventSeen = event;
+        in.anyMouseDown = mouseDown;
+        in.framesRequested = frames;
+        in.wantTextInput = text;
+        in.focused = focused;
+        in.minimized = minimized;
+        in.now = at(ms);
+        return in;
+    };
+
+    {
+        // A spinner in a window without focus runs at the slow rate, not at once.
+        FrameScheduler sched;
+        GG_CHECK(sched.waitMs(input(0, false, true, false, false, false)) == FrameScheduler::kSlowWaitMs);
+    }
+    {
+        // A minimized window sleeps, also with an animation request, a mouse button and an event.
+        FrameScheduler sched;
+        GG_CHECK(sched.waitMs(input(0, true, true, false, true, true, true)) == FrameScheduler::kIdleWaitMs);
+    }
+    {
+        // A restore: the first input opens the active window. After the window, the loop sleeps.
+        FrameScheduler sched;
+        GG_CHECK(sched.waitMs(input(0, false, false, false, false, true)) == FrameScheduler::kIdleWaitMs);
+        GG_CHECK(sched.waitMs(input(1000, true, false, false, true, false)) == 0);
+        GG_CHECK(sched.waitMs(input(1100, false, false, false, true, false)) == 0);
+        GG_CHECK(sched.waitMs(input(1499, false, false, false, true, false)) == 0);
+        GG_CHECK(sched.waitMs(input(1500, false, false, false, true, false)) == FrameScheduler::kIdleWaitMs);
+    }
+    {
+        // A text cursor blinks at the slow rate in a focused window. An unfocused window sleeps.
+        FrameScheduler sched;
+        GG_CHECK(sched.waitMs(input(0, false, false, true, true, false)) == FrameScheduler::kSlowWaitMs);
+        GG_CHECK(sched.waitMs(input(0, false, false, true, false, false)) == FrameScheduler::kIdleWaitMs);
+    }
+    {
+        // A mouse button in a window without focus gives no frames.
+        FrameScheduler sched;
+        GG_CHECK(sched.waitMs(input(0, false, false, false, false, false, true)) == FrameScheduler::kIdleWaitMs);
+    }
+}
+
 GG_TEST("frames", "worker wake reaches the loop")
 {
     ggui::Platform& platform = s.app.platform();
