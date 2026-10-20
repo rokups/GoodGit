@@ -233,6 +233,8 @@ private:
     bool m_restartForUpdate = false;
     bool m_updateResultTaken = false;
     bool m_autoOpenDone = false;
+    bool m_summariesRequested = false;   // requestSummaries() ran at least once
+    bool m_unavailableToastDone = false; // the start-up toast about unusable listed repositories was decided
     bool m_layoutPending = false;
     float m_zoomWheel = 0.0f; // Ctrl+wheel notches not yet turned into whole percents
     bool m_iniApplied = false;

@@ -212,6 +212,71 @@ GG_TEST("submodule", "Submodule list of the snapshot and the summary")
     GG_CHECK(!summary.submodules[0].initialized);
 }
 
+GG_TEST("submodule", "A submodule with a deleted directory is missing, not uninitialized")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    auto summary = ggui::core::readSummary(repo);
+    GG_REQUIRE(summary.submodules.size() == 1);
+    GG_CHECK(!summary.submodules[0].missing);
+    GG_CHECK(summary.submodules[0].initialized);
+    // An empty directory (deinit) stays "not initialized".
+    s.git(repo, {"submodule", "deinit", "-f", "sub"});
+    summary = ggui::core::readSummary(repo);
+    GG_REQUIRE(summary.submodules.size() == 1);
+    GG_CHECK(!summary.submodules[0].missing);
+    GG_CHECK(!summary.submodules[0].initialized);
+    GG_CHECK(!summary.submodules[0].gitmodulesMissing);
+    std::error_code ec;
+    fs::remove_all(repo / "sub", ec);
+    summary = ggui::core::readSummary(repo);
+    GG_REQUIRE(summary.submodules.size() == 1);
+    GG_CHECK_STR_EQ(summary.submodules[0].name, "sub");
+    GG_CHECK(summary.submodules[0].missing);
+    GG_CHECK(!summary.submodules[0].initialized);
+    GG_CHECK(!summary.submodules[0].gitmodulesMissing);
+}
+
+GG_TEST("submodule", "A deleted .gitmodules still lists the gitlinks of the index in the snapshot")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    std::error_code ec;
+    fs::remove(repo / ".gitmodules", ec);
+    GG_REQUIRE(!fs::exists(repo / ".gitmodules"));
+    // A summary is read for every listed repository: it does not scan the index.
+    GG_CHECK(ggui::core::readSummary(repo).submodules.empty());
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->snapshot()->submodules.empty(); }));
+    const auto& list = s.session()->snapshot()->submodules;
+    GG_REQUIRE(list.size() == 1);
+    GG_CHECK_STR_EQ(list[0].name, "sub");
+    GG_CHECK(list[0].gitmodulesMissing);
+    GG_CHECK(!list[0].missing);
+    GG_CHECK(list[0].initialized);
+    GG_CHECK_STR_EQ(list[0].branch, "main");
+    GG_CHECK_STR_EQ(list[0].head.hex(), s.head(repo / "sub"));
+}
+
+GG_TEST("submodule", "A deleted .gitmodules and a deleted directory give a missing gitlink row")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    std::error_code ec;
+    fs::remove(repo / ".gitmodules", ec);
+    fs::remove_all(repo / "sub", ec);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->snapshot()->submodules.empty(); }));
+    const auto& list = s.session()->snapshot()->submodules;
+    GG_REQUIRE(list.size() == 1);
+    GG_CHECK(list[0].gitmodulesMissing);
+    GG_CHECK(list[0].missing);
+    GG_CHECK(!list[0].initialized);
+}
+
+GG_TEST("submodule", "A repository without submodules has no submodule rows")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_CHECK(ggui::core::readSummary(repo).submodules.empty());
+}
+
 GG_TEST("submodule", "Nested submodules nest in the list")
 {
     const fs::path repo = s.fixture(Recipe::NestedSubmodules);

@@ -1129,7 +1129,9 @@ void RepositoriesPanel::repoDropTarget(const std::string& group)
 void RepositoriesPanel::drawWorktrees(std::string& toOpen)
 {
     for (const auto& w : m_session.snapshot()->worktrees) {
-        std::string label = w.name;
+        // A missing or prunable worktree has the warning triangle before its name.
+        const std::string warnPrefix = warnIconPrefix(w.missing || w.prunable);
+        std::string label = warnPrefix + w.name;
         if (w.isMain)
             label += " (main)";
         label += "  ";
@@ -1140,7 +1142,8 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
         const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
                                         : ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        if (selectableText(label, "row", m_selectedWorktree && path == m_selected)) {
+        if (selectableTextDimRanges(label, "row", {}, m_selectedWorktree && path == m_selected, 0, ImVec2(0, 0), warnPrefix.size(),
+                summaryWarnColor())) {
             m_selected = path;
             m_selectedWorktree = true;
         }
@@ -1200,6 +1203,7 @@ void RepositoriesPanel::submoduleMenuItems(const core::SubmoduleInfo& sm)
 
 // The submodules as rows, with the look of the worktree rows. The detail is the branch, else the short id of
 // HEAD. The open one has the text colour of the current branch and one that is not initialized is dimmed.
+// A missing one (its directory is gone) has the warning triangle and the suffix " (missing)".
 // A submodule with submodules is a node. A double-click opens a submodule, not the open one or an
 // uninitialized one.
 void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& list, std::string& toOpen)
@@ -1225,9 +1229,11 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
                 m_selectedWorktree = true;
             }
         } else {
-            const std::string label = sm.name + "  ";
+            // A submodule whose directory is gone, or that has no .gitmodules entry, has the warning triangle before its name.
+            const std::string warnPrefix = warnIconPrefix(sm.missing || sm.gitmodulesMissing);
+            const std::string label = warnPrefix + sm.name + (sm.missing ? " (missing)" : "") + "  ";
             detail = elideMiddleToWidth(detail, ImGui::GetContentRegionAvail().x - textWidth(label));
-            if (selectableText(label + detail, "row", selected)) {
+            if (selectableTextDimRanges(label + detail, "row", {}, selected, 0, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
                 m_selected = path;
                 m_selectedWorktree = true;
             }
@@ -1237,8 +1243,12 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
             m_openableSubmodules.insert(path);
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && canOpen)
             toOpen = path;
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("%s", sm.initialized ? path.c_str() : "Not initialized");
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            std::string text = sm.missing ? path + "\nThe directory is gone." : sm.initialized ? path : "Not initialized";
+            if (sm.gitmodulesMissing)
+                text += "\nThe .gitmodules file is missing. The index lists this submodule.";
+            tooltip("%s", text.c_str());
+        }
         if (beginContextMenu("##submodule_menu")) {
             submoduleMenuItems(sm);
             ImGui::EndPopup();
@@ -1363,7 +1373,9 @@ void WorktreesPanel::draw(bool* open)
     // Only the list scrolls: the controls above stay put.
     beginList();
     for (const auto& w : snap->worktrees) {
-        std::string label = w.name;
+        // A missing or prunable worktree has the warning triangle before its name.
+        const std::string warnPrefix = warnIconPrefix(w.missing || w.prunable);
+        std::string label = warnPrefix + w.name;
         if (w.isMain)
             label += " (main)";
         if (w.bare)
@@ -1392,7 +1404,8 @@ void WorktreesPanel::draw(bool* open)
         ImGui::PushID(("worktree_" + w.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         ImGui::SetNextItemAllowOverlap();
-        selectableTextDimRange(label, "row", dimFrom, dimTo, w.isCurrent, ImGuiSelectableFlags_AllowOverlap);
+        selectableTextDimRanges(label, "row", {{dimFrom, dimTo}}, w.isCurrent, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 0),
+            warnPrefix.size(), summaryWarnColor());
         ImGui::PopStyleColor();
         const int action = rowActions(acts, w.isCurrent);
         if (action == 0)

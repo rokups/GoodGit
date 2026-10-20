@@ -128,6 +128,8 @@ struct SubmoduleInfo {
     Oid head;
     std::string branch;              // short branch name, "" when detached or not initialized
     bool initialized = false;        // the working directory has a .git entry
+    bool missing = false;            // the working directory is gone (the path is in the index or .gitmodules)
+    bool gitmodulesMissing = false;  // the repository has no .gitmodules file; the row comes from the index
     std::vector<SubmoduleInfo> children;
 };
 

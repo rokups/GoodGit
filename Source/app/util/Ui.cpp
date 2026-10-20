@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -131,12 +132,28 @@ std::string summaryWarningText(const core::RepoSummary& s)
 
 std::string summaryWarnPrefix(const core::RepoSummary* s)
 {
-    return s && summaryWarns(*s) ? std::string(ICON_MS_WARNING " ") : std::string();
+    return warnIconPrefix(s && summaryWarns(*s));
+}
+
+std::string warnIconPrefix(bool warns)
+{
+    return warns ? std::string(ICON_MS_WARNING " ") : std::string();
 }
 
 ImU32 summaryWarnColor()
 {
     return theme().palette().warning;
+}
+
+int unavailableRepoCount(const std::vector<core::RepoSummary>& recent, const std::vector<core::RepoSummary>& listed)
+{
+    std::set<std::filesystem::path> seen;
+    int count = 0;
+    for (const auto* infos : {&recent, &listed})
+        for (const auto& info : *infos)
+            if (seen.insert(info.path).second && summaryWarns(info))
+                ++count;
+    return count;
 }
 
 std::string summaryNamesText(const core::RepoSummary& s)

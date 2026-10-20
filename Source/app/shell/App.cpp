@@ -263,6 +263,7 @@ void App::applyTheme()
 
 void App::requestSummaries()
 {
+    m_summariesRequested = true;
     const auto& d = m_settings.data();
     m_summaries.request(std::vector<fs::path>(d.recent.begin(), d.recent.end()));
     // The listed repositories that are recent are read by the request above.
@@ -292,6 +293,8 @@ void App::indexSummaries()
 
 void App::pumpSummaries()
 {
+    // Read before the polls: when both services are idle, all their results are already in the queues.
+    const bool settled = m_summariesRequested && m_summaries.idle() && m_listSummaries.idle();
     const auto listed = m_listSummaries.poll();
     for (const auto& info : listed) {
         const auto it = std::find_if(m_listInfo.begin(), m_listInfo.end(), [&](const core::RepoSummary& old) { return old.path == info.path; });
@@ -306,6 +309,15 @@ void App::pumpSummaries()
         m_recentInfo = std::move(results);
     if (!listed.empty() || recentRead)
         indexSummaries();
+    // Once per start, after the summaries of all listed repositories arrived: one toast for the unusable ones. It also
+    // covers a first recent repository that the auto-open below skips.
+    if (settled && !m_unavailableToastDone) {
+        m_unavailableToastDone = true;
+        if (const int unavailable = unavailableRepoCount(m_recentInfo, m_listInfo); unavailable > 0)
+            notify(Notice::Warning, "Repositories",
+                unavailable == 1 ? std::string("1 listed repository is not available.")
+                                 : std::to_string(unavailable) + " listed repositories are not available.");
+    }
     if (!recentRead)
         return;
     // Auto-open the most recent repository that still exists (§4.1).

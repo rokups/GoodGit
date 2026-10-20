@@ -11,6 +11,7 @@
 #include <initializer_list>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ggui {
 
@@ -32,6 +33,10 @@ std::string summaryWarningText(const core::RepoSummary& s);
 // Its length is the offset of the dim ranges. The icon has the colour summaryWarnColor().
 std::string summaryWarnPrefix(const core::RepoSummary* s);
 ImU32 summaryWarnColor();
+// The same icon and space for any row that warns: `warns` false gives an empty string. The colour is summaryWarnColor().
+std::string warnIconPrefix(bool warns);
+// The number of different repositories (by path) in `recent` and `listed` that are not usable (health is not Ok).
+int unavailableRepoCount(const std::vector<core::RepoSummary>& recent, const std::vector<core::RepoSummary>& listed);
 // The tooltip lines with the full names that summaryText() elides: "\nBranch: ..." and "\nUpstream: ..." (empty parts left out).
 std::string summaryNamesText(const core::RepoSummary& s);
 // A disabled menu item with a tooltip explaining why. `icon` should match the icon used by the

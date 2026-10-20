@@ -280,7 +280,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     }
 
     if (!snap->bare)
-        snap->submodules = readSubmodules(repo);
+        snap->submodules = readSubmodules(repo, true);
 
     // References
     std::vector<std::pair<std::string, git_oid>> localBranches;
@@ -1593,7 +1593,8 @@ RepoSummary readSummary(const fs::path& path)
             }
         }
     }
-    s.submodules = readSubmodules(repo.get());
+    // No index scan: a summary is read for every listed repository.
+    s.submodules = readSubmodules(repo.get(), false);
     git_error_clear();
     return s;
 }
@@ -1612,10 +1613,44 @@ static std::string submoduleKey(const fs::path& path)
     return out;
 }
 
-std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, int depth)
+// Fills the branch, the HEAD and the nested submodules of `info` from the opened repository `sub` of the submodule.
+static void readSubmoduleState(SubmoduleInfo& info, git_repository* sub, bool scanIndex, int depth)
+{
+    try {
+        // Throws when the lookup of HEAD fails: the row stays, without a branch.
+        if (const std::string target = headTarget(sub); !target.empty())
+            info.branch = stripPrefix(target, "refs/heads/");
+    } catch (...) {
+    }
+    git_oid oid;
+    if (git_reference_name_to_id(&oid, sub, "HEAD") == 0)
+        info.head = toOid(oid);
+    if (depth < 8)
+        info.children = readSubmodules(sub, scanIndex, depth + 1);
+}
+
+// The paths of the gitlink entries (mode 160000) of the index, for a repository that has no .gitmodules file.
+static std::vector<std::string> gitlinkPaths(git_repository* repo)
+{
+    std::vector<std::string> paths;
+    git_index* rawIndex = nullptr;
+    if (git_repository_index(&rawIndex, repo) != 0)
+        return paths;
+    Index index(rawIndex);
+    const size_t n = git_index_entrycount(index.get());
+    for (size_t i = 0; i < n; ++i) {
+        const git_index_entry* e = git_index_get_byindex(index.get(), i);
+        if (e && e->mode == static_cast<std::uint32_t>(GIT_FILEMODE_COMMIT) && git_index_entry_stage(e) == 0)
+            paths.emplace_back(e->path);
+    }
+    return paths;
+}
+
+std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, bool scanIndex, int depth)
 {
     struct Context {
         git_repository* repo;
+        bool scanIndex;
         int depth;
         std::vector<SubmoduleInfo>* out;
     };
@@ -1623,11 +1658,37 @@ std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, int depth)
     try {
         if (!repo || !git_repository_workdir(repo))
             return result; // bare repository
-        // No .gitmodules file: no submodules, so the (costly) walk over the index is not needed.
         std::error_code exists;
-        if (!fs::exists(fs::path(git_repository_workdir(repo)) / ".gitmodules", exists))
+        if (!fs::exists(fs::path(git_repository_workdir(repo)) / ".gitmodules", exists)) {
+            // No .gitmodules file: no submodules, so the (costly) walk over the index is not needed for a summary.
+            if (!scanIndex)
+                return result;
+            // The submodule list of the open repository: the gitlink entries of the index are the submodules (the
+            // .gitmodules file was deleted). The row says so.
+            for (const std::string& name : gitlinkPaths(repo)) {
+                SubmoduleInfo info;
+                info.name = name;
+                info.path = (fs::path(git_repository_workdir(repo)) / name).lexically_normal();
+                info.key = submoduleKey(info.path);
+                info.gitmodulesMissing = true;
+                std::error_code ec;
+                info.missing = !fs::exists(info.path, ec);
+                info.initialized = !info.missing && fs::exists(info.path / ".git", ec);
+                if (info.initialized) {
+                    git_repository* rawSub = nullptr;
+                    if (git_repository_open_ext(&rawSub, info.path.string().c_str(), GIT_REPOSITORY_OPEN_NO_SEARCH, nullptr) == 0) {
+                        Repository sub(rawSub);
+                        readSubmoduleState(info, sub.get(), scanIndex, depth);
+                    }
+                }
+                result.push_back(std::move(info));
+            }
+            std::sort(result.begin(), result.end(),
+                [](const SubmoduleInfo& a, const SubmoduleInfo& b) { return a.name < b.name; });
+            git_error_clear();
             return result;
-        Context context{repo, depth, &result};
+        }
+        Context context{repo, scanIndex, depth, &result};
         auto callback = [](git_submodule* sm, const char* name, void* payload) -> int {
             auto* ctx = static_cast<Context*>(payload);
             try {
@@ -1639,22 +1700,13 @@ std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, int depth)
                 info.path = (fs::path(git_repository_workdir(ctx->repo)) / info.name).lexically_normal();
                 std::error_code ec;
                 info.key = submoduleKey(info.path);
-                info.initialized = fs::exists(info.path / ".git", ec);
+                info.missing = !fs::exists(info.path, ec);
+                info.initialized = !info.missing && fs::exists(info.path / ".git", ec);
                 if (info.initialized) {
                     git_repository* rawSub = nullptr;
                     if (git_submodule_open(&rawSub, sm) == 0) {
                         Repository sub(rawSub);
-                        try {
-                            // Throws when the lookup of HEAD fails: the row stays, without a branch.
-                            if (const std::string target = headTarget(sub.get()); !target.empty())
-                                info.branch = stripPrefix(target, "refs/heads/");
-                        } catch (...) {
-                        }
-                        git_oid oid;
-                        if (git_reference_name_to_id(&oid, sub.get(), "HEAD") == 0)
-                            info.head = toOid(oid);
-                        if (ctx->depth < 8)
-                            info.children = readSubmodules(sub.get(), ctx->depth + 1);
+                        readSubmoduleState(info, sub.get(), ctx->scanIndex, ctx->depth);
                     }
                 }
                 ctx->out->push_back(std::move(info));

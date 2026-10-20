@@ -32,7 +32,9 @@ RepoSummary readSummary(const std::filesystem::path& path);
 
 // The submodules of `repo`, sorted by name, with nested submodules in `children` (to a depth of 8).
 // Never throws. A broken .gitmodules or a libgit2 error gives a partial list.
-std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, int depth = 0);
+// Without a .gitmodules file the list is empty, unless `scanIndex` is true: then the gitlink entries of the index
+// are the submodules (the scan reads the whole index, so only the snapshot of the open repository does it).
+std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, bool scanIndex, int depth = 0);
 
 // Repository state from Git's state files in the (per-worktree) git dir.
 RepoState detectState(git_repository* repo, std::string& detail);

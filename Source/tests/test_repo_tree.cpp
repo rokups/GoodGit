@@ -276,6 +276,19 @@ GG_TEST("summary", "readSummary reports why a path is not a usable repository (G
     GG_CHECK(ggui::summaryWarnPrefix(nullptr).empty());
     GG_CHECK(!ggui::summaryWarnPrefix(&missing).empty());
     GG_CHECK(ggui::summaryText(ok).find("main") != std::string::npos);
+    GG_CHECK(ggui::warnIconPrefix(true) == ggui::summaryWarnPrefix(&missing));
+    GG_CHECK(ggui::warnIconPrefix(false).empty());
+
+    // The count behind the start-up toast: entries that are not Ok, each path once.
+    ggui::core::RepoSummary a = ok, b = missing, c = notRepo, dup = missing;
+    a.path = "/a";
+    b.path = "/b";
+    c.path = "/c";
+    dup.path = "/b";
+    GG_CHECK(ggui::unavailableRepoCount({}, {}) == 0);
+    GG_CHECK(ggui::unavailableRepoCount({a}, {}) == 0);
+    GG_CHECK(ggui::unavailableRepoCount({a, b}, {c, dup}) == 2);
+    GG_CHECK(ggui::unavailableRepoCount({}, {b, c, unreadable}) == 3);
 }
 
 } // namespace ggtest
