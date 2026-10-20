@@ -31,6 +31,7 @@ namespace fs = std::filesystem;
 using core::MutationContext;
 using core::MutationError;
 using core::Outcome;
+using core::SubmoduleSync;
 
 std::vector<std::string> withPaths(std::vector<std::string> args, const std::vector<std::string>& paths)
 {
@@ -906,6 +907,7 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                 if (!gg::edit::write(editSessionFile(ctx), {head, branch, n}))
                     throw MutationError{Outcome::Failed, "The edit session file was not written", {}};
             }
+            ctx.submodules = SubmoduleSync::Update;
         },
         [this, label, target, detach, edit](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Ok && !e.message.empty()) {
@@ -940,6 +942,7 @@ void Actions::createBranch(const std::string& name, const std::string& at, bool 
         if (checkoutAfter) {
             ctx.git({"switch", "-q", "-c", name, at});
             ctx.worktreeFollowsIndex = true;
+            ctx.submodules = SubmoduleSync::Update;
         } else {
             ctx.git({"branch", name, at});
         }
@@ -991,6 +994,7 @@ void Actions::moveBranch(const std::string& name, const std::string& to)
             // The checked-out branch: keep local changes, refuse when they conflict.
             ctx.git({"reset", "-q", "--keep", to});
             ctx.worktreeFollowsIndex = true;
+            ctx.submodules = SubmoduleSync::Update;
         } else {
             const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", to + "^{commit}"}).out);
             ctx.git({"update-ref", "-m", "ggui: move branch", "refs/heads/" + name, id});
@@ -1081,6 +1085,9 @@ void Actions::resetBranch(const std::string& branch, const core::Oid& commit, Re
             ctx.git({"reset", "-q", std::string("--") + word, id});
             // Only a hard reset changes the working tree along with the index.
             ctx.worktreeFollowsIndex = mode == ResetMode::Hard;
+            // A hard reset also discards the changes in the submodule working trees.
+            if (mode == ResetMode::Hard)
+                ctx.submodules = SubmoduleSync::ForceUpdate;
         },
         [this, branch, commit, mode](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::LocalChanges) {
@@ -1116,6 +1123,7 @@ void Actions::fastForward(const std::string& branch)
         if (current) {
             ctx.git({"merge", "-q", "--ff-only", "@{upstream}"});
             ctx.worktreeFollowsIndex = true;
+            ctx.submodules = SubmoduleSync::Update;
         } else {
             const std::string up = gg::trim(ctx.git({"rev-parse", "--symbolic-full-name", branch + "@{upstream}"}).out);
             ctx.git({"fetch", "-q", ".", up + ":refs/heads/" + branch});
@@ -1213,6 +1221,7 @@ void Actions::pull(PullMode mode, bool autostash)
             ctx.env.emplace_back("GIT_EDITOR", "true");
             ctx.git(args, {}, true);
             ctx.worktreeFollowsIndex = true;
+            ctx.submodules = SubmoduleSync::Update;
         },
         [this, mode](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::LocalChanges) {
@@ -1295,6 +1304,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                                              "refs/heads/" + localBranch + ":refs/heads/" + remoteBranch},
                                                      {}, true);
                                                  ctx.worktreeFollowsIndex = true;
+                                                 ctx.submodules = SubmoduleSync::Update;
                                              },
                                              {}, true, true, true, true); // the pull can merge on a detached HEAD
                                      }});
@@ -1355,6 +1365,7 @@ void Actions::stashApply(int index, bool pop, bool restoreIndex)
         args.push_back(ref);
         ctx.worktreeFollowsIndex = true;
         ctx.git(args);
+        ctx.submodules = SubmoduleSync::Update;
     });
 }
 
@@ -1481,6 +1492,7 @@ void Actions::stashBranch(int index, const std::string& branch)
     run("branch " + branch + " from " + ref, [ref, branch](MutationContext& ctx) {
         ctx.git({"stash", "branch", branch, ref});
         ctx.worktreeFollowsIndex = true;
+        ctx.submodules = SubmoduleSync::Update;
     });
 }
 
@@ -1523,6 +1535,7 @@ void Actions::continueOperation()
         else
             ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
+        ctx.submodules = SubmoduleSync::Update;
     }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
@@ -1539,6 +1552,7 @@ void Actions::skipOperation()
         else
             ctx.git({cmd, "--skip"});
         ctx.worktreeFollowsIndex = true;
+        ctx.submodules = SubmoduleSync::Update;
     }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
@@ -1554,6 +1568,7 @@ void Actions::abortOperation()
         else
             ctx.git({cmd, "--abort"});
         ctx.worktreeFollowsIndex = true;
+        ctx.submodules = SubmoduleSync::Update;
     });
 }
 
@@ -1625,6 +1640,7 @@ void Actions::commitWithConflicts()
         else
             ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
+        ctx.submodules = SubmoduleSync::Update;
     }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
 }
 
@@ -1642,10 +1658,20 @@ void Actions::saveMergeMessage(const std::string& message)
 
 // ---- undo ------------------------------------------------------------------------------------------
 
+namespace {
+
+std::string headCommit(MutationContext& ctx)
+{
+    return gg::trim(ctx.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out);
+}
+
+} // namespace
+
 void Actions::undo(bool redo)
 {
     run(redo ? "redo" : "undo",
         [redo](MutationContext& ctx) {
+            const std::string headBefore = headCommit(ctx);
             const auto r = gg::undo(ctx.repo(), redo, "ggui");
             if (r.nothing)
                 throw MutationError{Outcome::Refused, redo ? "Nothing to redo" : "Nothing to undo", {}};
@@ -1655,6 +1681,9 @@ void Actions::undo(bool redo)
                 throw MutationError{r.wouldLoseData ? Outcome::LocalChanges : Outcome::Refused, r.error,
                     r.wouldLoseData ? r.target : r.error};
             ctx.info = r.label;
+            // A moved HEAD carries the files along (not the submodule working trees).
+            if (headCommit(ctx) != headBefore)
+                ctx.submodules = SubmoduleSync::Update;
         },
         [this, redo](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::LocalChanges) {
@@ -1685,10 +1714,13 @@ void Actions::restore(const std::string& operationId)
 {
     run("restore",
         [operationId](MutationContext& ctx) {
+            const std::string headBefore = headCommit(ctx);
             const auto r = gg::undo(ctx.repo(), false, "ggui", operationId);
             if (!r.ok)
                 throw MutationError{r.wouldLoseData ? Outcome::LocalChanges : Outcome::Refused, r.error, r.error};
             ctx.info = r.label;
+            if (headCommit(ctx) != headBefore)
+                ctx.submodules = SubmoduleSync::Update;
         },
         {}, false, false);
 }

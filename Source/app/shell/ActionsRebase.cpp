@@ -21,6 +21,7 @@ namespace fs = std::filesystem;
 using core::MutationContext;
 using core::MutationError;
 using core::Outcome;
+using core::SubmoduleSync;
 
 namespace {
 
@@ -151,6 +152,7 @@ void rebaseStep(MutationContext& ctx, std::vector<std::string> args)
     dropPreparedIfFinished(repo);
     const bool stopped = !gg::native::rebaseIdentity(repo).empty();
     if (res.ok()) {
+        ctx.submodules = SubmoduleSync::Update;
         if (stopped)
             ctx.info = gitMessage(res);
         else if (replayedBefore && !aborts)
@@ -159,6 +161,7 @@ void rebaseStep(MutationContext& ctx, std::vector<std::string> args)
     }
     if (stopped && readText(done) != doneBefore) {
         ctx.info = gitMessage(res);
+        ctx.submodules = SubmoduleSync::Update;
         return;
     }
     const std::string all = res.err + res.out;
@@ -219,6 +222,7 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 gg::native::writePrepared(dir, prepared, error);
                 ctx.result = "stopped";
                 ctx.info = gitMessage(res);
+                ctx.submodules = SubmoduleSync::Update;
                 return;
             }
             dropPreparedIfFinished(repo);
@@ -228,6 +232,7 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
             }
             // Finished in one step: there is no rebase-merge/ to read, the rows are the list written.
             dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo)), origHead);
+            ctx.submodules = SubmoduleSync::Update;
         },
         std::move(done), false, true, true, true);
 }

@@ -388,6 +388,7 @@ void Session::showDiscardAllDialog()
                                  if (all && !untracked.empty())
                                      ctx.git(withPaths({"clean", "-f", "-q"}, untracked));
                                  ctx.worktreeFollowsIndex = true;
+                                 ctx.submodules = core::SubmoduleSync::ForceUpdate;
                              });
                          }});
     f.buttons.push_back({"Cancel", {}});

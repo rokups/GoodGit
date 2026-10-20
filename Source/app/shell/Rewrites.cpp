@@ -23,6 +23,7 @@ namespace ggui {
 using core::MutationContext;
 using core::MutationError;
 using core::Outcome;
+using core::SubmoduleSync;
 namespace rw = gg::rewrite;
 
 struct Actions::RewriteState {
@@ -381,6 +382,9 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
             if (stashed && !plainGit({"stash", "pop", "-q", "--index"}).ok())
                 ctx.info = "Applying the autostash gave conflicts; your changes are safe in the stash.";
             ctx.worktreeFollowsIndex = r.headAfter != r.headBefore || stashed;
+            // The files follow a moved HEAD (read-tree), but a submodule working tree does not.
+            if (r.headAfter != r.headBefore && !plan.keepWorktree)
+                ctx.submodules = SubmoduleSync::Update;
             state->preview = std::move(r);
         },
         [this, state](const core::MutationFinishedEvent& e) {
@@ -1119,6 +1123,8 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
                 std::ofstream out(std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG", std::ios::binary | std::ios::trunc);
                 out << pending << "\n";
             }
+            // Also when a pick stopped: the earlier commits changed the files (git skips unmerged paths).
+            ctx.submodules = SubmoduleSync::Update;
             if (!conflicts)
                 return;
             // git revert leaves REVERT_HEAD; cherry-pick --no-commit leaves no state: the
@@ -1339,6 +1345,7 @@ void Actions::mergeNative(const std::string& branch, const std::string& message)
         const auto r = ctx.gitMayFail(args);
         if (!r.ok() && !std::filesystem::exists(ctx.cwd() / ".git" / "MERGE_HEAD"))
             throw MutationError{Outcome::Failed, r.message(), r.message()};
+        ctx.submodules = SubmoduleSync::Update;
     }, {}, false, true, true, true);
 }
 
@@ -1357,12 +1364,14 @@ void Actions::rebaseTipOntoNative(const std::string& tipRev, const std::string& 
         if (!gg::native::rebaseIdentity(ctx.repo()).empty()) {
             ctx.result = "stopped";
             ctx.info = r.message();
+            ctx.submodules = SubmoduleSync::Update;
             return;
         }
         if (!r.ok()) {
             const std::string all = r.err + r.out;
             throw MutationError{core::classifyFailure(all), r.message(), all};
         }
+        ctx.submodules = SubmoduleSync::Update;
     }, {}, false, true, true, true);
 }
 

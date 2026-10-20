@@ -488,4 +488,167 @@ GG_TEST("submodule", "A cancel during the update after a mutation keeps the outc
     GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
 }
 
+namespace {
+
+using ggui::core::Oid;
+
+// The submodule is at `commit` and the parent has no change.
+void checkSubmoduleAt(Scenario& s, const fs::path& repo, const std::string& commit)
+{
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), commit);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "HEAD:sub"}), commit);
+    GG_CHECK(s.gitOut(repo, {"status", "--porcelain"}).empty());
+}
+
+// The branch `name` holds a commit that moves the gitlink of `sub` one commit on. The checkout, the
+// submodule and the branch `main` stay as they were. Returns the new submodule commit.
+std::string branchWithMovedGitlink(Scenario& s, const fs::path& repo, const std::string& name)
+{
+    const std::string recorded = s.gitOut(repo, {"rev-parse", "HEAD:sub"});
+    s.git(repo, {"checkout", "-q", "-b", name});
+    const std::string moved = moveSubmodule(s, repo, true);
+    s.git(repo, {"commit", "-q", "-m", "Move sub"});
+    s.git(repo, {"checkout", "-q", "main"});
+    s.git(repo / "sub", {"checkout", "-q", recorded});
+    return moved;
+}
+
+} // namespace
+
+GG_TEST("submodule", "Reset hard before the submodule existed and back brings the submodule to the HEAD commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string recorded = s.gitOut(repo, {"rev-parse", "HEAD:sub"});
+    const std::string before = s.revParse(repo, "HEAD~2");
+    s.git(repo / "sub", {"checkout", "-q", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().resetBranch("main", Oid::fromHex(before), ggui::Actions::ResetMode::Hard, true);
+    GG_REQUIRE(s.settle());
+    GG_CHECK(!fs::exists(repo / ".gitmodules"));
+    s.session()->actions().resetBranch("main", Oid::fromHex(s.revParse(repo, "ORIG_HEAD")), ggui::Actions::ResetMode::Hard, true);
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / ".gitmodules"));
+    checkSubmoduleAt(s, repo, recorded);
+}
+
+GG_TEST("submodule", "Reset hard to a commit with another gitlink moves the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string older = s.gitOut(repo, {"rev-parse", "HEAD~1:sub"});
+    const std::string target = s.revParse(repo, "HEAD~1");
+    s.write(repo / "sub", "s3.txt", "s3 modified\n"); // a ForceUpdate discards it
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().resetBranch("main", Oid::fromHex(target), ggui::Actions::ResetMode::Hard, true);
+    GG_REQUIRE(s.settle());
+    checkSubmoduleAt(s, repo, older);
+}
+
+GG_TEST("submodule", "Reset mixed leaves the submodule where it is and the row shows new commits")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string current = s.head(repo / "sub");
+    const std::string target = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().resetBranch("main", Oid::fromHex(target), ggui::Actions::ResetMode::Mixed);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), current);
+    GG_CHECK(unstagedEntry(s, "sub", NewCommits) != nullptr);
+}
+
+GG_TEST("submodule", "Switching to a branch with another gitlink moves the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string moved = branchWithMovedGitlink(s, repo, "feature");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().checkout("feature", false);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "feature");
+    checkSubmoduleAt(s, repo, moved);
+}
+
+GG_TEST("submodule", "A dirty submodule does not fail the checkout")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string current = s.head(repo / "sub");
+    // s3.txt is not in the commit that "back" records, so the update cannot go there with the change.
+    s.git(repo, {"branch", "back", "main~1"});
+    s.write(repo / "sub", "s3.txt", "s3 modified\n");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().checkout("back", false);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "back"); // the checkout is Ok
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), current);
+    GG_CHECK_STR_EQ(s.read(repo / "sub", "s3.txt"), "s3 modified\n");
+}
+
+GG_TEST("submodule", "Checkout with the update setting off leaves the submodule where it is")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    branchWithMovedGitlink(s, repo, "feature");
+    const std::string current = s.head(repo / "sub");
+    s.app.settings().data().submodulesAutoUpdate = false;
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().checkout("feature", false);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--show-current"}), "feature");
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), current);
+}
+
+GG_TEST("submodule", "Merge of a branch that moves the gitlink moves the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string moved = branchWithMovedGitlink(s, repo, "feature");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().mergeNative("feature");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo), s.revParse(repo, "feature"));
+    checkSubmoduleAt(s, repo, moved);
+}
+
+GG_TEST("submodule", "Stash pop that moves the gitlink moves the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string recorded = s.head(repo / "sub");
+    const std::string moved = moveSubmodule(s, repo, true);
+    // git stash push ignores a changed gitlink: make the stash commit (worktree, parents HEAD and index) by hand.
+    const std::string tree = s.gitOut(repo, {"write-tree"});
+    const std::string index = s.gitOut(repo, {"commit-tree", tree, "-p", "HEAD", "-m", "index"});
+    const std::string stash = s.gitOut(repo, {"commit-tree", tree, "-p", "HEAD", "-p", index, "-m", "stash"});
+    s.git(repo, {"stash", "store", "-m", "gitlink", stash});
+    s.git(repo, {"reset", "-q", "--hard"});
+    s.git(repo / "sub", {"checkout", "-q", recorded});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().stashApply(0, true, true);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "M  sub");
+}
+
+GG_TEST("submodule", "Pull from a bare origin whose commit moves the gitlink fetches the commit and moves the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path subOrigin = repo.parent_path() / (repo.filename().string() + "-sub");
+    const fs::path bare = s.path("origin.git");
+    const fs::path other = s.path("other");
+    s.git(s.root(), {"clone", "-q", "--bare", repo.string(), bare.string()});
+    s.track(bare);
+    s.git(repo, {"remote", "add", "origin", "file://" + bare.generic_string()});
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.git(repo, {"branch", "-q", "--set-upstream-to=origin/main", "main"});
+    s.git(s.root(), {"clone", "-q", "file://" + bare.generic_string(), other.string()});
+    // A submodule commit that only the submodule's origin has.
+    s.commitFile(subOrigin, "s4.txt", "s4\n", "Sub s4");
+    const std::string moved = s.head(subOrigin);
+    GG_REQUIRE(!s.gitMayFail(repo / "sub", {"cat-file", "-e", moved + "^{commit}"}).ok());
+    s.git(other, {"update-index", "--cacheinfo", "160000," + moved + ",sub"});
+    s.git(other, {"commit", "-q", "-m", "Move sub"});
+    s.git(other, {"push", "-q", "origin", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().pull(ggui::PullMode::Merge);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo), s.head(other));
+    checkSubmoduleAt(s, repo, moved);
+}
+
 } // namespace ggtest
