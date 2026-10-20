@@ -39,6 +39,7 @@ struct FileRow {
     std::string oldPath;
     core::ChangeKind kind = core::ChangeKind::Modified;
     bool intentToAdd = false;
+    unsigned submoduleState = 0; // core::SubmoduleState bits (unstaged submodule rows)
     bool firstClass = false;
     int sides = 0;           // first-class conflicts: number of sides
     std::string conflict;

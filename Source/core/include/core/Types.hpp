@@ -204,12 +204,22 @@ enum class ChangeKind : char {
     Conflicted = 'U',
 };
 
+// Bits of StatusEntry::submoduleState: what differs inside a submodule (unstaged rows only).
+enum SubmoduleState : unsigned {
+    NewCommits = 1,       // the checked-out commit differs from the gitlink in the index
+    ModifiedContent = 2,  // tracked files in the submodule differ from its HEAD
+    UntrackedContent = 4, // the submodule holds untracked files
+    Missing = 8,          // the submodule working directory is deleted
+};
+
 struct StatusEntry {
     std::string path;
     std::string oldPath;           // renames/copies
     ChangeKind kind = ChangeKind::Modified;
     bool intentToAdd = false;
     bool binary = false;
+    bool submodule = false;           // the entry is a gitlink (submodule)
+    unsigned submoduleState = 0;      // SubmoduleState bits, set on unstaged submodule entries
     // Conflicts: which index stages exist (1 base, 2 ours, 3 theirs) and a description.
     bool stage1 = false, stage2 = false, stage3 = false;
     std::string conflictDescription; // "both modified", "deleted by them", …

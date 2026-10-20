@@ -490,6 +490,7 @@ StatusEntry entryFromDelta(const git_diff_delta* d)
     if (d->status == GIT_DELTA_RENAMED || d->status == GIT_DELTA_COPIED)
         e.oldPath = d->old_file.path;
     e.binary = (d->flags & GIT_DIFF_FLAG_BINARY) != 0;
+    e.submodule = d->old_file.mode == GIT_FILEMODE_COMMIT || d->new_file.mode == GIT_FILEMODE_COMMIT;
     return e;
 }
 
@@ -636,6 +637,30 @@ StatusPtr readStatusOnce(git_repository* repo, std::uint64_t generation, const g
         if (cancel.cancelled())
             throw gg::Cancelled{};
         check(rc, "git_diff_index_to_workdir");
+        // What changed inside each submodule: new commits, modified content, untracked content.
+        for (auto& e : result->unstaged) {
+            if (!e.submodule)
+                continue;
+            git_submodule* rawSub = nullptr;
+            if (git_submodule_lookup(&rawSub, repo, e.path.c_str()) != 0) {
+                git_error_clear();
+                continue;
+            }
+            unsigned flags = 0;
+            if (git_submodule_status(&flags, repo, git_submodule_name(rawSub), GIT_SUBMODULE_IGNORE_UNSPECIFIED) == 0) {
+                if (flags & GIT_SUBMODULE_STATUS_WD_MODIFIED)
+                    e.submoduleState |= NewCommits;
+                if (flags & (GIT_SUBMODULE_STATUS_WD_INDEX_MODIFIED | GIT_SUBMODULE_STATUS_WD_WD_MODIFIED))
+                    e.submoduleState |= ModifiedContent;
+                if (flags & GIT_SUBMODULE_STATUS_WD_UNTRACKED)
+                    e.submoduleState |= UntrackedContent;
+                if (flags & GIT_SUBMODULE_STATUS_WD_DELETED)
+                    e.submoduleState |= Missing;
+            } else {
+                git_error_clear();
+            }
+            git_submodule_free(rawSub);
+        }
         // Intent-to-add files that libgit2 does not report as modified are still "added".
         for (const auto& path : ita) {
             const bool listed = std::any_of(result->unstaged.begin(), result->unstaged.end(),

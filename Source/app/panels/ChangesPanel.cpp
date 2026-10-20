@@ -126,11 +126,27 @@ FileRow rowFromStatus(FileGroup g, const core::StatusEntry& e)
     r.oldPath = e.oldPath;
     r.kind = e.kind;
     r.intentToAdd = e.intentToAdd;
+    r.submoduleState = e.submoduleState;
     r.conflict = e.conflictDescription;
     r.sides = e.sides;
     r.firstClass = e.firstClass;
     r.brokenMarkerLines = e.brokenMarkerLines;
     return r;
+}
+
+// The suffix of an unstaged submodule row: "new commits, modified content".
+std::string submoduleSuffix(unsigned state)
+{
+    std::string text;
+    auto add = [&](unsigned bit, const char* name) {
+        if (state & bit)
+            text += (text.empty() ? "" : ", ") + std::string(name);
+    };
+    add(core::NewCommits, "new commits");
+    add(core::ModifiedContent, "modified content");
+    add(core::UntrackedContent, "untracked content");
+    add(core::Missing, "missing");
+    return text;
 }
 
 std::vector<FileRow> rowsFromDiff(FileGroup g, const core::DiffResult& d)
@@ -926,6 +942,8 @@ void ChangesPanel::drawFile(const FileRow& row, int)
         label += row.path;
     if (row.intentToAdd)
         label += "  (intent to add)";
+    if (const std::string suffix = submoduleSuffix(row.submoduleState); !suffix.empty())
+        label += "  (" + suffix + ")";
     if (!row.conflict.empty())
         label += "  (" + row.conflict + ")";
     const bool broken = !row.brokenMarkerLines.empty();

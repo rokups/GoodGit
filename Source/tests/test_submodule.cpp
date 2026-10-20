@@ -48,6 +48,23 @@ void commitWorkingTree(Scenario& s, const fs::path& repo, const std::string& mes
     s.settle();
 }
 
+// The unstaged status entry of `path`, once the status holds one (nullptr after the wait fails).
+const ggui::core::StatusEntry* unstagedEntry(Scenario& s, const std::string& path, unsigned state)
+{
+    const ggui::core::StatusEntry* found = nullptr;
+    s.waitUntil([&] {
+        const auto status = s.session()->status();
+        if (!status)
+            return false;
+        found = nullptr;
+        for (const auto& e : status->unstaged)
+            if (e.path == path && e.submoduleState == state)
+                found = &e;
+        return found != nullptr;
+    });
+    return found;
+}
+
 } // namespace
 
 GG_TEST("submodule", "Working tree commit takes an unstaged submodule change")
@@ -180,6 +197,79 @@ GG_TEST("submodule", "Nested submodules nest in the list")
     GG_CHECK_STR_EQ(list[0].children[0].name, "inner");
     GG_CHECK(list[0].children[0].initialized);
     GG_CHECK(list[0].children[0].children.empty());
+}
+
+GG_TEST("submodule", "Unstaged submodule rows tell what changed inside the submodule")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() != nullptr; }));
+    GG_CHECK(s.session()->status()->unstaged.empty());
+
+    moveSubmodule(s, repo, false);
+    const auto* entry = unstagedEntry(s, "sub", NewCommits);
+    GG_REQUIRE(entry != nullptr);
+    GG_CHECK(entry->submodule);
+    GG_CHECK(entry->kind == ChangeKind::Modified);
+
+    s.write(repo / "sub", "s3.txt", "s3 modified\n");
+    GG_CHECK(unstagedEntry(s, "sub", NewCommits | ModifiedContent) != nullptr);
+
+    s.write(repo / "sub", "loose.txt", "loose\n");
+    GG_CHECK(unstagedEntry(s, "sub", NewCommits | ModifiedContent | UntrackedContent) != nullptr);
+
+    s.git(repo / "sub", {"checkout", "-q", "--", "s3.txt"});
+    s.git(repo, {"add", "sub"});
+    GG_CHECK(s.waitUntil([&] {
+        const auto status = s.session()->status();
+        return status && status->staged.size() == 1 && status->staged[0].submodule;
+    }));
+    const auto* untracked = unstagedEntry(s, "sub", UntrackedContent);
+    GG_REQUIRE(untracked != nullptr);
+    GG_CHECK(s.session()->status()->staged[0].submoduleState == 0);
+}
+
+GG_TEST("submodule", "A modified file inside a submodule shows as modified content")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", "s3.txt", "s3 modified\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(unstagedEntry(s, "sub", ModifiedContent) != nullptr);
+}
+
+GG_TEST("submodule", "An untracked file inside a submodule shows as untracked content")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", "loose.txt", "loose\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(unstagedEntry(s, "sub", UntrackedContent) != nullptr);
+}
+
+GG_TEST("submodule", "A staged submodule row is flagged without a state")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    moveSubmodule(s, repo, true);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->staged.empty(); }));
+    const auto& staged = s.session()->status()->staged;
+    GG_REQUIRE(staged.size() == 1);
+    GG_CHECK_STR_EQ(staged[0].path, "sub");
+    GG_CHECK(staged[0].submodule);
+    GG_CHECK(staged[0].submoduleState == 0);
+}
+
+GG_TEST("submodule", "A change inside a nested submodule shows on the outer submodule row")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::NestedSubmodules);
+    const fs::path inner = repo / "sub" / "inner";
+    const std::string tracked = s.gitOut(inner, {"ls-files"}).substr(0, s.gitOut(inner, {"ls-files"}).find('\n'));
+    s.write(inner, tracked, "changed\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(unstagedEntry(s, "sub", ModifiedContent) != nullptr);
 }
 
 } // namespace ggtest
