@@ -1147,6 +1147,37 @@ const std::vector<core::SubmoduleInfo>* RepositoriesPanel::submodulesOf(const st
     return info ? &info->submodules : nullptr;
 }
 
+// The Submodule section of a submodule row's menu (GG-60). The commands run in the repository of the window, so
+// the items of a submodule of another repository in the list are disabled. `sm.path` is below the session path
+// when the row belongs to the repository of the window.
+void RepositoriesPanel::submoduleMenuItems(const core::SubmoduleInfo& sm)
+{
+    ImGui::SeparatorText("Submodule");
+    auto& actions = m_session.actions();
+    const std::filesystem::path rel = sm.path.lexically_relative(m_session.path());
+    const bool inSession = !rel.empty() && rel != "." && *rel.begin() != "..";
+    const std::string relPath = rel.generic_string();
+    const char* busy = actions.busy().empty() ? nullptr : "Another action is running";
+    const char* reason = !inSession ? "The submodule belongs to another repository: open it first" : busy;
+    const char* needsInit = sm.initialized ? reason : "The submodule is not initialized";
+    if (reason || sm.initialized)
+        disabledMenuItem(ICON_MS_DOWNLOAD, "Initialize", reason ? reason : "The submodule is initialized");
+    else if (menuItem(ICON_MS_DOWNLOAD, "Initialize"))
+        actions.submoduleInit(relPath);
+    if (needsInit)
+        disabledMenuItem(ICON_MS_SYNC, "Update", needsInit);
+    else if (menuItem(ICON_MS_SYNC, "Update"))
+        actions.submoduleUpdate(relPath);
+    if (needsInit)
+        disabledMenuItem(ICON_MS_CLOUD_DOWNLOAD, "Update to remote branch", needsInit);
+    else if (menuItem(ICON_MS_CLOUD_DOWNLOAD, "Update to remote branch"))
+        actions.submoduleUpdateRemote(relPath);
+    if (needsInit)
+        disabledMenuItem(ICON_MS_LINK, "Sync URL", needsInit);
+    else if (menuItem(ICON_MS_LINK, "Sync URL"))
+        actions.submoduleSyncUrl(relPath);
+}
+
 // The submodules as rows, with the look of the worktree rows. The detail is the branch, else the short id of
 // HEAD. The open one has the text colour of the current branch and one that is not initialized is dimmed.
 // A submodule with submodules is a node. A double-click opens a submodule, not the open one or an
@@ -1188,6 +1219,10 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
             toOpen = path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", sm.initialized ? path.c_str() : "Not initialized");
+        if (beginContextMenu("##submodule_menu")) {
+            submoduleMenuItems(sm);
+            ImGui::EndPopup();
+        }
         if (nodeOpen) {
             drawSubmodules(*inner, toOpen);
             ImGui::TreePop();

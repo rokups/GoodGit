@@ -75,6 +75,7 @@ private:
     const std::vector<core::SubmoduleInfo>* submodulesOf(const std::string& path) const;
     // The submodules as rows (nested ones as nodes). `toOpen` gets the path of the one that is double-clicked.
     void drawSubmodules(const std::vector<core::SubmoduleInfo>& list, std::string& toOpen);
+    void submoduleMenuItems(const core::SubmoduleInfo& sm);
     void repoDropTarget(const std::string& group);
     Session& m_session;
     // The label of the repository row that is dragged now: the default name of its alias after a drop.

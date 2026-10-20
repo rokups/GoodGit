@@ -1205,6 +1205,39 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
         {}, true);
 }
 
+void Actions::submoduleInit(const std::string& path)
+{
+    run("initialize submodule " + path,
+        [path](MutationContext& ctx) { ctx.git({"submodule", "update", "--init", "--recursive", "--progress", "--", path}, {}, true); },
+        {}, true);
+}
+
+void Actions::submoduleUpdate(const std::string& path)
+{
+    run("update submodule " + path,
+        [path](MutationContext& ctx) { ctx.git({"submodule", "update", "--recursive", "--progress", "--", path}, {}, true); }, {},
+        true);
+}
+
+void Actions::submoduleUpdateRemote(const std::string& path)
+{
+    run("update submodule " + path + " to remote branch",
+        [path](MutationContext& ctx) {
+            ctx.git({"submodule", "update", "--remote", "--recursive", "--progress", "--", path}, {}, true);
+        },
+        {}, true);
+}
+
+void Actions::submoduleSyncUrl(const std::string& path)
+{
+    run("sync URL of submodule " + path,
+        [path](MutationContext& ctx) {
+            ctx.git({"submodule", "sync", "--recursive", "--", path});
+            ctx.git({"submodule", "update", "--init", "--recursive", "--progress", "--", path}, {}, true);
+        },
+        {}, true);
+}
+
 void Actions::pull(PullMode mode, bool autostash)
 {
     run("pull",

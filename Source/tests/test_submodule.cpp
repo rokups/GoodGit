@@ -667,4 +667,64 @@ GG_TEST("submodule", "Pull from a bare origin whose commit moves the gitlink fet
     checkSubmoduleAt(s, repo, moved);
 }
 
+// ---- Repositories panel actions (GG-60) ----
+
+GG_TEST("submodule", "Initialize populates a submodule that is not populated")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string recorded = s.gitOut(repo, {"rev-parse", "HEAD:sub"});
+    s.git(repo, {"submodule", "deinit", "-f", "sub"});
+    GG_REQUIRE(!fs::exists(repo / "sub" / ".git"));
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleInit("sub");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "sub" / ".git"));
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), recorded);
+}
+
+GG_TEST("submodule", "Update returns a submodule to the commit of the superproject")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string recorded = s.gitOut(repo, {"rev-parse", "HEAD:sub"});
+    s.git(repo / "sub", {"checkout", "-q", "HEAD~1"});
+    GG_REQUIRE(s.head(repo / "sub") != recorded);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleUpdate("sub");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), recorded);
+}
+
+GG_TEST("submodule", "Update to remote branch moves a submodule to the new commit of its origin")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path subOrigin = repo.parent_path() / (repo.filename().string() + "-sub");
+    const std::string recorded = s.gitOut(repo, {"rev-parse", "HEAD:sub"});
+    s.commitFile(subOrigin, "s4.txt", "s4\n", "Sub s4");
+    const std::string moved = s.head(subOrigin);
+    GG_REQUIRE(moved != recorded);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleUpdateRemote("sub");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "HEAD:sub"}), recorded);
+    GG_CHECK(unstagedEntry(s, "sub", NewCommits) != nullptr);
+}
+
+GG_TEST("submodule", "Sync URL follows the URL of .gitmodules")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path subOrigin = repo.parent_path() / (repo.filename().string() + "-sub");
+    const fs::path moved = s.path("sub-moved");
+    s.git(s.root(), {"clone", "-q", subOrigin.string(), moved.string()});
+    s.track(moved);
+    s.git(repo, {"config", "-f", ".gitmodules", "submodule.sub.url", moved.string()});
+    GG_REQUIRE(s.gitOut(repo / "sub", {"remote", "get-url", "origin"}) != moved.string());
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleSyncUrl("sub");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.gitOut(repo / "sub", {"remote", "get-url", "origin"}), moved.string());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), s.gitOut(repo, {"rev-parse", "HEAD:sub"}));
+}
+
 } // namespace ggtest

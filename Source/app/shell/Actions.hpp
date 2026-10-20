@@ -223,6 +223,12 @@ public:
     void fetch(const std::string& remote, bool prune, bool tags); // remote "" = all
     // <remote>/HEAD, the remote's default branch: re-read from the remote (remove = false) or deleted.
     void pull(PullMode mode, bool autostash = false);
+    // Submodule commands for the submodule at `path`, relative to the working directory (GG-60). They
+    // keep the commit of the superproject, except updateRemote: that one moves to the remote branch.
+    void submoduleInit(const std::string& path);
+    void submoduleUpdate(const std::string& path);
+    void submoduleUpdateRemote(const std::string& path);
+    void submoduleSyncUrl(const std::string& path); // copies the URL of .gitmodules, then updates
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
         bool setUpstream, bool forceWithLease, bool tags = false);
 
