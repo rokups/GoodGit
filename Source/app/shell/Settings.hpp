@@ -95,6 +95,8 @@ struct SettingsData {
     bool infoWrapMessage = false; // Change information: word-wrap the message fields
     int infoMessageLines = 6; // Change information: height of the message fields, in text lines
     bool rebaseNewestFirst = false; // interactive rebase editor: list shown newest commit first
+    // Set by Settings::load (never stored): not empty when settings.json was partly unreadable. The App shows it.
+    std::string loadWarning;
 };
 
 class Settings {
@@ -146,11 +148,14 @@ private:
     // a key into memory while a later save of that key is still on its way: the file then holds an older value.
     std::map<std::string, int> m_savingRepoKeys;
     bool m_loaded = false;
+    bool m_backupFailed = false; // settings.json was damaged and its backup failed: save() does not write
     std::filesystem::path m_dir;
 };
 
 nlohmann::json toJson(const SettingsData& d);
-SettingsData fromJson(const nlohmann::json& j);
+// `skipped` (optional) is set to true when the file has a value that is dropped: a key with the wrong type
+// (a missing key is normal), a "recent" item that is not a string, or a repository item without a string "path".
+SettingsData fromJson(const nlohmann::json& j, bool* skipped = nullptr);
 
 // The key of a repository's shared state: its git common directory (one for all its worktrees), absolute,
 // symlinks resolved, no trailing separator, lower case on Windows (as gg::seqlink::gitDirKey). "" for "".

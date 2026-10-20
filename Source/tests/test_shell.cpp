@@ -402,6 +402,162 @@ GG_TEST("shell", "repository state: an older save does not undo a newer change i
     GG_CHECK(stored["repoState"]["k"]["hiddenRefs"] == nlohmann::json({"refs/heads/x"}));
 }
 
+namespace {
+
+// Loads settings.json from `dir` with a Settings of its own; `save` writes the file again after the load.
+ggui::SettingsData loadSettingsFrom(const fs::path& dir, const fs::path& restoreDir, bool save)
+{
+    using namespace ggui;
+    AsyncIo io;
+    Settings settings(io);
+    // GGUI_PREF_PATH works here because load() reads prefDir() synchronously, before it posts the job.
+    setEnv("GGUI_PREF_PATH", dir.string());
+    settings.load(nullptr);
+    setEnv("GGUI_PREF_PATH", restoreDir.string());
+    io.flush();
+    io.pump();
+    if (save) {
+        settings.save();
+        io.flush();
+        io.pump();
+    }
+    return settings.data();
+}
+
+} // namespace
+
+GG_TEST("shell", "settings load: a wrong-typed key does not lose the other keys")
+{
+    using namespace ggui;
+    const fs::path dir = s.root() / "prefs-badkey";
+    fs::create_directories(dir);
+    const std::string original = R"({"uiScale":"big","theme":3,"historyBadgePrefix":"x","recentOrder":[],"nothingStaged":7,)"
+                                 R"("submodulesAutoInit":"yes","repositories":[{"path":"/a/b","alias":"work/app"}],)"
+                                 R"("recent":["/a/b"],"repoState":{"/k":{"hiddenRefs":["refs/heads/x"]}}})";
+    std::ofstream(dir / "settings.json", std::ios::binary) << original;
+    const SettingsData d = loadSettingsFrom(dir, s.root() / "prefs", true);
+    GG_CHECK_EQ(d.uiScale, 1.0f);
+    GG_CHECK(d.theme == Theme::Dark);
+    GG_CHECK_EQ(d.historyBadgePrefix, 12);
+    GG_CHECK(d.recentOrder == RecentOrder::MostRecent);
+    GG_CHECK(d.nothingStaged == NothingStaged::Ask);
+    GG_CHECK(!d.submodulesAutoInit);
+    GG_REQUIRE(d.repositories.size() == 1);
+    GG_CHECK_STR_EQ(d.repositories[0].alias, "work/app");
+    GG_CHECK_EQ(d.recent.size(), size_t{1});
+    GG_REQUIRE(d.repoState.count("/k") == 1);
+    // The wrong-typed values are lost on the next save, so the old file is kept in a backup.
+    GG_CHECK(!d.loadWarning.empty());
+    GG_CHECK_STR_EQ(s.read(dir, "settings.json.bak"), original);
+    // The saved file still has the lists.
+    const nlohmann::json stored = nlohmann::json::parse(s.read(dir, "settings.json"));
+    GG_CHECK_EQ(stored["repositories"].size(), size_t{1});
+    GG_CHECK(stored["repoState"]["/k"]["hiddenRefs"] == nlohmann::json({"refs/heads/x"}));
+    // Each wrong-typed key sets the flag.
+    for (const char* json : {R"({"uiScale":"x"})", R"({"theme":1})", R"({"historyShowStashes":"no"})", R"({"panels":[]})",
+             R"({"panels":{"a":1}})", R"({"diff":3})", R"({"diff":{"context":"x"}})", R"({"window":[]})",
+             R"({"window":{"x":true}})", R"({"recent":"x"})", R"({"repoState":[1]})"}) {
+        bool skipped = false;
+        fromJson(nlohmann::json::parse(json), &skipped);
+        GG_CHECK(skipped);
+    }
+    // A good value next to a bad one is kept.
+    const SettingsData mixed = fromJson(nlohmann::json::parse(R"({"uiScale":"big","theme":"light","window":{"x":"a","y":5}})"));
+    GG_CHECK(mixed.theme == Theme::Light);
+    GG_CHECK_EQ(mixed.windowX, -1);
+    GG_CHECK_EQ(mixed.windowY, 5);
+}
+
+GG_TEST("shell", "settings load: an unreadable file is copied to settings.json.bak")
+{
+    using namespace ggui;
+    const fs::path dir = s.root() / "prefs-corrupt";
+    fs::create_directories(dir);
+    const std::string original = R"({"repositories":[{"path":"/a/b"}],)"; // cut off
+    std::ofstream(dir / "settings.json", std::ios::binary) << original;
+    std::ofstream(dir / "settings.json.bak", std::ios::binary) << "older backup";
+    const SettingsData d = loadSettingsFrom(dir, s.root() / "prefs", true);
+    GG_CHECK(!d.loadWarning.empty());
+    GG_CHECK_STR_EQ(s.read(dir, "settings.json.bak"), original); // the older backup is replaced
+    // The save wrote a new settings.json; the backup is not touched.
+    GG_CHECK(s.read(dir, "settings.json") != original);
+    GG_CHECK_STR_EQ(s.read(dir, "settings.json.bak"), original);
+    // A JSON value that is not an object is unreadable as well.
+    const fs::path dir2 = s.root() / "prefs-array";
+    fs::create_directories(dir2);
+    std::ofstream(dir2 / "settings.json", std::ios::binary) << "[1,2]";
+    GG_CHECK(!loadSettingsFrom(dir2, s.root() / "prefs", false).loadWarning.empty());
+    GG_CHECK_STR_EQ(s.read(dir2, "settings.json.bak"), "[1,2]");
+}
+
+GG_TEST("shell", "settings load: a good file and a legacy file make no backup")
+{
+    using namespace ggui;
+    const fs::path dir = s.root() / "prefs-good";
+    fs::create_directories(dir);
+    std::ofstream(dir / "settings.json", std::ios::binary)
+        << R"({"uiScale":2,"historyBadgePrefix":20.0,"recent":["/a/b"],"repositories":[{"path":"/a/b"}]})";
+    const SettingsData d = loadSettingsFrom(dir, s.root() / "prefs", false);
+    GG_CHECK(d.loadWarning.empty());
+    GG_CHECK(!fs::exists(dir / "settings.json.bak"));
+    GG_CHECK_EQ(d.uiScale, 2.0f);
+    GG_CHECK_EQ(d.historyBadgePrefix, 20);
+    GG_CHECK_EQ(d.repositories.size(), size_t{1});
+    // A legacy file has no "repositories" key.
+    const fs::path legacy = s.root() / "prefs-legacy";
+    fs::create_directories(legacy);
+    std::ofstream(legacy / "settings.json", std::ios::binary) << R"({"recent":["/a/b"],"theme":"light"})";
+    const SettingsData old = loadSettingsFrom(legacy, s.root() / "prefs", false);
+    GG_CHECK(old.loadWarning.empty());
+    GG_CHECK(!fs::exists(legacy / "settings.json.bak"));
+    GG_CHECK_EQ(old.repositories.size(), size_t{1});
+    // A missing file and an empty file are "no file".
+    const fs::path none = s.root() / "prefs-empty";
+    fs::create_directories(none);
+    std::ofstream(none / "settings.json", std::ios::binary).flush();
+    GG_CHECK(loadSettingsFrom(none, s.root() / "prefs", false).loadWarning.empty());
+    GG_CHECK(!fs::exists(none / "settings.json.bak"));
+}
+
+GG_TEST("shell", "settings load: a failed backup stops the save")
+{
+    using namespace ggui;
+    const fs::path dir = s.root() / "prefs-nobackup";
+    fs::create_directories(dir / "settings.json.bak"); // a directory: the copy to this name fails
+    const std::string original = R"({"uiScale":"big","recent":["/a/b"]})";
+    std::ofstream(dir / "settings.json", std::ios::binary) << original;
+    const SettingsData d = loadSettingsFrom(dir, s.root() / "prefs", true);
+    GG_CHECK(!d.loadWarning.empty());
+    GG_CHECK_STR_EQ(s.read(dir, "settings.json"), original);
+}
+
+GG_TEST("shell", "settings load: skipped entries give a backup and a warning")
+{
+    using namespace ggui;
+    bool skipped = false;
+    const SettingsData d = fromJson(nlohmann::json::parse(
+        R"({"recent":["/a/b",4],"repositories":[{"path":"/a/b"},{"alias":"x"},7,{"path":3}]})"), &skipped);
+    GG_CHECK(skipped);
+    GG_CHECK_EQ(d.recent.size(), size_t{1});
+    GG_CHECK_EQ(d.repositories.size(), size_t{1});
+    skipped = false;
+    fromJson(nlohmann::json::parse(R"({"repositories":"no"})"), &skipped);
+    GG_CHECK(skipped);
+    skipped = false;
+    fromJson(nlohmann::json::parse(R"({"recent":["/a/b"],"repositories":[{"path":"/a/b"}],"uiScale":2})"), &skipped);
+    GG_CHECK(!skipped);
+
+    const fs::path dir = s.root() / "prefs-skipped";
+    fs::create_directories(dir);
+    const std::string original = R"({"recent":["/a/b",4],"repositories":[{"path":"/a/b"},{"alias":"x"}]})";
+    std::ofstream(dir / "settings.json", std::ios::binary) << original;
+    const SettingsData loaded = loadSettingsFrom(dir, s.root() / "prefs", true);
+    GG_CHECK(!loaded.loadWarning.empty());
+    GG_CHECK_EQ(loaded.repositories.size(), size_t{1});
+    GG_CHECK_STR_EQ(s.read(dir, "settings.json.bak"), original);
+    GG_CHECK(s.read(dir, "settings.json") != original);
+}
+
 GG_TEST("shell", "permanent repositories: JSON round trip and loading")
 {
     using namespace ggui;

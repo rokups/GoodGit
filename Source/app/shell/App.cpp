@@ -206,6 +206,10 @@ void App::onSettingsLoaded(const std::string& iniText)
         m_settings.data().uiScale, m_settings.data().theme == Theme::Light ? "light" : "dark",
         m_settings.data().recent.size());
     applyTheme();
+    if (!m_settings.data().loadWarning.empty()) {
+        notify(Notice::Warning, "Settings", m_settings.data().loadWarning);
+        m_settings.data().loadWarning.clear();
+    }
     if (!iniText.empty())
         ImGui::LoadIniSettingsFromMemory(iniText.c_str(), iniText.size());
     m_layoutPending = iniText.find("[Docking]") == std::string::npos;

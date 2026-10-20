@@ -111,6 +111,18 @@ std::string readAll(const fs::path& p)
     return ss.str();
 }
 
+// Copies `file` to "<file>.bak" and replaces an older backup. Returns true when the copy is made.
+bool backupFile(const fs::path& file)
+{
+    std::error_code ec;
+    fs::path bak = file;
+    bak += ".bak";
+    fs::copy_file(file, bak, fs::copy_options::overwrite_existing, ec);
+    if (ec)
+        spdlog::warn("cannot copy {} to {}: {}", file.string(), bak.string(), ec.message());
+    return !ec;
+}
+
 void writeAtomically(const fs::path& p, const std::string& text)
 {
     std::error_code ec;
@@ -211,29 +223,88 @@ nlohmann::json toJson(const SettingsData& d)
     return j;
 }
 
-SettingsData fromJson(const nlohmann::json& j)
+namespace {
+
+// Non-throwing getters: a key that is missing or has the wrong type gives the default, and no other key is affected.
+// A key that is present with the wrong type also sets `*bad` (when `bad` is not null): the file has a value that is lost.
+void flagWrongType(bool present, bool* bad)
+{
+    if (present && bad)
+        *bad = true;
+}
+
+float jsonFloat(const nlohmann::json& j, const char* key, float def, bool* bad)
+{
+    const auto it = j.find(key);
+    if (it != j.end() && it->is_number())
+        return static_cast<float>(it->get<double>());
+    flagWrongType(it != j.end(), bad);
+    return def;
+}
+
+int jsonInt(const nlohmann::json& j, const char* key, int def, bool* bad)
+{
+    const auto it = j.find(key);
+    if (it == j.end() || !it->is_number()) {
+        flagWrongType(it != j.end(), bad);
+        return def;
+    }
+    return static_cast<int>(std::clamp(it->get<double>(), -1.0e9, 1.0e9));
+}
+
+bool jsonBool(const nlohmann::json& j, const char* key, bool def, bool* bad)
+{
+    const auto it = j.find(key);
+    if (it != j.end() && it->is_boolean())
+        return it->get<bool>();
+    flagWrongType(it != j.end(), bad);
+    return def;
+}
+
+std::string jsonString(const nlohmann::json& j, const char* key, const std::string& def, bool* bad)
+{
+    const auto it = j.find(key);
+    if (it != j.end() && it->is_string())
+        return it->get<std::string>();
+    flagWrongType(it != j.end(), bad);
+    return def;
+}
+
+} // namespace
+
+SettingsData fromJson(const nlohmann::json& j, bool* skipped)
 {
     SettingsData d;
     if (!j.is_object())
         return d;
-    d.uiScale = std::clamp(j.value("uiScale", 1.0f), static_cast<float>(kUiScaleMinPercent) / 100.0f,
+    const auto skip = [skipped] {
+        if (skipped)
+            *skipped = true;
+    };
+    d.uiScale = std::clamp(jsonFloat(j, "uiScale", 1.0f, skipped), static_cast<float>(kUiScaleMinPercent) / 100.0f,
         static_cast<float>(kUiScaleMaxPercent) / 100.0f);
-    d.theme = j.value("theme", std::string("dark")) == "light" ? Theme::Light : Theme::Dark;
-    d.historyBadgePrefix = std::clamp(j.value("historyBadgePrefix", 12), 1, 100);
-    d.historyBadgeSuffix = std::clamp(j.value("historyBadgeSuffix", 12), 1, 100);
-    if (j.contains("recent") && j["recent"].is_array())
-        for (const auto& r : j["recent"])
+    d.theme = jsonString(j, "theme", "dark", skipped) == "light" ? Theme::Light : Theme::Dark;
+    d.historyBadgePrefix = std::clamp(jsonInt(j, "historyBadgePrefix", 12, skipped), 1, 100);
+    d.historyBadgeSuffix = std::clamp(jsonInt(j, "historyBadgeSuffix", 12, skipped), 1, 100);
+    if (j.contains("recent") && j["recent"].is_array()) {
+        for (const auto& r : j["recent"]) {
             if (r.is_string())
                 d.recent.push_back(r.get<std::string>());
+            else
+                skip();
+        }
+    } else if (j.contains("recent")) {
+        skip();
+    }
     d.recent = uniqueRepoPaths(d.recent);
     if (j.contains("repositories") && j["repositories"].is_array()) {
         std::set<std::string> seen;
         for (const auto& item : j["repositories"]) {
-            if (!item.is_object())
+            const auto pathIt = item.is_object() ? item.find("path") : item.end();
+            if (!item.is_object() || pathIt == item.end() || !pathIt->is_string()) {
+                skip();
                 continue;
-            const auto pathIt = item.find("path");
-            if (pathIt == item.end() || !pathIt->is_string())
-                continue;
+            }
             std::string path = normalizeRepoPath(pathIt->get<std::string>());
             if (path.empty() || !seen.insert(path).second)
                 continue;
@@ -246,38 +317,53 @@ SettingsData fromJson(const nlohmann::json& j)
         // A settings file from before the permanent list: it starts as the recent list.
         for (const auto& path : d.recent)
             d.repositories.push_back({path, std::string()});
+    } else {
+        skip(); // "repositories" has the wrong type: its content is not readable
     }
-    d.recentOrder = j.value("recentOrder", std::string("recent")) == "alphabetical" ? RecentOrder::Alphabetical
-                                                                                    : RecentOrder::MostRecent;
-    if (j.contains("panels") && j["panels"].is_object())
-        for (auto it = j["panels"].begin(); it != j["panels"].end(); ++it)
+    d.recentOrder = jsonString(j, "recentOrder", "recent", skipped) == "alphabetical" ? RecentOrder::Alphabetical
+                                                                              : RecentOrder::MostRecent;
+    if (j.contains("panels") && j["panels"].is_object()) {
+        for (auto it = j["panels"].begin(); it != j["panels"].end(); ++it) {
             if (it.value().is_boolean())
                 d.panels[it.key()] = it.value().get<bool>();
+            else
+                skip();
+        }
+    } else if (j.contains("panels")) {
+        skip();
+    }
     // The view state and the window placement now live in imgui.ini (applied after this); they are
     // still read here for a settings.json written by an earlier version.
     if (j.contains("diff") && j["diff"].is_object()) {
-        d.diffSideBySide = j["diff"].value("sideBySide", false);
-        d.diffContext = std::clamp(j["diff"].value("context", 3), 0, 100);
-        d.diffWhitespace = std::clamp(j["diff"].value("whitespace", 0), 0, 2);
+        const auto& diff = j["diff"];
+        d.diffSideBySide = jsonBool(diff, "sideBySide", false, skipped);
+        d.diffContext = std::clamp(jsonInt(diff, "context", 3, skipped), 0, 100);
+        d.diffWhitespace = std::clamp(jsonInt(diff, "whitespace", 0, skipped), 0, 2);
+    } else if (j.contains("diff")) {
+        skip();
     }
-    d.historyShowStashes = j.value("historyShowStashes", true);
-    const std::string ns = j.value("nothingStaged", std::string("ask"));
+    d.historyShowStashes = jsonBool(j, "historyShowStashes", true, skipped);
+    const std::string ns = jsonString(j, "nothingStaged", "ask", skipped);
     d.nothingStaged = ns == "stage-all" ? NothingStaged::StageAll
         : ns == "stage-selected"        ? NothingStaged::StageSelected
                                         : NothingStaged::Ask;
-    d.expandStagesOnCheckout = j.value("expandStagesOnCheckout", false);
-    d.expandConflictStages = j.value("expandConflictStages", false);
-    d.submodulesAutoUpdate = j.value("submodulesAutoUpdate", true);
-    d.submodulesAutoInit = j.value("submodulesAutoInit", false);
-    d.historyGraphInDescription = j.value("historyGraphInDescription", false);
+    d.expandStagesOnCheckout = jsonBool(j, "expandStagesOnCheckout", false, skipped);
+    d.expandConflictStages = jsonBool(j, "expandConflictStages", false, skipped);
+    d.submodulesAutoUpdate = jsonBool(j, "submodulesAutoUpdate", true, skipped);
+    d.submodulesAutoInit = jsonBool(j, "submodulesAutoInit", false, skipped);
+    d.historyGraphInDescription = jsonBool(j, "historyGraphInDescription", false, skipped);
+    if (j.contains("repoState") && !j["repoState"].is_object())
+        skip();
     d.repoState = repoStateFromJson(j);
     if (j.contains("window") && j["window"].is_object()) {
         const auto& w = j["window"];
-        d.windowX = w.value("x", -1);
-        d.windowY = w.value("y", -1);
-        d.windowW = w.value("w", 0);
-        d.windowH = w.value("h", 0);
-        d.windowMaximized = w.value("maximized", false);
+        d.windowX = jsonInt(w, "x", -1, skipped);
+        d.windowY = jsonInt(w, "y", -1, skipped);
+        d.windowW = jsonInt(w, "w", 0, skipped);
+        d.windowH = jsonInt(w, "h", 0, skipped);
+        d.windowMaximized = jsonBool(w, "maximized", false, skipped);
+    } else if (j.contains("window")) {
+        skip();
     }
     return d;
 }
@@ -385,7 +471,15 @@ fs::path Settings::prefDir()
     if (!over.empty())
         return fs::path(over);
     char* p = SDL_GetPrefPath("gg", "ggui");
-    fs::path dir = p ? fs::path(p) : fs::current_path();
+    fs::path dir;
+    if (p) {
+        dir = fs::path(p);
+    } else {
+        std::error_code ec;
+        dir = fs::current_path(ec);
+        if (ec || dir.empty())
+            dir = ".";
+    }
     SDL_free(p);
     return dir;
 }
@@ -394,21 +488,45 @@ void Settings::load(std::function<void(const std::string& iniText)> onLoaded)
 {
     m_dir = prefDir();
     m_loaded = false;
+    m_backupFailed = false;
     m_pendingRepoKeys.clear();
     const fs::path dir = m_dir;
     m_io.post([this, dir, onLoaded = std::move(onLoaded)]() -> std::function<void()> {
         SettingsData data;
-        const std::string text = readAll(dir / "settings.json");
-        if (!text.empty()) {
+        const fs::path file = dir / "settings.json";
+        const std::string text = readAll(file);
+        bool backupFailed = false;
+        bool damaged = false;
+        if (text.empty()) {
+            // A file that exists and has a size, but cannot be read, is damaged: an empty or missing file is "no file".
+            std::error_code ec;
+            const auto size = fs::is_regular_file(file, ec) && !ec ? fs::file_size(file, ec) : std::uintmax_t{0};
+            damaged = !ec && size != 0;
+        } else {
+            // A file that is not readable as a whole, or that has entries which fromJson skips, is copied to
+            // settings.json.bak now: a later save() writes the file again, and the skipped data would be lost.
             try {
-                data = fromJson(nlohmann::json::parse(text));
+                const nlohmann::json j = nlohmann::json::parse(text);
+                if (j.is_object())
+                    data = fromJson(j, &damaged);
+                else
+                    damaged = true;
             } catch (const std::exception& e) {
                 spdlog::warn("ignoring unreadable settings.json: {}", e.what());
+                data = SettingsData{};
+                damaged = true;
             }
         }
+        if (damaged) {
+            backupFailed = !backupFile(file);
+            data.loadWarning = backupFailed
+                ? "Some settings were not readable. The backup of the old file failed. Settings are not saved."
+                : "Some settings were not readable. A backup of the old file is saved as settings.json.bak.";
+        }
         std::string ini = readAll(dir / "imgui.ini");
-        return [this, data = std::move(data), ini = std::move(ini), onLoaded]() {
+        return [this, data = std::move(data), ini = std::move(ini), backupFailed, onLoaded]() {
             m_data = data;
+            m_backupFailed = backupFailed;
             m_loaded = true;
             if (onLoaded)
                 onLoaded(ini);
@@ -418,6 +536,11 @@ void Settings::load(std::function<void(const std::string& iniText)> onLoaded)
 
 void Settings::save()
 {
+    if (m_backupFailed) {
+        // The file is damaged and its backup failed: a write would destroy the only copy of the old data.
+        spdlog::warn("settings.json is not saved: it was unreadable and its backup failed");
+        return;
+    }
     nlohmann::json j = toJson(m_data);
     std::map<std::string, RepoState> own;
     for (const auto& key : m_pendingRepoKeys)
