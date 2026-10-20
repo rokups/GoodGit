@@ -871,7 +871,12 @@ GG_TEST("diff", "a single-file query equals the whole-tree query for that file")
     using ggui::core::ChangeKind;
     using ggui::core::DiffKind;
     const fs::path repo = s.fixture(Recipe::Empty, "single-file");
+    // Windows cannot create a file name with '*' or '?'. A bracket name is the glob trap there.
+#ifdef _WIN32
+    const std::string funny = "x [y]z.txt";
+#else
     const std::string funny = "x *y?.txt";
+#endif
     for (const char* name : {"mod.txt", "sub/dir/deep.txt", "del.txt", "stage.txt", "a[1].txt", "a1.txt", "x yz.txt"})
         s.write(repo, name, tagged(name, 12));
     s.write(repo, funny, tagged(funny, 12));
