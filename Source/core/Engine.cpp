@@ -259,7 +259,10 @@ RequestId Engine::refreshStatus()
         if (!m_statusConflicts)
             m_statusConflicts = std::make_shared<gg::conflicts::Cache>(
                 std::filesystem::path(git_repository_commondir(job.repo())));
-        auto full = std::make_shared<StatusResult>(*status);
+        // Only this function holds `status` (the partial results are copies), and readStatus made
+        // it as a non-const StatusResult: take it over instead of copying every entry.
+        auto full = status.use_count() == 1 ? std::const_pointer_cast<StatusResult>(std::move(status))
+                                            : std::make_shared<StatusResult>(*status);
         addFirstClassConflicts(job.repo(), *full, m_statusConflicts.get());
         emit(StatusEvent{job.id, std::move(full)});
     });

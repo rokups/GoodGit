@@ -40,6 +40,8 @@ git_oid toGit(const Oid& oid)
 namespace {
 
 constexpr std::uint64_t kMaxTextBytes = 2 * 1024 * 1024;
+// A file modified less than this before it was read can change again with the same mtime.
+constexpr std::chrono::seconds kRacyWindow{2};
 
 std::string readFileText(const fs::path& p)
 {
@@ -733,10 +735,17 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
     std::set<std::string> native;
     for (const auto& e : status.conflicted)
         native.insert(e.path);
-    std::set<std::string> changed;
-    for (const auto* list : {&status.staged, &status.unstaged, &status.untracked})
-        for (const auto& e : *list)
-            changed.insert(e.path);
+    // Changed paths with how the status lists them (a bit per list and the entry kind of each list),
+    // which keys the file scan cache.
+    std::map<std::string, unsigned> changed;
+    {
+        unsigned shift = 0;
+        for (const auto* list : {&status.staged, &status.unstaged, &status.untracked}) {
+            for (const auto& e : *list)
+                changed[e.path] |= (1u << shift) | (static_cast<unsigned>(e.kind) << (8 * (shift + 1)));
+            ++shift;
+        }
+    }
     std::map<std::string, int> found;
     std::set<std::string> headConflicted; // paths whose HEAD blob holds a first-class conflict
     git_oid head;
@@ -756,26 +765,46 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
     // (deleted a "=======" / "|||||||" line, leaving "<<<<<<<"/">>>>>>>" behind as plain text):
     // record that on its ordinary Modified entry so Changes and the commit warning can warn about it.
     std::map<std::string, std::vector<size_t>> broken;
-    for (const auto& path : changed) {
-        if (native.count(path))
-            continue;
-        std::error_code ec;
-        const fs::path p = workdir / path;
-        if (!fs::is_regular_file(p, ec) || fs::file_size(p, ec) > kMaxTextBytes)
-            continue;
-        const std::string content = readFileText(p);
-        const int sides = gg::conflicts::contentSides(content);
-        if (sides > 0 && gg::conflicts::eligible(repo, nullptr, path)) {
-            found[path] = sides;
-            continue;
-        }
-        if (headConflicted.count(path)) {
-            const std::string headText = headBlobText(repo, headTree.get(), path);
-            auto lines = gg::markers::brokenMarkers(headText, content);
-            if (!lines.empty())
-                broken[path] = std::move(lines);
+    // Without gg.firstClassConflicts no path is eligible and HEAD has no conflicted path, so no
+    // content can matter.
+    std::set<std::string> kept; // paths with a valid cache entry
+    if (gg::conflicts::enabled(repo)) {
+        // A file is read only when its size or mtime changed (or the status lists it differently).
+        // A file changed close to the moment it was read may change again without a new mtime:
+        // it is read once more on a later refresh.
+        const auto now = fs::file_time_type::clock::now();
+        const std::string headKey = headConflicted.empty() ? std::string() : toHex(head);
+        for (const auto& [path, kind] : changed) {
+            if (native.count(path))
+                continue;
+            std::error_code ec;
+            const fs::path p = workdir / path;
+            if (!fs::is_regular_file(p, ec))
+                continue;
+            const std::uintmax_t size = fs::file_size(p, ec);
+            const auto mtime = fs::last_write_time(p, ec);
+            if (ec || size > kMaxTextBytes)
+                continue;
+            const std::string needHeadKey = headConflicted.count(path) ? headKey : std::string();
+            kept.insert(path);
+            auto& scan = cache.fileScans[path];
+            const bool fresh = scan.size == size && scan.mtime == mtime && scan.kind == kind
+                && scan.scannedAt != fs::file_time_type{} && scan.mtime + kRacyWindow <= scan.scannedAt;
+            if (!fresh || scan.headKey != needHeadKey) {
+                const std::string content = readFileText(p);
+                ++cache.fileReads;
+                scan = gg::conflicts::FileScan{size, mtime, now, kind, gg::conflicts::contentSides(content), needHeadKey, {}};
+                if (!needHeadKey.empty())
+                    scan.broken = gg::markers::brokenMarkers(headBlobText(repo, headTree.get(), path), content);
+            }
+            if (scan.sides > 0 && gg::conflicts::eligible(repo, nullptr, path))
+                found[path] = scan.sides;
+            else if (!scan.broken.empty())
+                broken[path] = scan.broken;
         }
     }
+    // Forget the paths that left the status (or became unreadable or too large).
+    std::erase_if(cache.fileScans, [&](const auto& kv) { return !kept.count(kv.first); });
     for (const auto& [path, sides] : found) {
         StatusEntry e;
         e.path = path;

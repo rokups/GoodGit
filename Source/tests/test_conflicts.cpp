@@ -1,5 +1,6 @@
 // Conflicts: native in-progress operations and first-class conflicts (§4.10).
 #include <thread>
+#include "core/Readers.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
@@ -16,6 +17,7 @@
 #include <libgg/Rewrite.hpp>
 
 #include <algorithm>
+#include <chrono>
 
 namespace ggtest {
 
@@ -1075,6 +1077,128 @@ GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrit
     GG_CHECK(s.head(repo) != s.head(copy));
     GG_CHECK(first == second);
     GG_CHECK(gg::markers::isConflicted(s.git(repo, {"show", "HEAD:f.txt"}).out));
+}
+
+// ---- The working-tree content scan cache of the status refresh ----------------------------------
+
+namespace {
+
+const char* const kMarked = "<<<<<<< ours\nA\n||||||| base\n0\n=======\nB\n>>>>>>> theirs\n";
+
+// A status that lists `unstaged` (modified) and `untracked` paths.
+ggui::core::StatusResult statusOf(const std::vector<std::string>& unstaged, const std::vector<std::string>& untracked)
+{
+    ggui::core::StatusResult st;
+    for (const auto& path : unstaged) {
+        ggui::core::StatusEntry e;
+        e.path = path;
+        e.kind = ggui::core::ChangeKind::Modified;
+        st.unstaged.push_back(e);
+    }
+    for (const auto& path : untracked) {
+        ggui::core::StatusEntry e;
+        e.path = path;
+        e.kind = ggui::core::ChangeKind::Untracked;
+        st.untracked.push_back(e);
+    }
+    return st;
+}
+
+// One status refresh step as the engine runs it, on a worker thread. Returns the first-class paths.
+std::vector<std::string> scanStatus(const fs::path& repo, const ggui::core::StatusResult& listed, gg::conflicts::Cache& cache)
+{
+    ggui::core::StatusResult st = listed;
+    std::thread([&] {
+        const auto handle = gg::git2::openRepository(repo);
+        ggui::core::addFirstClassConflicts(handle.get(), st, &cache);
+    }).join();
+    std::vector<std::string> paths;
+    for (const auto& e : st.conflicted)
+        if (e.firstClass)
+            paths.push_back(e.path);
+    return paths;
+}
+
+// Sets the mtime to `hoursAgo` hours in the past: old enough to be trusted by the cache.
+void age(const fs::path& file, int hoursAgo)
+{
+    fs::last_write_time(file, fs::file_time_type::clock::now() - std::chrono::hours(hoursAgo));
+}
+
+} // namespace
+
+GG_TEST("conflicts", "status scan cache: a refresh without file changes reads no content")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "a.txt", "plain\n");
+    s.write(repo, "b.txt", "plain\n");
+    s.write(repo, "u.txt", "untracked\n");
+    for (const char* f : {"a.txt", "b.txt", "u.txt"})
+        age(repo / f, 2);
+    const auto listed = statusOf({"a.txt", "b.txt"}, {"u.txt"});
+    gg::conflicts::Cache cache;
+    GG_CHECK(scanStatus(repo, listed, cache).empty());
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 3);
+    GG_CHECK(scanStatus(repo, listed, cache).empty());
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 3);
+    // Editing one file re-reads that file only, and the new marked content is found.
+    s.write(repo, "b.txt", kMarked);
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"b.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 4);
+    age(repo / "b.txt", 1);
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"b.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 5); // the edit was too recent to trust once
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"b.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 5);
+    // Resolving the file drops it from the result.
+    s.write(repo, "b.txt", "resolved\n");
+    age(repo / "b.txt", 3);
+    GG_CHECK(scanStatus(repo, listed, cache).empty());
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 6);
+    // A path that leaves the status loses its entry: listing it again reads it again.
+    GG_CHECK(scanStatus(repo, statusOf({"a.txt"}, {}), cache).empty());
+    GG_CHECK_EQ(static_cast<int>(cache.fileScans.size()), 1);
+    GG_CHECK(scanStatus(repo, listed, cache).empty());
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 8);
+}
+
+GG_TEST("conflicts", "status scan cache: a changed mtime with the same size re-reads the file")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string plain(std::char_traits<char>::length(kMarked), 'x');
+    s.write(repo, "a.txt", plain);
+    age(repo / "a.txt", 2);
+    const auto listed = statusOf({"a.txt"}, {});
+    gg::conflicts::Cache cache;
+    GG_CHECK(scanStatus(repo, listed, cache).empty());
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 1);
+    // The same size, other content, an older mtime.
+    s.write(repo, "a.txt", kMarked);
+    GG_REQUIRE(fs::file_size(repo / "a.txt") == plain.size());
+    age(repo / "a.txt", 5);
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"a.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 2);
+    // The same size and mtime: the cached result stands without a read.
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"a.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 2);
+}
+
+GG_TEST("conflicts", "status scan cache: many changed files are read once and then not again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::vector<std::string> tracked, untracked;
+    for (int i = 0; i < 1000; ++i) {
+        const std::string name = "many/f" + std::to_string(i) + ".txt";
+        s.write(repo, name, i == 777 ? std::string(kMarked) : "line " + std::to_string(i) + "\n");
+        age(repo / name, 2);
+        (i % 2 ? tracked : untracked).push_back(name);
+    }
+    const auto listed = statusOf(tracked, untracked);
+    gg::conflicts::Cache cache;
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"many/f777.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 1000);
+    GG_CHECK(scanStatus(repo, listed, cache) == std::vector<std::string>{"many/f777.txt"});
+    GG_CHECK_EQ(static_cast<int>(cache.fileReads), 1000);
 }
 
 } // namespace ggtest

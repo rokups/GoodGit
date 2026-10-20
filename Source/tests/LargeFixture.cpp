@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
 #include <random>
 
@@ -11,11 +12,29 @@ namespace ggtest {
 
 namespace {
 
-constexpr int kFiles = 50000;
+constexpr int kDefaultFiles = 50000;
 constexpr int kCommits = 100000;
 constexpr int kBranchRefs = 2600;
 constexpr int kTagRefs = 2600;
 constexpr const char* kVersion = "large-v1";
+
+// The number of files. GG_LARGE_FILES overrides it (to scale the fixture); the cache directory
+// name then carries the number, so each size has its own cache.
+int fileCount()
+{
+    static const int count = [] {
+        if (const char* env = std::getenv("GG_LARGE_FILES"))
+            if (const int n = std::atoi(env); n > 0)
+                return n;
+        return kDefaultFiles;
+    }();
+    return count;
+}
+
+std::string versionName()
+{
+    return fileCount() == kDefaultFiles ? std::string(kVersion) : std::string(kVersion) + "-f" + std::to_string(fileCount());
+}
 
 void appendData(std::string& out, const std::string& data)
 {
@@ -46,8 +65,8 @@ std::string buildStream()
         return mark;
     };
     // Initial commit with all files (inline data).
-    int root = commitHeader("refs/heads/main", "Initial import of " + std::to_string(kFiles) + " files");
-    for (int i = 0; i < kFiles; ++i) {
+    int root = commitHeader("refs/heads/main", "Initial import of " + std::to_string(fileCount()) + " files");
+    for (int i = 0; i < fileCount(); ++i) {
         s += "M 100644 inline " + filePath(i) + "\n";
         appendData(s, "file " + std::to_string(i) + "\n");
     }
@@ -65,7 +84,7 @@ std::string buildStream()
             for (int k = 0; k < 20 && made < kCommits; ++k, ++made) {
                 const int c = commitHeader("refs/heads/side", "Side change " + std::to_string(made));
                 s += "from :" + std::to_string(sideTip) + "\n";
-                s += "M 100644 inline " + filePath((made * 7919) % kFiles) + "\n";
+                s += "M 100644 inline " + filePath((made * 7919) % fileCount()) + "\n";
                 appendData(s, "side " + std::to_string(made) + "\n");
                 s += "\n";
                 sideTip = c;
@@ -79,7 +98,7 @@ std::string buildStream()
         } else {
             const int c = commitHeader("refs/heads/main", "Change " + std::to_string(made));
             s += "from :" + std::to_string(mainTip) + "\n";
-            s += "M 100644 inline " + filePath((made * 104729) % kFiles) + "\n";
+            s += "M 100644 inline " + filePath((made * 104729) % fileCount()) + "\n";
             appendData(s, "change " + std::to_string(made) + "\n");
             s += "\n";
             mainTip = c;
@@ -120,14 +139,14 @@ std::string uniqueSuffix()
 // deletes its own copy and uses the winner's. A cache with the completion stamp is never deleted.
 fs::path buildCache(Scenario& s)
 {
-    const fs::path cache = fixtureCacheDir() / kVersion;
+    const fs::path cache = fixtureCacheDir() / versionName();
     const fs::path stamp = cache / ".git" / "ggui-fixture-complete";
     std::error_code ec;
     if (fs::exists(stamp, ec))
         return cache;
     fs::create_directories(cache.parent_path(), ec);
     const auto start = std::chrono::steady_clock::now();
-    const fs::path mine = cache.parent_path() / (std::string(kVersion) + ".tmp-" + uniqueSuffix());
+    const fs::path mine = cache.parent_path() / (versionName() + ".tmp-" + uniqueSuffix());
     generate(s, mine);
     for (int attempt = 0; attempt < 2; ++attempt) {
         ec.clear();
@@ -143,7 +162,7 @@ fs::path buildCache(Scenario& s)
         }
         // An incomplete directory (left by an older version of this code): move it away atomically,
         // so only one process removes it, then try again.
-        const fs::path stale = cache.parent_path() / (std::string(kVersion) + ".stale-" + uniqueSuffix());
+        const fs::path stale = cache.parent_path() / (versionName() + ".stale-" + uniqueSuffix());
         ec.clear();
         fs::rename(cache, stale, ec);
         if (!ec)

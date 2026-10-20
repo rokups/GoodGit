@@ -10,6 +10,8 @@
 #include "libgg/Git2.hpp"
 #include "libgg/Markers.hpp"
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -21,6 +23,17 @@ struct ConflictedFile {
     std::string path;
     int sides = 2;
     bool operator==(const ConflictedFile&) const = default;
+};
+
+// What one scan of a working-tree file found (see Cache::fileScans).
+struct FileScan {
+    std::uintmax_t size = 0;
+    std::filesystem::file_time_type mtime{};
+    std::filesystem::file_time_type scannedAt{}; // the clock when the content was read
+    unsigned kind = 0;                           // how the status lists the path (caller defined)
+    int sides = 0;                               // contentSides of the content
+    std::string headKey;                         // HEAD commit used for `broken` ("" = not computed)
+    std::vector<size_t> broken;                  // brokenMarkers against the HEAD version
 };
 
 class Cache {
@@ -39,6 +52,13 @@ public:
     std::unordered_map<std::string, int> blobs; // blob id → sides (0 = not conflicted)
     bool dirty = false;
 
+    // Working-tree files scanned by the status refresh, by path. Memory only: a file is read again
+    // only when its size, its mtime or its `kind` changed (the caller drops paths that left the
+    // status). Used by one thread at a time (the snapshot worker).
+    std::unordered_map<std::string, FileScan> fileScans;
+    // Test hook: how many file contents were read into `fileScans` (counts reads, not cache hits).
+    std::uint64_t fileReads = 0;
+
 private:
     void load();
     std::filesystem::path m_file;
@@ -52,6 +72,9 @@ std::vector<ConflictedFile> scanTree(git_repository* repo, const git_oid& tree, 
 // according to the commit's attributes (gg-conflicts, filter, binary / -text / -diff).
 std::vector<ConflictedFile> commitConflicts(git_repository* repo, const git_oid& commit, Cache& cache,
     const CancelToken& cancel = CancelToken::none());
+
+// True when the repository config gg.firstClassConflicts is on. Without it no path is eligible.
+bool enabled(git_repository* repo);
 
 // Eligibility of `path` (K1). With `commit` null the working tree / index attributes are used.
 bool eligible(git_repository* repo, const git_oid* commit, const std::string& path);
