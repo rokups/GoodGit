@@ -20,6 +20,9 @@ public:
     struct Task {
         std::uint64_t id = 0;
         int slot = 0;                 // > 0: latest task per slot wins
+        // A new task of the same slot cancels the running task. When false, the running task
+        // ends by itself and the new task waits in the queue.
+        bool cancelRunning = true;
         gg::CancelToken token;
         std::function<void(Worker&, const gg::CancelToken&)> fn;
     };

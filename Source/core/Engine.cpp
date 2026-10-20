@@ -109,7 +109,8 @@ Engine::~Engine()
     m_watcher.reset();
 }
 
-RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancellable, std::function<void(Job&)> fn)
+RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancellable, std::function<void(Job&)> fn,
+    bool cancelRunning)
 {
     const RequestId id = m_nextId++;
     gg::CancelToken token;
@@ -122,6 +123,7 @@ RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancella
     Worker::Task task;
     task.id = id;
     task.slot = slot;
+    task.cancelRunning = cancelRunning;
     task.token = token;
     task.fn = [this, id, queued, name = m_activities.back().label, fn = std::move(fn)](Worker& worker,
                   const gg::CancelToken& tok) {
@@ -209,10 +211,11 @@ RequestId Engine::open()
                         emit(e);
                         if (e.refs || e.journal)
                             reconcile();
-                        if (e.refs)
-                            refresh(true);
-                        else if (e.index || e.worktree)
-                            refreshStatus();
+                        if (e.refs) {
+                            refresh(false);
+                            refreshStatus(false);
+                        } else if (e.index || e.worktree)
+                            refreshStatus(false);
                     });
             } catch (const std::exception& e) {
                 spdlog::warn("file watcher unavailable: {}", e.what());
@@ -250,7 +253,7 @@ RequestId Engine::refresh(bool withStatus)
     return id;
 }
 
-RequestId Engine::refreshStatus()
+RequestId Engine::refreshStatus(bool cancelRunning)
 {
     return submit(Queue::Snapshot, "Reading working tree status", kSlotStatus, true, [this](Job& job) {
         const RequestId id = job.id;
@@ -265,7 +268,7 @@ RequestId Engine::refreshStatus()
                                             : std::make_shared<StatusResult>(*status);
         addFirstClassConflicts(job.repo(), *full, m_statusConflicts.get());
         emit(StatusEvent{job.id, std::move(full)});
-    });
+    }, cancelRunning);
 }
 
 RequestId Engine::loadHistory(const HistoryScope& scope, int limit, SnapshotPtr snapshot)

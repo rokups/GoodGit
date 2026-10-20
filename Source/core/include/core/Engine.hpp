@@ -294,7 +294,9 @@ public:
     // ---- read requests --------------------------------------------------------------------
     RequestId open();
     RequestId refresh(bool withStatus = true);
-    RequestId refreshStatus();
+    // `cancelRunning` false (the file watcher): a running scan ends by itself and exactly one
+    // more scan runs after it. True: the running scan is cancelled.
+    RequestId refreshStatus(bool cancelRunning = true);
     RequestId loadHistory(const HistoryScope& scope, int limit, SnapshotPtr snapshot);
     RequestId showMoreHistory(int additional);
     RequestId revealCommit(const Oid& id);
@@ -349,7 +351,7 @@ public:
 private:
     struct Job;
     RequestId submit(Queue queue, std::string label, int slot, bool cancellable,
-        std::function<void(Job&)> fn);
+        std::function<void(Job&)> fn, bool cancelRunning = true);
     void finish(RequestId id, bool cancelled, bool failed);
 
     Options m_options;

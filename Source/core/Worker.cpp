@@ -45,7 +45,7 @@ void Worker::post(Task task)
                     ++it;
                 }
             }
-            if (m_runningId && m_runningSlot == task.slot)
+            if (task.cancelRunning && m_runningId && m_runningSlot == task.slot)
                 m_runningToken.cancel();
         }
         m_queue.push_back(std::move(task));

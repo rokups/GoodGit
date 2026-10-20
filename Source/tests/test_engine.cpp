@@ -1,4 +1,5 @@
 // Engine contract, watcher and responsiveness (§3.1).
+#include "core/Worker.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
 #include "panels/HistoryPanel.hpp"
@@ -9,6 +10,7 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
@@ -296,6 +298,85 @@ GG_TEST("engine", "a long content job does not delay a diff")
     engine.cancelAll();
     GG_CHECK(done);
     GG_CHECK(blamePending);
+}
+
+namespace {
+
+// A fake slow status scan on a Worker: it runs until `release` is set or its token is cancelled.
+struct SlotProbe {
+    std::atomic<bool> release{false};
+    std::atomic<bool> started{false};
+    std::atomic<bool> sawCancel{false};
+    std::atomic<int> followUpRuns{0};
+    std::atomic<int> droppedCount{0};
+};
+
+ggui::core::Worker::Task slowScan(SlotProbe& probe, std::uint64_t id, bool cancelRunning)
+{
+    ggui::core::Worker::Task task;
+    task.id = id;
+    task.slot = 2;
+    task.cancelRunning = cancelRunning;
+    task.fn = [&probe](ggui::core::Worker&, const gg::CancelToken& token) {
+        probe.started = true;
+        while (!probe.release && !token.cancelled())
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        probe.sawCancel = token.cancelled();
+    };
+    task.token = gg::CancelToken();
+    return task;
+}
+
+ggui::core::Worker::Task followUp(SlotProbe& probe, std::uint64_t id, bool cancelRunning)
+{
+    ggui::core::Worker::Task task;
+    task.id = id;
+    task.slot = 2;
+    task.cancelRunning = cancelRunning;
+    task.fn = [&probe](ggui::core::Worker&, const gg::CancelToken&) { ++probe.followUpRuns; };
+    return task;
+}
+
+} // namespace
+
+GG_TEST("engine", "a status request from the watcher does not cancel the running scan")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    SlotProbe probe;
+    std::atomic<std::uint64_t> lastDropped{0};
+    ggui::core::Worker worker("test", repo, [&](std::uint64_t id) {
+        lastDropped = id;
+        ++probe.droppedCount;
+    });
+    worker.post(slowScan(probe, 1, true));
+    GG_REQUIRE(s.waitUntil([&] { return probe.started.load(); }, 10.0f));
+    // Two watcher requests during the scan: the first is replaced, one follow-up stays.
+    worker.post(followUp(probe, 2, false));
+    worker.post(followUp(probe, 3, false));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    GG_CHECK(worker.running());
+    GG_CHECK(!probe.sawCancel.load());
+    GG_CHECK_EQ(probe.followUpRuns.load(), 0);
+    probe.release = true;
+    GG_CHECK(s.waitUntil([&] { return !worker.busy(); }, 10.0f));
+    GG_CHECK(!probe.sawCancel.load());
+    GG_CHECK_EQ(probe.followUpRuns.load(), 1);
+    GG_CHECK_EQ(probe.droppedCount.load(), 1);
+    GG_CHECK_EQ(lastDropped.load(), std::uint64_t(2));
+}
+
+GG_TEST("engine", "a status request that is not from the watcher cancels the running scan")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    SlotProbe probe;
+    ggui::core::Worker worker("test", repo, [&](std::uint64_t) { ++probe.droppedCount; });
+    worker.post(slowScan(probe, 1, true));
+    GG_REQUIRE(s.waitUntil([&] { return probe.started.load(); }, 10.0f));
+    worker.post(followUp(probe, 2, true));
+    // The scan ends by the cancel, without the release flag.
+    GG_CHECK(s.waitUntil([&] { return !worker.busy(); }, 10.0f));
+    GG_CHECK(probe.sawCancel.load());
+    GG_CHECK_EQ(probe.followUpRuns.load(), 1);
 }
 
 } // namespace ggtest
