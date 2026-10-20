@@ -727,4 +727,187 @@ GG_TEST("submodule", "Sync URL follows the URL of .gitmodules")
     GG_CHECK_STR_EQ(s.head(repo / "sub"), s.gitOut(repo, {"rev-parse", "HEAD:sub"}));
 }
 
+// ---- Remove and Add (GG-60) ----
+
+namespace {
+
+// The lines of `git status --porcelain` of the repository, one string.
+std::string porcelain(Scenario& s, const fs::path& repo) { return s.gitOut(repo, {"status", "--porcelain"}); }
+
+bool contains(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
+
+} // namespace
+
+GG_TEST("submodule", "Remove keeps the data in .git/modules and stages the deletion")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(fs::exists(repo / ".git" / "modules" / "sub"));
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", false);
+    GG_REQUIRE(s.settle());
+    GG_CHECK(!fs::exists(repo / "sub"));
+    GG_CHECK(fs::exists(repo / ".git" / "modules" / "sub"));
+    const std::string status = porcelain(s, repo);
+    GG_CHECK(contains(status, "M  .gitmodules"));
+    GG_CHECK(contains(status, "D  sub"));
+}
+
+GG_TEST("submodule", "Remove with the option deletes the data in .git/modules")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", true);
+    GG_REQUIRE(s.settle());
+    GG_CHECK(!fs::exists(repo / "sub"));
+    GG_CHECK(!fs::exists(repo / ".git" / "modules" / "sub"));
+    const std::string status = porcelain(s, repo);
+    GG_CHECK(contains(status, "M  .gitmodules"));
+    GG_CHECK(contains(status, "D  sub"));
+}
+
+GG_TEST("submodule", "Remove dialog with the option deletes the data in .git/modules")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showRemoveSubmoduleDialog("sub");
+    GG_REQUIRE(s.dialogOpen("Remove submodule"));
+    s.dialogCheck("Remove submodule", "data", "Also delete the repository data in .git\\/modules\\/<name>"); // "/" separates a reference
+    s.dialogButton("Remove submodule", "Remove");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(!fs::exists(repo / "sub"));
+    GG_CHECK(!fs::exists(repo / ".git" / "modules" / "sub"));
+    GG_CHECK(contains(porcelain(s, repo), "D  sub"));
+}
+
+GG_TEST("submodule", "Remove with the option is refused when the submodule has an unpushed commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo / "sub", {"checkout", "-q", "-B", "work"});
+    s.commitFile(repo / "sub", "local.txt", "local\n", "Local only");
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", true);
+    GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+    s.dialogButton("remove submodule sub", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "sub" / "local.txt"));
+    GG_CHECK(fs::exists(repo / ".git" / "modules" / "sub"));
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+    GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
+}
+
+GG_TEST("submodule", "Remove with the option is refused when only a detached HEAD has the commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo / "sub", {"checkout", "-q", "--detach"});
+    s.commitFile(repo / "sub", "detached.txt", "detached\n", "Detached only");
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", true);
+    GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+    s.dialogButton("remove submodule sub", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "sub" / "detached.txt"));
+    GG_CHECK(fs::exists(repo / ".git" / "modules" / "sub"));
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+GG_TEST("submodule", "Remove is refused when the name in .gitmodules leaves .git/modules")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string url = s.gitOut(repo, {"config", "-f", ".gitmodules", "submodule.sub.url"});
+    s.write(repo, ".gitmodules", "[submodule \"../outside\"]\n\tpath = sub\n\turl = " + url + "\n");
+    fs::create_directories(repo / ".git" / "outside");
+    s.write(repo / ".git" / "outside", "keep.txt", "keep\n");
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", true);
+    GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+    s.dialogButton("remove submodule sub", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / ".git" / "outside" / "keep.txt"));
+    GG_CHECK(fs::exists(repo / "sub" / ".git"));
+    GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty());
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+GG_TEST("submodule", "Remove is refused for the path .")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove(".", true);
+    GG_REQUIRE(s.dialogOpen("remove submodule ."));
+    s.dialogButton("remove submodule .", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / ".git" / "modules" / "sub"));
+    GG_CHECK(fs::exists(repo / "sub" / ".git"));
+    GG_CHECK(fs::exists(repo / "readme.txt"));
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+GG_TEST("submodule", "Add stages .gitmodules and the gitlink and populates the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path other = s.fixture(Recipe::Linear, "other");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleAdd(other.string(), "libs/other", "");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "libs" / "other" / ".git"));
+    GG_CHECK_STR_EQ(s.head(repo / "libs" / "other"), s.head(other));
+    const std::string status = porcelain(s, repo);
+    GG_CHECK(contains(status, "M  .gitmodules"));
+    GG_CHECK(contains(status, "A  libs/other"));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"ls-files", "-s", "libs/other"}).substr(0, 6), "160000");
+}
+
+GG_TEST("submodule", "Add with a branch follows that branch")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path other = s.fixture(Recipe::Linear, "other");
+    s.git(other, {"checkout", "-q", "-b", "feature"});
+    s.commitFile(other, "feature.txt", "feature\n", "Feature");
+    s.git(other, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleAdd(other.string(), "other", "feature");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "other" / "feature.txt"));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "-f", ".gitmodules", "submodule.other.branch"}), "feature");
+    GG_CHECK(contains(porcelain(s, repo), "A  other"));
+}
+
+GG_TEST("submodule", "Add dialog adds the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path other = s.fixture(Recipe::Linear, "other");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showAddSubmoduleDialog();
+    GG_REQUIRE(s.dialogOpen("Add submodule"));
+    s.dialogText("Add submodule", "url", other.string());
+    s.dialogText("Add submodule", "path", "other");
+    s.dialogButton("Add submodule", "Add");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "other" / ".git"));
+    GG_CHECK(contains(porcelain(s, repo), "A  other"));
+}
+
+GG_TEST("submodule", "Add is refused for a path that is absolute or has ..")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path other = s.fixture(Recipe::Linear, "other");
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string before = porcelain(s, repo);
+    GG_CHECK(!ggui::Actions::submodulePathProblem("").empty());
+    GG_CHECK(!ggui::Actions::submodulePathProblem("/abs/path").empty());
+    GG_CHECK(!ggui::Actions::submodulePathProblem("a/../b").empty());
+    GG_CHECK(!ggui::Actions::submodulePathProblem("..\\b").empty());
+    GG_CHECK(ggui::Actions::submodulePathProblem("a/b").empty());
+    // The title of the error dialog has no "/" here: it separates a reference.
+    s.session()->actions().submoduleAdd(other.string(), "..", "");
+    GG_REQUIRE(s.dialogOpen("add submodule .."));
+    s.dialogButton("add submodule ..", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
 } // namespace ggtest

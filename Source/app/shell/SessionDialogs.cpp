@@ -363,6 +363,35 @@ void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<st
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showRemoveSubmoduleDialog(const std::string& path)
+{
+    Form f;
+    f.title = "Remove submodule";
+    f.message = "Remove the submodule " + path + "? Its working tree is deleted, including changes that are not committed "
+        "(git submodule deinit -f discards them, also when the option below is off). "
+        "The removal of the entry in .gitmodules and of the submodule is staged.";
+    f.add(Field{Field::Check, "data", "Also delete the repository data in .git/modules/<name>"});
+    f.buttons.push_back({"Remove", [this, path](Form& form) { m_actions->submoduleRemove(path, form.checked("data")); }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
+void Session::showAddSubmoduleDialog()
+{
+    Form f;
+    f.title = "Add submodule";
+    f.add(Field{Field::Text, "url", "URL"});
+    f.add(Field{Field::Text, "path", "Path (relative to the working directory, no \"..\")"});
+    f.add(Field{Field::Text, "branch", "Branch (optional)"});
+    f.buttons.push_back({"Add", [this](Form& form) {
+                             m_actions->submoduleAdd(
+                                 gg::trim(form.text("url")), gg::trim(form.text("path")), gg::trim(form.text("branch")));
+                         },
+        [](const Form& form) { return nonEmpty(form, "url") && Actions::submodulePathProblem(form.text("path")).empty(); }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showDiscardAllDialog()
 {
     if (!m_status)

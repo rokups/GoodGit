@@ -229,6 +229,13 @@ public:
     void submoduleUpdate(const std::string& path);
     void submoduleUpdateRemote(const std::string& path);
     void submoduleSyncUrl(const std::string& path); // copies the URL of .gitmodules, then updates
+    // Removes the submodule: the working tree, the gitlink and the .gitmodules entry (staged). With `deleteData`
+    // it also deletes the repository data in .git/modules, but only when no commit exists that is not on a remote.
+    void submoduleRemove(const std::string& path, bool deleteData);
+    // Adds a submodule (network). `path` is relative to the working directory. `branch` may be empty.
+    void submoduleAdd(const std::string& url, const std::string& path, const std::string& branch);
+    // "" when `path` can be the path of a new submodule; else the reason it cannot (empty, absolute or with "..").
+    static std::string submodulePathProblem(const std::string& path);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
         bool setUpstream, bool forceWithLease, bool tags = false);
 

@@ -1238,6 +1238,159 @@ void Actions::submoduleSyncUrl(const std::string& path)
         {}, true);
 }
 
+// The name of the submodule at `path` in .gitmodules (it is the path by default, but may differ). With -z
+// an entry is "key\nvalue\0", so a name with spaces or other special characters stays whole.
+static std::string submoduleNameOf(MutationContext& ctx, const std::string& path)
+{
+    const auto r = ctx.gitMayFail({"config", "-z", "-f", ".gitmodules", "--get-regexp", R"(^submodule\..*\.path$)"});
+    if (!r.ok())
+        return path;
+    const std::string head = "submodule.", tail = ".path";
+    size_t pos = 0;
+    while (pos < r.out.size()) {
+        size_t end = r.out.find('\0', pos);
+        if (end == std::string::npos)
+            end = r.out.size();
+        const std::string entry = r.out.substr(pos, end - pos);
+        pos = end + 1;
+        const auto nl = entry.find('\n');
+        if (nl == std::string::npos || entry.compare(0, head.size(), head) != 0)
+            continue;
+        const std::string key = entry.substr(0, nl);
+        if (key.size() <= head.size() + tail.size() || entry.substr(nl + 1) != path)
+            continue;
+        return key.substr(head.size(), key.size() - head.size() - tail.size());
+    }
+    return path;
+}
+
+// Whether a submodule name is safe as a folder below .git/modules: no empty part, "." or "..".
+static bool submoduleNameSafe(const std::string& name)
+{
+    std::string part;
+    for (size_t i = 0; i <= name.size(); ++i) {
+        if (i < name.size() && name[i] != '/' && name[i] != '\\') {
+            part += name[i];
+            continue;
+        }
+        if (part.empty() || part == "." || part == "..")
+            return false;
+        part.clear();
+    }
+    return true;
+}
+
+// Whether `data` is below `modules`, not `modules` itself (symbolic links and ".." resolved).
+static bool strictChildOf(const fs::path& data, const fs::path& modules)
+{
+    std::error_code ec1, ec2;
+    const fs::path d = fs::weakly_canonical(data, ec1);
+    const fs::path m = fs::weakly_canonical(modules, ec2);
+    if (ec1 || ec2)
+        return false;
+    const fs::path rel = d.lexically_relative(m);
+    return !rel.empty() && rel != "." && *rel.begin() != "..";
+}
+
+// Deletes a directory tree. Git makes its object files read-only and Windows refuses to delete those.
+static void removeTree(const fs::path& dir, std::error_code& ec)
+{
+    std::error_code ignored;
+    for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ignored), end;
+         !ignored && it != end; it.increment(ignored))
+        fs::permissions(it->path(), fs::perms::owner_write, fs::perm_options::add | fs::perm_options::nofollow, ignored);
+    fs::remove_all(dir, ec);
+}
+
+void Actions::submoduleRemove(const std::string& path, bool deleteData)
+{
+    run("remove submodule " + path,
+        [path, deleteData](MutationContext& ctx) {
+            const std::string name = submoduleNameOf(ctx, path);
+            if (!submoduleNameSafe(name))
+                throw MutationError{Outcome::Refused, "The name of the submodule is not valid: \"" + name + "\"", {}};
+            auto gitPath = [&ctx](const std::string& what) {
+                const fs::path rel = gg::trim(ctx.git({"rev-parse", "--git-path", what}).out);
+                return rel.is_absolute() ? rel : ctx.cwd() / rel;
+            };
+            const fs::path data = gitPath("modules/" + name);
+            // Nothing changes before this check: the data folder must be a strict child of .git/modules.
+            if (!strictChildOf(data, gitPath("modules")))
+                throw MutationError{Outcome::Refused, "The repository data of the submodule is not below .git/modules: " + data.string(), {}};
+            const bool hasData = deleteData && fs::is_directory(data);
+            if (hasData) {
+                // The commits that no remote has: on a branch, on HEAD (a detached one) or in the stash.
+                const bool populated = fs::exists(ctx.cwd() / path / ".git");
+                const std::vector<std::string> where = populated ? std::vector<std::string>{"-C", path}
+                                                                 : std::vector<std::string>{"--git-dir=" + data.string()};
+                auto inRepo = [&where](std::vector<std::string> args) {
+                    args.insert(args.begin(), where.begin(), where.end());
+                    return args;
+                };
+                std::vector<std::string> log{"log", "--branches"};
+                for (const char* ref : {"HEAD", "refs/stash"})
+                    if (ctx.gitMayFail(inRepo({"rev-parse", "--verify", "-q", ref})).ok())
+                        log.emplace_back(ref);
+                log.insert(log.end(), {"--not", "--remotes", "-1", "--format=%H"});
+                const auto r = ctx.gitMayFail(inRepo(std::move(log)));
+                if (!r.ok())
+                    throw MutationError{Outcome::Refused, "The commits of the submodule cannot be checked: " + firstLineOf(r.message()), {}};
+                if (!gg::trim(r.out).empty())
+                    throw MutationError{Outcome::Refused,
+                        "The submodule " + path + " has commits that are not on a remote. Its repository data is kept: push them or clear the option to delete the data.",
+                        {}};
+            }
+            ctx.git({"submodule", "deinit", "-f", "--", path});
+            ctx.git({"rm", "-f", "-q", "--", path});
+            if (!hasData)
+                return;
+            std::error_code ec;
+            removeTree(data, ec);
+            if (ec)
+                ctx.warning = "The repository data " + data.string() + " was not deleted: " + ec.message();
+        },
+        {}, false);
+}
+
+std::string Actions::submodulePathProblem(const std::string& path)
+{
+    const std::string p = gg::trim(path);
+    if (p.empty())
+        return "The path is empty";
+    if (p.front() == '/' || p.front() == '\\' || fs::path(p).is_absolute() || fs::path(p).has_root_name())
+        return "The path must be relative to the working directory";
+    std::string part;
+    for (size_t i = 0; i <= p.size(); ++i) {
+        if (i < p.size() && p[i] != '/' && p[i] != '\\') {
+            part += p[i];
+            continue;
+        }
+        if (part == "..")
+            return "The path must not contain \"..\"";
+        part.clear();
+    }
+    return {};
+}
+
+void Actions::submoduleAdd(const std::string& url, const std::string& path, const std::string& branch)
+{
+    run("add submodule " + path,
+        [url = gg::trim(url), path = gg::trim(path), branch](MutationContext& ctx) {
+            if (url.empty())
+                throw MutationError{Outcome::Refused, "The URL is empty", {}};
+            if (const std::string problem = submodulePathProblem(path); !problem.empty())
+                throw MutationError{Outcome::Refused, problem, {}};
+            std::vector<std::string> args{"submodule", "add", "--progress"};
+            if (!branch.empty()) {
+                args.emplace_back("-b");
+                args.push_back(branch);
+            }
+            args.insert(args.end(), {"--", url, path});
+            ctx.git(std::move(args), {}, true);
+        },
+        {}, true);
+}
+
 void Actions::pull(PullMode mode, bool autostash)
 {
     run("pull",

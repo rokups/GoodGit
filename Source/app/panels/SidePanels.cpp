@@ -1042,6 +1042,15 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
                 toOpen = node.path;
             if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Set alias..."))
                 m_session.showSetAliasDialog(node.path);
+            // The command runs in the repository of the window, so only its row has the item.
+            const char* addReason = !isOpen ? "Open this repository first"
+                : (snap && snap->bare)       ? "A bare repository has no working tree"
+                : !m_session.actions().busy().empty() ? "Another action is running"
+                                                      : nullptr;
+            if (addReason)
+                disabledMenuItem(ICON_MS_ADD, "Add submodule...", addReason);
+            else if (menuItem(ICON_MS_ADD, "Add submodule..."))
+                m_session.showAddSubmoduleDialog();
             ImGui::Separator();
             if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
                 ImGui::SetClipboardText(node.path.c_str());
@@ -1176,6 +1185,10 @@ void RepositoriesPanel::submoduleMenuItems(const core::SubmoduleInfo& sm)
         disabledMenuItem(ICON_MS_LINK, "Sync URL", needsInit);
     else if (menuItem(ICON_MS_LINK, "Sync URL"))
         actions.submoduleSyncUrl(relPath);
+    if (reason)
+        disabledMenuItem(ICON_MS_DELETE, "Remove submodule...", reason);
+    else if (menuItem(ICON_MS_DELETE, "Remove submodule..."))
+        m_session.showRemoveSubmoduleDialog(relPath);
 }
 
 // The submodules as rows, with the look of the worktree rows. The detail is the branch, else the short id of

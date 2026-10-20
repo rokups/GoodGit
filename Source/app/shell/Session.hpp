@@ -202,6 +202,9 @@ public:
     void showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked,
         std::vector<StagedDiscard> staged = {}, std::vector<SubmoduleDiscard> submodules = {});
     void showDiscardAllDialog();
+    // Remove / add a submodule (GG-60). `path` is relative to the working directory.
+    void showRemoveSubmoduleDialog(const std::string& path);
+    void showAddSubmoduleDialog();
     void showApplyPatchDialog();
     void showRenameBranchDialog(const std::string& branch);
     // Sets or clears (empty text) the alias of a repository of the permanent list; no git operation.
