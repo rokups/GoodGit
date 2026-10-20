@@ -76,6 +76,8 @@ struct SettingsData {
     NothingStaged nothingStaged = NothingStaged::Ask;
     bool expandConflictStages = false; // §4.10: index stages 1–3 for two-sided first-class conflicts on checkout
     bool expandStagesOnCheckout = false;
+    bool submodulesAutoUpdate = true; // update the submodules after a checkout, pull, reset, ... (SubmoduleSync)
+    bool submodulesAutoInit = false;  // ... and initialize the ones not yet initialized
     int historyBadgePrefix = 12; // History: characters kept at the start of an elided badge (1 – 100)
     int historyBadgeSuffix = 12; // ... and at its end
     bool historyGraphInDescription = false; // History: the graph is drawn in the Description column; each row's text follows its own lanes

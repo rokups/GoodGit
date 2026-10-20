@@ -3,9 +3,12 @@
 #include "panels/HistoryPanel.hpp"
 #include "panels/InfoPanel.hpp"
 #include "core/Readers.hpp"
+#include "shell/Actions.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+
+#include <fstream>
 
 namespace ggtest {
 
@@ -370,6 +373,119 @@ GG_TEST("submodule", "Discard returns a nested submodule to its commit")
     checkSubmoduleReset(s, repo);
     GG_CHECK_STR_EQ(s.head(inner), s.gitOut(repo / "sub", {"rev-parse", "HEAD:inner"}));
     GG_CHECK(s.gitOut(inner, {"status", "--porcelain"}).empty());
+}
+
+namespace {
+
+// Runs a mutation whose body sets `sync` (GG-57) and waits for its event. `traceFile` collects the git
+// commands of the mutation (GIT_TRACE) when it is not empty.
+std::optional<ggui::core::MutationFinishedEvent> runSync(
+    Scenario& s, ggui::core::SubmoduleSync sync, const fs::path& traceFile = {})
+{
+    std::optional<ggui::core::MutationFinishedEvent> event;
+    s.session()->actions().run("sync test",
+        [sync, traceFile](ggui::core::MutationContext& mc) {
+            if (!traceFile.empty())
+                mc.env.emplace_back("GIT_TRACE", traceFile.string());
+            mc.submodules = sync;
+        },
+        [&](const ggui::core::MutationFinishedEvent& e) { event = e; });
+    if (!s.waitUntil([&] { return event.has_value(); }))
+        return std::nullopt;
+    s.settle();
+    return event;
+}
+
+// How many trace lines mention a submodule command.
+int submoduleCalls(const fs::path& traceFile)
+{
+    std::ifstream in(traceFile);
+    int n = 0;
+    for (std::string line; std::getline(in, line);)
+        if (line.find("submodule") != std::string::npos)
+            ++n;
+    return n;
+}
+
+} // namespace
+
+GG_TEST("submodule", "A force update after a mutation moves the submodule to the recorded commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo / "sub", {"checkout", "-q", "HEAD~1"});
+    const std::string recorded = s.gitOut(repo, {"rev-parse", "HEAD:sub"});
+    GG_REQUIRE(s.head(repo / "sub") != recorded);
+    GG_REQUIRE(s.openRepository(repo));
+    const auto event = runSync(s, ggui::core::SubmoduleSync::ForceUpdate);
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK(event->message.empty());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), recorded);
+}
+
+GG_TEST("submodule", "The update after a mutation is skipped with the setting off or SubmoduleSync::None")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo / "sub", {"checkout", "-q", "HEAD~1"});
+    const std::string moved = s.head(repo / "sub");
+    GG_REQUIRE(s.openRepository(repo));
+    const auto none = runSync(s, ggui::core::SubmoduleSync::None);
+    GG_REQUIRE(none.has_value());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
+    s.app.settings().data().submodulesAutoUpdate = false;
+    const auto off = runSync(s, ggui::core::SubmoduleSync::ForceUpdate);
+    GG_REQUIRE(off.has_value());
+    GG_CHECK(off->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
+}
+
+GG_TEST("submodule", "The update after a mutation runs git only when .gitmodules exists")
+{
+    const fs::path linear = s.fixture(Recipe::Linear);
+    const fs::path trace = s.root() / "trace.txt";
+    GG_REQUIRE(s.openRepository(linear));
+    GG_REQUIRE(runSync(s, ggui::core::SubmoduleSync::Update, trace).has_value());
+    GG_CHECK(submoduleCalls(trace) == 0);
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(runSync(s, ggui::core::SubmoduleSync::Update, trace).has_value());
+    GG_CHECK(submoduleCalls(trace) > 0);
+}
+
+GG_TEST("submodule", "A failing update after a mutation leaves the outcome Ok and adds a notice")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    // A gitlink to a commit that no repository has: the update fails.
+    s.git(repo, {"update-index", "--cacheinfo", "160000,1111111111111111111111111111111111111111,sub"});
+    GG_REQUIRE(s.openRepository(repo));
+    const auto event = runSync(s, ggui::core::SubmoduleSync::Update);
+    GG_REQUIRE(event.has_value());
+    GG_CHECK(event->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK(event->message.empty());
+    GG_CHECK(event->warning.rfind("Submodules were not updated: ", 0) == 0);
+    GG_CHECK(event->warning.find('\n') == std::string::npos);
+}
+
+GG_TEST("submodule", "A cancel during the update after a mutation keeps the outcome Ok and adds a warning")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo / "sub", {"checkout", "-q", "HEAD~1"});
+    const std::string moved = s.head(repo / "sub");
+    GG_REQUIRE(s.openRepository(repo));
+    std::optional<ggui::core::MutationFinishedEvent> event;
+    s.session()->actions().run("cancel test",
+        [](ggui::core::MutationContext& mc) {
+            mc.git({"branch", "cancel-test"});
+            mc.submodules = ggui::core::SubmoduleSync::ForceUpdate;
+            mc.token().cancel(); // the update is the next git command
+        },
+        [&](const ggui::core::MutationFinishedEvent& e) { event = e; });
+    GG_REQUIRE(s.waitUntil([&] { return event.has_value(); }));
+    s.settle();
+    GG_CHECK(event->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK_STR_EQ(event->warning, "Submodules were not updated: Cancelled");
+    GG_CHECK(s.gitMayFail(repo, {"show-ref", "--verify", "-q", "refs/heads/cancel-test"}).ok()); // no rollback
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
 }
 
 } // namespace ggtest

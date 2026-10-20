@@ -482,9 +482,39 @@ RequestId Engine::mutate(MutationSpec spec)
         MutationContext ctx(*this, job.id, repo, cwd, job.token);
         try {
             spec.run(ctx);
+            if (ctx.submodules != SubmoduleSync::None && spec.submodulesAutoUpdate && !bare
+                && std::filesystem::exists(cwd / ".gitmodules")) {
+                // The mutation is done: a failure or a cancel here is a warning, not an error, and no
+                // rollback runs. The update may fetch, so it shows progress.
+                std::vector<std::string> args{"submodule", "update", "--recursive"};
+                if (spec.submodulesAutoInit)
+                    args.emplace_back("--init");
+                if (ctx.submodules == SubmoduleSync::ForceUpdate) {
+                    args.emplace_back("--checkout");
+                    args.emplace_back("--force");
+                }
+                args.emplace_back("--progress");
+                std::string failure;
+                try {
+                    const gg::RunResult res = ctx.gitMayFail(std::move(args), {}, true);
+                    if (!res.ok())
+                        failure = res.message();
+                } catch (const MutationError& e) {
+                    failure = e.message;
+                } catch (const gg::Cancelled&) {
+                    failure = "Cancelled";
+                } catch (const std::exception& e) {
+                    failure = e.what();
+                }
+                if (!failure.empty()) {
+                    const std::string notice = "Submodules were not updated: " + failure.substr(0, failure.find('\n'));
+                    ctx.warning = ctx.warning.empty() ? notice : ctx.warning + "\n" + notice;
+                }
+            }
             ev.outcome = Outcome::Ok;
             ev.result = ctx.result;
             ev.message = ctx.info;
+            ev.warning = ctx.warning;
         } catch (const MutationError& e) {
             ev.outcome = e.outcome;
             ev.message = e.message;

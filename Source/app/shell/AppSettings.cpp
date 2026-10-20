@@ -644,6 +644,18 @@ void App::drawSettingsWindow()
                             "ggui collapses them again before switching away.");
             }
             ImGui::Separator();
+            if (ImGui::Checkbox("Update submodules after checkout, pull and reset##submodules_auto_update", &d.submodulesAutoUpdate))
+                m_settings.save();
+            ImGui::SameLine();
+            helpMarker("After such an action, ggui runs git submodule update, so each submodule is at the commit "
+                       "the superproject records. This can fetch from the network.");
+            ImGui::BeginDisabled(!d.submodulesAutoUpdate);
+            if (ImGui::Checkbox("Initialize new submodules too##submodules_auto_init", &d.submodulesAutoInit))
+                m_settings.save();
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            helpMarker("The update also initializes (clones) submodules that are not yet initialized.");
+            ImGui::Separator();
             if (!s) {
                 ImGui::TextDisabled("Open a repository to edit its git configuration.");
             } else {

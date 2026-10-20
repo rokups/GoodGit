@@ -122,6 +122,7 @@ struct MutationFinishedEvent {
     std::string label;
     Outcome outcome = Outcome::Ok;
     std::string message;             // error text (first lines of git's stderr) or info
+    std::string warning;             // Ok, but something minor failed (e.g. the submodule update): a Warning notification
     std::string detail;              // full output
     std::string operation;           // journal operation id
     std::string journalError;        // the undo journal could not record it (busy or unwritable)
@@ -186,6 +187,13 @@ using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent
 
 class Engine;
 
+// How the engine updates the submodules after a mutation body succeeded (see MutationContext::submodules).
+enum class SubmoduleSync {
+    None,       // nothing
+    Update,     // `git submodule update` to the commits the index records
+    ForceUpdate // the same, discarding changes in the submodule working trees
+};
+
 // What a mutation job can do (runs on a worker thread).
 class MutationContext {
 public:
@@ -201,8 +209,15 @@ public:
     // The action's result shown to / used by the UI (e.g. a new commit id).
     std::string result;
     std::string info;
+    // A minor failure after the work succeeded; the outcome stays Ok. Shown as a Warning notification.
+    std::string warning;
     // Set when the step changed the working tree along with the index (checkout, stash, …).
     bool worktreeFollowsIndex = false;
+    // Set by the body. When the body succeeds, the engine updates the submodules (not in a bare
+    // repository, and only with a .gitmodules file). A failure or a cancel there is a text in
+    // `warning`; the outcome stays Ok and nothing rolls back. MutationSpec::submodulesAutoUpdate
+    // (off: no update) and submodulesAutoInit (also initializes new submodules) come from the settings.
+    SubmoduleSync submodules = SubmoduleSync::None;
     // Commits the keep refs (libgg/Keep.hpp) must keep although nothing else anchors them: what a
     // rewrite put in place of the commits it replaced (rewrite::Result::keepExtra).
     std::vector<std::string> keepExtra;
@@ -240,6 +255,8 @@ struct MutationSpec {
     bool captureIndex = true;
     bool refreshAfter = true;
     bool createsCommits = false;     // makes commits with plain git: the recorder keeps a detached HEAD's new commit
+    bool submodulesAutoUpdate = true; // settings: off = MutationContext::submodules has no effect
+    bool submodulesAutoInit = false;  // settings: the update also initializes submodules (--init)
     std::function<void(MutationContext&)> run;
 };
 

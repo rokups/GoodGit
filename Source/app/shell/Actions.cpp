@@ -92,6 +92,8 @@ core::RequestId Actions::run(std::string label, std::function<void(MutationConte
     spec.journal = journal;
     spec.refreshAfter = refreshAfter;
     spec.createsCommits = createsCommits;
+    spec.submodulesAutoUpdate = m_session.app().settings().data().submodulesAutoUpdate;
+    spec.submodulesAutoInit = m_session.app().settings().data().submodulesAutoInit;
     const core::RequestId id = m_session.engine().mutate(std::move(spec));
     if (network)
         m_networkRuns.insert(id);
@@ -107,6 +109,9 @@ void Actions::onFinished(const core::MutationFinishedEvent& event)
     if (!event.journalError.empty())
         m_session.app().notify(App::Notice::Warning, "Undo journal",
             "\"" + event.label + "\" was not recorded, so Undo cannot restore it: " + event.journalError);
+    // For every action, also those with a done callback.
+    if (event.outcome == Outcome::Ok && !event.warning.empty())
+        m_session.app().notify(App::Notice::Warning, event.label, event.warning);
     auto it = m_callbacks.find(event.request);
     if (it != m_callbacks.end()) {
         Callback cb = std::move(it->second);

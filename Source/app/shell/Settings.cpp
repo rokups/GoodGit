@@ -202,6 +202,8 @@ nlohmann::json toJson(const SettingsData& d)
                                                                           : "ask";
     j["expandStagesOnCheckout"] = d.expandStagesOnCheckout;
     j["expandConflictStages"] = d.expandConflictStages;
+    j["submodulesAutoUpdate"] = d.submodulesAutoUpdate;
+    j["submodulesAutoInit"] = d.submodulesAutoInit;
     j["historyBadgePrefix"] = d.historyBadgePrefix;
     j["historyBadgeSuffix"] = d.historyBadgeSuffix;
     j["historyGraphInDescription"] = d.historyGraphInDescription;
@@ -265,6 +267,8 @@ SettingsData fromJson(const nlohmann::json& j)
                                         : NothingStaged::Ask;
     d.expandStagesOnCheckout = j.value("expandStagesOnCheckout", false);
     d.expandConflictStages = j.value("expandConflictStages", false);
+    d.submodulesAutoUpdate = j.value("submodulesAutoUpdate", true);
+    d.submodulesAutoInit = j.value("submodulesAutoInit", false);
     d.historyGraphInDescription = j.value("historyGraphInDescription", false);
     d.repoState = repoStateFromJson(j);
     if (j.contains("window") && j["window"].is_object()) {

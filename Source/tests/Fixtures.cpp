@@ -210,6 +210,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         git(m_root, {"init", "-q", "-b", "main", sub.string()});
         linear(*this, sub, 2, "s");
         init();
+        git(repo, {"config", "protocol.file.allow", "always"}); // submodule update clones from local paths
         commitFile(repo, "readme.txt", "super\n", "Super");
         git(repo, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", sub.string(), "sub"});
         git(repo, {"commit", "-q", "-m", "Add submodule"});
@@ -232,6 +233,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         git(sub, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", inner.string(), "inner"});
         git(sub, {"commit", "-q", "-m", "Add inner"});
         init();
+        git(repo, {"config", "protocol.file.allow", "always"}); // submodule update clones from local paths
         commitFile(repo, "readme.txt", "super\n", "Super");
         git(repo, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", sub.string(), "sub"});
         git(repo, {"commit", "-q", "-m", "Add submodule"});
