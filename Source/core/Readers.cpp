@@ -1127,7 +1127,34 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
     opts.progress_cb = [](const git_diff*, const char*, const char*, void* payload) -> int {
         return static_cast<gg::CancelToken*>(payload)->cancelled() ? GIT_EUSER : 0;
     };
-    // Single-file queries still diff the whole tree so renames can be matched.
+    // Exact paths limit the scan: a literal pathspec (no `[`, `*` or `?` match) lets libgit2 skip the rest
+    // of the tree and the working tree. A rename needs both of its paths, so the query names the old one.
+    // The filter below stays as a safety net.
+    std::vector<std::string> pathspec;
+    if (q.kind != DiffKind::Stages && q.kind != DiffKind::Term) {
+        auto addPath = [&](const std::string& p) {
+            if (!p.empty() && std::find(pathspec.begin(), pathspec.end(), p) == pathspec.end())
+                pathspec.push_back(p);
+        };
+        addPath(q.path);
+        if (!q.path.empty())
+            addPath(q.oldPath);
+        for (const auto& p : q.paths)
+            addPath(p);
+    }
+    std::vector<char*> pathspecPtrs;
+    for (auto& p : pathspec)
+        pathspecPtrs.push_back(p.data());
+    if (!pathspecPtrs.empty()) {
+        opts.pathspec.strings = pathspecPtrs.data();
+        opts.pathspec.count = pathspecPtrs.size();
+        opts.flags |= GIT_DIFF_DISABLE_PATHSPEC_MATCH;
+    }
+    if (q.kind != DiffKind::Stages && q.kind != DiffKind::Term) {
+        const auto config = gg::git2::repositoryConfig(repo);
+        if (gg::git2::configBool(config.get(), "core.ignorecase").value_or(false))
+            opts.flags |= GIT_DIFF_IGNORE_CASE;
+    }
 
     git_diff* raw = nullptr;
     Tree a, b;

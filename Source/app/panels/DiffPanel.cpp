@@ -76,6 +76,7 @@ core::DiffQuery DiffPanel::queryFor(const Selection& sel, const FileRow& row, co
 {
     core::DiffQuery q;
     q.path = row.path;
+    q.oldPath = row.oldPath;
     switch (row.group) {
     case FileGroup::Commit:
         if (compare.kind == CompareTarget::Rev) {

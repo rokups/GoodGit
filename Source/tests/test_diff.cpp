@@ -1,4 +1,5 @@
 // Diff panel (§4.5).
+#include "core/Readers.hpp"
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
@@ -8,6 +9,9 @@
 
 #include <IconsMaterialSymbols.h>
 #include <algorithm>
+#include <chrono>
+#include <libgg/Git2.hpp>
+#include <spdlog/spdlog.h>
 
 namespace ggtest {
 
@@ -19,6 +23,15 @@ std::string numbered(int n, int changedA = -1, int changedB = -1)
     for (int i = 1; i <= n; ++i)
         s += (i == changedA || i == changedB) ? "int line" + std::to_string(i) + " = 1; // changed\n"
                                               : "int line" + std::to_string(i) + " = 0;\n";
+    return s;
+}
+
+// Lines that differ between files, so no rename or copy is found by accident.
+std::string tagged(const std::string& tag, int n, int changedA = -1, int changedB = -1)
+{
+    std::string s;
+    for (int i = 1; i <= n; ++i)
+        s += tag + " line " + std::to_string(i) + ((i == changedA || i == changedB) ? " changed\n" : "\n");
     return s;
 }
 
@@ -100,6 +113,41 @@ const ggui::core::DiffFile* file(Scenario& s)
 {
     const auto& d = s.session()->diff().diff();
     return d && !d->files.empty() ? &d->files[0] : nullptr;
+}
+
+// A diff read on the test thread, without the UI.
+ggui::core::DiffPtr readOne(const fs::path& repo, ggui::core::DiffKind kind, const std::string& path = {},
+    const std::string& oldPath = {}, const std::string& commit = {})
+{
+    using namespace ggui::core;
+    const auto handle = gg::git2::openRepository(repo);
+    DiffQuery q;
+    q.kind = kind;
+    q.a = Oid::fromHex(commit);
+    q.path = path;
+    q.oldPath = oldPath;
+    return readDiff(handle.get(), q, gg::CancelToken::none());
+}
+
+// The number of milliseconds `fn` needs.
+template <class Fn> long long millis(Fn&& fn)
+{
+    const auto start = std::chrono::steady_clock::now();
+    fn();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+}
+
+// True when both files carry the same change.
+bool sameChange(const ggui::core::DiffFile& a, const ggui::core::DiffFile& b)
+{
+    if (a.kind != b.kind || a.oldPath != b.oldPath || a.newPath != b.newPath || a.oldId != b.oldId || a.newId != b.newId
+        || a.oldMode != b.oldMode || a.newMode != b.newMode || a.additions != b.additions || a.deletions != b.deletions
+        || a.hunks.size() != b.hunks.size())
+        return false;
+    for (size_t i = 0; i < a.hunks.size(); ++i)
+        if (a.hunks[i].header != b.hunks[i].header || a.hunks[i].lines.size() != b.hunks[i].lines.size())
+            return false;
+    return true;
 }
 
 } // namespace
@@ -816,6 +864,169 @@ GG_TEST("diff", "hunk navigation: buttons and Alt+Down / Alt+Up scroll to the ne
         GG_CHECK(atTop(0));
     }
     s.comboSelect("//Diff/##diff_view", "Unified");
+}
+
+GG_TEST("diff", "a single-file query equals the whole-tree query for that file")
+{
+    using ggui::core::ChangeKind;
+    using ggui::core::DiffKind;
+    const fs::path repo = s.fixture(Recipe::Empty, "single-file");
+    const std::string funny = "x *y?.txt";
+    for (const char* name : {"mod.txt", "sub/dir/deep.txt", "del.txt", "stage.txt", "a[1].txt", "a1.txt", "x yz.txt"})
+        s.write(repo, name, tagged(name, 12));
+    s.write(repo, funny, tagged(funny, 12));
+    s.write(repo, "ren_old.txt", "rename me\nline two\nline three\nline four\n");
+    s.write(repo, "wd_old.txt", "move me\nline two\nline three\nline four\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Base"});
+    s.git(repo, {"mv", "ren_old.txt", "ren_new.txt"});
+    s.write(repo, "ren_new.txt", "rename me\nline two\nline three\nline four changed\n");
+    s.git(repo, {"commit", "-q", "-a", "-m", "Rename"});
+    const std::string renameCommit = s.head(repo);
+    s.git(repo, {"mv", "ren_new.txt", "ren_again.txt"});
+    s.write(repo, "stage.txt", tagged("stage.txt", 12, 3));
+    s.git(repo, {"add", "-A"}); // staged: a rename and a modification
+    for (const char* name : {"mod.txt", "sub/dir/deep.txt", "a[1].txt", "a1.txt", "x yz.txt"})
+        s.write(repo, name, tagged(name, 12, 2, 9));
+    s.write(repo, funny, tagged(funny, 12, 4));
+    fs::remove(repo / "del.txt");
+    s.write(repo, "new.txt", tagged("new.txt", 5));
+    s.write(repo, "u [1].txt", tagged("u [1].txt", 5));
+    fs::rename(repo / "wd_old.txt", repo / "wd_new.txt"); // a rename in the working tree only
+    s.write(repo, "wd_new.txt", "move me\nline two\nline three\nline four changed\n");
+
+    struct Case {
+        DiffKind kind;
+        std::string path, oldPath, commit;
+        ChangeKind expected;
+    };
+    const std::vector<Case> cases = {
+        {DiffKind::Unstaged, "mod.txt", "", "", ChangeKind::Modified},
+        {DiffKind::Unstaged, "sub/dir/deep.txt", "", "", ChangeKind::Modified},
+        {DiffKind::Unstaged, "del.txt", "", "", ChangeKind::Deleted},
+        {DiffKind::Unstaged, "new.txt", "", "", ChangeKind::Untracked},
+        {DiffKind::Unstaged, "u [1].txt", "", "", ChangeKind::Untracked},
+        {DiffKind::Unstaged, "a[1].txt", "", "", ChangeKind::Modified},
+        {DiffKind::Unstaged, "a1.txt", "", "", ChangeKind::Modified},
+        {DiffKind::Unstaged, funny, "", "", ChangeKind::Modified},
+        {DiffKind::Unstaged, "x yz.txt", "", "", ChangeKind::Modified},
+        {DiffKind::Unstaged, "wd_new.txt", "wd_old.txt", "", ChangeKind::Renamed},
+        {DiffKind::Staged, "stage.txt", "", "", ChangeKind::Modified},
+        {DiffKind::Staged, "ren_again.txt", "ren_new.txt", "", ChangeKind::Renamed},
+        {DiffKind::Commit, "ren_new.txt", "ren_old.txt", renameCommit, ChangeKind::Renamed},
+    };
+    const auto whole = [&](DiffKind kind, const std::string& commit) { return readOne(repo, kind, "", "", commit); };
+    for (const auto& c : cases) {
+        const auto one = readOne(repo, c.kind, c.path, c.oldPath, c.commit);
+        const auto all = whole(c.kind, c.commit);
+        GG_REQUIRE(one && all);
+        GG_CHECK_STR_EQ(one->error, "");
+        std::vector<const ggui::core::DiffFile*> expected;
+        for (const auto& f : all->files)
+            if (f.newPath == c.path || f.oldPath == c.path)
+                expected.push_back(&f);
+        GG_CHECK_EQ(one->files.size(), static_cast<size_t>(1));
+        GG_CHECK_EQ(expected.size(), static_cast<size_t>(1));
+        if (one->files.size() != 1 || expected.size() != 1)
+            continue;
+        GG_CHECK(sameChange(one->files[0], *expected[0]));
+        GG_CHECK(one->files[0].kind == c.expected);
+        GG_CHECK_STR_EQ(one->files[0].path(), c.path);
+    }
+    // Without the old path the rename source is out of the diff: the new file is a plain addition.
+    const auto noOld = readOne(repo, DiffKind::Staged, "ren_again.txt");
+    GG_REQUIRE(noOld->files.size() == 1);
+    GG_CHECK(noOld->files[0].kind == ChangeKind::Added);
+    // Several exact paths, with a name that a glob would also match.
+    {
+        const auto handle = gg::git2::openRepository(repo);
+        ggui::core::DiffQuery q;
+        q.kind = DiffKind::Unstaged;
+        q.paths = {"a[1].txt", funny};
+        const auto d = readDiff(handle.get(), q, gg::CancelToken::none());
+        GG_CHECK_EQ(d->files.size(), static_cast<size_t>(2));
+    }
+}
+
+GG_TEST("diff", "a single-file query does not scan the working tree")
+{
+    using ggui::core::DiffKind;
+    const fs::path repo = s.fixture(Recipe::Empty, "single-file-scan");
+    s.write(repo, "tracked.txt", numbered(10));
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Base"});
+    s.write(repo, "tracked.txt", numbered(10, 4));
+    for (int i = 0; i < 5000; ++i)
+        s.write(repo, "untracked/d" + std::to_string(i % 50) + "/file" + std::to_string(i) + ".txt",
+            "untracked file " + std::to_string(i) + "\nsecond line\nthird line\n");
+    s.write(repo, "untracked/d7/target.txt", "the file in question\n");
+    ggui::core::DiffPtr tracked, untracked, everything;
+    const long long trackedMs = millis([&] { tracked = readOne(repo, DiffKind::Unstaged, "tracked.txt"); });
+    const long long untrackedMs = millis([&] { untracked = readOne(repo, DiffKind::Unstaged, "untracked/d7/target.txt"); });
+    const long long wholeMs = millis([&] { everything = readOne(repo, DiffKind::Unstaged); });
+    spdlog::info("single-file diff, 5000 untracked files: tracked {} ms, untracked {} ms; whole tree {} ms", trackedMs,
+        untrackedMs, wholeMs);
+    GG_CHECK_EQ(tracked->files.size(), static_cast<size_t>(1));
+    GG_CHECK_EQ(untracked->files.size(), static_cast<size_t>(1));
+    GG_CHECK_EQ(everything->files.size(), static_cast<size_t>(5002));
+    GG_CHECK(trackedMs < 2000 && untrackedMs < 2000);
+    GG_CHECK(trackedMs < wholeMs / 4 && untrackedMs < wholeMs / 4); // before the change: about the same as the whole tree
+
+    // libgit2 reports each pair of entries that it compares. A literal pathspec keeps the count small.
+    auto visited = [&](bool limited) {
+        const auto handle = gg::git2::openRepository(repo);
+        git_index* index = nullptr;
+        git_repository_index(&index, handle.get());
+        git_diff_options opts = GIT_DIFF_OPTIONS_INIT;
+        opts.flags = GIT_DIFF_INCLUDE_UNTRACKED | GIT_DIFF_RECURSE_UNTRACKED_DIRS;
+        char path[] = "tracked.txt";
+        char* paths[] = {path};
+        if (limited) {
+            opts.pathspec.strings = paths;
+            opts.pathspec.count = 1;
+            opts.flags |= GIT_DIFF_DISABLE_PATHSPEC_MATCH;
+        }
+        int count = 0;
+        opts.payload = &count;
+        opts.progress_cb = [](const git_diff*, const char*, const char*, void* payload) {
+            ++*static_cast<int*>(payload);
+            return 0;
+        };
+        git_diff* diff = nullptr;
+        git_diff_index_to_workdir(&diff, handle.get(), index, &opts);
+        git_diff_free(diff);
+        git_index_free(index);
+        return count;
+    };
+    const int all = visited(false), one = visited(true);
+    spdlog::info("entries visited: whole tree {}, one literal path {}", all, one);
+    GG_CHECK(all >= 5000);
+    GG_CHECK(one <= 5);
+}
+
+GG_TEST("diff", "a single-file query on the large repository is quick")
+{
+    using ggui::core::DiffKind;
+    const fs::path big = s.largeFixture();
+    const fs::path repo = s.path("big-diff-clone");
+    s.git(s.root(), {"clone", "-q", "--shared", "--no-checkout", big.string(), repo.string()});
+    s.git(repo, {"checkout", "-q", "main"});
+    s.write(repo, "dir000/file00000.txt", "modified\n");
+    s.write(repo, "dir000/new-file.txt", "new\n");
+    ggui::core::DiffPtr one, added, whole;
+    // The first query reads the index and warms the file cache; the second is the one that counts.
+    readOne(repo, DiffKind::Unstaged, "dir000/file00000.txt");
+    const long long modifiedMs = millis([&] { one = readOne(repo, DiffKind::Unstaged, "dir000/file00000.txt"); });
+    const long long addedMs = millis([&] { added = readOne(repo, DiffKind::Unstaged, "dir000/new-file.txt"); });
+    const long long wholeMs = millis([&] { whole = readOne(repo, DiffKind::Unstaged); });
+    spdlog::info("large repository, single-file diff: modified {} ms, untracked {} ms; whole tree {} ms", modifiedMs,
+        addedMs, wholeMs);
+    GG_CHECK_EQ(one->files.size(), static_cast<size_t>(1));
+    GG_CHECK_EQ(added->files.size(), static_cast<size_t>(1));
+    GG_CHECK_EQ(whole->files.size(), static_cast<size_t>(2));
+    GG_CHECK(modifiedMs < 2000);
+    GG_CHECK(addedMs < 2000);
+    GG_CHECK(modifiedMs < wholeMs / 2 && addedMs < wholeMs / 2);
 }
 
 } // namespace ggtest

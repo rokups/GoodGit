@@ -741,9 +741,13 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         core::DiffQuery q = patchQuery(row);
         if (m_selected.size() > 1) {
             q.path.clear();
+            q.oldPath.clear();
             for (const auto& r : m_rows)
-                if (m_selected.count(r.key()) && r.group == row.group)
+                if (m_selected.count(r.key()) && r.group == row.group) {
                     q.paths.push_back(r.path);
+                    if (!r.oldPath.empty()) // the rename source stays in the diff
+                        q.paths.push_back(r.oldPath);
+                }
         }
         if (menuItem(ICON_MS_CONTENT_COPY, "Copy"))
             m_session.engine().diff(q, kSlotCopyPatch);

@@ -326,6 +326,7 @@ struct DiffQuery {
                                     // resolved by the worker when set ("Compare with")
     std::string path;               // restrict to one file ("" = all files)
     std::vector<std::string> paths; // or to several files (patch of a selection)
+    std::string oldPath;            // with `path`: the rename or copy source, when known (else the rename is not found)
     bool withHunks = true;          // false: file list only
     int context = 3;
     Whitespace whitespace = Whitespace::Normal;
