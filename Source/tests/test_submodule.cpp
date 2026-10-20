@@ -8,6 +8,7 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <algorithm>
 #include <fstream>
 
 namespace ggtest {
@@ -815,7 +816,9 @@ GG_TEST("submodule", "Remove with the option is refused when only a detached HEA
 GG_TEST("submodule", "Remove is refused when the name in .gitmodules leaves .git/modules")
 {
     const fs::path repo = s.fixture(Recipe::Submodules);
-    const std::string url = s.gitOut(repo, {"config", "-f", ".gitmodules", "submodule.sub.url"});
+    std::string url = s.gitOut(repo, {"config", "-f", ".gitmodules", "submodule.sub.url"});
+    // A backslash starts an escape in a config value: Windows paths use a slash here.
+    std::replace(url.begin(), url.end(), '\\', '/');
     s.write(repo, ".gitmodules", "[submodule \"../outside\"]\n\tpath = sub\n\turl = " + url + "\n");
     fs::create_directories(repo / ".git" / "outside");
     s.write(repo / ".git" / "outside", "keep.txt", "keep\n");
