@@ -263,7 +263,7 @@ std::string App::recentMenuText(size_t i) const
         return {};
     bool elided = false;
     const std::string detail = recentDetail(recentInfo(i), elided);
-    return uniqueRecentNames(recent)[i].text() + (detail.empty() ? std::string() : "  " + detail);
+    return summaryWarnPrefix(recentInfo(i)) + uniqueRecentNames(recent)[i].text() + (detail.empty() ? std::string() : "  " + detail);
 }
 
 void App::drawRecentMenu()
@@ -290,15 +290,19 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
     const std::string currentKey = currentRepoKey();
     struct Row {
         size_t index;
-        std::string text; // the name, two spaces and the detail
-        size_t nameLength;
+        std::string text; // the warning icon (if any), the name, two spaces and the detail
+        size_t warnLength; // the length of the warning icon and its space (0 when the row has none)
+        size_t nameLength; // the end of the name in `text`
         const core::RepoSummary* info;
         bool elided;
     };
     std::vector<Row> rows;
     float widest = 0.0f;
     for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
-        Row row{i, names[i].text(), 0, infos[i], false};
+        Row row{i, std::string(), 0, 0, infos[i], false};
+        const std::string warnPrefix = summaryWarnPrefix(row.info);
+        row.text = warnPrefix + names[i].text();
+        row.warnLength = warnPrefix.size();
         row.nameLength = row.text.size();
         const std::string detail = recentDetail(row.info, row.elided);
         if (!detail.empty())
@@ -337,8 +341,9 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
             // The child is not a popup: the click closes the popup here, not in Selectable(). In the menu, Selectable()
             // closes the whole menu chain.
             const auto selectFlags = static_cast<ImGuiSelectableFlags>(rowFlags) | (scrollArea ? ImGuiSelectableFlags_NoAutoClosePopups : 0);
-            if (selectableTextDimRanges(row->text, id, {{0, names[row->index].prefix.size()}, {row->nameLength, row->text.size()}}, current,
-                    selectFlags)) {
+            const size_t prefixEnd = row->warnLength + names[row->index].prefix.size();
+            if (selectableTextDimRanges(row->text, id, {{row->warnLength, prefixEnd}, {row->nameLength, row->text.size()}}, current,
+                    selectFlags, ImVec2(0, 0), row->warnLength, summaryWarnColor())) {
                 if (!current)
                     post([this, path] { openRepository(path); });
                 if (scrollArea)
@@ -348,6 +353,8 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
                 ImGui::SetItemDefaultFocus();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
                 std::string text = path;
+                if (row->warnLength)
+                    text += "\n" + summaryWarningText(*row->info);
                 if (row->elided)
                     text += summaryNamesText(*row->info);
                 if (!current)

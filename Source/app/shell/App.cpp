@@ -328,6 +328,7 @@ void App::updateLiveSummary()
     m_liveSummary = core::RepoSummary();
     m_liveSummary.path = currentRepoKey();
     m_liveSummary.exists = true;
+    m_liveSummary.health = core::RepoSummary::Health::Ok;
     m_liveSummary.detached = snap.headDetached;
     m_liveSummary.branch = snap.headDetached ? std::string() : snap.headBranch;
     if (const core::BranchInfo* b = snap.currentBranch()) {

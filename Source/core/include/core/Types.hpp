@@ -521,8 +521,16 @@ using RebasePreviewPtr = std::shared_ptr<const RebasePreview>;
 // ---- Recent repository summary -----------------------------------------------------------------
 
 struct RepoSummary {
+    // Why the entry is not a usable repository. `exists` is true only for Ok.
+    enum class Health {
+        Ok,
+        Missing,    // the path does not exist
+        NotRepo,    // the path exists but is a file or a directory that is not a repository
+        Unreadable, // the path or the directory cannot be read (permission or other error)
+    };
     std::filesystem::path path;
     bool exists = false;
+    Health health = Health::Missing;
     std::string branch;               // "" when detached
     bool detached = false;
     std::string upstream;

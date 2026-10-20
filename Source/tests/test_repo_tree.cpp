@@ -1,6 +1,10 @@
 // Repo browser tree: grouping by alias, order, and the alias after a drop onto a group (GG-12).
+#include "core/Readers.hpp"
 #include "shell/RepoTree.hpp"
+#include "util/Ui.hpp"
 #include "tests/Harness.hpp"
+
+#include <fstream>
 
 namespace ggtest {
 
@@ -208,6 +212,70 @@ GG_TEST("shell", "repo tree: aliasFromDialog gives the alias to store")
     GG_CHECK_STR_EQ(aliasFromDialog("g", "n", "g/n", "p", "base"), "g/n");
     GG_CHECK_STR_EQ(aliasFromDialog("p", "base", "p/base", "p", "base"), "p/base");
     GG_CHECK_STR_EQ(aliasFromDialog("", "base", "base", "", "base"), "base");
+}
+
+GG_TEST("summary", "readSummary reports why a path is not a usable repository (GG-70)")
+{
+    using Health = ggui::core::RepoSummary::Health;
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path file = s.root() / "plain-file";
+    {
+        std::ofstream(file) << "text\n";
+    }
+    const fs::path plainDir = s.root() / "plain-dir";
+    fs::create_directories(plainDir);
+
+    const auto ok = ggui::core::readSummary(repo);
+    GG_CHECK(ok.health == Health::Ok);
+    GG_CHECK(ok.exists);
+    GG_CHECK(!ggui::summaryWarns(ok));
+
+    // Other kinds of repository are Ok too: bare, linked worktree, a .git file and (not on Windows) a symlink.
+    const fs::path bare = s.fixture(Recipe::Bare);
+    GG_CHECK(ggui::core::readSummary(bare).health == Health::Ok);
+    const fs::path linked = s.root() / "linked-worktree";
+    s.git(repo, {"worktree", "add", "-q", "--detach", linked.string()});
+    GG_CHECK(fs::is_regular_file(linked / ".git"));
+    GG_CHECK(ggui::core::readSummary(linked).health == Health::Ok);
+    const fs::path gitfile = s.root() / "gitfile-repo";
+    s.git(s.root(), {"init", "-q", "--separate-git-dir", (s.root() / "gitfile-repo.git").string(), gitfile.string()});
+    GG_CHECK(fs::is_regular_file(gitfile / ".git"));
+    GG_CHECK(ggui::core::readSummary(gitfile).health == Health::Ok);
+#ifndef _WIN32
+    const fs::path link = s.root() / "link-to-repo";
+    std::error_code linkError;
+    fs::create_directory_symlink(repo, link, linkError);
+    GG_REQUIRE(!linkError);
+    GG_CHECK(ggui::core::readSummary(link).health == Health::Ok);
+#endif
+
+    const auto missing = ggui::core::readSummary(s.root() / "no-such-dir");
+    GG_CHECK(missing.health == Health::Missing);
+    GG_CHECK(!missing.exists);
+    const auto underFile = ggui::core::readSummary(file / "inner");
+    GG_CHECK(underFile.health == Health::Missing);
+
+    const auto notDir = ggui::core::readSummary(file);
+    GG_CHECK(notDir.health == Health::NotRepo);
+    GG_CHECK(!notDir.exists);
+    const auto notRepo = ggui::core::readSummary(plainDir);
+    GG_CHECK(notRepo.health == Health::NotRepo);
+    GG_CHECK(!notRepo.exists);
+
+    GG_CHECK_STR_EQ(ggui::summaryText(missing), "missing");
+    GG_CHECK_STR_EQ(ggui::summaryText(notRepo), "not a repository");
+    ggui::core::RepoSummary unreadable;
+    unreadable.health = Health::Unreadable;
+    GG_CHECK_STR_EQ(ggui::summaryText(unreadable), "unreadable");
+    GG_CHECK(ggui::summaryWarns(missing));
+    GG_CHECK(ggui::summaryWarns(notRepo));
+    GG_CHECK(ggui::summaryWarns(unreadable));
+    GG_CHECK(!ggui::summaryWarningText(unreadable).empty());
+    GG_CHECK(ggui::summaryWarningText(ok).empty());
+    GG_CHECK(ggui::summaryWarnPrefix(&ok).empty());
+    GG_CHECK(ggui::summaryWarnPrefix(nullptr).empty());
+    GG_CHECK(!ggui::summaryWarnPrefix(&missing).empty());
+    GG_CHECK(ggui::summaryText(ok).find("main") != std::string::npos);
 }
 
 } // namespace ggtest

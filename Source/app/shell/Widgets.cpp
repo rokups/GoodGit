@@ -317,8 +317,10 @@ int rowActions(std::span<const RowAction> actions, bool rowSelected, bool padded
 
 namespace {
 
-// Draws the visible part of `label` at `pos`: the byte ranges (ascending, disjoint) dimmed, the rest in Text.
-void drawDimRangesText(ImVec2 pos, const char* label, const char* end, std::span<const std::pair<size_t, size_t>> ranges)
+// Draws the visible part of `label` at `pos`: the first `accentLen` bytes in `accent`, the byte ranges (ascending,
+// disjoint, after the accent) dimmed, the rest in Text.
+void drawDimRangesText(ImVec2 pos, const char* label, const char* end, std::span<const std::pair<size_t, size_t>> ranges,
+    size_t accentLen = 0, ImU32 accent = 0)
 {
     const size_t total = static_cast<size_t>(end - label);
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -333,6 +335,7 @@ void drawDimRangesText(ImVec2 pos, const char* label, const char* end, std::span
         pos.x += ImGui::CalcTextSize(label + at, label + to).x;
         at = to;
     };
+    draw(accentLen, accent);
     for (const auto& [begin, finish] : ranges) {
         draw(begin, text);
         draw(finish, dim);
@@ -438,7 +441,7 @@ bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool 
 }
 
 bool selectableTextDimRanges(const std::string& text, const std::string& id, std::initializer_list<std::pair<size_t, size_t>> ranges,
-    bool selected, ImGuiSelectableFlags flags, ImVec2 size)
+    bool selected, ImGuiSelectableFlags flags, ImVec2 size, size_t accentLen, ImU32 accent)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems)
@@ -461,7 +464,7 @@ bool selectableTextDimRanges(const std::string& text, const std::string& id, std
     [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext();
     IMGUI_TEST_ENGINE_ITEM_INFO(g.LastItemData.ID, (text + "###" + id).c_str(), g.LastItemData.StatusFlags);
     if (ImGui::IsItemVisible())
-        drawDimRangesText(pos, text.c_str(), text.c_str() + text.size(), std::span(ranges.begin(), ranges.size()));
+        drawDimRangesText(pos, text.c_str(), text.c_str() + text.size(), std::span(ranges.begin(), ranges.size()), accentLen, accent);
     return pressed;
 }
 

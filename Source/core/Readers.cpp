@@ -1554,15 +1554,28 @@ RepoSummary readSummary(const fs::path& path)
     RepoSummary s;
     s.path = path;
     std::error_code ec;
-    if (!fs::exists(path, ec))
+    const fs::file_status status = fs::status(path, ec);
+    if (status.type() == fs::file_type::not_found) {
+        s.health = RepoSummary::Health::Missing;
         return s;
+    }
+    if (ec) {
+        s.health = RepoSummary::Health::Unreadable;
+        return s;
+    }
+    if (status.type() != fs::file_type::directory) {
+        s.health = RepoSummary::Health::NotRepo;
+        return s;
+    }
     git_repository* raw = nullptr;
     if (git_repository_open_ext(&raw, path.string().c_str(), GIT_REPOSITORY_OPEN_NO_SEARCH, nullptr) != 0) {
         git_error_clear();
+        s.health = RepoSummary::Health::NotRepo;
         return s;
     }
     Repository repo(raw);
     s.exists = true;
+    s.health = RepoSummary::Health::Ok;
     s.detached = git_repository_head_detached(repo.get()) == 1;
     if (const std::string target = headTarget(repo.get()); !target.empty()) {
         s.branch = stripPrefix(target, "refs/heads/");

@@ -88,8 +88,9 @@ bool selectableDimRanges(const char* label, std::initializer_list<std::pair<size
 bool selectableDimRange(const char* label, size_t dimBegin, size_t dimEnd, bool selected = false, ImGuiSelectableFlags flags = 0,
     ImVec2 size = ImVec2(0, 0));
 // The two above for free text: `text` is drawn as is, the item ID is that of "text###id" (see selectableText).
+// The first `accentLen` bytes (an icon) are drawn in the colour `accent`; the dim ranges start after them.
 bool selectableTextDimRanges(const std::string& text, const std::string& id, std::initializer_list<std::pair<size_t, size_t>> ranges,
-    bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
+    bool selected = false, ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0), size_t accentLen = 0, ImU32 accent = 0);
 bool selectableTextDimRange(const std::string& text, const std::string& id, size_t dimBegin, size_t dimEnd, bool selected = false,
     ImGuiSelectableFlags flags = 0, ImVec2 size = ImVec2(0, 0));
 // Width button()/smallButton() will take for this icon and label, for right-aligning rows.

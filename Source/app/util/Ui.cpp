@@ -95,8 +95,12 @@ std::string trackedName(const std::string& branch, const std::string& upstream)
 
 std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSuffix)
 {
-    if (!s.exists)
-        return "missing";
+    switch (s.health) {
+    case core::RepoSummary::Health::Ok: break;
+    case core::RepoSummary::Health::Missing: return "missing";
+    case core::RepoSummary::Health::NotRepo: return "not a repository";
+    case core::RepoSummary::Health::Unreadable: return "unreadable";
+    }
     const auto shorten = [&](const std::string& name) { return elidePrefix > 0 ? elideMiddle(name, elidePrefix, elideSuffix) : name; };
     std::string text = s.detached ? std::string("detached") : shorten(s.branch);
     if (!s.upstream.empty()) {
@@ -107,6 +111,32 @@ std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSu
             text += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(s.behind);
     }
     return text;
+}
+
+bool summaryWarns(const core::RepoSummary& s)
+{
+    return s.health != core::RepoSummary::Health::Ok;
+}
+
+std::string summaryWarningText(const core::RepoSummary& s)
+{
+    switch (s.health) {
+    case core::RepoSummary::Health::Ok: break;
+    case core::RepoSummary::Health::Missing: return "The path does not exist.";
+    case core::RepoSummary::Health::NotRepo: return "The path is not a Git repository.";
+    case core::RepoSummary::Health::Unreadable: return "The path cannot be read.";
+    }
+    return {};
+}
+
+std::string summaryWarnPrefix(const core::RepoSummary* s)
+{
+    return s && summaryWarns(*s) ? std::string(ICON_MS_WARNING " ") : std::string();
+}
+
+ImU32 summaryWarnColor()
+{
+    return theme().palette().warning;
 }
 
 std::string summaryNamesText(const core::RepoSummary& s)

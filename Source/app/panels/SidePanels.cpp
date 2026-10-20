@@ -1008,7 +1008,9 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         const core::RepoSummary* info = m_session.app().repoSummary(std::filesystem::path(node.path));
         bool elided = false;
         const std::string detail = m_session.app().recentDetail(info, elided);
-        const std::string rowText = detail.empty() ? node.label : node.label + "  " + detail;
+        // A repository that is missing, not a repository or unreadable has the warning triangle before its name.
+        const std::string warnPrefix = hasChildren ? std::string() : summaryWarnPrefix(info);
+        const std::string rowText = warnPrefix + (detail.empty() ? node.label : node.label + "  " + detail);
         m_rowTexts[node.path] = rowText;
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
         bool nodeOpen = false;
@@ -1018,7 +1020,8 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
                 m_selected = node.path;
                 m_selectedWorktree = false;
             }
-        } else if (selectableTextDimRanges(rowText, "row", {{node.label.size(), rowText.size()}}, selected)) {
+        } else if (selectableTextDimRanges(rowText, "row", {{warnPrefix.size() + node.label.size(), rowText.size()}}, selected,
+                       0, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
             m_selected = node.path;
             m_selectedWorktree = false;
         }
@@ -1032,8 +1035,12 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         }
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !isOpen)
             toOpen = node.path;
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("%s", (elided ? node.path + summaryNamesText(*info) : node.path).c_str());
+        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            std::string text = elided ? node.path + summaryNamesText(*info) : node.path;
+            if (!warnPrefix.empty())
+                text += "\n" + summaryWarningText(*info) + "\nThe context menu has \"Remove from list\".";
+            tooltip("%s", text.c_str());
+        }
         // `node` is part of the tree copy that draw made, so removing the entry from the settings keeps the loop valid.
         if (beginContextMenu("##repo_menu")) {
             if (isOpen)

@@ -23,7 +23,7 @@ const char* kTagline = "A Git client with undo and first-class conflicts";
 std::string welcomeRowText(const RecentName& name, const core::RepoSummary* info)
 {
     const std::string detail = info ? summaryText(*info) : std::string();
-    return name.text() + (detail.empty() ? std::string() : "  \xe2\x80\x94  " + detail);
+    return summaryWarnPrefix(info) + name.text() + (detail.empty() ? std::string() : "  \xe2\x80\x94  " + detail);
 }
 }
 
@@ -154,12 +154,13 @@ void App::drawWelcome()
     for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
         const std::string& path = recent[i];
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
-        const std::string label = welcomeRowText(names[i], infos[i]) + "###row";
-        if (selectableDimPrefix(label.c_str(), names[i].prefix.size(), m_recentFocus == static_cast<int>(i),
-                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0)))
+        const std::string warnPrefix = summaryWarnPrefix(infos[i]);
+        const std::string text = welcomeRowText(names[i], infos[i]);
+        if (selectableTextDimRanges(text, "row", {{warnPrefix.size(), warnPrefix.size() + names[i].prefix.size()}}, m_recentFocus == static_cast<int>(i),
+                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor()))
             post([this, path] { openRepository(path); });
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            tooltip("%s\nDel removes", path.c_str());
+            tooltip("%s%s\nDel removes", path.c_str(), infos[i] && summaryWarns(*infos[i]) ? ("\n" + summaryWarningText(*infos[i])).c_str() : "");
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);
         if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) || (path != currentKey && hoveredDeletePressed()))

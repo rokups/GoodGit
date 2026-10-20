@@ -1563,7 +1563,9 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.app.recentRowText(0).find("main@origin") != std::string::npos; }));
     GG_CHECK(s.app.recentRowText(0).find(ICON_MS_ARROW_UPWARD_ALT) == std::string::npos); // no ahead/behind without the ref
-    GG_CHECK(s.app.recentRowText(1).rfind(notRepo.filename().string(), 0) != std::string::npos);
+    // The warning triangle comes before the name, and the reason is the detail (GG-70).
+    GG_CHECK(s.app.recentRowText(1).rfind(ICON_MS_WARNING " " + notRepo.filename().string(), 0) == 0);
+    GG_CHECK(s.app.recentRowText(1).find("  \xe2\x80\x94  not a repository") != std::string::npos);
     GG_CHECK(s.app.recentRowText(2).find("  \xe2\x80\x94  main") != std::string::npos);
     fs::rename(s.path("was-a-repo.git"), notRepo / ".git");
 }
@@ -1777,8 +1779,11 @@ GG_TEST("shell", "recent repositories: 300 recent repositories draw the Welcome 
     const double welcomeMs = frameMs(10);
     ctx->LogInfo("Welcome with %zu recents: %.2f ms for each frame", recent.size(), welcomeMs);
     GG_CHECK(welcomeMs < timeBudgetMs(60.0));
-    for (size_t i : {size_t(0), recent.size() - 1})
-        GG_CHECK(s.app.recentRowText(i).rfind(names[i].text(), 0) == 0);
+    // The paths are missing, so a row can have the warning triangle before the name (GG-70).
+    for (size_t i : {size_t(0), recent.size() - 1}) {
+        const std::string text = s.app.recentRowText(i);
+        GG_CHECK(text.rfind(names[i].text(), 0) == 0 || text.rfind(ICON_MS_WARNING " " + names[i].text(), 0) == 0);
+    }
 }
 
 GG_TEST("shell", "recent repositories: each opening of the switcher shows the current row, also below the first rows")

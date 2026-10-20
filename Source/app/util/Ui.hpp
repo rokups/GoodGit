@@ -22,7 +22,16 @@ bool containsNoCase(const std::string& haystack, const std::string& needle);
 std::string trackedName(const std::string& branch, const std::string& upstream);
 // "main@origin ↑1 ↓2" style summary of a recent repository. With `elidePrefix` > 0 the branch and the
 // upstream name are shortened in the middle (see elideMiddle).
+// For a repository that is not usable (health is not Ok) it is the short reason: "missing", "not a repository" or "unreadable".
 std::string summaryText(const core::RepoSummary& s, int elidePrefix = 0, int elideSuffix = 0);
+// True when the row of the repository shows a warning (its health is not Ok).
+bool summaryWarns(const core::RepoSummary& s);
+// The sentence for the tooltip of a row that warns (empty when it does not).
+std::string summaryWarningText(const core::RepoSummary& s);
+// The icon in front of the name of a row that warns: the warning triangle and a space (empty when `s` is null or does not warn).
+// Its length is the offset of the dim ranges. The icon has the colour summaryWarnColor().
+std::string summaryWarnPrefix(const core::RepoSummary* s);
+ImU32 summaryWarnColor();
 // The tooltip lines with the full names that summaryText() elides: "\nBranch: ..." and "\nUpstream: ..." (empty parts left out).
 std::string summaryNamesText(const core::RepoSummary& s);
 // A disabled menu item with a tooltip explaining why. `icon` should match the icon used by the
