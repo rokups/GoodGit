@@ -261,6 +261,10 @@ GG_TEST("diff", "binary, image, submodule and mode-change placeholders")
     GG_CHECK(s.itemText("//Diff/###diff_submodule").find("Submodule sub") != std::string::npos);
     GG_CHECK(file(s) && file(s)->submodule);
     GG_CHECK_STR_EQ(file(s)->newId.hex(), s.revParse(super, "HEAD:sub"));
+    // The commit lists of the range, as `git diff --submodule=log`.
+    GG_CHECK(s.itemText("//Diff/###diff_submodule_added").find("Commits added") != std::string::npos);
+    GG_CHECK(s.itemText("//Diff/###diff_submodule_added_0").find("Sub 3") != std::string::npos);
+    GG_CHECK(!s.itemExists("//Diff/###diff_submodule_removed"));
 }
 
 GG_TEST("diff", "renames, compare this file with HEAD or the working tree, large diffs")
@@ -720,11 +724,13 @@ GG_TEST("diff", "side by side across files: switching, a binary file, Shift+clic
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "code.cpp" && b->query.commit.isNull();
     }));
-    // The commit that added a submodule: "(none)" on the old side.
+    // The commit that added a submodule: no old side, and no commit lists.
     const fs::path super = s.fixture(Recipe::Submodules);
     GG_REQUIRE(s.openRepository(super));
     showFile(s, s.revParse(super, "HEAD~1"), "sub");
-    GG_CHECK(s.itemText("//Diff/###diff_submodule").find("(none)") != std::string::npos);
+    GG_CHECK(s.itemExists("//Diff/###diff_submodule"));
+    GG_CHECK(file(s) && file(s)->submoduleDiff.oldId.isNull() && !file(s)->submoduleDiff.newId.isNull());
+    GG_CHECK(!s.itemExists("//Diff/###diff_submodule_added"));
 }
 
 GG_TEST("diff", "hunk navigation: buttons and Alt+Down / Alt+Up scroll to the next and previous hunk in both views")

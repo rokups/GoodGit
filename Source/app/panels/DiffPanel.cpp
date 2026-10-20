@@ -929,17 +929,46 @@ void DiffPanel::drawToolbar()
 void DiffPanel::drawPlaceholder(const core::DiffFile& f)
 {
     const Palette& p = theme().palette();
-    auto info = [](const std::string& text, const char* id) { plainText((text + "###" + id).c_str()); };
+    auto info = [](const std::string& text, const std::string& id) { plainText(text, id); };
     if (f.oldMode && f.newMode && f.oldMode != f.newMode) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.hunkHeader);
         info("Mode changed " + modeText(f.oldMode) + " " ICON_MS_ARROW_RIGHT_ALT " " + modeText(f.newMode), "diff_mode");
         ImGui::PopStyleColor();
     }
     if (f.submodule) {
-        info(std::string(ICON_MS_ACCOUNT_TREE " Submodule ") + f.path() + ": "
-                + (f.oldId.isNull() ? std::string("(none)") : f.oldId.shortHex(10)) + " " ICON_MS_ARROW_RIGHT_ALT " "
-                + (f.newId.isNull() ? std::string("(none)") : f.newId.shortHex(10)),
+        const core::SubmoduleDiff& sd = f.submoduleDiff;
+        std::string range;
+        if (sd.oldId.isNull())
+            range = sd.newId.shortHex(10) + " (new submodule)";
+        else if (sd.newId.isNull())
+            range = sd.oldId.shortHex(10) + " (deleted)";
+        else
+            range = sd.oldId.shortHex(10) + " " ICON_MS_ARROW_RIGHT_ALT " " + sd.newId.shortHex(10);
+        info(std::string(ICON_MS_ACCOUNT_TREE " Submodule ") + f.path() + ": Subproject commit " + range,
             "diff_submodule");
+        auto list = [&](const char* title, const char* id, const std::vector<core::SubmoduleCommit>& commits,
+                        bool more) {
+            if (commits.empty())
+                return;
+            ImGui::PushStyleColor(ImGuiCol_Text, p.hunkHeader);
+            info(title, id);
+            ImGui::PopStyleColor();
+            for (size_t i = 0; i < commits.size(); ++i)
+                info("    " + commits[i].shortId + "  " + commits[i].subject, std::string(id) + "_" + std::to_string(i));
+            if (more)
+                info("    " "\xE2\x80\xA6" "more", std::string(id) + "_more");
+        };
+        list("Commits added", "diff_submodule_added", sd.added, sd.addedMore);
+        list("Commits removed", "diff_submodule_removed", sd.removed, sd.removedMore);
+        if (sd.dirty) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.conflict);
+            info("(dirty) The submodule has modified or untracked content.", "diff_submodule_dirty");
+            ImGui::PopStyleColor();
+        }
+        if (!sd.initialized && !sd.oldId.isNull() && !sd.newId.isNull())
+            ImGui::TextDisabled("The submodule is not initialized: its commits are not listed.");
+        else if (sd.commitsMissing)
+            ImGui::TextDisabled("Commits missing in the local submodule: fetch in the submodule to list them.");
     } else if (f.binary && f.image) {
         info(std::string(ICON_MS_DATASET " Image ") + f.path() + ": " + imageText(f), "diff_image");
     } else if (f.binary) {

@@ -958,6 +958,123 @@ void readHunks(git_patch* patch, DiffFile& f, bool full)
     }
 }
 
+// The most commits listed on each side of a submodule diff.
+constexpr size_t kSubmoduleCommitCap = 100;
+
+// The commits of `include` that `hide` does not reach, newest first, up to the cap.
+void submoduleCommits(git_repository* sub, const git_oid& include, const git_oid& hide,
+    std::vector<SubmoduleCommit>& out, bool& more)
+{
+    git_revwalk* rawWalk = nullptr;
+    if (git_revwalk_new(&rawWalk, sub) != 0) {
+        git_error_clear();
+        return;
+    }
+    Revwalk walk(rawWalk);
+    git_revwalk_sorting(walk.get(), GIT_SORT_TOPOLOGICAL | GIT_SORT_TIME);
+    if (git_revwalk_push(walk.get(), &include) != 0 || git_revwalk_hide(walk.get(), &hide) != 0) {
+        git_error_clear();
+        return;
+    }
+    git_oid oid;
+    while (git_revwalk_next(&oid, walk.get()) == 0) {
+        if (out.size() >= kSubmoduleCommitCap) {
+            more = true;
+            break;
+        }
+        SubmoduleCommit c;
+        c.shortId = toOid(oid).shortHex();
+        git_commit* rawCommit = nullptr;
+        if (git_commit_lookup(&rawCommit, sub, &oid) == 0) {
+            Commit commit(rawCommit);
+            if (const char* summary = git_commit_summary(commit.get()))
+                c.subject = summary;
+        }
+        out.push_back(std::move(c));
+    }
+    git_error_clear();
+}
+
+using SubmoduleHandle = Handle<git_submodule, git_submodule_free>;
+
+// Fills `f.submoduleDiff` for a changed gitlink. A side that is the working tree takes the checked-out
+// HEAD of the submodule as its ID. The commit lists need both IDs in the submodule repository.
+void readSubmoduleDiff(
+    git_repository* repo, const git_diff_delta* d, DiffKind kind, DiffFile& f, const gg::CancelToken& cancel)
+{
+    gg::throwIfCancelled(cancel);
+    SubmoduleDiff& sd = f.submoduleDiff;
+    const bool oldIsWorktree = kind == DiffKind::WorktreeCommit; // that diff is reversed
+    const bool newIsWorktree = kind == DiffKind::Unstaged;
+    if (d->old_file.mode == GIT_FILEMODE_COMMIT)
+        sd.oldId = toOid(d->old_file.id);
+    if (d->new_file.mode == GIT_FILEMODE_COMMIT)
+        sd.newId = toOid(d->new_file.id);
+
+    // The submodule is found through the repository, not through a path string (non-ASCII paths on Windows).
+    git_submodule* rawSm = nullptr;
+    if (git_submodule_lookup(&rawSm, repo, f.path().c_str()) != 0) {
+        git_error_clear();
+        rawSm = nullptr;
+    }
+    const SubmoduleHandle sm(rawSm);
+    git_repository* rawSub = nullptr;
+    if (sm) {
+        const char* workdir = git_repository_workdir(repo);
+        std::error_code ec;
+        if (workdir && fs::exists(fs::path(workdir) / f.path() / ".git", ec) && git_submodule_open(&rawSub, sm.get()) != 0) {
+            git_error_clear();
+            rawSub = nullptr;
+        }
+    }
+    Repository sub(rawSub);
+    sd.initialized = rawSub != nullptr;
+    if (sub) {
+        git_oid head;
+        if (git_reference_name_to_id(&head, sub.get(), "HEAD") == 0) {
+            if (oldIsWorktree && d->old_file.mode == GIT_FILEMODE_COMMIT)
+                sd.oldId = toOid(head);
+            if (newIsWorktree && d->new_file.mode == GIT_FILEMODE_COMMIT)
+                sd.newId = toOid(head);
+        }
+        git_error_clear();
+    }
+    f.oldId = sd.oldId;
+    f.newId = sd.newId;
+    if (!sub)
+        return;
+
+    if ((oldIsWorktree && d->old_file.mode == GIT_FILEMODE_COMMIT)
+        || (newIsWorktree && d->new_file.mode == GIT_FILEMODE_COMMIT)) {
+        unsigned flags = 0;
+        if (sm && git_submodule_status(&flags, repo, git_submodule_name(sm.get()), GIT_SUBMODULE_IGNORE_UNSPECIFIED) == 0)
+            sd.dirty = (flags
+                           & (GIT_SUBMODULE_STATUS_WD_INDEX_MODIFIED | GIT_SUBMODULE_STATUS_WD_WD_MODIFIED
+                               | GIT_SUBMODULE_STATUS_WD_UNTRACKED))
+                != 0;
+        git_error_clear();
+    }
+
+    // A new or deleted submodule has no range to list.
+    if (sd.oldId.isNull() || sd.newId.isNull())
+        return;
+    const git_oid oldGit = toGit(sd.oldId);
+    const git_oid newGit = toGit(sd.newId);
+    auto known = [&](const git_oid& id) {
+        git_commit* raw = nullptr;
+        const bool found = git_commit_lookup(&raw, sub.get(), &id) == 0;
+        git_commit_free(raw);
+        git_error_clear();
+        return found;
+    };
+    if (!known(oldGit) || !known(newGit)) {
+        sd.commitsMissing = true;
+        return;
+    }
+    submoduleCommits(sub.get(), newGit, oldGit, sd.added, sd.addedMore);
+    submoduleCommits(sub.get(), oldGit, newGit, sd.removed, sd.removedMore);
+}
+
 } // namespace
 
 DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken& cancel)
@@ -1149,6 +1266,8 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         f.oldId = toOid(d->old_file.id);
         f.newId = toOid(d->new_file.id);
         f.submodule = d->old_file.mode == GIT_FILEMODE_COMMIT || d->new_file.mode == GIT_FILEMODE_COMMIT;
+        if (f.submodule && q.withHunks)
+            readSubmoduleDiff(repo, d, q.kind, f, cancel);
         f.image = isImagePath(f.path());
         if (f.image && q.withHunks) {
             f.oldImage = imageDims(rawBlob(repo, d->old_file.id));

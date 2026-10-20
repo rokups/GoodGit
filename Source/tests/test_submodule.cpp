@@ -910,4 +910,122 @@ GG_TEST("submodule", "Add is refused for a path that is absolute or has ..")
     GG_CHECK_STR_EQ(porcelain(s, repo), before);
 }
 
+namespace {
+
+// The diff of the gitlink "sub", read on the test thread.
+ggui::core::DiffPtr submoduleDiff(const fs::path& repo, ggui::core::DiffKind kind, const std::string& commit = "")
+{
+    using namespace ggui::core;
+    const auto handle = gg::git2::openRepository(repo);
+    DiffQuery q;
+    q.kind = kind;
+    q.a = Oid::fromHex(commit);
+    q.path = "sub";
+    return readDiff(handle.get(), q, gg::CancelToken::none());
+}
+
+const ggui::core::SubmoduleDiff& subOf(const ggui::core::DiffPtr& diff)
+{
+    static const ggui::core::SubmoduleDiff none;
+    return diff && diff->files.size() == 1 && diff->files[0].submodule ? diff->files[0].submoduleDiff : none;
+}
+
+} // namespace
+
+GG_TEST("submodule", "Submodule diff lists the new commits, unstaged and staged")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string before = s.revParse(repo, "HEAD:sub");
+    const std::string id = moveSubmodule(s, repo, false);
+    for (const DiffKind kind : {DiffKind::Unstaged, DiffKind::Staged}) {
+        if (kind == DiffKind::Staged)
+            s.git(repo, {"add", "sub"});
+        const DiffPtr diff = submoduleDiff(repo, kind);
+        const SubmoduleDiff& sd = subOf(diff);
+        GG_REQUIRE(diff && diff->files.size() == 1 && diff->files[0].submodule);
+        GG_CHECK_STR_EQ(sd.oldId.hex(), before);
+        GG_CHECK_STR_EQ(sd.newId.hex(), id);
+        GG_CHECK_STR_EQ(diff->files[0].newId.hex(), id);
+        GG_CHECK(sd.initialized);
+        GG_CHECK(!sd.dirty);
+        GG_CHECK(!sd.commitsMissing);
+        GG_REQUIRE(sd.added.size() == 1);
+        GG_CHECK_STR_EQ(sd.added[0].shortId, id.substr(0, 7));
+        GG_CHECK_STR_EQ(sd.added[0].subject, "Sub s4.txt");
+        GG_CHECK(sd.removed.empty());
+    }
+}
+
+GG_TEST("submodule", "Submodule diff lists the removed commits when the submodule moves back")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string before = s.revParse(repo, "HEAD:sub");
+    s.git(repo / "sub", {"checkout", "-q", "HEAD~1"});
+    const std::string now = s.head(repo / "sub");
+    for (const DiffKind kind : {DiffKind::Unstaged, DiffKind::Staged}) {
+        if (kind == DiffKind::Staged)
+            s.git(repo, {"add", "sub"});
+        const DiffPtr diff = submoduleDiff(repo, kind);
+        const SubmoduleDiff& sd = subOf(diff);
+        GG_CHECK_STR_EQ(sd.oldId.hex(), before);
+        GG_CHECK_STR_EQ(sd.newId.hex(), now);
+        GG_CHECK(sd.added.empty());
+        GG_REQUIRE(sd.removed.size() == 1);
+        GG_CHECK_STR_EQ(sd.removed[0].shortId, before.substr(0, 7));
+        GG_CHECK_STR_EQ(sd.removed[0].subject, "Sub 3");
+    }
+}
+
+GG_TEST("submodule", "Submodule diff of a commit lists its commits; a new submodule lists none")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    DiffPtr diff = submoduleDiff(repo, DiffKind::Commit, s.head(repo));
+    GG_REQUIRE(subOf(diff).added.size() == 1);
+    GG_CHECK_STR_EQ(subOf(diff).added[0].subject, "Sub 3");
+    GG_CHECK(!subOf(diff).dirty); // a commit has no working tree side
+    diff = submoduleDiff(repo, DiffKind::Commit, s.revParse(repo, "HEAD~1"));
+    GG_CHECK(subOf(diff).oldId.isNull());
+    GG_CHECK(!subOf(diff).newId.isNull());
+    GG_CHECK(subOf(diff).added.empty());
+    GG_CHECK(!subOf(diff).commitsMissing);
+}
+
+GG_TEST("submodule", "Submodule diff marks modified and untracked content as dirty")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", "s3.txt", "s3 modified\n");
+    DiffPtr diff = submoduleDiff(repo, DiffKind::Unstaged);
+    GG_CHECK(subOf(diff).dirty);
+    GG_CHECK(subOf(diff).added.empty());
+    GG_CHECK_STR_EQ(subOf(diff).newId.hex(), s.head(repo / "sub"));
+    s.git(repo / "sub", {"checkout", "-q", "--", "s3.txt"});
+    s.write(repo / "sub", "loose.txt", "loose\n");
+    diff = submoduleDiff(repo, DiffKind::Unstaged);
+    GG_CHECK(subOf(diff).dirty);
+    // The staged side is the index: the content of the working tree does not count.
+    const std::string id = moveSubmodule(s, repo, true);
+    diff = submoduleDiff(repo, DiffKind::Staged);
+    GG_CHECK_STR_EQ(subOf(diff).newId.hex(), id);
+    GG_CHECK(!subOf(diff).dirty);
+}
+
+GG_TEST("submodule", "Submodule diff flags a gitlink whose commit is missing in the submodule")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const std::string missing(40, '1');
+    s.git(repo, {"update-index", "--cacheinfo", "160000," + missing + ",sub"});
+    const DiffPtr diff = submoduleDiff(repo, DiffKind::Staged);
+    const SubmoduleDiff& sd = subOf(diff);
+    GG_REQUIRE(diff && diff->files.size() == 1);
+    GG_CHECK_STR_EQ(sd.newId.hex(), missing);
+    GG_CHECK(sd.commitsMissing);
+    GG_CHECK(sd.added.empty());
+    GG_CHECK(sd.removed.empty());
+}
+
 } // namespace ggtest

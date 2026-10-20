@@ -349,6 +349,24 @@ struct DiffHunk {
     std::vector<DiffLine> lines;
 };
 
+// A commit in the submodule history, as shown in a submodule diff.
+struct SubmoduleCommit {
+    std::string shortId;
+    std::string subject;             // the first line of the message
+};
+
+// What a changed gitlink means (as `git diff --submodule=log`). The commit lists need the submodule repository.
+struct SubmoduleDiff {
+    Oid oldId, newId;                // null: no such side (new or deleted submodule)
+    std::vector<SubmoduleCommit> added;   // in `newId`, not in `oldId`
+    std::vector<SubmoduleCommit> removed; // in `oldId`, not in `newId`
+    bool addedMore = false;          // `added` is capped: more commits follow
+    bool removedMore = false;        // `removed` is capped: more commits follow
+    bool dirty = false;              // the working tree side has modified or untracked content
+    bool initialized = false;        // the submodule repository is open
+    bool commitsMissing = false;     // the submodule repository lacks `oldId` or `newId`
+};
+
 struct DiffFile {
     std::string oldPath;
     std::string newPath;
@@ -360,6 +378,7 @@ struct DiffFile {
     bool binary = false;
     bool image = false;
     bool submodule = false;
+    SubmoduleDiff submoduleDiff;     // set when `submodule` is true
     bool truncated = false;          // capped: "Load full diff"
     int additions = 0;
     int deletions = 0;
