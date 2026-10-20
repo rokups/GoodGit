@@ -11,6 +11,7 @@
 
 #include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
+#include <libgg/Worktrees.hpp>
 
 namespace ggtest {
 
@@ -61,6 +62,27 @@ bool originHas(Scenario& s, const fs::path& repo, const std::string& ref, const 
 {
     auto r = s.gitMayFail(origin(s, repo), {"rev-parse", "--verify", "-q", ref});
     return r.ok() && gg::trim(r.out) == id;
+}
+
+// A superproject with a bare origin; its submodule "sub" has a bare origin too and is on the branch main.
+// The submodule gets a commit that is on no remote, and the superproject records it.
+fs::path superWithUnpushedSub(Scenario& s, fs::path& subRemote)
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    subRemote = s.root() / "sub-remote.git";
+    s.git(s.root(), {"clone", "-q", "--bare", (s.root() / (repo.filename().string() + "-sub")).string(), subRemote.string()});
+    s.track(subRemote);
+    s.git(repo / "sub", {"remote", "set-url", "origin", fileUrl(subRemote)});
+    s.git(repo / "sub", {"fetch", "-q", "origin"});
+    s.git(repo / "sub", {"checkout", "-q", "-B", "main", "origin/main"});
+    s.git(s.root(), {"init", "-q", "--bare", "-b", "main", origin(s, repo).string()});
+    s.track(origin(s, repo));
+    s.git(repo, {"remote", "add", "origin", fileUrl(origin(s, repo))});
+    s.git(repo, {"push", "-q", "-u", "origin", "main"});
+    s.commitFile(repo / "sub", "unpushed.txt", "u\n", "Sub unpushed");
+    s.git(repo, {"add", "sub"});
+    s.git(repo, {"commit", "-q", "-m", "Record unpushed submodule commit"});
+    return repo;
 }
 
 } // namespace
@@ -382,6 +404,70 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
     s.git(repo, {"tag", "v1"});
     popupItem(s, "//###Toolbar/###tb_push_menu", "Push tags");
     GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "refs/tags/v1", s.head(repo)); }));
+    s.settle();
+}
+
+GG_TEST("network", "push is refused while a gitlink commit is on no submodule remote; pushing the submodule first allows it")
+{
+    fs::path subRemote;
+    const fs::path repo = superWithUnpushedSub(s, subRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().push("origin", "main", "main", false, false);
+    GG_REQUIRE(s.dialogOpen("Submodules not pushed"));
+    GG_CHECK(s.app.dialogs().current()->message.find("  sub\n") != std::string::npos);
+    GG_CHECK(s.app.dialogs().current()->message.find("detached") != std::string::npos);
+    GG_CHECK(s.app.errorMessage().empty());
+    s.dialogButton("Submodules not pushed", "Cancel");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
+    // The submodule commit is on its remote now: the same push goes through.
+    s.git(repo / "sub", {"push", "-q", "origin", "main"});
+    s.session()->actions().push("origin", "main", "main", false, false);
+    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", s.head(repo)); }));
+    s.settle();
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
+GG_TEST("network", "Push submodules first pushes the submodule branch and the superproject")
+{
+    fs::path subRemote;
+    const fs::path repo = superWithUnpushedSub(s, subRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().push("origin", "main", "main", false, false);
+    GG_REQUIRE(s.dialogOpen("Submodules not pushed"));
+    s.dialogButton("Submodules not pushed", "Push submodules first");
+    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", s.head(repo)); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(subRemote, "main"), s.head(repo / "sub"));
+    GG_CHECK(s.app.errorMessage().empty());
+}
+
+GG_TEST("network", "Push submodules first shows the error when the submodule push fails")
+{
+    fs::path subRemote;
+    const fs::path repo = superWithUnpushedSub(s, subRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().push("origin", "main", "main", false, false);
+    GG_REQUIRE(s.dialogOpen("Submodules not pushed"));
+    s.git(repo / "sub", {"remote", "set-url", "origin", fileUrl(subRemote.parent_path() / "gone.git")});
+    s.dialogButton("Submodules not pushed", "Push submodules first");
+    GG_REQUIRE(s.dialogOpen("push main to origin"));
+    GG_CHECK(s.app.errorMessage().find("submodule") != std::string::npos);
+    s.dialogButton("push main to origin", "OK");
+    s.settle();
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
+}
+
+GG_TEST("network", "Open submodule in the push form opens the first listed submodule")
+{
+    fs::path subRemote;
+    const fs::path repo = superWithUnpushedSub(s, subRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().push("origin", "main", "main", false, false);
+    GG_REQUIRE(s.dialogOpen("Submodules not pushed"));
+    s.dialogButton("Submodules not pushed", "Open submodule");
+    GG_CHECK(s.waitUntil([&] { return s.session() && gg::worktrees::samePath(s.session()->path(), repo / "sub"); }));
     s.settle();
 }
 

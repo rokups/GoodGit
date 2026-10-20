@@ -124,7 +124,7 @@ public:
     void fastForward(const std::string& branch);
     void createTag(const std::string& name, const std::string& at, const std::string& message);
     void deleteTag(const std::string& name);
-    void pushTag(const std::string& remote, const std::string& tag);
+    void pushTag(const std::string& remote, const std::string& tag, bool submodulesOnDemand = false);
     void deleteRemoteTag(const std::string& remote, const std::string& tag);
     void addRemote(const std::string& name, const std::string& url);
     void removeRemote(const std::string& name);
@@ -237,7 +237,11 @@ public:
     // "" when `path` can be the path of a new submodule; else the reason it cannot (empty, absolute or with "..").
     static std::string submodulePathProblem(const std::string& path);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
-        bool setUpstream, bool forceWithLease, bool tags = false);
+        bool setUpstream, bool forceWithLease, bool tags = false, bool submodulesOnDemand = false);
+    // GG-61: a push checks that the submodule commits it records are on a remote
+    // (--recurse-submodules=check, only with a .gitmodules file). `submodulesOnDemand` pushes them first.
+    // The submodule paths of git's refusal in `text`; empty when `text` is another failure.
+    static std::vector<std::string> unpushedSubmodulePaths(const std::string& text);
 
     // ---- stash (§4.9) ---------------------------------------------------------------------
     void stashPush(const std::string& message, bool keepIndex, bool untracked, bool stagedOnly,
@@ -295,6 +299,8 @@ public:
 
 private:
     void handleDefault(const core::MutationFinishedEvent& event);
+    // Opens the "Submodules not pushed" form when `event` is that refusal; false for any other result.
+    bool handleUnpushedSubmodules(const core::MutationFinishedEvent& event, std::function<void()> pushOnDemand);
     // A step of a stopped rebase finished: stopping again shows git's message, errors a popup.
     void onRebaseStep(const core::MutationFinishedEvent& event);
 
