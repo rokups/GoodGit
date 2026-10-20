@@ -5,6 +5,7 @@
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
 #include "util/Env.hpp"
+#include "util/Frames.hpp"
 #include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
@@ -728,6 +729,9 @@ void App::saveIniIfNeeded()
 void App::drawToasts()
 {
     constexpr float kLifetime[] = {6.0f, 12.0f}; // info, warning
+    // A toast fades and expires with time, not with input.
+    if (!m_toasts.empty())
+        requestAnimation();
     const Palette& p = theme().palette();
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float margin = ImGui::GetFontSize();

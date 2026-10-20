@@ -6,6 +6,7 @@
 #include "shell/App.hpp"
 #include "shell/Theme.hpp"
 #include "shell/Widgets.hpp"
+#include "util/Frames.hpp"
 #include "util/Ui.hpp"
 
 #include <libgg/Keep.hpp>
@@ -1693,6 +1694,8 @@ void HistoryPanel::draw(bool* open)
             m_scrolledAt = ImGui::GetTime();
         m_lastScrollY = scrollY;
         m_scrolling = m_scrolledAt >= 0.0 && ImGui::GetTime() - m_scrolledAt < kScrollSettleSeconds;
+        if (m_scrolling)
+            requestAnimation();
         if (!m_snapshot->bare) {
             std::string wtLabel = "Working tree";
             if (m_nativeConflicts)

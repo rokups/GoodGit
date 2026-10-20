@@ -1,4 +1,5 @@
 #include "util/Ui.hpp"
+#include "util/Frames.hpp"
 
 #include "shell/Theme.hpp"
 #include "shell/Widgets.hpp"
@@ -391,6 +392,9 @@ bool listScrolling()
         if (!(w->Flags & ImGuiWindowFlags_ChildWindow))
             break;
     }
+    // The settle time ends without input: ask for frames until it is over.
+    if (scrolling)
+        requestAnimation();
     return scrolling;
 }
 
@@ -630,6 +634,7 @@ void spinner(const char* id, float radius)
     ImGui::InvisibleButton(id, size);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 c(pos.x + radius, pos.y + size.y * 0.5f);
+    requestAnimation();
     const float t = static_cast<float>(ImGui::GetTime()) * 6.0f;
     const int segments = 24;
     dl->PathClear();

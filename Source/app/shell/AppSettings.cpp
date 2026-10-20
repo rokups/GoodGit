@@ -4,6 +4,7 @@
 #include "shell/Session.hpp"
 #include "shell/Theme.hpp"
 #include "util/Env.hpp"
+#include "util/Frames.hpp"
 #include "util/Ui.hpp"
 
 #include "shell/Widgets.hpp"
@@ -443,6 +444,9 @@ void App::drawUpdateSetting()
         break;
     }
 
+    // The worker thread changes the state and the progress without input.
+    if (state == State::Checking || state == State::Downloading)
+        requestAnimation();
     switch (state) {
     case State::Checking:
         ImGui::SameLine();
