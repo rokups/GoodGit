@@ -110,6 +110,10 @@ bool Platform::pollEvents()
             m_quit = true;
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(m_window))
             m_quit = true;
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED && event.window.windowID == SDL_GetWindowID(m_window))
+            m_focused = true;
+        else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST && event.window.windowID == SDL_GetWindowID(m_window))
+            m_focused = false;
         // Files and folders dropped on the window: one drop is BEGIN, a FILE per path, COMPLETE.
         if (event.type == SDL_EVENT_DROP_BEGIN) {
             m_inDrop = true;

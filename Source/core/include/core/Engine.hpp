@@ -279,11 +279,16 @@ class Worker;
 class Watcher;
 struct HistoryState;
 
+// What the window does now. The file watcher refreshes the status by this state.
+enum class WindowState { Focused, Unfocused, Minimized };
+
 class Engine {
 public:
     struct Options {
         std::filesystem::path path;
         bool watch = true;
+        // Unfocused window: at most one status refresh from the watcher in this time.
+        std::chrono::milliseconds unfocusedStatusInterval{2000};
     };
 
     explicit Engine(Options options);
@@ -331,6 +336,14 @@ public:
     RequestId rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::todo::Context> context,
         gg::todo::Options options);
 
+    // The window state, from any thread. The status refreshes that the watcher asks for follow it.
+    // Focused: each one runs. Unfocused: at most one in each `unfocusedStatusInterval`; poll() runs
+    // the held one when the time ends. Minimized: all are held. A focus gain or a restore runs
+    // exactly one refresh when any was held. Mutation and user refreshes are not affected.
+    void setWindowState(WindowState state);
+    // What the watcher thread does with one notice. Public so a test can send a fake event.
+    void onWatchEvent(const WatchEvent& event);
+
     void cancel(RequestId id);
     void cancelAll();
 
@@ -353,6 +366,8 @@ private:
     RequestId submit(Queue queue, std::string label, int slot, bool cancellable,
         std::function<void(Job&)> fn, bool cancelRunning = true);
     void finish(RequestId id, bool cancelled, bool failed);
+    void requestWatcherStatus();
+    void runHeldWatcherStatus();
 
     Options m_options;
     std::atomic<RequestId> m_nextId{1};
@@ -365,6 +380,12 @@ private:
     std::deque<Event> m_events;
     std::vector<Activity> m_activities;
     std::vector<std::pair<RequestId, gg::CancelToken>> m_tokens;
+
+    // Watcher status refreshes by window state. Own mutex: the watcher thread and the UI thread use it.
+    std::mutex m_windowMutex;
+    WindowState m_windowState = WindowState::Focused;
+    bool m_statusHeld = false;
+    std::chrono::steady_clock::time_point m_lastWatcherStatus{};
 
     std::string m_busy;
     std::shared_ptr<void> m_statusConflicts;  // gg::conflicts::Cache, snapshot worker only

@@ -632,6 +632,9 @@ void App::frame()
     std::erase_if(m_closing, [](const std::unique_ptr<Session>& s) { return s->idle(); });
 
     if (m_session) {
+        m_session->engine().setWindowState(m_platform.minimized() ? core::WindowState::Minimized
+                : m_platform.focused()                              ? core::WindowState::Focused
+                                                                    : core::WindowState::Unfocused);
         m_session->pump();
         if (m_session->failed()) {
             m_closing.push_back(std::move(m_session));

@@ -44,6 +44,9 @@ public:
     std::vector<std::vector<std::string>> takeDrops() { return std::exchange(m_drops, {}); }
     void requestQuit() { m_quit = true; }
     void cancelQuit() { m_quit = false; }
+    // The window has input focus (from the focus events; true until the first loss).
+    bool focused() const { return m_focused; }
+    bool minimized() const { return m_minimized; }
 
     void beginFrame();
     void endFrame(); // renders ImGui draw data and presents
@@ -79,6 +82,7 @@ private:
     bool m_inDrop = false;
     bool m_imguiReady = false;
     bool m_minimized = false;
+    bool m_focused = true;
 };
 
 } // namespace ggui

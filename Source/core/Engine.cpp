@@ -207,16 +207,7 @@ RequestId Engine::open()
         if (m_options.watch && !m_watcher) {
             try {
                 m_watcher = std::make_unique<Watcher>(snap->workdir, snap->gitDir, snap->commonDir,
-                    [this](const WatchEvent& e) {
-                        emit(e);
-                        if (e.refs || e.journal)
-                            reconcile();
-                        if (e.refs) {
-                            refresh(false);
-                            refreshStatus(false);
-                        } else if (e.index || e.worktree)
-                            refreshStatus(false);
-                    });
+                    [this](const WatchEvent& e) { onWatchEvent(e); });
             } catch (const std::exception& e) {
                 spdlog::warn("file watcher unavailable: {}", e.what());
             }
@@ -224,6 +215,78 @@ RequestId Engine::open()
         emit(OpenedEvent{job.id, std::move(snap)});
         reconcile();
     });
+}
+
+void Engine::onWatchEvent(const WatchEvent& e)
+{
+    emit(e);
+    if (e.refs || e.journal)
+        reconcile();
+    if (e.refs)
+        refresh(false);
+    if (e.refs || e.index || e.worktree)
+        requestWatcherStatus();
+}
+
+void Engine::requestWatcherStatus()
+{
+    bool run = false;
+    {
+        std::lock_guard lock(m_windowMutex);
+        const auto now = std::chrono::steady_clock::now();
+        switch (m_windowState) {
+        case WindowState::Focused:
+            run = true;
+            break;
+        case WindowState::Unfocused:
+            run = m_lastWatcherStatus == std::chrono::steady_clock::time_point{}
+                || now - m_lastWatcherStatus >= m_options.unfocusedStatusInterval;
+            break;
+        case WindowState::Minimized:
+            break;
+        }
+        m_statusHeld = !run;
+        if (run)
+            m_lastWatcherStatus = now;
+    }
+    if (run)
+        refreshStatus(false);
+}
+
+void Engine::runHeldWatcherStatus()
+{
+    bool run = false;
+    {
+        std::lock_guard lock(m_windowMutex);
+        if (m_statusHeld && m_windowState == WindowState::Unfocused) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now - m_lastWatcherStatus >= m_options.unfocusedStatusInterval) {
+                run = true;
+                m_statusHeld = false;
+                m_lastWatcherStatus = now;
+            }
+        }
+    }
+    if (run)
+        refreshStatus(false);
+}
+
+void Engine::setWindowState(WindowState state)
+{
+    bool run = false;
+    {
+        std::lock_guard lock(m_windowMutex);
+        const WindowState old = m_windowState;
+        m_windowState = state;
+        // A focus gain or a restore runs the one refresh. Unfocused alone waits for its interval.
+        if (m_statusHeld && state != WindowState::Minimized && (state == WindowState::Focused || old == WindowState::Minimized)) {
+            run = true;
+            m_statusHeld = false;
+            m_lastWatcherStatus = std::chrono::steady_clock::now();
+        }
+    }
+    if (run)
+        refreshStatus(false);
 }
 
 RequestId Engine::reconcile()
@@ -390,6 +453,7 @@ void Engine::cancelAll()
 
 std::vector<Event> Engine::poll(size_t maxEvents)
 {
+    runHeldWatcherStatus();
     std::vector<Event> out;
     std::lock_guard lock(m_mutex);
     while (!m_events.empty() && out.size() < maxEvents) {

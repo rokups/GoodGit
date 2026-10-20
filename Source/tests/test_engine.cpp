@@ -13,6 +13,7 @@
 #include <atomic>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -377,6 +378,97 @@ GG_TEST("engine", "a status request that is not from the watcher cancels the run
     GG_CHECK(s.waitUntil([&] { return !worker.busy(); }, 10.0f));
     GG_CHECK(probe.sawCancel.load());
     GG_CHECK_EQ(probe.followUpRuns.load(), 1);
+}
+
+namespace {
+
+// Counts the status scans of an engine: one final StatusEvent for each scan request.
+struct ScanCounter {
+    ggui::core::Engine& engine;
+    std::set<ggui::core::RequestId> scans;
+
+    int count()
+    {
+        for (auto& event : engine.poll(64))
+            if (const auto* st = std::get_if<ggui::core::StatusEvent>(&event))
+                scans.insert(st->request);
+        return static_cast<int>(scans.size());
+    }
+};
+
+ggui::core::WatchEvent worktreeEvent()
+{
+    ggui::core::WatchEvent e;
+    e.worktree = true;
+    return e;
+}
+
+} // namespace
+
+GG_TEST("engine", "window state: a focused window scans for every watcher event")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine::Options options{repo, false};
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    for (int i = 1; i <= 3; ++i) {
+        engine.onWatchEvent(worktreeEvent());
+        GG_CHECK(s.waitUntil([&] { return scans.count() == i; }, 10.0f));
+    }
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "window state: an unfocused window scans once in each interval")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine::Options options{repo, false};
+    options.unfocusedStatusInterval = std::chrono::milliseconds(600);
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    engine.setWindowState(ggui::core::WindowState::Unfocused);
+    // A burst: the first event scans at once, the others wait for the end of the interval.
+    for (int i = 0; i < 6; ++i)
+        engine.onWatchEvent(worktreeEvent());
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 1; }, 10.0f));
+    // poll() runs the held scan when the interval ends: one scan for the whole burst.
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
+    s.waitUntil([] { return false; }, 1.5f);
+    GG_CHECK_EQ(scans.count(), 2);
+    // A focus gain with nothing held does not scan.
+    engine.setWindowState(ggui::core::WindowState::Focused);
+    s.waitUntil([] { return false; }, 0.5f);
+    GG_CHECK_EQ(scans.count(), 2);
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "window state: a minimized window holds the scans until it has focus")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine::Options options{repo, false};
+    options.unfocusedStatusInterval = std::chrono::milliseconds(200);
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    engine.setWindowState(ggui::core::WindowState::Minimized);
+    for (int i = 0; i < 5; ++i)
+        engine.onWatchEvent(worktreeEvent());
+    s.waitUntil([] { return false; }, 1.0f);
+    GG_CHECK_EQ(scans.count(), 0);
+    // Focus gain: exactly one scan.
+    engine.setWindowState(ggui::core::WindowState::Focused);
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 1; }, 10.0f));
+    s.waitUntil([] { return false; }, 0.5f);
+    GG_CHECK_EQ(scans.count(), 1);
+    // A restore without focus runs one scan too, and no interval is needed for it.
+    engine.setWindowState(ggui::core::WindowState::Minimized);
+    engine.onWatchEvent(worktreeEvent());
+    engine.onWatchEvent(worktreeEvent());
+    s.waitUntil([] { return false; }, 0.5f);
+    GG_CHECK_EQ(scans.count(), 1);
+    engine.setWindowState(ggui::core::WindowState::Unfocused);
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
+    s.waitUntil([] { return false; }, 0.8f);
+    GG_CHECK_EQ(scans.count(), 2);
+    engine.cancelAll();
 }
 
 } // namespace ggtest
