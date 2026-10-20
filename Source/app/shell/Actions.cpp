@@ -40,6 +40,13 @@ std::vector<std::string> withPaths(std::vector<std::string> args, const std::vec
     return args;
 }
 
+// The first line of a git error, for a short message.
+std::string firstLineOf(const std::string& text)
+{
+    const auto lines = gg::splitLines(text);
+    return lines.empty() ? text : lines.front();
+}
+
 // "<7-hex short id> <first line of the message>", for conflict-side labels (CONF-SIDE-LABELS).
 std::string commitLabel(git_repository* repo, const git_oid& id)
 {
@@ -141,9 +148,15 @@ void Actions::unstage(const std::vector<std::string>& paths)
 }
 
 void Actions::discard(const std::vector<std::string>& tracked, const std::vector<std::string>& untracked,
-    const std::vector<StagedDiscard>& staged)
+    const std::vector<StagedDiscard>& staged, const std::vector<SubmoduleDiscard>& submodules)
 {
-    run("discard changes", [tracked, untracked, staged](MutationContext& ctx) {
+    auto done = [this](const core::MutationFinishedEvent& e) {
+        if (e.outcome == Outcome::Ok && !e.message.empty())
+            m_session.app().notify(App::Notice::Warning, "Discard changes", e.message);
+        else
+            handleDefault(e);
+    };
+    run("discard changes", [tracked, untracked, staged, submodules](MutationContext& ctx) {
         if (!tracked.empty())
             ctx.git(withPaths({"restore", "--worktree"}, tracked));
         // Fully staged files: new paths leave the index and disk, the rest (and renames' old
@@ -163,7 +176,31 @@ void Actions::discard(const std::vector<std::string>& tracked, const std::vector
             ctx.git(withPaths({"restore", "--staged", "--worktree", "--source=HEAD"}, restore));
         if (!untracked.empty())
             ctx.git(withPaths({"clean", "-f", "-q"}, untracked));
-    });
+        // Submodules: `restore` does not move their HEAD, so `submodule update` does. It runs after
+        // the steps above (a deleted submodule needs its restored .gitmodules entry).
+        for (const auto& m : submodules) {
+            const bool added = m.staged && (m.kind == core::ChangeKind::Added || m.kind == core::ChangeKind::Copied);
+            const bool deleted = m.staged && m.kind == core::ChangeKind::Deleted;
+            if (added) {
+                ctx.git({"rm", "-f", "-q", "--", m.path});
+                continue;
+            }
+            if (m.staged)
+                ctx.git({"restore", "--staged", "--source=HEAD", "--", m.path});
+            if (deleted) {
+                const auto r = ctx.gitMayFail({"submodule", "update", "--init", "--checkout", "--force", "--recursive", "--", m.path});
+                if (!r.ok())
+                    ctx.info = "Submodule " + m.path + " was not checked out again: " + firstLineOf(r.message());
+                continue;
+            }
+            // A submodule that is not populated has nothing to reset.
+            if (!fs::exists(ctx.cwd() / m.path / ".git"))
+                continue;
+            ctx.git({"submodule", "update", "--checkout", "--force", "--recursive", "--", m.path});
+            if (m.clean)
+                ctx.git({"-C", m.path, "clean", "-fd", "-q"});
+        }
+    }, done);
 }
 
 void Actions::stageAll()
@@ -743,13 +780,6 @@ std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::str
     if (any)
         throw MutationError{Outcome::Refused, why, {}};
     return std::nullopt;
-}
-
-// The first line of a git error, for a rollback step that fails.
-std::string firstLineOf(const std::string& text)
-{
-    const auto lines = gg::splitLines(text);
-    return lines.empty() ? text : lines.front();
 }
 
 } // namespace

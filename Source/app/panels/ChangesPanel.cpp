@@ -126,6 +126,7 @@ FileRow rowFromStatus(FileGroup g, const core::StatusEntry& e)
     r.oldPath = e.oldPath;
     r.kind = e.kind;
     r.intentToAdd = e.intentToAdd;
+    r.submodule = e.submodule;
     r.submoduleState = e.submoduleState;
     r.conflict = e.conflictDescription;
     r.sides = e.sides;
@@ -563,6 +564,10 @@ ChangesPanel::DiscardPlan ChangesPanel::discardPlan(const std::vector<const File
                 plan.partial = true;
                 break;
             }
+            if (r->submodule) {
+                plan.submodules.push_back({r->path, true, r->kind, false});
+                break;
+            }
             StagedDiscard s{r->path, {}, false};
             if (unborn || r->kind == core::ChangeKind::Added || r->kind == core::ChangeKind::Copied)
                 s.remove = true;
@@ -576,6 +581,8 @@ ChangesPanel::DiscardPlan ChangesPanel::discardPlan(const std::vector<const File
         case FileGroup::Unstaged:
             if (status && in(status->staged, r->path))
                 plan.partial = true;
+            else if (r->submodule)
+                plan.submodules.push_back({r->path, false, r->kind, (r->submoduleState & core::UntrackedContent) != 0});
             else if (!r->intentToAdd)
                 plan.tracked.push_back(r->path);
             break;

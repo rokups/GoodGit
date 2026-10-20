@@ -39,6 +39,7 @@ struct FileRow {
     std::string oldPath;
     core::ChangeKind kind = core::ChangeKind::Modified;
     bool intentToAdd = false;
+    bool submodule = false;      // the row is a gitlink (submodule)
     unsigned submoduleState = 0; // core::SubmoduleState bits (unstaged submodule rows)
     bool firstClass = false;
     int sides = 0;           // first-class conflicts: number of sides
@@ -105,11 +106,15 @@ private:
     struct DiscardPlan {
         std::vector<std::string> tracked, untracked;
         std::vector<StagedDiscard> staged;
+        std::vector<SubmoduleDiscard> submodules;
         bool partial = false; // a selected file is both staged and unstaged: Discard is off
-        bool enabled() const { return !partial && (!tracked.empty() || !untracked.empty() || !staged.empty()); }
+        bool enabled() const { return !partial && (!tracked.empty() || !untracked.empty() || !staged.empty() || !submodules.empty()); }
     };
     DiscardPlan discardPlan(const std::vector<const FileRow*>& rows) const;
-    void discard(const DiscardPlan& plan) { m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged); }
+    void discard(const DiscardPlan& plan)
+    {
+        m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged, plan.submodules);
+    }
     std::vector<const FileRow*> visibleRows() const;
     core::DiffQuery patchQuery(const FileRow& row) const;
     // The commit shown on the right: the upper one of two selected commits, else the selection itself.

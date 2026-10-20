@@ -330,7 +330,7 @@ void Session::showEditRemoteDialog(const std::string& remote)
 }
 
 void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked,
-    std::vector<StagedDiscard> staged)
+    std::vector<StagedDiscard> staged, std::vector<SubmoduleDiscard> submodules)
 {
     Form f;
     f.title = "Discard changes";
@@ -347,8 +347,18 @@ void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<st
         else
             list += "  " + s.path + " (staged: deleted)\n";
     }
+    for (const auto& m : submodules) {
+        if (m.staged && (m.kind == core::ChangeKind::Added || m.kind == core::ChangeKind::Copied)) {
+            list += "  Submodule " + m.path + ": remove it from the index and delete its working tree\n";
+            continue;
+        }
+        list += "  Submodule " + m.path + ": reset to the commit in " + (m.staged ? "HEAD" : "the index")
+            + " and discard changes to tracked files inside it" + (m.clean ? ", delete untracked files inside it" : "") + "\n";
+    }
     f.message = "Discard the changes of these files? This cannot be undone.\n\n" + list;
-    f.buttons.push_back({"Discard", [this, tracked, untracked, staged](Form&) { m_actions->discard(tracked, untracked, staged); }});
+    f.buttons.push_back({"Discard", [this, tracked, untracked, staged, submodules](Form&) {
+                             m_actions->discard(tracked, untracked, staged, submodules);
+                         }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

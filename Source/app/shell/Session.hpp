@@ -200,7 +200,7 @@ public:
     void showAddRemoteDialog();
     void showEditRemoteDialog(const std::string& remote);
     void showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked,
-        std::vector<StagedDiscard> staged = {});
+        std::vector<StagedDiscard> staged = {}, std::vector<SubmoduleDiscard> submodules = {});
     void showDiscardAllDialog();
     void showApplyPatchDialog();
     void showRenameBranchDialog(const std::string& branch);

@@ -65,6 +65,30 @@ const ggui::core::StatusEntry* unstagedEntry(Scenario& s, const std::string& pat
     return found;
 }
 
+// Selects the `sub` row of `group` in the working tree and discards it with the D key.
+void discardSubmodule(Scenario& s, const fs::path& repo, const char* group, const std::string& path = "sub")
+{
+    auto* ctx = s.ctx;
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string ref = fileRef(s, group, path);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(ref.c_str()); }));
+    ctx->ItemClick(ref.c_str());
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(ref.c_str()); }));
+    s.settle();
+}
+
+// The submodule is at the commit of HEAD and has no change.
+void checkSubmoduleReset(Scenario& s, const fs::path& repo, const std::string& path = "sub")
+{
+    GG_CHECK_STR_EQ(s.head(repo / path), s.gitOut(repo, {"rev-parse", "HEAD:" + path}));
+    GG_CHECK(s.gitOut(repo / path, {"status", "--porcelain"}).empty());
+    GG_CHECK(s.gitOut(repo, {"status", "--porcelain"}).empty());
+}
+
 } // namespace
 
 GG_TEST("submodule", "Working tree commit takes an unstaged submodule change")
@@ -270,6 +294,82 @@ GG_TEST("submodule", "A change inside a nested submodule shows on the outer subm
     s.write(inner, tracked, "changed\n");
     GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(unstagedEntry(s, "sub", ModifiedContent) != nullptr);
+}
+
+GG_TEST("submodule", "Discard resets a submodule with new commits")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    moveSubmodule(s, repo, false);
+    discardSubmodule(s, repo, "Unstaged");
+    checkSubmoduleReset(s, repo);
+}
+
+GG_TEST("submodule", "Discard resets a submodule with modified content")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", "s3.txt", "s3 modified\n");
+    discardSubmodule(s, repo, "Unstaged");
+    checkSubmoduleReset(s, repo);
+    GG_CHECK_STR_EQ(s.read(repo / "sub", "s3.txt"), "s3\n");
+}
+
+GG_TEST("submodule", "Discard deletes the untracked files inside a submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", "loose.txt", "loose\n");
+    discardSubmodule(s, repo, "Unstaged");
+    checkSubmoduleReset(s, repo);
+    GG_CHECK(!fs::exists(repo / "sub" / "loose.txt"));
+}
+
+GG_TEST("submodule", "Discard resets a submodule with new commits, modified and untracked content")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    moveSubmodule(s, repo, false);
+    s.write(repo / "sub", "s3.txt", "s3 modified\n");
+    s.write(repo / "sub", "loose.txt", "loose\n");
+    discardSubmodule(s, repo, "Unstaged");
+    checkSubmoduleReset(s, repo);
+}
+
+GG_TEST("submodule", "Discard of a staged submodule change resets the submodule")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    moveSubmodule(s, repo, true);
+    discardSubmodule(s, repo, "Staged");
+    checkSubmoduleReset(s, repo);
+}
+
+GG_TEST("submodule", "Discard of a staged submodule deletion brings the submodule back")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo, {"rm", "-f", "-q", "sub"});
+    s.git(repo, {"restore", "--staged", "--worktree", ".gitmodules"});
+    discardSubmodule(s, repo, "Staged");
+    GG_CHECK(fs::exists(repo / "sub" / "s3.txt"));
+    checkSubmoduleReset(s, repo);
+}
+
+GG_TEST("submodule", "Discard of a staged new submodule removes it")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path origin = repo.parent_path() / (repo.filename().string() + "-sub");
+    s.git(repo, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", origin.string(), "sub2"});
+    discardSubmodule(s, repo, "Staged", "sub2");
+    GG_CHECK(!fs::exists(repo / "sub2"));
+    GG_CHECK(s.gitOut(repo, {"ls-files", "sub2"}).empty());
+}
+
+GG_TEST("submodule", "Discard returns a nested submodule to its commit")
+{
+    const fs::path repo = s.fixture(Recipe::NestedSubmodules);
+    const fs::path inner = repo / "sub" / "inner";
+    s.commitFile(inner, "i3.txt", "i3\n", "Inner 3");
+    s.write(inner, "i3.txt", "i3 modified\n");
+    discardSubmodule(s, repo, "Unstaged");
+    checkSubmoduleReset(s, repo);
+    GG_CHECK_STR_EQ(s.head(inner), s.gitOut(repo / "sub", {"rev-parse", "HEAD:inner"}));
+    GG_CHECK(s.gitOut(inner, {"status", "--porcelain"}).empty());
 }
 
 } // namespace ggtest

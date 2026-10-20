@@ -27,6 +27,16 @@ struct StagedDiscard {
     bool remove = false;
 };
 
+// A submodule row to discard: the submodule goes back to the commit that the superproject expects.
+// `staged`: the gitlink change is staged (the index goes back to HEAD first); `kind` is the kind of
+// the staged change. `clean`: untracked files inside the submodule are deleted too.
+struct SubmoduleDiscard {
+    std::string path;
+    bool staged = false;
+    core::ChangeKind kind = core::ChangeKind::Modified;
+    bool clean = false;
+};
+
 class Session;
 
 enum class PullMode { Config, Merge, Rebase, FastForwardOnly };
@@ -61,7 +71,7 @@ public:
     void stage(const std::vector<std::string>& paths);
     void unstage(const std::vector<std::string>& paths);
     void discard(const std::vector<std::string>& tracked, const std::vector<std::string>& untracked,
-        const std::vector<StagedDiscard>& staged = {});
+        const std::vector<StagedDiscard>& staged = {}, const std::vector<SubmoduleDiscard>& submodules = {});
     void stageAll();
     void unstageAll();
     void stageModified();
