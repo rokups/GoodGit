@@ -39,6 +39,10 @@ constexpr int kSlotReconcile = 6;
 constexpr int kSlotRebasePreview = 1;
 constexpr int kSlotRemoteTags = 1;
 
+// An index write of our own mutation is seen by the watcher up to its debounce (150 ms) later.
+// The window after the mutation is longer than that.
+constexpr auto kSelfWriteWindow = std::chrono::milliseconds(400);
+
 std::string firstLines(const std::string& text, int n = 6)
 {
     std::string out;
@@ -62,6 +66,7 @@ const char* queueName(Queue q)
     case Queue::Preview: return "preview";
     case Queue::Remote: return "remote";
     case Queue::Diff: return "diff";
+    case Queue::Status: return "status";
     }
     return "?";
 }
@@ -224,8 +229,19 @@ void Engine::onWatchEvent(const WatchEvent& e)
         reconcile();
     if (e.refs)
         refresh(false);
-    if (e.refs || e.index || e.worktree)
+    // An index-only notice during or just after a mutation of ours is the write of that mutation
+    // (for example `git add`). The refresh of the mutation scans after the write, so a second
+    // scan finds nothing new. An index notice with no such mutation (an external `git add`) scans.
+    const bool ownWrite = e.index && !e.refs && !e.worktree && ownIndexWrite();
+    if (e.refs || e.worktree || (e.index && !ownWrite))
         requestWatcherStatus();
+}
+
+bool Engine::ownIndexWrite() const
+{
+    std::lock_guard lock(m_selfMutex);
+    return m_selfRunning > 0 || (m_selfEnded != std::chrono::steady_clock::time_point{}
+                                    && std::chrono::steady_clock::now() - m_selfEnded < kSelfWriteWindow);
 }
 
 void Engine::requestWatcherStatus()
@@ -318,7 +334,7 @@ RequestId Engine::refresh(bool withStatus)
 
 RequestId Engine::refreshStatus(bool cancelRunning)
 {
-    return submit(Queue::Snapshot, "Reading working tree status", kSlotStatus, true, [this](Job& job) {
+    return submit(Queue::Status, "Reading working tree status", kSlotStatus, true, [this](Job& job) {
         const RequestId id = job.id;
         StatusPtr status = readStatus(job.repo(), m_generation.load(), job.token,
             [this, id](StatusPtr partial) { emit(StatusEvent{id, std::move(partial)}); });
@@ -532,6 +548,29 @@ RequestId Engine::mutate(MutationSpec spec)
     const Queue queue = spec.network ? Queue::Network : Queue::Mutation;
     std::string label = spec.label;
     return submit(queue, std::move(label), 0, true, [this, spec = std::move(spec)](Job& job) {
+        // Opens the self-write window for the whole job. It closes (and the time starts) at the
+        // end of the job, after the refresh is queued, also when the job throws.
+        // A network job (fetch, push, pull) can run for minutes and needs no window: an external
+        // `git add` in that time must still refresh.
+        struct SelfWrite {
+            Engine& engine;
+            bool active;
+            SelfWrite(Engine& e, bool a) : engine(e), active(a)
+            {
+                if (active) {
+                    std::lock_guard lock(engine.m_selfMutex);
+                    ++engine.m_selfRunning;
+                }
+            }
+            ~SelfWrite()
+            {
+                if (active) {
+                    std::lock_guard lock(engine.m_selfMutex);
+                    --engine.m_selfRunning;
+                    engine.m_selfEnded = std::chrono::steady_clock::now();
+                }
+            }
+        } selfWrite(*this, spec.refreshAfter && !spec.network);
         {
             std::lock_guard lock(m_mutex);
             m_busy = spec.label;

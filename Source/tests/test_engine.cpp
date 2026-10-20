@@ -386,12 +386,16 @@ namespace {
 struct ScanCounter {
     ggui::core::Engine& engine;
     std::set<ggui::core::RequestId> scans;
+    bool mutationFinished = false;
 
     int count()
     {
-        for (auto& event : engine.poll(64))
+        for (auto& event : engine.poll(64)) {
             if (const auto* st = std::get_if<ggui::core::StatusEvent>(&event))
                 scans.insert(st->request);
+            else if (std::holds_alternative<ggui::core::MutationFinishedEvent>(event))
+                mutationFinished = true;
+        }
         return static_cast<int>(scans.size());
     }
 };
@@ -468,6 +472,38 @@ GG_TEST("engine", "window state: a minimized window holds the scans until it has
     GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
     s.waitUntil([] { return false; }, 0.8f);
     GG_CHECK_EQ(scans.count(), 2);
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "self write: a stage scans once, an external index change scans again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "staged-by-us.txt", "new\n");
+    ggui::core::Engine::Options options{repo, false};
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    ggui::core::MutationSpec spec;
+    spec.label = "stage test";
+    spec.journal = false;
+    spec.captureIndex = false;
+    ggui::core::WatchEvent index;
+    index.index = true;
+    spec.run = [&engine, index](ggui::core::MutationContext& mc) {
+        mc.git({"add", "-A", "--", "staged-by-us.txt"});
+        // The watcher notice of this write, while the mutation runs: no scan of its own.
+        engine.onWatchEvent(index);
+    };
+    engine.mutate(std::move(spec));
+    GG_CHECK(s.waitUntil([&] { scans.count(); return scans.mutationFinished; }, 10.0f));
+    // This check depends on the window of 400 ms after the mutation: the notice comes at once
+    // after the finish event, with no wait before it.
+    engine.onWatchEvent(index);
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 1; }, 10.0f));
+    s.waitUntil([] { return false; }, 1.0f);
+    GG_CHECK_EQ(scans.count(), 1);
+    // The window is closed: an index change now comes from outside and scans.
+    engine.onWatchEvent(index);
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
     engine.cancelAll();
 }
 

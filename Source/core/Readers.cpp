@@ -616,11 +616,12 @@ StatusPtr readStatusOnce(git_repository* repo, std::uint64_t generation, const g
             }
             // Publish partial results ("scanning…") once many changes have arrived, and then
             // periodically, so huge worktrees show progress instead of waiting for the full scan.
+            // Each partial result copies the whole result: after the first one, at most one in a second.
             const auto now = std::chrono::steady_clock::now();
             const size_t seen = c->result->unstaged.size() + c->result->untracked.size();
             const bool firstBatch = !c->published && seen >= 256;
             const bool periodic = now - c->start > std::chrono::milliseconds(150)
-                && now - c->lastPublish > std::chrono::milliseconds(250);
+                && now - c->lastPublish > std::chrono::milliseconds(c->published ? 1000 : 250);
             if (*c->partial && (firstBatch || periodic)) {
                 auto snapshot = std::make_shared<StatusResult>(*c->result);
                 snapshot->partial = true;

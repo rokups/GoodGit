@@ -272,8 +272,12 @@ struct Activity {
 };
 
 // Diff has its own queue: blame, reflog, commit details and messages (Content) never delay a diff.
-enum class Queue { Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5, Remote = 6, Diff = 7 };
-constexpr int kQueueCount = 8;
+// Status has its own queue: a long working tree scan never delays the snapshot, config, journal and
+// merge-check jobs (Snapshot).
+enum class Queue {
+    Mutation = 0, Snapshot = 1, History = 2, Content = 3, Network = 4, Preview = 5, Remote = 6, Diff = 7, Status = 8
+};
+constexpr int kQueueCount = 9;
 
 class Worker;
 class Watcher;
@@ -368,6 +372,8 @@ private:
     void finish(RequestId id, bool cancelled, bool failed);
     void requestWatcherStatus();
     void runHeldWatcherStatus();
+    // True when an index-only watcher notice comes from a write of our own mutation (see onWatchEvent).
+    bool ownIndexWrite() const;
 
     Options m_options;
     std::atomic<RequestId> m_nextId{1};
@@ -387,8 +393,14 @@ private:
     bool m_statusHeld = false;
     std::chrono::steady_clock::time_point m_lastWatcherStatus{};
 
+    // Self-write window: the mutations that run now and queue a refresh (with a status scan) when
+    // they end, and the time the last one ended. Own mutex: the watcher thread reads it.
+    mutable std::mutex m_selfMutex;
+    int m_selfRunning = 0;
+    std::chrono::steady_clock::time_point m_selfEnded{};
+
     std::string m_busy;
-    std::shared_ptr<void> m_statusConflicts;  // gg::conflicts::Cache, snapshot worker only
+    std::shared_ptr<void> m_statusConflicts;  // gg::conflicts::Cache, status worker only
     std::shared_ptr<void> m_historyConflicts; // gg::conflicts::Cache, history worker only
 
     friend class Worker;
