@@ -1,6 +1,7 @@
 #include "platform/SelfUpdater.hpp"
 
 #include "libgg/Launch.hpp"
+#include "libgg/Thread.hpp"
 
 #include <cerrno>
 #include <exception>
@@ -122,6 +123,7 @@ void SelfUpdater::probe()
         m_probeDone = true;
     }
     m_cv.notify_all();
+    gg::wakeUi();
 }
 
 SelfUpdater::State SelfUpdater::state() const
@@ -261,15 +263,21 @@ bool SelfUpdater::cancel()
 
 void SelfUpdater::setState(State to)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_state = to;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_state = to;
+    }
+    gg::wakeUi();
 }
 
 void SelfUpdater::fail(const std::string& text)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_error = text;
-    m_state = State::Failed;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_error = text;
+        m_state = State::Failed;
+    }
+    gg::wakeUi();
 }
 
 bool SelfUpdater::waitProbe(const gg::CancelToken& cancel)
@@ -311,6 +319,7 @@ void SelfUpdater::runCheck(gg::CancelToken cancel)
                     m_state = State::Idle;
                 }
             }
+            gg::wakeUi();
             return; // Off: the probe set the state
         }
         FetchFn fetch;
@@ -362,16 +371,19 @@ void SelfUpdater::runCheck(gg::CancelToken cancel)
             fail("The release has no usable package for " + m_config.buildInfo.packageSystem + ".");
             return;
         }
-        std::lock_guard<std::mutex> lock(m_mutex);
-        ReleaseInfo info;
-        info.commit = release.commit;
-        info.shortCommit = shortCommit(release.commit);
-        info.assetName = asset->name;
-        info.size = asset->size;
-        m_release = info;
-        m_asset = *asset;
-        m_total = asset->size;
-        m_state = State::Available;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ReleaseInfo info;
+            info.commit = release.commit;
+            info.shortCommit = shortCommit(release.commit);
+            info.assetName = asset->name;
+            info.size = asset->size;
+            m_release = info;
+            m_asset = *asset;
+            m_total = asset->size;
+            m_state = State::Available;
+        }
+        gg::wakeUi();
     } catch (const std::exception& e) {
         removeAll(dir);
         fail(std::string("The update check failed: ") + e.what());
@@ -421,14 +433,17 @@ void SelfUpdater::runDownload(gg::CancelToken cancel, Asset asset)
             fail(error);
             return;
         }
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (cancel.cancelled()) {
-            removeAll(stage);
-            m_state = State::Available;
-            return;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (cancel.cancelled()) {
+                removeAll(stage);
+                m_state = State::Available;
+            } else {
+                m_script = scriptPath(stage);
+                m_state = State::Ready;
+            }
         }
-        m_script = scriptPath(stage);
-        m_state = State::Ready;
+        gg::wakeUi();
     } catch (const std::exception& e) {
         removeAll(dir);
         fail(std::string("The download failed: ") + e.what());

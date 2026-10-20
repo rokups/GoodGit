@@ -11,6 +11,7 @@
 #include <libgg/Legacy.hpp>
 #include <libgg/Operation.hpp>
 #include <libgg/Reconcile.hpp>
+#include <libgg/Thread.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -166,18 +167,28 @@ RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancella
 
 void Engine::finish(RequestId id, bool cancelled, bool failed)
 {
-    std::lock_guard lock(m_mutex);
-    const auto before = m_activities.size();
-    std::erase_if(m_activities, [id](const Activity& a) { return a.id == id; });
-    std::erase_if(m_tokens, [id](const auto& p) { return p.first == id; });
-    if (m_activities.size() != before)
-        m_events.push_back(TaskFinishedEvent{id, cancelled, failed});
+    bool pushed = false;
+    {
+        std::lock_guard lock(m_mutex);
+        const auto before = m_activities.size();
+        std::erase_if(m_activities, [id](const Activity& a) { return a.id == id; });
+        std::erase_if(m_tokens, [id](const auto& p) { return p.first == id; });
+        if (m_activities.size() != before) {
+            m_events.push_back(TaskFinishedEvent{id, cancelled, failed});
+            pushed = true;
+        }
+    }
+    if (pushed)
+        gg::wakeUi();
 }
 
 void Engine::emit(Event event)
 {
-    std::lock_guard lock(m_mutex);
-    m_events.push_back(std::move(event));
+    {
+        std::lock_guard lock(m_mutex);
+        m_events.push_back(std::move(event));
+    }
+    gg::wakeUi();
 }
 
 void Engine::setProgress(RequestId id, int percent, const std::string& label)
@@ -876,6 +887,7 @@ void SummaryService::request(const std::vector<std::filesystem::path>& paths)
             m_results = std::move(results);
         }
         --m_pending;
+        gg::wakeUi();
     };
     m_worker->post(std::move(task));
 }

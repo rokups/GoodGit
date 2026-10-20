@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 namespace gg {
 namespace {
@@ -17,6 +18,8 @@ std::atomic<UiThreadCheck> g_mode{UiThreadCheck::Off};
 #endif
 std::mutex g_violationsMutex;
 std::vector<std::string> g_violations;
+std::mutex g_wakerMutex;
+std::function<void()> g_waker;
 
 } // namespace
 
@@ -47,6 +50,21 @@ bool threadChecksCompiled()
 #else
     return false;
 #endif
+}
+
+void setUiWaker(std::function<void()> waker)
+{
+    std::lock_guard lock(g_wakerMutex);
+    g_waker = std::move(waker);
+}
+
+void wakeUi()
+{
+    // The call runs under the lock, so setUiWaker({}) waits for the calls in flight.
+    // The waker must not call setUiWaker() or wakeUi().
+    std::lock_guard lock(g_wakerMutex);
+    if (g_waker)
+        g_waker();
 }
 
 void assertNotUiThread([[maybe_unused]] const char* what)

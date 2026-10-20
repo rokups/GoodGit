@@ -8,6 +8,7 @@
 #include "platform/SelfUpdater.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Settings.hpp"
+#include "util/Frames.hpp"
 
 #include <core/Engine.hpp>
 #include <core/Services.hpp>
@@ -144,8 +145,13 @@ public:
         return m_updater ? m_updater->readyScript() : std::nullopt;
     }
 
-    // Runs `fn` on the UI thread at the start of the next frame.
-    void post(std::function<void()> fn) { m_posted.push_back(std::move(fn)); }
+    // Runs `fn` on the UI thread at the start of the next frame. Call it on the UI thread only:
+    // the list has no lock. A worker thread hands work over with AsyncIo, which wakes the UI.
+    void post(std::function<void()> fn)
+    {
+        m_posted.push_back(std::move(fn));
+        requestAnimation(); // the next frame comes soon, also when the loop sleeps
+    }
 
     // Last error or warning reported (also logged), until clearError().
     const std::string& errorTitle() const { return m_errorTitle; }

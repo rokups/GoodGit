@@ -4,6 +4,7 @@
 
 #include <libgg/Files.hpp>
 #include <libgg/SequenceEditorLink.hpp>
+#include <libgg/Thread.hpp>
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
@@ -91,9 +92,15 @@ void AsyncIo::loop()
         }
         lock.lock();
         --m_running;
-        if (cont)
+        const bool hasCont = static_cast<bool>(cont);
+        if (hasCont)
             m_done.push_back(std::move(cont));
         m_cv.notify_all();
+        if (hasCont) {
+            lock.unlock();
+            gg::wakeUi(); // pump() runs the continuation on the UI thread
+            lock.lock();
+        }
     }
 }
 

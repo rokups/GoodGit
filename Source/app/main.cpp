@@ -15,6 +15,8 @@
 #include "shell/App.hpp"
 #include "util/FrameProbe.hpp"
 #include "util/Env.hpp"
+#include "util/FrameScheduler.hpp"
+#include "util/Frames.hpp"
 #include "util/Logging.hpp"
 
 #include <libgg/Git2.hpp>
@@ -27,6 +29,7 @@
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -183,6 +186,9 @@ int main(int argc, char** argv)
     ggui::PlatformOptions popts;
     popts.headless = options.headless;
     popts.vsync = !options.test;
+    // Tests, smoke and headless runs need fast frames: they never sleep in the event wait.
+    const bool idleWait = !options.test && !options.smoke && !options.headless;
+    popts.idleWait = idleWait;
     std::string error;
     if (!platform.init(popts, error)) {
         spdlog::critical("{}", error);
@@ -205,8 +211,19 @@ int main(int argc, char** argv)
 
     int frames = 0;
     int exitCode = 0;
+    int waitMs = 0;
+    int pendingFrames = 0; // frames that widgets asked for and the loop did not draw yet
+    ggui::FrameScheduler scheduler;
+    // GGUI_FRAME_LOG=1: once a second, log the frame rate and the number of waits.
+    const std::string frameLogValue = ggui::getEnv("GGUI_FRAME_LOG");
+    const bool frameLog = !frameLogValue.empty() && frameLogValue != "0";
+    auto logStart = std::chrono::steady_clock::now();
+    long long logFrames = ggui::frameProbe().frames;
+    int logWaits = 0;
     while (true) {
-        platform.pollEvents();
+        platform.pollEvents(waitMs);
+        if (waitMs > 0)
+            ++logWaits;
         if (platform.quitRequested() && !app->confirmQuit())
             platform.cancelQuit();
         if (platform.quitRequested())
@@ -227,6 +244,30 @@ int main(int argc, char** argv)
         }
 #endif
         ++frames;
+        // Always take the requests, so the counter does not grow in the modes that never sleep.
+        // A request for n frames gives n frames: the counter falls by one in each frame.
+        pendingFrames = std::max(pendingFrames - 1, ggui::takeFrameRequests());
+        const auto now = std::chrono::steady_clock::now();
+        waitMs = 0;
+        if (idleWait) {
+            ggui::FrameScheduler::Input input;
+            input.eventSeen = platform.eventsSeen();
+            input.woken = platform.woken();
+            input.anyMouseDown = ImGui::IsAnyMouseDown();
+            input.framesRequested = pendingFrames > 0;
+            input.wantTextInput = ImGui::GetIO().WantTextInput;
+            input.focused = platform.focused();
+            input.minimized = platform.minimized() || platform.hidden();
+            input.now = now;
+            waitMs = scheduler.waitMs(input);
+        }
+        if (frameLog && now - logStart >= std::chrono::seconds(1)) {
+            const long long total = ggui::frameProbe().frames;
+            spdlog::info("frames/s {} waited {}", total - logFrames, logWaits);
+            logStart = now;
+            logFrames = total;
+            logWaits = 0;
+        }
         if (options.smoke && frames >= 10 && app->idle())
             break;
         if (app->quitRequested()) {

@@ -4,6 +4,7 @@
 #include <libgg/GitRunner.hpp>
 #include <libgg/LocalSocket.hpp>
 #include <libgg/SequenceEditorLink.hpp>
+#include <libgg/Thread.hpp>
 #include <libgg/Todo.hpp>
 
 #include <git2.h>
@@ -80,6 +81,7 @@ void AskpassServer::loop()
             slot->request.id = m_next++;
             m_slots.push_back(slot);
         }
+        gg::wakeUi(); // the UI shows the prompt
         std::unique_lock lock(m_mutex);
         m_cv.wait(lock, [&] { return slot->done || m_stop.load(); });
         const bool ok = slot->done && slot->ok;
@@ -271,8 +273,10 @@ void SequenceEditorServer::serve(std::intptr_t client)
             std::lock_guard lock(m_mutex);
             same = !gitDir.empty() && gitDir == m_gitDirKey && !m_stop;
         }
-        if (same)
+        if (same) {
             m_raiseRequested = true;
+            gg::wakeUi();
+        }
         gg::net::sendAll(client, same ? "OK\n" : "NO\n");
         gg::net::closeSocket(client);
         return;
@@ -318,6 +322,7 @@ void SequenceEditorServer::serve(std::intptr_t client)
         r.id = m_next++;
         m_slots.push_back(slot);
     }
+    gg::wakeUi(); // the UI opens the todo editor
     std::unique_lock lock(m_mutex);
     while (!slot->done && !m_stop) {
         m_cv.wait_for(lock, std::chrono::milliseconds(100));
@@ -420,21 +425,27 @@ void CloneService::start(const std::string& url, const fs::path& destination)
         r.cancel = m_cancel;
         r.onProgress = [this](const gg::GitProgress& p) {
             m_percent = p.percent;
-            std::lock_guard lock(m_mutex);
-            m_phase = p.phase;
+            {
+                std::lock_guard lock(m_mutex);
+                m_phase = p.phase;
+            }
+            gg::wakeUi();
         };
         const gg::RunResult res = gg::run(r);
         if (!res.ok() && !existed)
             fs::remove_all(destination, ec); // no half-cloned directory is left behind
-        std::lock_guard lock(m_mutex);
-        if (res.cancelled) {
-            m_state = State::Cancelled;
-        } else if (!res.ok()) {
-            m_error = res.message();
-            m_state = State::Failed;
-        } else {
-            m_state = State::Done;
+        {
+            std::lock_guard lock(m_mutex);
+            if (res.cancelled) {
+                m_state = State::Cancelled;
+            } else if (!res.ok()) {
+                m_error = res.message();
+                m_state = State::Failed;
+            } else {
+                m_state = State::Done;
+            }
         }
+        gg::wakeUi();
     });
 }
 

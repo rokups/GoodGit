@@ -9,6 +9,7 @@
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
 #include "shell/Settings.hpp"
+#include "util/Frames.hpp"
 #include "util/Ui.hpp"
 
 #include <imgui.h>
@@ -97,15 +98,21 @@ void Session::pump()
 {
     // Bounded per frame: at most 64 events or ~4 ms of work (§3.1).
     const auto start = std::chrono::steady_clock::now();
+    bool drained = false;
     for (int round = 0; round < 8; ++round) {
         auto events = m_engine->poll(8);
-        if (events.empty())
+        if (events.empty()) {
+            drained = true;
             break;
+        }
         for (auto& e : events)
             handle(e);
         if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(4))
             break;
     }
+    // The limit stopped the loop: events can stay in the queue. Ask for the next frame.
+    if (!drained)
+        ggui::requestAnimation();
 }
 
 void Session::handle(core::Event& event)

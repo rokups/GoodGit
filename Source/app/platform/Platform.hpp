@@ -5,6 +5,7 @@
 // fully headless (SDL "offscreen" video driver, no swapchain) for CI.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -24,6 +25,8 @@ struct PlatformOptions {
     int height = 1000;
     bool headless = false; // offscreen video driver, no swapchain
     bool vsync = true;
+    // The loop may sleep in pollEvents() when the UI is idle. Off for tests, smoke and headless runs.
+    bool idleWait = false;
 };
 
 class Platform {
@@ -38,7 +41,18 @@ public:
     void shutdown();
 
     // Polls events. Returns false when the user asked to quit.
-    bool pollEvents();
+    // When `waitMs` is more than 0, waits up to `waitMs` milliseconds for the first event.
+    bool pollEvents(int waitMs = 0);
+    // The last pollEvents() call handled at least one event from the window system (input).
+    bool eventsSeen() const { return m_eventsSeen; }
+    // The last pollEvents() call handled a wake event and no other event.
+    bool woken() const { return m_woken && !m_eventsSeen; }
+    // The number of wake events handled since init. Only the UI thread reads it.
+    std::uint64_t wakesHandled() const { return m_wakesHandled; }
+    // Wakes a sleeping pollEvents() call. Any thread can call it.
+    void wake();
+    // A wake event is in the queue and pollEvents() did not read it yet.
+    bool wakePending() const { return m_wakePending.load(); }
     bool quitRequested() const { return m_quit; }
     // Paths dropped on the window since the last call, one list per drop (in the order given).
     std::vector<std::vector<std::string>> takeDrops() { return std::exchange(m_drops, {}); }
@@ -47,6 +61,8 @@ public:
     // The window has input focus (from the focus events; true until the first loss).
     bool focused() const { return m_focused; }
     bool minimized() const { return m_minimized; }
+    // The window is hidden (not shown by the window system).
+    bool hidden() const { return m_hidden; }
 
     void beginFrame();
     void endFrame(); // renders ImGui draw data and presents
@@ -64,6 +80,7 @@ public:
     void attention();
 
 private:
+    void handleEvent(const SDL_Event& event);
     bool ensureOffscreen(std::uint32_t w, std::uint32_t h);
 
     SDL_Window* m_window = nullptr;
@@ -82,7 +99,13 @@ private:
     bool m_inDrop = false;
     bool m_imguiReady = false;
     bool m_minimized = false;
+    bool m_hidden = false;
     bool m_focused = true;
+    bool m_eventsSeen = false;
+    bool m_woken = false;
+    std::uint64_t m_wakesHandled = 0;
+    std::uint32_t m_wakeEvent = 0; // SDL event type from SDL_RegisterEvents
+    std::atomic<bool> m_wakePending{false};
 };
 
 } // namespace ggui

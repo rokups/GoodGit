@@ -6,6 +6,8 @@
 #include <imgui_impl_sdlgpu3.h>
 #include <spdlog/spdlog.h>
 
+#include <libgg/Thread.hpp>
+
 #include <algorithm>
 #include <cstring>
 
@@ -23,6 +25,9 @@ bool Platform::init(const PlatformOptions& options, std::string& error)
         error = std::string("SDL_Init failed: ") + SDL_GetError();
         return false;
     }
+    m_wakeEvent = SDL_RegisterEvents(1);
+    m_wakePending = false;
+    gg::setUiWaker([this] { wake(); });
 
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     m_window = SDL_CreateWindow(options.title.c_str(), options.width, options.height, flags);
@@ -72,6 +77,8 @@ bool Platform::init(const PlatformOptions& options, std::string& error)
 
 void Platform::shutdown()
 {
+    // Before SDL_Quit: a late worker thread must not push to a dead event queue.
+    gg::setUiWaker({});
     if (m_device)
         SDL_WaitForGPUIdle(m_device);
     if (m_frameFence) {
@@ -101,34 +108,67 @@ void Platform::shutdown()
     }
 }
 
-bool Platform::pollEvents()
+void Platform::wake()
 {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        ImGui_ImplSDL3_ProcessEvent(&event);
-        if (event.type == SDL_EVENT_QUIT)
-            m_quit = true;
-        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(m_window))
-            m_quit = true;
-        if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED && event.window.windowID == SDL_GetWindowID(m_window))
-            m_focused = true;
-        else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST && event.window.windowID == SDL_GetWindowID(m_window))
-            m_focused = false;
-        // Files and folders dropped on the window: one drop is BEGIN, a FILE per path, COMPLETE.
-        if (event.type == SDL_EVENT_DROP_BEGIN) {
-            m_inDrop = true;
-            m_dropping.clear();
-        } else if (event.type == SDL_EVENT_DROP_FILE && event.drop.data) {
-            m_dropping.emplace_back(event.drop.data);
-            if (!m_inDrop)
-                m_drops.push_back(std::exchange(m_dropping, {}));
-        } else if (event.type == SDL_EVENT_DROP_COMPLETE) {
-            if (!m_dropping.empty())
-                m_drops.push_back(std::exchange(m_dropping, {}));
-            m_inDrop = false;
-        }
+    if (m_wakeEvent == 0)
+        return;
+    if (!m_wakePending.exchange(true)) {
+        SDL_Event event = {};
+        event.type = m_wakeEvent;
+        if (!SDL_PushEvent(&event))
+            m_wakePending = false;
     }
-    m_minimized = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) != 0;
+}
+
+void Platform::handleEvent(const SDL_Event& event)
+{
+    if (m_wakeEvent != 0 && event.type == m_wakeEvent) {
+        m_wakePending = false;
+        m_woken = true;
+        ++m_wakesHandled;
+        return;
+    }
+    m_eventsSeen = true;
+    ImGui_ImplSDL3_ProcessEvent(&event);
+    if (event.type == SDL_EVENT_QUIT)
+        m_quit = true;
+    if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(m_window))
+        m_quit = true;
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED && event.window.windowID == SDL_GetWindowID(m_window))
+        m_focused = true;
+    else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST && event.window.windowID == SDL_GetWindowID(m_window))
+        m_focused = false;
+    if (event.type == SDL_EVENT_WINDOW_HIDDEN && event.window.windowID == SDL_GetWindowID(m_window))
+        m_hidden = true;
+    else if (event.type == SDL_EVENT_WINDOW_SHOWN && event.window.windowID == SDL_GetWindowID(m_window))
+        m_hidden = false;
+    // Files and folders dropped on the window: one drop is BEGIN, a FILE per path, COMPLETE.
+    if (event.type == SDL_EVENT_DROP_BEGIN) {
+        m_inDrop = true;
+        m_dropping.clear();
+    } else if (event.type == SDL_EVENT_DROP_FILE && event.drop.data) {
+        m_dropping.emplace_back(event.drop.data);
+        if (!m_inDrop)
+            m_drops.push_back(std::exchange(m_dropping, {}));
+    } else if (event.type == SDL_EVENT_DROP_COMPLETE) {
+        if (!m_dropping.empty())
+            m_drops.push_back(std::exchange(m_dropping, {}));
+        m_inDrop = false;
+    }
+}
+
+bool Platform::pollEvents(int waitMs)
+{
+    m_eventsSeen = false;
+    m_woken = false;
+    SDL_Event event;
+    if (waitMs > 0 && SDL_WaitEventTimeout(&event, waitMs))
+        handleEvent(event);
+    while (SDL_PollEvent(&event))
+        handleEvent(event);
+    const SDL_WindowFlags flags = SDL_GetWindowFlags(m_window);
+    m_minimized = (flags & SDL_WINDOW_MINIMIZED) != 0;
+    m_hidden = (flags & SDL_WINDOW_HIDDEN) != 0;
     return !m_quit;
 }
 

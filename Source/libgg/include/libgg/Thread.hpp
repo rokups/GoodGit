@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -33,5 +34,11 @@ bool threadChecksCompiled();
 
 // Called by libgit2 helpers and the git runner. `what` names the call site.
 void assertNotUiThread(const char* what);
+
+// Wakes a sleeping UI loop. The UI registers the waker at startup. A worker thread calls wakeUi()
+// after it hands a result to the UI thread, outside any lock. It does nothing when no waker is set.
+// setUiWaker() waits until the calls that run now end. The waker must not call these functions.
+void setUiWaker(std::function<void()> waker);
+void wakeUi();
 
 } // namespace gg
