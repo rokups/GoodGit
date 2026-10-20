@@ -257,6 +257,22 @@ GG_TEST("submodule", "Unstaged submodule rows tell what changed inside the submo
     GG_CHECK(s.session()->status()->staged[0].submoduleState == 0);
 }
 
+GG_TEST("submodule", "A submodule HEAD moved outside the app refreshes the status")
+{
+    using namespace ggui::core;
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() != nullptr; }));
+    GG_CHECK(s.session()->status()->unstaged.empty());
+
+    // An empty commit changes only the HEAD of the submodule: no file in the worktree changes.
+    s.git(repo / "sub", {"commit", "-q", "--allow-empty", "-m", "Empty"});
+    GG_CHECK(unstagedEntry(s, "sub", NewCommits) != nullptr);
+    // Moving HEAD back to the commit of the gitlink removes the row.
+    s.git(repo / "sub", {"reset", "-q", "--hard", "HEAD~1"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->unstaged.empty(); }));
+}
+
 GG_TEST("submodule", "A modified file inside a submodule shows as modified content")
 {
     using namespace ggui::core;

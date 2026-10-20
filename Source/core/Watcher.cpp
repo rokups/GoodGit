@@ -91,7 +91,18 @@ void Watcher::changed(const fs::path& path)
         if (startsWith(rel, "objects/") || startsWith(rel, "logs/") || startsWith(rel, "hooks/")
             || startsWith(rel, "gg/cache") || (rel.size() > 5 && rel.compare(rel.size() - 5, 5, ".lock") == 0))
             return true; // ignored
-        if (rel == "gg/journal") {
+        if (startsWith(rel, "modules/")) {
+            // The git dir of a submodule. Its HEAD, refs and index change the superproject status.
+            // Objects, logs, hooks, lock files and FETCH_HEAD are noise, as in the main git dir.
+            const std::string name = rel.substr(rel.rfind('/') + 1);
+            if (rel.find("/objects/") != std::string::npos || rel.find("/logs/") != std::string::npos
+                || rel.find("/hooks/") != std::string::npos || rel.find("/gg/") != std::string::npos
+                || name == "FETCH_HEAD" || name == "ORIG_HEAD" || name == "COMMIT_EDITMSG"
+                || (name.size() > 5 && name.compare(name.size() - 5, 5, ".lock") == 0))
+                return true; // ignored
+            e.refs = true;
+            e.worktree = true;
+        } else if (rel == "gg/journal") {
             e.journal = true;
         } else if (rel == "gg" || startsWith(rel, "gg/")) {
             return true; // ggui's own files (rebase/, cache, reconcile.json, ...) are no repository change
