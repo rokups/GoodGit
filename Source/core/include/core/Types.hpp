@@ -233,6 +233,9 @@ struct StatusEntry {
     std::vector<size_t> brokenMarkerLines;
 };
 
+// How the working tree status is read: `git status` (default) or the libgit2 scan.
+enum class StatusBackend { Git, Libgit2 };
+
 struct StatusResult {
     std::uint64_t generation = 0;
     bool partial = false;            // "scanning…"

@@ -293,6 +293,8 @@ public:
         bool watch = true;
         // Unfocused window: at most one status refresh from the watcher in this time.
         std::chrono::milliseconds unfocusedStatusInterval{2000};
+        // How the working tree status is read.
+        StatusBackend statusBackend = StatusBackend::Git;
     };
 
     explicit Engine(Options options);

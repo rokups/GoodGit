@@ -19,7 +19,7 @@ against the real repository on disk with plain `git`.
 
 ```sh
 build/ninja/bin/ggui --test                 # run the whole suite
-build/ninja/bin/ggui --test='conflicts/*'   # filter by name
+build/ninja/bin/ggui --test=conflicts      # filter: substrings of category or test name
 build/ninja/bin/ggui --list-tests           # list test names
 
 # Headless, sharded (as CI runs it): 4 shards in parallel
@@ -39,6 +39,18 @@ look after a theme or layout change. `--test=readme` writes the README screensho
 (`readme-*.png`) there, taken on a real repository: set `GGUI_README_REPO` to a full clone of
 <https://github.com/ocornut/imgui> (with its remote-tracking branches, e.g. `docking`). The test
 clones it into its temp directory, pins the copy to a fixed commit and never modifies the original.
+
+## Status backend
+
+The working tree status comes from
+`git --no-optional-locks status --porcelain=v2 -z --untracked-files=all --renames`.
+This command uses the untracked cache and the fsmonitor setting of the user.
+
+- The command takes no `index.lock` and does not write the index. It is safe to kill a run.
+- A status run gives no partial result. A cancelled or failed run gives no result at all.
+- The scan never causes an index notice from the watcher. Only a mutation of ggui can do that.
+- `GG_STATUS_BACKEND=libgit2` selects the old libgit2 reader. Use it for a rollback or an A/B test.
+- ggui uses the libgit2 reader also when it cannot start `git`.
 
 ## Build identity and self-update
 

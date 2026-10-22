@@ -513,6 +513,10 @@ GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--cached", "--name-only"}), "a.txt");
     GG_CHECK_STR_EQ(s.head(r.path), tip);
     s.git(r.path, {"reset", "-q", "--hard"});
+    // The status result can arrive late. Wait until no staged entry is left, so the "Index (staged)"
+    // row is gone and the rows do not shift under the context menu.
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.empty(); }));
+    s.settle();
     // A merge whose second parent is already an ancestor of the first.
     const auto merge = s.gitgg(r.path, {"new", "-m", "Redundant merge", "HEAD", r.c2});
     GG_REQUIRE(merge.ok());

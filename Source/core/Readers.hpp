@@ -16,9 +16,10 @@ git_oid toGit(const Oid& oid);
 
 SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel);
 
-// Publishes partial results through `partial` (flagged partial) on large worktrees.
+// Reads the working tree status with `backend`. The libgit2 backend publishes partial results
+// through `partial` (flagged partial) on large worktrees. The Git backend sends none.
 StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
-    const std::function<void(StatusPtr)>& partial);
+    const std::function<void(StatusPtr)>& partial, StatusBackend backend);
 
 // Adds first-class conflicts of the checked-out commit (and of edited files) to `status`
 // under Conflicted with firstClass=true (product spec §4.10 "Checking out a conflicted commit").

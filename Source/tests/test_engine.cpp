@@ -11,7 +11,10 @@
 #include <libgg/GitRunner.hpp>
 
 #include <atomic>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <string>
@@ -62,7 +65,7 @@ GG_TEST("engine", "watcher: plain git steps update the UI")
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
 }
 
-GG_TEST("engine", "partial status on a huge worktree is marked scanning")
+GG_TEST("engine", "status on a huge worktree lists all changes")
 {
     const fs::path big = s.largeFixture();
     const fs::path repo = s.path("big-clone");
@@ -78,7 +81,6 @@ GG_TEST("engine", "partial status on a huge worktree is marked scanning")
     GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->partial
                                     && s.session()->status()->unstaged.size() >= 1900; }, 120.0f));
-    GG_CHECK(s.session()->changes().everScanned());
 }
 
 GG_TEST("engine", "responsiveness on the large repository")
@@ -387,12 +389,15 @@ struct ScanCounter {
     ggui::core::Engine& engine;
     std::set<ggui::core::RequestId> scans;
     bool mutationFinished = false;
+    ggui::core::StatusPtr last; // the newest status of the events
 
     int count()
     {
         for (auto& event : engine.poll(64)) {
-            if (const auto* st = std::get_if<ggui::core::StatusEvent>(&event))
+            if (const auto* st = std::get_if<ggui::core::StatusEvent>(&event)) {
                 scans.insert(st->request);
+                last = st->status;
+            }
             else if (std::holds_alternative<ggui::core::MutationFinishedEvent>(event))
                 mutationFinished = true;
         }
@@ -502,8 +507,74 @@ GG_TEST("engine", "self write: a stage scans once, an external index change scan
     s.waitUntil([] { return false; }, 1.0f);
     GG_CHECK_EQ(scans.count(), 1);
     // The window is closed: an index change now comes from outside and scans.
+    s.write(repo, "external.txt", "new\n");
+    s.git(repo, {"add", "external.txt"});
     engine.onWatchEvent(index);
     GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "status scan takes no index.lock and does not change the index")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine::Options options{repo, false};
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    engine.open();
+    engine.refreshStatus();
+    GG_CHECK(s.waitUntil([&] { return scans.count() >= 1; }, 10.0f));
+    const fs::path index = repo / ".git" / "index";
+    const fs::path lock = repo / ".git" / "index.lock";
+    auto bytes = [&] {
+        std::ifstream in(index, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    };
+    // The same content with a new mtime: the stat data of the index is stale. Plain `git status`
+    // would write the index now. No mutation runs here, so any change of the index is from the scan.
+    s.write(repo, "f1.txt", s.read(repo, "f1.txt"));
+    const std::string before = bytes();
+    const auto mtime = fs::last_write_time(index);
+    GG_CHECK(!before.empty());
+    for (int i = 0; i < 3; ++i) {
+        const int n = scans.count();
+        engine.refreshStatus();
+        // The lock must not exist at any time while the scan runs.
+        GG_CHECK(s.waitUntil([&] {
+            GG_CHECK(!fs::exists(lock));
+            return scans.count() > n;
+        }, 10.0f));
+    }
+    GG_CHECK(!fs::exists(lock));
+    GG_CHECK(bytes() == before);
+    GG_CHECK(fs::last_write_time(index) == mtime);
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "self write: an external git add right after a status scan still scans")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "late.txt", "new\n");
+    ggui::core::Engine::Options options{repo, true};
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    engine.open();
+    engine.refreshStatus();
+    GG_CHECK(s.waitUntil([&] { return scans.count() >= 1; }, 10.0f));
+    s.waitUntil([] { return false; }, 1.5f);
+    // A scan that ends now: the next index change comes inside the old window of 400 ms.
+    const int before = scans.count();
+    engine.refreshStatus();
+    GG_CHECK(s.waitUntil([&] { return scans.count() == before + 1; }, 10.0f));
+    s.git(repo, {"add", "late.txt"});
+    GG_CHECK(s.waitUntil([&] {
+        scans.count();
+        if (!scans.last)
+            return false;
+        for (const auto& entry : scans.last->staged)
+            if (entry.path == "late.txt")
+                return true;
+        return false;
+    }, 10.0f));
     engine.cancelAll();
 }
 

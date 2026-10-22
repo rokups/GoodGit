@@ -243,6 +243,7 @@ void Engine::onWatchEvent(const WatchEvent& e)
     // An index-only notice during or just after a mutation of ours is the write of that mutation
     // (for example `git add`). The refresh of the mutation scans after the write, so a second
     // scan finds nothing new. An index notice with no such mutation (an external `git add`) scans.
+    // The status scan does not write the index, so it never causes an index notice.
     const bool ownWrite = e.index && !e.refs && !e.worktree && ownIndexWrite();
     if (e.refs || e.worktree || (e.index && !ownWrite))
         requestWatcherStatus();
@@ -348,7 +349,7 @@ RequestId Engine::refreshStatus(bool cancelRunning)
     return submit(Queue::Status, "Reading working tree status", kSlotStatus, true, [this](Job& job) {
         const RequestId id = job.id;
         StatusPtr status = readStatus(job.repo(), m_generation.load(), job.token,
-            [this, id](StatusPtr partial) { emit(StatusEvent{id, std::move(partial)}); });
+            [this, id](StatusPtr partial) { emit(StatusEvent{id, std::move(partial)}); }, m_options.statusBackend);
         if (!m_statusConflicts)
             m_statusConflicts = std::make_shared<gg::conflicts::Cache>(
                 std::filesystem::path(git_repository_commondir(job.repo())));

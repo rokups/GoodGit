@@ -1,4 +1,5 @@
 #include "Readers.hpp"
+#include "StatusPorcelain.hpp"
 
 #include <libgg/Keep.hpp>
 #include <libgg/Todo.hpp>
@@ -9,11 +10,14 @@
 #include <libgg/GitRunner.hpp>
 #include <libgg/Thread.hpp>
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -474,14 +478,6 @@ ChangeKind kindFromDelta(git_delta_t s)
     }
 }
 
-// Stages present: base (1), ours (2), theirs (3).
-std::string conflictDescription(bool s1, bool s2, bool s3)
-{
-    static const char* const kByStages[8] = {"both deleted", "added by them", "added by us", "both added",
-        "both deleted", "deleted by us", "deleted by them", "both modified"};
-    return kByStages[(int(s1) << 2) | (int(s2) << 1) | int(s3)];
-}
-
 StatusEntry entryFromDelta(const git_diff_delta* d)
 {
     StatusEntry e;
@@ -685,12 +681,10 @@ StatusPtr readStatusOnce(git_repository* repo, std::uint64_t generation, const g
     return result;
 }
 
-} // namespace
-
-StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
+// The libgit2 scan. Retries when a file changes while it is hashed.
+StatusPtr readStatusLibgit2(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
     const std::function<void(StatusPtr)>& partial)
 {
-    gg::assertNotUiThread("readStatus");
     // A file replaced or removed while it is hashed (another writer: a checkout, an undo, an
     // editor saving) fails the scan with an OS error; the next scan sees the new state.
     for (int attempt = 0;; ++attempt) {
@@ -702,6 +696,108 @@ StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::C
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }
+}
+
+// True when git stderr says git refuses the repository because another user owns it.
+bool isDubiousOwnership(const std::string& err)
+{
+    return err.find("dubious ownership") != std::string::npos;
+}
+
+// Logs the ownership warning once for each repository path in the process.
+void warnDubiousOwnershipOnce(const std::string& path)
+{
+    static std::mutex mutex;
+    static std::set<std::string> seen;
+    {
+        std::lock_guard lock(mutex);
+        if (!seen.insert(path).second)
+            return;
+    }
+    spdlog::warn("git status: git refuses {} (dubious ownership), using libgit2", path);
+}
+
+// `git status --porcelain=v2 -z`. Falls back to libgit2 when git does not start
+// or refuses the repository because of its owner.
+StatusPtr readStatusGit(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
+    const std::function<void(StatusPtr)>& partial)
+{
+    if (git_repository_is_bare(repo) == 1) {
+        auto empty = std::make_shared<StatusResult>();
+        empty->generation = generation;
+        return empty;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    // --no-optional-locks: git takes no index.lock and does not write the index. No lock stays
+    // behind, so it is safe to kill this process. It must come right after `git`.
+    gg::RunRequest r;
+    r.args = {"git", "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all", "--renames"};
+    if (const char* workdir = git_repository_workdir(repo))
+        r.cwd = workdir;
+    r.cancel = cancel;
+    gg::RunResult res = gg::run(r);
+    if (res.startFailed) {
+        spdlog::warn("git status: cannot start git ({}), using libgit2", res.err);
+        return readStatusLibgit2(repo, generation, cancel, partial);
+    }
+    if (res.cancelled || cancel.cancelled())
+        throw gg::Cancelled{};
+    if (res.exitCode != 0 && isDubiousOwnership(res.err)) {
+        // libgit2 owner validation is off on purpose (Git2.cpp), so such a repository stays
+        // readable. The git CLI refuses it for good: a retry cannot help.
+        warnDubiousOwnershipOnce(git_repository_workdir(repo) ? git_repository_workdir(repo) : "");
+        return readStatusLibgit2(repo, generation, cancel, partial);
+    }
+    if (res.exitCode != 0) {
+        // A file changed while git scanned: the next scan sees the new state.
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        res = gg::run(r);
+        if (res.cancelled || cancel.cancelled())
+            throw gg::Cancelled{};
+        if (res.exitCode != 0)
+            throw std::runtime_error("git status: " + res.message());
+    }
+
+    ParsedStatus parsed = parsePorcelainV2(res.out);
+    auto result = std::make_shared<StatusResult>(std::move(parsed.status));
+    result->generation = generation;
+    result->partial = false;
+
+    // Binary if any side of a conflict is (git's heuristic on the blob): no text regions possible.
+    for (size_t i = 0; i < result->conflicted.size() && i < parsed.conflictOids.size(); ++i) {
+        StatusEntry& e = result->conflicted[i];
+        const auto& oids = parsed.conflictOids[i];
+        for (const std::string* hex : {&oids.h1, &oids.h2, &oids.h3}) {
+            git_oid id;
+            git_blob* blob = nullptr;
+            const git_oid_t type = hex->size() == GIT_OID_SHA256_HEXSIZE ? GIT_OID_SHA256 : GIT_OID_SHA1;
+            if (git_oid_fromstr(&id, hex->c_str(), type) != 0 || git_oid_is_zero(&id)) {
+                git_error_clear();
+                continue;
+            }
+            if (git_blob_lookup(&blob, repo, &id) == 0) {
+                e.binary = e.binary || git_blob_is_binary(blob);
+                git_blob_free(blob);
+            } else {
+                git_error_clear();
+            }
+        }
+    }
+    spdlog::debug("git status: {} ms, {} staged, {} unstaged, {} untracked, {} conflicted",
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count(),
+        result->staged.size(), result->unstaged.size(), result->untracked.size(), result->conflicted.size());
+    return result;
+}
+
+} // namespace
+
+StatusPtr readStatus(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel,
+    const std::function<void(StatusPtr)>& partial, StatusBackend backend)
+{
+    gg::assertNotUiThread("readStatus");
+    if (backend == StatusBackend::Libgit2)
+        return readStatusLibgit2(repo, generation, cancel, partial);
+    return readStatusGit(repo, generation, cancel, partial);
 }
 
 // HEAD's blob content at `path` ("" when the path does not exist there or is not a blob).

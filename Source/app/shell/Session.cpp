@@ -20,6 +20,8 @@
 #include <libgg/Thread.hpp>
 
 #include <chrono>
+#include <cstdlib>
+#include <string_view>
 
 namespace ggui {
 
@@ -27,6 +29,8 @@ Session::Session(App& app, std::filesystem::path path) : m_app(app), m_path(std:
 {
     core::Engine::Options opts;
     opts.path = m_path;
+    if (const char* backend = std::getenv("GG_STATUS_BACKEND"); backend && std::string_view(backend) == "libgit2")
+        opts.statusBackend = core::StatusBackend::Libgit2;
     m_engine = std::make_unique<core::Engine>(opts);
     m_actions = std::make_unique<Actions>(*this);
     m_history = std::make_unique<HistoryPanel>(*this);
