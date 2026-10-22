@@ -208,7 +208,7 @@ GG_TEST("status_porcelain", "submodule states")
     GG_CHECK_EQ(p.status.unstaged[0].submoduleState, 0u);
 }
 
-GG_TEST("status_porcelain", "conflicts")
+GG_TEST("status_porcelain", "conflict records give stages, descriptions and object ids")
 {
     const struct {
         const char* xy;

@@ -902,7 +902,10 @@ void RebasePanel::draw()
 
 void RebasePanel::drawHeader()
 {
-    const todo::Context& c = *m_state.context;
+    // Save closes the panel and resets m_state. The server thread then frees the Context.
+    // This reference keeps the Context alive for the rest of the frame.
+    const auto keep = m_state.context;
+    const todo::Context& c = *keep;
     const Palette& p = theme().palette();
     const size_t n = m_session.shortIdLength();
     size_t commits = 0, merges = 0;
@@ -929,6 +932,10 @@ void RebasePanel::drawHeader()
     const bool gitsList = m_remaining || m_sequence;
     if (ImGui::Button(gitsList ? ICON_MS_SAVE " Save###ir_start" : ICON_MS_PLAY_ARROW " Start###ir_start"))
         start();
+    if (!m_open) { // Save or Start closed the panel: m_state and m_sequence are reset
+        ImGui::EndDisabled();
+        return;
+    }
     if (m_sequence && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         tooltip("Hand the list to %s, which goes on with it", m_sequence->remaining ? "git rebase --edit-todo" : "git rebase -i");
     else if (m_remaining && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))

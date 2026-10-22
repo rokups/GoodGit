@@ -653,6 +653,12 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "conflict.txt") == "top\nx=2\nbottom\n"; }));
     s.settle();
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()) || s.session()->status()->unstaged.size() == 1; }));
+    // An index notice within 400 ms after a mutation of ggui counts as its own write and starts no
+    // scan. Wait for the end of that window, then the external add must refresh the status.
+    // The sleep of the test engine runs in frame time, not in real time: wait on the clock.
+    const auto windowEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(600);
+    GG_REQUIRE(s.waitUntil([&] { return std::chrono::steady_clock::now() >= windowEnd; }));
+    GG_REQUIRE(s.waitIdle());
     s.git(repo, {"add", "conflict.txt"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
     ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
