@@ -333,11 +333,15 @@ stays as it is (it is only limited to 50–300 % on load).
 ### 2.x Drag and drop (Phase 3)
 - **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,
   Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (the
-  dragged commit is the tip: the commits from its first divergence point with the target up to it move,
-  and other branches on them follow). Without a modifier a chooser pops up: Move before / Move after /
-  Copy after / Squash into / Rebase onto.
+  source is the rebase source of the dragged commit, see §4: the commits from its first
+  divergence point with the target up to the source tip move, and other branches on them follow).
+  Alt at a drop whose rebase is disabled opens the chooser. Without a modifier a chooser pops up:
+  Move before / Move after / Copy after / Squash into / Rebase onto. "Rebase onto" is disabled, with the
+  reason as a hint, when the commit cannot be rebased (§4). The drag tooltip of a commit row that is the tip
+  of a single usable branch (also the checked-out branch) shows the pill of that branch and the commit text.
+  Other commit rows show the commit text.
 - **Branch badge X → commit row or badge:** (the drag starts on the badge of a local branch; the tooltip
-  shows the name of X.) Without a modifier a small menu `##branch_drop_chooser` pops up, with the items
+  shows the pill of X.) Without a modifier a small menu `##branch_drop_chooser` pops up, with the items
   "Merge X into Y" (`###merge`), "Rebase X onto Y" (`###rebase`) and "Move X here" (`###move`, shortcut text
   "Shift"). Y is the target: the local branch of the badge the drop is on; else the only local branch at the
   commit; else the short ID of the commit. Merge X into Y is enabled when Y is the current branch: it opens
@@ -401,9 +405,14 @@ Drop commit…/Drop commit and descendants…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it
-when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field, no other choice) treats the selected commit as the tip:
-the commits from its first divergence point with the destination up to it move, and other branches on
-them follow. The *Squash* and *Rebase onto* dialogs have
+when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field, no other choice) has the rebase source of the selected commit.
+The source is, in this order: HEAD when HEAD is on the commit (a branch when HEAD is attached; the commit
+and its descendants when HEAD is detached); else the one local branch on the commit (a branch that another
+worktree has checked out does not count); else the commit with all its descendants. The commits from the first
+divergence point with the destination up to the source tip move, and other branches on them follow.
+A commit with no descendants and no usable local branch cannot be rebased (a detached HEAD on such a commit
+is the same case). Then the item "Rebase onto..." is disabled with the hint "The commit has no descendants."
+The info line of the dialog reads "Rebase \<branch\>" when the source is a branch, else "Rebase". The *Squash* and *Rebase onto* dialogs have
 *Open as interactive rebase…*: the editor opens with the action as its starting todo. For *Squash*,
 the commit moves after the target as squash or fixup. For *Rebase onto*, the editor lists the commits
 from the divergence point with the destination up to the tip of the branch that holds the commit

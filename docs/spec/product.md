@@ -320,8 +320,12 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   **N** Stash changes…, Stage all, Unstage all.
 - **K** Drag and drop:
   - commit → commit: Move before, Move after, Squash, Rebase (modifier keys pick the default;
-    otherwise a chooser pops up). Rebase treats the dragged commit as the tip: the commits from the
-    first divergence point with the target up to it move, and other branches on them follow.
+    otherwise a chooser pops up). Rebase uses the rebase source of the dragged commit (HEAD when HEAD is on the commit, else
+    the one local branch on it, else the commit with all its descendants): the commits from the
+    first divergence point with the target up to the source tip move, and other branches on them follow.
+    A commit with no descendants and no usable local branch cannot be rebased: Rebase is disabled
+    with the hint "The commit has no descendants.", and Alt at the drop opens the chooser. The drag
+    tooltip shows the branch pill for a branch drag, and the pill with the commit text for the tip of a single usable branch.
   - branch badge → commit or badge: a menu with Merge X into Y (Y is the current branch), Rebase X onto Y
     (X is a local branch: one that is not checked out is rebased with no change of the working tree, one
     behind Y fast-forwards, one that another worktree has checked out is refused) and Move X here;
@@ -349,7 +353,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Describe (Save message, Change information panel) | **M** | Reword any commit. Rebases descendants. For HEAD it is an amend. The button always reads *Save message*. It is red, and asks for confirmation (*Rewrite published history?*), only when the commit is pushed; an unpushed commit is saved at once. The tooltip of the button for HEAD notes when staged changes are not included |
 | Edit author | **M** | Change the author of any commit |
 | Duplicate commit / branch | **M** | Cherry-pick one commit or a range onto its parent, making a detached copy |
-| Rebase… | **K** | Rebase onto a destination with the selected commit as the tip: the commits from the first divergence point with the destination up to it move, and other branches on them follow |
+| Rebase… | **K** | Rebase onto a destination. The source is HEAD when HEAD is on the commit (a branch when attached; the commit and its descendants when detached), else the one local branch on the commit (not one that another worktree has), else the commit with all its descendants. The commits from the first divergence point with the destination up to the source tip move, and other branches on them follow. Disabled, with the hint "The commit has no descendants.", when the commit has no descendants and no usable local branch |
 | Interactive rebase… | **N** | Open the rebase todo editor for a range: from the selected commit to HEAD or the branch tip, optionally onto a new base (§4.13) |
 | Squash… / with descendants | **M** | Fold into a parent or a chosen target (fixup/squash) |
 | Split… | **M** | Split a commit by selected files into two commits |

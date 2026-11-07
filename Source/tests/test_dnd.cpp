@@ -488,6 +488,121 @@ GG_TEST("dnd", "the chooser's choices and Escape; a commit's files onto its chil
 
 namespace ggtest {
 
+namespace {
+
+bool isAncestor(Scenario& s, const fs::path& repo, const std::string& ancestor, const std::string& rev)
+{
+    return s.gitMayFail(repo, {"merge-base", "--is-ancestor", ancestor, rev}).ok();
+}
+
+} // namespace
+
+GG_TEST("dnd", "Alt on a commit rebases the tip of its rule: the checked-out branch moves, HEAD stays attached")
+{
+    const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string tip = s.revParse(r.path, "main");
+    drag(s, rowRef(tip), rowRef(dest), ImGuiMod_Alt);
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(!menuOpen(s));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~3"), dest);
+    GG_CHECK(subjects(s, r.path).front() == "c4");
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"symbolic-ref", "HEAD"}).substr(0, 15), "refs/heads/main");
+}
+
+GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens with Rebase onto disabled")
+{
+    const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
+    // A commit with only a tag: no branch on it, no child.
+    s.git(r.path, {"switch", "-q", "--detach", r.c[3]});
+    s.commitFile(r.path, "t.txt", "t\n", "tagged");
+    const std::string tagged = s.head(r.path);
+    s.git(r.path, {"tag", "t1"});
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tagged).c_str()); }));
+    const std::string before = s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"});
+    drag(s, rowRef(tagged), rowRef(dest), ImGuiMod_Alt);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
+    GG_CHECK(itemDisabled(s, "Rebase onto"));
+    GG_CHECK(!itemDisabled(s, "Copy after"));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"}), before);
+}
+
+GG_TEST("dnd", "the chooser's Rebase onto moves the branch that holds a middle commit")
+{
+    const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string tip = s.revParse(r.path, "main");
+    drag(s, rowRef(r.c[2]), rowRef(dest)); // c3: not a tip, c4 is its child
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
+    GG_CHECK(!itemDisabled(s, "Rebase onto"));
+    ctx->ItemClick("//$FOCUSED/Rebase onto");
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(isAncestor(s, r.path, dest, "main"));
+    GG_CHECK(subjects(s, r.path).front() == "c4");
+}
+
+GG_TEST("dnd", "Alt on the tip of a branch that is not checked out moves that branch (fast-forward when behind)")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    // side is at c2, behind main (c4); main stays checked out.
+    drag(s, rowRef(r.c[1]), rowRef(r.c[3]), ImGuiMod_Alt);
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c[3]; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c[3]);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"symbolic-ref", "HEAD"}).substr(0, 15), "refs/heads/main");
+}
+
+GG_TEST("dnd", "the drag tooltip of a commit shows the pill of the branch an Alt drop moves; a branch drag shows its pill")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"switch", "-q", "--detach", r.c[3]});
+    s.commitFile(r.path, "t.txt", "t\n", "tagged");
+    const std::string tagged = s.head(r.path);
+    s.git(r.path, {"tag", "t1"});
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tagged).c_str()); }));
+    auto dragging = [&](const std::string& from, ImVec2 off) {
+        s.waitUntil([&] { return s.itemExists(from.c_str()); });
+        const ImVec2 start = ctx->ItemInfo(from.c_str()).RectFull.GetCenter();
+        ctx->MouseMoveToPos(start);
+        ctx->MouseDown(ImGuiMouseButton_Left);
+        ctx->Yield(2);
+        ctx->MouseMoveToPos(ImVec2(start.x + off.x, start.y + off.y));
+        ctx->Yield(3);
+    };
+    auto release = [&] { // the drop opens a chooser: Escape closes it
+        ctx->MouseUp(ImGuiMouseButton_Left);
+        ctx->Yield(2);
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+    };
+    // The tip of main (HEAD): the pill of main, then the text.
+    dragging(rowRef(r.c[3]), ImVec2(0, 60));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "main"));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "c4"));
+    release();
+    // A commit without a rule branch: the text only.
+    dragging(rowRef(r.c[2]), ImVec2(0, 60));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "c3"));
+    GG_CHECK(!s.textShown("//##Tooltip_DragDrop_00", "main"));
+    release();
+    // The branch badge: the pill alone.
+    dragging(badgeRef(r.c[1], "side"), ImVec2(0, 60));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "side"));
+    GG_CHECK(!s.textShown("//##Tooltip_DragDrop_00", "c2"));
+    release();
+}
+
 GG_TEST("dnd", "a dragged commit fills the History filter and the Changes \"Compare with\" field")
 {
     const Chain r = makeChain(s);

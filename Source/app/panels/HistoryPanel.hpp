@@ -2,6 +2,7 @@
 // Index rows, scope, search, reveal, "Show more" and merge collapsing.
 #pragma once
 
+#include "panels/CommitMenu.hpp"
 #include "shell/Session.hpp"
 #include "util/Ui.hpp"
 
@@ -120,6 +121,10 @@ private:
     // Draws the badge of `ref` in the color of its kind (the row and its tooltip both use it).
     // `dimFrom`: the byte of `label` where the dimmed "@remote" parts start (npos: none).
     void drawRefBadge(const core::RefBadge& ref, const std::string& label, size_t dimFrom = std::string::npos) const;
+    // The tip that an Alt drop of the commit `id` rebases (the commit menu's rule); `why` is set when it has none.
+    RebaseSource sourceRebase(const core::Oid& id) const;
+    // Draws the pill of the local branch `name`, as its badge in the graph (the drag tooltip uses it).
+    void drawBranchPill(const std::string& name) const;
     bool selectRange(const core::Oid& id);
     void drawVirtualRow(const char* id, const char* label, SelKind kind, float laneWidth);
     void drawRowMenu(const core::HistoryRow& row);

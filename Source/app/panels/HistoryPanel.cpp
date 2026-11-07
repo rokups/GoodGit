@@ -515,6 +515,13 @@ void HistoryPanel::moveBranchHere(const core::BranchInfo& branch, const std::str
         m_session.showMoveBranchDialog(branch.name, commit);
 }
 
+// The tip that an Alt drop of the commit `id` rebases; a commit that a reload removed has none.
+RebaseSource HistoryPanel::sourceRebase(const core::Oid& id) const
+{
+    const core::HistoryRow* from = row(id);
+    return from ? rebaseSource(m_session, *from) : RebaseSource{{}, {}, "The commit is gone."};
+}
+
 void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
 {
     // Source: the commit, or a branch when the drag starts on its badge.
@@ -526,10 +533,16 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
                 branch = badge.name;
         if (!branch.empty()) {
             ImGui::SetDragDropPayload("GG_BRANCH", branch.data(), branch.size());
-            ImGui::TextUnformatted(branch.c_str()); // the drop moves it, merges or rebases: a menu asks
+            drawBranchPill(branch); // the drop moves it, merges or rebases: a menu asks
         } else {
             const std::string hex = row.id.hex();
             ImGui::SetDragDropPayload("GG_COMMIT", hex.data(), hex.size());
+            // The branch that an Alt drop rebases (the same rule as the commit menu): its pill leads the text.
+            const std::string moved = rebaseSource(m_session, row).branch;
+            if (!moved.empty()) {
+                drawBranchPill(moved);
+                ImGui::SameLine();
+            }
             ImGui::Text("%s %s", row.shortId.c_str(), fitText(std::string(firstLine(row.subject)), ImGui::GetFontSize() * 30).c_str());
         }
         ImGui::EndDragDropSource();
@@ -548,8 +561,8 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
                 actions.reorder(source, row.id, true, false);
             else if (io.KeyCtrl)
                 actions.squash(source, row.id.hex(), true);
-            else if (io.KeyAlt)
-                actions.rebaseTipOnto(source.hex(), row.id.hex());
+            else if (const RebaseSource rs = io.KeyAlt ? sourceRebase(source) : RebaseSource{{}, {}, "No Alt."}; rs.why.empty())
+                actions.rebaseTipOnto(rs.rev, row.id.hex());
             else {
                 m_pendingDrop = std::make_pair(source, row.id);
                 m_openChooser = true;
@@ -820,6 +833,15 @@ void HistoryPanel::drawDropChooser()
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
     const auto [source, target] = *m_pendingDrop;
     auto& actions = m_session.actions();
+    // The tip that "Rebase onto" moves (the same rule as the commit menu); a commit that a reload removed has none.
+    const RebaseSource rs = sourceRebase(source);
+    auto rebaseOnto = [&] {
+        if (!rs.why.empty()) {
+            disabledMenuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", rs.why.c_str(), "Alt");
+            return false;
+        }
+        return menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt");
+    };
     bool chosen = true;
     if (menuItem(ICON_MS_MOVE_UP, "Move before", "Ctrl+Shift"))
         actions.reorder(source, target, false, false);
@@ -829,8 +851,8 @@ void HistoryPanel::drawDropChooser()
         actions.reorder(source, target, true, true);
     else if (menuItem(ICON_MS_JOIN_INNER, "Squash into", "Ctrl"))
         actions.squash(source, target.hex(), true);
-    else if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt"))
-        actions.rebaseTipOnto(source.hex(), target.hex());
+    else if (rebaseOnto())
+        actions.rebaseTipOnto(rs.rev, target.hex());
     else
         chosen = false;
     if (chosen) {
@@ -1322,6 +1344,13 @@ std::string HistoryPanel::badgeLabel(const RefPill& pill, bool full) const
     for (const auto& r : pill.remotes)
         shown += "@" + r.remote;
     return std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
+}
+
+void HistoryPanel::drawBranchPill(const std::string& name) const
+{
+    const auto* info = m_snapshot->findBranch(name);
+    const RefPill pill{{core::RefKind::LocalBranch, name, info && info->isHead, {}}, name, {}, true};
+    drawRefBadge(pill.target, badgeLabel(pill, true));
 }
 
 void HistoryPanel::drawRefBadge(const core::RefBadge& ref, const std::string& label, size_t dimFrom) const
