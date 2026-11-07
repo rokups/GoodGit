@@ -335,9 +335,12 @@ stays as it is (it is only limited to 50–300 % on load).
   Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (the
   source is the rebase source of the dragged commit, see §4: the commits from its first
   divergence point with the target up to the source tip move, and other branches on them follow).
-  Alt at a drop whose rebase is disabled opens the chooser. Without a modifier a chooser pops up:
+  Alt at a drop whose rebase is disabled opens the chooser. Alt at a drop whose rebase source needs a
+  choice (a detached HEAD on the commit, with local branches on it, see §4) also opens the chooser.
+  Without a modifier a chooser pops up:
   Move before / Move after / Copy after / Squash into / Rebase onto. "Rebase onto" is disabled, with the
-  reason as a hint, when the commit cannot be rebased (§4). The drag tooltip of a commit row that is the tip
+  reason as a hint, when the commit cannot be rebased (§4). When the source needs a choice, the chooser
+  has one item "Rebase onto: \<choice\>" for each choice, in place of "Rebase onto". The drag tooltip of a commit row that is the tip
   of a single usable branch (also the checked-out branch) shows the pill of that branch and the commit text.
   Other commit rows show the commit text.
 - **Branch badge X → commit row or badge:** (the drag starts on the badge of a local branch; the tooltip
@@ -405,21 +408,36 @@ Drop commit…/Drop commit and descendants…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it
-when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field, no other choice) has the rebase source of the selected commit.
-The source is, in this order: HEAD when HEAD is on the commit (a branch when HEAD is attached; the commit
-and its descendants when HEAD is detached); else the one local branch on the commit (a branch that another
-worktree has checked out does not count); else the commit with all its descendants. The commits from the first
-divergence point with the destination up to the source tip move, and other branches on them follow.
-A commit with no descendants and no usable local branch cannot be rebased (a detached HEAD on such a commit
-is the same case). Then the item "Rebase onto..." is disabled with the hint "The commit has no descendants."
-The info line of the dialog reads "Rebase \<branch\>" when the source is a branch, else "Rebase". The *Squash* and *Rebase onto* dialogs have
-*Open as interactive rebase…*: the editor opens with the action as its starting todo. For *Squash*,
-the commit moves after the target as squash or fixup. For *Rebase onto*, the editor lists the commits
-from the divergence point with the destination up to the tip of the branch that holds the commit
-(HEAD, else a local branch whose tip is the commit, else the first local branch by name that contains
-it), with the destination as *Onto*. The button is refused with an error, and no editor opens, when the
-destination is the commit ("<id> is already on <destination>") or contains it ("<destination> already
-contains <id>").
+when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field) has the rebase source of the selected commit.
+The rule, in this order:
+1. HEAD is attached and on the commit: the checked-out branch, also when other branches are on the commit.
+2. HEAD is detached and on the commit, and local branches are on it (a branch that another worktree has
+   checked out does not count): the user chooses. The dialog has a *Rebase* combo. Its first entry is
+   "The detached commit and its descendants". Then it has one entry for each branch. The info line follows the choice.
+3. Otherwise, one usable local branch is on the commit: that branch.
+4. Otherwise, two or more usable branches are on the commit and none is checked out: the commit.
+   Every branch on it follows.
+5. Otherwise: the commit with all its descendants.
+
+The commits from the first divergence point with the destination up to the source tip move, and other
+branches on them follow. The info line of the dialog reads "Rebase \<branch\>" when the source is a
+branch, else "Rebase".
+
+**Descendant check.** A commit with no descendant and no branch cannot be rebased. Then the item
+"Rebase onto..." is disabled with the hint "The commit has no descendants." The check scans the loaded
+rows first. If they show no descendant, the engine searches all branches, remote branches, tags and HEAD in
+the background. The menu or the drag asks for this search once for each commit. The search stops after 1000
+commits, or at commits that are older than the commit by more than one day. A stopped search, a running
+search and a check that nobody asked for all count as "has descendants". The backend still refuses a bad rebase.
+
+The *Squash* and *Rebase onto* dialogs have *Open as interactive rebase…*: the editor opens with the action
+as its starting todo. For *Squash*, the commit moves after the target as squash or fixup. For *Rebase onto*,
+the button uses the commit only. It ignores the choice in the *Rebase* combo and the rebase source above.
+The editor lists the commits from the divergence point with the destination up to a tip. The tip is
+HEAD when HEAD is or descends from the commit, else the local branch whose tip is the commit, else the
+first local branch by name that contains it. The destination is *Onto*. A commit on none of them is refused
+with an error. The button is also refused with an error, and no editor opens, when the destination is the
+commit ("<id> is already on <destination>") or contains it ("<destination> already contains <id>").
 *Merge into HEAD…* and *Rebase HEAD onto this* in the shared commit actions act on the selected commit
 (disabled on HEAD itself; Rebase needs an attached HEAD); a commit is merged with Git's default message
 "Merge commit '<full ID>'" (the dialogs' revision fields are prefilled with the full ID, which Git
