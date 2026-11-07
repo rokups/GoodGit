@@ -123,6 +123,8 @@ RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancella
 {
     const RequestId id = m_nextId++;
     gg::CancelToken token;
+    // The task name is a copy: another thread can erase the activity at any time.
+    const std::string name = label;
     {
         std::lock_guard lock(m_mutex);
         m_activities.push_back(Activity{id, std::move(label), -1, cancellable, std::chrono::steady_clock::now()});
@@ -134,7 +136,7 @@ RequestId Engine::submit(Queue queue, std::string label, int slot, bool cancella
     task.slot = slot;
     task.cancelRunning = cancelRunning;
     task.token = token;
-    task.fn = [this, id, queued, name = m_activities.back().label, fn = std::move(fn)](Worker& worker,
+    task.fn = [this, id, queued, name, fn = std::move(fn)](Worker& worker,
                   const gg::CancelToken& tok) {
         Job job{*this, worker, id, tok};
         const auto started = std::chrono::steady_clock::now();
