@@ -5,6 +5,7 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <algorithm>
 #include <set>
 
 #include "util/Env.hpp"
@@ -281,6 +282,55 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     s.contextMenu("//Branches/remote_group_origin/origin", "Copy name");
     GG_CHECK_STR_EQ(s.clipboard(), "origin");
     GG_CHECK_STR_EQ(s.head(repo), localMain);
+}
+
+GG_TEST("network", "fetch more: named branches and tags only; the remote branch list and the check list")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path second = s.path("second.git");
+    s.git(s.root(), {"clone", "-q", "--bare", origin(s, repo).string(), second.string()});
+    s.track(second);
+    s.git(repo, {"remote", "add", "second", fileUrl(second)});
+    s.git(second, {"branch", "only-second", "main~1"});
+    s.git(second, {"branch", "other-second", "main~2"});
+    s.git(second, {"tag", "second-tag", "main~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto hasRef = [&](const std::string& ref) { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", ref}).ok(); };
+
+    // The branches on the remote.
+    s.session()->requestRemoteBranches("second");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->remoteBranches("second") != nullptr; }));
+    const auto* listed = s.session()->remoteBranches("second");
+    GG_CHECK(listed->ok);
+    GG_CHECK(std::find(listed->names.begin(), listed->names.end(), "only-second") != listed->names.end());
+    GG_CHECK(std::find(listed->names.begin(), listed->names.end(), "other-second") != listed->names.end());
+    // A new request removes the old entry until the answer arrives.
+    s.session()->requestRemoteBranches("second");
+    GG_CHECK(s.session()->remoteBranches("second") == nullptr);
+    GG_CHECK(s.waitUntil([&] { return s.session()->remoteBranches("second") != nullptr; }));
+
+    // The check list keeps the state of the names that stay.
+    ggui::Form form;
+    ggui::Field& list = form.add(ggui::Field{ggui::Field::CheckList, "branches", "Branches"});
+    list.setOptions({"a", "b", "c"});
+    list.checks[0] = 1;
+    list.checks[2] = 1;
+    list.setOptions({"c", "d", "a"});
+    GG_CHECK(form.checkedOptions("branches") == (std::vector<std::string>{"c", "a"}));
+    GG_CHECK(form.checkedOptions("missing").empty());
+
+    // Nothing to fetch: nothing happens.
+    s.session()->actions().fetchRefs("second", {}, {});
+    GG_CHECK(s.session()->actions().busy().empty());
+
+    // One branch and one tag: no other branch comes with them.
+    s.session()->actions().fetchRefs("second", {"only-second"}, {"second-tag"});
+    GG_CHECK(s.waitUntil([&] { return hasRef("refs/remotes/second/only-second"); }));
+    s.settle();
+    GG_CHECK(hasRef("refs/tags/second-tag"));
+    GG_CHECK(!hasRef("refs/remotes/second/other-second"));
+    GG_CHECK(!hasRef("refs/remotes/second/main"));
+    GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "only-second"}));
 }
 
 GG_TEST("network", "fetch from an unreachable remote reports the failure")

@@ -224,6 +224,9 @@ public:
     // creates none: a remote with none gets a warning. Prune deletes those gone from the remote.
     // Tags fetches all tags. The git config stays unchanged.
     void fetch(const std::string& remote, bool prune, bool tags);
+    // Fetches the named branches (into refs/remotes/<remote>/) and tags of one remote, and nothing else.
+    // It prunes nothing. It does nothing when both lists are empty.
+    void fetchRefs(const std::string& remote, std::vector<std::string> branches, std::vector<std::string> tags);
     // <remote>/HEAD, the remote's default branch: re-read from the remote (remove = false) or deleted.
     void pull(PullMode mode, bool autostash = false);
     // Submodule commands for the submodule at `path`, relative to the working directory (GG-60). They

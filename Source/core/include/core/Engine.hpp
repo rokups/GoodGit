@@ -155,6 +155,15 @@ struct RemoteTagsEvent {
     std::string error;
 };
 
+// The branches on one remote (git ls-remote --heads), or why they could not be read.
+struct RemoteBranchesEvent {
+    RequestId request = 0;
+    std::string remote;
+    bool ok = false;
+    std::vector<std::string> branches; // names without refs/heads/
+    std::string error;
+};
+
 struct ConfigEvent {
     RequestId request = 0;
     // key → value per scope ("user", "repository", "worktree", "effective").
@@ -183,7 +192,7 @@ struct RebasePreviewEvent {
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, CommitMessagesEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
     MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, RebasePreviewEvent,
-    RemoteTagsEvent, CommitWarningsEvent, BranchMergedEvent>;
+    RemoteTagsEvent, RemoteBranchesEvent, CommitWarningsEvent, BranchMergedEvent>;
 
 class Engine;
 
@@ -332,6 +341,8 @@ public:
     // The tags on each remote, one RemoteTagsEvent per remote. Never asks for credentials (a remote
     // that needs them reports an error); on its own queue so a slow remote holds up nothing else.
     RequestId readRemoteTags(std::vector<std::string> remotes);
+    // The branches on one remote (one RemoteBranchesEvent). Same rules as readRemoteTags.
+    RequestId readRemoteBranches(std::string remote);
     // The warnings the commit dialog shows for what is staged (CommitWarningsEvent; a newer
     // request replaces an older one).
     RequestId readCommitWarnings();

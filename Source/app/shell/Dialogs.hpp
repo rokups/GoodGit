@@ -29,7 +29,9 @@ struct Field {
     // Commit: a Text input that names a commit (branch, tag, id, HEAD~2...), with a preview line.
     // Warning: lines drawn in the warning color, read from `live` on every frame (nothing shown
     // while it returns an empty string): what may change while the dialog is open.
-    enum Kind { Text, Password, Multiline, Check, Combo, Info, Commit, Warning };
+    // CheckList: a filter box and a scrolling list with one check box for each of `options`. `checks`
+    // holds the state of each option. `hint` is shown while `options` is empty.
+    enum Kind { Text, Password, Multiline, Check, Combo, Info, Commit, Warning, CheckList };
     Kind kind = Text;
     std::string id;           // widget id: "##<id>"
     std::string label;
@@ -56,6 +58,10 @@ struct Field {
     std::string previewFor;
     bool previewValid = false;
     bool focus = false; // the field that gets the keyboard focus when the dialog opens (none set: the first text field)
+    std::vector<char> checks; // CheckList: parallel to `options` (1 = checked)
+
+    // CheckList: replaces `options`. A name that stays in the list keeps its check state.
+    void setOptions(std::vector<std::string> names);
 };
 
 struct FormButton {
@@ -90,6 +96,8 @@ struct Form {
     std::string text(const std::string& id) const;
     bool checked(const std::string& id) const;
     int choice(const std::string& id) const;
+    // The checked options of a CheckList field, in list order (empty: no such field).
+    std::vector<std::string> checkedOptions(const std::string& id) const;
 };
 
 class Dialogs {

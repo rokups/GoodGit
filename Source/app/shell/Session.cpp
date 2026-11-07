@@ -214,6 +214,13 @@ void Session::handle(core::Event& event)
                     r.tags = std::set<std::string>(e.tags.begin(), e.tags.end());
                     r.error = e.error;
                 }
+            } else if constexpr (std::is_same_v<T, core::RemoteBranchesEvent>) {
+                if (e.request == m_remoteBranchesRequest) {
+                    auto& r = m_remoteBranches[e.remote];
+                    r.ok = e.ok;
+                    r.names = std::move(e.branches);
+                    r.error = e.error;
+                }
             } else if constexpr (std::is_same_v<T, core::ConfigEvent>) {
                 m_config = std::move(e.values);
             } else if constexpr (std::is_same_v<T, core::CommitWarningsEvent>) {
@@ -353,6 +360,18 @@ void Session::requestRemoteTagsIfStale()
         return std::find(remotes.begin(), remotes.end(), kv.first) == remotes.end();
     });
     m_remoteTagsRequest = remotes.empty() ? 0 : m_engine->readRemoteTags(remotes);
+}
+
+void Session::requestRemoteBranches(const std::string& remote)
+{
+    m_remoteBranches.erase(remote);
+    m_remoteBranchesRequest = m_engine->readRemoteBranches(remote);
+}
+
+const Session::RemoteBranches* Session::remoteBranches(const std::string& remote) const
+{
+    auto it = m_remoteBranches.find(remote);
+    return it == m_remoteBranches.end() ? nullptr : &it->second;
 }
 
 void Session::requestConfig()

@@ -1426,6 +1426,22 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
         {}, true);
 }
 
+void Actions::fetchRefs(const std::string& remote, std::vector<std::string> branches, std::vector<std::string> tags)
+{
+    if (branches.empty() && tags.empty())
+        return;
+    run("fetch more from " + remote,
+        [remote, branches = std::move(branches), tags = std::move(tags)](MutationContext& ctx) {
+            std::string refspecs;
+            for (const auto& b : branches)
+                refspecs += "+refs/heads/" + b + ":refs/remotes/" + remote + "/" + b + "\n";
+            for (const auto& t : tags)
+                refspecs += "refs/tags/" + t + ":refs/tags/" + t + "\n";
+            ctx.git({"fetch", "--progress", "--no-tags", "--no-prune", "--stdin", remote}, refspecs, true);
+        },
+        {}, true);
+}
+
 void Actions::submoduleInit(const std::string& path)
 {
     run("initialize submodule " + path,

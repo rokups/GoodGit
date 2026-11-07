@@ -117,6 +117,31 @@ int Form::choice(const std::string& id) const
     return f ? f->choice : 0;
 }
 
+void Field::setOptions(std::vector<std::string> names)
+{
+    std::vector<char> kept(names.size(), 0);
+    for (size_t i = 0; i < names.size(); ++i) {
+        const auto it = std::find(options.begin(), options.end(), names[i]);
+        const size_t old = static_cast<size_t>(it - options.begin());
+        if (it != options.end() && old < checks.size())
+            kept[i] = checks[old];
+    }
+    options = std::move(names);
+    checks = std::move(kept);
+}
+
+std::vector<std::string> Form::checkedOptions(const std::string& id) const
+{
+    std::vector<std::string> out;
+    const Field* f = field(id);
+    if (!f)
+        return out;
+    for (size_t i = 0; i < f->options.size() && i < f->checks.size(); ++i)
+        if (f->checks[i])
+            out.push_back(f->options[i]);
+    return out;
+}
+
 void Dialogs::open(Form form) { m_queue.push_back(std::move(form)); }
 
 void Dialogs::draw()
@@ -237,6 +262,27 @@ void Dialogs::draw()
                 }
                 ImGui::EndCombo();
             }
+            break;
+        }
+        case Field::CheckList: {
+            if (!f.label.empty())
+                ImGui::TextUnformatted(f.label.c_str());
+            f.checks.resize(f.options.size(), 0);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint(("##" + f.id + "_filter").c_str(), ICON_MS_SEARCH " Filter", &f.filter);
+            if (ImGui::BeginChild(("##" + f.id + "_list").c_str(), ImVec2(-FLT_MIN, ImGui::GetTextLineHeightWithSpacing() * 8),
+                    ImGuiChildFlags_Borders)) {
+                if (f.options.empty())
+                    ImGui::TextDisabled("%s", f.hint.c_str());
+                for (size_t k = 0; k < f.options.size(); ++k) {
+                    if (!containsNoCase(f.options[k], f.filter))
+                        continue;
+                    bool on = f.checks[k] != 0;
+                    if (ImGui::Checkbox((f.options[k] + "##" + f.id + "_" + f.options[k]).c_str(), &on))
+                        f.checks[k] = on ? 1 : 0;
+                }
+            }
+            ImGui::EndChild();
             break;
         }
         case Field::Info:

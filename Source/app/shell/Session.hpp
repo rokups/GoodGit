@@ -174,6 +174,17 @@ public:
     void requestRemoteTagsIfStale();
     void markRemoteTagsStale() { m_remoteTagsStale = true; }
 
+    // Branches on one remote (git ls-remote), read when the Fetch more dialog asks. `ok` false: it
+    // could not be read. A remote missing from the map has not been read yet.
+    struct RemoteBranches {
+        bool ok = false;
+        std::vector<std::string> names;
+        std::string error;
+    };
+    // Always asks again. Removes the old entry first.
+    void requestRemoteBranches(const std::string& remote);
+    const RemoteBranches* remoteBranches(const std::string& remote) const;
+
     // The short form of a commit ID (its first kShortIdLength characters), as History shows it.
     std::string shortId(const core::Oid& id) const;
     // Length of the short IDs the UI shows (kShortIdLength).
@@ -284,6 +295,8 @@ private:
     std::string m_journalError; // the undo journal's problem last reported ("" = none)
     std::vector<std::string> m_remoteTagsFor; // the remotes last asked about
     core::RequestId m_remoteTagsRequest = 0;
+    std::map<std::string, RemoteBranches> m_remoteBranches;
+    core::RequestId m_remoteBranchesRequest = 0;
     bool m_remoteTagsStale = true;
 
     std::unique_ptr<HistoryPanel> m_history;
