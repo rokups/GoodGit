@@ -647,4 +647,92 @@ GG_TEST("worktrees", "Add is one operation Undo reverts; a plain git worktree ad
     GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/main");
 }
 
+GG_TEST("worktrees", "checking out a branch that another worktree has asks to detach that worktree first; Cancel changes nothing")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path wt1 = s.root() / "wt1";
+    s.git(repo, {"worktree", "add", "-q", "-b", "feature", wt1.string(), "HEAD~1"});
+    s.track(wt1);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto* b = s.session()->snapshot()->findBranch("feature");
+        return b && !b->worktree.empty();
+    }));
+    const std::string mainHead = s.head(repo);
+    const std::string featureId = s.revParse(repo, "refs/heads/feature");
+    // Cancel: no git runs, both HEADs stay.
+    s.contextMenu("//Branches/branch_feature/###branch_feature", "Check out");
+    GG_REQUIRE(s.dialogOpen("Check out branch"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_CHECK(form->message.find("feature is checked out in worktree wt1") != std::string::npos);
+    s.dialogButton("Check out branch", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/main");
+    GG_CHECK_STR_EQ(s.head(repo), mainHead);
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"symbolic-ref", "HEAD"}), "refs/heads/feature");
+    // Detach and check out: this HEAD is on the branch and the other worktree is detached at the same commit.
+    s.contextMenu("//Branches/branch_feature/###branch_feature", "Check out");
+    GG_REQUIRE(s.dialogOpen("Check out branch"));
+    s.dialogButton("Check out branch", "Detach and check out");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out.find("feature") != std::string::npos; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/feature");
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"rev-parse", "--abbrev-ref", "HEAD"}), "HEAD");
+    GG_CHECK_STR_EQ(s.head(wt1), featureId);
+    GG_CHECK_STR_EQ(s.head(repo), featureId);
+}
+
+GG_TEST("worktrees", "detach and check out: a worktree that left the branch since the dialog opened stays as it is")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path wt1 = s.root() / "wt1";
+    s.git(repo, {"worktree", "add", "-q", "-b", "feature", wt1.string(), "HEAD~1"});
+    s.track(wt1);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto* b = s.session()->snapshot()->findBranch("feature");
+        return b && !b->worktree.empty();
+    }));
+    s.contextMenu("//Branches/branch_feature/###branch_feature", "Check out");
+    GG_REQUIRE(s.dialogOpen("Check out branch"));
+    // The other worktree moves to another branch while the dialog is open: the snapshot is old.
+    s.git(wt1, {"switch", "-q", "-c", "other"});
+    s.dialogButton("Check out branch", "Detach and check out");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out.find("feature") != std::string::npos; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"symbolic-ref", "HEAD"}), "refs/heads/other");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/feature");
+}
+
+GG_TEST("worktrees", "detach and check out: when the rollback fails too, the error says the other worktree stays detached")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path wt1 = s.root() / "wt1";
+    s.git(repo, {"worktree", "add", "-q", "-b", "feature", wt1.string(), "HEAD~1"});
+    s.track(wt1);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto* b = s.session()->snapshot()->findBranch("feature");
+        return b && !b->worktree.empty();
+    }));
+    // A post-checkout hook that fails in the main worktree only, while the marker file exists: the switch
+    // fails after it moved HEAD, and the rollback switch fails the same way.
+    s.write(repo, ".git/hooks/post-checkout",
+        "#!/bin/sh\n[ -f \"$(git rev-parse --git-common-dir)/failhook\" ] && "
+        "[ \"$(git rev-parse --git-dir)\" = \"$(git rev-parse --git-common-dir)\" ] && exit 1\nexit 0\n");
+    fs::permissions(repo / ".git" / "hooks" / "post-checkout", fs::perms::owner_all, fs::perm_options::add);
+    s.contextMenu("//Branches/branch_feature/###branch_feature", "Check out");
+    GG_REQUIRE(s.dialogOpen("Check out branch"));
+    s.write(repo, ".git/failhook", "");
+    s.dialogButton("Check out branch", "Detach and check out");
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.errorMessage().empty(); }, 30.0f));
+    GG_CHECK(s.app.errorMessage().find("worktree wt1 stays detached") != std::string::npos);
+    GG_CHECK(s.dismissError());
+    fs::remove(repo / ".git" / "failhook");
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"rev-parse", "--abbrev-ref", "HEAD"}), "HEAD");
+}
+
 } // namespace ggtest

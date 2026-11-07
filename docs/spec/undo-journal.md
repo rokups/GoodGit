@@ -261,6 +261,8 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
   falls back to the lump. The reflog is read around the refs and a pass retries when the tip moved
   between the reads. Reftable repositories are not supported (libgit2). `git worktree add|remove|lock|unlock` are never
   recorded by the reconciler: only ggui and git-gg write `worktree` records.
+  A check out of a branch that another worktree has detaches that worktree first. The detach is not part
+  of the undo step: the operation reads only its own HEAD.
 
 ### 4.1 Native rebases (several git commands, one operation)
 A `git rebase` (either backend) that stops runs as several git commands

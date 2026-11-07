@@ -845,14 +845,38 @@ std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::str
 
 } // namespace
 
-void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit)
+void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit, const std::string& detachOther)
 {
+    // A local branch that another worktree has: git refuses the switch. Ask to detach that worktree first.
+    // A missing, prunable or bare worktree is not offered: the switch runs and git gives its error.
+    if (!detach && !edit && detachOther.empty()) {
+        const auto snap = m_session.snapshot();
+        const auto* b = snap->findBranch(target);
+        if (b && !b->isHead && !b->worktree.empty()) {
+            for (const auto& w : snap->worktrees) {
+                if (w.name != b->worktree || w.isCurrent || w.bare || w.missing || w.prunable || w.branch != target
+                    || !fs::is_directory(w.path))
+                    continue;
+                const std::string otherPath = w.path.string();
+                Form f;
+                f.title = "Check out branch";
+                f.message = target + " is checked out in worktree " + w.name + " (" + otherPath
+                    + "). Detach that worktree first?";
+                f.buttons.push_back({"Detach and check out", [this, target, stashFirst, otherPath](Form&) {
+                                         checkout(target, false, stashFirst, false, otherPath);
+                                     }});
+                f.buttons.push_back({"Cancel", {}});
+                m_session.app().dialogs().open(std::move(f));
+                return;
+            }
+        }
+    }
     const std::string label = edit ? "edit " + target.substr(0, 10)
         : detach                    ? "check out " + target.substr(0, 10)
                                     : "switch to " + target;
     const bool expand = m_session.app().settings().data().expandConflictStages;
     run(label,
-        [target, detach, stashFirst, expand, edit](MutationContext& ctx) {
+        [target, detach, stashFirst, expand, edit, detachOther](MutationContext& ctx) {
             // Edit commit: the branch to return to is the one HEAD is on (or the current edit
             // session's) if it contains the commit, else the first local branch that does, else
             // a local branch made (or fast-forwarded) from the first remote-tracking branch that
@@ -905,11 +929,25 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                         return c.gitMayFail({"stash", "pop", "-q", "--index"}).ok() ? std::string() : safe;
                     });
             }
+            // The snapshot can be old: the other worktree may have left the branch since the dialog opened.
+            // Then nothing is detached and the plain switch runs (git gives its own error if the branch is used).
+            std::string stays; // the text for a rollback that stops while the other worktree is detached
+            if (!detachOther.empty()
+                && gg::trim(ctx.gitMayFail({"-C", detachOther, "symbolic-ref", "-q", "--short", "HEAD"}).out) == target) {
+                // The other worktree keeps its files, so it needs no stash. Its rollback is pushed before the
+                // one for this HEAD: the rollback runs newest first, so the branch is free when it goes back.
+                ctx.git({"-C", detachOther, "switch", "-q", "--detach"});
+                stays = "worktree " + fs::path(detachOther).filename().string() + " stays detached";
+                ctx.rollback.push_back([detachOther, target, stays](MutationContext& c) {
+                    const auto res = c.gitMayFail({"-C", detachOther, "switch", "-q", target});
+                    return res.ok() ? std::string() : firstLineOf(res.message()) + "; " + stays;
+                });
+            }
             // Pushed before the switch: a switch can fail after it moved HEAD (a post-checkout hook).
             // Nothing when HEAD did not move: git can refuse that switch too (an unmerged index, a
             // merge in progress).
             if (!branchBefore.empty() || !headBefore.empty())
-                ctx.rollback.push_back([branchBefore, headBefore, stashed](MutationContext& c) {
+                ctx.rollback.push_back([branchBefore, headBefore, stashed, stays](MutationContext& c) {
                     if (gg::trim(c.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out) == headBefore
                         && gg::trim(c.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"}).out) == branchBefore)
                         return std::string();
@@ -919,7 +957,9 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                                                           : c.gitMayFail({"switch", "-q", branchBefore});
                     if (res.ok())
                         return std::string();
-                    return firstLineOf(res.message()) + (stashed ? "; your changes are in stash@{0}" : "");
+                    // This step stops the rollback, so the other worktree is not put back.
+                    return firstLineOf(res.message()) + (stashed ? "; your changes are in stash@{0}" : "")
+                        + (stays.empty() ? "" : "; " + stays);
                 });
             if (detach)
                 ctx.git({"switch", "-q", "--detach", target});
@@ -964,7 +1004,7 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             }
             ctx.submodules = SubmoduleSync::Update;
         },
-        [this, label, target, detach, edit](const core::MutationFinishedEvent& e) {
+        [this, label, target, detach, edit, detachOther](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Ok && !e.message.empty()) {
                 m_session.app().notify(App::Notice::Warning, label, e.message);
                 return;
@@ -975,7 +1015,8 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                 f.message = "Your local changes would be overwritten by the checkout.\n\n" + e.message
                     + "\n\nStash them first and then switch?";
                 f.buttons.push_back(
-                    {"Stash and switch", [this, target, detach, edit](Form&) { checkout(target, detach, true, edit); }});
+                    {"Stash and switch",
+                     [this, target, detach, edit, detachOther](Form&) { checkout(target, detach, true, edit, detachOther); }});
                 f.buttons.push_back({"Cancel", {}});
                 m_session.app().dialogs().open(std::move(f));
                 return;

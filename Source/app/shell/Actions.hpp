@@ -106,7 +106,10 @@ public:
     void newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message = {},
         const std::string& branch = {});
     // `edit`: Edit commit (the target detached, with an edit session to return from).
-    void checkout(const std::string& target, bool detach, bool stashFirst = false, bool edit = false);
+    // A branch that another worktree has: a dialog asks to detach that worktree first. `detachOther` is the
+    // path of that worktree after the user agrees: the mutation detaches it and then switches (all or nothing).
+    void checkout(const std::string& target, bool detach, bool stashFirst = false, bool edit = false,
+        const std::string& detachOther = {});
     void editCommit(const core::Oid& id);
 
     // ---- branches, tags, remotes (§4.7) ---------------------------------------------------

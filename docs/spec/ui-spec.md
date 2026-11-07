@@ -828,7 +828,7 @@ the panel without touching the repository.
 ## 9. Dialogs
 Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dialog>` and
 `Cancel##<dialog>`:
-`Commit`, `Create branch`, `Rename branch`, `Delete branch`, `Move branch`,
+`Commit`, `Create branch`, `Rename branch`, `Check out branch` (buttons *Detach and check out* / *Cancel*), `Delete branch`, `Move branch`,
 `Create tag`, `Add remote`, `Edit remote URL`, `Fetch more` (combo `##remote`, check lists `##branches` and `##tags` with a filter, buttons *Fetch* / *Cancel*), `Clone repository`, `Initialize repository`,
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
