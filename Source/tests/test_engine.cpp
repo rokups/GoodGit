@@ -578,4 +578,146 @@ GG_TEST("engine", "self write: an external git add right after a status scan sti
     engine.cancelAll();
 }
 
+GG_TEST("engine", "readDescendants: found, none, unknown at the cap, and children on a remote branch or a tag")
+{
+    using ggui::core::DescendantsResult;
+    using ggui::core::Oid;
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine engine(ggui::core::Engine::Options{repo, false});
+    auto ask = [&](const std::string& commit, int cap) {
+        const auto id = engine.readDescendants(Oid::fromHex(commit), cap);
+        std::optional<DescendantsResult> result;
+        s.waitUntil([&] {
+            for (auto& event : engine.poll(64))
+                if (const auto* d = std::get_if<ggui::core::DescendantsEvent>(&event); d && d->request == id)
+                    result = d->result;
+            return result.has_value();
+        }, 10.0f);
+        GG_CHECK(result.has_value()); // a missing answer reads as Unknown below
+        return result.value_or(DescendantsResult::Unknown);
+    };
+    // A commit with a child on a branch (beyond any window of loaded rows), and the tip of main: no child.
+    const std::string main = s.revParse(repo, "main");
+    GG_CHECK(ask(main, 1000) == DescendantsResult::None);
+    s.git(repo, {"switch", "-q", "-c", "side"});
+    s.commitFile(repo, "side.txt", "s\n", "on side");
+    s.git(repo, {"switch", "-q", "main"});
+    GG_CHECK(ask(main, 1000) == DescendantsResult::Found);
+    // The tip of side has no child.
+    GG_CHECK(ask(s.revParse(repo, "side"), 1000) == DescendantsResult::None);
+    // A child only on a remote-tracking branch.
+    s.git(repo, {"switch", "-q", "--detach", "main"});
+    s.commitFile(repo, "r1.txt", "r\n", "parent of remote");
+    const std::string remoteParent = s.head(repo);
+    s.commitFile(repo, "r2.txt", "r\n", "remote only");
+    s.git(repo, {"update-ref", "refs/remotes/origin/only", s.head(repo)});
+    // A child only on an annotated tag.
+    s.git(repo, {"switch", "-q", "--detach", "main"});
+    s.commitFile(repo, "t1.txt", "t\n", "parent of tag");
+    const std::string tagParent = s.head(repo);
+    s.commitFile(repo, "t2.txt", "t\n", "tag only");
+    s.git(repo, {"tag", "-a", "-m", "annotated", "only-tag"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_CHECK(ask(remoteParent, 1000) == DescendantsResult::Found);
+    GG_CHECK(ask(tagParent, 1000) == DescendantsResult::Found);
+    GG_CHECK(ask(s.revParse(repo, "only-tag^{commit}"), 1000) == DescendantsResult::None);
+    // The cap: an unrelated root leaves all the other commits to visit.
+    s.git(repo, {"switch", "-q", "--orphan", "other"});
+    s.commitFile(repo, "o.txt", "o\n", "orphan");
+    const std::string root = s.head(repo);
+    s.git(repo, {"switch", "-q", "main"});
+    GG_CHECK(ask(root, 3) == DescendantsResult::Unknown);
+    GG_CHECK(ask(root, 1000) == DescendantsResult::None);
+    engine.cancelAll();
+}
+
+namespace {
+
+// Commits one file with the author and committer date `when` (seconds since the epoch).
+std::string commitAt(Scenario& s, const fs::path& repo, const std::string& file, long long when)
+{
+    s.write(repo, file, file + "\n");
+    s.git(repo, {"add", "--", file});
+    gg::RunRequest r;
+    r.args = {"git", "commit", "-q", "-m", file};
+    r.cwd = repo;
+    const std::string date = "@" + std::to_string(when) + " +0000";
+    r.env = {{"GIT_AUTHOR_DATE", date}, {"GIT_COMMITTER_DATE", date}};
+    gg::run(r);
+    return s.head(repo);
+}
+
+ggui::core::DescendantsResult askDescendants(Scenario& s, ggui::core::Engine& engine, const std::string& commit, int cap)
+{
+    const auto id = engine.readDescendants(ggui::core::Oid::fromHex(commit), cap);
+    std::optional<ggui::core::DescendantsResult> result;
+    s.waitUntil([&] {
+        for (auto& event : engine.poll(64))
+            if (const auto* d = std::get_if<ggui::core::DescendantsEvent>(&event); d && d->request == id)
+                result = d->result;
+        return result.has_value();
+    }, 10.0f);
+    return result.value_or(ggui::core::DescendantsResult::Unknown);
+}
+
+} // namespace
+
+GG_TEST("engine", "readDescendants: many newer unrelated commits hit the visit cap")
+{
+    using ggui::core::DescendantsResult;
+    constexpr long long base = 1'700'000'000;
+    const fs::path repo = s.fixture(Recipe::Empty, "busy");
+    const std::string old = commitAt(s, repo, "old.txt", base);
+    // 30 newer commits on an unrelated branch lie on top of the old commit in time order.
+    s.git(repo, {"switch", "-q", "--orphan", "busy"});
+    for (int i = 0; i < 30; ++i)
+        commitAt(s, repo, "busy" + std::to_string(i) + ".txt", base + 86400 + 60 * i);
+    s.git(repo, {"switch", "-q", "main"});
+    ggui::core::Engine engine(ggui::core::Engine::Options{repo, false});
+    GG_CHECK(askDescendants(s, engine, old, 5) == DescendantsResult::Unknown);
+    GG_CHECK(askDescendants(s, engine, old, 1000) == DescendantsResult::None);
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "readDescendants: commits much older than the commit end the walk with none")
+{
+    using ggui::core::DescendantsResult;
+    constexpr long long base = 1'700'000'000;
+    const fs::path repo = s.fixture(Recipe::Empty, "ancient");
+    const std::string tip = commitAt(s, repo, "tip.txt", base);
+    // 30 commits, all 10 days older than the tip, on an unrelated branch.
+    s.git(repo, {"switch", "-q", "--orphan", "ancient"});
+    for (int i = 0; i < 30; ++i)
+        commitAt(s, repo, "ancient" + std::to_string(i) + ".txt", base - 10 * 86400 + 60 * i);
+    s.git(repo, {"switch", "-q", "main"});
+    ggui::core::Engine engine(ggui::core::Engine::Options{repo, false});
+    // The cap would stop the walk after 5 commits, but the walk stops at the first older commit.
+    GG_CHECK(askDescendants(s, engine, tip, 5) == DescendantsResult::None);
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "a cancelled descendants search does not stay pending in the session")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const auto id = ggui::core::Oid::fromHex(s.revParse(repo, "main"));
+    auto& engine = s.session()->engine();
+    // A blame job holds the Content queue, so the search waits behind it.
+    gg::setSlowGitLatency(std::chrono::milliseconds(5000));
+    ggui::core::BlameQuery blame;
+    blame.path = "f1.txt";
+    engine.blame(blame);
+    GG_REQUIRE(s.waitUntil([&] { return engine.running(ggui::core::Queue::Content); }, 10.0f));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    s.session()->requestDescendants(id);
+    GG_CHECK(!s.session()->descendants(id).has_value());
+    engine.cancelAll();
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
+    GG_REQUIRE(s.waitUntil([&] { return engine.activities().empty(); }, 10.0f));
+    s.settle();
+    // The cancelled entry is gone: a new request starts and gets an answer.
+    s.session()->requestDescendants(id);
+    GG_CHECK(s.waitUntil([&] { return s.session()->descendants(id).has_value(); }));
+}
+
 } // namespace ggtest

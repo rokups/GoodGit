@@ -322,6 +322,9 @@ GG_TEST("edit", "Rebase onto is disabled on a tag-only tip commit, with the reas
     GG_REQUIRE(rowReady(s, tip));
     const ggui::core::HistoryRow* row = s.session()->history().row(ggui::core::Oid::fromHex(tip));
     GG_REQUIRE(row);
+    // The engine answers "none" for a tag-only tip. Until then the commit counts as having a descendant.
+    s.session()->requestDescendants(row->id);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->descendants(row->id).has_value(); }));
     const ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
     GG_CHECK(src.rev.empty());
     GG_CHECK_STR_EQ(src.why, "The commit has no descendants.");
@@ -425,6 +428,8 @@ GG_TEST("edit", "rebaseSource: a detached HEAD on a branch tip offers the choice
     const auto* tipRow = s.session()->history().row(ggui::core::Oid::fromHex(tip));
     GG_REQUIRE(tipRow);
     GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->head == ggui::core::Oid::fromHex(tip); }));
+    s.session()->requestDescendants(tipRow->id);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->descendants(tipRow->id).has_value(); }));
     src = ggui::rebaseSource(*s.session(), *tipRow);
     GG_CHECK(src.rev.empty());
     GG_CHECK_STR_EQ(src.why, "The commit has no descendants.");
@@ -1284,6 +1289,62 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     GG_CHECK_STR_EQ(s.gitOut(stashes, {"diff", "--name-only"}), "b.txt");
     GG_CHECK_STR_EQ(s.gitOut(stashes, {"show", ":a.txt"}), "a staged");
     GG_CHECK_EQ(s.gitOut(stashes, {"stash", "list"}).find("index and worktree") != std::string::npos, true);
+}
+
+GG_TEST("edit", "Rebase onto stays enabled when the only child is not in the loaded rows")
+{
+    const EditRepo r = makeRepo(s);
+    // P has a tag. Its only child K is on the branch "kid", which the History hides: the rows lack K.
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    s.commitFile(r.path, "p.txt", "p\n", "P tagged parent");
+    const std::string parent = s.head(r.path);
+    s.git(r.path, {"tag", "parent-tag", parent});
+    s.git(r.path, {"switch", "-q", "-c", "kid"});
+    s.commitFile(r.path, "k.txt", "k\n", "K hidden child");
+    const std::string kid = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, kid));
+    s.session()->history().setRefsVisible({"refs/heads/kid"}, false);
+    const auto parentId = ggui::core::Oid::fromHex(parent);
+    GG_REQUIRE(s.waitUntil([&] {
+        return !s.session()->history().row(ggui::core::Oid::fromHex(kid)) && s.session()->history().row(parentId);
+    }));
+    ctx->ItemClick(rowRef(parent).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled));
+    // The engine finds the child beyond the rows; the item stays enabled.
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->descendants(parentId).has_value(); }));
+    GG_CHECK(s.session()->descendants(parentId) == ggui::core::DescendantsResult::Found);
+    ctx->Yield(2);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    const auto* row = s.session()->history().row(parentId);
+    GG_REQUIRE(row);
+    const ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
+    GG_CHECK(src.why.empty());
+    GG_CHECK_STR_EQ(src.rev, parent);
+}
+
+GG_TEST("edit", "Rebase onto is disabled on a tag-only tip once the engine says it has no descendant")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    s.commitFile(r.path, "t.txt", "t\n", "T tag only");
+    const std::string tip = s.head(r.path);
+    s.git(r.path, {"tag", "tip-tag", tip});
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, tip));
+    ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(s.waitUntil([&] {
+        return s.itemExists("//$FOCUSED/Rebase onto...")
+            && (ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled);
+    }));
+    GG_CHECK(s.session()->descendants(ggui::core::Oid::fromHex(tip)) == ggui::core::DescendantsResult::None);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
 }
 
 } // namespace ggtest

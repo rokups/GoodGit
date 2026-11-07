@@ -185,6 +185,8 @@ void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row)
 {
     const MenuContext c(session, row);
     const Other other = otherCommit(session, row);
+    // The menu is open: ask once for the descendants that the loaded rows may miss (rebaseSource).
+    session.requestDescendants(row.id);
     // HEAD and this commit (plan §4.3 "Merge into @"): also in Branches.
     if (c.one(ICON_MS_MERGE, "Merge into HEAD...", nullptr, c.headCommit && !c.isHead,
             c.headCommit ? "This commit is HEAD." : "HEAD has no commit yet."))
@@ -307,11 +309,13 @@ RebaseSource rebaseSource(Session& session, const core::HistoryRow& row)
 {
     RebaseSource out;
     const auto snap = session.snapshot();
+    // The loaded rows answer "yes" at once. Otherwise the engine's answer counts (the caller asked for it
+    // with Session::requestDescendants): only "None" says there is no descendant.
     auto hasChild = [&] {
         for (const auto& r : session.history().rows())
             if (std::find(r.parents.begin(), r.parents.end(), row.id) != r.parents.end())
                 return true;
-        return false;
+        return session.descendants(row.id) != core::DescendantsResult::None;
     };
     const bool onHead = !snap->headUnborn && snap->head == row.id;
     if (onHead && !snap->headDetached) {

@@ -538,6 +538,7 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
             const std::string hex = row.id.hex();
             ImGui::SetDragDropPayload("GG_COMMIT", hex.data(), hex.size());
             // The branch that an Alt drop rebases (the same rule as the commit menu): its pill leads the text.
+            m_session.requestDescendants(row.id);
             const std::string moved = rebaseSource(m_session, row).branch;
             if (!moved.empty()) {
                 drawBranchPill(moved);

@@ -187,6 +187,9 @@ void Session::handle(core::Event& event)
                 if (e.request == m_openRequest && !m_opened && (e.cancelled || e.failed))
                     m_failed = true;
                 m_history->onTaskFinished(e);
+                // A cancelled or failed descendants search sends no answer: forget the entry, so a later menu asks again.
+                if (e.cancelled || e.failed)
+                    std::erase_if(m_descendants, [&](const auto& kv) { return kv.second.request == e.request && !kv.second.result; });
                 m_rebase->onTaskFinished(e);
             } else if constexpr (std::is_same_v<T, core::WatchEvent>) {
                 if (e.refs)
@@ -221,6 +224,10 @@ void Session::handle(core::Event& event)
                     r.names = std::move(e.branches);
                     r.error = e.error;
                 }
+            } else if constexpr (std::is_same_v<T, core::DescendantsEvent>) {
+                // An answer for a request from before a reference change finds no entry or another request.
+                if (auto it = m_descendants.find(e.commit); it != m_descendants.end() && it->second.request == e.request)
+                    it->second.result = e.result;
             } else if constexpr (std::is_same_v<T, core::ConfigEvent>) {
                 m_config = std::move(e.values);
             } else if constexpr (std::is_same_v<T, core::CommitWarningsEvent>) {
@@ -248,6 +255,8 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
 {
     const bool refsChanged = !m_snapshot || m_snapshot->refsFingerprint() != snap->refsFingerprint();
     m_snapshot = std::move(snap);
+    if (refsChanged)
+        m_descendants.clear();
     m_history->onSnapshot(m_snapshot, refsChanged || first);
     m_branches->onSnapshot(m_snapshot);
     m_tags->onSnapshot(m_snapshot);
@@ -366,6 +375,19 @@ void Session::requestRemoteBranches(const std::string& remote)
 {
     m_remoteBranches.erase(remote);
     m_remoteBranchesRequest = m_engine->readRemoteBranches(remote);
+}
+
+void Session::requestDescendants(const core::Oid& commit)
+{
+    if (commit.isNull() || m_descendants.count(commit) != 0)
+        return;
+    m_descendants[commit].request = m_engine->readDescendants(commit);
+}
+
+std::optional<core::DescendantsResult> Session::descendants(const core::Oid& commit) const
+{
+    const auto it = m_descendants.find(commit);
+    return it == m_descendants.end() ? std::nullopt : it->second.result;
 }
 
 const Session::RemoteBranches* Session::remoteBranches(const std::string& remote) const

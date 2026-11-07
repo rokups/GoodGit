@@ -164,6 +164,13 @@ struct RemoteBranchesEvent {
     std::string error;
 };
 
+// Whether one commit has a descendant (see readDescendants).
+struct DescendantsEvent {
+    RequestId request = 0;
+    Oid commit;
+    DescendantsResult result = DescendantsResult::Unknown;
+};
+
 struct ConfigEvent {
     RequestId request = 0;
     // key → value per scope ("user", "repository", "worktree", "effective").
@@ -192,7 +199,7 @@ struct RebasePreviewEvent {
 using Event = std::variant<OpenedEvent, SnapshotEvent, StatusEvent, HistoryEvent, RevealEvent, SearchEvent,
     DiffEvent, BlameEvent, ReflogEvent, CommitDetailsEvent, CommitMessagesEvent, ErrorEvent, TaskFinishedEvent, WatchEvent,
     MutationFinishedEvent, OperationsEvent, ConflictsEvent, ConfigEvent, RebasePreviewEvent,
-    RemoteTagsEvent, RemoteBranchesEvent, CommitWarningsEvent, BranchMergedEvent>;
+    RemoteTagsEvent, RemoteBranchesEvent, CommitWarningsEvent, BranchMergedEvent, DescendantsEvent>;
 
 class Engine;
 
@@ -343,6 +350,10 @@ public:
     RequestId readRemoteTags(std::vector<std::string> remotes);
     // The branches on one remote (one RemoteBranchesEvent). Same rules as readRemoteTags.
     RequestId readRemoteBranches(std::string remote);
+    // Whether `commit` has a descendant in any branch, remote branch, tag or HEAD (one DescendantsEvent).
+    // The search visits at most `maxVisits` commits; if the cap stops it, the result is Unknown. Requests
+    // never replace each other.
+    RequestId readDescendants(Oid commit, int maxVisits = 1000);
     // The warnings the commit dialog shows for what is staged (CommitWarningsEvent; a newer
     // request replaces an older one).
     RequestId readCommitWarnings();

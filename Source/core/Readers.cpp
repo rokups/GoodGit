@@ -1,4 +1,5 @@
 #include "Readers.hpp"
+#include "History.hpp"
 #include "StatusPorcelain.hpp"
 
 #include <libgg/Keep.hpp>
@@ -182,6 +183,60 @@ bool isPublished(git_repository* repo, const git_oid& id)
         if (git_oid_equal(&t, &id))
             return true;
     return git_graph_reachable_from_any(repo, &id, tips.data(), tips.size()) == 1;
+}
+
+DescendantsResult readDescendants(git_repository* repo, const Oid& commit, int maxVisits, const gg::CancelToken& cancel)
+{
+    gg::assertNotUiThread("readDescendants");
+    const git_oid target = toGit(commit);
+    git_commit* rawTarget = nullptr;
+    if (git_commit_lookup(&rawTarget, repo, &target) != 0) {
+        git_error_clear();
+        return DescendantsResult::Unknown;
+    }
+    const std::int64_t targetTime = git_commit_time(Commit(rawTarget).get());
+    git_revwalk* rawWalk = nullptr;
+    if (git_revwalk_new(&rawWalk, repo) != 0) {
+        git_error_clear();
+        return DescendantsResult::Unknown;
+    }
+    Revwalk walk(rawWalk);
+    // Time order from the tips, newest first, one commit at a time. No git_revwalk_hide: a hidden commit
+    // makes libgit2 walk every commit that C does not reach before it returns the first one, which neither
+    // the visit cap nor the cancel token can bound.
+    git_revwalk_sorting(walk.get(), GIT_SORT_TIME);
+    // A glob skips the refs that do not peel to a commit. The pushes fail when there are no such refs.
+    for (const char* glob : {"refs/heads/*", "refs/remotes/*", "refs/tags/*"})
+        if (git_revwalk_push_glob(walk.get(), glob) != 0)
+            git_error_clear();
+    if (git_revwalk_push_head(walk.get()) != 0)
+        git_error_clear();
+    int visits = 0;
+    git_oid oid;
+    for (;;) {
+        gg::throwIfCancelled(cancel);
+        if (visits >= maxVisits)
+            return DescendantsResult::Unknown;
+        if (git_revwalk_next(&oid, walk.get()) != 0)
+            break;
+        ++visits;
+        git_commit* raw = nullptr;
+        if (git_commit_lookup(&raw, repo, &oid) != 0) {
+            git_error_clear();
+            return DescendantsResult::Unknown;
+        }
+        Commit c(raw);
+        for (unsigned i = 0, n = git_commit_parentcount(c.get()); i < n; ++i)
+            if (git_oid_equal(git_commit_parent_id(c.get(), i), &target))
+                return DescendantsResult::Found;
+        // The walk goes newest first, so a child of C comes before the commits that are much older than C.
+        // The margin is one day, as in git name-rev. A wrong "none" blocks a valid rebase, so it is wide.
+        constexpr long long kMargin = 86400;
+        if (git_commit_time(c.get()) < targetTime - kMargin)
+            return DescendantsResult::None;
+    }
+    git_error_clear();
+    return DescendantsResult::None;
 }
 
 SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel)

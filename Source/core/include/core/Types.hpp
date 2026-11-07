@@ -45,6 +45,9 @@ struct OidHash {
     }
 };
 
+// Whether a commit has a descendant in the repository. Unknown: the search reached its visit cap.
+enum class DescendantsResult { Found, None, Unknown };
+
 // ---- Snapshot ----------------------------------------------------------------------------------
 
 enum class RepoState {

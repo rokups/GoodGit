@@ -49,4 +49,11 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
 // True when `id` is reachable from any remote-tracking ref.
 bool isPublished(git_repository* repo, const git_oid& id);
 
+// Whether `commit` has a child among the commits of all branches, remote branches, tags and HEAD.
+// The walk goes from the tips, newest first, and visits at most `maxVisits` commits. It checks `cancel`
+// before each commit. Found: a visited commit has `commit` as a parent. None: the walk ended, or it
+// reached commits older than `commit` by more than HistoryState::kClockSkewSlack (a child is not older
+// than its parent, apart from clock skew). Unknown: the cap stopped it, or libgit2 failed.
+DescendantsResult readDescendants(git_repository* repo, const Oid& commit, int maxVisits, const gg::CancelToken& cancel);
+
 } // namespace ggui::core

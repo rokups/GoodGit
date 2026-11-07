@@ -32,6 +32,8 @@ constexpr int kSlotBlame = 20;
 constexpr int kSlotReflog = 30;
 constexpr int kSlotDetails = 40;
 constexpr int kSlotMessages = 41;
+// Slot 0 never coalesces: each commit asked about gets its own answer.
+constexpr int kSlotDescendants = 0;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotCommitWarnings = 7;
@@ -847,6 +849,13 @@ RequestId Engine::readRemoteBranches(std::string remote)
             }
             emit(std::move(ev));
         });
+}
+
+RequestId Engine::readDescendants(Oid commit, int maxVisits)
+{
+    return submit(Queue::Content, "Looking for descendants", kSlotDescendants, true, [this, commit, maxVisits](Job& job) {
+        emit(DescendantsEvent{job.id, commit, ggui::core::readDescendants(job.repo(), commit, maxVisits, job.token)});
+    });
 }
 
 RequestId Engine::readCommitWarnings()

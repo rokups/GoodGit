@@ -185,6 +185,12 @@ public:
     void requestRemoteBranches(const std::string& remote);
     const RemoteBranches* remoteBranches(const std::string& remote) const;
 
+    // Whether a commit has a descendant beyond the loaded history rows (DescendantsEvent). The
+    // answers are cached until the references change. requestDescendants does nothing when the
+    // answer is cached or on its way. descendants() is empty while the answer is not known.
+    void requestDescendants(const core::Oid& commit);
+    std::optional<core::DescendantsResult> descendants(const core::Oid& commit) const;
+
     // The short form of a commit ID (its first kShortIdLength characters), as History shows it.
     std::string shortId(const core::Oid& id) const;
     // Length of the short IDs the UI shows (kShortIdLength).
@@ -299,6 +305,11 @@ private:
     core::RequestId m_remoteTagsRequest = 0;
     std::map<std::string, RemoteBranches> m_remoteBranches;
     core::RequestId m_remoteBranchesRequest = 0;
+    struct DescendantsEntry {
+        core::RequestId request = 0;
+        std::optional<core::DescendantsResult> result;
+    };
+    std::map<core::Oid, DescendantsEntry> m_descendants; // cleared when the references change
     bool m_remoteTagsStale = true;
 
     std::unique_ptr<HistoryPanel> m_history;

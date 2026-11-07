@@ -526,7 +526,8 @@ GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens 
     const std::string before = s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"});
     drag(s, rowRef(tagged), rowRef(dest), ImGuiMod_Alt);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
-    GG_CHECK(itemDisabled(s, "Rebase onto"));
+    // The item is enabled until the engine answers that the tip has no descendant.
+    GG_CHECK(s.waitUntil([&] { return itemDisabled(s, "Rebase onto"); }));
     GG_CHECK(!itemDisabled(s, "Copy after"));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
