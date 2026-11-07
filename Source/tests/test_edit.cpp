@@ -397,7 +397,7 @@ GG_TEST("edit", "rebaseSource: a detached HEAD on a commit with a child rebases 
     GG_CHECK_STR_EQ(ggui::rebaseSource(*s.session(), *mid).rev, r.c2);
 }
 
-GG_TEST("edit", "rebaseSource: a detached HEAD on a branch tip without a child rebases the branch; a tag-only tip has no source")
+GG_TEST("edit", "rebaseSource: a detached HEAD on a branch tip offers the choice; a tag-only tip has no source")
 {
     const EditRepo r = makeRepo(s);
     s.git(r.path, {"switch", "-q", "--detach", "main"});
@@ -406,9 +406,11 @@ GG_TEST("edit", "rebaseSource: a detached HEAD on a branch tip without a child r
     const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(r.c4));
     GG_REQUIRE(row);
     ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
-    GG_CHECK_STR_EQ(src.rev, "refs/heads/main");
-    GG_CHECK_STR_EQ(src.branch, "main");
-    GG_CHECK(src.why.empty());
+    // The detached commit has a branch: the user chooses (the detached commit first, then main).
+    GG_CHECK(src.rev.empty() && src.why.empty());
+    GG_REQUIRE(src.choices.size() == 2u);
+    GG_CHECK_STR_EQ(src.choices[1].rev, "refs/heads/main");
+    GG_CHECK_STR_EQ(src.choices[1].branch, "main");
     ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled));
@@ -426,6 +428,104 @@ GG_TEST("edit", "rebaseSource: a detached HEAD on a branch tip without a child r
     src = ggui::rebaseSource(*s.session(), *tipRow);
     GG_CHECK(src.rev.empty());
     GG_CHECK_STR_EQ(src.why, "The commit has no descendants.");
+}
+
+GG_TEST("edit", "rebaseSource: an attached HEAD on a commit with other branches rebases the checked-out branch")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"branch", "twin", r.c4});
+    s.git(r.path, {"branch", "aaa", r.c4});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(r.c4));
+    GG_REQUIRE(row);
+    const ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
+    GG_CHECK_STR_EQ(src.rev, "HEAD");
+    GG_CHECK_STR_EQ(src.branch, "main");
+    GG_CHECK(src.why.empty());
+    GG_CHECK(src.choices.empty());
+}
+
+GG_TEST("edit", "rebaseSource: a detached HEAD on a commit with two branches asks the user")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"branch", "twin", r.c4});
+    s.git(r.path, {"switch", "-q", "--detach", r.c4});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(r.c4));
+    GG_REQUIRE(row);
+    const ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
+    GG_CHECK(src.rev.empty());
+    GG_CHECK(src.why.empty());
+    GG_REQUIRE(src.choices.size() == 3u);
+    GG_CHECK_STR_EQ(src.choices[0].rev, "HEAD");
+    GG_CHECK(src.choices[0].branch.empty());
+    GG_CHECK_STR_EQ(src.choices[1].rev, "refs/heads/" + src.choices[1].branch);
+    GG_CHECK_STR_EQ(src.choices[2].rev, "refs/heads/" + src.choices[2].branch);
+    GG_CHECK(src.choices[1].branch != src.choices[2].branch);
+}
+
+namespace {
+// The detached HEAD is on c3 with the branches "twin" and "other"; main (c4) is a descendant.
+EditRepo detachedOnTwoBranches(Scenario& s)
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"branch", "twin", r.c3});
+    s.git(r.path, {"branch", "other", r.c3});
+    s.git(r.path, {"switch", "-q", "--detach", r.c3});
+    return r;
+}
+} // namespace
+
+GG_TEST("edit", "Rebase onto dialog with choices: the chosen branch moves and its descendants follow")
+{
+    const EditRepo r = detachedOnTwoBranches(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    GG_REQUIRE(rowReady(s, r.c4));
+    s.contextMenu(rowRef(r.c3).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    const ggui::Field* pick = currentForm(s)->field("rebase_source");
+    GG_REQUIRE(pick);
+    GG_CHECK_STR_EQ(pick->label, "Rebase");
+    GG_REQUIRE(pick->options.size() == 3u);
+    GG_CHECK_STR_EQ(pick->options[0], "The detached commit and its descendants");
+    GG_CHECK(std::find(pick->options.begin(), pick->options.end(), "twin") != pick->options.end());
+    GG_CHECK(currentForm(s)->field("info_Rebase")->text.rfind("Rebase: ", 0) == 0);
+    ctx->ItemClick("//Rebase onto/Rebase##rebase_source");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/twin"); }));
+    ctx->ItemClick("//$FOCUSED/twin");
+    ctx->Yield(2);
+    GG_CHECK(currentForm(s)->field("info_Rebase")->text.rfind("Rebase twin: ", 0) == 0);
+    s.dialogText("Rebase onto", "destination", "side");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(changed(s, r.path, r.c4, "main"));
+    // twin moved onto s1; main (its descendant) and other (on the same commit) follow.
+    GG_CHECK_STR_EQ(s.revParse(r.path, "twin~1"), r.s1);
+    // The rebase moved the chosen branch (not HEAD): the reflog names the operation.
+    GG_CHECK(s.gitOut(r.path, {"reflog", "show", "-n1", "--format=%gs", "twin"}).find("rebase twin onto side") != std::string::npos);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~1"), s.revParse(r.path, "twin"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "other"), s.revParse(r.path, "twin"));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    GG_CHECK(s.session()->snapshot()->headDetached);
+}
+
+GG_TEST("edit", "Rebase onto dialog with choices: the detached commit moves with its descendants, HEAD stays detached")
+{
+    const EditRepo r = detachedOnTwoBranches(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    GG_REQUIRE(rowReady(s, r.c4));
+    s.contextMenu(rowRef(r.c3).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    s.dialogText("Rebase onto", "destination", "side"); // the first choice stays: the detached commit
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(changed(s, r.path, r.c4, "main"));
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~1"), r.s1);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~1"), s.head(r.path));
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
 }
 
 GG_TEST("edit", "squash a commit into its parent (S) with the concatenated message, and descendants into a commit (Shift+S)")

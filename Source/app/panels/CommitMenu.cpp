@@ -313,18 +313,11 @@ RebaseSource rebaseSource(Session& session, const core::HistoryRow& row)
                 return true;
         return false;
     };
-    if (!snap->headUnborn && snap->head == row.id) {
-        if (!snap->headDetached) {
-            out.branch = snap->headBranch;
-            out.rev = "HEAD";
-            return out;
-        }
-        // A detached HEAD moves with the commit and its descendants. Without a descendant, a
-        // branch on the commit can still be rebased: go on with the next rule.
-        if (hasChild()) {
-            out.rev = "HEAD";
-            return out;
-        }
+    const bool onHead = !snap->headUnborn && snap->head == row.id;
+    if (onHead && !snap->headDetached) {
+        out.branch = snap->headBranch;
+        out.rev = "HEAD";
+        return out;
     }
     std::vector<std::string> plain;
     const core::BranchInfo* elsewhere = nullptr;
@@ -337,6 +330,20 @@ RebaseSource rebaseSource(Session& session, const core::HistoryRow& row)
                 elsewhere = info;
         } else {
             plain.push_back(b.name);
+        }
+    }
+    if (onHead) {
+        // The user chooses: the detached commit with its descendants, or one of the branches on it.
+        if (!plain.empty()) {
+            out.choices.push_back({"The detached commit and its descendants", "HEAD", {}});
+            for (const auto& name : plain)
+                out.choices.push_back({name, "refs/heads/" + name, name});
+            return out;
+        }
+        // Without a branch, a detached HEAD moves with the commit and its descendants.
+        if (hasChild()) {
+            out.rev = "HEAD";
+            return out;
         }
     }
     if (plain.size() == 1) {
@@ -357,13 +364,39 @@ void showRebaseDialog(Session& session, const core::Oid& commit, const RebaseSou
     Form f;
     f.title = "Rebase onto";
     f.message = "Move the commits up to this one onto another commit. Commits that the destination already contains stay.";
-    Field info = commitInfo(session, source.branch.empty() ? "Rebase" : "Rebase " + source.branch, commit);
-    info.id = "info_Rebase";
-    f.add(std::move(info));
-    f.add(commitField(session, "destination", "Onto (branch, tag or commit)", prefill));
     Session* s = &session;
+    const std::vector<RebaseSource::Choice> choices = source.choices;
+    // The info line names the branch that moves (the chosen one, when the user chooses).
+    auto infoFor = [s, commit](const std::string& branch) {
+        Field info = commitInfo(*s, branch.empty() ? "Rebase" : "Rebase " + branch, commit);
+        info.id = "info_Rebase";
+        return info;
+    };
+    if (!choices.empty()) {
+        Field pick{Field::Combo, "rebase_source", "Rebase"};
+        for (const auto& c : choices)
+            pick.options.push_back(c.label);
+        f.add(std::move(pick));
+        f.add(infoFor(choices.front().branch));
+        f.onFrame = [infoFor, choices](Form& form) {
+            const size_t k = static_cast<size_t>(std::clamp(form.choice("rebase_source"), 0, static_cast<int>(choices.size()) - 1));
+            for (auto& field : form.fields)
+                if (field.id == "info_Rebase")
+                    field.text = infoFor(choices[k].branch).text;
+        };
+    } else {
+        f.add(infoFor(source.branch));
+    }
+    f.add(commitField(session, "destination", "Onto (branch, tag or commit)", prefill));
     f.buttons.push_back({"Rebase",
-        [s, rev = source.rev](Form& form) { s->actions().rebaseTipOnto(rev, gg::trim(form.text("destination"))); },
+        [s, rev = source.rev, choices](Form& form) {
+            std::string tip = rev;
+            if (!choices.empty()) {
+                const int k = std::clamp(form.choice("rebase_source"), 0, static_cast<int>(choices.size()) - 1);
+                tip = choices[static_cast<size_t>(k)].rev;
+            }
+            s->actions().rebaseTipOnto(tip, gg::trim(form.text("destination")));
+        },
         [](const Form& form) { return !gg::trim(form.text("destination")).empty(); }});
     // The same range as Rebase: from the divergence point with the destination up to the tip.
     f.buttons.push_back({"Open as interactive rebase...",

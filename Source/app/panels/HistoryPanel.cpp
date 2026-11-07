@@ -519,7 +519,7 @@ void HistoryPanel::moveBranchHere(const core::BranchInfo& branch, const std::str
 RebaseSource HistoryPanel::sourceRebase(const core::Oid& id) const
 {
     const core::HistoryRow* from = row(id);
-    return from ? rebaseSource(m_session, *from) : RebaseSource{{}, {}, "The commit is gone."};
+    return from ? rebaseSource(m_session, *from) : RebaseSource{{}, {}, "The commit is gone.", {}};
 }
 
 void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
@@ -561,7 +561,8 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
                 actions.reorder(source, row.id, true, false);
             else if (io.KeyCtrl)
                 actions.squash(source, row.id.hex(), true);
-            else if (const RebaseSource rs = io.KeyAlt ? sourceRebase(source) : RebaseSource{{}, {}, "No Alt."}; rs.why.empty())
+            else if (const RebaseSource rs = io.KeyAlt ? sourceRebase(source) : RebaseSource{{}, {}, "No Alt.", {}};
+                     rs.why.empty() && rs.choices.empty())
                 actions.rebaseTipOnto(rs.rev, row.id.hex());
             else {
                 m_pendingDrop = std::make_pair(source, row.id);
@@ -835,12 +836,23 @@ void HistoryPanel::drawDropChooser()
     auto& actions = m_session.actions();
     // The tip that "Rebase onto" moves (the same rule as the commit menu); a commit that a reload removed has none.
     const RebaseSource rs = sourceRebase(source);
+    // The tip to rebase: empty until the user picks (a detached HEAD that has branches on its commit offers each one).
+    std::string tip;
     auto rebaseOnto = [&] {
         if (!rs.why.empty()) {
             disabledMenuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", rs.why.c_str(), "Alt");
             return false;
         }
-        return menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt");
+        if (rs.choices.empty()) {
+            tip = rs.rev;
+            return menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt");
+        }
+        for (const auto& choice : rs.choices)
+            if (menuItem(ICON_MS_LOW_PRIORITY, ("Rebase onto: " + choice.label).c_str(), "Alt")) {
+                tip = choice.rev;
+                return true;
+            }
+        return false;
     };
     bool chosen = true;
     if (menuItem(ICON_MS_MOVE_UP, "Move before", "Ctrl+Shift"))
@@ -852,7 +864,7 @@ void HistoryPanel::drawDropChooser()
     else if (menuItem(ICON_MS_JOIN_INNER, "Squash into", "Ctrl"))
         actions.squash(source, target.hex(), true);
     else if (rebaseOnto())
-        actions.rebaseTipOnto(rs.rev, target.hex());
+        actions.rebaseTipOnto(tip, target.hex());
     else
         chosen = false;
     if (chosen) {

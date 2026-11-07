@@ -35,21 +35,32 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row);
 void handleCommitEditKeys(Session& session, const core::HistoryRow& row);
 
 // The tip that "Rebase onto" moves for a commit, chosen by one rule (see rebaseSource).
-// `rev` is "HEAD", "refs/heads/<name>" or the commit hex. It is empty when `why` is set.
+// `rev` is "HEAD", "refs/heads/<name>" or the commit hex. It is empty when `why` is set,
+// or when `choices` is not empty (the caller asks the user).
 // `branch` is the branch that the dialog shows, when the source is a branch.
 // `why` is the reason that the rebase is disabled.
 struct RebaseSource {
+    struct Choice {
+        std::string label;
+        std::string rev;    // "HEAD" or "refs/heads/<name>"
+        std::string branch; // empty for the detached commit
+    };
     std::string rev;
     std::string branch;
     std::string why;
+    std::vector<Choice> choices;
 };
 // The rule, in order:
-// 1. HEAD is on the commit: rev is "HEAD". A detached HEAD needs a descendant for this;
-//    without one, the next rules apply.
-// 2. One local branch is on the commit (not checked out in another worktree): rev is that branch.
+// 1. HEAD is attached and on the commit: rev is "HEAD" and branch is the checked-out branch,
+//    also when other branches are on the commit.
+// 2. HEAD is detached and on the commit, and local branches (not checked out in another worktree)
+//    are on it: `choices` has "The detached commit and its descendants" (rev "HEAD") first, then
+//    one choice for each such branch. rev and why stay empty.
+// 3. A detached HEAD on the commit, with a descendant: rev is "HEAD".
+// 4. One local branch is on the commit (not checked out in another worktree): rev is that branch.
 //    Two or more such branches: rev is the commit hex.
-// 3. A loaded commit has this commit as parent: rev is the commit hex.
-// 4. Else `why` tells the reason.
+// 5. A loaded commit has this commit as parent: rev is the commit hex.
+// 6. Else `why` tells the reason.
 RebaseSource rebaseSource(Session& session, const core::HistoryRow& row);
 
 // `source` is the tip to move. `commit` is the commit that the menu opened on.

@@ -549,6 +549,25 @@ GG_TEST("dnd", "the chooser's Rebase onto moves the branch that holds a middle c
     GG_CHECK(subjects(s, r.path).front() == "c4");
 }
 
+GG_TEST("dnd", "Alt on the detached commit with a branch opens the chooser with one Rebase item for each choice")
+{
+    const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string tip = s.revParse(r.path, "main");
+    drag(s, rowRef(tip), rowRef(dest), ImGuiMod_Alt);
+    // No immediate rebase: the chooser asks which tip moves.
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto: main"); }));
+    GG_CHECK(s.itemExists("//$FOCUSED/Rebase onto: The detached commit and its descendants"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
+    ctx->ItemClick("//$FOCUSED/Rebase onto: main");
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~3"), dest);
+    GG_CHECK(s.session()->snapshot()->headDetached);
+    GG_CHECK_STR_EQ(s.head(r.path), s.revParse(r.path, "main")); // the detached HEAD was on the moved commit: it follows
+}
+
 GG_TEST("dnd", "Alt on the tip of a branch that is not checked out moves that branch (fast-forward when behind)")
 {
     const Chain r = makeChain(s);
