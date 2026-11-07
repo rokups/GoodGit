@@ -378,6 +378,11 @@ stays as it is (it is only limited to 50–300 % on load).
   when `merge.tool` is set and the menu item is enabled for the row. Otherwise (no merge tool, a
   row with more than two sides, or more than one conflicted row selected) it opens the working-copy
   file in the editor.
+  A double-click on a submodule row of the working tree (Staged, Unstaged or Untracked) opens the
+  submodule repository in this window, as in the Repositories panel. If the submodule is the open
+  repository, nothing happens. If the submodule is not initialized or is missing, the row has no
+  repository to open and the double-click runs the diff tool. A submodule row of a commit or a
+  stash keeps the diff action. A Conflicted submodule row follows the Conflicted rule above.
 - Multi-select: Ctrl-click, Shift-click, Ctrl+A. ↑/↓ navigation.
 - File context menu: Open working-copy file · Open containing folder · Copy ▸ (Name, Relative
   path, Absolute path) · Stage/Unstage/Discard (N) · Intent to add (N) · Resolve with merge

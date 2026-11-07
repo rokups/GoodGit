@@ -956,6 +956,18 @@ void ChangesPanel::openFile(const FileRow& row)
             actions.mergeTool(row.path);
         return;
     }
+    if (row.submodule && (row.group == FileGroup::Staged || row.group == FileGroup::Unstaged || row.group == FileGroup::Untracked)) {
+        // A submodule of the working tree opens in this window, as in the Repositories panel. A submodule that
+        // is not initialized or is missing has no repository to open: it keeps the diff action below.
+        // The open repository stays as it is.
+        for (const auto& sm : snap->submodules) {
+            if (sm.name != row.path || !sm.initialized)
+                continue;
+            if (sm.key != normalizeRepoPath(m_session.path().string()))
+                m_session.app().openRepository(sm.path.string());
+            return;
+        }
+    }
     if ((added || headConflict || row.group == FileGroup::Conflicted) && fs::exists(snap->workdir / row.path, ec)) {
         actions.openInEditor(row.path);
         return;

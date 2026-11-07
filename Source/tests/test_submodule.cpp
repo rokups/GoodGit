@@ -1096,4 +1096,33 @@ GG_TEST("submodule", "Submodule diff flags a gitlink whose commit is missing in 
     GG_CHECK(sd.removed.empty());
 }
 
+GG_TEST("submodule", "A double-click on a submodule row of the Changes panel opens the submodule in this window")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    moveSubmodule(s, repo, false);
+    GG_REQUIRE(s.openRepository(repo));
+    s.ctx->ItemClick("//History/**/###row_wt");
+    const std::string row = fileRef(s, "Unstaged", "sub");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    s.ctx->ItemDoubleClick(row.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+}
+
+GG_TEST("submodule", "A double-click on a missing submodule row of the Changes panel keeps the open repository")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    std::error_code ec;
+    fs::remove_all(repo / "sub", ec);
+    GG_REQUIRE(s.openRepository(repo));
+    s.ctx->ItemClick("//History/**/###row_wt");
+    const std::string row = fileRef(s, "Unstaged", "sub");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    const auto* session = s.session();
+    s.ctx->ItemDoubleClick(row.c_str());
+    s.ctx->Yield(5);
+    s.settle();
+    GG_CHECK(s.session() == session);
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+}
+
 } // namespace ggtest
