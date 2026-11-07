@@ -130,6 +130,22 @@ void Scenario::commitFile(const fs::path& repo, const std::string& rel, const st
     git(repo, {"commit", "-q", "-m", message});
 }
 
+void Scenario::useAutocrlf(const fs::path& repo)
+{
+    git(repo, {"config", "--local", "core.autocrlf", "true"});
+}
+
+void Scenario::writeCrlf(const fs::path& repo, const std::string& rel, const std::string& lfContent)
+{
+    std::string out;
+    for (const char c : lfContent) {
+        if (c == '\n')
+            out += '\r';
+        out += c;
+    }
+    write(repo, rel, out);
+}
+
 void Scenario::track(const fs::path& repo)
 {
     for (const auto& t : m_tracked)

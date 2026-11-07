@@ -1252,9 +1252,11 @@ namespace {
 // A repository with a merge stopped on "f.txt" ("attributes": the content of a committed .gitattributes): "base" holds the common version; `oursEdit` and `theirsEdit` change the file
 // on each branch ("" = delete it, "-" = leave it as the base).
 fs::path mergeStopped(Scenario& s, const std::string& name, const std::string& base, const std::string& oursEdit,
-    const std::string& theirsEdit, const std::string& attributes = {})
+    const std::string& theirsEdit, const std::string& attributes = {}, bool autocrlf = false)
 {
     const fs::path repo = s.fixture(Recipe::Empty, name);
+    if (autocrlf)
+        s.useAutocrlf(repo);
     if (!attributes.empty())
         s.commitFile(repo, ".gitattributes", attributes, "Attributes");
     s.commitFile(repo, "keep.txt", "keep\n", "Keep");
@@ -1383,6 +1385,103 @@ GG_TEST("conflicts", "diff: a first-class conflicted file shows the note in the 
     s.settle();
     GG_CHECK(s.itemExists("//Diff/###diff_conflict"));
     GG_CHECK(!s.itemExists("//Diff/###diff_error"));
+}
+
+GG_TEST("conflicts", "diff: the working file is converted to the stored form (core.autocrlf)")
+{
+    // No attributes: only core.autocrlf=true makes the merged working file CRLF while the blob stays LF.
+    const fs::path repo = mergeStopped(s, "autocrlf", "a\nb\nc\n", "a\nours\nc\n", "a\ntheirs\nc\n", {}, true);
+    GG_CHECK(s.read(repo, "f.txt").find("\r\n") != std::string::npos);
+    showConflicted(s, repo);
+    const auto& d = s.session()->diff().diff();
+    GG_REQUIRE(d->files.size() == 1);
+    GG_CHECK_EQ(originOf(d, "<<<<<<<"), '+');
+    GG_CHECK_EQ(originOf(d, "ours"), ' ');
+    GG_CHECK_EQ(originOf(d, "a"), ' ');
+    GG_CHECK_EQ(d->files[0].deletions, 0);
+}
+
+GG_TEST("conflicts", "eol: the marker scan reads a CRLF working file of a first-class conflict")
+{
+    std::string conflicted;
+    const fs::path repo = conflictedCheckout(s, conflicted);
+    s.useAutocrlf(repo);
+    // A real edit outside the regions, written with CRLF: the file is still conflicted.
+    const std::string text = s.read(repo, "conflict.txt");
+    GG_REQUIRE(text.rfind("top\n", 0) == 0);
+    s.writeCrlf(repo, "conflict.txt", "TOP\n" + text.substr(4));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()); }));
+    // A deleted separator line leaves a broken region: it is found on the CRLF text too.
+    const size_t sep = text.find("=======\n");
+    GG_REQUIRE(sep != std::string::npos);
+    s.writeCrlf(repo, "conflict.txt", "TOP\n" + text.substr(4, sep - 4) + text.substr(sep + 8));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& st = s.session()->status();
+        if (!st)
+            return false;
+        for (const auto& e : st->unstaged)
+            if (e.path == "conflict.txt" && !e.brokenMarkerLines.empty())
+                return true;
+        return false;
+    }));
+}
+
+GG_TEST("conflicts", "eol: the merge tool stages of a first-class conflict hold the stored form (core.autocrlf)")
+{
+    std::string conflicted;
+    const fs::path repo = conflictedCheckout(s, conflicted);
+    s.useAutocrlf(repo);
+    s.writeCrlf(repo, "conflict.txt", s.read(repo, "conflict.txt"));
+    const std::string out = s.root().generic_string();
+    // The tool copies the stages as stored in the index, before it writes the result.
+    s.fakeTool("eol-merge-tool", "for n in 1 2 3; do git cat-file blob :$n:conflict.txt > \"" + out + "/stage$n.out\"; done\n"
+                                  "printf 'top\\nx=merged\\nbottom\\n' > \"$4\"\n");
+    s.git(repo, {"config", "merge.tool", "eoltool"});
+    s.git(repo, {"config", "mergetool.eoltool.cmd", "eol-merge-tool \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\""});
+    s.git(repo, {"config", "mergetool.eoltool.trustExitCode", "true"});
+    s.git(repo, {"config", "mergetool.keepBackup", "false"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()); }));
+    s.contextMenu(wtFile(s, "conflict.txt").c_str(), "Resolve with merge tool");
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.waitUntil([&] { return s.read(s.root(), "stage3.out").size() > 0; }));
+    s.settle();
+    for (const char* n : {"stage1.out", "stage2.out", "stage3.out"}) {
+        const std::string stage = s.read(s.root(), n);
+        GG_CHECK(!stage.empty());
+        GG_CHECK(stage.find('\r') == std::string::npos);
+    }
+    GG_CHECK_STR_EQ(s.read(s.root(), "stage1.out"), "top\nx=0\nbottom\n");
+    GG_CHECK_STR_EQ(s.read(s.root(), "stage3.out"), "top\nx=2\nbottom\n");
+}
+
+GG_TEST("conflicts", "eol: commit with conflicts writes the regions in the working form (core.autocrlf)")
+{
+    const fs::path repo = mergeStopped(s, "eol-commit-conflicts", "a\nb\nc\n", "a\nours\nc\n", "a\ntheirs\nc\n", {}, true);
+    GG_REQUIRE(s.read(repo, "f.txt").find("\r\n") != std::string::npos);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_REQUIRE(s.waitUntil([&] { return !inProgress(s, repo); }));
+    GG_REQUIRE(s.waitIdle());
+    s.settle();
+    // The commit holds the stored form; the working file the working form, on every line.
+    const std::string committed = s.gitOut(repo, {"show", "HEAD:f.txt"});
+    GG_CHECK(committed.find("<<<<<<<") != std::string::npos);
+    GG_CHECK(s.git(repo, {"show", "HEAD:f.txt"}).out.find('\r') == std::string::npos);
+    const std::string work = s.read(repo, "f.txt");
+    size_t lf = 0, crlf = 0;
+    for (size_t i = 0; i < work.size(); ++i)
+        if (work[i] == '\n') {
+            ++lf;
+            if (i > 0 && work[i - 1] == '\r')
+                ++crlf;
+        }
+    GG_CHECK(lf > 0);
+    GG_CHECK_EQ(lf, crlf);
+    // The index stat data matches the rewritten file: nothing shows as modified.
+    GG_CHECK(s.gitOut(repo, {"status", "--porcelain"}).empty());
 }
 
 } // namespace ggtest

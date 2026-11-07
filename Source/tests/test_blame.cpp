@@ -7,7 +7,9 @@
 #include "shell/Theme.hpp"
 #include "tests/Harness.hpp"
 #include "util/SyntaxHighlight.hpp"
+#include "core/Readers.hpp"
 
+#include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 
 #include <cmath>
@@ -1461,6 +1463,24 @@ GG_TEST("blame", "gutter tooltip waits until scrolling stops")
     // Once it stops, the tooltip comes back.
     ctx->SleepNoSkip(1.2f, 0.1f);
     GG_CHECK(tipShown());
+}
+
+GG_TEST("blame", "eol: a CRLF working file (core.autocrlf) blames the unchanged lines to their commits")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "eol-blame");
+    s.useAutocrlf(repo);
+    s.commitFile(repo, "f.txt", "one\ntwo\nthree\n", "Add f");
+    const std::string c1 = s.head(repo);
+    s.writeCrlf(repo, "f.txt", "one\nTWO\nthree\n");
+    const auto handle = gg::git2::openRepository(repo);
+    ggui::core::BlameQuery q;
+    q.path = "f.txt";
+    const auto b = ggui::core::readBlame(handle.get(), q, gg::CancelToken::none());
+    GG_REQUIRE(b && b->lines.size() == 3);
+    GG_CHECK_STR_EQ(b->lines[0].commit.hex(), c1);
+    GG_CHECK(b->lines[1].commit.isNull());
+    GG_CHECK_STR_EQ(b->lines[1].text, "TWO");
+    GG_CHECK_STR_EQ(b->lines[2].commit.hex(), c1);
 }
 
 } // namespace ggtest

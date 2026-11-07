@@ -651,7 +651,10 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
             std::string mode = staged.substr(0, staged.find(' '));
             if (mode.empty())
                 mode = "100644"; // not in the index yet
-            auto blob = [&](const std::string& content) { return gg::trim(ctx.git({"hash-object", "-w", "--stdin"}, content).out); };
+            // `--path` applies the clean filter (core.autocrlf, eol, filters): the working text becomes the stored form.
+            auto blob = [&](const std::string& content) {
+                return gg::trim(ctx.git({"hash-object", "-w", "--path=" + path, "--stdin"}, content).out);
+            };
             const std::string zero(gg::git2::hexSize(gg::git2::oidType(ctx.repo())), '0');
             std::string input = "0 " + zero + "\t" + path + "\n";
             input += mode + " " + blob(m.removes[static_cast<size_t>(pair)]) + " 1\t" + path + "\n";
@@ -2114,8 +2117,18 @@ void Actions::commitWithConflicts()
             std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
             out << text;
         }
-        if (!paths.empty())
+        if (!paths.empty()) {
             ctx.git(withPaths({"add"}, paths));
+            // The files hold the stored form (LF). Write each again in the working form (core.autocrlf, eol).
+            // `checkout-index -f` skips a file whose stat data matches the new index entry.
+            for (const auto& p : paths) {
+                const std::string worktree = ctx.git({"cat-file", "--filters", ":0:" + p}).out;
+                std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
+                out << worktree;
+            }
+            // The size of each file changed: add again (same blob) to refresh the stat data in the index.
+            ctx.git(withPaths({"add"}, paths));
+        }
         if (cmd == "rebase")
             return rebaseStep(ctx, {"--continue"});
         ctx.env.emplace_back("GIT_EDITOR", "true");

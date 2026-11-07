@@ -78,4 +78,27 @@ GG_TEST("patches", "a patch that does not apply is reported and changes nothing"
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
+GG_TEST("patches", "eol: a patch applies to a CRLF working file (core.autocrlf) and keeps the CRLF form")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "eol-patch");
+    s.useAutocrlf(repo);
+    s.commitFile(repo, "f.txt", "one\ntwo\nthree\n", "Add f");
+    s.writeCrlf(repo, "f.txt", "one\ntwo\nthree\n");
+    // The patch is in the stored form (LF), as `git diff` writes it.
+    const std::string patch = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n";
+    GG_REQUIRE(s.openRepository(repo));
+    ImGui::SetClipboardText(patch.c_str());
+    applyPatch(s, "Clipboard", "Working tree");
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == "one\r\nTWO\r\nthree\r\n"; }));
+    s.settle();
+    // The same patch from a file.
+    s.write(s.root(), "eol.patch", patch);
+    s.writeCrlf(repo, "f.txt", "one\ntwo\nthree\n");
+    applyPatch(s, "File", "Working tree", (s.root() / "eol.patch").string());
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == "one\r\nTWO\r\nthree\r\n"; }));
+    s.settle();
+}
+
 } // namespace ggtest

@@ -193,6 +193,11 @@ public:
     void write(const fs::path& repo, const std::string& rel, const std::string& content);
     std::string read(const fs::path& repo, const std::string& rel);
     void commitFile(const fs::path& repo, const std::string& rel, const std::string& content, const std::string& message);
+    // The eol fixture. `useAutocrlf` turns on core.autocrlf=true in the repository's own config (the test runner
+    // forces it off in the global config, and libgit2 ignores the global one). Files added after it stay LF in the
+    // repository. `writeCrlf` writes a working tree file with every LF as CRLF (the content has LF only).
+    void useAutocrlf(const fs::path& repo);
+    void writeCrlf(const fs::path& repo, const std::string& rel, const std::string& lfContent);
 
     // ---- fixtures -------------------------------------------------------------------------
     // Builds `recipe` under root()/<name> (name defaults to the recipe name). Tracked for the

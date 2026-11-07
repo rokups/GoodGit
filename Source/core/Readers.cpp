@@ -996,6 +996,25 @@ std::shared_ptr<std::vector<std::string>> splitText(const std::string& s)
     return lines;
 }
 
+// The text of a working tree file in its stored form: the clean filters of the path (core.autocrlf, the eol and
+// text attributes, a filter driver) turn CRLF into LF. A diff or a blame against a blob needs this form. On a
+// failure or without a filter the text stays as it is.
+std::string toStoredForm(git_repository* repo, const std::string& path, std::string text)
+{
+    git_filter_list* rawFilters = nullptr;
+    if (git_filter_list_load(&rawFilters, repo, nullptr, path.c_str(), GIT_FILTER_TO_ODB, GIT_FILTER_DEFAULT) == 0
+        && rawFilters) {
+        Handle<git_filter_list, git_filter_list_free> filters(rawFilters);
+        Buf stored;
+        if (git_filter_list_apply_to_buffer(&stored.buf, filters.get(), text.data(), text.size()) == 0)
+            return stored.str();
+        git_error_clear();
+    } else {
+        git_error_clear();
+    }
+    return text;
+}
+
 Tree treeOf(git_repository* repo, const Oid& commitId)
 {
     if (commitId.isNull())
@@ -1226,19 +1245,8 @@ void readConflictedWorktree(git_repository* repo, const std::string& path, const
     Blob blob = lookupBlob(repo, ours->id);
     std::string text = readFileText(file);
     // The blob holds the stored form (LF for a text file with autocrlf or eol attributes): bring the working file
-    // to the same form first, as a diff of the index against the working tree does. On a failure keep the raw bytes.
-    git_filter_list* rawFilters = nullptr;
-    if (git_filter_list_load(&rawFilters, repo, nullptr, path.c_str(), GIT_FILTER_TO_ODB, GIT_FILTER_DEFAULT) == 0
-        && rawFilters) {
-        Handle<git_filter_list, git_filter_list_free> filters(rawFilters);
-        Buf stored;
-        if (git_filter_list_apply_to_buffer(&stored.buf, filters.get(), text.data(), text.size()) == 0)
-            text = stored.str();
-        else
-            git_error_clear();
-    } else {
-        git_error_clear();
-    }
+    // to the same form first, as a diff of the index against the working tree does.
+    text = toStoredForm(repo, path, std::move(text));
     git_patch* rawPatch = nullptr;
     check(git_patch_from_blob_and_buffer(&rawPatch, blob.get(), path.c_str(), text.data(), text.size(), path.c_str(), &opts),
         "git_patch_from_blob_and_buffer");
@@ -1603,7 +1611,9 @@ BlamePtr readBlame(git_repository* repo, const BlameQuery& q, const gg::CancelTo
         git_error_clear();
     } else if (worktree) {
         git_blame* rawBuf = nullptr;
-        check(git_blame_buffer(&rawBuf, base.get(), content.data(), content.size()), "git_blame_buffer");
+        // The blame holds the stored form: a CRLF working file would differ from it on every line.
+        const std::string stored = toStoredForm(repo, result->query.path, content);
+        check(git_blame_buffer(&rawBuf, base.get(), stored.data(), stored.size()), "git_blame_buffer");
         blame.reset(rawBuf);
     }
     git_blame* use = worktree ? blame.get() : base.get();

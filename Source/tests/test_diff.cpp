@@ -1034,4 +1034,20 @@ GG_TEST("diff", "a single-file query on the large repository is quick")
     GG_CHECK(modifiedMs < wholeMs / 2 && addedMs < wholeMs / 2);
 }
 
+GG_TEST("diff", "eol: a CRLF working file with an LF blob (core.autocrlf) shows only the real changes")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "eol-diff");
+    s.useAutocrlf(repo);
+    s.commitFile(repo, "f.txt", "one\ntwo\nthree\nfour\n", "Add f");
+    GG_CHECK_STR_EQ(s.git(repo, {"show", "HEAD:f.txt"}).out, "one\ntwo\nthree\nfour\n");
+    s.writeCrlf(repo, "f.txt", "one\nTWO\nthree\nfour\n");
+    const auto d = readOne(repo, ggui::core::DiffKind::Unstaged, "f.txt");
+    GG_REQUIRE(d && d->files.size() == 1);
+    GG_CHECK_EQ(d->files[0].additions, 1);
+    GG_CHECK_EQ(d->files[0].deletions, 1);
+    // The text for context expansion has no CR.
+    GG_REQUIRE(d->files[0].newText && d->files[0].newText->size() == 4);
+    GG_CHECK_STR_EQ((*d->files[0].newText)[1], "TWO");
+}
+
 } // namespace ggtest

@@ -368,4 +368,21 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
     GG_CHECK(s.read(repo, "r.txt") == modified);
 }
 
+GG_TEST("linestaging", "eol: discarding a line of a CRLF working file (core.autocrlf) keeps the CRLF form")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "eol-discard");
+    s.useAutocrlf(repo);
+    s.commitFile(repo, "f.txt", "one\ntwo\nthree\n", "Add f");
+    s.writeCrlf(repo, "f.txt", "one\ntwo\nNEW\nthree\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    // Rows: 0 hunk, 1 "one", 2 "two", 3 "+NEW", 4 "three".
+    ctx->ItemClick((body(s) + "/###line_3").c_str());
+    s.contextMenu((body(s) + "/###line_3").c_str(), "Discard line(s)");
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == "one\r\ntwo\r\nthree\r\n"; }));
+    s.settle();
+    GG_CHECK(s.gitOut(repo, {"diff", "--stat"}).empty());
+}
+
 } // namespace ggtest
