@@ -1892,7 +1892,7 @@ GG_TEST("panels", "stashes: hover actions Apply and Pop leave the selection alon
     GG_CHECK(s.session()->selection().kind == selected.kind && s.session()->selection().id == selected.id);
 }
 
-GG_TEST("panels", "worktrees: hover actions Open here (not on the current one) and Open directory")
+GG_TEST("panels", "worktrees: hover actions Open here (not on the current one), Open in new window and Open directory")
 {
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     GG_REQUIRE(s.openRepository(repo));
@@ -1912,6 +1912,8 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one) a
     ctx->Yield(3);
     GG_CHECK(s.itemExists(button("main", "act_open_dir").c_str()));
     GG_CHECK(!s.itemExists(button("main", "act_open_here").c_str()));
+    GG_CHECK(s.itemExists(button("main", "act_open_window").c_str()));
+    GG_CHECK(!disabled(button("main", "act_open_window")));
     GG_CHECK(!s.itemExists(button(wt1, "act_open_dir").c_str()));
     // A missing one: both buttons, disabled.
     ctx->MouseMove(row(wt3).c_str());
@@ -1919,6 +1921,8 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one) a
     GG_REQUIRE(s.itemExists(button(wt3, "act_open_here").c_str()));
     GG_CHECK(disabled(button(wt3, "act_open_here")));
     GG_CHECK(disabled(button(wt3, "act_open_dir")));
+    GG_REQUIRE(s.itemExists(button(wt3, "act_open_window").c_str()));
+    GG_CHECK(disabled(button(wt3, "act_open_window")));
     // Another worktree: both, enabled; Open here switches this window to it.
     ctx->MouseMove(row(wt1).c_str());
     ctx->Yield(3);
@@ -1926,6 +1930,8 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one) a
     GG_CHECK(!disabled(button(wt1, "act_open_here")));
     GG_CHECK(s.itemExists(button(wt1, "act_open_dir").c_str()));
     GG_CHECK(!disabled(button(wt1, "act_open_dir")));
+    GG_REQUIRE(s.itemExists(button(wt1, "act_open_window").c_str()));
+    GG_CHECK(!disabled(button(wt1, "act_open_window")));
     ctx->ItemClick(button(wt1, "act_open_here").c_str());
     GG_CHECK(s.waitUntil([&] {
         auto* session = s.session();

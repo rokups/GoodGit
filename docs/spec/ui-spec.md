@@ -680,7 +680,8 @@ the panel without touching the repository.
   on HEAD's branch) `act_checkout` · Push `act_push`; remote-tracking branch: Check out ("Check out..." without a local branch); kept commit:
   Check out · Create branch `act_branch`; tag: Reveal
   `act_reveal`; remote: Fetch `act_fetch` · Fetch more… · Pull `act_pull`; stash: Apply `act_apply` · Pop `act_pop`;
-  worktree: Open here `act_open_here` (not on the current one) · Open directory `act_open_dir`.
+  worktree: Open here `act_open_here` (not on the current one) · Open in new window `act_open_window` · Open directory
+  (a folder icon) `act_open_dir`.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
   Ctrl+Space = only this; the eye is mouse-only), current outlined. Branches are grouped by folder and

@@ -1321,7 +1321,7 @@ void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core:
         ImGui::SetClipboardText(w.path.string().c_str());
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", nullptr, false, !w.head.isNull()))
         session.revealCommit(w.head);
-    if (menuItem(ICON_MS_OPEN_IN_NEW, "Open directory", nullptr, false, !w.missing))
+    if (menuItem(ICON_MS_FOLDER, "Open directory", nullptr, false, !w.missing))
         openInFileManager(w.path);
     ImGui::Separator();
     const std::string path = w.path.string();
@@ -1332,8 +1332,8 @@ void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core:
     else if (menuItem(ICON_MS_FOLDER_OPEN, "Open here"))
         session.app().openRepository(w.path);
     if (w.missing)
-        disabledMenuItem(ICON_MS_LAUNCH, "Open in new window", "Its directory is gone");
-    else if (menuItem(ICON_MS_LAUNCH, "Open in new window"))
+        disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Open in new window", "Its directory is gone");
+    else if (menuItem(ICON_MS_OPEN_IN_NEW, "Open in new window"))
         session.actions().openInNewWindow(path);
     ImGui::Separator();
     if (menuItem(ICON_MS_ADD, "Add...", nullptr, false, canAdd))
@@ -1401,10 +1401,12 @@ void WorktreesPanel::draw(bool* open)
             dimFrom = label.size() + kIdPrefixLength;
             dimTo = label.size() + kShortIdLength;
         }
-        // The hover buttons do what the menu's Open here and Open directory do (Open here: not for the current one).
+        // The hover buttons do what the menu's Open here, Open in new window and Open directory do (Open here: not
+        // for the current one).
         const RowAction acts[] = {
             {ICON_MS_FOLDER_OPEN, "act_open_here", "Open here", !w.missing, !w.isCurrent},
-            {ICON_MS_OPEN_IN_NEW, "act_open_dir", "Open directory", !w.missing},
+            {ICON_MS_OPEN_IN_NEW, "act_open_window", "Open in new window", !w.missing},
+            {ICON_MS_FOLDER, "act_open_dir", "Open directory", !w.missing},
         };
         label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength))
                                   : elideMiddleToWidth(w.branch,
@@ -1419,6 +1421,8 @@ void WorktreesPanel::draw(bool* open)
         if (action == 0)
             m_session.app().openRepository(w.path);
         else if (action == 1)
+            m_session.actions().openInNewWindow(w.path.string());
+        else if (action == 2)
             openInFileManager(w.path);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             tooltip("%s%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {

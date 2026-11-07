@@ -501,6 +501,14 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
             && (stubLines == 1 || lines[1] == "detached");
     }));
     GG_CHECK(s.waitUntil([&] { return toastShown(s, "Open in new window", n1); }));
+    // The hover button does the same: the stand-in logs the arguments once more.
+    ctx->MouseMove(wtRow(n1).c_str());
+    ctx->Yield(3);
+    ctx->ItemClick(("//Worktrees/worktree_" + n1 + "/###act_open_window").c_str());
+    GG_CHECK(s.waitUntil([&] {
+        const auto lines = gg::splitLines(s.read(s.root(), "ggui-stub.log"));
+        return lines.size() == 2 * stubLines && gg::worktrees::samePath(lines[stubLines], wt1);
+    }));
     // A missing worktree cannot be opened.
     ctx->ItemClick(wtRow(n3).c_str(), ImGuiMouseButton_Right);
     GG_CHECK(disabled(s, "//$FOCUSED/Open in new window"));
@@ -512,7 +520,7 @@ GG_TEST("worktrees", "open here switches this window; open in new window starts 
     s.contextMenu(wtRow("main").c_str(), "Open in new window");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("not found") != std::string::npos);
-    GG_CHECK_EQ(gg::splitLines(s.read(s.root(), "ggui-stub.log")).size(), stubLines);
+    GG_CHECK_EQ(gg::splitLines(s.read(s.root(), "ggui-stub.log")).size(), 2 * stubLines);
 
     // Open here: this window shows wt1 now (the checks below need its session).
     s.contextMenu(wtRow(n1).c_str(), "Open here");
