@@ -383,6 +383,8 @@ GG_TEST("edit-in-place", "Edit commit on a commit that no branch contains detach
     s.commitFile(p, "x.txt", "x\n", "x orphan");
     const std::string x = s.head(p);
     s.commitFile(p, "y.txt", "y\n", "y orphan");
+    // Both rows must be loaded: a row that appears after the click point is found shifts the list.
+    GG_REQUIRE(rowReady(s, s.head(p)));
     GG_REQUIRE(rowReady(s, x));
     s.settle();
     GG_REQUIRE(s.session()->editSession());
