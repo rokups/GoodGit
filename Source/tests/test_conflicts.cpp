@@ -1244,3 +1244,145 @@ GG_TEST("conflicts", "status scan cache: many changed files are read once and th
 }
 
 } // namespace ggtest
+
+namespace ggtest {
+
+namespace {
+
+// A repository with a merge stopped on "f.txt" ("attributes": the content of a committed .gitattributes): "base" holds the common version; `oursEdit` and `theirsEdit` change the file
+// on each branch ("" = delete it, "-" = leave it as the base).
+fs::path mergeStopped(Scenario& s, const std::string& name, const std::string& base, const std::string& oursEdit,
+    const std::string& theirsEdit, const std::string& attributes = {})
+{
+    const fs::path repo = s.fixture(Recipe::Empty, name);
+    if (!attributes.empty())
+        s.commitFile(repo, ".gitattributes", attributes, "Attributes");
+    s.commitFile(repo, "keep.txt", "keep\n", "Keep");
+    if (!base.empty())
+        s.commitFile(repo, "f.txt", base, "Base");
+    s.git(repo, {"branch", "theirs"});
+    auto edit = [&](const std::string& content, const char* message) {
+        if (content == "-")
+            return;
+        if (content.empty())
+            s.git(repo, {"rm", "-q", "f.txt"});
+        else {
+            s.write(repo, "f.txt", content);
+            s.git(repo, {"add", "f.txt"});
+        }
+        s.git(repo, {"commit", "-q", "-m", message});
+    };
+    edit(oursEdit, "Ours");
+    s.git(repo, {"switch", "-q", "theirs"});
+    edit(theirsEdit, "Theirs");
+    s.git(repo, {"switch", "-q", "main"});
+    s.gitMayFail(repo, {"merge", "theirs"});
+    return repo;
+}
+
+// Opens `repo`, selects its Conflicted "f.txt" in the Diff panel (Working tree view) and waits for the diff.
+void showConflicted(Scenario& s, const fs::path& repo)
+{
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "f.txt").c_str()); }));
+    s.ctx->ItemClick(fileRef(s, "Conflicted", "f.txt").c_str());
+    s.showPanel("Diff");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& d = s.session()->diff().diff();
+        return d && d->query.path == "f.txt";
+    }));
+    s.settle();
+}
+
+// The first line of the first hunk that starts with `text`, as an origin: '+', '-' or ' '; 0 when none.
+char originOf(const ggui::core::DiffPtr& d, const std::string& text)
+{
+    if (!d || d->files.empty())
+        return 0;
+    for (const auto& h : d->files[0].hunks)
+        for (const auto& l : h.lines)
+            if (l.text.rfind(text, 0) == 0)
+                return l.origin;
+    return 0;
+}
+
+} // namespace
+
+GG_TEST("conflicts", "diff: a native conflicted file shows ours against the working file, markers as added lines")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    showConflicted(s, repo);
+    const auto& d = s.session()->diff().diff();
+    GG_CHECK(d->query.kind == ggui::core::DiffKind::Unstaged);
+    GG_REQUIRE(d->files.size() == 1);
+    GG_CHECK(d->files[0].kind == ggui::core::ChangeKind::Conflicted);
+    GG_CHECK(!d->files[0].hunks.empty());
+    GG_CHECK_EQ(originOf(d, "<<<<<<<"), '+');
+    GG_CHECK_EQ(originOf(d, "ours"), ' '); // our own line is context
+    GG_CHECK_EQ(originOf(d, "theirs"), '+');
+    GG_CHECK_EQ(originOf(d, ">>>>>>>"), '+');
+    GG_CHECK(!s.itemExists("//Diff/###diff_conflict"));
+}
+
+GG_TEST("conflicts", "diff: the working file is converted to the stored form (eol=crlf)")
+{
+    // The blob has LF, the merged working file has CRLF: only the marker lines differ.
+    const fs::path repo = mergeStopped(s, "crlf", "a\nb\nc\n", "a\nours\nc\n", "a\ntheirs\nc\n", "f.txt text eol=crlf\n");
+    GG_CHECK(s.read(repo, "f.txt").find("\r\n") != std::string::npos);
+    showConflicted(s, repo);
+    const auto& d = s.session()->diff().diff();
+    GG_REQUIRE(d->files.size() == 1);
+    GG_CHECK_EQ(originOf(d, "<<<<<<<"), '+');
+    GG_CHECK_EQ(originOf(d, "ours"), ' ');
+    GG_CHECK_EQ(originOf(d, "a"), ' ');
+    GG_CHECK_EQ(d->files[0].deletions, 0);
+}
+
+GG_TEST("conflicts", "diff: a conflicted file with nothing to show gets a note, not an empty body")
+{
+    // Modified by us, deleted by them: the working file is our version, so there is no change to show.
+    const fs::path deletedByThem = mergeStopped(s, "deleted-by-them", "a\nb\n", "a\nours\n", "");
+    showConflicted(s, deletedByThem);
+    GG_CHECK(s.session()->diff().diff()->files.empty() || s.session()->diff().diff()->files[0].hunks.empty());
+    GG_CHECK(s.itemExists("//Diff/###diff_conflict"));
+    GG_CHECK(s.itemText("//Diff/###diff_conflict").find("Conflicted file") != std::string::npos);
+    GG_CHECK(!s.itemExists("//Diff/###diff_error"));
+
+    // Deleted by us, modified by them: no stage 2.
+    const fs::path deletedByUs = mergeStopped(s, "deleted-by-us", "a\nb\n", "", "a\ntheirs\n");
+    showConflicted(s, deletedByUs);
+    GG_CHECK(s.itemExists("//Diff/###diff_conflict"));
+}
+
+GG_TEST("conflicts", "diff: both added shows the markers, a stage view shows the lines")
+{
+    const fs::path repo = mergeStopped(s, "both-added", "", "ours\n", "theirs\n");
+    showConflicted(s, repo);
+    const auto& d = s.session()->diff().diff();
+    GG_REQUIRE(d->files.size() == 1);
+    GG_CHECK(!d->files[0].hunks.empty());
+    GG_CHECK_EQ(originOf(d, "<<<<<<<"), '+');
+    GG_CHECK(!s.itemExists("//Diff/###diff_conflict"));
+    // Base against ours has no base: every line of ours is added.
+    s.comboSelect("//Diff/##conflict_view", "Base " ICON_MS_ARROW_RIGHT_ALT " ours");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& v = s.session()->diff().diff();
+        return v && v->query.kind == ggui::core::DiffKind::Stages && originOf(v, "ours") == '+';
+    }));
+}
+
+GG_TEST("conflicts", "diff: a first-class conflicted file shows the note in the Working tree view")
+{
+    std::string conflicted;
+    const fs::path repo = conflictedCheckout(s, conflicted);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "conflict.txt").c_str()); }));
+    ctx->ItemClick(wtFile(s, "conflict.txt").c_str());
+    s.showPanel("Diff");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->diff().diff() != nullptr; }));
+    s.settle();
+    GG_CHECK(s.itemExists("//Diff/###diff_conflict"));
+    GG_CHECK(!s.itemExists("//Diff/###diff_error"));
+}
+
+} // namespace ggtest

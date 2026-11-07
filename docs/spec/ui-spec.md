@@ -611,6 +611,10 @@ the panel without touching the repository.
 - Expandable context rows `expand_<n>` (click: 10 lines; Shift+click: whole gap).
 - Placeholders: binary, image (dimensions), submodule (old → new commit), mode change line.
 - Capped large files: "Load full diff" `##load_full`.
+- Conflicted file, Working tree view: the diff of our side (stage 2) against the working file, so the conflict
+  markers show as added lines. When the view has no lines (no stage 2, deleted by one side, a first-class
+  conflict with no edit), the body shows the note `###diff_conflict` in the conflict colour: "Conflicted file. Use
+  the merge tool or choose a view above." The body is never empty and never "No differences".
 - Context menu: Copy · Blame file · Stage/Discard/Unstage line(s) and hunk(s) (N) · Move line(s)/hunk to
   child (or working tree on the HEAD commit, which has no child) / parent / active commit (Phase 3) · Revert line(s) (a commit's lines: a new commit on HEAD; id `###revert`) · Revert line(s) (no commit) (into the index and working tree; id `###revert_no_commit`) · Discard line(s)/hunk(s) of a commit (rewrite).
 

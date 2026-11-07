@@ -1201,6 +1201,63 @@ void readSubmoduleDiff(
     submoduleCommits(sub.get(), oldGit, newGit, sd.removed, sd.removedMore);
 }
 
+// A conflicted path in the working tree view: the diff of our side (stage 2) against the working file, so the
+// conflict markers show as added lines. Without stage 2, without a text working file or without a change the
+// file keeps no hunks (the panel then shows a note).
+void readConflictedWorktree(git_repository* repo, const std::string& path, const git_diff_options& opts, DiffFile& f,
+    bool full)
+{
+    const char* wd = git_repository_workdir(repo);
+    if (!wd)
+        return;
+    git_index* ri = nullptr;
+    check(git_repository_index(&ri, repo), "git_repository_index");
+    Index idx(ri);
+    git_index_read(idx.get(), 0);
+    const git_index_entry *anc = nullptr, *ours = nullptr, *theirs = nullptr;
+    if (git_index_conflict_get(&anc, &ours, &theirs, idx.get(), path.c_str()) != 0 || !ours) {
+        git_error_clear();
+        return;
+    }
+    const fs::path file = fs::path(wd) / path;
+    std::error_code ec;
+    if (!fs::is_regular_file(file, ec) || fs::file_size(file, ec) > kMaxTextBytes)
+        return;
+    Blob blob = lookupBlob(repo, ours->id);
+    std::string text = readFileText(file);
+    // The blob holds the stored form (LF for a text file with autocrlf or eol attributes): bring the working file
+    // to the same form first, as a diff of the index against the working tree does. On a failure keep the raw bytes.
+    git_filter_list* rawFilters = nullptr;
+    if (git_filter_list_load(&rawFilters, repo, nullptr, path.c_str(), GIT_FILTER_TO_ODB, GIT_FILTER_DEFAULT) == 0
+        && rawFilters) {
+        Handle<git_filter_list, git_filter_list_free> filters(rawFilters);
+        Buf stored;
+        if (git_filter_list_apply_to_buffer(&stored.buf, filters.get(), text.data(), text.size()) == 0)
+            text = stored.str();
+        else
+            git_error_clear();
+    } else {
+        git_error_clear();
+    }
+    git_patch* rawPatch = nullptr;
+    check(git_patch_from_blob_and_buffer(&rawPatch, blob.get(), path.c_str(), text.data(), text.size(), path.c_str(), &opts),
+        "git_patch_from_blob_and_buffer");
+    Patch patch(rawPatch);
+    f.oldId = toOid(ours->id);
+    f.binary = (git_patch_get_delta(patch.get())->flags & GIT_DIFF_FLAG_BINARY) != 0;
+    f.oldSize = static_cast<std::uint64_t>(git_blob_rawsize(blob.get()));
+    f.newSize = text.size();
+    size_t ctxLines = 0, adds = 0, dels = 0;
+    git_patch_line_stats(&ctxLines, &adds, &dels, patch.get());
+    f.additions = static_cast<int>(adds);
+    f.deletions = static_cast<int>(dels);
+    readHunks(patch.get(), f, full);
+    if (!f.binary && !f.truncated) {
+        f.oldText = splitText(blobContent(blob.get()));
+        f.newText = splitText(text);
+    }
+}
+
 } // namespace
 
 DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken& cancel)
@@ -1432,7 +1489,9 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
         f.oldSize = static_cast<std::uint64_t>(d->old_file.size);
         f.newSize = static_cast<std::uint64_t>(d->new_file.size);
 
-        if (q.withHunks && !f.submodule) {
+        if (q.withHunks && !f.submodule && worktree && d->status == GIT_DELTA_CONFLICTED) {
+            readConflictedWorktree(repo, newPath, opts, f, q.full);
+        } else if (q.withHunks && !f.submodule) {
             git_patch* rawPatch = nullptr;
             if (git_patch_from_diff(&rawPatch, diff.get(), i) == 0 && rawPatch) {
                 Patch patch(rawPatch);

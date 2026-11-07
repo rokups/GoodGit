@@ -59,6 +59,9 @@ std::string imageText(const core::DiffFile& f)
     return one(f.oldImage, f.oldSize) + " " ICON_MS_ARROW_RIGHT_ALT " " + one(f.newImage, f.newSize);
 }
 
+// Shown for a conflicted file when the view has no lines to show (never an empty body).
+constexpr const char* kConflictNote = "Conflicted file. Use the merge tool or choose a view above.";
+
 std::string modeText(std::uint32_t mode)
 {
     char buf[16];
@@ -1152,6 +1155,10 @@ void DiffPanel::draw(bool* open)
             ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().conflict);
             plainText((m_diff->error + "###diff_error").c_str());
             ImGui::PopStyleColor();
+        } else if (m_file && !m_loading && m_file->group == FileGroup::Conflicted) {
+            ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().conflict);
+            plainText(std::string(kConflictNote), "diff_conflict");
+            ImGui::PopStyleColor();
         } else if (m_file && !m_loading) {
             ImGui::TextDisabled("No differences");
         }
@@ -1162,6 +1169,13 @@ void DiffPanel::draw(bool* open)
     }
     const core::DiffFile& f = m_diff->files.front();
     drawPlaceholder(f);
+    if (m_file->group == FileGroup::Conflicted && !f.binary && !f.submodule && f.hunks.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme().palette().conflict);
+        plainText(std::string(kConflictNote), "diff_conflict");
+        ImGui::PopStyleColor();
+        ImGui::End();
+        return;
+    }
     if (m_paletteTheme != static_cast<int>(theme().theme())) {
         m_paletteTheme = static_cast<int>(theme().theme());
         m_viewsDirty = true;
