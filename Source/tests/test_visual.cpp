@@ -316,7 +316,10 @@ GG_TEST("visual", "icon glyphs are vertically centred on the text")
             ImFontBaked* baked = font->GetFontBaked(size);
             const ImFontGlyph* h = baked->FindGlyph('H');
             GG_REQUIRE(h != nullptr);
-            const float textCentre = (h->Y0 + h->Y1) * 0.5f;
+            // Copies: a later FindGlyph can grow the glyph vector and free `h`.
+            const float hY0 = h->Y0;
+            const float hY1 = h->Y1;
+            const float textCentre = (hY0 + hY1) * 0.5f;
             for (const char* icon : icons) {
                 unsigned int c = 0;
                 ImTextCharFromUtf8(&c, icon, nullptr);
@@ -324,7 +327,7 @@ GG_TEST("visual", "icon glyphs are vertically centred on the text")
                 GG_REQUIRE(g != nullptr);
                 const float iconCentre = (g->Y0 + g->Y1) * 0.5f;
                 ctx->LogInfo("size %.0f icon U+%04X centre %.2f vs text %.2f (glyph %.1f..%.1f, H %.1f..%.1f)", size, c,
-                    iconCentre, textCentre, g->Y0, g->Y1, h->Y0, h->Y1);
+                    iconCentre, textCentre, g->Y0, g->Y1, hY0, hY1);
                 GG_CHECK(std::abs(iconCentre - textCentre) <= std::max(1.0f, size * 0.05f));
             }
         }
