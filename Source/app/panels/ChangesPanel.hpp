@@ -101,6 +101,7 @@ private:
     void dropTarget(FileGroup group);
     // The rows an action on `row` applies to: the selection when `row` is selected.
     std::vector<const FileRow*> actionRows(const FileRow& row) const;
+    bool mergeToolApplies(const FileRow& row) const;
     void toggleStaging(const std::vector<const FileRow*>& rows);
     // What Discard... does to `rows`; shared by the menu item and the D key.
     struct DiscardPlan {

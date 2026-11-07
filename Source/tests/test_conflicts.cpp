@@ -137,6 +137,42 @@ GG_TEST("conflicts", "native: resolve with the configured merge tool")
     GG_CHECK_STR_EQ(s.read(repo, "f.txt"), "resolved by tool\n");
 }
 
+GG_TEST("conflicts", "native: a double-click on a Conflicted row runs the merge tool, not the editor")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    s.fakeTool("merge-tool", "printf 'resolved by tool\\n' > \"$4\"\n");
+    const fs::path editorLog = s.fakeTool("fake-editor");
+    ggui::unsetEnv("GIT_EDITOR");
+    ggui::unsetEnv("EDITOR");
+    s.git(repo, {"config", "core.editor", "fake-editor"});
+    s.git(repo, {"config", "merge.tool", "testtool"});
+    s.git(repo, {"config", "mergetool.testtool.cmd", "merge-tool \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\""});
+    s.git(repo, {"config", "mergetool.testtool.trustExitCode", "true"});
+    s.git(repo, {"config", "mergetool.keepBackup", "false"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "f.txt").c_str()); }));
+    ctx->ItemDoubleClick(fileRef(s, "Conflicted", "f.txt").c_str());
+    GG_CHECK(s.waitUntil([&] { return !unmerged(s, repo); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "f.txt"), "resolved by tool\n");
+    GG_CHECK(s.read(editorLog.parent_path(), editorLog.filename().string()).empty()); // the editor did not start
+}
+
+GG_TEST("conflicts", "native: a double-click on a Conflicted row opens the editor without a merge tool")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    const fs::path editorLog = s.fakeTool("fake-editor");
+    ggui::unsetEnv("GIT_EDITOR");
+    ggui::unsetEnv("EDITOR");
+    s.git(repo, {"config", "core.editor", "fake-editor"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "f.txt").c_str()); }));
+    ctx->ItemDoubleClick(fileRef(s, "Conflicted", "f.txt").c_str());
+    GG_CHECK(s.waitUntil([&] { return s.read(editorLog.parent_path(), editorLog.filename().string()).find("f.txt") != std::string::npos; }));
+    s.settle();
+    GG_CHECK(unmerged(s, repo)); // the conflict stays
+}
+
 GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered for binary conflicts")
 {
     const fs::path repo = s.fixture(Recipe::MidMerge);

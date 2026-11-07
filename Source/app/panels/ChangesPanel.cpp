@@ -913,6 +913,31 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     ImGui::EndPopup();
 }
 
+bool ChangesPanel::mergeToolApplies(const FileRow& row) const
+{
+    // A double-click uses the merge tool only when one is configured. The menu item has no such check.
+    const auto& cfg = m_session.config();
+    const auto scope = cfg.find("effective");
+    if (scope == cfg.end())
+        return false;
+    const auto tool = scope->second.find("merge.tool");
+    if (tool == scope->second.end() || tool->second.empty())
+        return false;
+    size_t conflicts = 0;
+    size_t nativeConflicts = 0;
+    for (const FileRow* r : actionRows(row)) {
+        if (r->group != FileGroup::Conflicted)
+            continue;
+        ++conflicts;
+        if (!r->firstClass)
+            ++nativeConflicts;
+    }
+    // The menu item of a row with more than two sides is a list of pairs: it has no single action.
+    if (row.firstClass)
+        return row.sides == 2 && conflicts == 1;
+    return nativeConflicts == 1;
+}
+
 void ChangesPanel::openFile(const FileRow& row)
 {
     const auto snap = m_session.snapshot();
@@ -923,6 +948,14 @@ void ChangesPanel::openFile(const FileRow& row)
     const bool added = row.kind == core::ChangeKind::Added || row.kind == core::ChangeKind::Untracked;
     // A conflicted commit's file has markers the diff tool cannot read: at HEAD the working copy is it.
     const bool headConflict = row.group == FileGroup::Commit && row.sides > 0 && m_selection.id == snap->head;
+    if (row.group == FileGroup::Conflicted && mergeToolApplies(row)) {
+        // The same action and the same conditions as the menu item "Resolve with merge tool".
+        if (row.firstClass)
+            actions.mergeToolFirstClass(row.path);
+        else
+            actions.mergeTool(row.path);
+        return;
+    }
     if ((added || headConflict || row.group == FileGroup::Conflicted) && fs::exists(snap->workdir / row.path, ec)) {
         actions.openInEditor(row.path);
         return;
