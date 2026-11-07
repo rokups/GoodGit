@@ -85,6 +85,11 @@ std::string Session::repositoryListPath() const
     return m_listPath;
 }
 
+std::string Session::worktreeCustomName(const core::WorktreeInfo& w) const
+{
+    return m_app.settings().worktreeName(repoStateKey(), w.name);
+}
+
 const std::string& Session::repoStateKey() const
 {
     if (m_repoStateKey.empty() && m_snapshot)

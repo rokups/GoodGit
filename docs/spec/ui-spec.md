@@ -768,15 +768,23 @@ the panel without touching the repository.
     empty alias with a group takes the base name; both empty remove the alias. A repository without an alias,
     with the group and the alias unchanged, stores nothing and so continues to follow its deduplicated name.
 - **Worktrees** `"Worktrees"` (M): header Add worktree… `###add_worktree` (disabled while HEAD
-  is unborn); rows `worktree_<name>` (git's id, the directory name) with "(main)", "(bare)", a lock
+  is unborn); rows `worktree_<name>` (git's id, the directory name; the row label is the custom
+  display name when the worktree has one, see Rename…) with "(main)", "(bare)", a lock
   icon, "(missing)" (directory gone; dimmed), "(prunable)" (git worktree prune would remove it:
   missing and not locked), then the branch or the detached commit. The current worktree is
-  selected. Tooltip: path, "Shown in this window", lock reason, what Prune/Repair do for a missing
+  selected. Tooltip: path, "Shown in this window", lock reason, "Id: <id>" when a custom name is shown, what Prune/Repair do for a missing
   one. Context: Copy name · Copy path · Reveal HEAD · Open directory (not for missing) · Open here
   (switches this window; not for the current or a missing one) · Open in new window (starts
   another ggui process on the worktree, detached; `GG_GGUI` names the program, default this ggui;
-  not for a missing one) · Add… · Remove… (not for the main worktree or the one this window shows)
+  not for a missing one) · Rename… (not for the bare entry; the main worktree is allowed) · Add… · Remove… (not for the main worktree or the one this window shows)
   · N: Lock… / Unlock (not for the main worktree) · Prune… · Repair…. D: gg rename/forget.
+  `Rename worktree` dialog: field `name` (text, prefilled with the current custom name; empty when
+  there is none), buttons *Rename* (enabled when the trimmed text differs from the current name) and
+  *Cancel*. It sets a display name only: it runs no git command, adds no undo entry and keeps the row
+  ID, the directory and the git id. An empty name clears the custom name. The name is stored in
+  settings.json `repoState[<common dir>].worktreeNames[<id>]` (`Settings::setWorktreeName`), so all
+  windows of the repository and a restart see it. The Repositories tree rows of the open repository
+  show the same name; the tooltip there also has the id.
   Every change runs `git worktree add|remove|lock|unlock|prune|repair`. Add, Remove, Lock and
   Unlock are undoable from the worktree whose window made them (undo-journal.md §5.4); Prune and
   Repair are listed in Operations but cannot be undone.
@@ -828,7 +836,7 @@ Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dia
 3), `Interactive rebase onto` (Phase 3: field `##base`, buttons *Open* / *Cancel*; the todo editor
 itself is the dockable window `Interactive rebase`, §4.x), `Replace sequence.editor` (Phase 4:
 *Replace* / *Cancel*, §1.6), `Add worktree`, `Remove worktree`, `Remove worktree with changes`,
-`Lock worktree`, `Prune worktrees`, `Repair worktree` (Phase 4, §8 Worktrees), `Set alias`
+`Lock worktree`, `Rename worktree`, `Prune worktrees`, `Repair worktree` (Phase 4, §8 Worktrees), `Set alias`
 (§8 Repositories), `Settings`.
 The `Commit` dialog has the message field `##message`, an *Amend* checkbox `##amend` (unchecked;
 disabled with a tooltip on an unborn HEAD or during a merge, cherry-pick or revert), *Skip hooks*

@@ -9,6 +9,8 @@
 
 #include <libgg/Worktrees.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <optional>
 
 namespace ggtest {
@@ -411,6 +413,65 @@ GG_TEST("worktrees", "lock with a reason and unlock, both undone; prune shows wh
     GG_CHECK(registered(s, repo, moved)->locked);
     GG_CHECK_STR_EQ(s.session()->operations().back().label, "repair worktree " + moved.filename().string());
     GG_CHECK(!s.session()->operations().back().restorable());
+}
+
+GG_TEST("worktrees", "rename sets a display name only: label, tooltip id, Repositories tree, clear, persists after reopen")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const std::string n1 = repo.filename().string() + "-wt1";
+    const fs::path wt1 = s.root() / n1;
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string key = s.session()->repoStateKey();
+    const std::string before = s.gitOut(repo, {"worktree", "list", "--porcelain"});
+    s.showPanel("Worktrees");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtRow(n1).c_str()); }));
+    // The button follows the text: it is off while the name is unchanged. Cancel changes nothing.
+    s.contextMenu(wtRow(n1).c_str(), "Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename worktree"));
+    GG_CHECK(disabled(s, "//Rename worktree/Rename"));
+    s.dialogText("Rename worktree", "name", "  Docs build  ");
+    GG_CHECK(!disabled(s, "//Rename worktree/Rename"));
+    s.dialogButton("Rename worktree", "Cancel");
+    GG_CHECK(s.app.settings().worktreeName(key, n1).empty());
+    // Rename: the panel shows the name; the row ID, git and the directory keep the id.
+    s.contextMenu(wtRow(n1).c_str(), "Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename worktree"));
+    s.dialogText("Rename worktree", "name", "  Docs build  ");
+    s.dialogButton("Rename worktree", "Rename");
+    GG_CHECK_STR_EQ(s.app.settings().worktreeName(key, n1), "Docs build");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("Worktrees", "Docs build"); }));
+    GG_CHECK(!s.textShown("Worktrees", n1));
+    GG_CHECK(s.itemExists(wtRow(n1).c_str()));
+    GG_CHECK(fs::exists(wt1));
+    GG_CHECK(shown(s, n1) != nullptr);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"worktree", "list", "--porcelain"}), before);
+    // The name is app state: no undo entry, nothing in the git directory.
+    GG_CHECK(s.read(repo, ".git/gg/journal").find("Docs build") == std::string::npos);
+    // The dialog starts with the current name; unchanged text keeps Rename off.
+    s.contextMenu(wtRow(n1).c_str(), "Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename worktree"));
+    GG_CHECK(disabled(s, "//Rename worktree/Rename"));
+    s.dialogButton("Rename worktree", "Cancel");
+    // Stored in settings.json under the repository key; a restart reads it back.
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json stored = nlohmann::json::parse(s.read(s.root() / "prefs", "settings.json"));
+    GG_CHECK_STR_EQ(stored["repoState"][key]["worktreeNames"][n1].get<std::string>(), "Docs build");
+    s.app.resetForTest();
+    s.ctx->Yield(2);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Worktrees");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("Worktrees", "Docs build"); }));
+    // An empty name clears it: the id shows again and nothing stays stored.
+    s.contextMenu(wtRow(n1).c_str(), "Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename worktree"));
+    s.dialogText("Rename worktree", "name", "");
+    s.dialogButton("Rename worktree", "Rename");
+    GG_CHECK(s.waitUntil([&] { return s.textShown("Worktrees", n1); }));
+    GG_CHECK(!s.textShown("Worktrees", "Docs build"));
+    GG_CHECK(s.app.settings().data().repoState.count(key) == 0);
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json cleared = nlohmann::json::parse(s.read(s.root() / "prefs", "settings.json"));
+    GG_CHECK(!cleared["repoState"].contains(key));
 }
 
 GG_TEST("worktrees", "open here switches this window; open in new window starts a detached ggui on the worktree; a missing program is an error")

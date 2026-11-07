@@ -164,13 +164,20 @@ void writeAtomically(const fs::path& p, const std::string& text)
     fs::remove(tmp, ec); // not left behind
 }
 
-// "repoState": {key: {"hiddenRefs": [names]}}. Entries without a hidden ref are not written.
+// "repoState": {key: {"hiddenRefs": [names], "worktreeNames": {id: name}}}. Empty entries are not written.
 nlohmann::json repoStateToJson(const std::map<std::string, RepoState>& states)
 {
     nlohmann::json j = nlohmann::json::object();
-    for (const auto& [key, state] : states)
-        if (!key.empty() && !state.hiddenRefs.empty())
-            j[key] = {{"hiddenRefs", state.hiddenRefs}};
+    for (const auto& [key, state] : states) {
+        if (key.empty() || state.empty())
+            continue;
+        nlohmann::json entry = nlohmann::json::object();
+        if (!state.hiddenRefs.empty())
+            entry["hiddenRefs"] = state.hiddenRefs;
+        if (!state.worktreeNames.empty())
+            entry["worktreeNames"] = state.worktreeNames;
+        j[key] = std::move(entry);
+    }
     return j;
 }
 
@@ -184,15 +191,22 @@ std::map<std::string, RepoState> repoStateFromJson(const nlohmann::json& j)
     for (auto entry = it->begin(); entry != it->end(); ++entry) {
         if (entry.key().empty() || !entry.value().is_object())
             continue;
+        RepoState state;
         const auto refs = entry.value().find("hiddenRefs");
-        if (refs == entry.value().end() || !refs->is_array())
-            continue;
-        std::set<std::string> names;
-        for (const auto& name : *refs)
-            if (name.is_string() && !name.get<std::string>().empty())
-                names.insert(name.get<std::string>());
-        if (!names.empty())
-            states[entry.key()].hiddenRefs.assign(names.begin(), names.end());
+        if (refs != entry.value().end() && refs->is_array()) {
+            std::set<std::string> names;
+            for (const auto& name : *refs)
+                if (name.is_string() && !name.get<std::string>().empty())
+                    names.insert(name.get<std::string>());
+            state.hiddenRefs.assign(names.begin(), names.end());
+        }
+        const auto wtNames = entry.value().find("worktreeNames");
+        if (wtNames != entry.value().end() && wtNames->is_object())
+            for (auto n = wtNames->begin(); n != wtNames->end(); ++n)
+                if (!n.key().empty() && n.value().is_string() && !n.value().get<std::string>().empty())
+                    state.worktreeNames[n.key()] = n.value().get<std::string>();
+        if (!state.empty())
+            states[entry.key()] = std::move(state);
     }
     return states;
 }
@@ -616,10 +630,37 @@ void Settings::setHiddenRefs(const std::string& key, const std::set<std::string>
     const std::vector<std::string> before = it != m_data.repoState.end() ? it->second.hiddenRefs : std::vector<std::string>{};
     if (sorted == before)
         return;
-    if (sorted.empty())
+    m_data.repoState[key].hiddenRefs = std::move(sorted);
+    if (m_data.repoState[key].empty())
         m_data.repoState.erase(key);
+    m_pendingRepoKeys.insert(key);
+    save();
+}
+
+std::string Settings::worktreeName(const std::string& key, const std::string& id) const
+{
+    const auto it = m_data.repoState.find(key);
+    if (it == m_data.repoState.end())
+        return {};
+    const auto name = it->second.worktreeNames.find(id);
+    return name == it->second.worktreeNames.end() ? std::string() : name->second;
+}
+
+void Settings::setWorktreeName(const std::string& key, const std::string& id, const std::string& name)
+{
+    if (key.empty() || id.empty())
+        return;
+    const auto first = name.find_first_not_of(" \t\r\n");
+    const std::string trimmed = first == std::string::npos ? std::string() : name.substr(first, name.find_last_not_of(" \t\r\n") - first + 1);
+    if (trimmed == worktreeName(key, id))
+        return;
+    auto& state = m_data.repoState[key];
+    if (trimmed.empty())
+        state.worktreeNames.erase(id);
     else
-        m_data.repoState[key].hiddenRefs = std::move(sorted);
+        state.worktreeNames[id] = trimmed;
+    if (state.empty())
+        m_data.repoState.erase(key);
     m_pendingRepoKeys.insert(key);
     save();
 }

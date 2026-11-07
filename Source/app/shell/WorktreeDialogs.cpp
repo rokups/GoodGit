@@ -145,6 +145,23 @@ void Session::showLockWorktreeDialog(const core::WorktreeInfo& w)
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showRenameWorktreeDialog(const core::WorktreeInfo& w)
+{
+    Form f;
+    f.title = "Rename worktree";
+    f.message = "This sets a display name only. The directory, the git id and the branch do not change.\n"
+        "An empty name shows the id again: " + w.name;
+    const std::string current = worktreeCustomName(w);
+    f.add(Field{Field::Text, "name", "Display name", current});
+    const std::string id = w.name;
+    f.buttons.push_back({"Rename", [this, id](Form& form) {
+                             m_app.settings().setWorktreeName(repoStateKey(), id, gg::trim(form.text("name")));
+                         },
+        [current](const Form& form) { return gg::trim(form.text("name")) != current; }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showPruneWorktreesDialog()
 {
     // What git would prune first (--dry-run), then ask.

@@ -1131,7 +1131,8 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
     for (const auto& w : m_session.snapshot()->worktrees) {
         // A missing or prunable worktree has the warning triangle before its name.
         const std::string warnPrefix = warnIconPrefix(w.missing || w.prunable);
-        std::string label = warnPrefix + w.name;
+        const std::string customName = m_session.worktreeCustomName(w);
+        std::string label = warnPrefix + (customName.empty() ? w.name : customName);
         if (w.isMain)
             label += " (main)";
         label += "  ";
@@ -1151,7 +1152,7 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !w.isCurrent && !w.missing)
             toOpen = path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("%s", path.c_str());
+            tooltip("%s", (customName.empty() ? path : path + "\nId: " + w.name).c_str());
         ImGui::PopID();
     }
 }
@@ -1349,6 +1350,10 @@ void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core:
         else
             session.showLockWorktreeDialog(w);
     }
+    if (w.bare)
+        disabledMenuItem(ICON_MS_EDIT, "Rename...", "The bare entry has no worktree to name");
+    else if (menuItem(ICON_MS_EDIT, "Rename..."))
+        session.showRenameWorktreeDialog(w);
     if (menuItem(ICON_MS_DELETE_SWEEP, "Prune...", nullptr, false, free))
         session.showPruneWorktreesDialog();
     if (menuItem(ICON_MS_HANDYMAN, "Repair...", nullptr, false, free))
@@ -1375,7 +1380,8 @@ void WorktreesPanel::draw(bool* open)
     for (const auto& w : snap->worktrees) {
         // A missing or prunable worktree has the warning triangle before its name.
         const std::string warnPrefix = warnIconPrefix(w.missing || w.prunable);
-        std::string label = warnPrefix + w.name;
+        const std::string customName = m_session.worktreeCustomName(w);
+        std::string label = warnPrefix + (customName.empty() ? w.name : customName);
         if (w.isMain)
             label += " (main)";
         if (w.bare)
@@ -1413,7 +1419,7 @@ void WorktreesPanel::draw(bool* open)
         else if (action == 1)
             openInFileManager(w.path);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-            tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
+            tooltip("%s%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 std::string text = w.path.string();
                 if (w.isCurrent)
                     text += "\nShown in this window";
@@ -1425,7 +1431,9 @@ void WorktreesPanel::draw(bool* open)
                                      : "\nMissing: its directory is gone. Prune removes its records; Repair reconnects it "
                                        "if it was moved";
                 return text;
-            }).c_str());
+            }).c_str(),
+                // Outside the cache: a rename does not change the snapshot.
+                customName.empty() ? "" : ("\nId: " + w.name).c_str());
         }
         if (beginContextMenu("##worktree_menu")) {
             worktreeMenuItems(m_session, *snap, w);

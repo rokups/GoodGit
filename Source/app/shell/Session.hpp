@@ -94,6 +94,8 @@ public:
     // The key of the state that all worktrees of this repository share (repoStateKey of the common
     // directory); "" before the repository is open.
     const std::string& repoStateKey() const;
+    // The custom display name of `w`; empty when it has none.
+    std::string worktreeCustomName(const core::WorktreeInfo& w) const;
 
     // Applies engine events, bounded per frame (§3.1).
     void pump();
@@ -224,6 +226,8 @@ public:
     void showAddWorktreeDialog(int mode = 0, const std::string& preset = {});
     void showRemoveWorktreeDialog(const core::WorktreeInfo& w);
     void showLockWorktreeDialog(const core::WorktreeInfo& w);
+    // Rename…: sets the custom display name of `w` (app state in settings.json; git does not change).
+    void showRenameWorktreeDialog(const core::WorktreeInfo& w);
     void showPruneWorktreesDialog();
     void showRepairWorktreeDialog(const core::WorktreeInfo& w);
     // New: an empty commit on `parent` (null = HEAD). Attached, the branch at `parent` advances (see

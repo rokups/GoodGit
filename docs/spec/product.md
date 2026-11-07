@@ -443,6 +443,9 @@ the History panel list newly conflicted commits. See §5, decision R1.
   Open here, Open in new window, Open directory, Copy name/path, Reveal HEAD, Remove….
   **N** Lock/unlock, prune, repair (Git offers them; the UI adds them). **D** gg rename
   and forget, which only managed gg metadata. A Git worktree name is its directory.
+  **N** Rename…: sets a display name only. The name is app state in settings.json
+  (`repoState`, key: the git common directory, then the worktree id). Git, the directory and the
+  id do not change. An empty name clears it. It is not undoable.
 - **K Remotes:** list, Add remote, Delete, Copy name, Fetch, Pull. **N** Edit URL, prune
   on fetch, Fetch all.
 - **N Stashes panel** (§4.9).

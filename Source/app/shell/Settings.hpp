@@ -59,6 +59,9 @@ struct RepoEntry {
 // The state of one repository, shared by all its worktrees (settings.json "repoState", keyed by repoStateKey).
 struct RepoState {
     std::vector<std::string> hiddenRefs; // full ref names hidden in History; sorted, unique
+    // Custom display names of worktrees, keyed by the worktree id (WorktreeInfo::name); no empty name or key.
+    std::map<std::string, std::string> worktreeNames;
+    bool empty() const { return hiddenRefs.empty() && worktreeNames.empty(); }
 };
 
 // The UI scale in percent: the limits of the Settings slider, of Ctrl+wheel and of a stored value.
@@ -137,6 +140,12 @@ public:
     std::set<std::string> hiddenRefs(const std::string& key) const;
     // Stores the hidden refs of `key` and saves settings.json when they changed.
     void setHiddenRefs(const std::string& key, const std::set<std::string>& names);
+
+    // The display name of the worktree `id` in the repository `key`; empty when it has no custom name.
+    std::string worktreeName(const std::string& key, const std::string& id) const;
+    // Stores a custom display name (trimmed) for the worktree `id`. An empty name removes it.
+    // Saves settings.json when the name changed.
+    void setWorktreeName(const std::string& key, const std::string& id, const std::string& name);
 
 private:
     AsyncIo& m_io;
