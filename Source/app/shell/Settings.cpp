@@ -254,6 +254,7 @@ nlohmann::json toJson(const SettingsData& d)
     j["historyBadgePrefix"] = d.historyBadgePrefix;
     j["historyBadgeSuffix"] = d.historyBadgeSuffix;
     j["historyGraphInDescription"] = d.historyGraphInDescription;
+    j["logLevel"] = d.logTrace ? "trace" : "debug";
     j["repoState"] = repoStateToJson(d.repoState);
     return j;
 }
@@ -387,6 +388,7 @@ SettingsData fromJson(const nlohmann::json& j, bool* skipped)
     d.submodulesAutoUpdate = jsonBool(j, "submodulesAutoUpdate", true, skipped);
     d.submodulesAutoInit = jsonBool(j, "submodulesAutoInit", false, skipped);
     d.historyGraphInDescription = jsonBool(j, "historyGraphInDescription", false, skipped);
+    d.logTrace = jsonString(j, "logLevel", "debug", skipped) == "trace"; // any other value is "debug"
     if (j.contains("repoState") && !j["repoState"].is_object())
         skip();
     d.repoState = repoStateFromJson(j);

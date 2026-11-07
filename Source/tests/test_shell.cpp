@@ -9,11 +9,13 @@
 #include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
+#include "util/Logging.hpp"
 
 #include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
 
 #include <SDL3/SDL_events.h>
+#include <spdlog/spdlog.h>
 #include <imgui_internal.h>
 
 #include <atomic>
@@ -1861,6 +1863,57 @@ GG_TEST("shell", "recent repositories: in the Recent menu the Left key closes th
     GG_CHECK_STR_EQ(std::string(g.NavWindow->Name), "##MainMenuBar");
     GG_CHECK_STR_EQ(std::string(ctx->ItemInfo(g.NavId, ImGuiTestOpFlags_NoError).DebugLabel), "Commit");
     GG_REQUIRE(closePopups(ctx));
+}
+
+GG_TEST("shell", "log level setting: stored as debug or trace, any other value is debug")
+{
+    using namespace ggui;
+    GG_CHECK(!SettingsData{}.logTrace);
+    GG_CHECK_STR_EQ(toJson(SettingsData{})["logLevel"].get<std::string>(), "debug");
+    SettingsData d;
+    d.logTrace = true;
+    GG_CHECK_STR_EQ(toJson(d)["logLevel"].get<std::string>(), "trace");
+    GG_CHECK(fromJson(toJson(d)).logTrace);
+    GG_CHECK(!fromJson(toJson(SettingsData{})).logTrace);
+    GG_CHECK(fromJson(nlohmann::json::parse(R"({"logLevel":"trace"})")).logTrace);
+    GG_CHECK(!fromJson(nlohmann::json::parse(R"({"logLevel":"verbose"})")).logTrace);
+    GG_CHECK(!fromJson(nlohmann::json::parse(R"({"logLevel":7})")).logTrace);
+    GG_CHECK(!fromJson(nlohmann::json::parse(R"({})")).logTrace);
+}
+
+GG_TEST("shell", "log file: a debug message reaches the rotated file in the settings directory")
+{
+    using namespace ggui;
+    // The test run sets GGUI_PREF_PATH to its own directory: the log folder is below it.
+    const fs::path dir = logDirectory();
+    GG_REQUIRE(dir == fs::path(s.root()) / "prefs" / "logs");
+    openLogFile();
+    spdlog::debug("log file test message 7f3a");
+    spdlog::default_logger()->flush();
+    bool found = false;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("ggui", 0) == 0 && name.size() > 4 && name.compare(name.size() - 4, 4, ".log") == 0)
+            found = s.read(dir, name).find("log file test message 7f3a") != std::string::npos || found;
+    }
+    GG_CHECK(found);
+    closeLogFile();
+}
+
+GG_TEST("shell", "Settings General tab: Log level combo and Open log folder button")
+{
+    s.app.openSettings();
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//Settings/##settings_tabs/General/Log level##log_level"));
+    GG_CHECK(s.itemExists("//Settings/##settings_tabs/General/**/Open log folder##open_log_dir"));
+    // Choosing Trace sets the setting at once; Debug sets it back.
+    s.comboSelect("//Settings/##settings_tabs/General/Log level##log_level", "Trace");
+    ctx->Yield(2);
+    GG_CHECK(s.app.settings().data().logTrace);
+    s.comboSelect("//Settings/##settings_tabs/General/Log level##log_level", "Debug");
+    ctx->Yield(2);
+    GG_CHECK(!s.app.settings().data().logTrace);
 }
 
 } // namespace ggtest

@@ -6,6 +6,7 @@
 #include "shell/Theme.hpp"
 #include "util/Env.hpp"
 #include "util/Frames.hpp"
+#include "util/Logging.hpp"
 #include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
@@ -207,6 +208,7 @@ void App::onSettingsLoaded(const std::string& iniText)
         m_settings.data().uiScale, m_settings.data().theme == Theme::Light ? "light" : "dark",
         m_settings.data().recent.size());
     applyTheme();
+    setLogLevel(m_settings.data().logTrace);
     if (!m_settings.data().loadWarning.empty()) {
         notify(Notice::Warning, "Settings", m_settings.data().loadWarning);
         m_settings.data().loadWarning.clear();

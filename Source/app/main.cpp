@@ -159,7 +159,7 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    ggui::initLogging();
+    ggui::initLogging(!options.test); // a test run sets its own settings directory later
     // A repository that another ggui has open: that window is raised, this process ends (no window of its own).
     if (!options.test && !options.repoPath.empty()) {
         std::error_code ec;

@@ -5,6 +5,7 @@
 #include "shell/Theme.hpp"
 #include "util/Env.hpp"
 #include "util/Frames.hpp"
+#include "util/Logging.hpp"
 #include "util/Ui.hpp"
 
 #include "shell/Widgets.hpp"
@@ -586,6 +587,23 @@ void App::drawSettingsWindow()
             ImGui::SameLine();
             helpMarker("The History graph is drawn inside the Description column. The text of a row starts "
                        "after the lanes of that row, not after the widest lane of the whole graph.");
+            const char* logLevels[] = {"Debug", "Trace"};
+            int ll = d.logTrace ? 1 : 0;
+            ImGui::SetNextItemWidth(comboWidth({logLevels[0], logLevels[1]}));
+            if (ImGui::Combo("Log level##log_level", &ll, logLevels, 2)) {
+                d.logTrace = ll == 1;
+                setLogLevel(d.logTrace);
+                m_settings.save();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                tooltip("How much ggui writes to the log file. Debug is the default. Trace adds more detail and makes "
+                        "the file grow faster. The file is in the logs folder of the settings directory.");
+            ImGui::SameLine();
+            if (button(ICON_MS_FOLDER_OPEN, "Open log folder##open_log_dir")) {
+                std::error_code ec;
+                std::filesystem::create_directories(logDirectory(), ec);
+                openInFileManager(logDirectory());
+            }
             drawPathSetting();
             ImGui::Separator();
             drawContextMenuSetting();

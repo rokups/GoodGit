@@ -287,6 +287,14 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   `HEAD`, refs, `MERGE_HEAD`, `rebase-*` and `refs/stash`.
 - **K** Logging (`GGUI_LOG_FILE`, spdlog env levels). `--test`, `--test=`, `--smoke` for the
   test engine.
+  - **N** Log file: ggui writes a rotated log file in the `logs` folder of the settings directory
+    (`GGUI_PREF_PATH` replaces the directory). The file name is `ggui_<date>.log`. The file
+    rotates at midnight. ggui keeps the current file and 5 old files, and deletes the older
+    files. If ggui cannot open the file, it writes one warning to the console and continues.
+  - **N** Log level: the setting `logLevel` in settings.json is `debug` (default) or `trace`.
+    An unknown value means `debug`. The setting sets the level of the logger and of the log
+    file. It applies at once. The console shows warnings and errors only. `SPDLOG_LEVEL` keeps
+    the level of the logger. The tests do not open the log file in the real settings directory.
 
 ### 4.2 History panel (commit graph)
 - **K** Lane-based graph with curved edges. Rows show ID prefix, subject, author, date,
