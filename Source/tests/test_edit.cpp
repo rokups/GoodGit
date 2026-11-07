@@ -1,6 +1,7 @@
 // History editing actions on the in-memory rewrite engine (§4.3).
 #include "panels/BlamePanel.hpp"
 #include "panels/ChangesPanel.hpp"
+#include "panels/CommitMenu.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
@@ -307,6 +308,124 @@ GG_TEST("edit", "rebase onto: the commits up to the selected commit move onto an
     for (const auto& f : currentForm(s)->fields)
         GG_CHECK(f.kind != ggui::Field::Check);
     s.dialogButton("Rebase onto", "Cancel");
+}
+
+GG_TEST("edit", "Rebase onto is disabled on a tag-only tip commit, with the reason")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    s.commitFile(r.path, "t.txt", "t\n", "T tag only");
+    const std::string tip = s.head(r.path);
+    s.git(r.path, {"tag", "tip-tag", tip});
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, tip));
+    const ggui::core::HistoryRow* row = s.session()->history().row(ggui::core::Oid::fromHex(tip));
+    GG_REQUIRE(row);
+    const ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
+    GG_CHECK(src.rev.empty());
+    GG_CHECK_STR_EQ(src.why, "The commit has no descendants.");
+    ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    GG_CHECK(!s.dialogOpen("Rebase onto"));
+    // The commit of the checked-out branch is enabled.
+    ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+}
+
+GG_TEST("edit", "Rebase onto on the checked-out branch tip moves the branch and HEAD stays on it")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    s.contextMenu(rowRef(r.c4).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    const ggui::Field* info = currentForm(s)->field("info_Rebase");
+    GG_REQUIRE(info);
+    GG_CHECK(info->text.rfind("Rebase main: ", 0) == 0);
+    s.dialogText("Rebase onto", "destination", "side");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(changed(s, r.path, r.c4));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~2"), r.s1);
+    GG_CHECK_STR_EQ(gg::trim(s.gitOut(r.path, {"symbolic-ref", "HEAD"})), "refs/heads/main");
+    GG_CHECK(!s.session()->snapshot()->headDetached);
+}
+
+GG_TEST("edit", "Rebase onto on a middle commit with a child moves the descendants' branch")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    s.contextMenu(rowRef(r.c3).c_str(), "Rebase onto...");
+    GG_REQUIRE(s.dialogOpen("Rebase onto"));
+    const ggui::Field* info = currentForm(s)->field("info_Rebase");
+    GG_REQUIRE(info);
+    GG_CHECK(info->text.rfind("Rebase: ", 0) == 0);
+    s.dialogText("Rebase onto", "destination", "side");
+    s.dialogButton("Rebase onto", "Rebase");
+    GG_CHECK(changed(s, r.path, r.c4));
+    // c3 moved onto s1, and main (its descendant) follows.
+    GG_CHECK(subjects(s, r.path, "main") == (std::vector<std::string>{"c4 add c and d", "c3 change a", "s1 add s", "c2 add b", "c1 add a"}));
+    GG_CHECK_STR_EQ(gg::trim(s.gitOut(r.path, {"symbolic-ref", "HEAD"})), "refs/heads/main");
+}
+
+GG_TEST("edit", "rebaseSource: a detached HEAD on a commit with a child rebases from HEAD")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"switch", "-q", "--detach", r.c3});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    GG_REQUIRE(rowReady(s, r.c4));
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(r.c3));
+    GG_REQUIRE(row);
+    const ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
+    GG_CHECK_STR_EQ(src.rev, "HEAD");
+    GG_CHECK(src.branch.empty());
+    GG_CHECK(src.why.empty());
+    // A commit with one branch uses that branch, a commit with a child only uses its hex.
+    const auto* tip = s.session()->history().row(ggui::core::Oid::fromHex(r.c4));
+    GG_REQUIRE(tip);
+    GG_CHECK_STR_EQ(ggui::rebaseSource(*s.session(), *tip).rev, "refs/heads/main");
+    const auto* mid = s.session()->history().row(ggui::core::Oid::fromHex(r.c2));
+    GG_REQUIRE(mid);
+    GG_CHECK_STR_EQ(ggui::rebaseSource(*s.session(), *mid).rev, r.c2);
+}
+
+GG_TEST("edit", "rebaseSource: a detached HEAD on a branch tip without a child rebases the branch; a tag-only tip has no source")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    const auto* row = s.session()->history().row(ggui::core::Oid::fromHex(r.c4));
+    GG_REQUIRE(row);
+    ggui::RebaseSource src = ggui::rebaseSource(*s.session(), *row);
+    GG_CHECK_STR_EQ(src.rev, "refs/heads/main");
+    GG_CHECK_STR_EQ(src.branch, "main");
+    GG_CHECK(src.why.empty());
+    ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    // Detached on a commit with no branch and no child: no source.
+    s.git(r.path, {"switch", "-q", "--detach", "main"});
+    s.commitFile(r.path, "t.txt", "t\n", "T detached tip");
+    const std::string tip = s.head(r.path);
+    s.git(r.path, {"tag", "tip-tag", tip});
+    GG_REQUIRE(rowReady(s, tip));
+    const auto* tipRow = s.session()->history().row(ggui::core::Oid::fromHex(tip));
+    GG_REQUIRE(tipRow);
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->head == ggui::core::Oid::fromHex(tip); }));
+    src = ggui::rebaseSource(*s.session(), *tipRow);
+    GG_CHECK(src.rev.empty());
+    GG_CHECK_STR_EQ(src.why, "The commit has no descendants.");
 }
 
 GG_TEST("edit", "squash a commit into its parent (S) with the concatenated message, and descendants into a commit (Shift+S)")

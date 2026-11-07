@@ -189,8 +189,9 @@ void drawCommitIntegrateItems(Session& session, const core::HistoryRow& row)
     if (c.one(ICON_MS_MERGE, "Merge into HEAD...", nullptr, c.headCommit && !c.isHead,
             c.headCommit ? "This commit is HEAD." : "HEAD has no commit yet."))
         showMergeDialog(session, row.id.hex(), true);
-    if (c.one(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, true, nullptr, true))
-        showRebaseDialog(session, row.id, other.ref);
+    const RebaseSource src = rebaseSource(session, row);
+    if (c.one(ICON_MS_LOW_PRIORITY, "Rebase onto...", nullptr, src.why.empty(), src.why.c_str(), true))
+        showRebaseDialog(session, row.id, src, other.ref);
     if (c.one(ICON_MS_LOW_PRIORITY, "Interactive rebase...", "I"))
         openInteractiveRebase(session, row.id);
     // The label does not name the branch (a long name widens the menu); the dialog does. Enabled on HEAD too (Mixed unstages, Hard discards).
@@ -302,16 +303,67 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
         showAbandonDialog(session, row.id);
 }
 
-void showRebaseDialog(Session& session, const core::Oid& commit, const std::string& prefill)
+RebaseSource rebaseSource(Session& session, const core::HistoryRow& row)
+{
+    RebaseSource out;
+    const auto snap = session.snapshot();
+    auto hasChild = [&] {
+        for (const auto& r : session.history().rows())
+            if (std::find(r.parents.begin(), r.parents.end(), row.id) != r.parents.end())
+                return true;
+        return false;
+    };
+    if (!snap->headUnborn && snap->head == row.id) {
+        if (!snap->headDetached) {
+            out.branch = snap->headBranch;
+            out.rev = "HEAD";
+            return out;
+        }
+        // A detached HEAD moves with the commit and its descendants. Without a descendant, a
+        // branch on the commit can still be rebased: go on with the next rule.
+        if (hasChild()) {
+            out.rev = "HEAD";
+            return out;
+        }
+    }
+    std::vector<std::string> plain;
+    const core::BranchInfo* elsewhere = nullptr;
+    for (const auto& b : row.refs) {
+        if (b.kind != core::RefKind::LocalBranch)
+            continue;
+        const core::BranchInfo* info = snap->findBranch(b.name);
+        if (info && !info->worktree.empty()) {
+            if (!elsewhere)
+                elsewhere = info;
+        } else {
+            plain.push_back(b.name);
+        }
+    }
+    if (plain.size() == 1) {
+        out.rev = "refs/heads/" + plain.front();
+        out.branch = plain.front();
+    } else if (plain.size() > 1 || hasChild()) {
+        out.rev = row.id.hex();
+    } else if (elsewhere) {
+        out.why = elsewhere->name + " is checked out in the worktree " + elsewhere->worktree + ".";
+    } else {
+        out.why = "The commit has no descendants.";
+    }
+    return out;
+}
+
+void showRebaseDialog(Session& session, const core::Oid& commit, const RebaseSource& source, const std::string& prefill)
 {
     Form f;
     f.title = "Rebase onto";
     f.message = "Move the commits up to this one onto another commit. Commits that the destination already contains stay.";
-    f.add(commitInfo(session, "Rebase", commit));
+    Field info = commitInfo(session, source.branch.empty() ? "Rebase" : "Rebase " + source.branch, commit);
+    info.id = "info_Rebase";
+    f.add(std::move(info));
     f.add(commitField(session, "destination", "Onto (branch, tag or commit)", prefill));
     Session* s = &session;
     f.buttons.push_back({"Rebase",
-        [s, commit](Form& form) { s->actions().rebaseTipOnto(commit.hex(), gg::trim(form.text("destination"))); },
+        [s, rev = source.rev](Form& form) { s->actions().rebaseTipOnto(rev, gg::trim(form.text("destination"))); },
         [](const Form& form) { return !gg::trim(form.text("destination")).empty(); }});
     // The same range as Rebase: from the divergence point with the destination up to the tip.
     f.buttons.push_back({"Open as interactive rebase...",

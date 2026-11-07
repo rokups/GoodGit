@@ -34,8 +34,27 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row);
 // Keyboard shortcuts for the selected commit (History panel focused).
 void handleCommitEditKeys(Session& session, const core::HistoryRow& row);
 
+// The tip that "Rebase onto" moves for a commit, chosen by one rule (see rebaseSource).
+// `rev` is "HEAD", "refs/heads/<name>" or the commit hex. It is empty when `why` is set.
+// `branch` is the branch that the dialog shows, when the source is a branch.
+// `why` is the reason that the rebase is disabled.
+struct RebaseSource {
+    std::string rev;
+    std::string branch;
+    std::string why;
+};
+// The rule, in order:
+// 1. HEAD is on the commit: rev is "HEAD". A detached HEAD needs a descendant for this;
+//    without one, the next rules apply.
+// 2. One local branch is on the commit (not checked out in another worktree): rev is that branch.
+//    Two or more such branches: rev is the commit hex.
+// 3. A loaded commit has this commit as parent: rev is the commit hex.
+// 4. Else `why` tells the reason.
+RebaseSource rebaseSource(Session& session, const core::HistoryRow& row);
+
+// `source` is the tip to move. `commit` is the commit that the menu opened on.
 // `prefill` fills the dialog's commit field (see otherCommit in CommitMenu.cpp).
-void showRebaseDialog(Session& session, const core::Oid& commit, const std::string& prefill = {});
+void showRebaseDialog(Session& session, const core::Oid& commit, const RebaseSource& source, const std::string& prefill = {});
 // Squash the commits (newest first, each the parent of the one before) into one, asking for its
 // message (prefilled from theirs). The oldest is the base the others fold into.
 void showSquashDialog(Session& session, const std::vector<core::Oid>& commits);
