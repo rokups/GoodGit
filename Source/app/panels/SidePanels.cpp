@@ -341,6 +341,8 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
         actions.fetch(r.name, false, false);
     if (menuItem(ICON_MS_DELETE_SWEEP, "Fetch and prune", nullptr, false, free))
         actions.fetch(r.name, true, false);
+    if (menuItem(ICON_MS_DOWNLOAD, "Fetch more...", nullptr, false, free))
+        session.showFetchMoreDialog(r.name);
     if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, remotePullable(*snap, r, free)))
         actions.pull(PullMode::Config);
     bool prune = r.pruneOnFetch;

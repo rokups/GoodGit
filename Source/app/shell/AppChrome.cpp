@@ -413,6 +413,8 @@ void App::drawMenuBar()
         ImGui::Separator();
         if (menuItem(ICON_MS_DOWNLOAD, "Fetch", nullptr, false, free))
             s->actions().fetch("", false, false);
+        if (menuItem(ICON_MS_DOWNLOAD, "Fetch more...", nullptr, false, free && !s->snapshot()->remotes.empty()))
+            s->showFetchMoreDialog("");
         std::string reason;
         if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, free && s->pullAvailable(&reason)))
             s->actions().pull(PullMode::Config);
@@ -525,6 +527,8 @@ void App::drawRepositoryButtons()
             s->actions().fetch("", true, false);
         if (menuItem(ICON_MS_SELL, "Fetch tags"))
             s->actions().fetch("", false, true);
+        if (menuItem(ICON_MS_DOWNLOAD, "Fetch more..."))
+            s->showFetchMoreDialog("");
         ImGui::EndPopup();
     }
     ImGui::SameLine();

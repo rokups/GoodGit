@@ -333,6 +333,52 @@ GG_TEST("network", "fetch more: named branches and tags only; the remote branch 
     GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "only-second"}));
 }
 
+GG_TEST("network", "fetch more: dialog lists only what is new; Fetch takes the ticked branches and tags")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path second = s.path("second.git");
+    s.git(s.root(), {"clone", "-q", "--bare", origin(s, repo).string(), second.string()});
+    s.track(second);
+    s.git(repo, {"remote", "add", "second", fileUrl(second)});
+    s.git(second, {"branch", "only-second", "main~1"});
+    s.git(second, {"tag", "t-second", "main~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto hasRef = [&](const std::string& ref) { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", ref}).ok(); };
+
+    // The default remote is origin: its main branch is known here, so the list does not show it.
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch more...");
+    GG_REQUIRE(s.dialogOpen("Fetch more"));
+    GG_CHECK(s.waitUntil([&] { return s.session()->remoteBranches("origin") != nullptr; }));
+    s.settle();
+    const std::string mainRow = "//Fetch more/**/main##branches_main";
+    GG_CHECK(!s.itemExists(mainRow.c_str()));
+    GG_CHECK(!s.itemExists("//Fetch more/**/only-second##branches_only-second"));
+
+    // Pick "second": its new branch and tag are listed.
+    ctx->ItemClick("//Fetch more/Remote##remote");
+    ctx->ItemClick("//$FOCUSED/second");
+    const std::string branchRow = "//Fetch more/**/only-second##branches_only-second";
+    const std::string tagRow = "//Fetch more/**/t-second##tags_t-second";
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(branchRow.c_str()); }));
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(tagRow.c_str()); }));
+    GG_CHECK(s.itemExists(mainRow.c_str())); // "second" has no remote-tracking branches here
+    GG_CHECK(disabled(s, "//Fetch more/Fetch"));
+    ctx->ItemCheck(branchRow.c_str());
+    ctx->ItemCheck(tagRow.c_str());
+    s.dialogButton("Fetch more", "Fetch");
+    GG_CHECK(s.waitUntil([&] { return hasRef("refs/remotes/second/only-second") && hasRef("refs/tags/t-second"); }));
+    s.settle();
+    GG_CHECK(!hasRef("refs/remotes/second/main"));
+
+    // The branch is tracked now: a plain "Fetch second" moves it.
+    const std::string before = s.revParse(repo, "second/only-second");
+    s.git(second, {"branch", "-f", "only-second", "main"});
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "second/only-second") != before; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "main"}));
+}
+
 GG_TEST("network", "fetch from an unreachable remote reports the failure")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

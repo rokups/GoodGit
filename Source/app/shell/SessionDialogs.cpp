@@ -319,6 +319,108 @@ void Session::showAddRemoteDialog()
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showFetchMoreDialog(const std::string& remoteName)
+{
+    const auto remotes = remoteNames(m_snapshot);
+    if (remotes.empty()) {
+        m_app.notify(App::Notice::Warning, "Fetch", "This repository has no remotes. Add one in the Remotes panel.");
+        return;
+    }
+    Form f;
+    f.title = "Fetch more";
+    Field remote{Field::Combo, "remote", "Remote"};
+    remote.options = remotes;
+    auto pick = std::find(remotes.begin(), remotes.end(), remoteName);
+    if (pick == remotes.end())
+        pick = std::find(remotes.begin(), remotes.end(), "origin");
+    if (pick == remotes.end())
+        pick = remotes.begin();
+    remote.choice = static_cast<int>(pick - remotes.begin());
+    f.add(remote);
+    f.add(Field{Field::CheckList, "branches", "Branches"});
+    f.add(Field{Field::CheckList, "tags", "Tags"});
+    // What the dialog has shown so far: the remote it asked about and what it already filled in.
+    struct State {
+        int last = -1;
+        bool branchesDone = false;
+        bool tagsDone = false;
+    };
+    auto state = std::make_shared<State>();
+    f.onFrame = [this, remotes, state](Form& form) {
+        Field* remoteField = nullptr;
+        Field* branches = nullptr;
+        Field* tags = nullptr;
+        for (auto& fld : form.fields) {
+            if (fld.id == "remote")
+                remoteField = &fld;
+            else if (fld.id == "branches")
+                branches = &fld;
+            else if (fld.id == "tags")
+                tags = &fld;
+        }
+        if (!remoteField || !branches || !tags || remoteField->choice < 0
+            || static_cast<size_t>(remoteField->choice) >= remotes.size())
+            return;
+        const std::string name = remotes[static_cast<size_t>(remoteField->choice)];
+        if (remoteField->choice != state->last) {
+            state->last = remoteField->choice;
+            state->branchesDone = false;
+            state->tagsDone = false;
+            branches->setOptions({});
+            tags->setOptions({});
+            branches->hint = "Checking...";
+            tags->hint = "Checking...";
+            requestRemoteBranches(name);
+            m_remoteTags.erase(name);
+            markRemoteTagsStale();
+            requestRemoteTagsIfStale();
+        }
+        const std::string nothing = "Nothing new on " + name + ".";
+        if (!state->branchesDone) {
+            if (const RemoteBranches* rb = remoteBranches(name)) {
+                state->branchesDone = true;
+                std::vector<std::string> names;
+                if (rb->ok) {
+                    for (const auto& n : rb->names) {
+                        const std::string full = name + "/" + n;
+                        const bool known = std::any_of(m_snapshot->remoteBranches.begin(), m_snapshot->remoteBranches.end(),
+                            [&](const core::RemoteBranchInfo& r) { return r.remote == name && r.name == full; });
+                        if (!known)
+                            names.push_back(n);
+                    }
+                }
+                branches->hint = rb->ok ? nothing : rb->error;
+                branches->setOptions(std::move(names));
+            }
+        }
+        if (!state->tagsDone) {
+            const auto it = m_remoteTags.find(name);
+            if (it != m_remoteTags.end()) {
+                state->tagsDone = true;
+                std::vector<std::string> names;
+                if (it->second.ok) {
+                    for (const auto& t : it->second.tags) {
+                        const bool known = std::any_of(m_snapshot->tags.begin(), m_snapshot->tags.end(),
+                            [&](const core::TagInfo& l) { return l.name == t; });
+                        if (!known)
+                            names.push_back(t);
+                    }
+                }
+                tags->hint = it->second.ok ? nothing : it->second.error;
+                tags->setOptions(std::move(names));
+            }
+        }
+    };
+    f.buttons.push_back({"Fetch",
+        [this, remotes](Form& form) {
+            m_actions->fetchRefs(remotes[static_cast<size_t>(form.choice("remote"))], form.checkedOptions("branches"),
+                form.checkedOptions("tags"));
+        },
+        [](const Form& form) { return !form.checkedOptions("branches").empty() || !form.checkedOptions("tags").empty(); }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showEditRemoteDialog(const std::string& remote)
 {
     std::string url;

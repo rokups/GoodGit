@@ -443,7 +443,7 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
 
     // The remote: remote items, no branch items.
     ctx->ItemClick(node.c_str(), ImGuiMouseButton_Right);
-    for (const char* item : {"Copy name", "Copy URL", "Fetch", "Fetch and prune", "Pull", "Prune on fetch", "Edit URL...", "Delete"})
+    for (const char* item : {"Copy name", "Copy URL", "Fetch", "Fetch and prune", "Fetch more...", "Pull", "Prune on fetch", "Edit URL...", "Delete"})
         GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
     for (const char* item : {"Check out", "Merge into HEAD...", "Rename...", "Push", "Delete on remote...", "Set upstream..."})
         GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
@@ -454,7 +454,7 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     ctx->ItemClick(lrow.c_str(), ImGuiMouseButton_Right);
     for (const char* item : {"Check out", "Rename...", "Push", "Set upstream...", "Delete"})
         GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
-    for (const char* item : {"Fetch", "Fetch and prune", "Copy URL", "Edit URL...", "Prune on fetch", "Remote origin", "Delete on remote..."})
+    for (const char* item : {"Fetch", "Fetch and prune", "Fetch more...", "Copy URL", "Edit URL...", "Prune on fetch", "Remote origin", "Delete on remote..."})
         GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
     ctx->PopupCloseAll();
     ctx->Yield(2);

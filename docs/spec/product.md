@@ -195,7 +195,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **K** Main menu:
   - **Repository:** Open… (Ctrl+O), Initialize…, Clone…, Recent ▸ (filterable; shows
     branch, upstream and ahead/behind), Open working directory, Copy path, Close repository
-    (Ctrl+W), Refresh (F5), **N** Fetch / Pull / Push (same behavior as the toolbar),
+    (Ctrl+W), Refresh (F5), **N** Fetch / Fetch more… / Pull / Push (same behavior as the toolbar),
     Settings…, Quit.
   - **Change** → rename to **Commit**: New commit (Ctrl+N), Commit… (its *Amend* checkbox amends HEAD), and the
     selected-commit actions (§4.3).
@@ -209,7 +209,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **N** Toolbar **Fetch / Pull / Push** group, placed after Refresh. All three run through
   the `git` CLI (T1), on a worker, with progress and Cancel in the activity area (§3.1).
   - **Fetch:** fetches all remotes. The dropdown arrow offers: a single remote, "Fetch and
-    prune", and "Fetch tags".
+    prune", "Fetch tags", and "Fetch more…" (§4.8).
   - **Pull:** updates the current branch from its upstream, following `pull.rebase` /
     `pull.ff`.
     - Shows an **incoming count badge** (↓n), taken from the last fetch.
@@ -447,7 +447,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   (`repoState`, key: the git common directory, then the worktree id). Git, the directory and the
   id do not change. An empty name clears it. It is not undoable.
 - **K Remotes:** list, Add remote, Delete, Copy name, Fetch, Pull. **N** Edit URL, prune
-  on fetch, Fetch all.
+  on fetch, Fetch all, Fetch and prune, Fetch more….
 - **N Stashes panel** (§4.9).
 - **K Reflog panel:** HEAD reflog with filter. Copy/reveal old and new commits, and create
   a branch from either. **N** Choose a reflog: HEAD, any branch, or stash.
@@ -466,6 +466,18 @@ the History panel list newly conflicted commits. See §5, decision R1.
   / ff-only). Remove the gg rule that fetch fast-forwards local branches automatically. A
   plain `git fetch` changes only remote-tracking refs. Show ahead/behind so the user
   decides.
+- **N** Fetch rules. A plain fetch updates only the remote-tracking refs that already exist
+  here. It passes `--no-tags`. When a remote has tracked branches, it checks the remote with
+  `git ls-remote` first. It prunes stale tracked refs only when prune is on (the "Fetch and
+  prune" flag, `fetch.prune` or `remote.<name>.prune`). When no tracked branch is live on the
+  remote, it shows the warning "No tracked branches on <remote>. Use Fetch more."
+- **N** **Fetch more…** (toolbar dropdown, Repository menu, remote context menu) opens the
+  dialog "Fetch more". It has a Remote combo, a Branches check list and a Tags check list. Each
+  list has a filter. The lists show only the names that are not local yet: a branch without a
+  remote-tracking ref, and a tag that does not exist here. The dialog reads them from the remote
+  and shows "Checking..." while it waits. The remote default is the remote of the menu item, else
+  `origin`, else the first. The "Fetch" button needs one checked name. It fetches only the
+  checked branches and tags and prunes nothing. A plain fetch then keeps these branches current.
 - **N** Push `--set-upstream` for a new branch, push tags, and Force-with-lease as the only
   force option.
 - **M** Pushed/locked state: a commit counts as published when a remote-tracking ref
