@@ -158,6 +158,11 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     s.git(s.root(), {"clone", "-q", "--bare", origin(s, repo).string(), second.string()});
     s.track(second);
     s.git(repo, {"remote", "add", "second", fileUrl(second)});
+    // A remote named "origin/fork" owns refs/remotes/origin/fork/*: they are not branches of "origin".
+    // (git refuses `remote add` for such a name: the config is written directly.)
+    s.git(repo, {"config", "remote.origin/fork.url", fileUrl(second)});
+    s.git(repo, {"config", "remote.origin/fork.fetch", "+refs/heads/*:refs/remotes/origin/fork/*"});
+    s.git(repo, {"fetch", "-q", "origin/fork", "+refs/heads/main:refs/remotes/origin/fork/main"});
     // Tag on an old commit, only on origin (before any fetch sees it).
     s.git(other(s, repo), {"tag", "old-tag", "HEAD~2"});
     s.git(other(s, repo), {"push", "-q", "origin", "old-tag"});
@@ -167,9 +172,15 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     GG_CHECK(s.itemText("//###Toolbar/###tb_pull").find(ICON_MS_ARROW_DOWNWARD_ALT "1") != std::string::npos);
     GG_CHECK(s.itemText("//###Toolbar/###tb_push").find(ICON_MS_ARROW_UPWARD_ALT "1") != std::string::npos);
 
+    // "second" has no remote-tracking branch yet: its tags come with a tags refspec, which never prunes
+    // local tags, also with fetch.prune set.
+    s.git(repo, {"tag", "local-only-tag"});
+    s.git(repo, {"config", "fetch.prune", "true"});
     popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch tags");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/tags/old-tag"}).ok(); }));
     s.settle();
+    GG_CHECK(s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/tags/local-only-tag"}).ok());
+    s.git(repo, {"config", "--unset", "fetch.prune"});
 
     remoteCommit(s, repo, "r2.txt", "two\n");
     ctx->ItemClick("//###Toolbar/###tb_fetch");
@@ -178,17 +189,74 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     GG_CHECK_STR_EQ(s.head(repo), localMain); // no automatic fast-forward / merge
     GG_CHECK(s.waitUntil([&] { return s.itemText("//###Toolbar/###tb_pull").find(ICON_MS_ARROW_DOWNWARD_ALT "2") != std::string::npos; }));
 
-    // A branch only on "second": fetch that remote from the dropdown.
-    s.git(second, {"branch", "only-second", "main~1"});
-    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
-    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "second/only-second"}).ok(); }));
+    // Tag on origin after the first fetch: a plain fetch does not take it, "Fetch tags" does.
+    s.git(other(s, repo), {"tag", "new-tag", "HEAD"});
+    s.git(other(s, repo), {"push", "-q", "origin", "new-tag"});
+    remoteCommit(s, repo, "r2b.txt", "two b\n");
+    ctx->ItemClick("//###Toolbar/###tb_fetch");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
+    s.settle();
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/tags/new-tag"}).ok());
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch tags");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/tags/new-tag"}).ok(); }));
     s.settle();
 
-    // Prune: the branch disappears on the remote.
-    s.git(second, {"branch", "-D", "only-second"});
-    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch and prune");
-    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "second/only-second"}).ok(); }));
+    auto hasRef = [&](const std::string& ref) { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", ref}).ok(); };
+    auto hasToast = [&](const std::string& text) {
+        for (const auto& t : s.app.toasts())
+            if (t.level == ggui::App::Notice::Warning && t.message == text)
+                return true;
+        return false;
+    };
+
+    // A branch only on "second": a plain fetch does not create its remote-tracking branch.
+    s.git(second, {"branch", "only-second", "main~1"});
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
+    GG_CHECK(s.waitUntil([&] { return hasToast("No tracked branches on second. Use Fetch more."); }));
     s.settle();
+    GG_CHECK(!hasRef("refs/remotes/second/only-second"));
+
+    // With a remote-tracking branch, a plain fetch moves it, and creates no other.
+    s.git(repo, {"fetch", "-q", "second", "+refs/heads/only-second:refs/remotes/second/only-second"});
+    const std::string before = s.revParse(repo, "second/only-second");
+    s.git(second, {"branch", "extra", "main~2"});
+    s.git(second, {"branch", "-f", "only-second", "main"});
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "second/only-second") != before; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "main"}));
+    GG_CHECK(!hasRef("refs/remotes/second/extra"));
+
+    // The branch disappears on the remote: a plain fetch keeps it, "Fetch and prune" deletes it.
+    s.git(second, {"branch", "-D", "only-second"});
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
+    s.settle();
+    GG_CHECK(hasRef("refs/remotes/second/only-second"));
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch and prune");
+    GG_CHECK(s.waitUntil([&] { return !hasRef("refs/remotes/second/only-second"); }));
+    s.settle();
+    GG_CHECK(!hasRef("refs/remotes/second/extra"));
+
+    // Prune from the git config: remote.<r>.prune makes a plain fetch prune.
+    s.git(second, {"branch", "pruned", "main~1"});
+    s.git(repo, {"fetch", "-q", "second", "+refs/heads/pruned:refs/remotes/second/pruned"});
+    s.git(second, {"branch", "-D", "pruned"});
+    s.git(repo, {"config", "remote.second.prune", "true"});
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
+    GG_CHECK(s.waitUntil([&] { return !hasRef("refs/remotes/second/pruned"); }));
+    s.settle();
+    s.git(repo, {"config", "--unset", "remote.second.prune"});
+
+    // A name that only another refspec maps (refs/pull/*) is not a tracked branch: it is never pruned.
+    s.git(repo, {"config", "--add", "remote.origin.fetch", "+refs/pull/*/head:refs/remotes/origin/pr/*"});
+    s.git(repo, {"update-ref", "refs/remotes/origin/pr/12", "HEAD"});
+    remoteCommit(s, repo, "r2c.txt", "two c\n");
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch and prune");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == s.head(other(s, repo)); }));
+    s.settle();
+    GG_CHECK(hasRef("refs/remotes/origin/pr/12"));
+    GG_CHECK(hasRef("refs/remotes/origin/fork/main"));
+    GG_CHECK(!hasToast("No tracked branches on origin. Use Fetch more."));
 
     remoteCommit(s, repo, "r3.txt", "three\n");
     ctx->MenuClick("//##MainMenuBar/Repository/Fetch");
@@ -219,6 +287,8 @@ GG_TEST("network", "fetch from an unreachable remote reports the failure")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"remote", "add", "dead", "git://127.0.0.1:1/nothing.git"});
+    // Fetch reads the remote only when a remote-tracking branch exists here.
+    s.git(repo, {"update-ref", "refs/remotes/dead/main", "HEAD"});
     GG_REQUIRE(s.openRepository(repo));
     popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch dead");
     GG_CHECK(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));

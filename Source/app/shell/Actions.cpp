@@ -1255,21 +1255,173 @@ void Actions::setPruneOnFetch(const std::string& name, bool prune)
 
 // ---- network ---------------------------------------------------------------------------------------
 
+namespace {
+
+// One `remote.<r>.fetch` refspec as a mapping from remote ref names to local ones.
+struct FetchMap {
+    std::string srcPrefix, srcSuffix, dstPrefix, dstSuffix;
+    bool wildcard = false;
+};
+
+std::optional<FetchMap> parseFetchRefspec(std::string spec)
+{
+    if (!spec.empty() && spec[0] == '+')
+        spec.erase(0, 1);
+    const auto colon = spec.find(':');
+    if (spec.empty() || spec[0] == '^' || colon == std::string::npos)
+        return std::nullopt;
+    const std::string src = spec.substr(0, colon);
+    const std::string dst = spec.substr(colon + 1);
+    const auto sStar = src.find('*');
+    const auto dStar = dst.find('*');
+    if ((sStar == std::string::npos) != (dStar == std::string::npos))
+        return std::nullopt;
+    FetchMap m;
+    if (sStar == std::string::npos) {
+        m.srcPrefix = src;
+        m.dstPrefix = dst;
+        return m;
+    }
+    m.wildcard = true;
+    m.srcPrefix = src.substr(0, sStar);
+    m.srcSuffix = src.substr(sStar + 1);
+    m.dstPrefix = dst.substr(0, dStar);
+    m.dstSuffix = dst.substr(dStar + 1);
+    return m;
+}
+
+// The remote ref that the refspec maps to the local ref `dst`, if it does.
+std::optional<std::string> fetchSource(const FetchMap& m, const std::string& dst)
+{
+    if (!m.wildcard)
+        return dst == m.dstPrefix ? std::optional<std::string>(m.srcPrefix) : std::nullopt;
+    if (dst.size() < m.dstPrefix.size() + m.dstSuffix.size() || dst.compare(0, m.dstPrefix.size(), m.dstPrefix) != 0
+        || dst.compare(dst.size() - m.dstSuffix.size(), m.dstSuffix.size(), m.dstSuffix) != 0)
+        return std::nullopt;
+    const std::string mid = dst.substr(m.dstPrefix.size(), dst.size() - m.dstPrefix.size() - m.dstSuffix.size());
+    return m.srcPrefix + mid + m.srcSuffix;
+}
+
+} // namespace
+
 void Actions::fetch(const std::string& remote, bool prune, bool tags)
 {
     const std::string label = remote.empty() ? "fetch all remotes" : "fetch " + remote;
+    std::vector<std::string> remotes;
+    std::vector<std::string> allRemotes;
+    for (const auto& r : m_session.snapshot()->remotes)
+        allRemotes.push_back(r.name);
+    if (!remote.empty())
+        remotes.push_back(remote);
+    else
+        remotes = allRemotes;
     run(label,
-        [remote, prune, tags](MutationContext& ctx) {
-            std::vector<std::string> args{"fetch", "--progress"};
-            if (prune)
-                args.emplace_back("--prune");
-            if (tags)
-                args.emplace_back("--tags");
-            if (remote.empty())
-                args.emplace_back("--all");
-            else
-                args.push_back(remote);
-            ctx.git(args, {}, true);
+        [remotes, allRemotes, prune, tags](MutationContext& ctx) {
+            for (const auto& r : remotes) {
+                // Prune: the parameter, else remote.<r>.prune, else fetch.prune (git config, may be unset).
+                bool pruneNow = prune;
+                if (!pruneNow) {
+                    for (const std::string& key : std::vector<std::string>{"remote." + r + ".prune", "fetch.prune"}) {
+                        const gg::RunResult res = ctx.gitMayFail({"config", "--type=bool", "--get", key});
+                        if (res.ok()) {
+                            pruneNow = gg::trim(res.out) == "true";
+                            break;
+                        }
+                    }
+                }
+                // The configured refspecs. Only a refs/heads/<name> source that maps to refs/remotes/<r>/<name>
+                // gives a tracked branch. A name that another refspec maps from elsewhere is not one.
+                std::vector<FetchMap> maps;
+                for (const auto& line : gg::splitLines(ctx.gitMayFail({"config", "--get-all", "remote." + r + ".fetch"}).out))
+                    if (auto m = parseFetchRefspec(gg::trim(line)))
+                        maps.push_back(*m);
+                if (maps.empty())
+                    maps.push_back(*parseFetchRefspec("+refs/heads/*:refs/remotes/" + r + "/*"));
+                const std::string headsRef = "refs/heads/";
+                auto isBranch = [&](const std::string& name) {
+                    const std::string dst = "refs/remotes/" + r + "/" + name;
+                    bool fromHeads = false;
+                    for (const auto& m : maps) {
+                        const auto src = fetchSource(m, dst);
+                        if (!src)
+                            continue;
+                        if (*src != headsRef + name)
+                            return false; // a source outside refs/heads (or another name) owns the ref
+                        fromHeads = true;
+                    }
+                    if (!fromHeads)
+                        return false;
+                    // A remote named "<r>/<x>" owns refs/remotes/<r>/<x>/*.
+                    for (const auto& o : allRemotes)
+                        if (o.size() > r.size() + 1 && o.compare(0, r.size() + 1, r + "/") == 0
+                            && name.compare(0, o.size() - r.size(), o.substr(r.size() + 1) + "/") == 0)
+                            return false;
+                    return true;
+                };
+                // The remote-tracking branches that exist here. Fetch updates only these.
+                const std::string trackedPrefix = "refs/remotes/" + r + "/";
+                std::vector<std::string> tracked;
+                for (const auto& line : gg::splitLines(ctx.git({"for-each-ref", "--format=%(refname)", trackedPrefix}).out)) {
+                    if (line.compare(0, trackedPrefix.size(), trackedPrefix) != 0)
+                        continue;
+                    const std::string name = line.substr(trackedPrefix.size());
+                    if (!name.empty() && name != "HEAD" && isBranch(name))
+                        tracked.push_back(name);
+                }
+                const std::string notracked = "No tracked branches on " + r + ". Use Fetch more.";
+                bool warned = false;
+                auto warn = [&] {
+                    if (warned)
+                        return;
+                    warned = true;
+                    ctx.warning = ctx.warning.empty() ? notracked : ctx.warning + "\n" + notracked;
+                };
+                if (tracked.empty() && !tags) {
+                    warn();
+                    continue;
+                }
+                // The branches on the remote. A failure here fails the mutation, as a failed fetch does.
+                std::set<std::string> heads;
+                const std::string headsPrefix = "refs/heads/";
+                for (const auto& line : gg::splitLines(ctx.git({"ls-remote", "--heads", "--refs", r}).out)) {
+                    const auto tab = line.find('\t');
+                    if (tab != std::string::npos && line.compare(tab + 1, headsPrefix.size(), headsPrefix) == 0)
+                        heads.insert(line.substr(tab + 1 + headsPrefix.size()));
+                }
+                std::vector<std::string> live;
+                std::vector<std::string> stale;
+                for (const auto& b : tracked)
+                    (heads.count(b) ? live : stale).push_back(b);
+                std::string refspecs;
+                for (const auto& b : live)
+                    refspecs += "+refs/heads/" + b + ":" + trackedPrefix + b + "\n";
+                // With no branch to fetch, a tags refspec stops git from using the configured refspecs.
+                // Explicit tag refspecs would also let --prune delete local tags: use --tags when possible.
+                const bool tagsRefspec = tags && live.empty();
+                if (tagsRefspec)
+                    refspecs += "refs/tags/*:refs/tags/*\n";
+                if (!refspecs.empty()) {
+                    std::vector<std::string> args{"fetch", "--progress"};
+                    if (tags && !tagsRefspec)
+                        args.emplace_back("--tags");
+                    else if (!tags)
+                        args.emplace_back("--no-tags");
+                    // A tags refspec must not prune: git would delete the local tags that the remote lacks,
+                    // also when the git config asks for prune.
+                    if (tagsRefspec)
+                        args.emplace_back("--no-prune");
+                    else if (pruneNow)
+                        args.emplace_back("--prune");
+                    args.emplace_back("--stdin");
+                    args.push_back(r);
+                    ctx.git(args, refspecs, true);
+                }
+                if (pruneNow)
+                    for (const auto& b : stale)
+                        ctx.git({"update-ref", "-d", trackedPrefix + b});
+                if (live.empty() && !tracked.empty() && !tags)
+                    warn();
+            }
         },
         {}, true);
 }

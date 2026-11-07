@@ -220,7 +220,10 @@ public:
     void reorder(const core::Oid& commit, const core::Oid& anchor, bool after, bool copy);
 
     // ---- network (§4.8) -------------------------------------------------------------------
-    void fetch(const std::string& remote, bool prune, bool tags); // remote "" = all
+    // Fetch updates only the remote-tracking branches that exist here (remote "" = all remotes). It
+    // creates none: a remote with none gets a warning. Prune deletes those gone from the remote.
+    // Tags fetches all tags. The git config stays unchanged.
+    void fetch(const std::string& remote, bool prune, bool tags);
     // <remote>/HEAD, the remote's default branch: re-read from the remote (remove = false) or deleted.
     void pull(PullMode mode, bool autostash = false);
     // Submodule commands for the submodule at `path`, relative to the working directory (GG-60). They
