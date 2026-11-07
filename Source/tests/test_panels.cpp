@@ -108,8 +108,9 @@ GG_TEST("panels", "visibility: hidden refs survive a restart; refs that no longe
     GG_REQUIRE(!key.empty());
     GG_REQUIRE(s.waitIdle());
     const nlohmann::json stored = nlohmann::json::parse(s.read(s.root() / "prefs", "settings.json"));
-    GG_CHECK(stored["repoState"][key]["hiddenRefs"]
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["main"]
              == nlohmann::json({"refs/heads/gone", "refs/heads/side", "refs/tags/v1.0"}));
+    GG_CHECK(!stored["repoState"][key].contains("hiddenRefs")); // the legacy list is not written
     // A restart reads them back; `gone`, deleted meanwhile, is dropped from the stored state.
     s.app.resetForTest();
     ctx->Yield(2);
@@ -118,13 +119,13 @@ GG_TEST("panels", "visibility: hidden refs survive a restart; refs that no longe
     auto& after = s.session()->history();
     GG_CHECK(!after.refVisible("refs/tags/v1.0") && !after.refVisible("refs/heads/side"));
     GG_CHECK(after.refVisible("refs/heads/main"));
-    GG_CHECK(s.app.settings().hiddenRefs(key) == std::set<std::string>({"refs/heads/side", "refs/tags/v1.0"}));
+    GG_CHECK(s.app.settings().hiddenRefs(key, "main") == std::set<std::string>({"refs/heads/side", "refs/tags/v1.0"}));
     // Show all leaves nothing stored for the repository.
     after.showAllRefs();
     GG_CHECK(s.app.settings().data().repoState.count(key) == 0);
 }
 
-GG_TEST("panels", "visibility: all worktrees of a repository share the hidden refs")
+GG_TEST("panels", "visibility: each worktree of a repository has its own hidden refs")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.git(repo, {"tag", "v1.0", "HEAD~3"});
@@ -138,18 +139,146 @@ GG_TEST("panels", "visibility: all worktrees of a repository share the hidden re
     ctx->ItemClick("//Branches/branch_side/###eye");
     GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
     const std::string key = s.session()->repoStateKey();
-    // The linked worktree has the same key (the common directory) and shows the same hidden refs.
+    // The linked worktree has the same key (the common directory) but its own list: `side` is shown there.
     GG_REQUIRE(s.openRepository(linked));
     GG_CHECK_STR_EQ(s.session()->repoStateKey(), key);
-    GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
-    GG_CHECK(s.session()->history().refVisible("refs/heads/main"));
-    // A change there is what the main worktree shows next.
+    GG_CHECK(s.session()->history().refVisible("refs/heads/side"));
+    // A change there does not reach the main worktree.
     s.showPanel("Tags");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/tag_v1.0/###eye"); }));
     ctx->ItemClick("//Tags/tag_v1.0/###eye");
-    GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(!s.session()->history().refVisible("refs/tags/v1.0"));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.session()->history().refVisible("refs/tags/v1.0"));
     GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json stored = nlohmann::json::parse(s.read(s.root() / "prefs", "settings.json"));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["main"] == nlohmann::json({"refs/heads/side"}));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["linked"] == nlohmann::json({"refs/tags/v1.0"}));
+    // Both lists survive a restart.
+    s.app.resetForTest();
+    ctx->Yield(2);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
+    GG_CHECK(s.session()->history().refVisible("refs/tags/v1.0"));
+    GG_REQUIRE(s.openRepository(linked));
+    GG_CHECK(s.session()->history().refVisible("refs/heads/side"));
+    GG_CHECK(!s.session()->history().refVisible("refs/tags/v1.0"));
+}
+
+GG_TEST("panels", "visibility: the legacy repository list is the default of each worktree")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    const fs::path linked = s.root() / "linked";
+    s.git(repo, {"worktree", "add", "-q", "-b", "wt", linked.string(), "HEAD~1"});
+    s.track(linked);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitIdle());
+    const std::string key = s.session()->repoStateKey();
+    // A settings.json from an older version: one list for the repository, no worktreeHidden.
+    s.app.resetForTest();
+    ctx->Yield(2);
+    const fs::path prefs = s.root() / "prefs";
+    nlohmann::json old = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    old["repoState"][key] = {{"hiddenRefs", {"refs/heads/side"}}};
+    s.write(prefs, "settings.json", old.dump(2));
+    s.app.settings().load(nullptr);
+    GG_REQUIRE(s.waitUntil([&] { return s.app.settings().hiddenRefs(key, "main").count("refs/heads/side") == 1; }));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
+    GG_REQUIRE(s.openRepository(linked));
+    GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
+    // Show all in the linked worktree: an empty entry overrides the legacy list there only.
+    s.session()->history().showAllRefs();
+    GG_CHECK(s.app.settings().hiddenRefs(key, "linked").empty());
+    GG_CHECK(s.app.settings().hiddenRefs(key, "main") == std::set<std::string>({"refs/heads/side"}));
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    GG_CHECK(stored["repoState"][key]["hiddenRefs"] == nlohmann::json({"refs/heads/side"}));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["linked"] == nlohmann::json::array());
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
+}
+
+GG_TEST("panels", "visibility: a save keeps the hidden refs of the worktrees another ggui process stored")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitIdle());
+    const std::string key = s.session()->repoStateKey();
+    const fs::path prefs = s.root() / "prefs";
+    // Another process (the window of another worktree of the same repository) stored its own list.
+    nlohmann::json other = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    other["repoState"][key]["worktreeHidden"]["other"] = {"refs/heads/x"};
+    other["repoState"][key]["worktreeHidden"]["main"] = {"refs/heads/stale"};
+    s.write(prefs, "settings.json", other.dump(2));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###eye"); }));
+    ctx->ItemClick("//Branches/branch_side/###eye");
+    GG_REQUIRE(s.waitIdle());
+    nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["other"] == nlohmann::json({"refs/heads/x"}));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["main"] == nlohmann::json({"refs/heads/side"}));
+    // Show all here: the entry of this worktree goes, the other one stays.
+    s.session()->history().showAllRefs();
+    GG_REQUIRE(s.waitIdle());
+    stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["other"] == nlohmann::json({"refs/heads/x"}));
+    GG_CHECK(!stored["repoState"][key]["worktreeHidden"].contains("main"));
+}
+
+GG_TEST("panels", "visibility: a save does not bring back an entry that another ggui process erased")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitIdle());
+    const std::string key = s.session()->repoStateKey();
+    const fs::path prefs = s.root() / "prefs";
+    // This process has read an entry of another worktree.
+    nlohmann::json file = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    file["repoState"][key]["worktreeHidden"]["wt1"] = {"refs/heads/x"};
+    s.write(prefs, "settings.json", file.dump(2));
+    s.app.settings().load(nullptr);
+    GG_REQUIRE(s.waitUntil([&] { return s.app.settings().hiddenRefs(key, "wt1").count("refs/heads/x") == 1; }));
+    // The other process shows all refs and erases its entry.
+    file["repoState"][key].erase("worktreeHidden");
+    s.write(prefs, "settings.json", file.dump(2));
+    // This process changes the list of its own worktree and saves.
+    s.app.settings().setHiddenRefs(key, "main", {"refs/heads/side"});
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["main"] == nlohmann::json({"refs/heads/side"}));
+    GG_CHECK(!stored["repoState"][key]["worktreeHidden"].contains("wt1"));
+    GG_CHECK(s.app.settings().hiddenRefs(key, "wt1").empty());
+}
+
+GG_TEST("panels", "visibility: a save keeps the worktree name that another ggui process changed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitIdle());
+    const std::string key = s.session()->repoStateKey();
+    const fs::path prefs = s.root() / "prefs";
+    nlohmann::json file = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    file["repoState"][key]["worktreeNames"]["wt1"] = "Old";
+    s.write(prefs, "settings.json", file.dump(2));
+    s.app.settings().load(nullptr);
+    GG_REQUIRE(s.waitUntil([&] { return s.app.settings().worktreeName(key, "wt1") == "Old"; }));
+    // The other process renames its worktree.
+    file["repoState"][key]["worktreeNames"]["wt1"] = "New";
+    s.write(prefs, "settings.json", file.dump(2));
+    // This process changes the hidden refs and saves.
+    s.app.settings().setHiddenRefs(key, "main", {"refs/heads/side"});
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
+    GG_CHECK(stored["repoState"][key]["worktreeNames"]["wt1"] == "New");
+    GG_CHECK(s.app.settings().worktreeName(key, "wt1") == "New");
+    // A name that this process sets wins over the file.
+    s.app.settings().setWorktreeName(key, "wt1", "Mine");
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.app.settings().worktreeName(key, "wt1") == "Mine");
 }
 
 GG_TEST("panels", "visibility: a save keeps the repository state another ggui process stored")
@@ -170,9 +299,9 @@ GG_TEST("panels", "visibility: a save keeps the repository state another ggui pr
     const std::string key = s.session()->repoStateKey();
     const nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
     GG_CHECK(stored["repoState"]["/elsewhere/.git"]["hiddenRefs"] == nlohmann::json({"refs/heads/x"}));
-    GG_CHECK(stored["repoState"][key]["hiddenRefs"] == nlohmann::json({"refs/heads/side"}));
+    GG_CHECK(stored["repoState"][key]["worktreeHidden"]["main"] == nlohmann::json({"refs/heads/side"}));
     // Memory takes the other process's state too, so a later save keeps it.
-    GG_CHECK(s.app.settings().hiddenRefs("/elsewhere/.git") == std::set<std::string>({"refs/heads/x"}));
+    GG_CHECK(s.app.settings().hiddenRefs("/elsewhere/.git", "main") == std::set<std::string>({"refs/heads/x"}));
 }
 
 GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open")

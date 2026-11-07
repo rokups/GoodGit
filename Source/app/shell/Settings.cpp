@@ -164,7 +164,8 @@ void writeAtomically(const fs::path& p, const std::string& text)
     fs::remove(tmp, ec); // not left behind
 }
 
-// "repoState": {key: {"hiddenRefs": [names], "worktreeNames": {id: name}}}. Empty entries are not written.
+// "repoState": {key: {"hiddenRefs": [names], "worktreeHidden": {id: [names]}, "worktreeNames": {id: name}}}.
+// Empty entries are not written. A worktreeHidden entry with an empty list is written.
 nlohmann::json repoStateToJson(const std::map<std::string, RepoState>& states)
 {
     nlohmann::json j = nlohmann::json::object();
@@ -174,6 +175,8 @@ nlohmann::json repoStateToJson(const std::map<std::string, RepoState>& states)
         nlohmann::json entry = nlohmann::json::object();
         if (!state.hiddenRefs.empty())
             entry["hiddenRefs"] = state.hiddenRefs;
+        if (!state.worktreeHidden.empty())
+            entry["worktreeHidden"] = state.worktreeHidden;
         if (!state.worktreeNames.empty())
             entry["worktreeNames"] = state.worktreeNames;
         j[key] = std::move(entry);
@@ -200,6 +203,17 @@ std::map<std::string, RepoState> repoStateFromJson(const nlohmann::json& j)
                     names.insert(name.get<std::string>());
             state.hiddenRefs.assign(names.begin(), names.end());
         }
+        const auto wtHidden = entry.value().find("worktreeHidden");
+        if (wtHidden != entry.value().end() && wtHidden->is_object())
+            for (auto w = wtHidden->begin(); w != wtHidden->end(); ++w) {
+                if (w.key().empty() || !w.value().is_array())
+                    continue;
+                std::set<std::string> names;
+                for (const auto& name : w.value())
+                    if (name.is_string() && !name.get<std::string>().empty())
+                        names.insert(name.get<std::string>());
+                state.worktreeHidden[w.key()].assign(names.begin(), names.end());
+            }
         const auto wtNames = entry.value().find("worktreeNames");
         if (wtNames != entry.value().end() && wtNames->is_object())
             for (auto n = wtNames->begin(); n != wtNames->end(); ++n)
@@ -511,6 +525,8 @@ void Settings::load(std::function<void(const std::string& iniText)> onLoaded)
     m_loaded = false;
     m_backupFailed = false;
     m_pendingRepoKeys.clear();
+    m_pendingHiddenIds.clear();
+    m_pendingNameIds.clear();
     const fs::path dir = m_dir;
     m_io.post([this, dir, onLoaded = std::move(onLoaded)]() -> std::function<void()> {
         SettingsData data;
@@ -569,10 +585,15 @@ void Settings::save()
             own.emplace(key, it->second);
     std::set<std::string> ownKeys;
     ownKeys.swap(m_pendingRepoKeys);
+    std::map<std::string, std::set<std::string>> ownIds;
+    ownIds.swap(m_pendingHiddenIds);
+    std::map<std::string, std::set<std::string>> ownNameIds;
+    ownNameIds.swap(m_pendingNameIds);
     for (const auto& key : ownKeys)
         ++m_savingRepoKeys[key];
     const fs::path file = m_dir / "settings.json";
-    m_io.post([this, file, j = std::move(j), own = std::move(own), ownKeys = std::move(ownKeys)]() mutable
+    m_io.post([this, file, j = std::move(j), own = std::move(own), ownKeys = std::move(ownKeys),
+                         ownIds = std::move(ownIds), ownNameIds = std::move(ownNameIds)]() mutable
               -> std::function<void()> {
         // Another ggui process (another worktree, another repository) may have stored repository state since
         // this one read the file: the file's state is kept, except for the repositories this save changes.
@@ -587,10 +608,40 @@ void Settings::save()
         }
         if (!fromFile)
             merged = repoStateFromJson(j); // no readable file: this process's state
+        // The hidden refs and names of the worktrees this save does not change come from the file. A key whose
+        // state is empty in memory still keeps the file's entries of the other worktrees.
+        for (const auto& key : ownKeys)
+            own.try_emplace(key);
+        // An id this save does not change takes the file's value, also when the file has none: the entry
+        // that another process removed stays removed.
+        for (auto& [key, state] : own) {
+            const auto fileState = merged.find(key);
+            const auto changedHidden = ownIds.find(key);
+            const auto changedNames = ownNameIds.find(key);
+            const auto mineHidden = [&](const std::string& id) {
+                return changedHidden != ownIds.end() && changedHidden->second.count(id);
+            };
+            const auto mineName = [&](const std::string& id) {
+                return changedNames != ownNameIds.end() && changedNames->second.count(id);
+            };
+            for (auto it = state.worktreeHidden.begin(); it != state.worktreeHidden.end();)
+                it = mineHidden(it->first) ? std::next(it) : state.worktreeHidden.erase(it);
+            for (auto it = state.worktreeNames.begin(); it != state.worktreeNames.end();)
+                it = mineName(it->first) ? std::next(it) : state.worktreeNames.erase(it);
+            if (fileState == merged.end())
+                continue;
+            for (const auto& [id, names] : fileState->second.worktreeHidden)
+                if (!mineHidden(id))
+                    state.worktreeHidden[id] = names;
+            for (const auto& [id, name] : fileState->second.worktreeNames)
+                if (!mineName(id))
+                    state.worktreeNames[id] = name;
+        }
         for (const auto& key : ownKeys)
             merged.erase(key);
         for (auto& [key, state] : own)
-            merged[key] = std::move(state);
+            if (!state.empty())
+                merged[key] = std::move(state);
         j["repoState"] = repoStateToJson(merged);
         writeAtomically(file, j.dump(2));
         // Memory takes the file's state, except for repositories changed after this save was posted (pending, or
@@ -612,28 +663,35 @@ void Settings::save()
     });
 }
 
-std::set<std::string> Settings::hiddenRefs(const std::string& key) const
+std::set<std::string> Settings::hiddenRefs(const std::string& key, const std::string& wtId) const
 {
     const auto it = m_data.repoState.find(key);
     if (it == m_data.repoState.end())
         return {};
-    return {it->second.hiddenRefs.begin(), it->second.hiddenRefs.end()};
+    const auto own = it->second.worktreeHidden.find(wtId);
+    const auto& list = own != it->second.worktreeHidden.end() ? own->second : it->second.hiddenRefs;
+    return {list.begin(), list.end()};
 }
 
-void Settings::setHiddenRefs(const std::string& key, const std::set<std::string>& names)
+void Settings::setHiddenRefs(const std::string& key, const std::string& wtId, const std::set<std::string>& names)
 {
-    if (key.empty())
+    if (key.empty() || wtId.empty())
         return;
     std::vector<std::string> sorted(names.begin(), names.end());
     sorted.erase(std::remove(sorted.begin(), sorted.end(), std::string()), sorted.end());
-    const auto it = m_data.repoState.find(key);
-    const std::vector<std::string> before = it != m_data.repoState.end() ? it->second.hiddenRefs : std::vector<std::string>{};
-    if (sorted == before)
+    const std::set<std::string> before = hiddenRefs(key, wtId);
+    if (std::set<std::string>(sorted.begin(), sorted.end()) == before)
         return;
-    m_data.repoState[key].hiddenRefs = std::move(sorted);
-    if (m_data.repoState[key].empty())
+    auto& state = m_data.repoState[key];
+    // An empty list needs an entry only when it overrides a non-empty legacy list.
+    if (sorted.empty() && state.hiddenRefs.empty())
+        state.worktreeHidden.erase(wtId);
+    else
+        state.worktreeHidden[wtId] = std::move(sorted);
+    if (state.empty())
         m_data.repoState.erase(key);
     m_pendingRepoKeys.insert(key);
+    m_pendingHiddenIds[key].insert(wtId);
     save();
 }
 
@@ -662,6 +720,7 @@ void Settings::setWorktreeName(const std::string& key, const std::string& id, co
     if (state.empty())
         m_data.repoState.erase(key);
     m_pendingRepoKeys.insert(key);
+    m_pendingNameIds[key].insert(id);
     save();
 }
 

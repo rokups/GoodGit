@@ -168,7 +168,7 @@ void HistoryPanel::loadHidden()
     const std::string& key = m_session.repoStateKey();
     if (key.empty() || !m_snapshot)
         return;
-    const std::set<std::string> stored = m_session.app().settings().hiddenRefs(key);
+    const std::set<std::string> stored = m_session.app().settings().hiddenRefs(key, m_snapshot->worktreeId);
     const auto& s = *m_snapshot;
     std::set<std::string> existing;
     for (const auto& b : s.branches)
@@ -187,7 +187,11 @@ void HistoryPanel::loadHidden()
         storeHidden();
 }
 
-void HistoryPanel::storeHidden() { m_session.app().settings().setHiddenRefs(m_session.repoStateKey(), m_hidden); }
+void HistoryPanel::storeHidden()
+{
+    if (m_snapshot)
+        m_session.app().settings().setHiddenRefs(m_session.repoStateKey(), m_snapshot->worktreeId, m_hidden);
+}
 
 void HistoryPanel::onStatus(const core::StatusPtr& status)
 {

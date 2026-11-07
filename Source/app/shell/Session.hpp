@@ -91,8 +91,8 @@ public:
     // repository, or a --separate-git-dir or submodule one, has none there), else the session path; both
     // normalised. Empty until the first snapshot is there. The disk is read once for each snapshot.
     std::string repositoryListPath() const;
-    // The key of the state that all worktrees of this repository share (repoStateKey of the common
-    // directory); "" before the repository is open.
+    // The key of the state of this repository (repoStateKey of the common directory; all its
+    // worktrees have the same key); "" before the repository is open.
     const std::string& repoStateKey() const;
     // The custom display name of `w`; empty when it has none.
     std::string worktreeCustomName(const core::WorktreeInfo& w) const;

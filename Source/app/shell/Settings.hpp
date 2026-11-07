@@ -56,12 +56,17 @@ struct RepoEntry {
     std::string alias; // empty: the entry has no alias
 };
 
-// The state of one repository, shared by all its worktrees (settings.json "repoState", keyed by repoStateKey).
+// The state of one repository (settings.json "repoState", keyed by repoStateKey). Some parts are per worktree.
 struct RepoState {
+    // Legacy default of the hidden refs: the list of a worktree that has no entry in worktreeHidden.
+    // Older versions stored the only list here. It is read, kept unchanged in the file and never written again.
     std::vector<std::string> hiddenRefs; // full ref names hidden in History; sorted, unique
+    // Hidden refs of each worktree, keyed by the worktree id ("main" or WorktreeInfo::name). Each list is sorted
+    // and unique. An entry with an empty list means "show all": it hides nothing, even if hiddenRefs is not empty.
+    std::map<std::string, std::vector<std::string>> worktreeHidden;
     // Custom display names of worktrees, keyed by the worktree id (WorktreeInfo::name); no empty name or key.
     std::map<std::string, std::string> worktreeNames;
-    bool empty() const { return hiddenRefs.empty() && worktreeNames.empty(); }
+    bool empty() const { return hiddenRefs.empty() && worktreeHidden.empty() && worktreeNames.empty(); }
 };
 
 // The UI scale in percent: the limits of the Settings slider, of Ctrl+wheel and of a stored value.
@@ -136,10 +141,12 @@ public:
     // changes nothing.
     void setAlias(const std::string& path, const std::string& alias);
 
-    // The hidden refs stored for the repository `key` (repoStateKey); empty when none are stored.
-    std::set<std::string> hiddenRefs(const std::string& key) const;
-    // Stores the hidden refs of `key` and saves settings.json when they changed.
-    void setHiddenRefs(const std::string& key, const std::set<std::string>& names);
+    // The hidden refs of the worktree `wtId` in the repository `key` (repoStateKey). The worktree's own list
+    // when it has one, else the legacy repository list; empty when none is stored.
+    std::set<std::string> hiddenRefs(const std::string& key, const std::string& wtId) const;
+    // Stores the hidden refs of the worktree `wtId` and saves settings.json when they changed.
+    // The legacy repository list does not change.
+    void setHiddenRefs(const std::string& key, const std::string& wtId, const std::set<std::string>& names);
 
     // The display name of the worktree `id` in the repository `key`; empty when it has no custom name.
     std::string worktreeName(const std::string& key, const std::string& id) const;
@@ -153,6 +160,11 @@ private:
     // Repositories whose state changed since the last save. A save writes only their state from memory;
     // the state of the others comes from the file, so another ggui process does not lose its changes.
     std::set<std::string> m_pendingRepoKeys;
+    // Per repository key: the worktree ids whose hidden refs changed since the last save. A save takes the
+    // other worktrees' lists from the file.
+    std::map<std::string, std::set<std::string>> m_pendingHiddenIds;
+    // Per repository key: the worktree ids whose name changed since the last save. Same rule as the hidden refs.
+    std::map<std::string, std::set<std::string>> m_pendingNameIds;
     // Saves posted and not yet finished, per repository key. A finished save does not copy the file's state of
     // a key into memory while a later save of that key is still on its way: the file then holds an older value.
     std::map<std::string, int> m_savingRepoKeys;

@@ -318,11 +318,15 @@ stays as it is (it is only limited to 50–300 % on load).
 - Reveal: loads more history until the commit is found; progress in the activity area,
   cancellable. A commit that a collapsed merge hides (it has no row) expands that merge, and each nested collapsed
   merge, and is selected; the merges stay expanded. The notice shows only when the commit is not in the scope.
-- Scope: branch/tag/remote visibility from the side panels. The hidden refs are stored per repository in
-  settings.json (`repoState`, keyed by the git common directory), so all worktrees of a repository and a restart
-  show the same hidden refs. Each change writes them; opening a worktree reads them and drops names of refs that
+- Scope: branch/tag/remote visibility from the side panels. Each worktree has its own hidden refs. The lists are
+  stored in settings.json `repoState[<common dir>].worktreeHidden[<id>]` (id: `main` for the main worktree, else
+  the worktree id). The old repository-level list `repoState[<common dir>].hiddenRefs` is the default for a
+  worktree that has no list of its own yet. It is read only: a save keeps it unchanged. A list with no names
+  is stored when the legacy list is not empty (it means "show all"). The lists stay when a worktree is removed.
+  Each change writes the list of the window's worktree; opening a worktree reads it and drops names of refs that
   no longer exist. A save writes only the repositories this process changed and keeps the file's state of the others
-  (another ggui process). A running ggui reads the state that other processes stored when it starts and after each of
+  (another ggui process); inside a changed repository, it keeps the lists of the worktrees it did not change.
+  A running ggui reads the state that other processes stored when it starts and after each of
   its own saves; an open History panel does not follow a change made in another process. Two processes that write
   settings.json at the same moment can lose the change of one repository from the other process (an accepted limit).
 

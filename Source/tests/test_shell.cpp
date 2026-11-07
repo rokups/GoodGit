@@ -345,6 +345,8 @@ GG_TEST("shell", "repository state: JSON round trip and loading")
     using namespace ggui;
     SettingsData d;
     d.repoState["/a/.git"].hiddenRefs = {"refs/heads/x", "refs/tags/v1"};
+    d.repoState["/a/.git"].worktreeHidden["main"] = {"refs/heads/y"};
+    d.repoState["/a/.git"].worktreeHidden["wt"] = {}; // an entry with no names: "show all"
     d.repoState["/b/.git"] = {}; // empty: not written
     const nlohmann::json j = toJson(d);
     GG_REQUIRE(j["repoState"].is_object());
@@ -352,6 +354,17 @@ GG_TEST("shell", "repository state: JSON round trip and loading")
     const SettingsData back = fromJson(j);
     GG_REQUIRE(back.repoState.count("/a/.git") == 1);
     GG_CHECK(back.repoState.at("/a/.git").hiddenRefs == std::vector<std::string>({"refs/heads/x", "refs/tags/v1"}));
+    GG_CHECK(back.repoState.at("/a/.git").worktreeHidden.size() == size_t{2});
+    GG_CHECK(back.repoState.at("/a/.git").worktreeHidden.at("main") == std::vector<std::string>({"refs/heads/y"}));
+    GG_CHECK(back.repoState.at("/a/.git").worktreeHidden.at("wt").empty());
+    GG_CHECK(j["repoState"]["/a/.git"]["worktreeHidden"]["wt"] == nlohmann::json::array());
+    // An entry that has only an empty worktreeHidden entry is not empty; wrong types and empty ids are skipped.
+    const SettingsData wt = fromJson(nlohmann::json::parse(
+        R"({"repoState":{"/p":{"worktreeHidden":{"a":[],"":["x"],"b":"no","c":[1,"refs/heads/q","refs/heads/q"]}},"/q":{"worktreeHidden":[]}}})"));
+    GG_REQUIRE(wt.repoState.size() == 1);
+    GG_CHECK(wt.repoState.at("/p").worktreeHidden.size() == size_t{2});
+    GG_CHECK(wt.repoState.at("/p").worktreeHidden.at("a").empty());
+    GG_CHECK(wt.repoState.at("/p").worktreeHidden.at("c") == std::vector<std::string>({"refs/heads/q"}));
     // A file from before the key, and malformed entries, load fine.
     GG_CHECK(fromJson(nlohmann::json::parse(R"({"recent":[]})")).repoState.empty());
     GG_CHECK(fromJson(nlohmann::json::parse(R"({"repoState":[1,2]})")).repoState.empty());
@@ -379,7 +392,7 @@ GG_TEST("shell", "repository state: an older save does not undo a newer change i
     io.pump();
     GG_REQUIRE(settings.loaded());
     // Hide X (save 1), then hold the I/O thread so that save 2 (show X) is not finished yet.
-    settings.setHiddenRefs("k", {"refs/heads/x"});
+    settings.setHiddenRefs("k", "main", {"refs/heads/x"});
     std::atomic<bool> holding{false}, release{false};
     io.post([&]() -> std::function<void()> {
         holding = true;
@@ -387,19 +400,19 @@ GG_TEST("shell", "repository state: an older save does not undo a newer change i
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         return {};
     });
-    settings.setHiddenRefs("k", {});
+    settings.setHiddenRefs("k", "main", {});
     while (!holding)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     io.pump(); // save 1 finishes: its file has X, but save 2 is on its way
-    GG_CHECK(settings.hiddenRefs("k").empty());
+    GG_CHECK(settings.hiddenRefs("k", "main").empty());
     // Hide X again: a change, so a save.
-    settings.setHiddenRefs("k", {"refs/heads/x"});
+    settings.setHiddenRefs("k", "main", {"refs/heads/x"});
     release = true;
     io.flush();
     io.pump();
-    GG_CHECK(settings.hiddenRefs("k") == std::set<std::string>({"refs/heads/x"}));
+    GG_CHECK(settings.hiddenRefs("k", "main") == std::set<std::string>({"refs/heads/x"}));
     const nlohmann::json stored = nlohmann::json::parse(s.read(dir, "settings.json"));
-    GG_CHECK(stored["repoState"]["k"]["hiddenRefs"] == nlohmann::json({"refs/heads/x"}));
+    GG_CHECK(stored["repoState"]["k"]["worktreeHidden"]["main"] == nlohmann::json({"refs/heads/x"}));
 }
 
 namespace {

@@ -155,7 +155,7 @@ private:
     bool m_hasWorktreeChanges = false;
     bool m_nativeConflicts = false;
 
-    // Full names of the hidden refs. All worktrees of a repository share them (settings.json, Settings::hiddenRefs).
+    // Full names of the hidden refs. Each worktree has its own list (settings.json, Settings::hiddenRefs).
     std::set<std::string> m_hidden;
     std::vector<core::Oid> m_toggledMerges; // differ from the default (collapsed)
 
