@@ -325,9 +325,15 @@ GG_TEST("commit", "Amend checkbox: toggling swaps the commit draft and HEAD's me
     s.dialogText("Commit", "message", "my draft");
     s.dialogCheck("Commit", "amend", "Amend");
     GG_CHECK(s.waitUntil([&] { return field().rfind(headMsg, 0) == 0; }));
-    s.dialogText("Commit", "message", "edited amend text");
+    // HEAD's message is untouched: unticking gives the field back to the commit draft.
     s.dialogCheck("Commit", "amend", "Amend", false);
     GG_CHECK_STR_EQ(field(), "my draft");
+    s.dialogCheck("Commit", "amend", "Amend");
+    GG_CHECK(field().rfind(headMsg, 0) == 0);
+    s.dialogText("Commit", "message", "edited amend text");
+    // An edited amend text stays in the field when Amend is unticked.
+    s.dialogCheck("Commit", "amend", "Amend", false);
+    GG_CHECK_STR_EQ(field(), "edited amend text");
     s.dialogCheck("Commit", "amend", "Amend");
     GG_CHECK_STR_EQ(field(), "edited amend text");
     s.dialogButton("Commit", "Amend");
@@ -335,6 +341,27 @@ GG_TEST("commit", "Amend checkbox: toggling swaps the commit draft and HEAD's me
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), older);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f6.txt"}), "six");
+}
+
+GG_TEST("commit", "Amend checkbox: an edited message stays in the field when Amend is unticked")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "f7.txt", "seven\n");
+    s.git(repo, {"add", "f7.txt"});
+    const std::string headMsg = headMessage(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    auto field = [&] { return s.app.dialogs().current()->text("message"); };
+    s.dialogText("Commit", "message", "my draft");
+    s.dialogCheck("Commit", "amend", "Amend");
+    GG_CHECK(s.waitUntil([&] { return field().rfind(headMsg, 0) == 0; }));
+    s.dialogText("Commit", "message", "reworded message");
+    s.dialogCheck("Commit", "amend", "Amend", false);
+    GG_CHECK_STR_EQ(field(), "reworded message");
+    s.dialogButton("Commit", "Commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("reworded message", 0) == 0; }));
+    s.settle();
 }
 
 GG_TEST("commit", "Amend of a published HEAD asks before rewriting published history; Cancel brings the dialog back")

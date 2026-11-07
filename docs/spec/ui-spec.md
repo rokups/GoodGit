@@ -834,7 +834,9 @@ The `Commit` dialog has the message field `##message`, an *Amend* checkbox `##am
 disabled with a tooltip on an unborn HEAD or during a merge, cherry-pick or revert), *Skip hooks*
 `##skip_hooks` and, while Amend is ticked, *Change the message only* `##message_only`. Ticking
 Amend swaps the field to HEAD's message (whatever is selected) and the button to *Amend*; the
-typed commit message and the (edited) amend message are each kept across toggles. The
+typed commit message and the (edited) amend message are each kept across toggles. Unticking Amend
+keeps an edited message in the field; an empty field, or HEAD's message as filled in, gives the
+field back to the commit draft. The
 conflict-marker warning shows in both modes (not with *message only*). Amending commits that are already on a remote (HEAD or a restacked descendant, also *message only*) asks `Rewrite published history` first; Cancel reopens the Commit dialog as it was.
 
 ## 10. States

@@ -74,7 +74,8 @@ void Session::showCommitDialog(const CommitDialogState* restore)
     Form f;
     f.title = "Commit";
     const bool nothingStaged = m_status && m_status->staged.empty();
-    // What is typed is never lost when Amend is toggled: each mode keeps its own text.
+    // What is typed is never lost when Amend is toggled. Unticking Amend keeps an edited text.
+    // It restores the commit draft only when the text is empty or still HEAD's message.
     struct Texts {
         std::string commit; // the commit message, while Amend is ticked
         std::string amend;  // the amend message as edited, while Amend is not ticked
@@ -138,7 +139,11 @@ void Session::showCommitDialog(const CommitDialogState* restore)
             fillHead(form);
         } else {
             texts->amend = message->text;
-            message->text = texts->commit;
+            // An edited amend text stays in the field. An untouched one (empty, or HEAD's
+            // message as filled in) gives the field back to the commit draft.
+            const bool edited = !message->text.empty() && !(texts->headLoaded && message->text == texts->head);
+            if (!edited)
+                message->text = texts->commit;
         }
     };
     Field skipHooks{Field::Check, "skip_hooks", "Skip hooks (--no-verify)"};
