@@ -195,7 +195,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **K** Main menu:
   - **Repository:** Open… (Ctrl+O), Initialize…, Clone…, Recent ▸ (filterable; shows
     branch, upstream and ahead/behind), Open working directory, Copy path, Close repository
-    (Ctrl+W), Refresh (F5), **N** Fetch / Fetch more… / Pull / Push (same behavior as the toolbar),
+    (Ctrl+W), Refresh (F5), **N** Fetch / Fetch more… / Forget… / Pull / Push (same behavior as the toolbar),
     Settings…, Quit.
   - **Change** → rename to **Commit**: New commit (Ctrl+N), Commit… (its *Amend* checkbox amends HEAD), and the
     selected-commit actions (§4.3).
@@ -209,7 +209,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
 - **N** Toolbar **Fetch / Pull / Push** group, placed after Refresh. All three run through
   the `git` CLI (T1), on a worker, with progress and Cancel in the activity area (§3.1).
   - **Fetch:** fetches all remotes. The dropdown arrow offers: a single remote, "Fetch and
-    prune", "Fetch tags", and "Fetch more…" (§4.8).
+    prune", "Fetch tags", "Fetch more…", and "Forget…" (§4.8).
   - **Pull:** updates the current branch from its upstream, following `pull.rebase` /
     `pull.ff`.
     - Shows an **incoming count badge** (↓n), taken from the last fetch.
@@ -469,7 +469,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   (`repoState`, key: the git common directory, then the worktree id). Git, the directory and the
   id do not change. An empty name clears it. It is not undoable.
 - **K Remotes:** list, Add remote, Delete, Copy name, Fetch, Pull. **N** Edit URL, prune
-  on fetch, Fetch all, Fetch and prune, Fetch more….
+  on fetch, Fetch all, Fetch and prune, Fetch more…, Forget….
 - **N Stashes panel** (§4.9).
 - **K Reflog panel:** HEAD reflog with filter. Copy/reveal old and new commits, and create
   a branch from either. **N** Choose a reflog: HEAD, any branch, or stash.
@@ -500,6 +500,13 @@ the History panel list newly conflicted commits. See §5, decision R1.
   and shows "Checking..." while it waits. The remote default is the remote of the menu item, else
   `origin`, else the first. The "Fetch" button needs one checked name. It fetches only the
   checked branches and tags and prunes nothing. A plain fetch then keeps these branches current.
+- **N** **Forget…** (toolbar dropdown, Repository menu, remote context menu) opens the
+  dialog "Forget". It has a Remote combo, a Branches check list and a Tags check list. The
+  Branches list shows the remote-tracking branches of the remote. The Tags list shows the local
+  tags that are also on the remote, and shows "Checking..." while it reads them. The "Forget"
+  button needs one checked name. It deletes the checked refs in one journaled operation. Undo
+  restores them. The upstream config of a local branch that tracks a forgotten ref stays. The
+  branch shows "(gone)". A later "Fetch more…" brings the refs back. A plain gg Fetch does not.
 - **N** Push `--set-upstream` for a new branch, push tags, and Force-with-lease as the only
   force option.
 - **M** Pushed/locked state: a commit counts as published when a remote-tracking ref

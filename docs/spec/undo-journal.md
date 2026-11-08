@@ -178,7 +178,7 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
   changed remote-tracking ref says so (at most three reflogs are read), else `external changes`;
   `cmd` empty, `time` now. It restores to Known, so Undo of a lump puts every ref back at once.
   A fetch with prune deletes the stale remote-tracking refs with `update-ref -d` in the same journaled
-  mutation as the fetch. One Undo restores them with the other fetched refs.
+  mutation as the fetch. One Undo restores them with the other fetched refs. The Forget dialog deletes refs the same way, and one Undo restores them.
 - **Keep refs (invariant K, product spec K2).** `refs/gg/keep/*` is derived, repository-wide state.
   `keep::maintain` runs in `OperationRecorder::finish`, before it reads the after-values, and at the
   end of each reconcile pass that was not deferred or skipped. `finish` skips it while a native

@@ -415,6 +415,8 @@ void App::drawMenuBar()
             s->actions().fetch("", false, false);
         if (menuItem(ICON_MS_DOWNLOAD, "Fetch more...", nullptr, false, free && !s->snapshot()->remotes.empty()))
             s->showFetchMoreDialog("");
+        if (menuItem(ICON_MS_DELETE_SWEEP, "Forget...", nullptr, false, free && !s->snapshot()->remotes.empty()))
+            s->showForgetDialog("");
         std::string reason;
         if (menuItem(ICON_MS_ARROW_DOWNWARD, "Pull", nullptr, false, free && s->pullAvailable(&reason)))
             s->actions().pull(PullMode::Config);
@@ -529,6 +531,8 @@ void App::drawRepositoryButtons()
             s->actions().fetch("", false, true);
         if (menuItem(ICON_MS_DOWNLOAD, "Fetch more..."))
             s->showFetchMoreDialog("");
+        if (menuItem(ICON_MS_DELETE_SWEEP, "Forget..."))
+            s->showForgetDialog("");
         ImGui::EndPopup();
     }
     ImGui::SameLine();

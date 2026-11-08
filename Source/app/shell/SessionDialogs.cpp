@@ -421,6 +421,96 @@ void Session::showFetchMoreDialog(const std::string& remoteName)
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showForgetDialog(const std::string& remoteName)
+{
+    const auto remotes = remoteNames(m_snapshot);
+    if (remotes.empty()) {
+        m_app.notify(App::Notice::Warning, "Forget", "This repository has no remotes. Add one in the Remotes panel.");
+        return;
+    }
+    Form f;
+    f.title = "Forget";
+    Field remote{Field::Combo, "remote", "Remote"};
+    remote.options = remotes;
+    auto pick = std::find(remotes.begin(), remotes.end(), remoteName);
+    if (pick == remotes.end())
+        pick = std::find(remotes.begin(), remotes.end(), "origin");
+    if (pick == remotes.end())
+        pick = remotes.begin();
+    remote.choice = static_cast<int>(pick - remotes.begin());
+    f.add(remote);
+    f.add(Field{Field::CheckList, "branches", "Branches"});
+    f.add(Field{Field::CheckList, "tags", "Tags"});
+    // What the dialog has shown so far: the remote it asked about and whether it filled in the tags.
+    struct State {
+        int last = -1;
+        bool tagsDone = false;
+    };
+    auto state = std::make_shared<State>();
+    f.onFrame = [this, remotes, state](Form& form) {
+        Field* remoteField = nullptr;
+        Field* branches = nullptr;
+        Field* tags = nullptr;
+        for (auto& fld : form.fields) {
+            if (fld.id == "remote")
+                remoteField = &fld;
+            else if (fld.id == "branches")
+                branches = &fld;
+            else if (fld.id == "tags")
+                tags = &fld;
+        }
+        if (!remoteField || !branches || !tags || remoteField->choice < 0
+            || static_cast<size_t>(remoteField->choice) >= remotes.size())
+            return;
+        const std::string name = remotes[static_cast<size_t>(remoteField->choice)];
+        const std::string nothing = "Nothing fetched from " + name + ".";
+        if (remoteField->choice != state->last) {
+            state->last = remoteField->choice;
+            state->tagsDone = false;
+            // The branches come from the snapshot, so they are ready at once.
+            std::vector<std::string> names;
+            const std::string prefix = name + "/";
+            for (const auto& r : m_snapshot->remoteBranches) {
+                if (r.remote != name || r.name.compare(0, prefix.size(), prefix) != 0)
+                    continue;
+                std::string n = r.name.substr(prefix.size());
+                if (n != "HEAD")
+                    names.push_back(std::move(n));
+            }
+            branches->hint = names.empty() ? nothing : std::string();
+            branches->setOptions(std::move(names));
+            tags->setOptions({});
+            tags->hint = "Checking...";
+            m_remoteTags.erase(name);
+            markRemoteTagsStale();
+            requestRemoteTagsIfStale();
+        }
+        if (!state->tagsDone) {
+            const auto it = m_remoteTags.find(name);
+            if (it != m_remoteTags.end()) {
+                state->tagsDone = true;
+                std::vector<std::string> names;
+                if (it->second.ok) {
+                    for (const auto& l : m_snapshot->tags) {
+                        if (it->second.tags.count(l.name) != 0)
+                            names.push_back(l.name);
+                    }
+                }
+                tags->hint = it->second.ok ? nothing : it->second.error;
+                tags->setOptions(std::move(names));
+            }
+        }
+    };
+    f.buttons.push_back({"Forget",
+        [this, remotes](Form& form) {
+            m_actions->forgetRefs(remotes[static_cast<size_t>(form.choice("remote"))], form.checkedOptions("branches"),
+                form.checkedOptions("tags"));
+        },
+        [](const Form& form) { return !form.checkedOptions("branches").empty() || !form.checkedOptions("tags").empty(); }});
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showEditRemoteDialog(const std::string& remote)
 {
     std::string url;

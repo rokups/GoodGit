@@ -220,6 +220,8 @@ public:
     void showEditRemoteDialog(const std::string& remote);
     // Picks branches and tags of a remote that are not local yet and fetches them. remote "": origin or the first.
     void showFetchMoreDialog(const std::string& remote);
+    // Picks fetched remote-tracking branches and tags of a remote and deletes them. remote "": origin or the first.
+    void showForgetDialog(const std::string& remote);
     void showDiscardDialog(std::vector<std::string> tracked, std::vector<std::string> untracked,
         std::vector<StagedDiscard> staged = {}, std::vector<SubmoduleDiscard> submodules = {});
     void showDiscardAllDialog();

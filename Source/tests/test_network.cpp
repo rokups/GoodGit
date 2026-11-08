@@ -379,6 +379,48 @@ GG_TEST("network", "fetch more: dialog lists only what is new; Fetch takes the t
     GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "main"}));
 }
 
+GG_TEST("network", "forget: dialog lists the fetched branches and tags; Forget removes the ticked ones; Undo restores them")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path second = s.path("second.git");
+    s.git(s.root(), {"clone", "-q", "--bare", origin(s, repo).string(), second.string()});
+    s.track(second);
+    s.git(repo, {"remote", "add", "second", fileUrl(second)});
+    s.git(second, {"branch", "only-second", "main~1"});
+    s.git(second, {"tag", "t-second", "main~1"});
+    s.git(repo, {"fetch", "-q", "second", "+refs/heads/only-second:refs/remotes/second/only-second",
+        "refs/tags/t-second:refs/tags/t-second"});
+    s.git(repo, {"tag", "t-local"});
+    s.git(repo, {"branch", "--track", "track", "second/only-second"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto hasRef = [&](const std::string& ref) { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", ref}).ok(); };
+
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Forget...");
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    ctx->ItemClick("//Forget/Remote##remote");
+    ctx->ItemClick("//$FOCUSED/second");
+    const std::string branchRow = "//Forget/**/only-second##branches_only-second";
+    const std::string tagRow = "//Forget/**/t-second##tags_t-second";
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(branchRow.c_str()); }));
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(tagRow.c_str()); })); // the tags need ls-remote
+    s.settle();
+    GG_CHECK(!s.itemExists("//Forget/**/t-local##tags_t-local"));
+    GG_CHECK(!s.itemExists("//Forget/**/main##branches_main"));
+    GG_CHECK(disabled(s, "//Forget/Forget"));
+    ctx->ItemCheck(branchRow.c_str());
+    ctx->ItemCheck(tagRow.c_str());
+    s.dialogButton("Forget", "Forget");
+    GG_CHECK(s.waitUntil([&] { return !hasRef("refs/remotes/second/only-second") && !hasRef("refs/tags/t-second"); }));
+    s.settle();
+    GG_CHECK(hasRef("refs/tags/t-local"));
+    GG_CHECK_STR_EQ(gg::trim(s.gitOut(repo, {"config", "branch.track.merge"})), "refs/heads/only-second");
+
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return hasRef("refs/remotes/second/only-second") && hasRef("refs/tags/t-second"); }));
+    s.settle();
+    GG_CHECK(hasRef("refs/tags/t-local"));
+}
+
 GG_TEST("network", "fetch from an unreachable remote reports the failure")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

@@ -1486,6 +1486,18 @@ void Actions::fetchRefs(const std::string& remote, std::vector<std::string> bran
         {}, true);
 }
 
+void Actions::forgetRefs(const std::string& remote, std::vector<std::string> branches, std::vector<std::string> tags)
+{
+    if (branches.empty() && tags.empty())
+        return;
+    run("forget from " + remote, [remote, branches = std::move(branches), tags = std::move(tags)](MutationContext& ctx) {
+        for (const auto& b : branches)
+            ctx.git({"update-ref", "-d", "refs/remotes/" + remote + "/" + b});
+        for (const auto& t : tags)
+            ctx.git({"update-ref", "-d", "refs/tags/" + t}); // a ref that is already gone is no error
+    });
+}
+
 void Actions::submoduleInit(const std::string& path)
 {
     run("initialize submodule " + path,

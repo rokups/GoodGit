@@ -59,7 +59,7 @@ name, then its branch, upstream and ahead/behind directly after it, dimmed; the 
 shortened in the middle as History badges are, and the tooltip gives the path and the full names; the field is as
 wide as the longest row of all, at least 16 font sizes, so the width does not change while the user types a filter;
 the current repository is marked; the number of recent repositories has no limit; up to 12 rows are drawn in the menu itself, so Left and Right reach the menu bar as on any menu item, and more rows scroll in a child area `##recent_rows` of 12 rows, so the field stays in view and the scrollbar does not clip the widest row (Right on a row of the child also moves to the next top menu; the layout follows the number of all rows, not of the rows the filter leaves); with no match the list shows "No match"; the filter is empty at each opening; Delete forgets the hovered or focused entry other than the current repository, also inside the scroll area) · Open working directory ·
-Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · Fetch more… · Pull · Push · — ·
+Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · Fetch more… · Forget… · Pull · Push · — ·
 Settings… · Quit `Ctrl+Q`.
 
 **Commit** (M, renamed from "Change"): New commit `Ctrl+N` · New detached commit · Commit… ·
@@ -77,7 +77,7 @@ Branches, Tags, Worktrees, Remotes, Stashes, Reflog, Operations) · Previous cha
 Left to right, each button has a tooltip with its shortcut:
 New `##tb_new` · Commit `##tb_commit` (always "Commit", whatever is selected; the dialog's
 *Amend* checkbox amends HEAD) · Undo `##tb_undo` ·
-Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` (items: Fetch <remote> · Fetch and prune · Fetch tags · Fetch more…) ·
+Redo `##tb_redo` · Refresh `##tb_refresh` · **N** Fetch `##tb_fetch` + `##tb_fetch_menu` (items: Fetch <remote> · Fetch and prune · Fetch tags · Fetch more… · Forget…) ·
 Pull `##tb_pull` + `##tb_pull_menu` (badge ↓n) · Push `##tb_push` + `##tb_push_menu` (badge ↑n) ·
 **N** Stash `##tb_stash` · Pop `##tb_pop` · repository switcher `##tb_repo` (combo of open and
 recent repositories, as wide as the name it shows (12 to 28 font sizes; a longer name loses its start to an ellipsis, so its base name stays, and a tooltip on the closed combo gives the whole name; the list is the Recent menu list: rows `switch_<n>`, filter field `##tb_repo_filter`, the same detail, "No match" text and filter, which is empty at each opening; with more than 12 recent repositories (no limit; the rows of a shorter list are drawn directly in the popup) the rows scroll in a child area of 12 rows, so the field stays in view, the scrollbar does not clip the widest row, the area starts at the top at each opening (a popup that starts on the current row keeps its scroll) and Down on the last row goes to the first row; the list is as wide as its longest row and the field fills it; the current repository is shown selected; the popup starts on the current row, not on the field); Enter opens it, Down walks the entries, Enter switches, Delete forgets the focused entry other than the current one) · folder `##tb_open` (opens the working directory in the file manager) ·
@@ -887,7 +887,7 @@ the panel without touching the repository.
     shows git's lines.
   - `Repair worktree`: *Location* `##path` (the worktree's path; the new one if it was moved by
     hand) · *Repair* / *Cancel*; a notification shows git's repair lines.
-- **Remotes** `"Remotes"`: rows `remote_<name>` with URL. Context: Copy name · Fetch · Fetch and prune · Fetch more… · Pull ·
+- **Remotes** `"Remotes"`: rows `remote_<name>` with URL. Context: Copy name · Fetch · Fetch and prune · Fetch more… · Forget… · Pull ·
   Delete · N: Edit URL… · Prune on fetch (checkbox) · Fetch all. Header: Add remote…
 - **Stashes** `"Stashes"` (N): rows `stash_<n>` (index, message, base, date). Context: Apply ·
   Apply (restore index) · Pop · Pop (restore index) · Branch from stash… · Drop… · Copy (the one ID item, after a separator: on
@@ -909,7 +909,7 @@ the panel without touching the repository.
 Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dialog>` and
 `Cancel##<dialog>`:
 `Commit`, `Create branch`, `Rename branch`, `Check out branch` (buttons *Detach and check out* / *Cancel*), `Delete branch`, `Move branch`,
-`Create tag`, `Add remote`, `Edit remote URL`, `Fetch more` (combo `##remote`, check lists `##branches` and `##tags` with a filter, buttons *Fetch* / *Cancel*), `Clone repository`, `Initialize repository`,
+`Create tag`, `Add remote`, `Edit remote URL`, `Fetch more` (combo `##remote`, check lists `##branches` and `##tags` with a filter, buttons *Fetch* / *Cancel*), `Forget` (combo `##remote`, check lists `##branches` and `##tags`, buttons *Forget* / *Cancel*), `Clone repository`, `Initialize repository`,
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
 `Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
