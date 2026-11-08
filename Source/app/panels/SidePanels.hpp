@@ -37,6 +37,8 @@ private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_filter;
+    // Remote nodes opened by the filter: the open state each had before it, put back when the filter is cleared.
+    std::map<std::string, bool> m_remoteOpenBeforeFilter;
 };
 
 class TagsPanel {

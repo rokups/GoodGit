@@ -197,6 +197,10 @@ GG_MANUAL_TEST("readme", "screenshots of the imgui repository for the README")
         ctx->Yield(5);
     };
 
+    // The remote section of the Branches panel starts closed: open it for the shots.
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+
     // 1. Main view, dark.
     showMain();
     shot(s, "readme-main");

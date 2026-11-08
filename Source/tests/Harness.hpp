@@ -291,6 +291,8 @@ public:
     bool dismissError(float seconds = 20.0f);
     // Brings a docked panel's tab to the front (e.g. "Tags" behind "Branches").
     void showPanel(const char* name);
+    // Opens the node of a remote in the Branches panel (the remote section starts closed). Waits for the node.
+    bool openRemote(const std::string& remote = "origin");
     // Visible text of an item's label (before "##"), from the test engine (max 31 bytes).
     std::string itemText(const char* ref);
     ggui::Session* session();

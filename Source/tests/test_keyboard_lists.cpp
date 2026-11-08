@@ -130,6 +130,7 @@ GG_TEST("keyboard", "branches: tree rows, Alt+Space menus, groups open and close
     GG_CHECK(navTo(ctx, branchRef("main")));
     // The remote node and a remote-tracking branch under it.
     const std::string remote = "//Branches/remote_group_origin/origin";
+    GG_REQUIRE(s.openRemote());
     GG_REQUIRE(navTo(ctx, remote));
     altSpaceMenu(s, "Show all branches in History");
     press(ctx, ImGuiKey_LeftArrow);

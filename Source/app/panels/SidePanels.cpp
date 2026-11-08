@@ -822,10 +822,19 @@ void BranchesPanel::draw(bool* open)
         collectRefs(remoteTree, remoteEyes, listed);
         groupEye(history, listed);
         ImGui::SameLine();
+        // A filter opens the node that has matches. The state of the user comes back when the filter is cleared.
+        const auto before = m_remoteOpenBeforeFilter.find(remote);
+        if (filtering && before == m_remoteOpenBeforeFilter.end()) {
+            m_remoteOpenBeforeFilter[remote] = ImGui::GetStateStorage()->GetInt(ImGui::GetID(remote.c_str()), 0) != 0;
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        } else if (!filtering && before != m_remoteOpenBeforeFilter.end()) {
+            ImGui::SetNextItemOpen(before->second, ImGuiCond_Always);
+            m_remoteOpenBeforeFilter.erase(before);
+        }
         bool nodeOpen;
         {
             const SectionHeaderColors neutral;
-            nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
         }
         // The remote has the Remotes panel's menu, plus History visibility of its branches.
         if (info && beginContextMenu("##remote_menu")) {
@@ -869,6 +878,9 @@ void BranchesPanel::draw(bool* open)
         }
         ImGui::PopID();
     }
+    // A remote that left the list while the filter was active has no state to put back.
+    if (!filtering)
+        m_remoteOpenBeforeFilter.clear();
     endList();
     ImGui::End();
 }

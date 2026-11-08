@@ -436,6 +436,7 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     s.git(repo, {"branch", "-D", "topic"}); // the branch is now only on the remote
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     const std::string node = "//Branches/remote_group_origin/origin";
     const std::string rrow = "//Branches/remote_group_origin/origin/rbranch_origin:topic/###rbranch_origin:topic";
     const std::string lrow = branchRow("main");
@@ -578,6 +579,7 @@ GG_TEST("refs", "branches: Check out on a remote-tracking branch opens Create br
     s.git(repo, {"branch", "-D", "topic"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     const std::string rrow = "//Branches/remote_group_origin/origin/rbranch_origin:topic/###rbranch_origin:topic";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rrow.c_str()); }));
     const std::string before = symbolicHead(s, repo);
@@ -617,6 +619,7 @@ GG_TEST("refs", "branches: <remote>/HEAD is not listed; the snapshot keeps it ap
     GG_REQUIRE(refExists(s, repo, "refs/remotes/origin/HEAD"));
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     GG_CHECK(s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main"));
     GG_CHECK(!s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:HEAD/###rbranch_origin:HEAD"));
     GG_CHECK(!s.itemExists("//Branches/remote_group_origin/origin/rhead_origin:HEAD/###rhead_origin:HEAD"));
@@ -636,6 +639,7 @@ GG_TEST("refs", "branches: <remote>/HEAD is not listed; the snapshot keeps it ap
     s.git(repo, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     GG_REQUIRE(s.session()->snapshot()->remoteHeads.size() == 1);
     GG_CHECK(s.session()->snapshot()->remoteHeads[0].dangling);
     GG_CHECK(!s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:HEAD/###rbranch_origin:HEAD"));

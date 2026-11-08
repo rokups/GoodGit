@@ -55,6 +55,46 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
     GG_CHECK(s.itemExists((remoteGroup + "/origin").c_str()));
 }
 
+GG_TEST("panels", "branches: the remote section starts closed and a click on the remote node shows its rows")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    // The app outlives the tests and the window keeps the open state of its tree nodes: forget it.
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (w->RootWindow && std::string(w->RootWindow->Name) == "Branches")
+            w->StateStorage.Clear();
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string node = "//Branches/remote_group_origin/origin";
+    const std::string rrow = node + "/rbranch_origin:main/###rbranch_origin:main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(node.c_str()); }));
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(rrow.c_str()));
+    ctx->ItemClick(node.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(rrow.c_str()); }));
+    ctx->ItemClick(node.c_str());
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(rrow.c_str()); }));
+}
+
+GG_TEST("panels", "branches: a filter opens a closed remote node and clearing it closes the node again")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (w->RootWindow && std::string(w->RootWindow->Name) == "Branches")
+            w->StateStorage.Clear();
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string node = "//Branches/remote_group_origin/origin";
+    const std::string rrow = node + "/rbranch_origin:main/###rbranch_origin:main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(node.c_str()); }));
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(rrow.c_str()));
+    ctx->ItemInputValue("//Branches/##branch_filter", "main");
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(rrow.c_str()); }));
+    ctx->ItemInputValue("//Branches/##branch_filter", "");
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(rrow.c_str()); }));
+    GG_CHECK(s.itemExists(node.c_str()));
+}
+
 GG_TEST("panels", "branches: a cut row keeps its name and counters in the text colour and dims what stays of the upstream")
 {
     // About 200 characters each: too long for the panel at any width.
@@ -1499,6 +1539,7 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
 
     // A remote-tracking branch: its menu, and its visibility in History.
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     const std::string rbranch = "//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rbranch.c_str()); }));
     s.contextMenu(rbranch.c_str(), "Copy name");
@@ -1710,6 +1751,7 @@ GG_TEST("panels", "branches: a remote-tracking row's hover Check out opens Creat
     s.git(repo, {"branch", "-D", "side"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     const std::string row = "//Branches/remote_group_origin/origin/rbranch_origin:side/###rbranch_origin:side";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     const std::string checkout = "//Branches/remote_group_origin/origin/rbranch_origin:side/###act_checkout";
@@ -1757,6 +1799,7 @@ GG_TEST("panels", "branches: Create branch... in a remote-tracking branch's menu
     s.git(repo, {"branch", "-D", "side"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     const std::string row = "//Branches/remote_group_origin/origin/rbranch_origin:side/###rbranch_origin:side";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     s.contextMenu(row.c_str(), "Create branch...");
@@ -1876,6 +1919,7 @@ GG_TEST("panels", "branches: a remote node's eye hides and shows all its remote-
     ctx->ItemClick(nodeEye.c_str());
     GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
     // A folder group under the remote has its own eye.
+    GG_REQUIRE(s.openRemote());
     const std::string folderEye = "//Branches/remote_group_origin/origin/group_remote:origin:feature:/###eye";
     GG_REQUIRE(s.itemExists(folderEye.c_str()));
     ctx->ItemClick(folderEye.c_str());

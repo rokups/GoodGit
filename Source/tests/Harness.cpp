@@ -715,6 +715,16 @@ void Scenario::showPanel(const char* name)
     ctx->Yield(2);
 }
 
+bool Scenario::openRemote(const std::string& remote)
+{
+    const std::string node = "//Branches/remote_group_" + remote + "/" + remote;
+    if (!waitUntil([&] { return itemExists(node.c_str()); }))
+        return false;
+    ctx->ItemOpen(node.c_str());
+    ctx->Yield(2);
+    return true;
+}
+
 std::string Scenario::child(const char* parent, const char* childName)
 {
     ImGuiTestItemInfo info = ctx->WindowInfo((std::string(parent) + "/" + childName).c_str(), ImGuiTestOpFlags_NoError);

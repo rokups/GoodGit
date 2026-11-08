@@ -742,7 +742,9 @@ the panel without touching the repository.
   Branches are grouped by folder and
   remote-tracking ones by remote; a group row's eye (`###eye` in the group's scope) shows/hides the branches
   listed under it (all visible: hide, else show; mixed drawn dimmed; Ctrl-click = only these; mouse only). Ctrl-click
-  (on a row's or a group's eye) hides every other branch, tag and kept commit too. Context:
+  (on a row's or a group's eye) hides every other branch, tag and kept commit too. The remote section starts collapsed:
+  each remote node is closed until the user opens it. While the filter text is not empty, a remote node with matching
+  rows is open; the user can close it. When the filter is cleared, the node returns to the state it had before. Context:
   Reveal · Copy name · Check out · Create branch… (the `Create branch` dialog with this branch as the start point; a
   remote-tracking branch has it too, next to Create local branch…) · Merge into HEAD · Rebase HEAD onto branch · Push · Push to… ·
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all

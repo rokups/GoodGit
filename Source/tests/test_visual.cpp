@@ -234,6 +234,9 @@ GG_TEST("visual", "readable colours: text keeps its contrast in the dark and the
         // What the side panels draw: every letter readable on the panel.
         for (const char* panel : {"Branches", "Tags"}) {
             s.showPanel(panel);
+            if (std::string(panel) == "Branches") {
+                GG_REQUIRE(s.openRemote());
+            }
             ctx->Yield(2);
             ImGuiWindow* w = ctx->GetWindowByRef((std::string("//") + panel).c_str());
             GG_REQUIRE(w != nullptr);
