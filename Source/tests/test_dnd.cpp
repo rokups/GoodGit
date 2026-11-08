@@ -382,6 +382,9 @@ GG_TEST("dnd", "the drag tooltip of a branch badge states the action of a drop")
     s.ctx->MouseMoveToPos(row.GetCenter());
     s.ctx->Yield(3);
     GG_CHECK_STR_EQ(history.dropHint(), "Choose an action for side on " + id + "\nShift: move the branch");
+    // The tooltip is the one of a commit drag (the ID of the branch commit) with the pill of the branch.
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", r.c[1].substr(0, 7)));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "side"));
     s.ctx->KeyDown(ImGuiMod_Shift);
     s.ctx->Yield(3);
     GG_CHECK_STR_EQ(history.dropHint(), "Move side to " + id);
@@ -836,10 +839,10 @@ GG_TEST("dnd", "the drag tooltip of a commit shows the pill of the branch an Alt
     GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "c3"));
     GG_CHECK(!s.textShown("//##Tooltip_DragDrop_00", "main"));
     release();
-    // The branch badge: the pill alone.
+    // The branch badge: the pill of the branch, then the text of its commit.
     dragging(badgeRef(r.c[1], "side"), ImVec2(0, 60));
     GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "side"));
-    GG_CHECK(!s.textShown("//##Tooltip_DragDrop_00", "c2"));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "c2"));
     release();
 }
 

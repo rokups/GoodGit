@@ -577,33 +577,33 @@ HistoryPanel::DropPlan HistoryPanel::planDrop(bool free, const core::Oid& source
 void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
 {
     // Source: the commit, or a branch when the drag starts on its badge.
-    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+    if (beginOpaqueDragSource()) {
         const ImVec2 start = ImGui::GetIO().MouseClickedPos[0];
         std::string branch;
         for (const auto& badge : m_rowBadges)
             if (badge.kind == core::RefKind::LocalBranch && badge.rect.Contains(start))
                 branch = badge.name;
-        if (!branch.empty()) {
-            ImGui::SetDragDropPayload("GG_BRANCH", branch.data(), branch.size());
-            drawBranchPill(branch); // the drop moves it, merges or rebases: a menu asks
-            // What a drop does now (set by the target of the last frame).
-            if (!m_dropHint.empty())
-                ImGui::TextDisabled("%s", m_dropHint.c_str());
-        } else {
+        if (!branch.empty())
+            ImGui::SetDragDropPayload("GG_BRANCH", branch.data(), branch.size()); // a drop moves, merges or rebases: a menu asks
+        else {
             const std::string hex = row.id.hex();
             ImGui::SetDragDropPayload("GG_COMMIT", hex.data(), hex.size());
-            // The branch that an Alt drop rebases (the same rule as the commit menu): its pill leads the text.
-            m_session.requestDescendants(row.id);
-            const std::string moved = rebaseSource(m_session, row).branch;
-            if (!moved.empty()) {
-                drawBranchPill(moved);
-                ImGui::SameLine();
-            }
-            ImGui::Text("%s %s", row.shortId.c_str(), fitText(std::string(firstLine(row.subject)), ImGui::GetFontSize() * 30).c_str());
-            // What a drop does now (set by the target of the last frame); one or two lines.
-            if (!m_dropHint.empty())
-                ImGui::TextDisabled("%s", m_dropHint.c_str());
         }
+        // The same preview for both drags. A branch drag shows the pill of the dragged branch. A commit drag shows
+        // the branch that an Alt drop rebases (the same rule as the commit menu).
+        std::string pill = branch;
+        if (pill.empty()) {
+            m_session.requestDescendants(row.id);
+            pill = rebaseSource(m_session, row).branch;
+        }
+        if (!pill.empty()) {
+            drawBranchPill(pill);
+            ImGui::SameLine();
+        }
+        ImGui::Text("%s %s", row.shortId.c_str(), fitText(std::string(firstLine(row.subject)), ImGui::GetFontSize() * 30).c_str());
+        // What a drop does now (set by the target of the last frame); one or two lines.
+        if (!m_dropHint.empty())
+            ImGui::TextDisabled("%s", m_dropHint.c_str());
         ImGui::EndDragDropSource();
     }
     // Only a drag has a target. The checks below need no work outside a drag.

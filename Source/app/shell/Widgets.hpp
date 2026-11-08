@@ -101,6 +101,9 @@ bool acceptCommitDrop(std::string& text);
 // The first line of `text` (up to the first '\n' or '\r', trailing whitespace trimmed): what a commit
 // subject, stash or tag message shows wherever it takes one line.
 std::string_view firstLine(std::string_view text);
+// ImGui::BeginDragDropSource() with an opaque preview tooltip. ImGui draws this tooltip with 60% of the
+// alpha of the popup colour. The popup colour gets an alpha that the window code saturates to 1.
+bool beginOpaqueDragSource(ImGuiDragDropFlags flags = ImGuiDragDropFlags_None);
 // `text` cut to `width` pixels with an ellipsis (as it is when it already fits).
 std::string fitText(const std::string& text, float width);
 // `text` cut at its start to `width` pixels, with an ellipsis in front, so that its end stays (as it is when it

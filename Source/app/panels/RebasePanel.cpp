@@ -1506,7 +1506,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, rowHovered ? p.selectionHovered : p.selection);
     else if (rowHovered)
         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, ImGui::GetColorU32(ImGuiCol_HeaderHovered));
-    if (ImGui::BeginDragDropSource()) {
+    if (beginOpaqueDragSource()) {
         const std::string payload = std::to_string(row);
         ImGui::SetDragDropPayload("GG_TODO_ROW", payload.data(), payload.size());
         ImGui::Text("%s %s", actionLabel(item).c_str(),

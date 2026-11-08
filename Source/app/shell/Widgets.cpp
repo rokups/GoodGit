@@ -501,6 +501,18 @@ std::string_view firstLine(std::string_view text)
     return text;
 }
 
+bool beginOpaqueDragSource(ImGuiDragDropFlags flags)
+{
+    // BeginTooltipEx multiplies the alpha of ImGuiCol_PopupBg by 0.6 and the window background saturates it.
+    // The colour is only needed while BeginDragDropSource opens the tooltip window.
+    ImVec4 popup = ImGui::GetStyleColorVec4(ImGuiCol_PopupBg);
+    popup.w = 2.0f;
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, popup);
+    const bool active = ImGui::BeginDragDropSource(flags);
+    ImGui::PopStyleColor();
+    return active;
+}
+
 std::string fitText(const std::string& text, float width)
 {
     if (ImGui::CalcTextSize(text.c_str()).x <= width)

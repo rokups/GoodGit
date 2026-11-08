@@ -1084,7 +1084,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
     const bool fromCommit = row.group == FileGroup::Commit && m_selection.kind == SelKind::Commit && !m_pair;
     const bool draggable = row.group == FileGroup::Staged || row.group == FileGroup::Unstaged
         || row.group == FileGroup::Untracked || fromCommit;
-    if (draggable && ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+    if (draggable && beginOpaqueDragSource()) {
         std::string payload = fromCommit ? "@" + m_selection.id.hex() : std::string(groupName(row.group));
         for (const FileRow* r : actionRows(row))
             if (r->group == row.group)

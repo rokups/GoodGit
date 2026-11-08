@@ -1225,7 +1225,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         }
         ImGui::PopStyleColor();
         // Drag the repository onto a group: the payload is its path, the preview its label.
-        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+        if (beginOpaqueDragSource()) {
             m_dragLabel = node.label;
             ImGui::SetDragDropPayload("GG_REPO", node.path.data(), node.path.size());
             ImGui::TextUnformatted(node.label.c_str());
