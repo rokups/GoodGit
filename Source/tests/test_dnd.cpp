@@ -367,6 +367,43 @@ GG_TEST("dnd", "a branch badge onto a commit with Shift moves the branch; onto i
     GG_CHECK(!menuOpen(s));
 }
 
+GG_TEST("dnd", "the drag tooltip of a branch badge states the action of a drop")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    const std::string id = r.c[3].substr(0, 7);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(r.c[1], "side").c_str()) && s.itemExists(rowRef(r.c[3]).c_str()); }));
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(badgeRef(r.c[1], "side").c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    // A row without the branch, right of the badges: no modifier names the menu, Shift names the move.
+    const ImRect row = s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull;
+    s.ctx->MouseMoveToPos(row.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Choose an action for side on " + id + "\nShift: move the branch");
+    s.ctx->KeyDown(ImGuiMod_Shift);
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move side to " + id);
+    s.ctx->KeyUp(ImGuiMod_Shift);
+    // The row of the branch itself: nothing to do, no hint.
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(history.dropHint().empty());
+    // Escape cancels the drag: no menu, the branch stays and the hint clears.
+    s.ctx->MouseMoveToPos(row.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(!history.dropHint().empty());
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    s.settle();
+    GG_CHECK(!menuOpen(s));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.c[1]);
+    GG_CHECK(history.dropHint().empty());
+}
+
 GG_TEST("dnd", "a branch badge onto a branch badge: Merge into the current branch, Rebase of the current branch")
 {
     const Chain r = makeChain(s);

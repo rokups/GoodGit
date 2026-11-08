@@ -586,6 +586,9 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
         if (!branch.empty()) {
             ImGui::SetDragDropPayload("GG_BRANCH", branch.data(), branch.size());
             drawBranchPill(branch); // the drop moves it, merges or rebases: a menu asks
+            // What a drop does now (set by the target of the last frame).
+            if (!m_dropHint.empty())
+                ImGui::TextDisabled("%s", m_dropHint.c_str());
         } else {
             const std::string hex = row.id.hex();
             ImGui::SetDragDropPayload("GG_COMMIT", hex.data(), hex.size());
@@ -673,12 +676,29 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
             }
         }
     }
-    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_BRANCH"); p && free) {
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_BRANCH", peek)) {
         const std::string branch(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
         const auto* info = m_snapshot->findBranch(branch);
         // On its own commit there is nothing to do. Shift moves the branch; otherwise the menu asks.
-        if (info && info->target != row.id) {
-            if (ImGui::GetIO().KeyShift) {
+        const bool act = free && info && info->target != row.id;
+        const bool shift = ImGui::GetIO().KeyShift;
+        if (!free)
+            m_dropHintNext = "Wait: another task runs";
+        else if (!act)
+            m_dropHintNext.clear();
+        else if (shift)
+            m_dropHintNext = "Move " + branch + " to " + row.shortId;
+        else
+            m_dropHintNext = "Choose an action for " + branch + " on " + row.shortId + "\nShift: move the branch";
+        if (act) {
+            const ImU32 blue = IM_COL32(100, 175, 255, 255);
+            ImDrawList* dl = ImGui::GetForegroundDrawList();
+            dl->PushClipRect(visible.Min, visible.Max, false); // the frame stays in the visible part of the table
+            dl->AddRect(rowRect.Min, rowRect.Max, blue, 0.0f, 0, 2.0f);
+            dl->PopClipRect();
+        }
+        if (act && p->IsDelivery()) {
+            if (shift) {
                 moveBranchHere(*info, row.id.hex());
             } else {
                 // The target: the local branch of the badge under the mouse, else the only local branch of the row.
