@@ -1479,12 +1479,15 @@ GG_TEST("history", "a branch and its remotes on one commit share one pill")
     GG_CHECK(!badgeShown(s, tip, "origin/main"));
     GG_CHECK(!badgeShown(s, tip, "upstream/main"));
     GG_CHECK(endsWith(badgeText(s, tip, "main"), "main@origin@upstream"));
-    // Without the local branch the pill stays and the tracked remote branch is its target.
-    ctx->ItemClick("//Branches/branch_main/###eye");
-    GG_CHECK(s.waitUntil([&] { return badgeShown(s, tip, "origin/main"); }));
-    GG_CHECK(!badgeShown(s, tip, "main"));
+    // Without the local branch the pill stays and the tracked remote branch is its target. The eye of the row
+    // would hide the remote-tracking refs too, so only the local ref is hidden.
+    s.session()->history().toggleRef("refs/heads/main", false);
+    // The test engine still reports a removed item for a frame or two: wait for the whole new state.
+    GG_CHECK(s.waitUntil([&] {
+        return badgeShown(s, tip, "origin/main") && !badgeShown(s, tip, "main") &&
+            endsWith(badgeText(s, tip, "origin/main"), "main@origin@upstream");
+    }));
     GG_CHECK(!badgeShown(s, tip, "upstream/main"));
-    GG_CHECK(endsWith(badgeText(s, tip, "origin/main"), "main@origin@upstream"));
 }
 
 GG_TEST("history", "a remote-only pill acts as the tracked remote branch")

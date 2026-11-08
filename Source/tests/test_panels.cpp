@@ -1803,6 +1803,60 @@ GG_TEST("panels", "branches: a folder group's eye hides and shows all its branch
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/remotes/origin/main"));
 }
 
+GG_TEST("panels", "branches: the eye of a local branch also hides and shows its remote-tracking refs")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "side", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "side"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    const std::string eye = "//Branches/branch_main/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(eye.c_str()); }));
+    const std::string remoteMain = "refs/remotes/origin/main", remoteSide = "refs/remotes/origin/side";
+    GG_REQUIRE(history.refVisible("refs/heads/main") && history.refVisible(remoteMain));
+    ctx->ItemClick(eye.c_str());
+    GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible(remoteMain));
+    GG_CHECK(history.refVisible(remoteSide));
+    ctx->ItemClick(eye.c_str());
+    GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible(remoteMain));
+    // The remote ref of another branch stays visible.
+    GG_CHECK(history.refVisible(remoteSide));
+    // Ctrl-click: only the branch and its remote-tracking refs.
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(eye.c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible(remoteMain));
+    GG_CHECK(!history.refVisible("refs/heads/side") && !history.refVisible(remoteSide));
+}
+
+GG_TEST("panels", "branches: a folder group's eye and Hide all / Show all cover the remote-tracking refs of the branches")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "feature/one"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    const std::string groupEye = "//Branches/group_local:feature:/###eye";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()); }));
+    const std::string oneRemote = "refs/remotes/origin/feature/one";
+    GG_REQUIRE(history.refVisible(oneRemote));
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible("refs/heads/feature/two"));
+    GG_CHECK(!history.refVisible(oneRemote));
+    GG_CHECK(history.refVisible("refs/remotes/origin/main"));
+    ctx->ItemClick(groupEye.c_str());
+    GG_CHECK(history.refVisible("refs/heads/feature/one") && history.refVisible(oneRemote));
+    ctx->ItemClick("//Branches/###hide_all_branches");
+    GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/remotes/origin/main"));
+    GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible(oneRemote));
+    ctx->ItemClick("//Branches/###show_all_branches");
+    GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible("refs/remotes/origin/main"));
+    GG_CHECK(history.refVisible("refs/heads/feature/one") && history.refVisible(oneRemote));
+}
+
 GG_TEST("panels", "branches: a remote node's eye hides and shows all its remote-tracking branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
