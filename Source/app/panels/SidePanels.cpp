@@ -769,6 +769,11 @@ void BranchesPanel::draw(bool* open)
         // Two or more remote refs: an expandable node, and the refs are its child rows (no "@" suffix).
         const bool expandable = branchRemoteRefs.refs.size() >= 2;
         std::string link, tail, remote;
+        // One remote ref and no upstream: the suffix names the ref. The counters need an upstream.
+        if (b.upstream.empty() && branchRemoteRefs.refs.size() == 1) {
+            remote = branchRemoteRefs.refs.front()->name;
+            link = "@";
+        }
         if (!b.upstream.empty()) {
             if (!expandable) {
                 remote = trackedName(b.name, b.upstream);
@@ -799,6 +804,8 @@ void BranchesPanel::draw(bool* open)
         if ((shortName != b.name || events.elided) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             if (events.elided && !b.upstream.empty())
                 tooltip("%s\n%s %s", b.name.c_str(), ICON_MS_ARROW_RIGHT_ALT, b.upstream.c_str());
+            else if (events.elided && !remote.empty())
+                tooltip("%s\n%s %s", b.name.c_str(), ICON_MS_ARROW_RIGHT_ALT, remote.c_str());
             else
                 tooltip("%s", b.name.c_str());
         }

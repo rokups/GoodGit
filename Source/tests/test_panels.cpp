@@ -119,6 +119,25 @@ GG_TEST("panels", "branches: a branch with two remote refs is a closed node with
     GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 5));
 }
 
+GG_TEST("panels", "branches: one remote ref without an upstream gives the dimmed suffix")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    // "solo" has a same-name remote ref and no upstream. "lonely" has neither.
+    s.git(repo, {"branch", "solo", "HEAD"});
+    s.git(repo, {"update-ref", "refs/remotes/origin/solo", "HEAD"});
+    s.git(repo, {"branch", "lonely", "HEAD"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto* solo = s.session()->snapshot()->findBranch("solo");
+    GG_REQUIRE(solo != nullptr);
+    GG_CHECK(solo->upstream.empty());
+    GG_CHECK(s.itemText("//Branches/branch_solo/###branch_solo").find("solo@origin/solo") != std::string::npos);
+    GG_CHECK(s.idShownDimmed("//Branches", "solo@origin/solo", 4));
+    GG_CHECK(!s.itemExists("//Branches/branch_solo/###expand"));
+    const std::string lonely = s.itemText("//Branches/branch_lonely/###branch_lonely");
+    GG_CHECK(lonely.find('@') == std::string::npos);
+}
+
 GG_TEST("panels", "branches: the remote section starts closed and a click on the remote node shows its rows")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

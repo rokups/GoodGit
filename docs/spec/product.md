@@ -451,7 +451,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   remotes). **N** Set/unset upstream, Fast-forward to upstream, Pull (for the current
   branch).
   **N** The remote refs of a local branch are its same-name refs in every remote, plus its
-  upstream ref. A branch with one remote ref and an upstream shows a dimmed `@<remote>` suffix, and
+  upstream ref. A branch with one remote ref shows a dimmed `@<remote>` suffix: it names the upstream, or else the ref, and
   its menu has a "Remote <name>" submenu: the menu of the remote ref plus "Set as upstream". A
   branch with two or more remote refs is a node: it has no suffix, and its child rows
   (`<remote>  <short ID>`, with "(upstream)", or the full name for a ref of another name) have the
