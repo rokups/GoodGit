@@ -196,6 +196,79 @@ GG_TEST("dnd", "commit dropped between rows reorders with no modifier")
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c2", "c4", "c1"}));
 }
 
+GG_TEST("dnd", "the drag tooltip states the action of a drop")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    const auto id = [&](int i) { return r.c[static_cast<size_t>(i)].substr(0, 7); };
+    const std::string tip = s.revParse(r.path, "main");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()) && s.itemExists(rowRef(r.c[0]).c_str()); }));
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    // The gap between c2 and c1.
+    const ImRect c2 = s.ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull;
+    s.ctx->MouseMoveToPos(ImVec2(c2.GetCenter().x, c2.Max.y - 2));
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move between " + id(1) + " and " + id(0));
+    // The middle of c2: no modifier lists the choices, Ctrl squashes.
+    s.ctx->MouseMoveToPos(c2.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(history.dropHint().rfind("Choose an action for " + id(1), 0) == 0);
+    GG_CHECK(history.dropHint().find("Ctrl: squash") != std::string::npos);
+    s.ctx->KeyDown(ImGuiMod_Ctrl);
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Squash into " + id(1));
+    s.ctx->KeyUp(ImGuiMod_Ctrl);
+    // Shift on the middle: Move after.
+    s.ctx->KeyDown(ImGuiMod_Shift);
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move after " + id(1));
+    s.ctx->KeyDown(ImGuiMod_Ctrl);
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move before " + id(1));
+    s.ctx->KeyUp(ImGuiMod_Ctrl);
+    s.ctx->KeyUp(ImGuiMod_Shift);
+    // The bottom of the last row: the oldest position.
+    const ImRect c1 = s.ctx->ItemInfo(rowRef(r.c[0]).c_str()).RectFull;
+    s.ctx->MouseMoveToPos(ImVec2(c1.GetCenter().x, c1.Max.y - 2));
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move below " + id(0));
+    // The gap next to the dragged row (the top of c3) does nothing: no hint.
+    const ImRect c3 = s.ctx->ItemInfo(rowRef(r.c[2]).c_str()).RectFull;
+    s.ctx->MouseMoveToPos(ImVec2(c3.GetCenter().x, c3.Min.y + 2));
+    s.ctx->Yield(3);
+    GG_CHECK(history.dropHint().empty());
+    // Escape cancels the drag: nothing changes and the hint clears.
+    s.ctx->MouseMoveToPos(c2.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(!history.dropHint().empty());
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
+    GG_CHECK(history.dropHint().empty());
+    GG_CHECK(!s.itemExists("//$FOCUSED/Copy after"));
+    // The top of the first row is the new tip (c3 is dragged: c4 is not next to it).
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[2]).c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    const ImRect c4 = s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull;
+    s.ctx->MouseMoveToPos(ImVec2(c4.GetCenter().x, c4.Min.y + 2));
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move above " + id(3) + " (new tip)");
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
+    GG_CHECK(history.dropHint().empty());
+}
+
 namespace {
 
 std::string badgeRef(const std::string& commit, const std::string& branch) { return "//History/**/" + commit + "/###badge_" + branch; }

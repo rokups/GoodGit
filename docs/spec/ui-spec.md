@@ -339,6 +339,17 @@ stays as it is (it is only limited to 50–300 % on load).
   The top of the first row is the new tip. The bottom of the last row is the oldest position. Modifiers do not
   change a gap drop. A non-linear case is refused with a notification. While an action runs, there is no line
   and a drop does nothing.
+- **Drag tooltip hint.** The drag tooltip adds a line with the action of a drop now. The line uses the short
+  ID of each row, for example "a1b2c3d". The hint follows the mouse by one frame.
+  - On a gap it says "Move between a1b2c3d and e4f5a6b". On the top of the first row it says
+    "Move above a1b2c3d (new tip)". On the bottom of the last row it says "Move below a1b2c3d".
+  - On the middle of a row the modifier picks the text: "Move before a1b2c3d" (Ctrl+Shift),
+    "Move after a1b2c3d" (Shift), "Squash into a1b2c3d" (Ctrl) and "Rebase onto a1b2c3d" (Alt).
+  - Alt at a drop that opens the chooser says "Choose an action for a1b2c3d".
+  - On the middle of a row with no modifier it says "Choose an action for a1b2c3d". A second line lists
+    the modifiers.
+  - While a task runs it says "Wait: another task runs".
+  - A gap next to the dragged row adds no line. A drag of a branch or of files adds no line.
 - **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,
   Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (the
   source is the rebase source of the dragged commit, see §4: the commits from its first

@@ -89,6 +89,8 @@ public:
     };
     std::optional<CommitPair> selectedPair() const;
     const std::vector<core::HistoryRow>& rows() const { return m_rows; }
+    // The action line of the drag tooltip (empty with no drag or no action).
+    const std::string& dropHint() const { return m_dropHint; }
     // Ids of the rows currently shown (after the filter), in order.
     std::vector<core::Oid> visibleIds() const;
     bool searchActive() const { return !m_appliedFilter.empty(); }
@@ -176,6 +178,8 @@ private:
     std::vector<int> m_visible; // indexes into m_rows (filtered)
     bool m_visibleDirty = true;
     bool m_lastConflictedOnly = false; // conflictedOnly() when m_visible was last built
+    // What a drop does now, for the drag tooltip: the target sets Next in a frame, the tooltip shows the value of the frame before.
+    std::string m_dropHint, m_dropHintNext;
     std::vector<std::pair<int, float>> m_rowTops; // (display index, top y) drawn this frame
     // Where the badges of a row were (last frame): a drag of a branch badge and a right click on a badge find
     // theirs here.
@@ -203,6 +207,15 @@ private:
     bool m_openCheckoutChooser = false;
     std::optional<core::Oid> m_firstClickRow; // the row that got the last first click (a double click needs it)
     void dragAndDrop(const core::HistoryRow& row, int index);
+    // What a drop of the commit `source` on the zone of `row` does. The line, the tooltip hint and the drop use it.
+    enum class DropZone { Top, Middle, Bottom };
+    enum class DropAct { None, Busy, ReorderAbove, ReorderBelow, MoveBefore, MoveAfter, Squash, Rebase, Chooser };
+    struct DropPlan {
+        DropAct act = DropAct::None;
+        RebaseSource rebase; // the tip to rebase (act Rebase)
+        std::string hint;    // the line of the drag tooltip
+    };
+    DropPlan planDrop(bool free, const core::Oid& source, const core::HistoryRow& row, int index, DropZone zone) const;
     void drawDropChooser();
     // A branch dropped on a row (without Shift) waits for the menu: the branch, the row, and the local branch
     // the drop was on ("" = the target is the commit).

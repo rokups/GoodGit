@@ -522,6 +522,58 @@ RebaseSource HistoryPanel::sourceRebase(const core::Oid& id) const
     return from ? rebaseSource(m_session, *from) : RebaseSource{{}, {}, "The commit is gone.", {}};
 }
 
+// The one decision for a drop of the commit `source` on `zone` of `row` (display index `index`): the gaps
+// reorder, the middle follows the modifiers. A gap next to the dragged row is where the commit already is.
+// The rebase source can scan the loaded rows. This scan runs only while Alt is held (the tooltip pill uses it too).
+HistoryPanel::DropPlan HistoryPanel::planDrop(bool free, const core::Oid& source, const core::HistoryRow& row, int index, DropZone zone) const
+{
+    DropPlan plan;
+    if (!free) {
+        plan.act = DropAct::Busy;
+        plan.hint = "Wait: another task runs";
+        return plan;
+    }
+    const auto at = [&](int i) -> const core::HistoryRow* {
+        return i >= 0 && i < static_cast<int>(m_visible.size()) ? &m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(i)])] : nullptr;
+    };
+    const core::HistoryRow* above = at(index - 1);
+    const core::HistoryRow* below = at(index + 1);
+    if (source == row.id || (zone == DropZone::Top && above && above->id == source)
+        || (zone == DropZone::Bottom && below && below->id == source))
+        return plan; // act None, no hint
+    const ImGuiIO& io = ImGui::GetIO();
+    if (zone == DropZone::Top) {
+        plan.act = DropAct::ReorderAbove;
+        plan.hint = above ? "Move between " + above->shortId + " and " + row.shortId : "Move above " + row.shortId + " (new tip)";
+    } else if (zone == DropZone::Bottom) {
+        plan.act = DropAct::ReorderBelow;
+        plan.hint = below ? "Move between " + row.shortId + " and " + below->shortId : "Move below " + row.shortId;
+    } else if (io.KeyCtrl && io.KeyShift) {
+        plan.act = DropAct::MoveBefore;
+        plan.hint = "Move before " + row.shortId;
+    } else if (io.KeyShift) {
+        plan.act = DropAct::MoveAfter;
+        plan.hint = "Move after " + row.shortId;
+    } else if (io.KeyCtrl) {
+        plan.act = DropAct::Squash;
+        plan.hint = "Squash into " + row.shortId;
+    } else {
+        if (io.KeyAlt) {
+            plan.rebase = sourceRebase(source);
+            if (plan.rebase.why.empty() && plan.rebase.choices.empty()) {
+                plan.act = DropAct::Rebase;
+                plan.hint = "Rebase onto " + row.shortId;
+                return plan;
+            }
+        }
+        plan.act = DropAct::Chooser;
+        plan.hint = "Choose an action for " + row.shortId;
+        if (!io.KeyAlt)
+            plan.hint += "\nCtrl: squash | Alt: rebase | Shift: move after | Ctrl+Shift: move before";
+    }
+    return plan;
+}
+
 void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
 {
     // Source: the commit, or a branch when the drag starts on its badge.
@@ -545,12 +597,18 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
                 ImGui::SameLine();
             }
             ImGui::Text("%s %s", row.shortId.c_str(), fitText(std::string(firstLine(row.subject)), ImGui::GetFontSize() * 30).c_str());
+            // What a drop does now (set by the target of the last frame); one or two lines.
+            if (!m_dropHint.empty())
+                ImGui::TextDisabled("%s", m_dropHint.c_str());
         }
         ImGui::EndDragDropSource();
     }
     // Only a drag has a target. The checks below need no work outside a drag.
-    if (!ImGui::GetDragDropPayload())
+    if (!ImGui::GetDragDropPayload()) {
+        m_dropHint.clear();
+        m_dropHintNext.clear();
         return;
+    }
     // The target is the whole table row, with the cell padding. The Selectable can be shorter than the row when
     // the row grows, and a drop in the padding between two rows must not be dead. The rows touch each other,
     // so a gap has the same Y for both rows. The row can be partly outside the table: only the visible part
@@ -577,49 +635,40 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
     const bool free = actions.busy().empty();
     // The commit payload is peeked at: the zone under the mouse decides what a drop does and where the line is.
     const ImGuiDragDropFlags peek = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
-    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_COMMIT", peek); p && free) {
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_COMMIT", peek)) {
         const core::Oid source = core::Oid::fromHex(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)));
-        const ImGuiIO& io = ImGui::GetIO();
         const ImVec2 rmin = rowRect.Min;
         const ImVec2 rmax = rowRect.Max;
+        const float mouseY = ImGui::GetIO().MousePos.y;
         const float edge = std::max(5.0f, 0.25f * (rmax.y - rmin.y));
-        enum class Zone { Top, Middle, Bottom };
-        const Zone zone = io.MousePos.y < rmin.y + edge ? Zone::Top : io.MousePos.y >= rmax.y - edge ? Zone::Bottom : Zone::Middle;
-        // A gap next to the dragged row is where the commit already is.
-        const auto neighbourIs = [&](int at) {
-            return at >= 0 && at < static_cast<int>(m_visible.size())
-                && m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(at)])].id == source;
-        };
-        const bool noop = source == row.id || (zone == Zone::Top && neighbourIs(index - 1))
-            || (zone == Zone::Bottom && neighbourIs(index + 1));
-        if (!noop) {
+        const DropZone zone = mouseY < rmin.y + edge ? DropZone::Top : mouseY >= rmax.y - edge ? DropZone::Bottom : DropZone::Middle;
+        const DropPlan plan = planDrop(free, source, row, index, zone);
+        m_dropHintNext = plan.hint;
+        if (plan.act != DropAct::None && plan.act != DropAct::Busy) {
             const ImU32 blue = IM_COL32(100, 175, 255, 255);
             ImDrawList* dl = ImGui::GetForegroundDrawList();
             dl->PushClipRect(visible.Min, visible.Max, false); // the line stays in the visible part of the table
-            if (zone == Zone::Middle)
+            if (zone == DropZone::Middle)
                 dl->AddRect(rmin, rmax, blue, 0.0f, 0, 2.0f);
             else {
-                const float y = zone == Zone::Top ? rmin.y : rmax.y;
+                const float y = zone == DropZone::Top ? rmin.y : rmax.y;
                 dl->AddLine(ImVec2(rmin.x, y), ImVec2(rmax.x, y), blue, 3.0f);
             }
             dl->PopClipRect();
             if (p->IsDelivery()) {
-                if (zone == Zone::Top)
-                    actions.reorder(source, row.id, true, false);
-                else if (zone == Zone::Bottom)
-                    actions.reorder(source, row.id, false, false);
-                else if (io.KeyCtrl && io.KeyShift)
-                    actions.reorder(source, row.id, false, false);
-                else if (io.KeyShift)
-                    actions.reorder(source, row.id, true, false);
-                else if (io.KeyCtrl)
-                    actions.squash(source, row.id.hex(), true);
-                else if (const RebaseSource rs = io.KeyAlt ? sourceRebase(source) : RebaseSource{{}, {}, "No Alt.", {}};
-                         rs.why.empty() && rs.choices.empty())
-                    actions.rebaseTipOnto(rs.rev, row.id.hex());
-                else {
+                switch (plan.act) {
+                case DropAct::ReorderAbove:
+                case DropAct::MoveAfter: actions.reorder(source, row.id, true, false); break;
+                case DropAct::ReorderBelow:
+                case DropAct::MoveBefore: actions.reorder(source, row.id, false, false); break;
+                case DropAct::Squash: actions.squash(source, row.id.hex(), true); break;
+                case DropAct::Rebase: actions.rebaseTipOnto(plan.rebase.rev, row.id.hex()); break;
+                case DropAct::Chooser:
                     m_pendingDrop = std::make_pair(source, row.id);
                     m_openChooser = true;
+                    break;
+                case DropAct::None:
+                case DropAct::Busy: break;
                 }
             }
         }
@@ -1670,6 +1719,11 @@ void HistoryPanel::captureScrollAnchor(int virtualRows)
 
 void HistoryPanel::draw(bool* open)
 {
+    // Without a drag no hint stays, also when the panel was hidden during the last drag.
+    if (!ImGui::GetDragDropPayload()) {
+        m_dropHint.clear();
+        m_dropHintNext.clear();
+    }
     // Each first click forgets the row of the last one; the row under the mouse sets it again (see drawRow).
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left] == 1)
         m_firstClickRow.reset();
@@ -1817,6 +1871,9 @@ void HistoryPanel::draw(bool* open)
                 }
         }
         m_rowTops.clear();
+        // The drag tooltip shows the hint that the target set in the last frame.
+        m_dropHint = std::move(m_dropHintNext);
+        m_dropHintNext.clear();
         while (clipper.Step()) {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                 drawRow(m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(i)])], i, laneWidth);
