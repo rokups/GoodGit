@@ -111,6 +111,93 @@ GG_TEST("dnd", "commit onto commit: modifiers pick move/squash/rebase, otherwise
 
 namespace {
 
+// A drag onto the top (or bottom) edge of the target row: the gap above (or below) it.
+void dragToGap(Scenario& s, const std::string& from, const std::string& to, bool top)
+{
+    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    const ImRect info = s.ctx->ItemInfo(to.c_str()).RectFull;
+    const ImVec2 target(info.GetCenter().x, top ? info.Min.y + 2 : info.Max.y - 2);
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(target);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+}
+
+} // namespace
+
+GG_TEST("dnd", "commit dropped between rows reorders with no modifier")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    const auto restore = [&] {
+        s.git(r.path, {"reset", "-q", "--hard", r.c[3]});
+        s.settle();
+        s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()); });
+    };
+    // c4 below c2.
+    std::string tip = s.revParse(r.path, "main");
+    dragToGap(s, rowRef(r.c[3]), rowRef(r.c[1]), false);
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c2", "c4", "c1"}));
+    // c1 above c4 (the new tip).
+    restore();
+    tip = s.revParse(r.path, "main");
+    dragToGap(s, rowRef(r.c[0]), rowRef(r.c[3]), true);
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c1", "c4", "c3", "c2"}));
+    // c4 below c1 (the last row: the oldest position).
+    restore();
+    tip = s.revParse(r.path, "main");
+    dragToGap(s, rowRef(r.c[3]), rowRef(r.c[0]), false);
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c2", "c1", "c4"}));
+    // c3 below c4: the gap is next to c3, so nothing happens and no chooser opens.
+    restore();
+    tip = s.revParse(r.path, "main");
+    dragToGap(s, rowRef(r.c[2]), rowRef(r.c[3]), false);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
+    GG_CHECK(!s.itemExists("//$FOCUSED/Copy after"));
+    // c3 above c2: the same gap seen from the other row.
+    dragToGap(s, rowRef(r.c[2]), rowRef(r.c[1]), true);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
+    GG_CHECK(!s.itemExists("//$FOCUSED/Copy after"));
+    // The border between two rows: the padding between the Selectables is not dead. c4 is moved to the border
+    // below c2, between the bottom of the c2 row and the top of the c1 row.
+    restore();
+    tip = s.revParse(r.path, "main");
+    {
+        const ImRect upper = s.ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull;
+        const ImRect lower = s.ctx->ItemInfo(rowRef(r.c[0]).c_str()).RectFull;
+        GG_CHECK(lower.Min.y >= upper.Max.y - 0.5f);
+        const float y = 0.5f * (upper.Max.y + lower.Min.y);
+        const ImVec2 target(upper.GetCenter().x, y);
+        s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
+        s.ctx->MouseDown(ImGuiMouseButton_Left);
+        s.ctx->Yield(2);
+        s.ctx->MouseMoveToPos(target);
+        s.ctx->Yield(2);
+        s.ctx->MouseUp(ImGuiMouseButton_Left);
+        s.ctx->Yield(2);
+    }
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c2", "c4", "c1"}));
+    // Shift does not change a gap drop: c4 below c2 gives the same result.
+    restore();
+    tip = s.revParse(r.path, "main");
+    s.ctx->KeyDown(ImGuiMod_Shift);
+    dragToGap(s, rowRef(r.c[3]), rowRef(r.c[1]), false);
+    s.ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK(changedFrom(s, r.path, tip));
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c3", "c2", "c4", "c1"}));
+}
+
+namespace {
+
 std::string badgeRef(const std::string& commit, const std::string& branch) { return "//History/**/" + commit + "/###badge_" + branch; }
 
 // A drag of a badge onto an exact position (ItemDragAndDrop drops at the centre of the target item).
@@ -134,6 +221,29 @@ bool itemDisabled(Scenario& s, const char* item)
 }
 
 } // namespace
+
+GG_TEST("dnd", "a branch badge dropped on the edge of a row opens the branch menu")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string tip = s.revParse(r.path, "main");
+    s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); });
+    const ImRect rowRect = s.ctx->ItemInfo(rowRef(tip).c_str()).RectFull;
+    // 2 px below the top edge of the tip row, right of the badges: the zone of a gap for a commit drop.
+    s.waitUntil([&] { return s.itemExists(badgeRef(r.c[1], "side").c_str()); });
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(badgeRef(r.c[1], "side").c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(ImVec2(rowRect.Max.x - 10.0f, rowRect.Min.y + 2.0f));
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.c[1]);
+}
 
 GG_TEST("dnd", "a branch badge onto a commit opens a menu; Escape changes nothing; Move moves the branch")
 {

@@ -202,7 +202,7 @@ private:
     core::Oid m_chooserRow;                      // the commit of the double-clicked row
     bool m_openCheckoutChooser = false;
     std::optional<core::Oid> m_firstClickRow; // the row that got the last first click (a double click needs it)
-    void dragAndDrop(const core::HistoryRow& row);
+    void dragAndDrop(const core::HistoryRow& row, int index);
     void drawDropChooser();
     // A branch dropped on a row (without Shift) waits for the menu: the branch, the row, and the local branch
     // the drop was on ("" = the target is the commit).

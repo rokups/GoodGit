@@ -522,7 +522,7 @@ RebaseSource HistoryPanel::sourceRebase(const core::Oid& id) const
     return from ? rebaseSource(m_session, *from) : RebaseSource{{}, {}, "The commit is gone.", {}};
 }
 
-void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
+void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
 {
     // Source: the commit, or a branch when the drag starts on its badge.
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
@@ -548,26 +548,79 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
         }
         ImGui::EndDragDropSource();
     }
-    if (!ImGui::BeginDragDropTarget())
+    // Only a drag has a target. The checks below need no work outside a drag.
+    if (!ImGui::GetDragDropPayload())
         return;
+    // The target is the whole table row, with the cell padding. The Selectable can be shorter than the row when
+    // the row grows, and a drop in the padding between two rows must not be dead. The rows touch each other,
+    // so a gap has the same Y for both rows. The row can be partly outside the table: only the visible part
+    // takes a drop and shows the line.
+    const ImGuiTable* table = ImGui::GetCurrentTable();
+    const ImVec2 itemMin = ImGui::GetItemRectMin();
+    const ImVec2 itemMax = ImGui::GetItemRectMax();
+    ImRect rowRect(itemMin, itemMax);
+    ImRect visible = rowRect;
+    if (table) {
+        // RowPosY2 grows when a cell ends: the item bottom is the other limit.
+        rowRect.Min.y = std::min(table->RowPosY1, itemMin.y);
+        rowRect.Max.y = std::max(table->RowPosY2, itemMax.y);
+        visible = rowRect;
+        visible.ClipWithFull(table->InnerClipRect);
+    }
+    // The cell clip rect of the first column would cut the target: the clip rect is the visible row for the drop.
+    ImGui::PushClipRect(visible.Min, visible.Max, false);
+    if (visible.GetWidth() <= 0.0f || visible.GetHeight() <= 0.0f || !ImGui::BeginDragDropTargetCustom(visible, ImGui::GetItemID())) {
+        ImGui::PopClipRect();
+        return;
+    }
     auto& actions = m_session.actions();
     const bool free = actions.busy().empty();
-    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_COMMIT"); p && free) {
+    // The commit payload is peeked at: the zone under the mouse decides what a drop does and where the line is.
+    const ImGuiDragDropFlags peek = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_COMMIT", peek); p && free) {
         const core::Oid source = core::Oid::fromHex(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)));
         const ImGuiIO& io = ImGui::GetIO();
-        if (source != row.id) {
-            if (io.KeyCtrl && io.KeyShift)
-                actions.reorder(source, row.id, false, false);
-            else if (io.KeyShift)
-                actions.reorder(source, row.id, true, false);
-            else if (io.KeyCtrl)
-                actions.squash(source, row.id.hex(), true);
-            else if (const RebaseSource rs = io.KeyAlt ? sourceRebase(source) : RebaseSource{{}, {}, "No Alt.", {}};
-                     rs.why.empty() && rs.choices.empty())
-                actions.rebaseTipOnto(rs.rev, row.id.hex());
+        const ImVec2 rmin = rowRect.Min;
+        const ImVec2 rmax = rowRect.Max;
+        const float edge = std::max(5.0f, 0.25f * (rmax.y - rmin.y));
+        enum class Zone { Top, Middle, Bottom };
+        const Zone zone = io.MousePos.y < rmin.y + edge ? Zone::Top : io.MousePos.y >= rmax.y - edge ? Zone::Bottom : Zone::Middle;
+        // A gap next to the dragged row is where the commit already is.
+        const auto neighbourIs = [&](int at) {
+            return at >= 0 && at < static_cast<int>(m_visible.size())
+                && m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(at)])].id == source;
+        };
+        const bool noop = source == row.id || (zone == Zone::Top && neighbourIs(index - 1))
+            || (zone == Zone::Bottom && neighbourIs(index + 1));
+        if (!noop) {
+            const ImU32 blue = IM_COL32(100, 175, 255, 255);
+            ImDrawList* dl = ImGui::GetForegroundDrawList();
+            dl->PushClipRect(visible.Min, visible.Max, false); // the line stays in the visible part of the table
+            if (zone == Zone::Middle)
+                dl->AddRect(rmin, rmax, blue, 0.0f, 0, 2.0f);
             else {
-                m_pendingDrop = std::make_pair(source, row.id);
-                m_openChooser = true;
+                const float y = zone == Zone::Top ? rmin.y : rmax.y;
+                dl->AddLine(ImVec2(rmin.x, y), ImVec2(rmax.x, y), blue, 3.0f);
+            }
+            dl->PopClipRect();
+            if (p->IsDelivery()) {
+                if (zone == Zone::Top)
+                    actions.reorder(source, row.id, true, false);
+                else if (zone == Zone::Bottom)
+                    actions.reorder(source, row.id, false, false);
+                else if (io.KeyCtrl && io.KeyShift)
+                    actions.reorder(source, row.id, false, false);
+                else if (io.KeyShift)
+                    actions.reorder(source, row.id, true, false);
+                else if (io.KeyCtrl)
+                    actions.squash(source, row.id.hex(), true);
+                else if (const RebaseSource rs = io.KeyAlt ? sourceRebase(source) : RebaseSource{{}, {}, "No Alt.", {}};
+                         rs.why.empty() && rs.choices.empty())
+                    actions.rebaseTipOnto(rs.rev, row.id.hex());
+                else {
+                    m_pendingDrop = std::make_pair(source, row.id);
+                    m_openChooser = true;
+                }
             }
         }
     }
@@ -627,6 +680,7 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row)
         }
     }
     ImGui::EndDragDropTarget();
+    ImGui::PopClipRect();
 }
 
 // The menu of a badge's ref, the same items as the ref's row in its side panel. It is drawn here, outside the
@@ -1486,7 +1540,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
                 hit = &badge;
         checkoutOnDoubleClick(row, hit);
     }
-    dragAndDrop(row);
+    dragAndDrop(row, index);
     // A right click on a badge selects the row and opens the menu of the badge's ref (drawBadgeMenu, after the
     // table) in place of the row's. Only the badges that have a menu: the HEAD badge shows the row's.
     bool badgeClick = false;

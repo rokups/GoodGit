@@ -310,10 +310,12 @@ stays as it is (it is only limited to 50–300 % on load).
   click on the row outside its badges shows the row context menu. The left click and the drag of a badge are as before.
 - Working tree context menu: Commit… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.
-- Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase; Shift = move
-  before, Ctrl = squash, Alt = rebase, none = chooser popup `##dnd_chooser`), branch
-  badge→commit or badge (a menu `##branch_drop_chooser`: Merge into, Rebase onto, Move here; Shift = move at once),
-  files from Changes→commit (move changes).
+- Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase). A drop on the edge of a row, between
+  two rows, moves the commit there. On the middle of a row Shift = move after, Ctrl+Shift = move before,
+  Ctrl = squash, Alt = rebase, none = chooser popup `##dnd_chooser`. A drop of a branch
+  badge on a commit or a badge shows the menu `##branch_drop_chooser`. Its items are Merge into, Rebase onto and
+  Move here; Shift = move at once. A drop of
+  files from Changes on a commit moves the changes.
 - Reveal: loads more history until the commit is found; progress in the activity area,
   cancellable. A commit that a collapsed merge hides (it has no row) expands that merge, and each nested collapsed
   merge, and is selected; the merges stay expanded. The notice shows only when the commit is not in the scope.
@@ -330,6 +332,13 @@ stays as it is (it is only limited to 50–300 % on load).
   settings.json at the same moment can lose the change of one repository from the other process (an accepted limit).
 
 ### 2.x Drag and drop (Phase 3)
+- **Between rows.** The top and the bottom quarter of a row (at least 5 px) are gaps between two rows. A blue
+  insertion line (3 px) shows the gap. The middle of a row shows a blue rectangle (2 px) round the row. A drop on a
+  gap moves the commit there with no modifier. Gaps use the visible rows. A gap next to the dragged row in the
+  visible list does nothing. This is also true when a filter or a collapsed merge hides commits between them.
+  The top of the first row is the new tip. The bottom of the last row is the oldest position. Modifiers do not
+  change a gap drop. A non-linear case is refused with a notification. While an action runs, there is no line
+  and a drop does nothing.
 - **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,
   Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (the
   source is the rebase source of the dragged commit, see §4: the commits from its first
