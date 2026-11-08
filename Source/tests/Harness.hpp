@@ -277,6 +277,8 @@ public:
     // rest dimmed.
     // Whether a filled shape (hover/selection highlight, button frame) is drawn behind an item.
     bool itemDrawsBackground(const char* ref);
+    // The glyphs that a window and its child windows drew in the last frame, in reading order.
+    std::vector<DrawnGlyph> glyphsOf(const char* windowRef);
     bool idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen);
     // Left-clicks the ID text item `ref`: inside its first `leadChars` characters, or inside the rest of it.
     void clickIdText(const char* ref, size_t leadChars, bool lead);

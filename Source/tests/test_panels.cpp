@@ -26,8 +26,11 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
     s.git(repo, {"branch", "other"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/main", "other"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    // The "@origin/main" part of a local row is dimmed; the name keeps the text colour.
+    GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 5));
     const auto* main = s.session()->snapshot()->findBranch("main");
     GG_REQUIRE(main != nullptr);
     GG_CHECK(main->isHead);
@@ -50,6 +53,69 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
     ctx->Yield(2);
     const std::string remoteGroup = "//Branches/remote_group_origin";
     GG_CHECK(s.itemExists((remoteGroup + "/origin").c_str()));
+}
+
+GG_TEST("panels", "branches: a cut row keeps its name and counters in the text colour and dims what stays of the upstream")
+{
+    // About 200 characters each: too long for the panel at any width.
+    std::string name, upstream;
+    for (int i = 0; i < 10; ++i) {
+        name += "long-branch-name-";
+        upstream += "long-upstream-nm-";
+    }
+    name += "the-end-of-the-name";
+    upstream += "up-end";
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"update-ref", "refs/remotes/origin/" + upstream, "HEAD"});
+    s.git(repo, {"branch", name, "HEAD~1"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/" + upstream, name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string row = "//Branches/branch_" + name + "/###branch_" + name;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    ctx->Yield(2);
+    const ImU32 normal = ImGui::GetColorU32(ImGuiCol_Text), dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    const unsigned ellipsis = 0x2026;
+    // The mouse is away from the rows: no hover buttons add glyphs.
+    ctx->MouseMoveToPos(ImVec2(0, 0));
+    ctx->Yield(2);
+    const auto glyphs = s.glyphsOf("//Branches");
+    // Find the glyphs of the row's line: the eye, the cut name, "@", the cut upstream and the counter.
+    const std::string nameEnd = "-name@";
+    size_t begin = 0, finish = 0;
+    std::string line;
+    for (size_t i = 1; i <= glyphs.size() && line.empty(); ++i) {
+        if (i < glyphs.size() && std::abs(glyphs[i].baseline - glyphs[begin].baseline) <= 0.5f)
+            continue;
+        std::string text; // ('?' for an icon or the ellipsis)
+        for (size_t k = begin; k < i; ++k)
+            text += glyphs[k].codepoint < 0x80 ? static_cast<char>(glyphs[k].codepoint) : '?';
+        if (text.find(nameEnd) != std::string::npos) {
+            line = text;
+            finish = i;
+        } else {
+            begin = i;
+        }
+    }
+    GG_REQUIRE(!line.empty());
+    const size_t link = line.find(nameEnd) + nameEnd.size() - 1;
+    const size_t upstreamEnd = line.find("up-end") + std::string("up-end").size();
+    GG_REQUIRE(link < upstreamEnd && upstreamEnd < line.size());
+    // The row is cut for sure: the name and the upstream both start with the ellipsis.
+    GG_REQUIRE(glyphs[begin + 1].codepoint == ellipsis);
+    GG_REQUIRE(glyphs[begin + link + 1].codepoint == ellipsis);
+    // The name is cut at its start: after the eye comes the ellipsis, then the rest of the name.
+    for (size_t k = 1; k < link; ++k)
+        GG_CHECK(glyphs[begin + k].col == normal);
+    // The link, the ellipsis of the upstream and what stays of it are dimmed.
+    GG_CHECK_EQ(line.substr(link, 1), "@");
+    GG_CHECK_EQ(glyphs[begin + link + 1].codepoint, ellipsis);
+    for (size_t k = link; k < upstreamEnd; ++k)
+        GG_CHECK(glyphs[begin + k].col == dim);
+    // The counter after the upstream (an icon and a number) is in the text colour.
+    GG_CHECK(upstreamEnd < finish - begin);
+    for (size_t k = upstreamEnd; k < finish - begin; ++k)
+        GG_CHECK(glyphs[begin + k].col == normal);
 }
 
 GG_TEST("panels", "tags: filter, visibility, reveal, copy")

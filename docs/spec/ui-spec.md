@@ -738,7 +738,8 @@ the panel without touching the repository.
   (a folder icon) `act_open_dir`.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
-  Ctrl+Space = only this; the eye is mouse-only), current outlined. Branches are grouped by folder and
+  Ctrl+Space = only this; the eye is mouse-only), current outlined. The link and the upstream name of a local row are drawn dimmed. When the label is cut, only the part that stays is dimmed.
+  Branches are grouped by folder and
   remote-tracking ones by remote; a group row's eye (`###eye` in the group's scope) shows/hides the branches
   listed under it (all visible: hide, else show; mixed drawn dimmed; Ctrl-click = only these; mouse only). Ctrl-click
   (on a row's or a group's eye) hides every other branch, tag and kept commit too. Context:

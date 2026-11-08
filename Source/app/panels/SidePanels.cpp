@@ -46,7 +46,63 @@ struct RowEvents {
 // at their start (their ends stay); the link, the counters and the worktree (`link`, `tail`) always stay.
 struct BranchLabelParts {
     std::string_view name, link, upstream, tail;
+    bool dimUpstream = false; // `link` and `upstream` are drawn dimmed
 };
+
+// The remote-tracking branches that a local branch relates to.
+// The pointers stay valid while the snapshot that they come from lives.
+struct BranchRemotes {
+    std::vector<const core::RemoteBranchInfo*> refs; // the refs with the name of the branch, in the order of the remotes
+    const core::RemoteBranchInfo* upstream = nullptr; // the upstream of the branch, when it is a listed ref
+};
+
+// The remote-tracking branches by their name without the remote ("origin/feature/one" is "feature/one").
+// A "<remote>/HEAD" ref is not listed.
+[[maybe_unused]] std::map<std::string, std::vector<const core::RemoteBranchInfo*>> remotesByShortName(const core::Snapshot& snapshot)
+{
+    std::map<std::string, std::vector<const core::RemoteBranchInfo*>> index;
+    for (const auto& r : snapshot.remoteBranches) {
+        const std::string prefix = r.remote + "/";
+        if (r.name.size() <= prefix.size() || r.name.compare(0, prefix.size(), prefix) != 0)
+            continue;
+        std::string shortName = r.name.substr(prefix.size());
+        if (shortName == "HEAD")
+            continue;
+        index[std::move(shortName)].push_back(&r);
+    }
+    return index;
+}
+
+// The refs of `index` with the name `shortName`, in the order of `Snapshot::remotes`. The `upstream` ref
+// (a full ref name, "origin/main") is added when it is a listed ref that the name does not give.
+[[maybe_unused]] BranchRemotes branchRemotes(const core::Snapshot& snapshot,
+    const std::map<std::string, std::vector<const core::RemoteBranchInfo*>>& index, const std::string& shortName,
+    const std::string& upstream)
+{
+    BranchRemotes result;
+    if (const auto it = index.find(shortName); it != index.end())
+    {
+        for (const auto& remote : snapshot.remotes)
+            for (const auto* ref : it->second)
+                if (ref->remote == remote.name)
+                    result.refs.push_back(ref);
+        // A ref of a remote that `Snapshot::remotes` does not list comes last.
+        for (const auto* ref : it->second)
+            if (std::find(result.refs.begin(), result.refs.end(), ref) == result.refs.end())
+                result.refs.push_back(ref);
+    }
+    if (upstream.empty())
+        return result;
+    for (const auto& r : snapshot.remoteBranches) {
+        if (r.name != upstream)
+            continue;
+        result.upstream = &r;
+        if (std::find(result.refs.begin(), result.refs.end(), &r) == result.refs.end())
+            result.refs.push_back(&r);
+        break;
+    }
+    return result;
+}
 
 float textWidth(std::string_view text)
 {
@@ -55,7 +111,8 @@ float textWidth(std::string_view text)
 
 // Cuts the name and the upstream of `parts` to `room` pixels into `out`. False (and `out` as it was) when the
 // label fits as it is, or when cutting the two would not shorten it. Each of the two keeps at least 3 font sizes.
-bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out)
+// `dimRange` gets the byte range of `link` and `upstream` in `out` (what is left of them after the cut).
+bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out, std::pair<size_t, size_t>& dimRange)
 {
     const float nameWidth = textWidth(parts.name), upstreamWidth = textWidth(parts.upstream);
     const float avail = room - textWidth(parts.link) - textWidth(parts.tail);
@@ -78,6 +135,7 @@ bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out)
     out.clear();
     out.reserve(name.size() + parts.link.size() + upstream.size() + parts.tail.size());
     out.append(name).append(parts.link).append(upstream).append(parts.tail);
+    dimRange = {name.size(), name.size() + parts.link.size() + upstream.size()};
     return true;
 }
 
@@ -85,7 +143,8 @@ bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out)
 // tooltips attach to it). Rows without a double-click action are plain text. `acts` are the row's hover buttons.
 // `dim` is a byte range of the label drawn dimmed (the tail of a short ID); only on a row with a double-click action.
 // `parts` (the pieces of `label`): the label is cut at the start of its name where it does not fit the row (`elided`);
-// only for a row in view (the others are clipped anyway). `dim` is a range of the whole label: not with `parts`.
+// only for a row in view (the others are clipped anyway).
+// `dim` must be empty with `parts`; `dimUpstream` sets the range.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
     bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {},
     const BranchLabelParts* parts = nullptr)
@@ -111,13 +170,18 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     // nothing is built while the label fits.
     std::string fitted;
     const std::string* shown = &label;
+    if (parts && parts->dimUpstream)
+        dim = {parts->name.size(), parts->name.size() + parts->link.size() + parts->upstream.size()};
+    std::pair<size_t, size_t> fittedDim;
     if (parts) {
         const float room = ImGui::GetContentRegionAvail().x - rowActionsReserve(acts);
         const ImVec2 at = ImGui::GetCursorScreenPos();
         if (ImGui::IsRectVisible(at, ImVec2(at.x + room, at.y + ImGui::GetTextLineHeight()))
-            && ImGui::CalcTextSize(label.c_str()).x > room && fitBranchLabel(*parts, room, fitted)) {
+            && ImGui::CalcTextSize(label.c_str()).x > room && fitBranchLabel(*parts, room, fitted, fittedDim)) {
             shown = &fitted;
             events.elided = true;
+            if (parts->dimUpstream)
+                dim = fittedDim;
         }
     }
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
@@ -620,7 +684,7 @@ void BranchesPanel::draw(bool* open)
         if (!b.worktree.empty())
             tail += "  [" + b.worktree + "]";
         const std::string label = shortName + link + remote + tail;
-        const BranchLabelParts parts{shortName, link, remote, tail};
+        const BranchLabelParts parts{shortName, link, remote, tail, true};
         const std::string full = "refs/heads/" + b.name;
         ImGui::PushOverrideID(windowId);
         // The hover buttons do what the menu's Check out and Push do.

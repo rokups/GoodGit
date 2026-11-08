@@ -536,6 +536,11 @@ bool Scenario::itemDrawsBackground(const char* ref)
     return false;
 }
 
+std::vector<Scenario::DrawnGlyph> Scenario::glyphsOf(const char* windowRef)
+{
+    return windowGlyphs(ctx, windowRef);
+}
+
 bool Scenario::idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen)
 {
     const auto glyphs = windowGlyphs(ctx, windowRef);
