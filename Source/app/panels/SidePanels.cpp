@@ -139,15 +139,23 @@ bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out,
     return true;
 }
 
+// The expand arrow of a row (a local branch with two or more remote refs). `open` is the state of the node:
+// ImGui keeps it, and a closed node is the start state. The row sets `open` on each frame.
+struct ExpandSlot {
+    bool open = false;
+};
+
 // A ref row: the eye icon toggles visibility in History; the label is the row's item (menus and
 // tooltips attach to it). Rows without a double-click action are plain text. `acts` are the row's hover buttons.
 // `dim` is a byte range of the label drawn dimmed (the tail of a short ID); only on a row with a double-click action.
 // `parts` (the pieces of `label`): the label is cut at the start of its name where it does not fit the row (`elided`);
 // only for a row in view (the others are clipped anyway).
 // `dim` must be empty with `parts`; `dimUpstream` sets the range.
+// `expand`: the row has an arrow between the eye and the label. A click on the arrow, and Right or Left on the
+// focused label, open or close the node. The caller draws the child rows when `expand->open` is set.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
     bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {},
-    const BranchLabelParts* parts = nullptr)
+    const BranchLabelParts* parts = nullptr, ExpandSlot* expand = nullptr)
 {
     assert(!(parts && dim.second > dim.first) && "dim is a range of the whole label, not of a cut one");
     RowEvents events;
@@ -165,6 +173,18 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         tooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
     ImGui::SameLine();
+    ImGuiID expandId = 0;
+    if (expand) {
+        // The arrow is for the mouse like the eye: the keys act on the label (below).
+        ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+        {
+            const SectionHeaderColors neutral;
+            expand->open = ImGui::TreeNodeEx("###expand", ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+        }
+        ImGui::PopItemFlag();
+        expandId = ImGui::GetItemID();
+        ImGui::SameLine();
+    }
     events.labelLeft = ImGui::GetCursorScreenPos().x;
     // The room from the label to the list's edge, less the hover buttons' while the row is hovered;
     // nothing is built while the label fits.
@@ -205,6 +225,13 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     // Space on the row toggles its visibility like a click on the eye (Ctrl+Space: only this one).
     if (ImGui::IsItemFocused() && (ImGui::GetIO().KeyMods & ~ImGuiMod_Ctrl) == 0 && ImGui::IsKeyPressed(ImGuiKey_Space, false))
         events.toggle = true;
+    if (expand && ImGui::IsItemFocused() && ImGui::GetIO().KeyMods == 0) {
+        const bool right = ImGui::IsKeyPressed(ImGuiKey_RightArrow), left = ImGui::IsKeyPressed(ImGuiKey_LeftArrow);
+        if ((right && !expand->open) || (left && expand->open)) {
+            expand->open = right;
+            ImGui::GetStateStorage()->SetInt(expandId, expand->open ? 1 : 0);
+        }
+    }
     if (outlined) {
         // Around the text itself: the item spans the row, and is cut at its edge where the text does not fit.
         // The item reaches left of the text by half the item spacing, so the text's own left is used.
@@ -481,6 +508,40 @@ void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core
         session.showDeleteRemoteBranchDialog(r.name);
 }
 
+// The child rows of an open local branch node: one for each remote ref of the branch, under the row, at the
+// start of its label. The ID of a row is "remote_<remote>" in the ID scope of the branch row. A row has no eye
+// (the eye of the branch covers it) and no hover button. Its menu is the one of the ref with Set as upstream.
+void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPanel& history, const core::BranchInfo& b,
+    const BranchRemotes& remotes, float labelLeft, ImU32 color)
+{
+    const float indent = std::max(labelLeft - ImGui::GetCursorScreenPos().x, 0.0f);
+    ImGui::PushID(rowId("branch_" + b.name).c_str());
+    ImGui::Indent(indent);
+    for (const auto* r : remotes.refs) {
+        // The usual ref is "<remote>/<branch>": its row shows the remote and has the ID "remote_<remote>". Another
+        // ref (the upstream "origin/other" of "main") shows its whole name and has the ID "remote_<ref name>". A
+        // remote has one usual ref, and ref names differ, so the IDs differ.
+        const bool usual = r->name == r->remote + "/" + b.name;
+        const std::string head = (usual ? r->remote : r->name) + "  ";
+        std::string label = head + r->target.shortHex(kShortIdLength);
+        if (r == remotes.upstream)
+            label += "  (upstream)";
+        const std::string id = rowId("remote_" + (usual ? r->remote : r->name));
+        // A ref hidden in History is grey, like the rows of the remote-tracking branches.
+        ImGui::PushStyleColor(ImGuiCol_Text, history.refVisible("refs/remotes/" + r->name) ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        // The item spans the room to the list's edge, not the text: a long label (cut by the edge) keeps its item in view.
+        selectableTextDimRange(label, id, head.size() + kIdPrefixLength, head.size() + kShortIdLength, false, ImGuiSelectableFlags_None,
+            ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 0.0f));
+        ImGui::PopStyleColor();
+        if (beginContextMenu(("##remote_ref_menu_" + id).c_str())) {
+            remoteRefMenuItems(session, snap, *r, {false, false, &b});
+            ImGui::EndPopup();
+        }
+    }
+    ImGui::Unindent(indent);
+    ImGui::PopID();
+}
+
 } // namespace
 
 // ---- Branches -----------------------------------------------------------------------------------
@@ -564,7 +625,8 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
     if (menuItem(ICON_MS_FAST_FORWARD, "Fast-forward to upstream", nullptr, false, free && !b.upstream.empty() && b.behind > 0 && b.ahead == 0))
         actions.fastForward(b.name);
     // The remote-tracking branch of this branch: its menu without Check out and Create local branch (the
-    // local branch exists). The submenu shows for exactly one such ref.
+    // local branch exists). The submenu shows for exactly one such ref; with more, the child rows of the branch
+    // in the Branches panel have the menus.
     const BranchRemotes remotes = branchRemotes(snap, remotesByShortName(snap), b.name, b.upstream);
     if (remotes.refs.size() == 1) {
         ImGui::Separator();
@@ -689,22 +751,29 @@ void BranchesPanel::draw(bool* open)
             locals.push_back({i, m_snapshot->branches[i].name});
     // The refs of a local branch row: the branch and its remote-tracking refs. Built once for the frame.
     std::vector<std::vector<std::string>> localRefs(m_snapshot->branches.size());
+    std::vector<BranchRemotes> localRemotes(m_snapshot->branches.size());
     {
         const auto remoteIndex = remotesByShortName(*m_snapshot);
         for (size_t i = 0; i < localRefs.size(); ++i) {
             const auto& b = m_snapshot->branches[i];
+            localRemotes[i] = branchRemotes(*m_snapshot, remoteIndex, b.name, b.upstream);
             localRefs[i].push_back("refs/heads/" + b.name);
-            for (const auto* r : branchRemotes(*m_snapshot, remoteIndex, b.name, b.upstream).refs)
+            for (const auto* r : localRemotes[i].refs)
                 localRefs[i].push_back("refs/remotes/" + r->name);
         }
     }
     const GroupEyes localEyes{history, [&](size_t index) { return localRefs[index]; }};
     drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
+        const BranchRemotes& branchRemoteRefs = localRemotes[index];
+        // Two or more remote refs: an expandable node, and the refs are its child rows (no "@" suffix).
+        const bool expandable = branchRemoteRefs.refs.size() >= 2;
         std::string link, tail, remote;
         if (!b.upstream.empty()) {
-            remote = trackedName(b.name, b.upstream);
-            link = "@";
+            if (!expandable) {
+                remote = trackedName(b.name, b.upstream);
+                link = "@";
+            }
             if (b.upstreamGone)
                 tail += " (gone)";
             if (b.ahead)
@@ -723,8 +792,10 @@ void BranchesPanel::draw(bool* open)
             {ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free && !b.isHead, !b.isHead},
             {ICON_MS_UPLOAD, "act_push", "Push", free && !m_snapshot->remotes.empty()},
         };
+        ExpandSlot expand;
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
-            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts, {}, &parts);
+            b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts, {}, &parts,
+            expandable ? &expand : nullptr);
         if ((shortName != b.name || events.elided) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             if (events.elided && !b.upstream.empty())
                 tooltip("%s\n%s %s", b.name.c_str(), ICON_MS_ARROW_RIGHT_ALT, b.upstream.c_str());
@@ -746,6 +817,8 @@ void BranchesPanel::draw(bool* open)
         else if (events.action == 1)
             pushBranch(m_session, b);
         branchMenu(b);
+        if (expandable && expand.open)
+            drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, events.labelLeft, p.remoteText);
         ImGui::PopID();
     }, &localEyes);
 

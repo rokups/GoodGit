@@ -739,6 +739,16 @@ the panel without touching the repository.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
   Ctrl+Space = only this; the eye is mouse-only; the eye of a local row also covers its remote-tracking refs), current outlined. The link and the upstream name of a local row are drawn dimmed. When the label is cut, only the part that stays is dimmed.
+  A local row with two or more remote-tracking refs (same name in each remote, plus its upstream) is a node: an
+  arrow `###expand` sits between the eye and the label, the node starts closed, and the row has no `@<remote>` suffix.
+  A click on the arrow, or Right and Left on the row, open and close it. A click on the row text acts as before.
+  An open node has a child row `remote_<remote>` for each ref, indented to the label: `<remote>  <short ID>` (the ID
+  after its prefix dimmed), plus `  (upstream)` for the upstream. A child row has no eye and no hover button (the
+  eye of the node covers it). The row of a ref named `<remote>/<branch>` shows the remote and has the ID
+  `remote_<remote>`. Another ref (the upstream `origin/other` of `main`) shows its whole name and has the ID
+  `remote_<ref name>`, so two rows never share an ID. A ref hidden in History is drawn dimmed (`TextDisabled`), as the
+  rows of the remote section. It is a keyboard stop. Its menu is the one of a remote-tracking branch without Check out
+  and Create local branch…, with Set as upstream (disabled for the upstream).
   Branches are grouped by folder and
   remote-tracking ones by remote; a group row's eye (`###eye` in the group's scope) shows/hides the branches
   listed under it (all visible: hide, else show; mixed drawn dimmed; Ctrl-click = only these; mouse only). Ctrl-click
@@ -751,7 +761,7 @@ the panel without touching the repository.
   remotes; a delete on a remote, here or by Delete on remote…, also unsets the upstream of every local branch that
   tracked the deleted remote branch, after each successful remote delete; a failed delete changes nothing) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
   Remote <name> ▸ (only when the branch has exactly one remote-tracking branch, by its name or as its upstream: that
-  branch's menu without Check out and Create local branch…, plus Set as upstream, disabled when it is the upstream) ·
+  branch's menu without Check out and Create local branch…, plus Set as upstream, disabled when it is the upstream; with two or more, the child rows have the menus) ·
   Interactive rebase onto… (Phase 3: the `Interactive rebase onto` dialog asks for the base; the
   branch is the tip and only it and its update-ref branches move, HEAD stays) · Check out in new
   worktree… (Phase 4: the `Add worktree` dialog with *An existing branch* and this branch; disabled

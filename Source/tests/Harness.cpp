@@ -541,6 +541,13 @@ std::vector<Scenario::DrawnGlyph> Scenario::glyphsOf(const char* windowRef)
     return windowGlyphs(ctx, windowRef);
 }
 
+void Scenario::forgetPanelState(const char* name)
+{
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (w->RootWindow && std::string(w->RootWindow->Name) == name)
+            w->StateStorage.Clear();
+}
+
 bool Scenario::idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen)
 {
     const auto glyphs = windowGlyphs(ctx, windowRef);

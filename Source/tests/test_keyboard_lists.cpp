@@ -141,6 +141,28 @@ GG_TEST("keyboard", "branches: tree rows, Alt+Space menus, groups open and close
     altSpaceMenu(s, "Reveal");
 }
 
+GG_TEST("keyboard", "branches: Right and Left open and close a branch node with two remote refs; Down reaches its child rows")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "second", (s.root() / (repo.filename().string() + "-origin.git")).string()});
+    s.git(repo, {"fetch", "-q", "second"});
+    s.forgetPanelState("Branches"); // the node starts closed
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/**/###expand"); }));
+    const std::string main = branchRef("main");
+    GG_REQUIRE(navTo(ctx, main));
+    GG_CHECK(!s.itemExists("//Branches/**/###remote_origin"));
+    press(ctx, ImGuiKey_RightArrow);
+    GG_REQUIRE(s.itemExists("//Branches/**/###remote_origin"));
+    GG_CHECK(navTo(ctx, "//Branches/**/###remote_origin"));
+    GG_CHECK(navTo(ctx, "//Branches/**/###remote_second"));
+    altSpaceMenu(s, "Set as upstream");
+    GG_REQUIRE(navTo(ctx, main));
+    press(ctx, ImGuiKey_LeftArrow);
+    GG_CHECK(!s.itemExists("//Branches/**/###remote_origin"));
+}
+
 GG_TEST("keyboard", "tags: rows by arrows, Alt+Space menu")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

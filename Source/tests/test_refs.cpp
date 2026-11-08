@@ -550,6 +550,87 @@ GG_TEST("refs", "branches: no Remote submenu without a remote ref, with two remo
     GG_CHECK(!hasRemoteSubmenu(s, branchRow("main"), "Remote second"));
 }
 
+GG_TEST("refs", "branches: Set as upstream in the menu of a child row of a branch with two remote refs")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "second", origin(s, repo).string()});
+    s.git(repo, {"fetch", "-q", "second"});
+    s.forgetPanelState("Branches"); // the nodes start closed
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_main/###expand"); }));
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("main")->upstream, "origin/main");
+    ctx->ItemClick("//Branches/branch_main/###expand");
+    ctx->Yield(2);
+    const std::string origin = "//Branches/branch_main/###remote_origin", second = "//Branches/branch_main/###remote_second";
+    GG_REQUIRE(s.itemExists(second.c_str()));
+    // The menu of a child row: the items of a remote-tracking branch, with Set as upstream; no Check out.
+    ctx->ItemClick(second.c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    for (const char* item : {"Reveal", "Copy name", "Create branch...", "Merge into HEAD...", "Set as upstream", "Delete on remote..."})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    for (const char* item : {"Create local branch...", "###check_out"})
+        GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    // The upstream child has it disabled.
+    ctx->ItemClick(origin.c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(second.c_str(), "Set as upstream");
+    GG_CHECK(s.waitUntil([&] { return gg::trim(s.gitMayFail(repo, {"config", "--get", "branch.main.remote"}).out) == "second"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("main")->upstream, "second/main");
+    // The node stays open and the upstream mark moves.
+    GG_CHECK(s.itemText(second.c_str()).find("(upstream)") != std::string::npos);
+    GG_CHECK(s.itemText(origin.c_str()).find("(upstream)") == std::string::npos);
+    ctx->ItemClick("//Branches/branch_main/###expand"); // closed again for the next test
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists(second.c_str()));
+}
+
+GG_TEST("refs", "branches: an upstream with another name is a second child row with its own ID, label and menu")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "other", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "other"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/other", "main"}); // origin/main (the name) and origin/other
+    s.forgetPanelState("Branches");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_main/###expand"); }));
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("main")->upstream, "origin/other");
+    ctx->ItemClick("//Branches/branch_main/###expand");
+    ctx->Yield(2);
+    const std::string usual = "//Branches/branch_main/###remote_origin", renamed = "//Branches/branch_main/###remote_origin:other";
+    GG_REQUIRE(s.itemExists(usual.c_str()));
+    GG_REQUIRE(s.itemExists(renamed.c_str()));
+    GG_CHECK_STR_EQ(s.itemText(usual.c_str()), "origin  " + s.revParse(repo, "origin/main").substr(0, 7));
+    // The test engine keeps 31 characters of a label: the end "(upstream)" is cut.
+    GG_CHECK(s.itemText(renamed.c_str()).rfind("origin/other  " + s.revParse(repo, "origin/other").substr(0, 7) + "  (upstr", 0) == 0);
+    // Each menu works: the upstream has Set as upstream disabled, the other ref has it enabled.
+    ctx->ItemClick(renamed.c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_CHECK(ctx->ItemExists("//$FOCUSED/Copy name"));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    ctx->ItemClick(usual.c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(usual.c_str(), "Set as upstream");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "--get", "branch.main.merge"}).out.find("refs/heads/main") != std::string::npos; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("main")->upstream, "origin/main");
+    // origin/main is the upstream and the name: one ref, so the node is gone. origin/other is not a ref of main now.
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###expand"));
+}
+
 GG_TEST("refs", "branches: <remote>/HEAD is not a remote ref of a branch; an upstream with another name is")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

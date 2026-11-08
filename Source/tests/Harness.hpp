@@ -280,6 +280,9 @@ public:
     // The glyphs that a window and its child windows drew in the last frame, in reading order.
     std::vector<DrawnGlyph> glyphsOf(const char* windowRef);
     bool idShownDimmed(const char* windowRef, const std::string& hex, size_t shortLen);
+    // Forgets the state ImGui keeps for the panel window `name` and its child windows (the open tree nodes). The app
+    // outlives the tests, so a test that checks a node that starts closed calls it first.
+    void forgetPanelState(const char* name);
     // Left-clicks the ID text item `ref`: inside its first `leadChars` characters, or inside the rest of it.
     void clickIdText(const char* ref, size_t leadChars, bool lead);
     // Right-clicks the ID text item `ref` like clickIdText, with Shift held at the click when `shift`.

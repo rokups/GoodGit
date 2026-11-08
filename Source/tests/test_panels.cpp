@@ -55,13 +55,75 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
     GG_CHECK(s.itemExists((remoteGroup + "/origin").c_str()));
 }
 
+GG_TEST("panels", "branches: a branch with two remote refs is a closed node with a child row for each ref")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "other"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/main", "other"}); // one remote ref: the upstream
+    s.git(repo, {"remote", "add", "second", (s.root() / (repo.filename().string() + "-origin.git")).string()});
+    s.git(repo, {"fetch", "-q", "second"});
+    s.forgetPanelState("Branches"); // the nodes start closed
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string main = "//Branches/branch_main/###branch_main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(main.c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->remoteBranches.size() >= 2; }));
+    GG_REQUIRE(s.session()->snapshot()->findBranch("main")->upstream == "origin/main");
+    // Two refs: a node with an arrow, closed at the start, and no "@" suffix on the row.
+    GG_CHECK(s.itemExists("//Branches/branch_main/###expand"));
+    GG_CHECK(s.itemText(main.c_str()).find('@') == std::string::npos);
+    GG_CHECK(s.itemText(main.c_str()).find("main") != std::string::npos);
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###remote_origin"));
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###remote_second"));
+    // A click on the arrow opens the node: a child row for each ref, the upstream marked, and no eye.
+    ctx->ItemClick("//Branches/branch_main/###expand");
+    ctx->Yield(2);
+    const std::string originId = s.revParse(repo, "origin/main").substr(0, 7);
+    const std::string secondId = s.revParse(repo, "second/main").substr(0, 7);
+    GG_REQUIRE(s.itemExists("//Branches/branch_main/###remote_origin"));
+    GG_CHECK_STR_EQ(s.itemText("//Branches/branch_main/###remote_origin"), "origin  " + originId + "  (upstream)");
+    GG_CHECK_STR_EQ(s.itemText("//Branches/branch_main/###remote_second"), "second  " + secondId);
+    GG_CHECK(!s.itemExists("//Branches/branch_main/remote_origin/###eye"));
+    // A ref hidden in History is grey: the eye of the branch hides its remote refs too.
+    const auto nameColour = [&](const char* name) {
+        const auto glyphs = s.glyphsOf("//Branches");
+        const std::string want = name;
+        for (size_t i = 0; i + want.size() <= glyphs.size(); ++i) {
+            size_t k = 0;
+            while (k < want.size() && glyphs[i + k].codepoint == static_cast<unsigned>(want[k]))
+                ++k;
+            if (k == want.size())
+                return glyphs[i].col;
+        }
+        return ImU32(0);
+    };
+    const ImU32 disabled = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    GG_CHECK(nameColour("second") != 0 && nameColour("second") != disabled);
+    ctx->ItemClick("//Branches/branch_main/###eye");
+    ctx->Yield(3);
+    GG_CHECK_EQ(nameColour("second"), disabled);
+    GG_CHECK_EQ(nameColour("origin"), disabled);
+    ctx->ItemClick("//Branches/branch_main/###eye");
+    ctx->Yield(3);
+    GG_CHECK(nameColour("second") != disabled);
+    // A click on the row text does not change the node; the arrow closes it again.
+    ctx->ItemClick(main.c_str());
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists("//Branches/branch_main/###remote_origin"));
+    ctx->ItemClick("//Branches/branch_main/###expand");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###remote_origin"));
+    // One remote ref: the "@" suffix stays, and there is no arrow.
+    GG_CHECK(!s.itemExists("//Branches/branch_other/###expand"));
+    GG_CHECK(s.itemText("//Branches/branch_other/###branch_other").find("other@origin/main") != std::string::npos);
+    GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 5));
+}
+
 GG_TEST("panels", "branches: the remote section starts closed and a click on the remote node shows its rows")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     // The app outlives the tests and the window keeps the open state of its tree nodes: forget it.
-    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
-        if (w->RootWindow && std::string(w->RootWindow->Name) == "Branches")
-            w->StateStorage.Clear();
+    s.forgetPanelState("Branches");
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     const std::string node = "//Branches/remote_group_origin/origin";
@@ -78,9 +140,7 @@ GG_TEST("panels", "branches: the remote section starts closed and a click on the
 GG_TEST("panels", "branches: a filter opens a closed remote node and clearing it closes the node again")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
-    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
-        if (w->RootWindow && std::string(w->RootWindow->Name) == "Branches")
-            w->StateStorage.Clear();
+    s.forgetPanelState("Branches");
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     const std::string node = "//Branches/remote_group_origin/origin";
