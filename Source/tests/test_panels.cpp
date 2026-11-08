@@ -176,9 +176,10 @@ GG_TEST("panels", "branches: a filter opens a closed remote node and clearing it
 
 GG_TEST("panels", "branches: a cut row keeps its name and counters in the text colour and dims what stays of the upstream")
 {
-    // About 200 characters each: too long for the panel at any width.
+    // About 70 and 57 characters: too long for the panel. Longer names break the Windows path
+    // limit (260 characters) of the loose ref file in the temporary directory.
     std::string name, upstream;
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 3; ++i) {
         name += "long-branch-name-";
         upstream += "long-upstream-nm-";
     }
