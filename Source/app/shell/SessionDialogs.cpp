@@ -246,9 +246,9 @@ void Session::showPushToDialog(const std::string& branch)
     const auto* b = m_snapshot->findBranch(local);
     std::string target = local;
     if (b && !b->upstream.empty()) {
-        const auto slash = b->upstream.find('/');
+        const size_t slash = b->upstreamRemote.size();
         for (size_t i = 0; i < remotes.size(); ++i)
-            if (remotes[i] == b->upstream.substr(0, slash))
+            if (remotes[i] == b->upstreamRemote)
                 remote.choice = static_cast<int>(i);
         target = b->upstream.substr(slash + 1);
     }
@@ -939,8 +939,8 @@ void Session::pushCurrent()
         showPushToDialog(m_snapshot->headBranch);
         return;
     }
-    const auto slash = b->upstream.find('/');
-    m_actions->push(b->upstream.substr(0, slash), b->name, b->upstream.substr(slash + 1), false, false);
+    const size_t slash = b->upstreamRemote.size();
+    m_actions->push(b->upstreamRemote, b->name, b->upstream.substr(slash + 1), false, false);
 }
 
 void Session::popStash()

@@ -65,6 +65,7 @@ struct BranchInfo {
     std::string name;            // short name, e.g. "main"
     Oid target;
     std::string upstream;        // e.g. "origin/main" ("" = none)
+    std::string upstreamRemote;  // the remote part of upstream, e.g. "origin" ("" = none)
     bool upstreamGone = false;   // configured but the ref does not exist
     int ahead = 0;
     int behind = 0;
@@ -542,6 +543,7 @@ struct RepoSummary {
     std::string branch;               // "" when detached
     bool detached = false;
     std::string upstream;
+    std::string upstreamRemote;
     int ahead = 0, behind = 0;
     std::vector<SubmoduleInfo> submodules;
 };

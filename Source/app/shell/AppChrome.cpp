@@ -570,7 +570,7 @@ void App::drawRepositoryButtons()
         if (menuItem(ICON_MS_WARNING, "Force with lease...", nullptr, false, canPush)) {
             const auto* b = s->snapshot()->currentBranch();
             if (b && !b->upstream.empty()) {
-                const auto slash = b->upstream.find('/');
+                const size_t slash = b->upstreamRemote.size();
                 Form f;
                 f.title = "Force push";
                 f.message = "Overwrite " + b->upstream + " with " + b->name + " (--force-with-lease)?";
@@ -586,7 +586,7 @@ void App::drawRepositoryButtons()
             const auto* b = s->snapshot()->currentBranch();
             std::string remote = s->snapshot()->remotes.front().name;
             if (b && !b->upstream.empty())
-                remote = b->upstream.substr(0, b->upstream.find('/'));
+                remote = b->upstreamRemote;
             s->actions().push(remote, "", "", false, false, true);
         }
         ImGui::EndPopup();

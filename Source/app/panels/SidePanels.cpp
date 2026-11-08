@@ -449,8 +449,7 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
 void pushBranch(Session& session, const core::BranchInfo& b)
 {
     if (!b.upstream.empty()) {
-        const auto slash = b.upstream.find('/');
-        session.actions().push(b.upstream.substr(0, slash), b.name, b.upstream.substr(slash + 1), false, false);
+        session.actions().push(b.upstreamRemote, b.name, b.upstream.substr(b.upstreamRemote.size() + 1), false, false);
     } else {
         session.showPushToDialog(b.name);
     }
@@ -778,7 +777,7 @@ void BranchesPanel::draw(bool* open)
         }
         if (!b.upstream.empty()) {
             if (!expandable) {
-                remote = trackedName(b.name, b.upstream);
+                remote = trackedName(b.name, b.upstream, b.upstreamRemote);
                 link = "@";
             }
             if (b.upstreamGone)

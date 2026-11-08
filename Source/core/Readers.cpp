@@ -474,6 +474,23 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
             info.pruneOnFetch = configBool(cfg.get(), ("remote." + info.name + ".prune").c_str()).value_or(false);
             snap->remotes.push_back(std::move(info));
         }
+        for (BranchInfo& b : snap->branches) {
+            for (const RemoteInfo& r : snap->remotes) {
+                if (b.upstream.size() > r.name.size() && b.upstream.compare(0, r.name.size(), r.name) == 0
+                    && b.upstream[r.name.size()] == '/' && r.name.size() > b.upstreamRemote.size())
+                    b.upstreamRemote = r.name;
+            }
+            if (b.upstreamRemote.empty() && !b.upstream.empty())
+                b.upstreamRemote = b.upstream.substr(0, b.upstream.find('/'));
+        }
+        // A remote name may contain '/': the longest configured remote that prefixes the ref wins.
+        for (RemoteBranchInfo& rb : snap->remoteBranches) {
+            for (const RemoteInfo& r : snap->remotes) {
+                if (r.name.size() > rb.remote.size() && rb.name.size() > r.name.size()
+                    && rb.name.compare(0, r.name.size(), r.name) == 0 && rb.name[r.name.size()] == '/')
+                    rb.remote = r.name;
+            }
+        }
     }
 
     // Stashes
@@ -1803,6 +1820,11 @@ RepoSummary readSummary(const fs::path& path)
         Buf up;
         if (git_branch_upstream_name(&up.buf, repo.get(), target.c_str()) == 0) {
             s.upstream = stripPrefix(up.str(), "refs/remotes/");
+            Buf upRemote;
+            if (git_branch_remote_name(&upRemote.buf, repo.get(), up.str().c_str()) == 0)
+                s.upstreamRemote = upRemote.str();
+            else
+                git_error_clear();
             git_oid local, remote;
             if (git_reference_name_to_id(&local, repo.get(), target.c_str()) == 0
                 && git_reference_name_to_id(&remote, repo.get(), up.str().c_str()) == 0) {

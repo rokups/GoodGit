@@ -20,7 +20,7 @@ namespace ggui {
 std::string remoteHost(const std::string& url);
 bool containsNoCase(const std::string& haystack, const std::string& needle);
 // How a branch row names the branch it tracks: "origin" for origin/main on main, else the whole "origin/other".
-std::string trackedName(const std::string& branch, const std::string& upstream);
+std::string trackedName(const std::string& branch, const std::string& upstream, const std::string& remote);
 // "main@origin ↑1 ↓2" style summary of a recent repository. With `elidePrefix` > 0 the branch and the
 // upstream name are shortened in the middle (see elideMiddle).
 // For a repository that is not usable (health is not Ok) it is the short reason: "missing", "not a repository" or "unreadable".

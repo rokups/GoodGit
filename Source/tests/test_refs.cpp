@@ -652,6 +652,26 @@ GG_TEST("refs", "branches: <remote>/HEAD is not a remote ref of a branch; an ups
     s.git(repo, {"remote", "set-head", "origin", "-d"});
 }
 
+GG_TEST("refs", "a remote name with a slash gives the right remote for its branches and upstreams")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "team/fork", s.gitOut(repo, {"remote", "get-url", "origin"})});
+    s.git(repo, {"fetch", "-q", "team/fork"});
+    s.git(repo, {"branch", "--track", "forked", "team/fork/main"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto snap = s.session()->snapshot();
+        for (const auto& r : snap->remoteBranches)
+            if (r.name == "team/fork/main")
+                return r.remote == "team/fork";
+        return false;
+    }));
+    const auto snap = s.session()->snapshot();
+    const auto* b = snap->findBranch("forked");
+    GG_REQUIRE(b != nullptr);
+    GG_CHECK_STR_EQ(b->upstreamRemote, "team/fork");
+}
+
 GG_TEST("refs", "branches: Check out on a remote-tracking branch opens Create branch when no local branch has its name")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
