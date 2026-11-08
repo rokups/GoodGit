@@ -738,8 +738,9 @@ the panel without touching the repository.
   (a folder icon) `act_open_dir`.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
-  Ctrl+Space = only this; the eye is mouse-only; the eye of a local row also covers its remote-tracking refs), current outlined. The link and the upstream name of a local row are drawn dimmed. When the label is cut, only the part that stays is dimmed.
-  A local row with two or more remote-tracking refs (same name in each remote, plus its upstream) is a node: an
+  Ctrl+Space = only this; the eye is mouse-only; the eye of a local row also covers its remote-tracking refs), current outlined. The remote refs of a local branch are its same-name refs in every remote, plus its upstream ref.
+  A local row with at most one remote ref and an upstream shows the dimmed suffix `@<remote>` (the upstream name). When the label is cut, only the part that stays is dimmed.
+  A local row with two or more remote refs is a node: an
   arrow `###expand` sits between the eye and the label, the node starts closed, and the row has no `@<remote>` suffix.
   A click on the arrow, or Right and Left on the row, open and close it. A click on the row text acts as before.
   An open node has a child row `remote_<remote>` for each ref, indented to the label: `<remote>  <short ID>` (the ID
@@ -747,7 +748,7 @@ the panel without touching the repository.
   eye of the node covers it). The row of a ref named `<remote>/<branch>` shows the remote and has the ID
   `remote_<remote>`. Another ref (the upstream `origin/other` of `main`) shows its whole name and has the ID
   `remote_<ref name>`, so two rows never share an ID. A ref hidden in History is drawn dimmed (`TextDisabled`), as the
-  rows of the remote section. It is a keyboard stop. Its menu is the one of a remote-tracking branch without Check out
+  rows of the remote section. It is a keyboard stop. The eye of a folder row covers the remote refs of the branches below it, as the eye of a local row does. Its menu is the one of a remote-tracking branch without Check out
   and Create local branch…, with Set as upstream (disabled for the upstream).
   Branches are grouped by folder and
   remote-tracking ones by remote; a group row's eye (`###eye` in the group's scope) shows/hides the branches

@@ -450,6 +450,15 @@ the History panel list newly conflicted commits. See §5, decision R1.
   Reconcile with remote/branch…, Rename…, Delete ▸ (Local / a given remote / Local and all
   remotes). **N** Set/unset upstream, Fast-forward to upstream, Pull (for the current
   branch).
+  **N** The remote refs of a local branch are its same-name refs in every remote, plus its
+  upstream ref. A branch with one remote ref and an upstream shows a dimmed `@<remote>` suffix, and
+  its menu has a "Remote <name>" submenu: the menu of the remote ref plus "Set as upstream". A
+  branch with two or more remote refs is a node: it has no suffix, and its child rows
+  (`<remote>  <short ID>`, with "(upstream)", or the full name for a ref of another name) have the
+  same menu. A child row is grey when the ref is hidden. The eye of a local row, and of a folder,
+  also shows or hides the remote refs. The Remotes section of the panel stays: one node for each
+  remote with all its remote-tracking refs, each with its own eye. Each node starts closed. A
+  filter opens a node that has matches. Clearing the filter restores the earlier state.
 - **K Tags:** Create tag, filter, visibility toggle, Reveal, Copy, Delete.
   **N** Annotated tags (message), push tag, delete a remote tag.
 - **M Workspaces → Worktrees:** native `git worktree`: list (stale, locked, main), Add…,
