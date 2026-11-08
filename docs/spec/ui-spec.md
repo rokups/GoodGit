@@ -748,6 +748,8 @@ the panel without touching the repository.
   Reconcile with remote/branch… · Rename… · Delete ▸ (Local / on <remote> / Local and all
   remotes; a delete on a remote, here or by Delete on remote…, also unsets the upstream of every local branch that
   tracked the deleted remote branch, after each successful remote delete; a failed delete changes nothing) · N: Set upstream… · Unset upstream · Fast-forward to upstream · Pull (current branch) ·
+  Remote <name> ▸ (only when the branch has exactly one remote-tracking branch, by its name or as its upstream: that
+  branch's menu without Check out and Create local branch…, plus Set as upstream, disabled when it is the upstream) ·
   Interactive rebase onto… (Phase 3: the `Interactive rebase onto` dialog asks for the base; the
   branch is the tip and only it and its update-ref branches move, HEAD stays) · Check out in new
   worktree… (Phase 4: the `Add worktree` dialog with *An existing branch* and this branch; disabled

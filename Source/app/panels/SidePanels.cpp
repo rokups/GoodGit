@@ -58,7 +58,7 @@ struct BranchRemotes {
 
 // The remote-tracking branches by their name without the remote ("origin/feature/one" is "feature/one").
 // A "<remote>/HEAD" ref is not listed.
-[[maybe_unused]] std::map<std::string, std::vector<const core::RemoteBranchInfo*>> remotesByShortName(const core::Snapshot& snapshot)
+std::map<std::string, std::vector<const core::RemoteBranchInfo*>> remotesByShortName(const core::Snapshot& snapshot)
 {
     std::map<std::string, std::vector<const core::RemoteBranchInfo*>> index;
     for (const auto& r : snapshot.remoteBranches) {
@@ -75,7 +75,7 @@ struct BranchRemotes {
 
 // The refs of `index` with the name `shortName`, in the order of `Snapshot::remotes`. The `upstream` ref
 // (a full ref name, "origin/main") is added when it is a listed ref that the name does not give.
-[[maybe_unused]] BranchRemotes branchRemotes(const core::Snapshot& snapshot,
+BranchRemotes branchRemotes(const core::Snapshot& snapshot,
     const std::map<std::string, std::vector<const core::RemoteBranchInfo*>>& index, const std::string& shortName,
     const std::string& upstream)
 {
@@ -448,6 +448,48 @@ void checkoutRemoteBranch(Session& session, const core::Snapshot& snapshot, cons
         session.showCreateBranchDialog(r.name, shortName);
 }
 
+// Which items of a remote-tracking branch menu show.
+struct RemoteMenuOptions {
+    bool checkout;                           // Check out
+    bool createLocal;                        // Create local branch...
+    const core::BranchInfo* setUpstreamFor;  // when set: "Set as upstream" for this local branch
+};
+
+// The items of the menu of a remote-tracking branch. The History panel, the Branches panel and the
+// "Remote <name>" submenu of a local branch share it.
+void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core::RemoteBranchInfo& r, RemoteMenuOptions options)
+{
+    auto& actions = session.actions();
+    const bool free = actions.busy().empty();
+    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
+    const bool headAttached = !snap.headDetached && !snap.headUnborn;
+    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
+        session.revealCommit(r.target);
+    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
+        ImGui::SetClipboardText(r.name.c_str());
+    ImGui::Separator();
+    if (options.checkout) {
+        // A local branch of that name is checked out; otherwise the Create branch dialog opens (so "...").
+        const std::string checkoutLabel = snap.findBranch(shortName) ? "Check out###check_out" : "Check out...###check_out";
+        if (menuItem(ICON_MS_SWAP_HORIZ, checkoutLabel.c_str(), nullptr, false, free))
+            checkoutRemoteBranch(session, snap, r);
+    }
+    if (options.createLocal && menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
+        session.showCreateBranchDialog(r.name, shortName);
+    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free))
+        session.showCreateBranchDialog(r.name);
+    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !snap.headUnborn))
+        showMergeDialog(session, "refs/remotes/" + r.name);
+    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
+        actions.rebaseHeadOnto("refs/remotes/" + r.name);
+    if (const core::BranchInfo* local = options.setUpstreamFor;
+        local && menuItem(ICON_MS_LINK, "Set as upstream", nullptr, false, free && local->upstream != r.name))
+        actions.setUpstream(local->name, r.name);
+    ImGui::Separator();
+    if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
+        session.showDeleteRemoteBranchDialog(r.name);
+}
+
 } // namespace
 
 // ---- Branches -----------------------------------------------------------------------------------
@@ -530,6 +572,16 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
         actions.unsetUpstream(b.name);
     if (menuItem(ICON_MS_FAST_FORWARD, "Fast-forward to upstream", nullptr, false, free && !b.upstream.empty() && b.behind > 0 && b.ahead == 0))
         actions.fastForward(b.name);
+    // The remote-tracking branch of this branch: its menu without Check out and Create local branch (the
+    // local branch exists). The submenu shows for exactly one such ref.
+    const BranchRemotes remotes = branchRemotes(snap, remotesByShortName(snap), b.name, b.upstream);
+    if (remotes.refs.size() == 1) {
+        ImGui::Separator();
+        if (beginMenu(ICON_MS_CLOUD, ("Remote " + remotes.refs.front()->remote).c_str(), true)) {
+            remoteRefMenuItems(session, snap, *remotes.refs.front(), {false, false, &b});
+            ImGui::EndMenu();
+        }
+    }
 }
 
 void BranchesPanel::branchMenu(const core::BranchInfo& b)
@@ -542,30 +594,7 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b)
 
 void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const core::RemoteBranchInfo& r)
 {
-    auto& actions = session.actions();
-    const bool free = actions.busy().empty();
-    const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
-    const bool headAttached = !snap.headDetached && !snap.headUnborn;
-    if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
-        session.revealCommit(r.target);
-    if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-        ImGui::SetClipboardText(r.name.c_str());
-    ImGui::Separator();
-    // A local branch of that name is checked out; otherwise the Create branch dialog opens (so "...").
-    const std::string checkoutLabel = snap.findBranch(shortName) ? "Check out###check_out" : "Check out...###check_out";
-    if (menuItem(ICON_MS_SWAP_HORIZ, checkoutLabel.c_str(), nullptr, false, free))
-        checkoutRemoteBranch(session, snap, r);
-    if (menuItem(ICON_MS_ADD, "Create local branch...", nullptr, false, free))
-        session.showCreateBranchDialog(r.name, shortName);
-    if (menuItem(ICON_MS_ADD, "Create branch...", nullptr, false, free))
-        session.showCreateBranchDialog(r.name);
-    if (menuItem(ICON_MS_MERGE, "Merge into HEAD...", nullptr, false, free && !snap.headUnborn))
-        showMergeDialog(session, "refs/remotes/" + r.name);
-    if (menuItem(ICON_MS_LOW_PRIORITY, "Rebase HEAD onto branch", nullptr, false, free && headAttached))
-        actions.rebaseHeadOnto("refs/remotes/" + r.name);
-    ImGui::Separator();
-    if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
-        session.showDeleteRemoteBranchDialog(r.name);
+    remoteRefMenuItems(session, snap, r, {true, true, nullptr});
 }
 
 void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)

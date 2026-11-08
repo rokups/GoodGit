@@ -454,8 +454,9 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     ctx->ItemClick(lrow.c_str(), ImGuiMouseButton_Right);
     for (const char* item : {"Check out", "Rename...", "Push", "Set upstream...", "Delete"})
         GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
-    for (const char* item : {"Fetch", "Fetch and prune", "Fetch more...", "Copy URL", "Edit URL...", "Prune on fetch", "Remote origin", "Delete on remote..."})
+    for (const char* item : {"Fetch", "Fetch and prune", "Fetch more...", "Copy URL", "Edit URL...", "Prune on fetch", "Delete on remote..."})
         GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    GG_CHECK(ctx->ItemExists("//$FOCUSED/Remote origin")); // main has origin/main
     ctx->PopupCloseAll();
     ctx->Yield(2);
 
@@ -465,7 +466,7 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###check_out"), "Check out...###check_out");
     for (const char* item : {"Create local branch...", "Merge into HEAD...", "Rebase HEAD onto branch", "Copy name", "Delete on remote..."})
         GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
-    for (const char* item : {"Fetch", "Copy URL", "Edit URL...", "Remote origin", "Rename...", "Set upstream...", "Push"})
+    for (const char* item : {"Fetch", "Copy URL", "Edit URL...", "Remote origin", "Rename...", "Set upstream...", "Set as upstream", "Push"})
         GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
     ctx->PopupCloseAll();
     ctx->Yield(2);
@@ -478,6 +479,95 @@ GG_TEST("refs", "branches: remote node, local branch and remote-tracking branch 
     GG_CHECK(s.waitUntil([&] { return !s.itemExists(rrow.c_str()); }));
     s.settle();
     GG_CHECK(!refExists(s, repo, "refs/remotes/origin/topic"));
+}
+
+// Whether the "Remote <name>" submenu is in the open context menu of a local branch row.
+static bool hasRemoteSubmenu(Scenario& s, const std::string& row, const char* name)
+{
+    auto* ctx = s.ctx;
+    ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
+    const bool found = ctx->ItemExists((std::string("//$FOCUSED/") + name).c_str());
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    return found;
+}
+
+GG_TEST("refs", "branches: a local branch with one remote ref has a Remote submenu; Set as upstream sets the upstream")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "side", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "side"}); // origin/side exists; side has no upstream
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("side").c_str()); }));
+    GG_REQUIRE(s.session()->snapshot()->findBranch("side"));
+    GG_CHECK(s.session()->snapshot()->findBranch("side")->upstream.empty());
+    // The submenu has the remote-tracking branch items, but not Check out or Create local branch.
+    ctx->ItemClick(branchRow("side").c_str(), ImGuiMouseButton_Right);
+    ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Remote origin");
+    ctx->Yield(2);
+    for (const char* item : {"Reveal", "Copy name", "Create branch...", "Merge into HEAD...", "Rebase HEAD onto branch", "Set as upstream", "Delete on remote..."})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    for (const char* item : {"Create local branch...", "###check_out"})
+        GG_CHECK(!ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(branchRow("side").c_str(), "Remote origin/Set as upstream");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"config", "--get", "branch.side.merge"}).out.find("refs/heads/side") != std::string::npos; }));
+    GG_CHECK_STR_EQ(gg::trim(s.gitMayFail(repo, {"config", "--get", "branch.side.remote"}).out), "origin");
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("side")->upstream, "origin/side");
+    // It is the upstream now: the item is disabled.
+    ctx->ItemClick(branchRow("side").c_str(), ImGuiMouseButton_Right);
+    ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Remote origin");
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+}
+
+GG_TEST("refs", "branches: no Remote submenu without a remote ref, with two remote refs or with a local upstream")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "lonely", "HEAD~1"});
+    s.git(repo, {"branch", "--track", "local-up", "main"}); // branch.local-up.remote is "."
+    GG_REQUIRE(s.gitOut(repo, {"config", "--get", "branch.local-up.remote"}) == ".");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("local-up").c_str()); }));
+    GG_CHECK(hasRemoteSubmenu(s, branchRow("main"), "Remote origin")); // one remote ref
+    GG_CHECK(!hasRemoteSubmenu(s, branchRow("lonely"), "Remote origin"));
+    GG_CHECK(!hasRemoteSubmenu(s, branchRow("local-up"), "Remote origin"));
+    // A second remote with a ref of the same name: two refs, so no submenu.
+    s.git(repo, {"remote", "add", "second", origin(s, repo).string()});
+    s.git(repo, {"fetch", "-q", "second"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("main").c_str()); }));
+    GG_CHECK(!hasRemoteSubmenu(s, branchRow("main"), "Remote origin"));
+    GG_CHECK(!hasRemoteSubmenu(s, branchRow("main"), "Remote second"));
+}
+
+GG_TEST("refs", "branches: <remote>/HEAD is not a remote ref of a branch; an upstream with another name is")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "set-head", "origin", "-a"});
+    s.git(repo, {"branch", "--track", "renamed", "origin/main"}); // the upstream has another short name
+    GG_REQUIRE(refExists(s, repo, "refs/remotes/origin/HEAD"));
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("renamed").c_str()); }));
+    // origin/HEAD and origin/main give main one ref only; "renamed" counts its upstream origin/main.
+    GG_CHECK(hasRemoteSubmenu(s, branchRow("main"), "Remote origin"));
+    GG_CHECK(hasRemoteSubmenu(s, branchRow("renamed"), "Remote origin"));
+    ctx->ItemClick(branchRow("renamed").c_str(), ImGuiMouseButton_Right);
+    ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Remote origin");
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled); // already its upstream
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.git(repo, {"remote", "set-head", "origin", "-d"});
 }
 
 GG_TEST("refs", "branches: Check out on a remote-tracking branch opens Create branch when no local branch has its name")
