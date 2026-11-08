@@ -428,7 +428,7 @@ GG_TEST("history", "the copy-ID menu item by part clicked and Shift: all five ro
     check(true, true, false, "Copy 0123456", hex.substr(0, 7));
     check(true, false, false, "Copy full ID", hex);
     check(false, false, true, "Copy full ID", hex);
-    check(false, true, false, "Copy 012", hex.substr(0, 3));
+    check(false, true, false, "Copy 0123456", hex.substr(0, 7));
     check(false, false, false, "Copy 0123456", hex.substr(0, 7));
     // A long ID: Shift changes nothing.
     check(true, true, true, "Copy 0123456", hex.substr(0, 7));
@@ -465,7 +465,7 @@ GG_TEST("history", "copy ID and full description; tooltip ID")
     GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy full ID###copy_id");
     ctx->ItemClick("//$FOCUSED/###copy_id");
     GG_CHECK_STR_EQ(s.clipboard(), id);
-    // A right click on the ID's highlighted prefix: the 3 characters.
+    // A right click on the ID's highlighted prefix: the 7 characters.
     const ImGuiTestItemInfo row = ctx->ItemInfo(rowRef(id).c_str());
     const ImVec2 range = s.session()->history().idPrefixRange();
     GG_REQUIRE(range.y > range.x);
@@ -474,9 +474,9 @@ GG_TEST("history", "copy ID and full description; tooltip ID")
     ctx->MouseMoveToPos(ImVec2((range.x + range.y) * 0.5f, row.RectFull.GetCenter().y));
     ctx->MouseClick(ImGuiMouseButton_Right);
     ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Copy");
-    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + id.substr(0, 3) + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + id.substr(0, 7) + "###copy_id");
     ctx->ItemClick("//$FOCUSED/###copy_id");
-    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 3));
+    GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 7));
     // The row tooltip starts with the full ID: 7 characters in the text colour, the rest dimmed.
     ctx->MouseMove(rowRef(id).c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);

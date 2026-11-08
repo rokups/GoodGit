@@ -1270,7 +1270,7 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
     GG_CHECK(s.textShown("//Reflog", "Commits"));
     const std::string table = "//Reflog/##reflog_table";
     const std::string oldId = s.revParse(repo, "HEAD@{1}");
-    // One copy item: for the ID the right click was on (its prefix: 3 characters, the rest: 7), the new ID anywhere
+    // One copy item: for the ID the right click was on (any part of it: 7 characters), the new ID anywhere
     // else on the row; Shift makes it the full ID.
     const std::string copyItem = "//$FOCUSED/###copy_id";
     const std::string newHead = headLines[0].substr(0, 7), oldHead = oldId.substr(0, 7);
@@ -1280,11 +1280,11 @@ GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
         GG_CHECK_STR_EQ(s.clipboard(), text);
     };
     GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 0, 3));
-    copied(newHead.substr(0, 3), newHead.substr(0, 3));
+    copied(newHead, newHead);
     GG_REQUIRE(s.rightClickIdChars("//Reflog", newHead, 3, 7));
     copied(newHead, newHead);
     GG_REQUIRE(s.rightClickIdChars("//Reflog", oldHead, 0, 3));
-    copied(oldHead.substr(0, 3), oldHead.substr(0, 3));
+    copied(oldHead, oldHead);
     GG_REQUIRE(s.rightClickIdChars("//Reflog", oldHead, 3, 7));
     copied(oldHead, oldHead);
     GG_REQUIRE(s.rightClickIdChars("//Reflog", oldHead, 3, 7, true));
@@ -1364,10 +1364,10 @@ GG_TEST("panels", "stashes: copy the stash's ID and its base's ID")
         ctx->MenuClick(copyItem.c_str());
         GG_CHECK_STR_EQ(s.clipboard(), text);
     };
-    // A right click on the base ID: only the base's item (the highlighted 3 characters, the rest, Shift: full).
+    // A right click on the base ID: only the base's item (any part: the 7 characters, Shift: full).
     GG_REQUIRE(s.rightClickIdChars("//Stashes", base7, 0, 3));
     GG_CHECK(!s.itemExists(baseItem.c_str()));
-    copied(base7.substr(0, 3), base7.substr(0, 3));
+    copied(base7, base7);
     GG_REQUIRE(s.rightClickIdChars("//Stashes", base7, 3, 7));
     GG_CHECK(!s.itemExists(baseItem.c_str()));
     copied(base7, base7);

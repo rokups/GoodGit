@@ -258,8 +258,8 @@ Hit textItem(const char* label, const char* end, size_t dimFrom, ImGuiID id, boo
 // The X range of the highlighted prefix of the ID drawn last (see lastIdPrefixRange).
 ImVec2 g_lastIdPrefixRange;
 
-// The first `shownLen` characters of `hex`, split after `lead`. A click on the lead part copies its
-// first `lead` characters, a click on the rest copies all of `hex`.
+// The first `shownLen` characters of `hex`, split after `lead`. A click on the lead part copies the short ID
+// (the first kShortIdLength characters), a click on the rest copies all of `hex`.
 void idItem(const std::string& hex, size_t shownLen, size_t lead, const char* id, bool clickable)
 {
     const std::string shown = hex.substr(0, shownLen);
@@ -269,7 +269,7 @@ void idItem(const std::string& hex, size_t shownLen, size_t lead, const char* id
     const Hit hit = textItem(label.c_str(), label.c_str() + shown.size(), lead, id ? ImGui::GetID(label.c_str()) : 0,
         clickable && id);
     if (hit != Hit::None)
-        ImGui::SetClipboardText((hit == Hit::Lead ? hex.substr(0, lead) : hex).c_str());
+        ImGui::SetClipboardText((hit == Hit::Lead ? hex.substr(0, kShortIdLength) : hex).c_str());
 }
 
 } // namespace
@@ -290,7 +290,7 @@ void plainText(const std::string& text, const std::string& id)
 
 // A short commit ID: the first kShortIdLength characters of `hex`, split after kIdPrefixLength. Registered like
 // plainText under `id` when given. With `clickable` (needs an id) a click on the highlighted prefix copies the
-// prefix and a click on the dimmed rest copies the full `hex`; the hand cursor shows on hover.
+// short ID and a click on the dimmed rest copies the full `hex`; the hand cursor shows on hover.
 static void shortIdText(const std::string& hex, const char* id = nullptr, bool clickable = false)
 {
     idItem(hex, kShortIdLength, kIdPrefixLength, id, clickable);
@@ -475,18 +475,18 @@ void badgeSameLineIfFits(const char* label)
 
 IdCopyChoice idCopyChoice(const std::string& hex, bool longId, bool onPrefix, bool shift)
 {
-    // A long ID: its 7-character prefix copies the short ID. A short ID: Shift copies the full ID,
-    // else its 3-character prefix copies those 3 characters and the rest copies the 7.
+    // A long ID: its 7-character prefix copies the short ID, the rest copies the full ID. A short ID: any part
+    // copies the 7 characters, and Shift copies the full ID.
     const bool full = longId ? !onPrefix : shift;
     if (full)
         return {"Copy full ID", hex};
-    const std::string part = hex.substr(0, longId || !onPrefix ? kShortIdLength : kIdPrefixLength);
+    const std::string part = hex.substr(0, kShortIdLength);
     return {"Copy " + part, part};
 }
 
 IdCopyChoice idCopyChoiceKeyboard(const std::string& hex, bool shift)
 {
-    // No click to tell the part: the 7 characters, never the 3; Shift gives the full ID of a long ID too.
+    // No click to tell the part: the 7 characters; Shift gives the full ID of a long ID too.
     return idCopyChoice(hex, false, false, shift);
 }
 
@@ -544,9 +544,10 @@ int captureTargets(std::span<const IdCopyTarget> ids)
     return g_idCopyOpen.target;
 }
 
-// The item for what captureClick / captureTargets recorded, with the stable ID "###copy_id". `longId` is a full ID
-// (its highlighted prefix is the 7 characters) rather than a short one (3). Shift counts when it was held as the
-// menu opened or while it is open (a menu opened from the keyboard). `what` names the ID in the label ("Copy old
+// The item for what captureClick / captureTargets recorded, with the stable ID "###copy_id". `longId` is a full
+// ID (its highlighted prefix is the 7 characters) rather than a short one (7 characters). Shift counts when it
+// was held as the menu opened or while it is open (a menu opened from the keyboard). `what` names the ID in the
+// label ("Copy old
 // a1b2c3d", "Copy old full ID") for a menu with a second item. Returns true when clicked (after copying).
 bool copyItem(const std::string& hex, bool longId, bool enabled = true, const char* what = nullptr)
 {

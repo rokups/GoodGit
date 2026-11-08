@@ -162,7 +162,7 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     GG_CHECK_STR_EQ(s.itemText("//Changes/###changes_title_id"), shown.substr(0, 7));
     // The title's ID copies like every standalone ID: a click on the prefix or the rest, and the copy item.
     s.clickIdText("//Changes/###changes_title_id", 3, true);
-    GG_CHECK_STR_EQ(s.clipboard(), shown.substr(0, 3));
+    GG_CHECK_STR_EQ(s.clipboard(), shown.substr(0, 7));
     s.clickIdText("//Changes/###changes_title_id", 3, false);
     GG_CHECK_STR_EQ(s.clipboard(), shown);
     s.rightClickIdText("//Changes/###changes_title_id", 3, false);
@@ -849,7 +849,7 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     ctx->Yield(2);
     GG_CHECK(ImGui::GetActiveID() == 0 && !s.itemDrawsBackground("//Change information/**/###author"));
     // The short ID shows its first 3 characters normally and the rest dimmed. A click on the text copies the
-    // highlighted 3 characters, or the full ID from the dimmed part. There is no Copy button.
+    // short ID from the highlighted part, or the full ID from the dimmed part. There is no Copy button.
     const std::string head = s.head(repo);
     const std::string shortHead = head.substr(0, 7);
     ctx->ScrollToItemY("//Change information/**/###commit_id_text");
@@ -859,13 +859,13 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     s.clickIdText("//Change information/**/###commit_id_text", 3, false);
     GG_CHECK_STR_EQ(s.clipboard(), head);
     s.clickIdText("//Change information/**/###commit_id_text", 3, true);
-    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
-    // Right-click offers the one copy item: the 3 characters on the prefix, the 7 on the rest, the full ID with Shift.
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
+    // Right-click offers the one copy item: the 7 characters on any part, the full ID with Shift.
     const std::string copyItem = "//$FOCUSED/###copy_id";
     s.rightClickIdText("//Change information/**/###commit_id_text", 3, true);
-    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + head.substr(0, 3) + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
     ctx->MenuClick(copyItem.c_str());
-    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
     s.rightClickIdText("//Change information/**/###commit_id_text", 3, false);
     GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
     ctx->MenuClick(copyItem.c_str());
@@ -897,7 +897,7 @@ GG_TEST("info", "change information: message, author, committer, date, ID, paren
     ctx->MenuClick(copyItem.c_str());
     GG_CHECK_STR_EQ(s.clipboard(), parent2.substr(0, 7));
     s.rightClickIdText("//Change information/**/###parent_1", 3, true);
-    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + parent2.substr(0, 3) + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + parent2.substr(0, 7) + "###copy_id");
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);
     ctx->ItemClick("//Change information/**/###parent_1");

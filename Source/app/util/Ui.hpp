@@ -87,16 +87,16 @@ void tooltipText(std::string_view text);
 // A tooltip (like SetTooltip) with the text wrapped and cut by tooltipText; the text may be any length.
 void tooltip(const char* fmt, ...) IM_FMTARGS(1);
 // The one "copy ID" menu item every commit ID offers. `longId` is a full ID (its highlighted prefix is the 7
-// characters) rather than a short one (3). Which part was clicked and whether Shift was held decide the item:
+// characters) rather than a short one (7 characters). The clicked part and the Shift key select the item:
 //   long ID:  the 7-character prefix -> "Copy <7 characters>"; the rest -> "Copy full ID";
-//   short ID: Shift -> "Copy full ID"; else the 3-character prefix -> "Copy <3 characters>", the rest -> "Copy <7 characters>".
+//   short ID: Shift -> "Copy full ID"; else any part -> "Copy <7 characters>" (`onPrefix` has no effect).
 struct IdCopyChoice {
     std::string label; // the item's text
     std::string text;  // what it copies
 };
 IdCopyChoice idCopyChoice(const std::string& hex, bool longId, bool onPrefix, bool shift);
 // The item of a menu opened from the keyboard (Alt+Space), for a long or a short ID: "Copy <7 characters>", with
-// Shift "Copy full ID"; never the 3 characters.
+// Shift "Copy full ID".
 IdCopyChoice idCopyChoiceKeyboard(const std::string& hex, bool shift);
 // X ranges [min, max) on screen of a drawn ID's whole text and of its highlighted prefix; ImVec2() = none.
 struct IdSlot {
@@ -104,7 +104,7 @@ struct IdSlot {
     ImVec2 prefix;
 };
 struct IdOptions {
-    bool full = false; // the full ID (split after 7) instead of the short one (3 of 7)
+    bool full = false; // the full ID (split after 7) instead of the short one (7 characters, the first 3 highlighted)
 };
 // A standalone commit ID (an item of its own, `id` is its item ID): draws it, copies on left click (the highlighted
 // prefix copies that part, the rest the full ID), and owns its context menu "##<id>_menu" whose only item is the

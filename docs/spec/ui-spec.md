@@ -111,14 +111,13 @@ colour and the other 4 dimmed; a full ID shows its first 7 characters in the tex
 rest dimmed. The context menu of a commit ID offers one "Copy" item that states what it copies; it
 depends on where the right click landed and on Shift (held as the menu opens or while it is open). A
 full ID: its 7-character prefix gives "Copy a1b2c3d", the rest "Copy full ID". A short ID: with
-Shift "Copy full ID"; without it the 3-character prefix gives "Copy a1b" and the rest "Copy
-a1b2c3d". A right click on a row outside its ID text counts as the rest. A menu opened with
+Shift "Copy full ID"; without it any part gives "Copy a1b2c3d". A right click on a row outside its ID text counts as the rest. A menu opened with
 `Alt+Space` has no click: it gives "Copy a1b2c3d" for a short and for a full ID, and "Copy full ID"
-with Shift, never the 3 characters. The item's ID is `###copy_id`. This applies to every ID menu
+with Shift. No menu or click copies only 3 characters. The item's ID is `###copy_id`. This applies to every ID menu
 (the toolbar HEAD, the History row's Copy submenu, Blame's line menus, the reflog, the Stashes
 rows, Change information's commit ID and parents, the Changes title's commit ID). ID text on its own
 (the toolbar HEAD, the Change information commit ID and the Changes title's commit ID) is the exception to "plain text does nothing on click": clicking its
-highlighted part copies that part (3 characters of a short ID, 7 of a full ID) and clicking the
+highlighted part copies the 7-character short ID (for a short ID and for a full ID) and clicking the
 dimmed rest copies the full ID (hand cursor, no highlight); Space/Enter on the focused ID copies
 the full ID. IDs inside rows and tooltips are not clickable.
 Every item with a right-click context menu also opens it on `Alt+Space` while it has keyboard
@@ -674,8 +673,8 @@ the panel without touching the repository.
 - **Menus:** a right click on a line's gutter, on its line number or on its code, and Alt+Space (for the cursor line), open the
   menu of that line. The code's menu has Copy (enabled with a selection) and Select all first, a separator and then the
   line items; the other three have the line items only. Line items: Blame before this change ·
-  Show originating source · Reveal commit · Copy (the one ID item: on the gutter's ID its 3
-  highlighted characters give 3, anywhere else the 7, Shift the full ID; a line whose ID is not
+  Show originating source · Reveal commit · Copy (the one ID item: on any part of
+  the gutter's ID or elsewhere the 7, Shift the full ID; a line whose ID is not
   shown counts as the rest) · Select change block · Copy change block. The first four act on the
   line's commit and are disabled for an uncommitted line. A right click acts on the line
   hit and does not move the cursor or change the selection (*Select change block* does select).

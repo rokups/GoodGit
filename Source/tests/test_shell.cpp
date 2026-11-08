@@ -1179,10 +1179,10 @@ GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
     const std::string shortHead = head.substr(0, 7);
     GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_head"), shortHead);
     GG_CHECK(s.idShownDimmed("//###Toolbar", shortHead, 3));
-    // Clicking the highlighted prefix copies it, the dimmed rest copies the full ID; nothing is selected or highlighted.
+    // Clicking the highlighted prefix copies the short ID, the dimmed rest copies the full ID; nothing is selected or highlighted.
     GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
     s.clickIdText("//###Toolbar/###tb_head", 3, true);
-    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
     GG_CHECK(!s.itemDrawsBackground("//###Toolbar/###tb_head"));
     s.clickIdText("//###Toolbar/###tb_head", 3, false);
     GG_CHECK_STR_EQ(s.clipboard(), head);
@@ -1202,11 +1202,11 @@ GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
     // Right-click offers one copy item that depends on where the click landed and on Shift.
     const std::string copyItem = "//$FOCUSED/###copy_id";
     s.rightClickIdText("//###Toolbar/###tb_head", 3, true);
-    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + head.substr(0, 3) + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
     GG_CHECK(s.itemLabel("//$FOCUSED/###Copy ID3").empty() && s.itemLabel("//$FOCUSED/###Copy ID7").empty()
         && s.itemLabel("//$FOCUSED/###Copy IDfull").empty());
     ctx->MenuClick(copyItem.c_str());
-    GG_CHECK_STR_EQ(s.clipboard(), head.substr(0, 3));
+    GG_CHECK_STR_EQ(s.clipboard(), shortHead);
     s.rightClickIdText("//###Toolbar/###tb_head", 3, false);
     GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + shortHead + "###copy_id");
     ctx->MenuClick(copyItem.c_str());

@@ -341,13 +341,13 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     GG_CHECK_EQ(s.session()->blame().cursorLine(), 4);
     ctx->SetInputMode(ImGuiInputSource_Mouse);
     // Reveal and copy the commit of line 3.
-    // One copy item on the gutter's ID: its 3 highlighted characters copy those 3, the rest of the line the 7, Shift
+    // One copy item on the gutter's ID: any part of it and the rest of the line copy the 7, Shift
     // the full ID; a line that does not show the ID (the block's second line) counts as the rest.
     const std::string copyItem = "//$FOCUSED/###copy_id";
     s.rightClickIdText(lineRef(s, 3).c_str(), 3, true);
-    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + r.c2.substr(0, 3) + "###copy_id");
+    GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + r.c2.substr(0, 7) + "###copy_id");
     ctx->MenuClick(copyItem.c_str());
-    GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 3));
+    GG_CHECK_STR_EQ(s.clipboard(), r.c2.substr(0, 7));
     s.rightClickIdText(lineRef(s, 3).c_str(), 3, false);
     GG_CHECK_STR_EQ(s.itemLabel(copyItem.c_str()), "Copy " + r.c2.substr(0, 7) + "###copy_id");
     ctx->MenuClick(copyItem.c_str());
