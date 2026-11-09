@@ -32,6 +32,9 @@ bool dangerButton(const char* icon, const char* label, ImVec2 size = ImVec2(0, 0
 // The colors of dangerButton() for a button drawn another way: pair the two calls around it.
 void pushDangerColors();
 void popDangerColors();
+// The accent colors (blueish in the dark theme) of the confirm button of a dialog: pair the two calls around it.
+void pushPrimaryColors();
+void popPrimaryColors();
 // Icon-only square-ish button (`id` like "##name", ID = ImGui::GetID(id)) that centres the
 // glyph's drawn bounds in the frame, ignoring the icon font's baseline GlyphOffset and advance.
 bool iconButton(const char* icon, const char* id, ImVec2 size);

@@ -435,6 +435,7 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
         f.message = "Delete the remote '" + r.name + "' and its remote-tracking branches?";
         const std::string name = r.name;
         f.buttons.push_back({"Delete", [&actions, name](Form&) { actions.removeRemote(name); }});
+        f.buttons.back().danger = true;
         f.buttons.push_back({"Cancel", {}});
         session.app().dialogs().open(std::move(f));
     }

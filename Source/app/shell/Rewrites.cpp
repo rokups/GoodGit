@@ -304,6 +304,7 @@ void Actions::rewriteDecide(const std::shared_ptr<RewriteState>& state)
         f.title = "Rewrite published history?";
         f.message = warnings + "\nContinue?";
         f.buttons.push_back({"Rewrite", [this, state](Form&) { rewriteApply(state); }});
+        f.buttons.back().danger = true;
         f.buttons.push_back({"Cancel", {}});
         dialogs.open(std::move(f));
         return;

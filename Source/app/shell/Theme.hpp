@@ -23,6 +23,7 @@ struct Palette {
     ImU32 added, removed, addedBg, removedBg, hunkHeader, lineNumber;
     ImU32 dim;
     ImU32 error, errorBg, warning;  // error: text on errorBg
+    ImU32 primary, primaryText;     // the confirm button of a dialog (blueish), and its text
     ImU32 errorText;                 // an error as text on the panel
     ImU32 selection;
     ImU32 selectionHovered; // a selected list row under the mouse (hover alone is a neutral overlay)

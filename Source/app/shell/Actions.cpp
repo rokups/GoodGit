@@ -492,6 +492,7 @@ void Actions::amend(const std::string& message, bool noVerify, bool messageOnly,
             f.buttons.push_back({"Rewrite", [this, message, noVerify, messageOnly, done](Form&) {
                                      amendNow(message, noVerify, messageOnly, done);
                                  }});
+            f.buttons.back().danger = true;
             f.buttons.push_back({"Cancel", [declined](Form&) {
                                      if (declined)
                                          declined();
@@ -1195,6 +1196,7 @@ void Actions::resetBranch(const std::string& branch, const core::Oid& commit, Re
                 f.message = "The hard reset discards these. Changes of tracked files and untracked files cannot be "
                             "recovered.\n\n" + e.message;
                 f.buttons.push_back({"Reset hard", [this, branch, commit, mode](Form&) { resetBranch(branch, commit, mode, true); }});
+                f.buttons.back().danger = true;
                 f.buttons.push_back({"Cancel", {}});
                 m_session.app().dialogs().open(std::move(f));
                 return;
@@ -1816,6 +1818,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                          confirm.buttons.push_back({"Force push", [this, remote, localBranch, remoteBranch](Form&) {
                                                                         push(remote, localBranch, remoteBranch, false, true);
                                                                     }});
+                                         confirm.buttons.back().danger = true;
                                          confirm.buttons.push_back({"Cancel", {}});
                                          m_session.app().dialogs().open(std::move(confirm));
                                      }});

@@ -507,6 +507,7 @@ void Session::showForgetDialog(const std::string& remoteName)
                 form.checkedOptions("tags"));
         },
         [](const Form& form) { return !form.checkedOptions("branches").empty() || !form.checkedOptions("tags").empty(); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -556,6 +557,7 @@ void Session::showDiscardDialog(std::vector<std::string> tracked, std::vector<st
     f.buttons.push_back({"Discard", [this, tracked, untracked, staged, submodules](Form&) {
                              m_actions->discard(tracked, untracked, staged, submodules);
                          }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -569,6 +571,7 @@ void Session::showRemoveSubmoduleDialog(const std::string& path)
         "The removal of the entry in .gitmodules and of the submodule is staged.";
     f.add(Field{Field::Check, "data", "Also delete the repository data in .git/modules/<name>"});
     f.buttons.push_back({"Remove", [this, path](Form& form) { m_actions->submoduleRemove(path, form.checked("data")); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -617,6 +620,7 @@ void Session::showDiscardAllDialog()
                                  ctx.submodules = core::SubmoduleSync::ForceUpdate;
                              });
                          }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -876,6 +880,7 @@ void Session::showDropStashDialog(int index)
     f.title = "Drop stash";
     f.message = "Drop stash@{" + std::to_string(index) + "}? (Undo can bring it back.)";
     f.buttons.push_back({"Drop", [this, index](Form&) { m_actions->stashDrop(index); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -886,6 +891,7 @@ void Session::showClearStashesDialog()
     f.title = "Clear stashes";
     f.message = "Drop all " + std::to_string(m_snapshot->stashes.size()) + " stashes?";
     f.buttons.push_back({"Clear all", [this](Form&) { m_actions->stashClear(); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -899,6 +905,7 @@ void Session::showDeleteFilesDialog(std::vector<std::string> paths)
         list += "  " + p + "\n";
     f.message = "Delete these files from the working tree?\n\n" + list;
     f.buttons.push_back({"Delete", [this, paths](Form&) { m_actions->deleteFiles(paths); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

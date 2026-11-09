@@ -930,6 +930,15 @@ keeps an edited message in the field; an empty field, or HEAD's message as fille
 field back to the commit draft. The
 conflict-marker warning shows in both modes (not with *message only*). Amending commits that are already on a remote (HEAD or a restacked descendant, also *message only*) asks `Rewrite published history` first; Cancel reopens the Commit dialog as it was.
 
+**Dialog buttons (GG-17).** The first button of a dialog is the confirm button. It has the accent color
+(`Palette::primary`, blueish in the dark theme). The keyboard focus starts on it, and Enter presses it.
+A dialog with a text field keeps the first focus on that field. Enter in a text field presses the confirm button.
+The confirm button of a destructive action has the danger color (`Palette::errorBg`, reddish in the dark
+theme) and not the accent color. The keyboard focus of that dialog starts on *Cancel*. Set `FormButton::danger`
+for these dialogs: *Delete branch*, *Delete remote*, *Delete files*, *Discard changes* (all forms), *Reset hard*, *Force push*,
+*Rewrite published history* (button *Rewrite*), *Forget*, *Drop commit*, *Drop commit and descendants*, *Drop stash*, *Clear stashes*,
+*Remove worktree*, *Remove worktree with changes* (button *Delete changes and remove*), *Remove submodule*. The labels and the IDs of the buttons stay the same.
+
 ## 10. States
 - **Busy:** conflicting actions disabled with reason tooltip; browsing stays enabled.
 - **Scanning:** Changes header shows "scanning…" while partial status results arrive.

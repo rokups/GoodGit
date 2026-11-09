@@ -531,6 +531,7 @@ void showAbandonDialog(Session& session, const core::Oid& commit)
     f.add(commitInfo(session, "Drop", commit));
     Session* s = &session;
     f.buttons.push_back({"Drop", [s, commit](Form&) { s->actions().abandon(commit, false); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }
@@ -591,6 +592,7 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
                                      s->actions().deleteBranch(name, true, remotes, true);
                              });
                          }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
 }

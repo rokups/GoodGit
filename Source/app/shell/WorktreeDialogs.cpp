@@ -128,6 +128,7 @@ void Session::showRemoveWorktreeDialog(const core::WorktreeInfo& w)
             + ": removing unlocks it first.";
     f.message += "\n\nUndo re-creates it at the same branch or commit (files git ignores do not come back).";
     f.buttons.push_back({"Remove", [this, path](Form&) { m_actions->removeWorktree(path, false); }});
+    f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

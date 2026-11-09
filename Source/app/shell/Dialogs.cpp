@@ -304,6 +304,13 @@ void Dialogs::draw()
     ImGui::Spacing();
     ImGui::Separator();
     int clicked = -1;
+    // The keyboard focus starts on the confirm button (the first), or on Cancel (the last) when the confirm
+    // button is destructive. A text field that takes the focus first keeps it.
+    const bool hasTextField = std::any_of(form.fields.begin(), form.fields.end(), [](const Field& f) {
+        return f.kind == Field::Text || f.kind == Field::Commit || f.kind == Field::Password || f.kind == Field::Multiline;
+    });
+    const size_t focusButton = !form.buttons.empty() && form.buttons.front().danger ? form.buttons.size() - 1 : 0;
+    bool focusDone = false;
     for (size_t b = 0; b < form.buttons.size(); ++b) {
         const FormButton& button = form.buttons[b];
         const std::string label = button.labelFn ? button.labelFn(form) : button.label;
@@ -312,17 +319,32 @@ void Dialogs::draw()
             ImGui::SameLine();
         ImGui::BeginDisabled(!enabled);
         const char* icon = dialogButtonIcon(button, label);
+        // The confirm button (the first) has the accent color; a destructive one has the danger color.
+        const bool primary = b == 0 && !button.danger && form.buttons.size() > 1;
         if (button.danger)
             pushDangerColors();
+        else if (primary)
+            pushPrimaryColors();
+        if (m_focusFirst && !hasTextField && b == focusButton && enabled) {
+            focusDone = true;
+            ImGui::SetKeyboardFocusHere();
+            // Show the focus: Enter and Space press the focused button only while the nav cursor is visible.
+            ImGui::GetCurrentContext()->NavCursorVisible = true;
+        }
         if (icon ? ggui::button(icon, label.c_str()) : ImGui::Button(label.c_str()))
             clicked = static_cast<int>(b);
         if (button.danger)
             popDangerColors();
+        else if (primary)
+            popPrimaryColors();
         ImGui::EndDisabled();
         // Enter on a single-line field activates the first (primary) button.
         if (b == 0 && enabled && enterPressed)
             clicked = 0;
     }
+    // A disabled focus button cannot take the focus: ask again on the next frame.
+    if (focusDone)
+        m_focusFirst = false;
     // Escape belongs to a combo or menu above the dialog: one that is still open (a filter field takes
     // the first Escape for itself) or that this very key press closed. Only then is it Cancel.
     const ImGuiContext& g = *ImGui::GetCurrentContext();

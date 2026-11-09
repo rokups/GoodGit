@@ -98,22 +98,43 @@ bool button(const char* icon, const char* label, ImVec2 size)
     return iconButtonEx(icon, label, size, ImGuiButtonFlags_None);
 }
 
-void pushDangerColors()
+namespace {
+
+// `fill` as a button: hover lightens, press darkens. `text` is the text colour meant for the fill.
+void pushFillColors(ImU32 fill, ImU32 text)
 {
-    // errorBg is the palette's solid red and `error` the text colour meant for it; hover lightens, press darkens.
-    const Palette& p = theme().palette();
     const auto shade = [](ImU32 c, float toward, float amount) {
         const ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
         return ImGui::ColorConvertFloat4ToU32(ImVec4(v.x + (toward - v.x) * amount, v.y + (toward - v.y) * amount,
             v.z + (toward - v.z) * amount, v.w));
     };
-    ImGui::PushStyleColor(ImGuiCol_Button, p.errorBg);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, shade(p.errorBg, 1.0f, 0.15f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, shade(p.errorBg, 0.0f, 0.2f));
-    ImGui::PushStyleColor(ImGuiCol_Text, p.error);
+    ImGui::PushStyleColor(ImGuiCol_Button, fill);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, shade(fill, 1.0f, 0.15f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, shade(fill, 0.0f, 0.2f));
+    ImGui::PushStyleColor(ImGuiCol_Text, text);
+}
+
+} // namespace
+
+void pushDangerColors()
+{
+    // errorBg is the palette's solid red and `error` the text colour meant for it.
+    const Palette& p = theme().palette();
+    pushFillColors(p.errorBg, p.error);
 }
 
 void popDangerColors()
+{
+    ImGui::PopStyleColor(4);
+}
+
+void pushPrimaryColors()
+{
+    const Palette& p = theme().palette();
+    pushFillColors(p.primary, p.primaryText);
+}
+
+void popPrimaryColors()
 {
     ImGui::PopStyleColor(4);
 }

@@ -121,6 +121,7 @@ void Actions::removeWorktree(const std::string& path, bool force)
                     + "\n\nRemove it anyway? The changes and untracked files are deleted for good: Undo re-creates "
                       "the worktree at its commit, but not them.";
                 f.buttons.push_back({"Delete changes and remove", [this, path](Form&) { removeWorktree(path, true); }});
+                f.buttons.back().danger = true;
                 f.buttons.push_back({"Cancel", {}});
                 m_session.app().dialogs().open(std::move(f));
                 return;

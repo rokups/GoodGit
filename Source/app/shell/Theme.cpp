@@ -313,6 +313,8 @@ void ThemeManager::apply(Theme t, float scale)
         p.dim = rgb(140, 140, 140);
         p.error = rgb(255, 255, 255);
         p.errorBg = rgb(160, 40, 50);
+        p.primary = rgb(38, 96, 170);
+        p.primaryText = rgb(255, 255, 255);
         p.warning = rgb(255, 175, 41);
         p.selection = rgb(255, 255, 255, 64);  // neutral: clearly above hover (22) and plain rows
         p.selectionHovered = rgb(255, 255, 255, 88);
@@ -347,6 +349,8 @@ void ThemeManager::apply(Theme t, float scale)
         p.dim = rgb(120, 120, 120);
         p.error = rgb(255, 255, 255);
         p.errorBg = rgb(190, 50, 55);
+        p.primary = rgb(35, 100, 185);
+        p.primaryText = rgb(255, 255, 255);
         p.warning = rgb(190, 120, 10);
         p.selection = rgb(0, 0, 0, 30);
         p.selectionHovered = rgb(0, 0, 0, 42);
