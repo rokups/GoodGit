@@ -905,6 +905,10 @@ the panel without touching the repository.
   settings.json `repoState[<common dir>].worktreeNames[<id>]` (`Settings::setWorktreeName`), so all
   windows of the repository and a restart see it. The Repositories tree rows of the open repository
   show the same name; the tooltip there also has the id.
+  Each worktree row of the Repositories panel has this context menu too (`##worktree_menu`, GG-16). A
+  repository that is not open has some items disabled with the reason "Open this repository first". These
+  items run in the session of the window: Reveal HEAD, Add…, Remove…, Lock…/Unlock, Rename…, Prune…, Repair….
+  The items that need only the path work: Copy name, Copy path, Open directory, Open here, Open in new window.
   Every change runs `git worktree add|remove|lock|unlock|prune|repair`. Add, Remove, Lock and
   Unlock are undoable from the worktree whose window made them (undo-journal.md §5.4); Prune and
   Repair are listed in Operations but cannot be undone.

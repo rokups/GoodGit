@@ -870,6 +870,80 @@ GG_TEST("panels", "repositories: a worktree row of a closed repository opens on 
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), linkedPath); }));
 }
 
+// The labels of the menu of a worktree row, in the Worktrees panel and in the Repositories panel (GG-16).
+static const char* const kWorktreeMenuLabels[] = {"Copy name", "Copy path", "Reveal HEAD", "Open directory", "Open here",
+    "Open in new window", "Add...", "Remove...", "Lock...", "Rename...", "Prune...", "Repair..."};
+
+GG_TEST("panels", "repositories: a worktree row has the menu of the Worktrees panel")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    s.showPanel("Worktrees");
+    const std::string wt1 = repo.filename().string() + "-wt1";
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string wtRow = worktreeRow(row, wt1);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+    ctx->ItemClick(wtRow.c_str(), ImGuiMouseButton_Right);
+    for (const char* label : kWorktreeMenuLabels)
+        GG_CHECK(ctx->ItemExists(("//$FOCUSED/" + std::string(label)).c_str()));
+    ctx->KeyPress(ImGuiKey_Escape);
+    // The open repository: the items of the session are enabled.
+    ctx->ItemClick(wtRow.c_str(), ImGuiMouseButton_Right);
+    for (const char* label : {"Reveal HEAD", "Add...", "Remove...", "Lock...", "Rename...", "Prune...", "Repair..."}) {
+        GG_REQUIRE(ctx->ItemExists(("//$FOCUSED/" + std::string(label)).c_str()));
+        GG_CHECK(!(ctx->ItemInfo(("//$FOCUSED/" + std::string(label)).c_str()).ItemFlags & ImGuiItemFlags_Disabled));
+    }
+    ctx->KeyPress(ImGuiKey_Escape);
+    // The same labels in the Worktrees panel.
+    ctx->ItemClick(("//Worktrees/worktree_" + wt1 + "/###row").c_str(), ImGuiMouseButton_Right);
+    for (const char* label : kWorktreeMenuLabels)
+        GG_CHECK(ctx->ItemExists(("//$FOCUSED/" + std::string(label)).c_str()));
+    ctx->KeyPress(ImGuiKey_Escape);
+    // An enabled item works: Rename... opens its dialog for the worktree.
+    s.contextMenu(wtRow.c_str(), "Rename...");
+    GG_CHECK(s.dialogOpen("Rename worktree"));
+}
+
+GG_TEST("panels", "repositories: the menu of a worktree row of a closed repository")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees, "closedmenu");
+    const fs::path opened = s.fakeTool(kFileManager);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return linkedWorktreeOfSummary(s, repo) != nullptr; }));
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    const fs::path linkedPath = linkedWorktreeOfSummary(s, repo)->path;
+    const std::string wtRow = worktreeRow(row, linkedWorktreeOfSummary(s, repo)->name);
+    openRepoNode(ctx, row);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+    // The items that run in the session of the window are disabled; the path items are not.
+    ctx->ItemClick(wtRow.c_str(), ImGuiMouseButton_Right);
+    for (const char* label : kWorktreeMenuLabels)
+        GG_CHECK(ctx->ItemExists(("//$FOCUSED/" + std::string(label)).c_str()));
+    for (const char* label : {"Reveal HEAD", "Add...", "Remove...", "Lock...", "Rename...", "Prune...", "Repair..."})
+        GG_CHECK(ctx->ItemInfo(("//$FOCUSED/" + std::string(label)).c_str()).ItemFlags & ImGuiItemFlags_Disabled);
+    for (const char* label : {"Copy name", "Copy path", "Open directory", "Open here", "Open in new window"})
+        GG_CHECK(!(ctx->ItemInfo(("//$FOCUSED/" + std::string(label)).c_str()).ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
+    s.contextMenu(wtRow.c_str(), "Copy path");
+    GG_CHECK_STR_EQ(s.clipboard(), linkedPath.string());
+    s.contextMenu(wtRow.c_str(), "Open directory");
+    GG_CHECK(s.waitUntil([&] {
+        return s.read(opened.parent_path(), opened.filename().string()).find(linkedPath.string()) != std::string::npos;
+    }));
+    // Open here switches the window to the worktree.
+    s.contextMenu(wtRow.c_str(), "Open here");
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), linkedPath); }));
+}
+
 GG_TEST("panels", "repositories: a repository without worktrees expands to nothing")
 {
     s.app.settings().data().repositories.clear();

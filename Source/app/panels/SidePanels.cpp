@@ -1650,7 +1650,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         }
         if (nodeOpen) {
             if (hasWorktrees)
-                drawWorktrees(*worktrees, toOpen);
+                drawWorktrees(*worktrees, isOpen, toOpen);
             if (submodules)
                 drawSubmodules(*submodules, toOpen);
             ImGui::TreePop();
@@ -1703,7 +1703,7 @@ void RepositoriesPanel::repoDropTarget(const std::string& group)
 
 // The worktrees of a repository as rows below its node. The current one has the text colour of the
 // current branch and a missing one is dimmed. A double-click opens a worktree, not the current or a missing one.
-void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& list, std::string& toOpen)
+void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& list, bool own, std::string& toOpen)
 {
     for (const auto& w : list) {
         // A missing or prunable worktree has the warning triangle before its name.
@@ -1732,6 +1732,10 @@ void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& lis
             toOpen = path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", (customName.empty() ? path : path + "\nId: " + w.name).c_str());
+        if (beginContextMenu("##worktree_menu")) {
+            repositoryWorktreeMenuItems(m_session, own, w);
+            ImGui::EndPopup();
+        }
         ImGui::PopID();
     }
 }
@@ -1896,16 +1900,23 @@ void RepositoriesPanel::draw(bool* open)
 
 // ---- Worktrees ----------------------------------------------------------------------------------
 
-// The Worktrees panel's menu for a worktree; also on a worktree badge in History.
-void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w)
+// The reason for a disabled session item on a worktree of another repository.
+static const char* const kOtherRepoReason = "Open this repository first";
+
+// The items of the menu of a worktree. `own` is true when the worktree belongs to the open repository.
+// Session items are disabled for another repository: Reveal HEAD, Add, Remove, Lock, Unlock, Rename, Prune, Repair.
+// The items that need only the path work for every worktree.
+static void worktreeMenuImpl(Session& session, bool own, bool headUnborn, const core::WorktreeInfo& w)
 {
     const bool free = session.actions().busy().empty();
-    const bool canAdd = free && !snap.headUnborn;
+    const bool canAdd = free && !headUnborn;
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(w.name.c_str());
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy path"))
         ImGui::SetClipboardText(w.path.string().c_str());
-    if (menuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", nullptr, false, !w.head.isNull()))
+    if (!own)
+        disabledMenuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", kOtherRepoReason);
+    else if (menuItem(ICON_MS_MY_LOCATION, "Reveal HEAD", nullptr, false, !w.head.isNull()))
         session.revealCommit(w.head);
     if (menuItem(ICON_MS_FOLDER, "Open directory", nullptr, false, !w.missing))
         openInFileManager(w.path);
@@ -1922,15 +1933,21 @@ void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core:
     else if (menuItem(ICON_MS_OPEN_IN_NEW, "Open in new window"))
         session.actions().openInNewWindow(path);
     ImGui::Separator();
-    if (menuItem(ICON_MS_ADD, "Add...", nullptr, false, canAdd))
+    if (!own)
+        disabledMenuItem(ICON_MS_ADD, "Add...", kOtherRepoReason);
+    else if (menuItem(ICON_MS_ADD, "Add...", nullptr, false, canAdd))
         session.showAddWorktreeDialog();
-    if (w.isMain)
+    if (!own)
+        disabledMenuItem(ICON_MS_DELETE, "Remove...", kOtherRepoReason);
+    else if (w.isMain)
         disabledMenuItem(ICON_MS_DELETE, "Remove...", "The main worktree cannot be removed");
     else if (w.isCurrent)
         disabledMenuItem(ICON_MS_DELETE, "Remove...", "This window shows this worktree: open another one first");
     else if (menuItem(ICON_MS_DELETE, "Remove...", nullptr, false, free))
         session.showRemoveWorktreeDialog(w);
-    if (w.isMain)
+    if (!own)
+        disabledMenuItem(w.locked ? ICON_MS_LOCK_OPEN : ICON_MS_LOCK, w.locked ? "Unlock" : "Lock...", kOtherRepoReason);
+    else if (w.isMain)
         disabledMenuItem(ICON_MS_LOCK, "Lock...", "The main worktree cannot be locked");
     else if (w.locked ? menuItem(ICON_MS_LOCK_OPEN, "Unlock", nullptr, false, free) : menuItem(ICON_MS_LOCK, "Lock...", nullptr, false, free)) {
         if (w.locked)
@@ -1938,14 +1955,33 @@ void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core:
         else
             session.showLockWorktreeDialog(w);
     }
-    if (w.bare)
+    if (!own)
+        disabledMenuItem(ICON_MS_EDIT, "Rename...", kOtherRepoReason);
+    else if (w.bare)
         disabledMenuItem(ICON_MS_EDIT, "Rename...", "The bare entry has no worktree to name");
     else if (menuItem(ICON_MS_EDIT, "Rename..."))
         session.showRenameWorktreeDialog(w);
-    if (menuItem(ICON_MS_DELETE_SWEEP, "Prune...", nullptr, false, free))
+    if (!own)
+        disabledMenuItem(ICON_MS_DELETE_SWEEP, "Prune...", kOtherRepoReason);
+    else if (menuItem(ICON_MS_DELETE_SWEEP, "Prune...", nullptr, false, free))
         session.showPruneWorktreesDialog();
-    if (menuItem(ICON_MS_HANDYMAN, "Repair...", nullptr, false, free))
+    if (!own)
+        disabledMenuItem(ICON_MS_HANDYMAN, "Repair...", kOtherRepoReason);
+    else if (menuItem(ICON_MS_HANDYMAN, "Repair...", nullptr, false, free))
         session.showRepairWorktreeDialog(w);
+}
+
+// The Worktrees panel's menu for a worktree; also on a worktree badge in History.
+void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w)
+{
+    worktreeMenuImpl(session, true, snap.headUnborn, w);
+}
+
+// The same menu on a worktree row of the Repositories panel. `own`: the row belongs to the open repository.
+void repositoryWorktreeMenuItems(Session& session, bool own, const core::WorktreeInfo& w)
+{
+    const auto& snap = session.snapshot();
+    worktreeMenuImpl(session, own, snap && snap->headUnborn, w);
 }
 
 void WorktreesPanel::draw(bool* open)

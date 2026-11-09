@@ -25,6 +25,8 @@ void tagMenuItems(Session& session, const core::Snapshot& snap, const core::TagI
 void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, const IdSlot& idSlot);
 void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& baseSlot);
 void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w);
+// The same menu for a worktree row of the Repositories panel. `own`: it is a worktree of the open repository.
+void repositoryWorktreeMenuItems(Session& session, bool own, const core::WorktreeInfo& w);
 
 // The kind of a ref row that the Branches panel or the Tags panel can select.
 enum class RefKind { LocalBranch, RemoteBranch, Tag };
@@ -105,7 +107,8 @@ private:
     void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
     // The worktree rows of a repository: the live list of the open one, else the list of its summary (GG-15).
     const std::vector<core::WorktreeInfo>* worktreesOf(const std::string& path) const;
-    void drawWorktrees(const std::vector<core::WorktreeInfo>& list, std::string& toOpen);
+    // `own`: the list is that of the open repository, so the menu items that run in the session are enabled.
+    void drawWorktrees(const std::vector<core::WorktreeInfo>& list, bool own, std::string& toOpen);
     // The submodules of a repository (`path` is a list key): the snapshot list of the open one, else the summary list of a listed one, else null.
     const std::vector<core::SubmoduleInfo>* submodulesOf(const std::string& path) const;
     // The submodules as rows (nested ones as nodes). `toOpen` gets the path of the one that is double-clicked.
