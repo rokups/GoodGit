@@ -349,7 +349,16 @@ stays as it is (it is only limited to 50–300 % on load).
   - On the middle of a row with no modifier it says "Choose an action for a1b2c3d". A second line lists
     the modifiers.
   - While a task runs it says "Wait: another task runs".
-  - A gap next to the dragged row adds no line. A drag of a branch or of files adds no line.
+  - A gap next to the dragged row adds no line. A drag of a branch adds its own line (see below).
+  - A drag of files adds a line under the path. The line names the action of a drop on the target under the mouse.
+    A target with no action adds no line. The count is the number of dragged files, for example "1 file" or
+    "3 files".
+    - A commit row, for working tree files: "Absorb 3 files into a1b2c3d".
+    - A commit row, for the files of a commit: "Move 3 files to parent a1b2c3d", "Move 3 files to child a1b2c3d"
+      or "Move 3 files to HEAD a1b2c3d". Another row adds no line.
+    - The Staged group of Changes, for files from another group: "Stage 3 files". The Unstaged group, for
+      staged files: "Unstage 3 files". Other drops on these groups add no line.
+    - While a task runs, a target that has an action says "Wait: another task runs".
 - **Commit row → commit row.** The modifier held at the drop picks the action: Shift = Move after,
   Ctrl+Shift = Move before, Ctrl = Squash into (messages combined), Alt = Rebase onto (the
   source is the rebase source of the dragged commit, see §4: the commits from its first

@@ -937,3 +937,148 @@ GG_TEST("dnd", "a dragged commit fills the History filter and the Changes \"Comp
 }
 
 } // namespace ggtest
+
+namespace ggtest {
+
+namespace {
+
+std::string groupRef(Scenario& s, const char* group) { return s.child("//Changes", "##files") + "/" + group; }
+
+std::string fileItem(Scenario& s, const std::string& group, const std::string& file)
+{
+    return s.child("//Changes", "##files") + "/" + (group.empty() ? "" : group + "/") + file + "/###file_" + file;
+}
+
+// Presses the mouse on `from`, moves to `to` (an item path) and leaves the drag open.
+void hold(Scenario& s, const std::string& from, const std::string& to)
+{
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(to.c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+}
+
+void release(Scenario& s)
+{
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    s.settle();
+}
+
+} // namespace
+
+GG_TEST("dnd", "hint: files of a commit")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    const auto id = [&](int i) { return r.c[static_cast<size_t>(i)].substr(0, 7); };
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()) && s.itemExists(rowRef(r.c[0]).c_str()); }));
+    ctx->ItemClick(rowRef(r.c[1]).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileItem(s, "", "f2.txt").c_str()); }));
+    hold(s, fileItem(s, "", "f2.txt"), rowRef(r.c[0]));
+    GG_CHECK_STR_EQ(history.dropHint(), "Move 1 file to parent " + id(0));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "f2.txt"));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "Move 1 file to parent " + id(0)));
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[2]).c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move 1 file to child " + id(2));
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Move 1 file to HEAD " + id(3));
+    release(s);
+    GG_CHECK(history.dropHint().empty());
+    // A commit that is neither the parent, the child nor HEAD: no action, no hint.
+    ctx->ItemClick(rowRef(r.c[3]).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileItem(s, "", "f4.txt").c_str()); }));
+    hold(s, fileItem(s, "", "f4.txt"), rowRef(r.c[0]));
+    GG_CHECK(history.dropHint().empty());
+    release(s);
+}
+
+GG_TEST("dnd", "hint: files of the working tree")
+{
+    const Chain r = makeChain(s);
+    s.write(r.path, "f1.txt", "1 changed\n");
+    s.write(r.path, "f2.txt", "2 changed\n");
+    s.git(r.path, {"add", "f2.txt"});
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    auto& changes = s.session()->changes();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/**/###row_wt"); }));
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string unstaged = fileItem(s, "Unstaged", "f1.txt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(unstaged.c_str()) && s.itemExists(fileItem(s, "Staged", "f2.txt").c_str()); }));
+    // On a commit row: absorb.
+    hold(s, unstaged, rowRef(r.c[0]));
+    GG_CHECK_STR_EQ(history.dropHint(), "Absorb 1 file into " + r.c[0].substr(0, 7));
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "Absorb 1 file into " + r.c[0].substr(0, 7)));
+    // On Staged: stage. On its own group: no action, no hint.
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo((groupRef(s, "Staged") + "/###group").c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(history.dropHint().empty());
+    GG_CHECK_STR_EQ(changes.dropHint(), "Stage 1 file");
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "Stage 1 file"));
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo((groupRef(s, "Unstaged") + "/###group").c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(changes.dropHint().empty());
+    release(s);
+    GG_CHECK(changes.dropHint().empty());
+    // A staged file on Unstaged: unstage. On Staged: no action.
+    hold(s, fileItem(s, "Staged", "f2.txt"), groupRef(s, "Unstaged") + "/###group");
+    GG_CHECK_STR_EQ(changes.dropHint(), "Unstage 1 file");
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo((groupRef(s, "Staged") + "/###group").c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(changes.dropHint().empty());
+    release(s);
+}
+
+GG_TEST("dnd", "hint: files while busy show Wait")
+{
+    const Chain r = makeChain(s);
+    s.write(r.path, "staged.txt", "staged\n");
+    s.git(r.path, {"add", "staged.txt"});
+    s.write(r.path, "f1.txt", "1 changed\n");
+    const fs::path go = s.root() / "go";
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    auto& changes = s.session()->changes();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/**/###row_wt") && s.itemExists(rowRef(r.c[0]).c_str()); }));
+    ctx->ItemClick("//History/**/###row_wt");
+    const std::string unstaged = fileItem(s, "Unstaged", "f1.txt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(unstaged.c_str()); }));
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Waits for the hook");
+    s.dialogButton("Commit", "Commit");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
+    GG_REQUIRE(s.itemExists(unstaged.c_str()));
+    hold(s, unstaged, rowRef(r.c[0]));
+    GG_CHECK_STR_EQ(history.dropHint(), "Wait: another task runs");
+    GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "Wait: another task runs"));
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo((groupRef(s, "Staged") + "/###group").c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(changes.dropHint(), "Wait: another task runs");
+    release(s);
+    // The files of a commit: Wait on its parent, no hint on a row with no action.
+    ctx->ItemClick(rowRef(r.c[3]).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileItem(s, "", "f4.txt").c_str()); }));
+    hold(s, fileItem(s, "", "f4.txt"), rowRef(r.c[2]));
+    GG_CHECK_STR_EQ(history.dropHint(), "Wait: another task runs");
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[0]).c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(history.dropHint().empty());
+    release(s);
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }, 10.0f));
+    s.settle();
+    GG_CHECK(history.dropHint().empty());
+    GG_CHECK(changes.dropHint().empty());
+}
+
+} // namespace ggtest

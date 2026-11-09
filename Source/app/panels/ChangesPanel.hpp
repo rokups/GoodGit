@@ -69,6 +69,8 @@ public:
     // Called every frame: two selected commits in History are compared (Before: the lower row), one or three
     // and more are not; a change reloads the file list.
     void syncPair();
+    // The action of a drop of files on a Changes group under the mouse; empty when there is none.
+    const std::string& dropHint() const { return m_dropHint; }
 
     // F6 / Shift+F6: move the current file.
     void moveCurrent(int direction);
@@ -126,6 +128,7 @@ private:
     Selection m_selection;
     std::vector<FileRow> m_rows;
     std::set<std::string> m_selected;
+    std::string m_dropHint, m_dropHintNext;
     std::string m_current;
     std::string m_anchor;
     // The path of the file that the user last selected; a new commit selects this file when it has it.

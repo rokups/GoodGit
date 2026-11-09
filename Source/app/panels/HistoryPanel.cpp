@@ -722,12 +722,13 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
             }
         }
     }
-    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES"); p && free) {
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES", ImGuiDragDropFlags_AcceptBeforeDelivery)) {
         // The source ("@<commit>" or a Changes group), then the paths.
         auto lines = gg::splitLines(std::string(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize)));
         const std::string from = lines.front();
         lines.erase(lines.begin());
         std::erase(lines, std::string());
+        const std::string files = std::to_string(lines.size()) + (lines.size() == 1 ? " file" : " files");
         if (from.rfind("@", 0) == 0) {
             // A commit's files: into its parent, its child or the checked-out commit.
             const core::Oid source = core::Oid::fromHex(from.substr(1));
@@ -735,17 +736,27 @@ void HistoryPanel::dragAndDrop(const core::HistoryRow& row, int index)
             const bool toParent = src && !src->parents.empty() && src->parents.front() == row.id;
             const bool toChild = !row.parents.empty() && row.parents.front() == source;
             const bool toHead = row.id == m_snapshot->head;
-            if (toParent)
-                actions.moveChanges(source, Actions::MoveTo::Parent, lines, {});
-            else if (toChild)
-                actions.moveChanges(source, Actions::MoveTo::Child, lines, {});
-            else if (toHead)
-                actions.moveChanges(source, Actions::MoveTo::Active, lines, {});
+            // A target with no action shows no hint.
+            if (toParent || toChild || toHead)
+                m_dropHintNext = free ? "Move " + files + " to " + (toParent ? "parent " : toChild ? "child " : "HEAD ") + row.shortId
+                                      : "Wait: another task runs";
             else
-                m_session.app().notify(App::Notice::Warning, "Move changes",
-                    "Drop a commit's files on its parent, its child or the checked-out commit.");
+                m_dropHintNext.clear();
+            if (p->IsDelivery() && free) {
+                if (toParent)
+                    actions.moveChanges(source, Actions::MoveTo::Parent, lines, {});
+                else if (toChild)
+                    actions.moveChanges(source, Actions::MoveTo::Child, lines, {});
+                else if (toHead)
+                    actions.moveChanges(source, Actions::MoveTo::Active, lines, {});
+                else
+                    m_session.app().notify(App::Notice::Warning, "Move changes",
+                        "Drop a commit's files on its parent, its child or the checked-out commit.");
+            }
         } else {
-            actions.absorb(row.id, lines); // working tree files folded into the commit
+            m_dropHintNext = free ? "Absorb " + files + " into " + row.shortId : "Wait: another task runs";
+            if (p->IsDelivery() && free)
+                actions.absorb(row.id, lines); // working tree files folded into the commit
         }
     }
     ImGui::EndDragDropTarget();

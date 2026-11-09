@@ -1091,6 +1091,10 @@ void ChangesPanel::drawFile(const FileRow& row, int)
                 payload += "\n" + r->path;
         ImGui::SetDragDropPayload("GG_FILES", payload.data(), payload.size());
         ImGui::TextUnformatted(row.path.c_str());
+        // What a drop does now: the hint of a Changes group (set in the last frame) or of a History row.
+        const std::string& hint = !m_dropHint.empty() ? m_dropHint : m_session.history().dropHint();
+        if (!hint.empty())
+            ImGui::TextDisabled("%s", hint.c_str());
         ImGui::EndDragDropSource();
     }
     drawFileMenu(row);
@@ -1101,16 +1105,29 @@ void ChangesPanel::dropTarget(FileGroup group)
 {
     if (!ImGui::BeginDragDropTarget())
         return;
-    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES")) {
+    // The payload is peeked at: the hint names the action of a drop before the drop.
+    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GG_FILES", ImGuiDragDropFlags_AcceptBeforeDelivery)) {
         const std::string data(static_cast<const char*>(p->Data), static_cast<size_t>(p->DataSize));
         auto lines = gg::splitLines(data); // the source group, then the paths
         const std::string from = lines.front();
         lines.erase(lines.begin());
+        std::erase(lines, std::string());
         auto& actions = m_session.actions();
-        if (actions.busy().empty()) {
-            if (group == FileGroup::Staged && from != groupName(FileGroup::Staged))
+        const bool stage = group == FileGroup::Staged && from != groupName(FileGroup::Staged);
+        const bool unstage = group == FileGroup::Unstaged && from == groupName(FileGroup::Staged);
+        const bool free = actions.busy().empty();
+        // A target with no action shows no hint.
+        if (!stage && !unstage)
+            m_dropHintNext.clear();
+        else if (!free)
+            m_dropHintNext = "Wait: another task runs";
+        else
+            m_dropHintNext = std::string(stage ? "Stage " : "Unstage ") + std::to_string(lines.size())
+                + (lines.size() == 1 ? " file" : " files");
+        if (p->IsDelivery() && free) {
+            if (stage)
                 actions.stage(lines);
-            else if (group == FileGroup::Unstaged && from == groupName(FileGroup::Staged))
+            else if (unstage)
                 actions.unstage(lines);
         }
     }
@@ -1164,6 +1181,13 @@ void ChangesPanel::drawGroup(FileGroup group, const char* title, int count)
 
 void ChangesPanel::draw(bool* open)
 {
+    // The drag tooltip shows the hint that the target set in the last frame. Without a drag no hint stays.
+    if (ImGui::GetDragDropPayload()) {
+        m_dropHint = std::move(m_dropHintNext);
+    } else {
+        m_dropHint.clear();
+    }
+    m_dropHintNext.clear();
     if (!ImGui::Begin(panel::Changes, open)) {
         ImGui::End();
         return;
