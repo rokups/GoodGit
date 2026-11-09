@@ -2399,4 +2399,140 @@ GG_TEST("panels", "branches: a name too long for the panel is cut at its start; 
     GG_CHECK(!tooltipHas("main"));
 }
 
+GG_TEST("panels", "branches: click, Ctrl-click and Shift-click select rows")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"a", "b", "c", "d"})
+        s.git(repo, {"branch", name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto row = [](const char* name) { return std::string("//Branches/branch_") + name + "/###branch_" + name; };
+    const auto selected = [&] { return s.session()->branches().selection().names; };
+    using Names = std::set<std::string>;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row("d").c_str()); }));
+    ctx->ItemClick(row("a").c_str());
+    GG_CHECK(selected() == (Names{"a"}));
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(row("c").c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(selected() == (Names{"a", "c"}));
+    // The range runs from the anchor (c, the last Ctrl-click) to the row.
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(row("d").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK(selected() == (Names{"c", "d"}));
+    // Esc with the window focused drops the selection.
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    GG_CHECK(selected().empty());
+}
+
+GG_TEST("panels", "branches: a click on a remote-tracking row after a local row starts a new selection")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.forgetPanelState("Branches");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string node = "//Branches/remote_group_origin/origin";
+    const std::string rrow = node + "/rbranch_origin:main/###rbranch_origin:main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(node.c_str()); }));
+    ctx->ItemClick(node.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rrow.c_str()); }));
+    ctx->ItemClick("//Branches/branch_main/###branch_main");
+    const auto& selection = s.session()->branches().selection();
+    GG_CHECK(selection.contains(ggui::RefKind::LocalBranch, "main"));
+    // Ctrl does not keep the local row: the kinds do not mix.
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rrow.c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(selection.kind == ggui::RefKind::RemoteBranch);
+    GG_CHECK(selection.names == (std::set<std::string>{"origin/main"}));
+}
+
+GG_TEST("panels", "branches: a deleted or renamed branch leaves the selection")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"a", "b", "c"})
+        s.git(repo, {"branch", name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto row = [](const char* name) { return std::string("//Branches/branch_") + name + "/###branch_" + name; };
+    const auto selected = [&] { return s.session()->branches().selection().names; };
+    using Names = std::set<std::string>;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row("c").c_str()); }));
+    ctx->ItemClick(row("a").c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(row("c").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_REQUIRE(selected() == (Names{"a", "b", "c"}));
+    s.git(repo, {"branch", "-D", "b"});
+    GG_CHECK(s.waitUntil([&] { return selected() == (Names{"a", "c"}); }));
+    s.git(repo, {"branch", "-m", "c", "e"});
+    GG_CHECK(s.waitUntil([&] { return selected() == (Names{"a"}); }));
+}
+
+GG_TEST("panels", "branches: a right-click does not change the selection")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"a", "b"})
+        s.git(repo, {"branch", name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto row = [](const char* name) { return std::string("//Branches/branch_") + name + "/###branch_" + name; };
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row("b").c_str()); }));
+    ctx->ItemClick(row("a").c_str());
+    ctx->ItemClick(row("b").c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_Escape); // closes the menu
+    ctx->Yield(2);
+    GG_CHECK(s.session()->branches().selection().names == (std::set<std::string>{"a"}));
+}
+
+GG_TEST("panels", "branches: a Shift-click acts as a plain click when the anchor row is not drawn")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"a", "b", "c"})
+        s.git(repo, {"branch", name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const auto row = [](const char* name) { return std::string("//Branches/branch_") + name + "/###branch_" + name; };
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row("c").c_str()); }));
+    ctx->ItemClick(row("a").c_str());
+    ctx->ItemInputValue("//Branches/##branch_filter", "c");
+    GG_REQUIRE(s.waitUntil([&] { return !s.itemExists(row("a").c_str()); }));
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(row("c").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK(s.session()->branches().selection().names == (std::set<std::string>{"c"}));
+}
+
+GG_TEST("panels", "branches: a Shift range counts the rows drawn, also for a remote ref that two places draw")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "second", (s.root() / (repo.filename().string() + "-origin.git")).string()});
+    s.git(repo, {"fetch", "-q", "second"});
+    s.git(repo, {"update-ref", "refs/remotes/origin/zeta", "HEAD"});
+    s.forgetPanelState("Branches");
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    const std::string main = "//Branches/branch_main/###branch_main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(main.c_str()) && s.session()->snapshot()->remoteBranches.size() >= 3; }));
+    ctx->ItemClick("//Branches/branch_main/###expand");
+    const std::string child = "//Branches/branch_main/###remote_origin";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(child.c_str()); }));
+    ctx->ItemClick("//Branches/remote_group_origin/origin");
+    ctx->ItemClick("//Branches/remote_group_second/second");
+    const std::string zeta = "//Branches/remote_group_origin/origin/rbranch_origin:zeta/###rbranch_origin:zeta";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(zeta.c_str()); }));
+    // Rows: main, origin/main (child), second/main (child), origin/main, origin/zeta, second/main. The range runs
+    // from the child row to origin/zeta, so it takes second/main on the way.
+    ctx->ItemClick(child.c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(zeta.c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    const auto& selection = s.session()->branches().selection();
+    GG_CHECK(selection.kind == ggui::RefKind::RemoteBranch);
+    GG_CHECK(selection.names == (std::set<std::string>{"origin/main", "second/main", "origin/zeta"}));
+}
+
 } // namespace ggtest

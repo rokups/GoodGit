@@ -9,8 +9,10 @@
 #include <core/Engine.hpp>
 
 #include <map>
+#include <cstddef>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ggui {
@@ -24,11 +26,34 @@ void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, cons
 void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& baseSlot);
 void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w);
 
+// The kind of a ref row that the Branches panel can select.
+enum class RefKind { LocalBranch, RemoteBranch, Tag };
+
+// The selected ref rows of the Branches panel. All selected rows have the same kind.
+struct RefSelection {
+    RefKind kind = RefKind::LocalBranch;
+    std::set<std::string> names;  // the branch name, "origin/x" for a remote-tracking branch, or the tag name
+    std::string anchor;           // the row where a Shift-click range starts ("" when none)
+    size_t anchorRow = 0;         // the position of the anchor row in `drawn` when it was clicked
+    // The rows drawn in the last frame, in order. Shift-click and prune() read them.
+    std::vector<std::pair<RefKind, std::string>> drawn;
+
+    bool contains(RefKind rowKind, const std::string& name) const;
+    // A click on a row. A row of another kind starts a new selection.
+    // Plain: only this row. Ctrl: toggle this row. Shift: the rows from the anchor to this row.
+    // `row`: the position of the row in `drawn`. A name that is drawn twice (a remote ref) needs it.
+    void click(RefKind rowKind, const std::string& name, bool ctrl, bool shift, size_t row = 0);
+    // Drops the names that `drawn` does not have.
+    void prune();
+    void clear();
+};
+
 class BranchesPanel {
 public:
     explicit BranchesPanel(Session& session) : m_session(session) { }
     void onSnapshot(const core::SnapshotPtr& snapshot) { m_snapshot = snapshot; }
     void draw(bool* open);
+    const RefSelection& selection() const { return m_selection; }
 
 private:
     // `refs`: the full refs the row shows or hides in History (the menu's Show/Hide in History item).
@@ -40,6 +65,7 @@ private:
     std::string m_filter;
     // Remote nodes opened by the filter: the open state each had before it, put back when the filter is cleared.
     std::map<std::string, bool> m_remoteOpenBeforeFilter;
+    RefSelection m_selection;
 };
 
 class TagsPanel {

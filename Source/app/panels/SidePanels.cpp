@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <span>
@@ -34,7 +35,31 @@ std::string rowId(std::string id)
     return id;
 }
 
+// The refs-panel selection of the rows drawn in one frame. `drawn` collects the rows of this frame; the panel
+// moves it into RefSelection::drawn at the end of the frame.
+struct SelectionFrame {
+    RefSelection& selection;
+    std::vector<std::pair<RefKind, std::string>> drawn;
+    size_t row = 0; // the position of the row that add() drew last
+    // Call before a row is drawn. Returns whether the row is selected.
+    bool add(RefKind kind, const std::string& name)
+    {
+        row = drawn.size();
+        drawn.emplace_back(kind, name);
+        return selection.contains(kind, name);
+    }
+    // Call after a row is drawn, with the events of the row.
+    void click(bool clicked, RefKind kind, const std::string& name) const
+    {
+        if (!clicked)
+            return;
+        const ImGuiIO& io = ImGui::GetIO();
+        selection.click(kind, name, io.KeyCtrl, io.KeyShift, row);
+    }
+};
+
 struct RowEvents {
+    bool clicked = false;       // a mouse click on the label (not a hover button, not a double click)
     bool toggle = false;        // Space on the row (Ctrl: only this ref)
     bool doubleClicked = false; // the row itself (only rows with a double-click action react)
     int action = -1;            // the index of the hover button clicked in `acts`
@@ -148,11 +173,13 @@ struct ExpandSlot {
 // `parts` (the pieces of `label`): the label is cut at the start of its name where it does not fit the row (`elided`);
 // only for a row in view (the others are clipped anyway).
 // `dim` must be empty with `parts`.
+// `clickable`: the label is a Selectable (a row with a double-click action always is), and a mouse click on it sets
+// `RowEvents::clicked`. `selected`: the row shows as selected.
 // `expand`: the row has an arrow before the label. A click on the arrow, and Right or Left on the
 // focused label, open or close the node. The caller draws the child rows when `expand->open` is set.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
     bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {},
-    const BranchLabelParts* parts = nullptr, ExpandSlot* expand = nullptr)
+    const BranchLabelParts* parts = nullptr, ExpandSlot* expand = nullptr, bool clickable = false, bool selected = false)
 {
     assert(!(parts && dim.second > dim.first) && "dim is a range of the whole label, not of a cut one");
     RowEvents events;
@@ -185,17 +212,22 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         }
     }
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
-    if (doubleClickable) {
+    if (doubleClickable || clickable) {
         // With buttons over it the row must be flagged as overlappable for IsItemHovered() too (Selectable's own
         // AllowOverlap only reaches its click handling): else a double click on a button is also the row's.
         if (!acts.empty())
             ImGui::SetNextItemAllowOverlap();
-        const ImGuiSelectableFlags flags = ImGuiSelectableFlags_AllowDoubleClick | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap);
+        const ImGuiSelectableFlags flags = (doubleClickable ? ImGuiSelectableFlags_AllowDoubleClick : 0)
+            | (acts.empty() ? 0 : ImGuiSelectableFlags_AllowOverlap);
+        bool pressed;
         if (dim.second > dim.first)
-            selectableTextDimRange(*shown, id, dim.first, dim.second, false, flags);
+            pressed = selectableTextDimRange(*shown, id, dim.first, dim.second, selected, flags);
         else
-            selectableText(*shown, id, false, flags);
-        events.doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+            pressed = selectableText(*shown, id, selected, flags);
+        // A double click on a row with a double-click action is that action, not a click.
+        const bool doubleClick = doubleClickable && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+        events.clicked = clickable && pressed && pressSource() == PressSource::Mouse && !doubleClick;
+        events.doubleClicked = doubleClick;
     } else {
         if (!acts.empty())
             ImGui::SetNextItemAllowOverlap();
@@ -221,6 +253,9 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     }
     if (!acts.empty())
         events.action = rowActions(acts, false, doubleClickable);
+    // A click on a hover button is not a click on the label.
+    if (events.action >= 0)
+        events.clicked = false;
     ImGui::PopID();
     return events;
 }
@@ -507,9 +542,9 @@ void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core
 
 // The child rows of an open local branch node: one for each remote ref of the branch, under the row, at the
 // start of its label. The ID of a row is "remote_<remote>" in the ID scope of the branch row. A row has no
-// visibility item (the menu of the branch covers it) and no hover button. Its menu is the one of the ref with Set as upstream.
+// visibility item (the menu of the branch covers it) and no hover button. A row is selectable (RemoteBranch). Its menu is the one of the ref with Set as upstream.
 void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPanel& history, const core::BranchInfo& b,
-    const BranchRemotes& remotes, float labelLeft, ImU32 color)
+    const BranchRemotes& remotes, float labelLeft, ImU32 color, SelectionFrame& selection)
 {
     const float indent = std::max(labelLeft - ImGui::GetCursorScreenPos().x, 0.0f);
     ImGui::PushID(rowId("branch_" + b.name).c_str());
@@ -527,8 +562,10 @@ void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPan
         // A ref hidden in History is grey, like the rows of the remote-tracking branches.
         ImGui::PushStyleColor(ImGuiCol_Text, history.refVisible("refs/remotes/" + r->name) ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
         // The item spans the room to the list's edge, not the text: a long label (cut by the edge) keeps its item in view.
-        selectableTextDimRange(label, id, head.size() + kIdPrefixLength, head.size() + kShortIdLength, false, ImGuiSelectableFlags_None,
-            ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 0.0f));
+        const bool selected = selection.add(RefKind::RemoteBranch, r->name);
+        const bool pressed = selectableTextDimRange(label, id, head.size() + kIdPrefixLength, head.size() + kShortIdLength, selected,
+            ImGuiSelectableFlags_None, ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 0.0f));
+        selection.click(pressed && pressSource() == PressSource::Mouse, RefKind::RemoteBranch, r->name);
         ImGui::PopStyleColor();
         if (beginContextMenu(("##remote_ref_menu_" + id).c_str())) {
             remoteRefMenuItems(session, snap, *r, {false, false, &b});
@@ -542,6 +579,74 @@ void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPan
 } // namespace
 
 // ---- Branches -----------------------------------------------------------------------------------
+
+bool RefSelection::contains(RefKind rowKind, const std::string& name) const
+{
+    return kind == rowKind && names.count(name) != 0;
+}
+
+void RefSelection::click(RefKind rowKind, const std::string& name, bool ctrl, bool shift, size_t row)
+{
+    if (kind != rowKind) {
+        names.clear();
+        anchor.clear();
+        kind = rowKind;
+    }
+    // The position in `drawn` of the row `name` near `hint`: the row at `hint` when it is this row, else the nearest one.
+    const auto find = [&](const std::string& rowName, size_t hint) {
+        size_t best = SIZE_MAX;
+        for (size_t i = 0; i < drawn.size(); ++i) {
+            if (drawn[i].first != kind || drawn[i].second != rowName)
+                continue;
+            if (best == SIZE_MAX || (i > hint ? i - hint : hint - i) < (best > hint ? best - hint : hint - best))
+                best = i;
+        }
+        return best;
+    };
+    if (shift && !anchor.empty()) {
+        // The range runs over the drawn rows from the anchor row to this row. A name that is drawn twice counts once.
+        const size_t to = find(name, row);
+        const size_t from = to == SIZE_MAX ? SIZE_MAX : find(anchor, anchorRow);
+        if (from != SIZE_MAX) {
+            if (!ctrl)
+                names.clear();
+            anchorRow = from;
+            for (size_t i = std::min(from, to); i <= std::max(from, to); ++i)
+                if (drawn[i].first == kind)
+                    names.insert(drawn[i].second);
+            return;
+        }
+    }
+    anchorRow = row;
+    if (ctrl) {
+        // The anchor stays when the row leaves the selection: a Shift-click still starts from it.
+        if (names.erase(name) == 0) {
+            names.insert(name);
+            anchor = name;
+        }
+        return;
+    }
+    names = {name};
+    anchor = name;
+}
+
+void RefSelection::prune()
+{
+    const auto has = [&](const std::string& name) {
+        return std::find(drawn.begin(), drawn.end(), std::pair<RefKind, std::string>(kind, name)) != drawn.end();
+    };
+    std::erase_if(names, [&](const std::string& name) { return !has(name); });
+    // The anchor stays while its row is drawn, also when the row is not selected.
+    if (!anchor.empty() && !has(anchor))
+        anchor.clear();
+}
+
+void RefSelection::clear()
+{
+    names.clear();
+    anchor.clear();
+    anchorRow = 0;
+}
 
 void branchMenuItems(Session& session, const core::Snapshot& snap, const core::BranchInfo& b)
 {
@@ -703,6 +808,14 @@ void BranchesPanel::draw(bool* open)
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Create branch at HEAD...");
     auto& history = m_session.history();
+    // The selection keeps the rows that the last frame drew. This frame collects its own rows.
+    m_selection.prune();
+    SelectionFrame selection{m_selection, {}};
+    selection.drawn.reserve(m_selection.drawn.size());
+    // Esc drops the selection (not while a popup is open or the filter field takes the key).
+    if (!m_selection.names.empty() && !ImGui::GetIO().WantTextInput
+        && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && hotkey(ImGuiKey_Escape))
+        m_selection.clear();
     // Show all / Hide all: every local and remote-tracking branch and kept commit in History.
     std::vector<std::string> all;
     for (const auto& b : m_snapshot->branches)
@@ -804,7 +917,8 @@ void BranchesPanel::draw(bool* open)
         ExpandSlot expand;
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
             b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts, {}, &parts,
-            expandable ? &expand : nullptr);
+            expandable ? &expand : nullptr, true, selection.add(RefKind::LocalBranch, b.name));
+        selection.click(events.clicked, RefKind::LocalBranch, b.name);
         if ((shortName != b.name || events.elided) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             if (events.elided && !b.upstream.empty())
                 tooltip("%s\n%s %s", b.name.c_str(), ICON_MS_ARROW_RIGHT_ALT, b.upstream.c_str());
@@ -825,7 +939,8 @@ void BranchesPanel::draw(bool* open)
             pushBranch(m_session, b);
         branchMenu(b, localRefs[index]);
         if (expandable && expand.open)
-            drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, events.labelLeft, p.remoteText);
+            drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, events.labelLeft, p.remoteText,
+                selection);
         ImGui::PopID();
     }, &localGroupRefs);
 
@@ -955,7 +1070,9 @@ void BranchesPanel::draw(bool* open)
                 const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", hasLocal ? "Check out" : "Check out...", free}};
                 const BranchLabelParts parts{shortName, {}, {}, {}};
                 const RowEvents events = visibilityRow("rbranch_" + r.name, shortName,
-                    history.refVisible(full), false, p.remoteText, false, acts, {}, &parts);
+                    history.refVisible(full), false, p.remoteText, false, acts, {}, &parts, nullptr, true,
+                    selection.add(RefKind::RemoteBranch, r.name));
+                selection.click(events.clicked, RefKind::RemoteBranch, r.name);
                 if (events.elided && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                     tooltip("%s", r.name.c_str());
                 const std::vector<std::string> fullRefs{full};
@@ -975,6 +1092,7 @@ void BranchesPanel::draw(bool* open)
     // A remote that left the list while the filter was active has no state to put back.
     if (!filtering)
         m_remoteOpenBeforeFilter.clear();
+    m_selection.drawn.swap(selection.drawn);
     endList();
     ImGui::End();
 }
