@@ -1612,6 +1612,7 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
     auto& probe = ggui::frameProbe();
     const int requested = editor(s).previewsRequested();
     const int shown = editor(s).previewsShown();
+    const double baselineMs = measureIdleFrameMs(ctx);
     gg::setSlowGitLatency(std::chrono::milliseconds(600));
     probe.reset();
     key(s, c[5], ImGuiKey_D);
@@ -1630,7 +1631,7 @@ GG_TEST("rebase-i", "live preview on a worker: the newest edit wins, frames neve
         editor(s).previewsRequested() - requested, editor(s).previewsShown() - shown);
     GG_CHECK(editor(s).previewsRequested() - requested == 5);
     GG_CHECK(editor(s).previewsShown() - shown < 5);
-    GG_CHECK(frameBudgetMet(ctx, probe));
+    GG_CHECK(frameBudgetMet(ctx, probe, baselineMs));
     GG_CHECK(p->rows.size() == 28);
     const auto names = previewSubjects(*p);
     GG_CHECK(std::find(names.begin(), names.end(), "c20") == names.end());

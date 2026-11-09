@@ -483,22 +483,46 @@ double timeBudgetMs(double ms)
     return ms * (factor >= 1.0 ? factor : 1.0);
 }
 
-bool frameBudgetMet(ImGuiTestContext* ctx, const ggui::FrameProbe& probe)
+double measureIdleFrameMs(ImGuiTestContext* ctx)
+{
+    constexpr int idleFrames = 30;
+    auto& probe = ggui::frameProbe();
+    for (int i = 0; i < 5; ++i) // Let the last work settle.
+        ctx->Yield();
+    probe.reset();
+    for (int i = 0; i < idleFrames; ++i)
+        ctx->Yield();
+    const double p50 = probe.percentileAppMs(50.0);
+    probe.reset();
+    ctx->LogInfo("idle app frame ms (baseline): p50 %.1f", p50);
+    return p50;
+}
+
+// Rule for the limit. The release gate (no slack) keeps the fixed limit of 33 ms for p99 and max.
+// With slack, the machine can be slow: a coverage build on a software renderer needs 100 ms for a
+// normal frame. The limit is then the larger of the slack-scaled 33 ms and 3 times the idle frame
+// time, which the test measured in the same process. A product stall adds time to some frames
+// and does not move the idle frame time, so it still fails. The max limit is 5 times the limit.
+bool frameBudgetMet(ImGuiTestContext* ctx, const ggui::FrameProbe& probe, double baselineMs)
 {
     constexpr double budgetMs = 33.0;
+    constexpr double baselineFactor = 3.0;
+    const bool strict = timeBudgetMs(1.0) == 1.0;
+    const double limit = strict ? budgetMs : std::max(timeBudgetMs(budgetMs), baselineFactor * baselineMs);
     const double p50 = probe.percentileAppMs(50.0);
     const double p95 = probe.percentileAppMs(95.0);
     const double p99 = probe.percentileAppMs(99.0);
-    ctx->LogInfo("app frame ms: p50 %.1f, p95 %.1f, p99 %.1f, max %.1f", p50, p95, p99, probe.maxAppMs);
-    bool ok = p99 < timeBudgetMs(budgetMs);
-    if (timeBudgetMs(1.0) == 1.0)
+    ctx->LogInfo("app frame ms: baseline %.1f, p50 %.1f, p95 %.1f, p99 %.1f, max %.1f, limit %.1f", baselineMs, p50,
+        p95, p99, probe.maxAppMs, limit);
+    bool ok = p99 < limit;
+    if (strict)
         ok = ok && probe.maxAppMs < budgetMs;
     else
-        ok = ok && probe.maxAppMs < timeBudgetMs(budgetMs) * 5.0;
+        ok = ok && probe.maxAppMs < limit * 5.0;
     if (!ok)
         ctx->LogError("app frames too slow: p99 %.1f ms, max %.1f ms (frame %lld of %lld, %.0f ms after the "
-                      "start of the measured window), budget %.1f ms",
-            p99, probe.maxAppMs, probe.worstFrame, probe.frames, probe.worstAtMs, timeBudgetMs(budgetMs));
+                      "start of the measured window), baseline %.1f ms, limit %.1f ms",
+            p99, probe.maxAppMs, probe.worstFrame, probe.frames, probe.worstAtMs, baselineMs, limit);
     return ok;
 }
 

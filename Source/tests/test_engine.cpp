@@ -112,6 +112,7 @@ GG_TEST("engine", "responsiveness on the large repository")
     ctx->ItemClick("//History/**/###row_wt");
     ctx->ScrollToTop(table->ID);
     s.waitIdle(30.0f);
+    const double baselineMs = measureIdleFrameMs(ctx);
     probe.reset();
     // Scroll, select commits, look at diffs and blame, filter.
     for (int i = 0; i < 20; ++i) {
@@ -136,7 +137,7 @@ GG_TEST("engine", "responsiveness on the large repository")
         probe.frames, probe.maxAppMs, probe.worstFrame, probe.worstAtMs, probe.maxPresentMs, probe.maxTotalMs,
         probe.slowFrames);
     GG_CHECK(probe.frames > 50);
-    GG_CHECK(frameBudgetMet(ctx, probe));
+    GG_CHECK(frameBudgetMet(ctx, probe, baselineMs));
 }
 
 namespace {
