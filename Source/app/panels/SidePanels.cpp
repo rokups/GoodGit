@@ -1171,6 +1171,14 @@ void TagsPanel::draw(bool* open)
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Create tag at HEAD...");
     auto& history = m_session.history();
+    // The selection keeps the rows that the last frame drew. This frame collects its own rows.
+    m_selection.prune();
+    SelectionFrame selection{m_selection, {}};
+    selection.drawn.reserve(m_selection.drawn.size());
+    // Esc drops the selection (not while a popup is open or the filter field takes the key).
+    if (!m_selection.names.empty() && !ImGui::GetIO().WantTextInput
+        && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && hotkey(ImGuiKey_Escape))
+        m_selection.clear();
     // Show all / Hide all: every tag in History.
     std::vector<std::string> all;
     for (const auto& t : m_snapshot->tags)
@@ -1219,7 +1227,8 @@ void TagsPanel::draw(bool* open)
             {ICON_MS_MY_LOCATION, "act_reveal", "Reveal"},
         };
         const RowEvents events = visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false,
-            theme().palette().tagText, false, acts);
+            theme().palette().tagText, false, acts, {}, nullptr, nullptr, true, selection.add(RefKind::Tag, t.name));
+        selection.click(events.clicked, RefKind::Tag, t.name);
         const std::vector<std::string> fullRefs{full};
         if (events.toggle)
             toggleRefs(history, fullRefs, history.refVisible(full));
@@ -1253,7 +1262,10 @@ void TagsPanel::draw(bool* open)
         ImGui::TextDisabled(ICON_MS_CLOUD);
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-        plainText(name + "  (" + where + ")", id);
+        // The item spans the room to the list's edge, as the rows of the remote-tracking branches do.
+        const bool pressed = selectableText(name + "  (" + where + ")", id, selection.add(RefKind::Tag, name), ImGuiSelectableFlags_None,
+            ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 0.0f));
+        selection.click(pressed && pressSource() == PressSource::Mouse, RefKind::Tag, name);
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("Only on %s: fetch to get it here", where.c_str());
@@ -1266,6 +1278,7 @@ void TagsPanel::draw(bool* open)
         }
         ImGui::PopID();
     }
+    m_selection.drawn.swap(selection.drawn);
     endList();
     ImGui::End();
 }

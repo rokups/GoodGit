@@ -2122,6 +2122,58 @@ GG_TEST("panels", "tags: the hover action reveals a tag; there is no Delete butt
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~3"); }));
 }
 
+GG_TEST("panels", "tags: click and Ctrl-click select rows")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1", "HEAD~3"});
+    s.git(repo, {"tag", "v2", "HEAD~2"});
+    s.git(repo, {"tag", "v3", "HEAD~1"});
+    s.git(repo, {"tag", "v4", "HEAD"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    const auto row = [](const char* name) { return std::string("//Tags/tag_") + name + "/###tag_" + name; };
+    const auto& selection = s.session()->tags().selection();
+    using Names = std::set<std::string>;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row("v4").c_str()); }));
+    ctx->ItemClick(row("v1").c_str());
+    GG_CHECK(selection.kind == ggui::RefKind::Tag);
+    GG_CHECK(selection.names == (Names{"v1"}));
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(row("v3").c_str());
+    GG_CHECK(selection.names == (Names{"v1", "v3"}));
+    // A second Ctrl-click on a selected row takes it out.
+    ctx->ItemClick(row("v1").c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(selection.names == (Names{"v3"}));
+    // Esc with the window focused drops the selection.
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    GG_CHECK(selection.names.empty());
+}
+
+GG_TEST("panels", "tags: Shift-click selects a range")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1", "HEAD~3"});
+    s.git(repo, {"tag", "v2", "HEAD~2"});
+    s.git(repo, {"tag", "v3", "HEAD~1"});
+    s.git(repo, {"tag", "v4", "HEAD"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    const auto row = [](const char* name) { return std::string("//Tags/tag_") + name + "/###tag_" + name; };
+    const auto& selection = s.session()->tags().selection();
+    using Names = std::set<std::string>;
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row("v4").c_str()); }));
+    ctx->ItemClick(row("v2").c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(row("v4").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK(selection.names == (Names{"v2", "v3", "v4"}));
+    // A plain click starts again.
+    ctx->ItemClick(row("v3").c_str());
+    GG_CHECK(selection.names == (Names{"v3"}));
+}
+
 GG_TEST("panels", "tags: show all and hide all; the menu of the buttons sets whether new tags are hidden")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

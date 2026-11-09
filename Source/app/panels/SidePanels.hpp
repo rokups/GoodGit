@@ -26,10 +26,10 @@ void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, cons
 void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& baseSlot);
 void worktreeMenuItems(Session& session, const core::Snapshot& snap, const core::WorktreeInfo& w);
 
-// The kind of a ref row that the Branches panel can select.
+// The kind of a ref row that the Branches panel or the Tags panel can select.
 enum class RefKind { LocalBranch, RemoteBranch, Tag };
 
-// The selected ref rows of the Branches panel. All selected rows have the same kind.
+// The selected ref rows of the Branches panel or the Tags panel. All selected rows have the same kind.
 struct RefSelection {
     RefKind kind = RefKind::LocalBranch;
     std::set<std::string> names;  // the branch name, "origin/x" for a remote-tracking branch, or the tag name
@@ -73,11 +73,13 @@ public:
     explicit TagsPanel(Session& session) : m_session(session) { }
     void onSnapshot(const core::SnapshotPtr& snapshot) { m_snapshot = snapshot; }
     void draw(bool* open);
+    const RefSelection& selection() const { return m_selection; }
 
 private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_filter;
+    RefSelection m_selection;
 };
 
 // The permanent repository list as a tree of groups and repositories (GG-12).
