@@ -23,7 +23,7 @@ concurrency:
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
   GGUI_FIXTURE_CACHE: ${{ github.workspace }}/.cache/ggui-fixtures
-  SHARDS: "4"
+  SHARDS: "6"
   # Timing budgets (HIST-LOAD-FAST, the 33 ms frame limit, HOOK-FAST) x3 on shared runners (software
   # rendering, coverage, slow process start); the release gate runs them unscaled
   # (docs/release-checklist.md).
@@ -81,7 +81,7 @@ jobs:
       fail-fast: false
       matrix:
         git: [minimum, latest]
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v7
       - name: Dependencies (runtime only)
@@ -107,7 +107,7 @@ jobs:
         with:
           name: linux-bin
       - run: mkdir -p build/coverage && tar -C build/coverage -xf linux-bin.tar && rm linux-bin.tar
-      - name: Tests (shard ${{ matrix.shard }}/4, Xvfb, lavapipe)
+      - name: Tests (shard ${{ matrix.shard }}/6, Xvfb, lavapipe)
         env:
           LLVM_PROFILE_FILE: ${{ github.workspace }}/out/profiles/%p-%m.profraw
           GGUI_TEST_ARTIFACTS: ${{ github.workspace }}/out/test-artifacts
@@ -202,7 +202,7 @@ jobs:
       fail-fast: false
       matrix:
         toolchain: [mingw, msvc]
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5]
     defaults:
       run:
         shell: bash # Git for Windows' bash; git is Git for Windows, as users have it
@@ -217,7 +217,7 @@ jobs:
           path: .cache/ggui-fixtures
           key: fixtures-large-v1-windows
       - run: git --version
-      - name: Tests (shard ${{ matrix.shard }}/4, headless, D3D12/WARP)
+      - name: Tests (shard ${{ matrix.shard }}/6, headless, D3D12/WARP)
         # A hang fails the job instead of holding the runner for the 6 h default.
         timeout-minutes: 30
         env:
