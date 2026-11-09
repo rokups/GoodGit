@@ -57,7 +57,9 @@ public:
 
 private:
     // `refs`: the full refs the row shows or hides in History (the menu's Show/Hide in History item).
-    void branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs);
+    // `allRefs`: the same for each branch of the snapshot, by index (the menu of a selection needs them).
+    void branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs,
+        const std::vector<std::vector<std::string>>& allRefs);
     void remoteBranchMenu(const core::RemoteBranchInfo& r, const std::vector<std::string>& refs);
     void keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot, const std::vector<std::string>& refs);
     Session& m_session;

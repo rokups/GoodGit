@@ -739,10 +739,47 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
     }
 }
 
-void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs)
+void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs,
+    const std::vector<std::vector<std::string>>& allRefs)
 {
     if (!beginContextMenu(("##branch_menu_" + rowId(b.name)).c_str()))
         return;
+    // A row of a selection of two or more local branches has the menu of the selection. Other rows keep the single menu.
+    const RefSelection& sel = m_selection;
+    if (sel.kind == RefKind::LocalBranch && sel.names.size() >= 2 && sel.names.count(b.name)) {
+        // The selected branches in the order of the rows, with their full refs.
+        std::vector<std::string> names;
+        std::vector<std::string> upstreamNames;
+        std::vector<std::string> selectedRefs;
+        for (const auto& row : sel.drawn) {
+            if (row.first != RefKind::LocalBranch || !sel.names.count(row.second))
+                continue;
+            for (size_t i = 0; i < m_snapshot->branches.size(); ++i) {
+                const auto& sb = m_snapshot->branches[i];
+                if (sb.name != row.second)
+                    continue;
+                names.push_back(sb.name);
+                if (!sb.upstream.empty())
+                    upstreamNames.push_back(sb.name);
+                selectedRefs.insert(selectedRefs.end(), allRefs[i].begin(), allRefs[i].end());
+                break;
+            }
+        }
+        const bool free = m_session.actions().busy().empty();
+        visibilityMenuItem(m_session.history(), selectedRefs, refsState(m_session.history(), selectedRefs).all);
+        ImGui::Separator();
+        if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
+            if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, free))
+                m_session.showDeleteBranchesDialog(names, 0);
+            if (menuItem(ICON_MS_DELETE, "On its remote", nullptr, false, !upstreamNames.empty()))
+                m_session.showDeleteBranchesDialog(upstreamNames, 1);
+            if (menuItem(ICON_MS_DELETE, "Local and all remotes", nullptr, false, free))
+                m_session.showDeleteBranchesDialog(names, 2);
+            ImGui::EndMenu();
+        }
+        ImGui::EndPopup();
+        return;
+    }
     branchMenuItems(m_session, *m_snapshot, b);
     ImGui::Separator();
     // The branch decides: one click hides or shows the branch with its remote-tracking refs.
@@ -937,7 +974,7 @@ void BranchesPanel::draw(bool* open)
             m_session.actions().checkout(b.name, false);
         else if (events.action == 1)
             pushBranch(m_session, b);
-        branchMenu(b, localRefs[index]);
+        branchMenu(b, localRefs[index], localRefs);
         if (expandable && expand.open)
             drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, events.labelLeft, p.remoteText,
                 selection);

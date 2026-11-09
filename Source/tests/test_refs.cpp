@@ -1,5 +1,6 @@
 // Branch, tag and remote management (§4.7).
 #include "panels/HistoryPanel.hpp"
+#include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
@@ -51,6 +52,55 @@ bool mergedRowShown(Scenario& s)
 }
 
 } // namespace
+
+GG_TEST("refs", "delete two selected branches from the row menu")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* name : {"a", "b", "c"})
+        s.git(repo, {"branch", name, "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("c").c_str()); }));
+    ctx->ItemClick(branchRow("a").c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(branchRow("b").c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    s.contextMenu(branchRow("b").c_str(), "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    GG_CHECK(s.waitUntil([&] {
+        const ggui::Form* form = s.app.dialogs().current();
+        return form && form->buttons[0].enabled(*form);
+    }, 5.0f));
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/a") && !refExists(s, repo, "refs/heads/b"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/c"));
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/a") && refExists(s, repo, "refs/heads/b"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/c"));
+}
+
+GG_TEST("refs", "the row menu of an unselected branch stays the single menu")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* name : {"a", "b", "c"})
+        s.git(repo, {"branch", name, "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("c").c_str()); }));
+    ctx->ItemClick(branchRow("a").c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(branchRow("b").c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    // Rename is an item of the single menu only. The right-click does not change the selection.
+    s.contextMenu(branchRow("c").c_str(), "Rename...");
+    GG_CHECK(s.dialogOpen("Rename branch"));
+    GG_CHECK(s.session()->branches().selection().names.size() == 2);
+    s.dialogButton("Rename branch", "Cancel");
+}
 
 GG_TEST("refs", "create, check out, rename and delete branches")
 {
