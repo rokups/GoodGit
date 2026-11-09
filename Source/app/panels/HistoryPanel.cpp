@@ -1445,10 +1445,11 @@ std::vector<RefPill> refPills(const std::vector<core::RefBadge>& refs,
     return pills;
 }
 
-// The byte of badgeLabel(pill, ...) where its "@remote" parts start (npos: the pill has none).
+// The byte of badgeLabel(pill, ...) where its "@remote" parts start (npos: nothing is dimmed).
+// A pill with one remote shows its "@remote" part not dimmed; a pill with two or more dims them.
 static size_t remotesOffset(const RefPill& pill, const std::string& label)
 {
-    if (pill.remotes.empty())
+    if (pill.remotes.size() < 2)
         return std::string::npos;
     size_t tail = std::string("###badge_").size() + pill.target.name.size();
     for (const auto& r : pill.remotes)

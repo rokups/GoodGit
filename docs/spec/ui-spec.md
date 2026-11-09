@@ -739,7 +739,7 @@ the panel without touching the repository.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
   (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
   Ctrl+Space = only this; the eye is mouse-only; the eye of a local row also covers its remote-tracking refs), current outlined. The remote refs of a local branch are its same-name refs in every remote, plus its upstream ref.
-  A local row with one remote ref shows the dimmed suffix `@<remote>`: it names the upstream, or else the ref. The ahead and behind counters need an upstream. When the label is cut, only the part that stays is dimmed.
+  A local row with one remote ref shows the suffix `@<remote>`. The suffix is not dimmed. It names the upstream, or else the ref. The ahead and behind counters need an upstream.
   A local row with two or more remote refs is a node: an
   arrow `###expand` sits between the eye and the label, the node starts closed, and the row has no `@<remote>` suffix.
   A click on the arrow, or Right and Left on the row, open and close it. A click on the row text acts as before.

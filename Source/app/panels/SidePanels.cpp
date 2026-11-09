@@ -46,7 +46,6 @@ struct RowEvents {
 // at their start (their ends stay); the link, the counters and the worktree (`link`, `tail`) always stay.
 struct BranchLabelParts {
     std::string_view name, link, upstream, tail;
-    bool dimUpstream = false; // `link` and `upstream` are drawn dimmed
 };
 
 // The remote-tracking branches that a local branch relates to.
@@ -111,8 +110,7 @@ float textWidth(std::string_view text)
 
 // Cuts the name and the upstream of `parts` to `room` pixels into `out`. False (and `out` as it was) when the
 // label fits as it is, or when cutting the two would not shorten it. Each of the two keeps at least 3 font sizes.
-// `dimRange` gets the byte range of `link` and `upstream` in `out` (what is left of them after the cut).
-bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out, std::pair<size_t, size_t>& dimRange)
+bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out)
 {
     const float nameWidth = textWidth(parts.name), upstreamWidth = textWidth(parts.upstream);
     const float avail = room - textWidth(parts.link) - textWidth(parts.tail);
@@ -135,7 +133,6 @@ bool fitBranchLabel(const BranchLabelParts& parts, float room, std::string& out,
     out.clear();
     out.reserve(name.size() + parts.link.size() + upstream.size() + parts.tail.size());
     out.append(name).append(parts.link).append(upstream).append(parts.tail);
-    dimRange = {name.size(), name.size() + parts.link.size() + upstream.size()};
     return true;
 }
 
@@ -150,7 +147,7 @@ struct ExpandSlot {
 // `dim` is a byte range of the label drawn dimmed (the tail of a short ID); only on a row with a double-click action.
 // `parts` (the pieces of `label`): the label is cut at the start of its name where it does not fit the row (`elided`);
 // only for a row in view (the others are clipped anyway).
-// `dim` must be empty with `parts`; `dimUpstream` sets the range.
+// `dim` must be empty with `parts`.
 // `expand`: the row has an arrow between the eye and the label. A click on the arrow, and Right or Left on the
 // focused label, open or close the node. The caller draws the child rows when `expand->open` is set.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
@@ -190,18 +187,13 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     // nothing is built while the label fits.
     std::string fitted;
     const std::string* shown = &label;
-    if (parts && parts->dimUpstream)
-        dim = {parts->name.size(), parts->name.size() + parts->link.size() + parts->upstream.size()};
-    std::pair<size_t, size_t> fittedDim;
     if (parts) {
         const float room = ImGui::GetContentRegionAvail().x - rowActionsReserve(acts);
         const ImVec2 at = ImGui::GetCursorScreenPos();
         if (ImGui::IsRectVisible(at, ImVec2(at.x + room, at.y + ImGui::GetTextLineHeight()))
-            && ImGui::CalcTextSize(label.c_str()).x > room && fitBranchLabel(*parts, room, fitted, fittedDim)) {
+            && ImGui::CalcTextSize(label.c_str()).x > room && fitBranchLabel(*parts, room, fitted)) {
             shown = &fitted;
             events.elided = true;
-            if (parts->dimUpstream)
-                dim = fittedDim;
         }
     }
     ImGui::PushStyleColor(ImGuiCol_Text, visible ? color : ImGui::GetColorU32(ImGuiCol_TextDisabled));
@@ -790,7 +782,7 @@ void BranchesPanel::draw(bool* open)
         if (!b.worktree.empty())
             tail += "  [" + b.worktree + "]";
         const std::string label = shortName + link + remote + tail;
-        const BranchLabelParts parts{shortName, link, remote, tail, true};
+        const BranchLabelParts parts{shortName, link, remote, tail};
         const std::string& full = localRefs[index].front();
         ImGui::PushOverrideID(windowId);
         // The hover buttons do what the menu's Check out and Push do.

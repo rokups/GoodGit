@@ -29,8 +29,8 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
     s.git(repo, {"branch", "--set-upstream-to=origin/main", "other"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
-    // The "@origin/main" part of a local row is dimmed; the name keeps the text colour.
-    GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 5));
+    // The "@origin/main" part of a local row is not dimmed: the whole label keeps the text colour.
+    GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 17));
     const auto* main = s.session()->snapshot()->findBranch("main");
     GG_REQUIRE(main != nullptr);
     GG_CHECK(main->isHead);
@@ -116,10 +116,10 @@ GG_TEST("panels", "branches: a branch with two remote refs is a closed node with
     // One remote ref: the "@" suffix stays, and there is no arrow.
     GG_CHECK(!s.itemExists("//Branches/branch_other/###expand"));
     GG_CHECK(s.itemText("//Branches/branch_other/###branch_other").find("other@origin/main") != std::string::npos);
-    GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 5));
+    GG_CHECK(s.idShownDimmed("//Branches", "other@origin/main", 17));
 }
 
-GG_TEST("panels", "branches: one remote ref without an upstream gives the dimmed suffix")
+GG_TEST("panels", "branches: one remote ref without an upstream gives the suffix not dimmed")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     // "solo" has a same-name remote ref and no upstream. "lonely" has neither.
@@ -132,7 +132,7 @@ GG_TEST("panels", "branches: one remote ref without an upstream gives the dimmed
     GG_REQUIRE(solo != nullptr);
     GG_CHECK(solo->upstream.empty());
     GG_CHECK(s.itemText("//Branches/branch_solo/###branch_solo").find("solo@origin/solo") != std::string::npos);
-    GG_CHECK(s.idShownDimmed("//Branches", "solo@origin/solo", 4));
+    GG_CHECK(s.idShownDimmed("//Branches", "solo@origin/solo", 16));
     GG_CHECK(!s.itemExists("//Branches/branch_solo/###expand"));
     const std::string lonely = s.itemText("//Branches/branch_lonely/###branch_lonely");
     GG_CHECK(lonely.find('@') == std::string::npos);
@@ -174,7 +174,7 @@ GG_TEST("panels", "branches: a filter opens a closed remote node and clearing it
     GG_CHECK(s.itemExists(node.c_str()));
 }
 
-GG_TEST("panels", "branches: a cut row keeps its name and counters in the text colour and dims what stays of the upstream")
+GG_TEST("panels", "branches: a cut row keeps its name, upstream and counters in the text colour")
 {
     // About 70 and 57 characters: too long for the panel. Longer names break the Windows path
     // limit (260 characters) of the loose ref file in the temporary directory.
@@ -194,7 +194,7 @@ GG_TEST("panels", "branches: a cut row keeps its name and counters in the text c
     const std::string row = "//Branches/branch_" + name + "/###branch_" + name;
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     ctx->Yield(2);
-    const ImU32 normal = ImGui::GetColorU32(ImGuiCol_Text), dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    const ImU32 normal = ImGui::GetColorU32(ImGuiCol_Text);
     const unsigned ellipsis = 0x2026;
     // The mouse is away from the rows: no hover buttons add glyphs.
     ctx->MouseMoveToPos(ImVec2(0, 0));
@@ -227,11 +227,11 @@ GG_TEST("panels", "branches: a cut row keeps its name and counters in the text c
     // The name is cut at its start: after the eye comes the ellipsis, then the rest of the name.
     for (size_t k = 1; k < link; ++k)
         GG_CHECK(glyphs[begin + k].col == normal);
-    // The link, the ellipsis of the upstream and what stays of it are dimmed.
+    // The link, the ellipsis of the upstream and what stays of it are in the text colour.
     GG_CHECK_EQ(line.substr(link, 1), "@");
     GG_CHECK_EQ(glyphs[begin + link + 1].codepoint, ellipsis);
     for (size_t k = link; k < upstreamEnd; ++k)
-        GG_CHECK(glyphs[begin + k].col == dim);
+        GG_CHECK(glyphs[begin + k].col == normal);
     // The counter after the upstream (an icon and a number) is in the text colour.
     GG_CHECK(upstreamEnd < finish - begin);
     for (size_t k = upstreamEnd; k < finish - begin; ++k)
