@@ -1676,20 +1676,85 @@ GG_TEST("refs", "the group menu item On its remote is enabled only when a group 
     s.dialogButton("Delete branches", "Cancel");
 }
 
-GG_TEST("refs", "the group menu of remote branches has no Delete item")
+GG_TEST("refs", "the group menu of remote branches forgets the group refs; one undo restores them")
 {
-    const fs::path repo = repoWithRemoteBranches(s, {"feature/one", "feature/two"});
+    const fs::path repo = repoWithRemoteBranches(s, {"feature/one", "feature/two", "feature/sub/x", "other/a", "solo"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(remoteRow("origin/feature/one").c_str()); }));
     const char* group = "//Branches/remote_group_origin/origin/###group_remote:origin:feature:";
     GG_REQUIRE(s.itemExists(group));
     ctx->ItemClick(group, ImGuiMouseButton_Right);
     ctx->Yield(2);
     GG_CHECK(ctx->ItemExists("//$FOCUSED/###history_visibility"));
+    GG_CHECK(ctx->ItemExists("//$FOCUSED/Delete on remote..."));
+    GG_CHECK(ctx->ItemExists("//$FOCUSED/Forget..."));
     GG_CHECK(!ctx->ItemExists("//$FOCUSED/Delete"));
     ctx->PopupCloseAll();
     ctx->Yield(2);
+    s.contextMenu(group, "Forget...");
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    // Exactly the branches of the group, in the order of the rows.
+    const std::vector<std::string> expected{"origin/feature/one", "origin/feature/sub/x", "origin/feature/two"};
+    GG_CHECK(form->checkedOptions("branches") == expected);
+    s.dialogButton("Forget", "Forget");
+    GG_CHECK(s.waitUntil([&] {
+        for (const auto& b : expected)
+            if (refExists(s, repo, "refs/remotes/" + b))
+                return false;
+        return true;
+    }));
+    s.settle();
+    for (const char* b : {"other/a", "solo"})
+        GG_CHECK(refExists(s, repo, std::string("refs/remotes/origin/") + b));
+    // The server keeps the branches.
+    GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "feature/*"}).find("feature/one") != std::string::npos);
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] {
+        for (const auto& b : expected)
+            if (!refExists(s, repo, "refs/remotes/" + b))
+                return false;
+        return true;
+    }));
+}
+
+GG_TEST("refs", "the group menu of remote branches deletes the group branches on the remote, subgroups included")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"feature/one", "feature/two", "feature/sub/x", "other/a", "solo"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(remoteRow("origin/feature/one").c_str()); }));
+    s.contextMenu("//Branches/remote_group_origin/origin/###group_remote:origin:feature:", "Delete on remote...");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    const std::vector<std::string> expected{"origin/feature/one", "origin/feature/sub/x", "origin/feature/two"};
+    GG_CHECK(form->checkedOptions("branches") == expected);
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "feature/*"}).empty(); }));
+    s.settle();
+    for (const char* b : {"other/a", "solo"})
+        GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", b}).find(b) != std::string::npos);
+}
+
+GG_TEST("refs", "the group menu of a nested remote subgroup acts only on the subgroup branches")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"feature/one", "feature/sub/x", "feature/sub/y"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(remoteRow("origin/feature/sub/x").c_str()); }));
+    s.contextMenu("//Branches/remote_group_origin/origin/###group_remote:origin:feature:/###group_remote:origin:feature:sub:",
+        "Forget...");
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    GG_CHECK(form->checkedOptions("branches") == (std::vector<std::string>{"origin/feature/sub/x", "origin/feature/sub/y"}));
+    s.dialogButton("Forget", "Cancel");
 }
 
 } // namespace ggtest
