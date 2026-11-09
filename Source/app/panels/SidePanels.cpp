@@ -1200,6 +1200,55 @@ static void tagDeleteItems(Session& session, const core::Snapshot& snap, const s
     ImGui::EndMenu();
 }
 
+// The menu of a selection of two or more tag rows (the clicked row is in it): show or hide the tags in History,
+// and delete them locally or on a remote. Returns false when the selection has no such menu. The caller ends the popup.
+static bool tagMultiMenu(Session& session, const core::Snapshot& snap, const RefSelection& sel, const std::string& clicked)
+{
+    if (sel.kind != RefKind::Tag || sel.names.size() < 2 || !sel.names.count(clicked))
+        return false;
+    // The selected tags in the order of the rows, once each.
+    std::vector<std::string> names;
+    std::vector<std::string> selectedRefs;
+    std::vector<std::string> localNames;
+    for (const auto& row : sel.drawn) {
+        if (row.first != RefKind::Tag || !sel.names.count(row.second)
+            || std::find(names.begin(), names.end(), row.second) != names.end())
+            continue;
+        names.push_back(row.second);
+        // A remote-only tag has no local ref, so History cannot show or hide it.
+        if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == row.second; })) {
+            localNames.push_back(row.second);
+            selectedRefs.push_back("refs/tags/" + row.second);
+        }
+    }
+    auto& history = session.history();
+    const bool free = session.actions().busy().empty();
+    visibilityMenuItem(history, selectedRefs, refsState(history, selectedRefs).all);
+    ImGui::Separator();
+    if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
+        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, !localNames.empty()))
+            session.showDeleteTagsDialog(localNames, "");
+        ImGui::Separator();
+        const auto& remoteTags = session.remoteTags();
+        for (const auto& r : snap.remotes) {
+            // The tags that the remote has. A remote that is not read yet (or failed) may have any of them.
+            auto it = remoteTags.find(r.name);
+            const bool known = it != remoteTags.end() && it->second.ok;
+            std::vector<std::string> onRemote;
+            for (const auto& n : names)
+                if (!known || it->second.tags.count(n))
+                    onRemote.push_back(n);
+            if (onRemote.empty())
+                continue;
+            const std::string label = "On " + r.name + (it == remoteTags.end() ? " (checking...)" : known ? "" : " (not checked)");
+            if (menuItem(ICON_MS_DELETE, label.c_str()))
+                session.showDeleteTagsDialog(onRemote, r.name);
+        }
+        ImGui::EndMenu();
+    }
+    return true;
+}
+
 // The Tags panel's menu for a tag; also on the tag's badge in History.
 void tagMenuItems(Session& session, const core::Snapshot& snap, const core::TagInfo& t)
 {
@@ -1302,9 +1351,11 @@ void TagsPanel::draw(bool* open)
             ImGui::EndTooltip();
         }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
-            tagMenuItems(m_session, *m_snapshot, t);
-            ImGui::Separator();
-            visibilityMenuItem(history, fullRefs, history.refVisible(full));
+            if (!tagMultiMenu(m_session, *m_snapshot, m_selection, t.name)) {
+                tagMenuItems(m_session, *m_snapshot, t);
+                ImGui::Separator();
+                visibilityMenuItem(history, fullRefs, history.refVisible(full));
+            }
             ImGui::EndPopup();
         }
     }
@@ -1332,10 +1383,12 @@ void TagsPanel::draw(bool* open)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("Only on %s: fetch to get it here", where.c_str());
         if (beginContextMenu("##rtag_menu")) {
-            if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-                ImGui::SetClipboardText(name.c_str());
-            ImGui::Separator();
-            tagDeleteItems(m_session, *m_snapshot, name, false);
+            if (!tagMultiMenu(m_session, *m_snapshot, m_selection, name)) {
+                if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
+                    ImGui::SetClipboardText(name.c_str());
+                ImGui::Separator();
+                tagDeleteItems(m_session, *m_snapshot, name, false);
+            }
             ImGui::EndPopup();
         }
         ImGui::PopID();

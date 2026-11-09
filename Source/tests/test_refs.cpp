@@ -1369,6 +1369,124 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; t
     s.settle();
 }
 
+namespace {
+
+// Selects the tags `names` in the Tags panel: a click on the first, Ctrl+click on the others.
+void selectTags(Scenario& s, const std::vector<std::string>& names)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    ctx->ItemClick(tagRow(names.front()).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    for (size_t i = 1; i < names.size(); ++i)
+        ctx->ItemClick(tagRow(names[i]).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+}
+
+// A repository with the tags t1, t2 and t3 (t1 and t3 also on origin).
+fs::path repoWithTags(Scenario& s)
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"t1", "t2", "t3"})
+        s.git(repo, {"tag", name});
+    s.git(repo, {"push", "-q", "origin", "t1", "t3"});
+    return repo;
+}
+
+} // namespace
+
+GG_TEST("refs", "the multi menu of tags deletes the selected tags locally")
+{
+    const fs::path repo = repoWithTags(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("t3").c_str()); }));
+    selectTags(s, {"t1", "t3"});
+    GG_REQUIRE(s.session()->tags().selection().names.size() == 2);
+    s.contextMenu(tagRow("t3").c_str(), "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these tags?");
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("tags") == (std::vector<std::string>{"t1", "t3"}));
+    s.dialogButton("Delete tags", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/t1") && !refExists(s, repo, "refs/tags/t3"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/tags/t2"));
+    // The remote keeps its tags.
+    GG_CHECK(refExists(s, origin(s, repo), "refs/tags/t1"));
+}
+
+GG_TEST("refs", "the multi menu of tags deletes on a remote only the selected tags that it has")
+{
+    const fs::path repo = repoWithTags(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("t3").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& tags = s.session()->remoteTags();
+        auto it = tags.find("origin");
+        return it != tags.end() && it->second.ok;
+    }));
+    selectTags(s, {"t1", "t2", "t3"});
+    GG_REQUIRE(s.session()->tags().selection().names.size() == 3);
+    s.contextMenu(tagRow("t1").c_str(), "Delete/On origin");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these tags on 'origin'?");
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("tags") == (std::vector<std::string>{"t1", "t3"}));
+    s.dialogButton("Delete tags", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/t1") && !refExists(s, origin(s, repo), "refs/tags/t3"); }));
+    s.settle();
+    // The local tags stay.
+    GG_CHECK(refExists(s, repo, "refs/tags/t1") && refExists(s, repo, "refs/tags/t2") && refExists(s, repo, "refs/tags/t3"));
+}
+
+GG_TEST("refs", "the multi menu of tags shows or hides all selected tags in History")
+{
+    const fs::path repo = repoWithTags(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("t3").c_str()); }));
+    const auto& history = s.session()->history();
+    const auto visible = [&](const char* name) { return history.refVisible(std::string("refs/tags/") + name); };
+    GG_CHECK(visible("t1") && visible("t2") && visible("t3"));
+    selectTags(s, {"t1", "t2"});
+    GG_REQUIRE(s.session()->tags().selection().names.size() == 2);
+    s.toggleVisibility(tagRow("t2").c_str());
+    GG_CHECK(s.waitUntil([&] { return !visible("t1") && !visible("t2"); }));
+    GG_CHECK(visible("t3"));
+    s.toggleVisibility(tagRow("t2").c_str());
+    GG_CHECK(s.waitUntil([&] { return visible("t1") && visible("t2"); }));
+}
+
+GG_TEST("refs", "the menu of a tag outside the selection, or of one selected tag, is the single menu")
+{
+    const fs::path repo = repoWithTags(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("t3").c_str()); }));
+    const auto hasItem = [&](const char* item) {
+        return ctx->ItemInfo((std::string("//$FOCUSED/") + item).c_str(), ImGuiTestOpFlags_NoError).ID != 0;
+    };
+    // One selected tag: Reveal and Copy name are there.
+    selectTags(s, {"t1"});
+    ctx->ItemClick(tagRow("t1").c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(hasItem("Reveal") && hasItem("Copy name"));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    // A tag outside a selection of two: the single menu too.
+    selectTags(s, {"t1", "t2"});
+    ctx->ItemClick(tagRow("t3").c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(hasItem("Reveal") && hasItem("Copy name"));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    // A tag in the selection: the multi menu has no Reveal.
+    ctx->ItemClick(tagRow("t2").c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(!hasItem("Reveal") && !hasItem("Copy name"));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+}
+
 GG_TEST("refs", "remotes: add, edit URL, prune on fetch, delete")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
