@@ -454,6 +454,10 @@ the History panel list newly conflicted commits. See §5, decision R1.
   Two or more local rows: Show/Hide in History, Delete ▸ Local / On its remote / Local and all remotes. Each opens the
   dialog "Delete branches": a check list, the merged state of each branch, and a warning for unmerged branches (deleted with force).
   Two or more remote-tracking rows: Show/Hide in History, "Delete on remote…" (on the server) and "Forget…" (local refs only).
+  **N** A group row (a folder, subgroups included) has Show/Hide in History and then Delete items for all branches of the group.
+  A group of local branches: Delete ▸ Local / On its remote / Local and all remotes, with the same dialog and rules as the
+  menu of many rows. "On its remote" is enabled only if a branch of the group has an upstream. A group of remote-tracking
+  branches: "Delete on remote…" and "Forget…". Delete is disabled while an operation runs.
   **N** The remote refs of a local branch are its same-name refs in every remote, plus its
   upstream ref. A branch with one remote ref shows a `@<remote>` suffix that is not dimmed: it names the upstream, or else the ref, and
   its menu has a "Remote <name>" submenu: the menu of the remote ref plus "Set as upstream". A

@@ -800,6 +800,10 @@ the panel without touching the repository.
   Remote-tracking rows: Show/Hide in History · Delete on remote… (the `Delete branches` dialog, on the server) · Forget…
   (the `Forget` dialog: only local refs, one journaled operation, one Undo). A single remote-tracking row has Forget… after
   Delete on remote…. A plain Fetch does not bring a forgotten ref back; Fetch more… lists it again.
+  Group rows (a folder of the local or remote section, subgroups included): after Show/Hide in History, a group of local
+  branches has Delete ▸ Local / On its remote / Local and all remotes, with the dialog and rules of the selection menu;
+  "On its remote" is enabled only when a branch of the group has an upstream. A group of remote-tracking branches has
+  Delete on remote… and Forget… for all its branches. Delete is disabled while an operation runs.
   Check out on a remote-tracking branch (the menu item, the row's `act_checkout` button and the double click on its
   badge in History) has one result: a local branch of the short name is checked out; without one, the *Create branch*
   dialog opens (name: the short name, at: the remote-tracking branch, *Check out after creating* on), and nothing is
