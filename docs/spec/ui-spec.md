@@ -699,7 +699,8 @@ the panel without touching the repository.
   the alternate background.
 - **Opening at a line:** *Show originating source* and *Blame before this change* open the blame with the cursor on the
   corresponding line. When they are used on a line, that line stays on the same row of the editor; without a known row
-  it is scrolled to the middle of the code. That is not a selection: Down in the window selects it.
+  it is scrolled to the middle of the code. That is not a selection: Down in the window selects it. A blame opened
+  without a line starts at the first line.
 - **Menus:** a right click on a line's gutter, on its line number or on its code, and Alt+Space (for the cursor line), open the
   menu of that line. The code's menu has Copy (enabled with a selection) and Select all first, a separator and then the
   line items; the other three have the line items only. Line items: Blame before this change ·

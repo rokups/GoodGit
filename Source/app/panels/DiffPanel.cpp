@@ -30,7 +30,21 @@ ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (s
 // first appears: diffs show up as a side effect of clicks elsewhere (and would close their menus).
 class DiffEditor : public TextEditor {
 public:
-    DiffEditor() { focusOnEditor = false; }
+    DiffEditor()
+    {
+        focusOnEditor = false;
+        // The editor leaves its view state uninitialized until its first render, and the first render reads it.
+        visibleHeight = 0.0f;
+        visibleLines = 0;
+        firstVisibleLine = 0;
+        lastVisibleLine = 0;
+        visibleWidth = 0.0f;
+        visibleColumns = 0;
+        firstVisibleColumn = 0;
+        lastVisibleColumn = 0;
+        verticalScrollBarSize = 0.0f;
+        horizontalScrollBarSize = 0.0f;
+    }
 
     // Sets the text with syntax colors, the given lines drawn dimmed instead. The colors are
     // computed here (not on the next render, which would overwrite the dimming).

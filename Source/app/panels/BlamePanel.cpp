@@ -33,7 +33,21 @@ ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (s
 // it first appears.
 class BlameEditor : public TextEditor {
 public:
-    BlameEditor() { focusOnEditor = false; }
+    BlameEditor()
+    {
+        focusOnEditor = false;
+        // The editor leaves its view state uninitialized until its first render, and the first render reads it.
+        visibleHeight = 0.0f;
+        visibleLines = 0;
+        firstVisibleLine = 0;
+        lastVisibleLine = 0;
+        visibleWidth = 0.0f;
+        visibleColumns = 0;
+        firstVisibleColumn = 0;
+        lastVisibleColumn = 0;
+        verticalScrollBarSize = 0.0f;
+        horizontalScrollBarSize = 0.0f;
+    }
 
     // Selects the lines from `anchor` to `line` (up to the end of the last one) and leaves the cursor on
     // `line`, so the arrows go on from the line pressed. Nothing scrolls: that line is on the screen.
@@ -247,6 +261,9 @@ void BlamePanel::onBlame(const core::BlameEvent& event)
         else
             m_editor->ScrollToLine(line, TextEditor::Scroll::alignMiddle);
         m_cursorSeen = cursorState();
+    } else {
+        // A fresh blame starts at its first line, whatever the cursor-visible logic of the editor does.
+        m_editor->ScrollToLine(0, TextEditor::Scroll::alignTop);
     }
     m_restore.reset();
     m_scrollTo = 0;

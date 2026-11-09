@@ -684,7 +684,10 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
     // The panel may not draw its lines for some frames after the blame arrives.
     std::string blameLine;
     GG_REQUIRE(s.waitUntil([&] {
-        blameLine = s.child("//Blame", "##blame_editor") + "/###blame_line_1";
+        const std::string editor = s.child("//Blame", "##blame_editor");
+        if (ctx->GetWindowByRef(editor.c_str()))
+            ctx->ScrollToTop(editor.c_str()); // line 1 is drawn only while the view is at the top
+        blameLine = editor + "/###blame_line_1";
         return s.itemExists(blameLine.c_str());
     }));
     s.contextMenu(blameLine.c_str(), "Blame before this change");
