@@ -450,6 +450,10 @@ the History panel list newly conflicted commits. See §5, decision R1.
   Reconcile with remote/branch…, Rename…, Delete ▸ (Local / a given remote / Local and all
   remotes). **N** Set/unset upstream, Fast-forward to upstream, Pull (for the current
   branch).
+  **N** Rows select: click, Ctrl-click, Shift-click for a range; one kind of rows (local or remote-tracking) at a time.
+  Two or more local rows: Show/Hide in History, Delete ▸ Local / On its remote / Local and all remotes. Each opens the
+  dialog "Delete branches": a check list, the merged state of each branch, and a warning for unmerged branches (deleted with force).
+  Two or more remote-tracking rows: Show/Hide in History, "Delete on remote…" (on the server) and "Forget…" (local refs only).
   **N** The remote refs of a local branch are its same-name refs in every remote, plus its
   upstream ref. A branch with one remote ref shows a `@<remote>` suffix that is not dimmed: it names the upstream, or else the ref, and
   its menu has a "Remote <name>" submenu: the menu of the remote ref plus "Set as upstream". A
@@ -461,6 +465,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
   filter opens a node that has matches. Clearing the filter restores the earlier state.
 - **K Tags:** Create tag, filter, Show or Hide in History (menu item), Reveal, Copy, Delete.
   **N** Annotated tags (message), push tag, delete a remote tag.
+  **N** Tag rows select as branch rows do. Two or more tags: Show/Hide in History, Delete ▸ Local / On <remote>, in the dialog "Delete tags".
 - **M Workspaces → Worktrees:** native `git worktree`: list (stale, locked, main), Add…,
   Open here, Open in new window, Open directory, Copy name/path, Reveal HEAD, Remove….
   **N** Lock/unlock, prune, repair (Git offers them; the UI adds them). **D** gg rename
@@ -507,6 +512,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
   button needs one checked name. It deletes the checked refs in one journaled operation. Undo
   restores them. The upstream config of a local branch that tracks a forgotten ref stays. The
   branch shows "(gone)". A later "Fetch more…" brings the refs back. A plain gg Fetch does not.
+  **N** The context menu of a remote-tracking branch has "Forget…" after "Delete on remote…". With two or more selected
+  rows, it opens the dialog with all of them checked. It runs as one journaled operation with one Undo.
 - **N** Push `--set-upstream` for a new branch, push tags, and Force-with-lease as the only
   force option.
 - **M** Pushed/locked state: a commit counts as published when a remote-tracking ref

@@ -790,6 +790,16 @@ the panel without touching the repository.
   whole, and so do the hover buttons. A row or group that is elided shows a tooltip with the whole
   name (a local row also its upstream); the tooltip a nested row already has stays. History's badges are not
   affected.
+  Selection (**N**): a click on a local or a remote-tracking row selects it; Ctrl-click adds or removes a row; Shift-click
+  selects the rows from the anchor to the clicked row. A selection holds one kind of rows: local, or remote-tracking. A click
+  on a row of the other kind starts a new selection. Esc clears the selection (not while a popup is open or the filter field
+  has the key). With two or more selected rows, the context menu is the menu of the selection, not of one row.
+  Local rows: Show/Hide in History (`###history_visibility`) · Delete ▸ Local / On its remote / Local and all remotes. "Local" and
+  "Local and all remotes" open the dialog `Delete branches` (mode 0 and 2). "On its remote" opens it with the upstream refs (mode 1);
+  it is disabled when no selected branch has an upstream. The current branch is not in the list; the dialog shows a note.
+  Remote-tracking rows: Show/Hide in History · Delete on remote… (the `Delete branches` dialog, on the server) · Forget…
+  (the `Forget` dialog: only local refs, one journaled operation, one Undo). A single remote-tracking row has Forget… after
+  Delete on remote…. A plain Fetch does not bring a forgotten ref back; Fetch more… lists it again.
   Check out on a remote-tracking branch (the menu item, the row's `act_checkout` button and the double click on its
   badge in History) has one result: a local branch of the short name is checked out; without one, the *Create branch*
   dialog opens (name: the short name, at: the remote-tracking branch, *Check out after creating* on), and nothing is
@@ -812,6 +822,9 @@ the panel without touching the repository.
   while the list scrolls. Rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)
   (the menu item Show/Hide in History, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
+  Selection (**N**): rows select as in Branches (click, Ctrl-click, Shift-click, Esc), local and remote-only tag rows. With two or
+  more selected tags the menu is: Show/Hide in History · Delete ▸ Local / On <remote> (one item for each remote; its label
+  adds "(checking...)" or "(not checked)" while the tags on the remote are unknown). Each item opens the dialog `Delete tags`.
 - **Repositories** `"Repositories"` (N): the permanent repository list of the settings (`repositories`:
   `[{path, alias}]`, no limit; each opened or dropped repository is added, except a linked worktree,
   see below; a settings file without the key starts with the recent list) as a tree. An alias `group/subgroup/name` puts a repository in groups
@@ -920,8 +933,8 @@ the panel without touching the repository.
 ## 9. Dialogs
 Each dialog is a modal popup with the given name and OK/Cancel buttons `OK##<dialog>` and
 `Cancel##<dialog>`:
-`Commit`, `Create branch`, `Rename branch`, `Check out branch` (buttons *Detach and check out* / *Cancel*), `Delete branch`, `Move branch`,
-`Create tag`, `Add remote`, `Edit remote URL`, `Fetch more` (combo `##remote`, check lists `##branches` and `##tags` with a filter, buttons *Fetch* / *Cancel*), `Forget` (combo `##remote`, check lists `##branches` and `##tags`, buttons *Forget* / *Cancel*), `Clone repository`, `Initialize repository`,
+`Commit`, `Create branch`, `Rename branch`, `Check out branch` (buttons *Detach and check out* / *Cancel*), `Delete branch`, `Delete branches` (check list `##branches`; the message names the mode: local, on their remotes, or local and every remote; a warning lists branches that are not merged, they are deleted with force; buttons *Delete* / *Cancel*), `Delete tags` (check list `##tags`, "Delete these tags?" or "Delete these tags on '<remote>'?"; buttons *Delete* / *Cancel*), `Move branch`,
+`Create tag`, `Add remote`, `Edit remote URL`, `Fetch more` (combo `##remote`, check lists `##branches` and `##tags` with a filter, buttons *Fetch* / *Cancel*), `Forget` (combo `##remote`, check lists `##branches` and `##tags`, buttons *Forget* / *Cancel*; opened from a row menu it has only the list `##branches` with the selected refs), `Clone repository`, `Initialize repository`,
 `Push to`, `Force push`, `Stash changes`, `Drop stash`, `Branch from stash`, `Discard changes`,
 `Apply patch`, `Save patch`, `Stash and switch`, `Stash and pull`, `Push refused`,
 `Credentials` (askpass), `Rewrite published history`, `Non-text conflicts` (pre-flight, Phase
@@ -944,7 +957,7 @@ conflict-marker warning shows in both modes (not with *message only*). Amending 
 A dialog with a text field keeps the first focus on that field. Enter in a text field presses the confirm button.
 The confirm button of a destructive action has the danger color (`Palette::errorBg`, reddish in the dark
 theme) and not the accent color. The keyboard focus of that dialog starts on *Cancel*. Set `FormButton::danger`
-for these dialogs: *Delete branch*, *Delete remote*, *Delete files*, *Discard changes* (all forms), *Reset hard*, *Force push*,
+for these dialogs: *Delete branch*, *Delete branches*, *Delete tags*, *Delete remote*, *Delete files*, *Discard changes* (all forms), *Reset hard*, *Force push*,
 *Rewrite published history* (button *Rewrite*), *Forget*, *Drop commit*, *Drop commit and descendants*, *Drop stash*, *Clear stashes*,
 *Remove worktree*, *Remove worktree with changes* (button *Delete changes and remove*), *Remove submodule*. The labels and the IDs of the buttons stay the same.
 
