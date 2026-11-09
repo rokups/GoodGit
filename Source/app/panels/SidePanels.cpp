@@ -503,6 +503,7 @@ struct RemoteMenuOptions {
     bool checkout;                           // Check out
     bool createLocal;                        // Create local branch...
     const core::BranchInfo* setUpstreamFor;  // when set: "Set as upstream" for this local branch
+    bool forget = false;                     // Forget...: remove the local ref only
 };
 
 // The items of the menu of a remote-tracking branch. The History panel, the Branches panel and the
@@ -538,6 +539,8 @@ void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core
     ImGui::Separator();
     if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
         session.showDeleteRemoteBranchDialog(r.name);
+    if (options.forget && menuItem(ICON_MS_DELETE_SWEEP, "Forget...", nullptr, false, free))
+        session.showForgetRefsDialog({r.name});
 }
 
 // The child rows of an open local branch node: one for each remote ref of the branch, under the row, at the
@@ -789,13 +792,35 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std:
 
 void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const core::RemoteBranchInfo& r)
 {
-    remoteRefMenuItems(session, snap, r, {true, true, nullptr});
+    remoteRefMenuItems(session, snap, r, {true, true, nullptr, true});
 }
 
 void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r, const std::vector<std::string>& refs)
 {
     if (!beginContextMenu(("##rbranch_menu_" + rowId(r.name)).c_str()))
         return;
+    // A row of a selection of two or more remote-tracking branches has the menu of the selection.
+    const RefSelection& sel = m_selection;
+    if (sel.kind == RefKind::RemoteBranch && sel.names.size() >= 2 && sel.names.count(r.name)) {
+        // The selected branches in the order of the rows: "origin/x" and the full refs, once each.
+        std::vector<std::string> names;
+        std::vector<std::string> selectedRefs;
+        for (const auto& row : sel.drawn)
+            if (row.first == RefKind::RemoteBranch && sel.names.count(row.second)
+                && std::find(names.begin(), names.end(), row.second) == names.end()) {
+                names.push_back(row.second);
+                selectedRefs.push_back("refs/remotes/" + row.second);
+            }
+        const bool free = m_session.actions().busy().empty();
+        visibilityMenuItem(m_session.history(), selectedRefs, refsState(m_session.history(), selectedRefs).all);
+        ImGui::Separator();
+        if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
+            m_session.showDeleteRemoteBranchesDialog(names);
+        if (menuItem(ICON_MS_DELETE_SWEEP, "Forget...", nullptr, false, free))
+            m_session.showForgetRefsDialog(names);
+        ImGui::EndPopup();
+        return;
+    }
     remoteBranchMenuItems(m_session, *m_snapshot, r);
     ImGui::Separator();
     visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));

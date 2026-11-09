@@ -17,6 +17,38 @@ std::string branchRow(const std::string& name)
     return "//Branches/branch_" + id + "/###branch_" + id;
 }
 
+// The row of the remote-tracking branch `name` ("origin/x") in the Branches panel.
+std::string remoteRow(const std::string& name)
+{
+    std::string id = name;
+    std::replace(id.begin(), id.end(), '/', ':');
+    return "//Branches/remote_group_origin/origin/rbranch_" + id + "/###rbranch_" + id;
+}
+
+// Selects the remote-tracking branch rows `names`: a click on the first, Ctrl+click on the others.
+void selectRemoteRows(Scenario& s, const std::vector<std::string>& names)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    ctx->ItemClick(remoteRow(names.front()).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    for (size_t i = 1; i < names.size(); ++i)
+        ctx->ItemClick(remoteRow(names[i]).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+}
+
+// A repository where the branches `names` are on origin and fetched, with no local branch of these names.
+fs::path repoWithRemoteBranches(Scenario& s, const std::vector<std::string>& names)
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const auto& name : names) {
+        s.git(repo, {"branch", name, "HEAD~1"});
+        s.git(repo, {"push", "-q", "origin", name});
+        s.git(repo, {"branch", "-D", name});
+    }
+    s.git(repo, {"fetch", "-q", "origin"});
+    return repo;
+}
+
 std::string tagRow(const std::string& name) { return "//Tags/tag_" + name + "/###tag_" + name; }
 
 bool refExists(Scenario& s, const fs::path& repo, const std::string& ref)
@@ -644,6 +676,125 @@ GG_TEST("refs", "forget refs dialog removes the checked remote-tracking branches
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
     s.settle();
     GG_CHECK(refExists(s, repo, "refs/remotes/origin/f3"));
+}
+
+GG_TEST("refs", "the menu of a remote-tracking row forgets only the local ref; one undo restores it")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_REQUIRE(s.itemExists(remoteRow("origin/f1").c_str()));
+    ctx->ItemClick(remoteRow("origin/f1").c_str(), ImGuiMouseButton_Right);
+    for (const char* item : {"Delete on remote...", "Forget..."})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(remoteRow("origin/f1").c_str(), "Forget...");
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    const auto checked = s.app.dialogs().current()->checkedOptions("branches");
+    GG_REQUIRE(checked.size() == 1);
+    GG_CHECK_STR_EQ(checked.front(), "origin/f1");
+    s.dialogButton("Forget", "Forget");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/f1"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/f2"));
+    GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "f1"}).find("f1") != std::string::npos); // the remote keeps it
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/f2"));
+}
+
+GG_TEST("refs", "the multi menu of remote-tracking rows forgets them in one undo step")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2", "f3"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_REQUIRE(s.itemExists(remoteRow("origin/f3").c_str()));
+    selectRemoteRows(s, {"origin/f1", "origin/f2"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    ctx->ItemClick(remoteRow("origin/f2").c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    for (const char* item : {"###history_visibility", "Delete on remote...", "Forget..."})
+        GG_CHECK(ctx->ItemExists((std::string("//$FOCUSED/") + item).c_str()));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu(remoteRow("origin/f2").c_str(), "Forget...");
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("branches") == (std::vector<std::string>{"origin/f1", "origin/f2"}));
+    s.dialogButton("Forget", "Forget");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/f1") && !refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/f3"));
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/f3"));
+}
+
+GG_TEST("refs", "the multi menu of remote-tracking rows deletes the selected branches on the remote")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2", "f3"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_REQUIRE(s.itemExists(remoteRow("origin/f3").c_str()));
+    selectRemoteRows(s, {"origin/f1", "origin/f3"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    s.contextMenu(remoteRow("origin/f1").c_str(), "Delete on remote...");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("branches") == (std::vector<std::string>{"origin/f1", "origin/f3"}));
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "f1", "f3"}).empty(); }));
+    s.settle();
+    GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "f2"}).find("f2") != std::string::npos);
+}
+
+GG_TEST("refs", "a plain fetch does not bring forgotten refs back; Fetch more lists them; one undo restores them")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().forgetRefs({"refs/remotes/origin/f1", "refs/remotes/origin/f2"});
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/f1") && !refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    // A plain fetch updates only the refs that exist here.
+    s.session()->actions().fetch("origin", false, false);
+    s.settle();
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/f1"));
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/f2"));
+    // Fetch more lists the branches of the remote again.
+    s.session()->showFetchMoreDialog("origin");
+    GG_REQUIRE(s.dialogOpen("Fetch more"));
+    GG_CHECK(s.waitUntil([&] { return s.itemExists("//Fetch more/**/f1##branches_f1"); }, 10.0f));
+    GG_CHECK(s.itemExists("//Fetch more/**/f2##branches_f2"));
+    s.dialogButton("Fetch more", "Cancel");
+    // One undo restores both.
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
+}
+
+GG_TEST("refs", "a remote-tracking branch with a slash in its name can be forgotten and deleted on the remote")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"feature/x", "feature/y"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_REQUIRE(s.itemExists(remoteRow("origin/feature/x").c_str()));
+    s.contextMenu(remoteRow("origin/feature/x").c_str(), "Forget...");
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    s.dialogButton("Forget", "Forget");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/feature/x"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/feature/y"));
+    s.contextMenu(remoteRow("origin/feature/y").c_str(), "Delete on remote...");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "feature/y"}).empty(); }));
+    s.settle();
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/feature/y"));
+    GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "feature/x"}).find("feature/x") != std::string::npos);
 }
 
 GG_TEST("refs", "delete tags dialog deletes the checked local tags; one undo restores them")
