@@ -233,10 +233,9 @@ void Session::handle(core::Event& event)
             } else if constexpr (std::is_same_v<T, core::CommitWarningsEvent>) {
                 m_commitWarnings = std::move(e.warnings);
             } else if constexpr (std::is_same_v<T, core::BranchMergedEvent>) {
-                if (e.request == m_branchMergedRequest)
-                    m_branchMerged = e.result == core::BranchMergedEvent::Result::Merged ? MergedState::Merged
-                        : e.result == core::BranchMergedEvent::Result::NotMerged        ? MergedState::NotMerged
-                                                                                        : MergedState::Failed;
+                m_branchMerged[e.request] = e.result == core::BranchMergedEvent::Result::Merged ? MergedState::Merged
+                    : e.result == core::BranchMergedEvent::Result::NotMerged                    ? MergedState::NotMerged
+                                                                                                : MergedState::Failed;
             } else if constexpr (std::is_same_v<T, core::RebasePreviewEvent>) {
                 m_rebase->onPreview(e);
             }

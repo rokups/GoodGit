@@ -709,7 +709,8 @@ void Session::showSetAliasDialog(const std::string& repoPath)
 
 Session::MergedState Session::branchMerged(core::RequestId request) const
 {
-    return request == m_branchMergedRequest ? m_branchMerged : MergedState::Failed;
+    const auto it = m_branchMerged.find(request);
+    return it == m_branchMerged.end() ? MergedState::Unknown : it->second;
 }
 
 void Session::showDeleteBranchDialog(const std::string& branch, int mode)
@@ -750,8 +751,8 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
             shown = b->upstream.rfind(localPrefix, 0) == 0 ? b->upstream.substr(localPrefix.size()) : b->upstream;
         }
         // The engine reads the answer off the UI thread; the dialog shows it when it arrives.
-        m_branchMerged = MergedState::Unknown;
-        request = m_branchMergedRequest = m_engine->readBranchMerged(branch, target);
+        request = m_engine->readBranchMerged(branch, target);
+        m_branchMerged.emplace(request, MergedState::Unknown);
         Field mergedInto = commitInfo(*this, "Merged into", shown);
         mergedInto.visible = [this, request](const Form&) { return branchMerged(request) == MergedState::Merged; };
         f.add(std::move(mergedInto));

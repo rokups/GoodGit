@@ -146,8 +146,8 @@ public:
     // detached, or its branch gone) is cleared.
     const std::optional<gg::edit::Session>& editSession() const { return m_editSession; }
     void stopEditing();
-    // The answer to the readBranchMerged request `request`: Unknown until it arrives; Failed when git
-    // could not tell, or a newer request replaced it (the caller then lets git decide).
+    // The answer to the readBranchMerged request `request`: Unknown until it arrives or when the request
+    // is not known; Failed when git could not tell (the caller then lets git decide).
     enum class MergedState { Unknown, Merged, NotMerged, Failed };
     MergedState branchMerged(core::RequestId request) const;
     // What committing the staged files would make or leave conflicted (read off the UI thread on every
@@ -296,9 +296,8 @@ private:
     std::vector<gg::journal::Operation> m_operations;
     std::optional<gg::edit::Session> m_editSession;
     std::vector<gg::outgoing::StagedWarning> m_commitWarnings;
-    // The merged state the Delete branch dialog asked for (BranchMergedEvent): none until it arrives.
-    core::RequestId m_branchMergedRequest = 0;
-    MergedState m_branchMerged = MergedState::Unknown;
+    // The merged state of each readBranchMerged request, by request id (BranchMergedEvent).
+    std::map<core::RequestId, MergedState> m_branchMerged;
     std::map<std::string, std::map<std::string, std::string>> m_config;
     mutable std::atomic<bool> m_firstClassKnown{false}; // gg.firstClassConflicts as last read (for the UI thread)
     std::map<std::string, RemoteTags> m_remoteTags;
