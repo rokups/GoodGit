@@ -291,6 +291,8 @@ static std::vector<WorktreeInfo> readWorktrees(git_repository* repo, const fs::p
         info.isCurrent = worktreeId == info.name;
         out.push_back(std::move(info));
     }
+    // The directory order of libgit2 differs between file systems: sort the linked entries by name.
+    std::sort(out.begin() + 1, out.end(), [](const WorktreeInfo& a, const WorktreeInfo& b) { return a.name < b.name; });
     return out;
 }
 
