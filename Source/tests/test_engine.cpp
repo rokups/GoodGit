@@ -136,11 +136,7 @@ GG_TEST("engine", "responsiveness on the large repository")
         probe.frames, probe.maxAppMs, probe.worstFrame, probe.worstAtMs, probe.maxPresentMs, probe.maxTotalMs,
         probe.slowFrames);
     GG_CHECK(probe.frames > 50);
-    const bool fast = probe.maxAppMs < timeBudgetMs(33.0);
-    if (!fast)
-        ctx->LogError("slowest app frame: %.1f ms, frame %lld of %lld, %.0f ms after the start of the measured window",
-            probe.maxAppMs, probe.worstFrame, probe.frames, probe.worstAtMs);
-    GG_CHECK(fast);
+    GG_CHECK(frameBudgetMet(ctx, probe));
 }
 
 namespace {

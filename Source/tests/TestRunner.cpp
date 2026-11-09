@@ -483,6 +483,25 @@ double timeBudgetMs(double ms)
     return ms * (factor >= 1.0 ? factor : 1.0);
 }
 
+bool frameBudgetMet(ImGuiTestContext* ctx, const ggui::FrameProbe& probe)
+{
+    constexpr double budgetMs = 33.0;
+    const double p50 = probe.percentileAppMs(50.0);
+    const double p95 = probe.percentileAppMs(95.0);
+    const double p99 = probe.percentileAppMs(99.0);
+    ctx->LogInfo("app frame ms: p50 %.1f, p95 %.1f, p99 %.1f, max %.1f", p50, p95, p99, probe.maxAppMs);
+    bool ok = p99 < timeBudgetMs(budgetMs);
+    if (timeBudgetMs(1.0) == 1.0)
+        ok = ok && probe.maxAppMs < budgetMs;
+    else
+        ok = ok && probe.maxAppMs < timeBudgetMs(budgetMs) * 5.0;
+    if (!ok)
+        ctx->LogError("app frames too slow: p99 %.1f ms, max %.1f ms (frame %lld of %lld, %.0f ms after the "
+                      "start of the measured window), budget %.1f ms",
+            p99, probe.maxAppMs, probe.worstFrame, probe.frames, probe.worstAtMs, timeBudgetMs(budgetMs));
+    return ok;
+}
+
 void markCurrentTestSkipped(const std::string& reason)
 {
     if (g_current)

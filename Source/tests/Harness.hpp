@@ -12,6 +12,8 @@
 // GIT_CONFIG_GLOBAL, preferences directory and a PATH that contains the git-gg under test.
 #pragma once
 
+#include "util/FrameProbe.hpp"
+
 #include <libgg/GitRunner.hpp>
 
 #include <imgui.h>
@@ -82,6 +84,10 @@ fs::path artifactsDir();
 // A timing budget scaled by GGUI_TIMING_SLACK (default 1): shared CI runners with software
 // rendering and coverage instrumentation are slower than the machines the budgets are set for.
 double timeBudgetMs(double ms);
+// Checks the app frame times of a probe against the 33 ms budget. Logs p50, p95, p99 and max.
+// A single frame can lose the CPU to other shards. A product stall repeats and moves p99.
+// One frame above 5 times the budget still fails. The unscaled release gate checks the max.
+bool frameBudgetMet(ImGuiTestContext* ctx, const ggui::FrameProbe& probe);
 
 class Scenario;
 // Writes screenshot.png, app.log, git-commands.log and info.txt for a failing test into `dir`.
