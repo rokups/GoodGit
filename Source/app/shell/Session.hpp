@@ -235,6 +235,9 @@ public:
     void showDeleteBranchDialog(const std::string& branch, int mode); // 0 local, 1 remote, 2 all
     void showDeleteBranchesDialog(std::vector<std::string> branches, int mode); // 0 local, 1 remote, 2 all
     void showDeleteRemoteBranchDialog(const std::string& remoteBranch); // "origin/x": git push origin --delete x
+    void showDeleteRemoteBranchesDialog(std::vector<std::string> remoteBranches); // "origin/x" each
+    void showForgetRefsDialog(std::vector<std::string> remoteBranches); // "origin/x" each: remove the local refs
+    void showDeleteTagsDialog(std::vector<std::string> tags, const std::string& remote); // remote empty: local tags
     void showMoveBranchDialog(const std::string& branch, const std::string& to);
     void showSetUpstreamDialog(const std::string& branch);
     void showBranchFromStashDialog(int index);

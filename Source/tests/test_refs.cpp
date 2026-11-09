@@ -367,6 +367,137 @@ GG_TEST("refs", "delete branches dialog leaves out the current branch")
     GG_CHECK(!s.dialogOpen("Delete branches"));
 }
 
+GG_TEST("refs", "delete branches dialog: an unmerged branch shows the warning and is deleted with force")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "merged-b", "HEAD~1"});
+    s.git(repo, {"switch", "-q", "-c", "unmerged-b", "HEAD~1"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "only here"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteBranchesDialog({"merged-b", "unmerged-b"}, 0);
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    GG_CHECK(s.waitUntil([&] { return deleteWarning(s).find("unmerged-b") != std::string::npos; }, 5.0f));
+    const std::string warning = deleteWarning(s);
+    GG_CHECK(warning.find("Not merged into HEAD") != std::string::npos);
+    GG_CHECK(warning.find("merged-b,") == std::string::npos);
+    // A branch that is not checked leaves the warning.
+    ctx->ItemUncheck("//Delete branches/**/unmerged-b##branches_unmerged-b");
+    GG_CHECK(s.waitUntil([&] { return deleteWarning(s).empty(); }, 5.0f));
+    ctx->ItemCheck("//Delete branches/**/unmerged-b##branches_unmerged-b");
+    GG_CHECK(s.waitUntil([&] { return !deleteWarning(s).empty(); }, 5.0f));
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/unmerged-b") && !refExists(s, repo, "refs/heads/merged-b"); }));
+    s.settle();
+}
+
+GG_TEST("refs", "delete branches dialog: mode 2 deletes the local branches and their remote branches")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"both1", "both2"}) {
+        s.git(repo, {"branch", name, "HEAD~1"});
+        s.git(repo, {"push", "-q", "-u", "origin", name});
+    }
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteBranchesDialog({"both1", "both2"}, 2);
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    GG_CHECK(s.waitUntil([&] {
+        const ggui::Form* form = s.app.dialogs().current();
+        return form && form->buttons[0].enabled(*form);
+    }, 5.0f));
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/both1") && !refExists(s, repo, "refs/heads/both2"); }));
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "both*"}).empty(); }));
+    s.settle();
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/both1"));
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/both2"));
+}
+
+GG_TEST("refs", "delete remote branches dialog deletes the checked branches on the remote")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"r1", "r2", "r3"}) {
+        s.git(repo, {"branch", name, "HEAD~1"});
+        s.git(repo, {"push", "-q", "origin", name});
+    }
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteRemoteBranchesDialog({"origin/r1", "origin/r2", "origin/r3"});
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these branches on their remotes?");
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("branches").size() == 3);
+    ctx->ItemUncheck((s.child("//Delete branches", "##branches_list") + "/origin\\/r3##branches_origin\\/r3").c_str());
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"ls-remote", "--heads", "."}).find("refs/heads/r1") == std::string::npos; }));
+    s.settle();
+    const std::string heads = s.gitOut(origin(s, repo), {"ls-remote", "--heads", "."});
+    GG_CHECK(heads.find("refs/heads/r2") == std::string::npos);
+    GG_CHECK(heads.find("refs/heads/r3") != std::string::npos);
+    GG_CHECK(refExists(s, repo, "refs/heads/r1")); // the local branch stays
+}
+
+GG_TEST("refs", "forget refs dialog removes the checked remote-tracking branches; one undo restores them")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"f1", "f2", "f3"}) {
+        s.git(repo, {"branch", name, "HEAD~1"});
+        s.git(repo, {"push", "-q", "origin", name});
+    }
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showForgetRefsDialog({"origin/f1", "origin/f2", "origin/f3"});
+    GG_REQUIRE(s.dialogOpen("Forget"));
+    ctx->ItemUncheck((s.child("//Forget", "##branches_list") + "/origin\\/f3##branches_origin\\/f3").c_str());
+    s.dialogButton("Forget", "Forget");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/f1") && !refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/f3"));
+    GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "f1"}).find("f1") != std::string::npos); // the remote keeps it
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/f3"));
+}
+
+GG_TEST("refs", "delete tags dialog deletes the checked local tags; one undo restores them")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* name : {"t1", "t2", "t3"})
+        s.git(repo, {"tag", name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteTagsDialog({"t1", "t2", "t3"}, "");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these tags?");
+    ctx->ItemUncheck("//Delete tags/**/t3##tags_t3");
+    s.dialogButton("Delete tags", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/t1") && !refExists(s, repo, "refs/tags/t2"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/tags/t3"));
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/tags/t1") && refExists(s, repo, "refs/tags/t2"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/tags/t3"));
+}
+
+GG_TEST("refs", "delete tags dialog with a remote deletes the checked tags on that remote")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"v1", "v2"}) {
+        s.git(repo, {"tag", name});
+        s.git(repo, {"push", "-q", "origin", name});
+    }
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteTagsDialog({"v1", "v2"}, "origin");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these tags on 'origin'?");
+    ctx->ItemUncheck("//Delete tags/**/v2##tags_v2");
+    s.dialogButton("Delete tags", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"ls-remote", "--tags", "."}).find("refs/tags/v1") == std::string::npos; }));
+    s.settle();
+    GG_CHECK(s.gitOut(origin(s, repo), {"ls-remote", "--tags", "."}).find("refs/tags/v2") != std::string::npos);
+    GG_CHECK(refExists(s, repo, "refs/tags/v1")); // the local tag stays
+}
+
 GG_TEST("refs", "Delete branch: a branch merged into its local upstream has no warning and is deleted")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

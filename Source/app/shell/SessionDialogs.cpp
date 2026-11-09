@@ -917,6 +917,87 @@ void Session::showDeleteRemoteBranchDialog(const std::string& remoteBranch)
     m_app.dialogs().open(std::move(f));
 }
 
+// A check list of `names`, all checked, in the field `id`.
+static Field checkedList(const std::string& id, const std::string& label, const std::vector<std::string>& names)
+{
+    Field list{Field::CheckList, id, label};
+    list.setOptions(names);
+    list.checks.assign(names.size(), 1);
+    return list;
+}
+
+void Session::showDeleteRemoteBranchesDialog(std::vector<std::string> remoteBranches)
+{
+    // The remote of each branch comes from the snapshot, as in the single dialog. A name without a remote is left out.
+    std::map<std::string, std::string> remoteOf;
+    std::vector<std::string> names;
+    for (const auto& name : remoteBranches)
+        for (const auto& r : m_snapshot->remoteBranches)
+            if (r.name == name && remoteOf.emplace(name, r.remote).second)
+                names.push_back(name);
+    if (names.empty())
+        return;
+    Form f;
+    f.title = "Delete branches";
+    f.message = "Delete these branches on their remotes?";
+    f.add(checkedList("branches", "Branches", names));
+    FormButton del{"Delete", [this, remoteOf](Form& form) {
+                       std::vector<BranchDelete> items;
+                       for (const auto& name : form.checkedOptions("branches")) {
+                           const std::string& remote = remoteOf.at(name);
+                           items.push_back({name.substr(remote.size() + 1), false, {remote}, false});
+                       }
+                       m_actions->deleteBranches(std::move(items));
+                   },
+        [](const Form& form) { return !form.checkedOptions("branches").empty(); }};
+    del.danger = true;
+    f.buttons.push_back(std::move(del));
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
+void Session::showForgetRefsDialog(std::vector<std::string> remoteBranches)
+{
+    if (remoteBranches.empty())
+        return;
+    Form f;
+    f.title = "Forget";
+    f.message = "Remove these remote-tracking branches from this repository? The remote keeps them. Fetch more... brings them back.";
+    f.add(checkedList("branches", "Branches", remoteBranches));
+    FormButton forget{"Forget", [this](Form& form) {
+                          std::vector<std::string> refs;
+                          for (const auto& name : form.checkedOptions("branches"))
+                              refs.push_back("refs/remotes/" + name);
+                          m_actions->forgetRefs(std::move(refs));
+                      },
+        [](const Form& form) { return !form.checkedOptions("branches").empty(); }};
+    forget.danger = true;
+    f.buttons.push_back(std::move(forget));
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
+void Session::showDeleteTagsDialog(std::vector<std::string> tags, const std::string& remote)
+{
+    if (tags.empty())
+        return;
+    Form f;
+    f.title = "Delete tags";
+    f.message = remote.empty() ? "Delete these tags?" : "Delete these tags on '" + remote + "'?";
+    f.add(checkedList("tags", "Tags", tags));
+    FormButton del{"Delete", [this, remote](Form& form) {
+                       if (remote.empty())
+                           m_actions->deleteTags(form.checkedOptions("tags"));
+                       else
+                           m_actions->deleteRemoteTags(remote, form.checkedOptions("tags"));
+                   },
+        [](const Form& form) { return !form.checkedOptions("tags").empty(); }};
+    del.danger = true;
+    f.buttons.push_back(std::move(del));
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showMoveBranchDialog(const std::string& branch, const std::string& to)
 {
     std::string elsewhere;
