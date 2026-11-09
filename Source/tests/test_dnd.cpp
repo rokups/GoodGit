@@ -846,6 +846,73 @@ GG_TEST("dnd", "the drag tooltip of a commit shows the pill of the branch an Alt
     release();
 }
 
+GG_TEST("dnd", "hint: Alt shows Rebase onto")
+{
+    const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()) && s.itemExists(rowRef(dest).c_str()); }));
+    const std::string tip = s.revParse(r.path, "main");
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(dest).c_str()).RectFull.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK(history.dropHint().rfind("Choose an action for " + dest.substr(0, 7), 0) == 0);
+    s.ctx->KeyDown(ImGuiMod_Alt);
+    GG_CHECK(s.waitUntil([&] { return history.dropHint() == "Rebase onto " + dest.substr(0, 7); }));
+    s.ctx->KeyUp(ImGuiMod_Alt);
+    // Escape cancels the drag: nothing changes.
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
+    GG_CHECK(history.dropHint().empty());
+}
+
+GG_TEST("dnd", "hint: a running task shows Wait")
+{
+    const Chain r = makeChain(s);
+    s.write(r.path, "staged.txt", "staged\n");
+    s.git(r.path, {"add", "staged.txt"});
+    // The commit waits in pre-commit until the test lets it go.
+    const fs::path go = s.root() / "go";
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
+    GG_REQUIRE(s.openRepository(r.path));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()) && s.itemExists(rowRef(r.c[1]).c_str()); }));
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Waits for the hook");
+    s.dialogButton("Commit", "Commit");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
+    // The middle of a row and a gap: both show the hint.
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    const ImRect c2 = s.ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull;
+    s.ctx->MouseMoveToPos(c2.GetCenter());
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Wait: another task runs");
+    s.ctx->MouseMoveToPos(ImVec2(c2.GetCenter().x, c2.Max.y - 2));
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(history.dropHint(), "Wait: another task runs");
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    GG_CHECK(!s.itemExists("//$FOCUSED/Copy after"));
+    // Let the hook go: the task ends and the hint clears.
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }, 10.0f));
+    s.settle();
+    GG_CHECK(history.dropHint().empty());
+}
+
 GG_TEST("dnd", "a dragged commit fills the History filter and the Changes \"Compare with\" field")
 {
     const Chain r = makeChain(s);
