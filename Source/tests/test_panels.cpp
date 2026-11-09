@@ -1252,6 +1252,33 @@ GG_TEST("panels", "repositories: the current and a missing worktree do not open,
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
 }
 
+GG_TEST("panels", "repositories: a repository row has Add worktree for the open repository only")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path closed = s.fixture(Recipe::Linear, "closedrepo");
+    const fs::path repo = s.fixture(Recipe::Linear, "openrepo");
+    GG_REQUIRE(s.openRepository(closed));
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    const std::string closedRow = repoRow(s, closed);
+    const std::string openRow = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(closedRow.c_str()));
+    GG_REQUIRE(s.itemExists(openRow.c_str()));
+    // A repository that is not open: the item is there and disabled.
+    ctx->ItemClick(closedRow.c_str(), ImGuiMouseButton_Right);
+    GG_REQUIRE(ctx->ItemExists("//$FOCUSED/Add worktree..."));
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Add worktree...").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->KeyPress(ImGuiKey_Escape);
+    GG_CHECK(!s.dialogOpen("Add worktree"));
+    // The open repository: the item opens the dialog of the Worktrees panel.
+    ctx->ItemClick(openRow.c_str(), ImGuiMouseButton_Right);
+    GG_REQUIRE(ctx->ItemExists("//$FOCUSED/Add worktree..."));
+    GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Add worktree...").ItemFlags & ImGuiItemFlags_Disabled));
+    ctx->KeyPress(ImGuiKey_Escape);
+    s.contextMenu(openRow.c_str(), "Add worktree...");
+    GG_CHECK(s.dialogOpen("Add worktree"));
+}
+
 GG_TEST("panels", "repositories: the context menu sets and clears an alias")
 {
     s.app.settings().data().repositories.clear();

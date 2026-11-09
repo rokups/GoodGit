@@ -870,8 +870,10 @@ the panel without touching the repository.
   entry (a `--separate-git-dir` or submodule repository), the worktree folder is the entry and the open row. The Recent list gets the worktree folder as before.
   The worktrees of a listed repository come from its summary, which the background worker reads with the
   submodules (at start-up and when a repository closes or opens), not from the file system in the draw loop. Context (repository rows): Open (disabled on the
-  open one) · Set alias… · Copy path · Remove from list (also the open one; it comes back without its
-  alias at its next open).
+  open one) · Set alias… · Add worktree… · Add submodule… · Copy path · Remove from list (also the open one; it
+  comes back without its alias at its next open). Add worktree… opens the `Add worktree` dialog of the
+  Worktrees panel. It runs in the session of the window, so a repository that is not open has it disabled with the
+  reason "Open this repository first". It is also disabled when HEAD has no commit or another action runs.
   Drag and drop: a repository row (not a worktree row) dragged onto a group node goes into that group:
   the alias becomes the group path plus the last segment of the alias, or plus the last "/" segment of
   the label when there is no alias. The empty area below the rows (`###top_level`) is the top level: the alias keeps only its

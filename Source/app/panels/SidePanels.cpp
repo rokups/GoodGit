@@ -1626,7 +1626,16 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
                 toOpen = node.path;
             if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Set alias..."))
                 m_session.showSetAliasDialog(node.path);
-            // The command runs in the repository of the window, so only its row has the item.
+            // The command runs in the repository of the window, so only its row has the items.
+            // The rules of Add worktree are those of "Add..." in the Worktrees panel.
+            const char* worktreeReason = !isOpen ? "Open this repository first"
+                : (snap && snap->headUnborn)     ? "HEAD has no commit yet"
+                : !m_session.actions().busy().empty() ? "Another action is running"
+                                                      : nullptr;
+            if (worktreeReason)
+                disabledMenuItem(ICON_MS_ADD, "Add worktree...", worktreeReason);
+            else if (menuItem(ICON_MS_ADD, "Add worktree..."))
+                m_session.showAddWorktreeDialog();
             const char* addReason = !isOpen ? "Open this repository first"
                 : (snap && snap->bare)       ? "A bare repository has no working tree"
                 : !m_session.actions().busy().empty() ? "Another action is running"
