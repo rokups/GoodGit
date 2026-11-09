@@ -173,7 +173,7 @@ GG_TEST("keyboard", "tags: rows by arrows, Alt+Space menu")
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/**/###tag_v3"); }));
     GG_REQUIRE(navThrough(s, "//Tags", {"//Tags/**/###tag_v1", "//Tags/**/###tag_v2", "//Tags/**/###tag_v3"}));
     altSpaceMenu(s, "Push tag");
-    // Space toggles the row's visibility in History (the keyboard side of the eye icon).
+    // Space toggles the row's visibility in History (the keyboard side of the menu item).
     auto& history = s.session()->history();
     GG_CHECK(history.refVisible("refs/tags/v3"));
     press(ctx, ImGuiKey_Space);

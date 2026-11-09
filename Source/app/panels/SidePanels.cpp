@@ -35,7 +35,7 @@ std::string rowId(std::string id)
 }
 
 struct RowEvents {
-    bool toggle = false;        // the eye icon was clicked (Ctrl: only this ref)
+    bool toggle = false;        // Space on the row (Ctrl: only this ref)
     bool doubleClicked = false; // the row itself (only rows with a double-click action react)
     int action = -1;            // the index of the hover button clicked in `acts`
     float labelLeft = 0;        // screen X where the label's text starts
@@ -142,13 +142,13 @@ struct ExpandSlot {
     bool open = false;
 };
 
-// A ref row: the eye icon toggles visibility in History; the label is the row's item (menus and
-// tooltips attach to it). Rows without a double-click action are plain text. `acts` are the row's hover buttons.
+// A ref row: the label is the row's item (menus and tooltips attach to it). Space on the row toggles its
+// visibility in History; a hidden ref has a dimmed label. Rows without a double-click action are plain text. `acts` are the row's hover buttons.
 // `dim` is a byte range of the label drawn dimmed (the tail of a short ID); only on a row with a double-click action.
 // `parts` (the pieces of `label`): the label is cut at the start of its name where it does not fit the row (`elided`);
 // only for a row in view (the others are clipped anyway).
 // `dim` must be empty with `parts`.
-// `expand`: the row has an arrow between the eye and the label. A click on the arrow, and Right or Left on the
+// `expand`: the row has an arrow before the label. A click on the arrow, and Right or Left on the
 // focused label, open or close the node. The caller draws the child rows when `expand->open` is set.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
     bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {},
@@ -158,21 +158,9 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     RowEvents events;
     const std::string id = rowId(rawId);
     ImGui::PushID(id.c_str());
-    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-    // The eye is for the mouse: the label is the row's one nav stop (menus attach to it), and Space on it
-    // toggles the visibility (below).
-    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
-    events.toggle = ImGui::SmallButton(visible ? ICON_MS_VISIBILITY "###eye" : ICON_MS_VISIBILITY_OFF "###eye");
-    ImGui::PopItemFlag();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip(visible ? "Hide in History (Ctrl-click: show only this)" : "Show in History (Ctrl-click: show only this)");
-    ImGui::SameLine();
     ImGuiID expandId = 0;
     if (expand) {
-        // The arrow is for the mouse like the eye: the keys act on the label (below).
+        // The arrow is for the mouse: the label is the row's one nav stop, and the keys act on it (below).
         ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
         {
             const SectionHeaderColors neutral;
@@ -214,7 +202,7 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         plainText(*shown, id);
     }
     ImGui::PopStyleColor();
-    // Space on the row toggles its visibility like a click on the eye (Ctrl+Space: only this one).
+    // Space on the row toggles its visibility, like the menu item Show/Hide in History (Ctrl+Space: only this one).
     if (ImGui::IsItemFocused() && (ImGui::GetIO().KeyMods & ~ImGuiMod_Ctrl) == 0 && ImGui::IsKeyPressed(ImGuiKey_Space, false))
         events.toggle = true;
     if (expand && ImGui::IsItemFocused() && ImGui::GetIO().KeyMods == 0) {
@@ -298,58 +286,71 @@ std::vector<NameTree::Entry> buildTree(const std::vector<std::pair<size_t, std::
     return out;
 }
 
-// The eye of a group row: shows or hides, in History, the refs listed under the row. All visible: a click
-// hides them, else it shows them; Ctrl-click shows only these. Mixed is drawn dimmed. Mouse only.
-void groupEye(HistoryPanel& history, std::span<const std::string> refs)
+// Shows or hides `refs` in History. `visible`: the refs are shown now, so they get hidden. Ctrl: only these show.
+void toggleRefs(HistoryPanel& history, const std::vector<std::string>& refs, bool visible)
+{
+    if (ImGui::GetIO().KeyCtrl)
+        history.showOnlyRefs(refs);
+    else
+        history.setRefsVisible(refs, !visible);
+}
+
+// The refs of a group row: all visible (hide them next) or not (show them next). None visible: the row is dimmed.
+struct RefsState {
+    bool all = false;
+    bool none = false;
+};
+
+RefsState refsState(HistoryPanel& history, std::span<const std::string> refs)
 {
     size_t visible = 0;
     for (const auto& r : refs)
         visible += history.refVisible(r) ? 1 : 0;
-    const bool all = visible == refs.size();
-    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(visible > 0 && !all ? ImGuiCol_TextDisabled : ImGuiCol_Text));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
-    const bool clicked = ImGui::SmallButton(visible > 0 ? ICON_MS_VISIBILITY "###eye" : ICON_MS_VISIBILITY_OFF "###eye");
-    ImGui::PopItemFlag();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip(all ? "Hide these in History (Ctrl-click: show only these)"
-                    : "Show these in History (Ctrl-click: show only these)");
-    if (clicked) {
-        const std::vector<std::string> list(refs.begin(), refs.end());
-        if (ImGui::GetIO().KeyCtrl)
-            history.showOnlyRefs(list);
-        else
-            history.setRefsVisible(list, !all);
-    }
+    return {visible == refs.size(), visible == 0 && !refs.empty()};
 }
 
-// Branches: group rows get an eye over the full refs below them. `refOf` maps a leaf index to its full refs
+// The menu item of a ref row or a group row: shows or hides `refs` in History. The ID stays whatever the label says.
+// `visible`: the refs are shown, so a click hides them (all visible for a group).
+void visibilityMenuItem(HistoryPanel& history, const std::vector<std::string>& refs, bool visible)
+{
+    if (menuItem(visible ? ICON_MS_VISIBILITY_OFF : ICON_MS_VISIBILITY,
+            visible ? "Hide in History###history_visibility" : "Show in History###history_visibility"))
+        toggleRefs(history, refs, visible);
+}
+
+// The context menu of a group row (the last item): the menu item that shows or hides the refs below the row.
+void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::string>& refs)
+{
+    if (!beginContextMenu(strId))
+        return;
+    visibilityMenuItem(history, refs, refsState(history, refs).all);
+    ImGui::EndPopup();
+}
+
+// Branches: group rows act on the full refs below them. `refOf` maps a leaf index to its full refs
 // (a local branch has its own ref and its remote-tracking refs).
-struct GroupEyes {
+struct GroupRefs {
     HistoryPanel& history;
     std::function<std::vector<std::string>(size_t)> refOf;
 };
 
 // The full refs of the leaves under `entries`, in the order they are drawn.
-void collectRefs(const std::vector<NameTree::Entry>& entries, const GroupEyes& eyes, std::vector<std::string>& out)
+void collectRefs(const std::vector<NameTree::Entry>& entries, const GroupRefs& groupRefs, std::vector<std::string>& out)
 {
     for (const auto& e : entries) {
         if (e.group)
-            collectRefs(e.children, eyes, out);
+            collectRefs(e.children, groupRefs, out);
         else
-            for (auto& ref : eyes.refOf(e.item))
+            for (auto& ref : groupRefs.refOf(e.item))
                 out.push_back(std::move(ref));
     }
 }
 
-// Draws `entries`; `leaf(index, label)` draws one ref. Groups open by default and while filtering. With `eyes`,
-// a group row starts with its eye over the refs of its leaves.
+// Draws `entries`; `leaf(index, label)` draws one ref. Groups open by default and while filtering. With `groupRefs`,
+// a group row has a menu that shows or hides the refs of its leaves, and its label is dimmed while all are hidden.
 template <typename Leaf>
 void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& idPrefix, bool filtering, Leaf&& leaf,
-    const GroupEyes* eyes = nullptr)
+    const GroupRefs* groupRefs = nullptr)
 {
     for (const auto& e : entries) {
         if (!e.group) {
@@ -358,14 +359,9 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
         }
         const std::string id = idPrefix + e.label + "/";
         std::vector<std::string> below;
-        if (eyes) {
-            collectRefs(e.children, *eyes, below);
-            ImGui::PushID(("group_" + rowId(id)).c_str());
-            groupEye(eyes->history, below);
-            ImGui::PopID();
-            ImGui::SameLine();
-        }
-        if (filtering) // after the eye: any item consumes the next-item data
+        if (groupRefs)
+            collectRefs(e.children, *groupRefs, below);
+        if (filtering)
             ImGui::SetNextItemOpen(true);
         // A group's name is cut at its start where it does not fit; the tooltip has the whole name.
         std::string fitted;
@@ -380,13 +376,20 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
         bool open;
         {
             const SectionHeaderColors neutral;
+            const bool hidden = groupRefs && refsState(groupRefs->history, below).none;
+            if (hidden)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             open = ImGui::TreeNodeEx(((fitted.empty() ? e.label : fitted) + "###group_" + rowId(id)).c_str(),
                 ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            if (hidden)
+                ImGui::PopStyleColor();
         }
+        if (groupRefs)
+            groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below);
         if (!fitted.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", e.label.c_str());
         if (open) {
-            drawTree(e.children, id, filtering, leaf, eyes);
+            drawTree(e.children, id, filtering, leaf, groupRefs);
             ImGui::TreePop();
         }
     }
@@ -502,8 +505,8 @@ void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core
 }
 
 // The child rows of an open local branch node: one for each remote ref of the branch, under the row, at the
-// start of its label. The ID of a row is "remote_<remote>" in the ID scope of the branch row. A row has no eye
-// (the eye of the branch covers it) and no hover button. Its menu is the one of the ref with Set as upstream.
+// start of its label. The ID of a row is "remote_<remote>" in the ID scope of the branch row. A row has no
+// visibility item (the menu of the branch covers it) and no hover button. Its menu is the one of the ref with Set as upstream.
 void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPanel& history, const core::BranchInfo& b,
     const BranchRemotes& remotes, float labelLeft, ImU32 color)
 {
@@ -630,11 +633,14 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
     }
 }
 
-void BranchesPanel::branchMenu(const core::BranchInfo& b)
+void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs)
 {
     if (!beginContextMenu(("##branch_menu_" + rowId(b.name)).c_str()))
         return;
     branchMenuItems(m_session, *m_snapshot, b);
+    ImGui::Separator();
+    // The branch decides: one click hides or shows the branch with its remote-tracking refs.
+    visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -643,11 +649,13 @@ void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const c
     remoteRefMenuItems(session, snap, r, {true, true, nullptr});
 }
 
-void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
+void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r, const std::vector<std::string>& refs)
 {
     if (!beginContextMenu(("##rbranch_menu_" + rowId(r.name)).c_str()))
         return;
     remoteBranchMenuItems(m_session, *m_snapshot, r);
+    ImGui::Separator();
+    visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -670,11 +678,13 @@ void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, cons
         showAbandonDialog(session, k.id);
 }
 
-void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot)
+void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot, const std::vector<std::string>& refs)
 {
     if (!beginContextMenu(("##kept_menu_" + k.id.hex()).c_str()))
         return;
     keptMenuItems(m_session, k, current, idSlot);
+    ImGui::Separator();
+    visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -755,7 +765,7 @@ void BranchesPanel::draw(bool* open)
                 localRefs[i].push_back("refs/remotes/" + r->name);
         }
     }
-    const GroupEyes localEyes{history, [&](size_t index) { return localRefs[index]; }};
+    const GroupRefs localGroupRefs{history, [&](size_t index) { return localRefs[index]; }};
     drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
         const BranchRemotes& branchRemoteRefs = localRemotes[index];
@@ -802,13 +812,9 @@ void BranchesPanel::draw(bool* open)
             else
                 tooltip("%s", b.name.c_str());
         }
-        // The eye of the row shows or hides the branch and its remote-tracking refs together.
-        if (events.toggle) {
-            if (ImGui::GetIO().KeyCtrl)
-                history.showOnlyRefs(localRefs[index]);
-            else
-                history.setRefsVisible(localRefs[index], !history.refVisible(full));
-        }
+        // Space on the row shows or hides the branch and its remote-tracking refs together.
+        if (events.toggle)
+            toggleRefs(history, localRefs[index], history.refVisible(full));
         // Double-click checks the branch out.
         if (events.doubleClicked && free && !b.isHead)
             m_session.actions().checkout(b.name, false);
@@ -816,11 +822,11 @@ void BranchesPanel::draw(bool* open)
             m_session.actions().checkout(b.name, false);
         else if (events.action == 1)
             pushBranch(m_session, b);
-        branchMenu(b);
+        branchMenu(b, localRefs[index]);
         if (expandable && expand.open)
             drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, events.labelLeft, p.remoteText);
         ImGui::PopID();
-    }, &localEyes);
+    }, &localGroupRefs);
 
     // Kept commits (a detached HEAD's commits no branch reaches) between the local and the remote branches.
     std::vector<const core::KeptInfo*> kept;
@@ -832,13 +838,17 @@ void BranchesPanel::draw(bool* open)
         std::vector<std::string> listed;
         for (const auto* k : kept)
             listed.push_back(gg::keep::refName(k->id.hex()));
-        groupEye(history, listed);
-        ImGui::SameLine();
         bool nodeOpen;
         {
             const SectionHeaderColors neutral;
+            const bool hidden = refsState(history, listed).none;
+            if (hidden)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             nodeOpen = ImGui::TreeNodeEx("Detached", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            if (hidden)
+                ImGui::PopStyleColor();
         }
+        groupMenu(history, "##detached_menu", listed);
         if (nodeOpen) {
             for (const auto* k : kept) {
                 const std::string hex = k->id.hex();
@@ -858,14 +868,15 @@ void BranchesPanel::draw(bool* open)
                 const RowEvents events = visibilityRow("detached_" + hex, label, history.refVisible(full), current,
                     current ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts,
                     {kIdPrefixLength, kShortIdLength});
+                const std::vector<std::string> fullRefs{full};
                 if (events.toggle)
-                    history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+                    toggleRefs(history, fullRefs, history.refVisible(full));
                 // Double-click checks the commit out.
                 if ((events.doubleClicked && free && !current) || events.action == 0)
                     m_session.actions().checkout(hex, true);
                 else if (events.action == 1)
                     m_session.showCreateBranchDialog(hex);
-                keptMenu(*k, current, idSlotAt(events.labelLeft, shortId, kIdPrefixLength));
+                keptMenu(*k, current, idSlotAt(events.labelLeft, shortId, kIdPrefixLength), fullRefs);
                 ImGui::PopID();
                 ImGui::PopID();
             }
@@ -888,13 +899,11 @@ void BranchesPanel::draw(bool* open)
             if (r.name == remote)
                 info = &r;
         const auto remoteTree = buildTree(list);
-        const GroupEyes remoteEyes{history, [&](size_t index) {
+        const GroupRefs remoteGroupRefs{history, [&](size_t index) {
             return std::vector<std::string>{"refs/remotes/" + m_snapshot->remoteBranches[index].name};
         }};
         std::vector<std::string> listed;
-        collectRefs(remoteTree, remoteEyes, listed);
-        groupEye(history, listed);
-        ImGui::SameLine();
+        collectRefs(remoteTree, remoteGroupRefs, listed);
         // A filter opens the node that has matches. The state of the user comes back when the filter is cleared.
         const auto before = m_remoteOpenBeforeFilter.find(remote);
         if (filtering && before == m_remoteOpenBeforeFilter.end()) {
@@ -907,11 +916,21 @@ void BranchesPanel::draw(bool* open)
         bool nodeOpen;
         {
             const SectionHeaderColors neutral;
+            const bool hidden = refsState(history, listed).none;
+            if (hidden)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
+            if (hidden)
+                ImGui::PopStyleColor();
         }
-        // The remote has the Remotes panel's menu, plus History visibility of its branches.
-        if (info && beginContextMenu("##remote_menu")) {
-            remoteMenuItems(m_session, *info);
+        // The remote has the Remotes panel's menu, plus History visibility of its branches. The node of a
+        // remote that is not in the list has the visibility item only.
+        if (beginContextMenu("##remote_menu")) {
+            if (info) {
+                remoteMenuItems(m_session, *info);
+                ImGui::Separator();
+            }
+            visibilityMenuItem(history, listed, refsState(history, listed).all);
             ImGui::Separator();
             std::vector<std::string> refs;
             for (const auto& r : m_snapshot->remoteBranches)
@@ -938,15 +957,16 @@ void BranchesPanel::draw(bool* open)
                     history.refVisible(full), false, p.remoteText, false, acts, {}, &parts);
                 if (events.elided && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                     tooltip("%s", r.name.c_str());
+                const std::vector<std::string> fullRefs{full};
                 if (events.toggle)
-                    history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+                    toggleRefs(history, fullRefs, history.refVisible(full));
                 if (events.action == 0)
                     checkoutRemoteBranch(m_session, *m_snapshot, r);
-                remoteBranchMenu(r);
+                remoteBranchMenu(r, fullRefs);
                 ImGui::PopID();
                 ImGui::PopID();
                 ImGui::PopID();
-            }, &remoteEyes);
+            }, &remoteGroupRefs);
             ImGui::TreePop();
         }
         ImGui::PopID();
@@ -1081,8 +1101,9 @@ void TagsPanel::draw(bool* open)
         };
         const RowEvents events = visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false,
             theme().palette().tagText, false, acts);
+        const std::vector<std::string> fullRefs{full};
         if (events.toggle)
-            history.toggleRef(full, ImGui::GetIO().KeyCtrl);
+            toggleRefs(history, fullRefs, history.refVisible(full));
         if (events.action == 0)
             m_session.revealCommit(t.target);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && beginTooltip()) {
@@ -1092,6 +1113,8 @@ void TagsPanel::draw(bool* open)
         }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
             tagMenuItems(m_session, *m_snapshot, t);
+            ImGui::Separator();
+            visibilityMenuItem(history, fullRefs, history.refVisible(full));
             ImGui::EndPopup();
         }
     }

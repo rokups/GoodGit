@@ -737,23 +737,26 @@ the panel without touching the repository.
   worktree: Open here `act_open_here` (not on the current one) · Open in new window `act_open_window` · Open directory
   (a folder icon) `act_open_dir`.
 - **Branches** `"Branches"`: filter, Create branch… `##create_branch`, rows `branch_<name>`
-  (click toggles visibility in History, Ctrl-click = only this; keyboard: Space toggles,
-  Ctrl+Space = only this; the eye is mouse-only; the eye of a local row also covers its remote-tracking refs), current outlined. The remote refs of a local branch are its same-name refs in every remote, plus its upstream ref.
+  (a row has no visibility button. The context-menu item `###history_visibility` toggles the row in History:
+  "Hide in History" while the ref is visible, else "Show in History". Ctrl held while the item is chosen = only this.
+  Keyboard: Space toggles, Ctrl+Space = only this. The item of a local row also covers its remote-tracking refs.
+  A hidden ref has a dimmed label), current outlined. The remote refs of a local branch are its same-name refs in every remote, plus its upstream ref.
   A local row with one remote ref shows the suffix `@<remote>`. The suffix is not dimmed. It names the upstream, or else the ref. The ahead and behind counters need an upstream.
   A local row with two or more remote refs is a node: an
-  arrow `###expand` sits between the eye and the label, the node starts closed, and the row has no `@<remote>` suffix.
+  arrow `###expand` sits before the label, the node starts closed, and the row has no `@<remote>` suffix.
   A click on the arrow, or Right and Left on the row, open and close it. A click on the row text acts as before.
   An open node has a child row `remote_<remote>` for each ref, indented to the label: `<remote>  <short ID>` (the ID
-  after its prefix dimmed), plus `  (upstream)` for the upstream. A child row has no eye and no hover button (the
-  eye of the node covers it). The row of a ref named `<remote>/<branch>` shows the remote and has the ID
+  after its prefix dimmed), plus `  (upstream)` for the upstream. A child row has no visibility item and no hover button (the
+  item of the node covers it). The row of a ref named `<remote>/<branch>` shows the remote and has the ID
   `remote_<remote>`. Another ref (the upstream `origin/other` of `main`) shows its whole name and has the ID
   `remote_<ref name>`, so two rows never share an ID. A ref hidden in History is drawn dimmed (`TextDisabled`), as the
-  rows of the remote section. It is a keyboard stop. The eye of a folder row covers the remote refs of the branches below it, as the eye of a local row does. Its menu is the one of a remote-tracking branch without Check out
+  rows of the remote section. It is a keyboard stop. The visibility item of a folder row covers the remote refs of the branches below it, as the item of a local row does. Its menu is the one of a remote-tracking branch without Check out
   and Create local branch…, with Set as upstream (disabled for the upstream).
   Branches are grouped by folder and
-  remote-tracking ones by remote; a group row's eye (`###eye` in the group's scope) shows/hides the branches
-  listed under it (all visible: hide, else show; mixed drawn dimmed; Ctrl-click = only these; mouse only). Ctrl-click
-  (on a row's or a group's eye) hides every other branch, tag and kept commit too. The remote section starts collapsed:
+  remote-tracking ones by remote; a group row has the context-menu item `###history_visibility`. It shows or hides the branches
+  listed under the row (all visible: hide, else show; Ctrl held = only these). The label of a group is dimmed while all
+  its branches are hidden. The remote node also keeps its items "Show all branches in History" and
+  "Hide all branches in History". "Only these" (on a row or a group) hides every other branch, tag and kept commit too. The remote section starts collapsed:
   each remote node is closed until the user opens it. While the filter text is not empty, a remote node with matching
   rows is open; the user can close it. When the filter is cleared, the node returns to the state it had before. Context:
   Reveal · Copy name · Check out · Create branch… (the `Create branch` dialog with this branch as the start point; a
@@ -775,7 +778,7 @@ the panel without touching the repository.
   list's edge, so it fits any panel width and font size, and is cut at a code point border. A local row's
   upstream is cut the same way when the name and the upstream together do not fit (they share the room; each
   keeps at least 3 font sizes); the arrow, the "(gone)" note, the ahead/behind counters and the worktree stay
-  whole, and so do the eye and the hover buttons. A row or group that is elided shows a tooltip with the whole
+  whole, and so do the hover buttons. A row or group that is elided shows a tooltip with the whole
   name (a local row also its upstream); the tooltip a nested row already has stays. History's badges are not
   affected.
   Check out on a remote-tracking branch (the menu item, the row's `act_checkout` button and the double click on its
@@ -784,10 +787,10 @@ the panel without touching the repository.
   created before the user confirms it. The menu item is then "Check out…" (`###check_out`); else "Check out".
   The **Detached** node `detached_group` sits between the local and the remote branches. It is shown only
   while the snapshot lists kept commits (commits a ggui or git-gg operation made on a detached HEAD that no branch or tag reaches,
-  kept by `refs/gg/keep/<id>`; a detached HEAD merely on a commit does not list it) that pass the filter; open by default. Its eye (`###eye` in the node's scope) acts on the listed rows
-  like a group's eye. One row per kept commit, in the snapshot's order, `detached_<full commit id>`: the short ID
+  kept by `refs/gg/keep/<id>`; a detached HEAD merely on a commit does not list it) that pass the filter; open by default. Its context menu has the item `###history_visibility`. It acts on the listed rows
+  like the item of a group. One row per kept commit, in the snapshot's order, `detached_<full commit id>`: the short ID
   (7 characters, the last 4 dimmed), two spaces, the summary, and `[<worktree>]` when the commit is another
-  worktree's detached HEAD. The row's eye toggles `refs/gg/keep/<id>` in History. This worktree's detached HEAD
+  worktree's detached HEAD. The row's menu item toggles `refs/gg/keep/<id>` in History. This worktree's detached HEAD
   is outlined as the current branch is. Hover actions: Check out `act_checkout` (not on the current row) ·
   Create branch `act_branch` (the `Create branch` dialog at the commit). Double-click checks the commit out.
   Context: Check out (detached; disabled on the current row) · Create branch here… · Reveal · Copy <ID> (as in
@@ -799,7 +802,7 @@ the panel without touching the repository.
   tags have no groups, so only this setting applies), filter (N annotated with message). These controls stay
   while the list scrolls. Rows `tag_<name>` (the
   name only; the tooltip of an annotated tag shows its message)
-  (visibility toggle, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
+  (the menu item Show/Hide in History, keys as Branches). Context: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
 - **Repositories** `"Repositories"` (N): the permanent repository list of the settings (`repositories`:
   `[{path, alias}]`, no limit; each opened or dropped repository is added, except a linked worktree,
   see below; a settings file without the key starts with the recent list) as a tree. An alias `group/subgroup/name` puts a repository in groups

@@ -1837,7 +1837,7 @@ std::string keptCommit(Scenario& s, const fs::path& repo, const std::string& fro
 
 // Branches panel: the Detached node and its rows.
 std::string detachedRow(const std::string& hex) { return "//Branches/detached_group/detached_" + hex; }
-const char* const kDetachedEye = "//Branches/detached_group/###eye";
+const char* const kDetachedNode = "//Branches/detached_group/Detached";
 
 GG_TEST("keep", "Branches: the Detached node and a row per kept commit appear with the kept commit and go with it")
 {
@@ -1845,18 +1845,18 @@ GG_TEST("keep", "Branches: the Detached node and a row per kept commit appear wi
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     s.settle();
-    GG_CHECK(!s.itemExists(kDetachedEye));
+    GG_CHECK(!s.itemExists(kDetachedNode));
     const std::string x = keptCommit(s, repo, "main", "x.txt");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kDetachedEye); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kDetachedNode); }));
     const std::string row = detachedRow(x);
     GG_REQUIRE(s.itemExists((row + "/###detached_" + x).c_str()));
     GG_CHECK_STR_EQ(s.itemText((row + "/###detached_" + x).c_str()), x.substr(0, 7) + "  Detached x.txt");
     s.git(repo, {"branch", "graduated", x});
-    GG_CHECK(s.waitUntil([&] { return !s.itemExists(kDetachedEye); }));
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(kDetachedNode); }));
     GG_CHECK(!s.itemExists((row + "/###detached_" + x).c_str()));
 }
 
-GG_TEST("keep", "Branches: a Detached row's eye hides its commit in History; the node's eye and Hide all hide every kept commit")
+GG_TEST("keep", "Branches: a Detached row's menu hides its commit in History; the node's menu and Hide all hide every kept commit")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = keptCommit(s, repo, "main", "x.txt");
@@ -1865,23 +1865,23 @@ GG_TEST("keep", "Branches: a Detached row's eye hides its commit in History; the
     s.showPanel("Branches");
     auto& history = s.session()->history();
     const std::string kx = gg::keep::refName(x), ky = gg::keep::refName(y);
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kDetachedEye) && s.itemExists((detachedRow(y) + "/###eye").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(kDetachedNode) && s.itemExists((detachedRow(y) + "/###detached_" + y).c_str()); }));
     GG_REQUIRE(s.waitUntil([&] { return history.row(ggui::core::Oid::fromHex(x)) && history.row(ggui::core::Oid::fromHex(y)); }));
     // The kept commits are listed in the snapshot's order.
     const ggui::core::SnapshotPtr snap = s.session()->snapshot();
     const auto& kept = snap->kept;
     GG_REQUIRE(kept.size() == 2u);
-    GG_CHECK(ctx->ItemInfo((detachedRow(kept[0].id.hex()) + "/###eye").c_str()).RectFull.Min.y
-        < ctx->ItemInfo((detachedRow(kept[1].id.hex()) + "/###eye").c_str()).RectFull.Min.y);
-    // A row's eye.
-    ctx->ItemClick((detachedRow(x) + "/###eye").c_str());
+    GG_CHECK(ctx->ItemInfo((detachedRow(kept[0].id.hex()) + "/###detached_" + kept[0].id.hex()).c_str()).RectFull.Min.y
+        < ctx->ItemInfo((detachedRow(kept[1].id.hex()) + "/###detached_" + kept[1].id.hex()).c_str()).RectFull.Min.y);
+    // The menu item of a row.
+    s.toggleVisibility((detachedRow(x) + "/###detached_" + x).c_str());
     GG_CHECK(!history.refVisible(kx) && history.refVisible(ky));
     GG_CHECK(s.waitUntil([&] { return !history.loading() && history.row(ggui::core::Oid::fromHex(x)) == nullptr; }));
     GG_CHECK(history.row(ggui::core::Oid::fromHex(y)) != nullptr);
-    // The node's eye: mixed shows all, then hides all.
-    ctx->ItemClick(kDetachedEye);
+    // The menu item of the node: mixed shows all, then hides all.
+    s.toggleVisibility(kDetachedNode);
     GG_CHECK(history.refVisible(kx) && history.refVisible(ky));
-    ctx->ItemClick(kDetachedEye);
+    s.toggleVisibility(kDetachedNode);
     GG_CHECK(!history.refVisible(kx) && !history.refVisible(ky));
     GG_CHECK(history.refVisible("refs/heads/main"));
     // Show all and Hide all at the top reach the kept commits too.
@@ -1891,7 +1891,7 @@ GG_TEST("keep", "Branches: a Detached row's eye hides its commit in History; the
     GG_CHECK(!history.refVisible(kx) && !history.refVisible(ky) && !history.refVisible("refs/heads/main"));
 }
 
-GG_TEST("keep", "Branches: the filter lists the kept commits whose ID or summary matches, and the node's eye acts on the listed ones")
+GG_TEST("keep", "Branches: the filter lists the kept commits whose ID or summary matches, and the node's menu acts on the listed ones")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string x = keptCommit(s, repo, "main", "x.txt");
@@ -1899,20 +1899,20 @@ GG_TEST("keep", "Branches: the filter lists the kept commits whose ID or summary
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     auto& history = s.session()->history();
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((detachedRow(y) + "/###eye").c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((detachedRow(y) + "/###detached_" + y).c_str()); }));
     ctx->ItemInputValue("//Branches/##branch_filter", "DETACHED Y");
     ctx->Yield(2);
-    GG_CHECK(s.itemExists((detachedRow(y) + "/###eye").c_str()));
-    GG_CHECK(!s.itemExists((detachedRow(x) + "/###eye").c_str()));
-    ctx->ItemClick(kDetachedEye);
+    GG_CHECK(s.itemExists((detachedRow(y) + "/###detached_" + y).c_str()));
+    GG_CHECK(!s.itemExists((detachedRow(x) + "/###detached_" + x).c_str()));
+    s.toggleVisibility(kDetachedNode);
     GG_CHECK(!history.refVisible(gg::keep::refName(y)) && history.refVisible(gg::keep::refName(x)));
     ctx->ItemInputValue("//Branches/##branch_filter", x.substr(2, 6).c_str());
     ctx->Yield(2);
-    GG_CHECK(s.itemExists((detachedRow(x) + "/###eye").c_str()));
-    GG_CHECK(!s.itemExists((detachedRow(y) + "/###eye").c_str()));
+    GG_CHECK(s.itemExists((detachedRow(x) + "/###detached_" + x).c_str()));
+    GG_CHECK(!s.itemExists((detachedRow(y) + "/###detached_" + y).c_str()));
     ctx->ItemInputValue("//Branches/##branch_filter", "no such commit");
     ctx->Yield(2);
-    GG_CHECK(!s.itemExists(kDetachedEye));
+    GG_CHECK(!s.itemExists(kDetachedNode));
 }
 
 GG_TEST("keep", "Branches: a kept commit that is another worktree's detached HEAD names that worktree")

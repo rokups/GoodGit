@@ -319,6 +319,9 @@ public:
     void comboSelect(const char* combo, const char* item);
     // Opens the context menu of `ref` and clicks `path` in it ("Copy/###ID" for submenus).
     void contextMenu(const char* ref, const char* path, bool shift = false); // shift: held while choosing
+    // The menu item Show/Hide in History of a ref row or a group row (its ID stays the same whatever its label).
+    // ctrl: held while choosing (show only these).
+    void toggleVisibility(const char* ref, bool ctrl = false);
     std::string itemLabel(const char* ref);
     // Text of the clipboard.
     std::string clipboard();

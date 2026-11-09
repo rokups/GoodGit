@@ -137,7 +137,7 @@ GG_TEST("history", "stash badges on base commits")
     GG_CHECK(s.itemExists(("//History/**/" + base + "/###badge_stash@{0}").c_str()));
 }
 
-GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-click shows only one, a hidden branch loses its badge, show and hide all")
+GG_TEST("history", "scope follows the side panels: the menu item toggles, Ctrl shows only one, a hidden branch loses its badge, show and hide all")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     s.git(repo, {"branch", "alias", "main"});
@@ -150,25 +150,23 @@ GG_TEST("history", "scope follows the side panels: the eye icon toggles, Ctrl-cl
     ctx->ItemClick("//Branches/branch_topic/###branch_topic");
     ctx->Yield(3);
     GG_CHECK(s.session()->history().refVisible("refs/heads/topic"));
-    // The eye icon hides the branch.
-    ctx->ItemClick("//Branches/branch_topic/###eye");
+    // The menu item Hide in History hides the branch.
+    s.toggleVisibility("//Branches/branch_topic/###branch_topic");
     GG_CHECK(s.waitUntil([&] { return findRow(s, topic) == nullptr && !s.session()->history().loading(); }));
     GG_CHECK(findRow(s, mainTip) != nullptr);
     // Again shows it.
-    ctx->ItemClick("//Branches/branch_topic/###eye");
+    s.toggleVisibility("//Branches/branch_topic/###branch_topic");
     GG_CHECK(s.waitUntil([&] { return findRow(s, topic) != nullptr; }));
     // A hidden branch whose commit other refs keep in view loses its badge there.
     GG_CHECK(s.itemExists(("//History/**/" + mainTip + "/###badge_alias").c_str()));
-    ctx->ItemClick("//Branches/branch_alias/###eye");
+    s.toggleVisibility("//Branches/branch_alias/###branch_alias");
     GG_CHECK(s.waitUntil([&] { return !s.session()->history().loading() && findRow(s, mainTip) != nullptr; }));
     ctx->Yield(2);
     GG_CHECK(!s.itemExists(("//History/**/" + mainTip + "/###badge_alias").c_str()));
     GG_CHECK(s.itemExists(("//History/**/" + mainTip + "/###badge_main").c_str()));
-    ctx->ItemClick("//Branches/branch_alias/###eye");
+    s.toggleVisibility("//Branches/branch_alias/###branch_alias");
     // Ctrl-click: only this branch.
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick("//Branches/branch_feature/###eye");
-    ctx->KeyUp(ImGuiMod_Ctrl);
+    s.toggleVisibility("//Branches/branch_feature/###branch_feature", true);
     GG_CHECK(s.waitUntil([&] { return findRow(s, mainTip) == nullptr && findRow(s, topic) == nullptr; }));
     GG_CHECK(findRow(s, s.revParse(repo, "feature")) != nullptr);
     ctx->ItemClick("//History/Show all refs##hist_all");
@@ -1036,7 +1034,7 @@ GG_TEST("history", "the row tooltip lists every shown ref as a badge with its wh
     GG_REQUIRE(s.waitUntil([&] { return findRow(s, tip) != nullptr && !s.session()->history().loading(); }));
     ctx->Yield(2);
     // The branch "hiddenone" is hidden: the row and the tooltip leave its badge out.
-    ctx->ItemClick("//Branches/branch_hiddenone/###eye");
+    s.toggleVisibility("//Branches/branch_hiddenone/###branch_hiddenone");
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->history().loading() && findRow(s, tip) != nullptr; }));
     ctx->Yield(2);
     ctx->MouseMove(rowRef(tip).c_str());
@@ -1479,7 +1477,7 @@ GG_TEST("history", "a branch and its remotes on one commit share one pill")
     GG_CHECK(!badgeShown(s, tip, "origin/main"));
     GG_CHECK(!badgeShown(s, tip, "upstream/main"));
     GG_CHECK(endsWith(badgeText(s, tip, "main"), "main@origin@upstream"));
-    // Without the local branch the pill stays and the tracked remote branch is its target. The eye of the row
+    // Without the local branch the pill stays and the tracked remote branch is its target. The menu item of the row
     // would hide the remote-tracking refs too, so only the local ref is hidden.
     s.session()->history().toggleRef("refs/heads/main", false);
     // The test engine still reports a removed item for a frame or two: wait for the whole new state.

@@ -867,6 +867,18 @@ void Scenario::contextMenu(const char* ref, const char* path, bool shift)
         ctx->KeyUp(ImGuiMod_Shift);
 }
 
+void Scenario::toggleVisibility(const char* ref, bool ctrl)
+{
+    ctx->ItemClick(ref, ImGuiMouseButton_Right);
+    if (ctrl) {
+        ctx->KeyDown(ImGuiMod_Ctrl);
+        ctx->Yield(2);
+    }
+    ctx->MenuClick("//$FOCUSED/###history_visibility");
+    if (ctrl)
+        ctx->KeyUp(ImGuiMod_Ctrl);
+}
+
 std::string Scenario::itemLabel(const char* ref)
 {
     ImGuiTestItemInfo info = ctx->ItemInfo(ref, ImGuiTestOpFlags_NoError);

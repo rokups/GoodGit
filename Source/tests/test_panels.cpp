@@ -75,7 +75,7 @@ GG_TEST("panels", "branches: a branch with two remote refs is a closed node with
     GG_CHECK(s.itemText(main.c_str()).find("main") != std::string::npos);
     GG_CHECK(!s.itemExists("//Branches/branch_main/###remote_origin"));
     GG_CHECK(!s.itemExists("//Branches/branch_main/###remote_second"));
-    // A click on the arrow opens the node: a child row for each ref, the upstream marked, and no eye.
+    // A click on the arrow opens the node: a child row for each ref, the upstream marked, and no visibility item of their own.
     ctx->ItemClick("//Branches/branch_main/###expand");
     ctx->Yield(2);
     const std::string originId = s.revParse(repo, "origin/main").substr(0, 7);
@@ -83,8 +83,8 @@ GG_TEST("panels", "branches: a branch with two remote refs is a closed node with
     GG_REQUIRE(s.itemExists("//Branches/branch_main/###remote_origin"));
     GG_CHECK_STR_EQ(s.itemText("//Branches/branch_main/###remote_origin"), "origin  " + originId + "  (upstream)");
     GG_CHECK_STR_EQ(s.itemText("//Branches/branch_main/###remote_second"), "second  " + secondId);
-    GG_CHECK(!s.itemExists("//Branches/branch_main/remote_origin/###eye"));
-    // A ref hidden in History is grey: the eye of the branch hides its remote refs too.
+    GG_CHECK(!s.itemExists("//Branches/branch_main/remote_origin/###history_visibility"));
+    // A ref hidden in History is grey: Hide in History on the branch hides its remote refs too.
     const auto nameColour = [&](const char* name) {
         const auto glyphs = s.glyphsOf("//Branches");
         const std::string want = name;
@@ -99,11 +99,11 @@ GG_TEST("panels", "branches: a branch with two remote refs is a closed node with
     };
     const ImU32 disabled = ImGui::GetColorU32(ImGuiCol_TextDisabled);
     GG_CHECK(nameColour("second") != 0 && nameColour("second") != disabled);
-    ctx->ItemClick("//Branches/branch_main/###eye");
+    s.toggleVisibility("//Branches/branch_main/###branch_main");
     ctx->Yield(3);
     GG_CHECK_EQ(nameColour("second"), disabled);
     GG_CHECK_EQ(nameColour("origin"), disabled);
-    ctx->ItemClick("//Branches/branch_main/###eye");
+    s.toggleVisibility("//Branches/branch_main/###branch_main");
     ctx->Yield(3);
     GG_CHECK(nameColour("second") != disabled);
     // A click on the row text does not change the node; the arrow closes it again.
@@ -200,7 +200,7 @@ GG_TEST("panels", "branches: a cut row keeps its name, upstream and counters in 
     ctx->MouseMoveToPos(ImVec2(0, 0));
     ctx->Yield(2);
     const auto glyphs = s.glyphsOf("//Branches");
-    // Find the glyphs of the row's line: the eye, the cut name, "@", the cut upstream and the counter.
+    // Find the glyphs of the row's line: the cut name, "@", the cut upstream and the counter.
     const std::string nameEnd = "-name@";
     size_t begin = 0, finish = 0;
     std::string line;
@@ -222,10 +222,10 @@ GG_TEST("panels", "branches: a cut row keeps its name, upstream and counters in 
     const size_t upstreamEnd = line.find("up-end") + std::string("up-end").size();
     GG_REQUIRE(link < upstreamEnd && upstreamEnd < line.size());
     // The row is cut for sure: the name and the upstream both start with the ellipsis.
-    GG_REQUIRE(glyphs[begin + 1].codepoint == ellipsis);
+    GG_REQUIRE(glyphs[begin].codepoint == ellipsis);
     GG_REQUIRE(glyphs[begin + link + 1].codepoint == ellipsis);
-    // The name is cut at its start: after the eye comes the ellipsis, then the rest of the name.
-    for (size_t k = 1; k < link; ++k)
+    // The name is cut at its start: the line starts with the ellipsis, then the rest of the name.
+    for (size_t k = 0; k < link; ++k)
         GG_CHECK(glyphs[begin + k].col == normal);
     // The link, the ellipsis of the upstream and what stays of it are in the text colour.
     GG_CHECK_EQ(line.substr(link, 1), "@");
@@ -261,16 +261,14 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy")
     GG_CHECK_STR_EQ(s.clipboard(), "v2.0");
     s.contextMenu("//Tags/tag_v2.0/###tag_v2.0", "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~1"); }));
-    // Visibility: Ctrl-click shows only this tag's history.
+    // Visibility: the menu item with Ctrl held shows only this tag's history.
     ctx->ItemInputValue("//Tags/##tag_filter", "");
     ctx->Yield(2);
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick("//Tags/tag_v1.0/###eye");
-    ctx->KeyUp(ImGuiMod_Ctrl);
+    s.toggleVisibility("//Tags/tag_v1.0/###tag_v1.0", true);
     auto& history = s.session()->history();
     GG_CHECK(s.waitUntil([&] { return !history.loading() && history.rows().size() == 2; }));
     GG_CHECK(!history.refVisible("refs/tags/v2.0"));
-    ctx->ItemClick("//Tags/tag_v2.0/###eye");
+    s.toggleVisibility("//Tags/tag_v2.0/###tag_v2.0");
     GG_CHECK(s.waitUntil([&] { return history.refVisible("refs/tags/v2.0") && history.rows().size() == 4; }));
 }
 
@@ -282,12 +280,12 @@ GG_TEST("panels", "visibility: hidden refs survive a restart; refs that no longe
     s.git(repo, {"branch", "gone", "HEAD~1"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Tags");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/tag_v1.0/###eye"); }));
-    ctx->ItemClick("//Tags/tag_v1.0/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/tag_v1.0/###tag_v1.0"); }));
+    s.toggleVisibility("//Tags/tag_v1.0/###tag_v1.0");
     s.showPanel("Branches");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###eye"); }));
-    ctx->ItemClick("//Branches/branch_side/###eye");
-    ctx->ItemClick("//Branches/branch_gone/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    s.toggleVisibility("//Branches/branch_gone/###branch_gone");
     auto& history = s.session()->history();
     GG_CHECK(!history.refVisible("refs/tags/v1.0") && !history.refVisible("refs/heads/side"));
     const std::string key = s.session()->repoStateKey();
@@ -321,8 +319,8 @@ GG_TEST("panels", "visibility: each worktree of a repository has its own hidden 
     s.track(linked);
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###eye"); }));
-    ctx->ItemClick("//Branches/branch_side/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
     GG_CHECK(!s.session()->history().refVisible("refs/heads/side"));
     const std::string key = s.session()->repoStateKey();
     // The linked worktree has the same key (the common directory) but its own list: `side` is shown there.
@@ -331,8 +329,8 @@ GG_TEST("panels", "visibility: each worktree of a repository has its own hidden 
     GG_CHECK(s.session()->history().refVisible("refs/heads/side"));
     // A change there does not reach the main worktree.
     s.showPanel("Tags");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/tag_v1.0/###eye"); }));
-    ctx->ItemClick("//Tags/tag_v1.0/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/tag_v1.0/###tag_v1.0"); }));
+    s.toggleVisibility("//Tags/tag_v1.0/###tag_v1.0");
     GG_CHECK(!s.session()->history().refVisible("refs/tags/v1.0"));
     GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(s.session()->history().refVisible("refs/tags/v1.0"));
@@ -401,8 +399,8 @@ GG_TEST("panels", "visibility: a save keeps the hidden refs of the worktrees ano
     other["repoState"][key]["worktreeHidden"]["main"] = {"refs/heads/stale"};
     s.write(prefs, "settings.json", other.dump(2));
     s.showPanel("Branches");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###eye"); }));
-    ctx->ItemClick("//Branches/branch_side/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
     GG_REQUIRE(s.waitIdle());
     nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
     GG_CHECK(stored["repoState"][key]["worktreeHidden"]["other"] == nlohmann::json({"refs/heads/x"}));
@@ -479,8 +477,8 @@ GG_TEST("panels", "visibility: a save keeps the repository state another ggui pr
     other["repoState"]["/elsewhere/.git"] = {{"hiddenRefs", {"refs/heads/x"}}};
     s.write(prefs, "settings.json", other.dump(2));
     s.showPanel("Branches");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###eye"); }));
-    ctx->ItemClick("//Branches/branch_side/###eye");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
     GG_REQUIRE(s.waitIdle());
     const std::string key = s.session()->repoStateKey();
     const nlohmann::json stored = nlohmann::json::parse(s.read(prefs, "settings.json"));
@@ -1627,10 +1625,10 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     s.contextMenu(rbranch.c_str(), "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "origin/main"); }));
     auto& history = s.session()->history();
-    const std::string rbranchEye = "//Branches/remote_group_origin/origin/rbranch_origin:main/###eye";
-    ctx->ItemClick(rbranchEye.c_str());
+    const std::string rbranchRow = "//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main";
+    s.toggleVisibility(rbranchRow.c_str());
     GG_CHECK(!history.refVisible("refs/remotes/origin/main"));
-    ctx->ItemClick(rbranchEye.c_str());
+    s.toggleVisibility(rbranchRow.c_str());
     GG_CHECK(history.refVisible("refs/remotes/origin/main"));
     // Tooltips: an annotated tag's message, a remote's URLs, a locked worktree's reason.
     s.showPanel("Tags");
@@ -1892,7 +1890,7 @@ GG_TEST("panels", "branches: Create branch... in a remote-tracking branch's menu
     GG_CHECK(s.revParse(repo, "from-remote") != s.revParse(repo, "HEAD"));
 }
 
-GG_TEST("panels", "branches: a folder group's eye hides and shows all its branches; Ctrl-click shows only them")
+GG_TEST("panels", "branches: a folder group's menu hides and shows all its branches; Ctrl shows only them")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
@@ -1901,32 +1899,30 @@ GG_TEST("panels", "branches: a folder group's eye hides and shows all its branch
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     auto& history = s.session()->history();
-    const std::string groupEye = "//Branches/group_local:feature:/###eye";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()); }));
+    const std::string groupRow = "//Branches/###group_local:feature:";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupRow.c_str()); }));
     const std::string one = "refs/heads/feature/one", two = "refs/heads/feature/two", three = "refs/heads/feature/three";
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(!history.refVisible(one) && !history.refVisible(two) && !history.refVisible(three));
     GG_CHECK(history.refVisible("refs/heads/main"));
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(history.refVisible(one) && history.refVisible(two) && history.refVisible(three));
-    // Mixed (one hidden by its own eye): a click shows all.
-    ctx->ItemClick("//Branches/branch_feature:one/###eye");
+    // Mixed (one hidden by its own menu item): the group item shows all.
+    s.toggleVisibility("//Branches/branch_feature:one/###branch_feature:one");
     GG_CHECK(!history.refVisible(one) && history.refVisible(two));
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(history.refVisible(one) && history.refVisible(two) && history.refVisible(three));
     // The click did not close the group.
     GG_CHECK(s.itemExists("//Branches/branch_feature:one/###branch_feature:one"));
-    // Ctrl-click: only these, also with a member hidden.
-    ctx->ItemClick("//Branches/branch_feature:one/###eye");
+    // Ctrl: only these, also with a member hidden.
+    s.toggleVisibility("//Branches/branch_feature:one/###branch_feature:one");
     GG_CHECK(!history.refVisible(one));
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick(groupEye.c_str());
-    ctx->KeyUp(ImGuiMod_Ctrl);
+    s.toggleVisibility(groupRow.c_str(), true);
     GG_CHECK(history.refVisible(one) && history.refVisible(two) && history.refVisible(three));
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/remotes/origin/main"));
 }
 
-GG_TEST("panels", "branches: the eye of a local branch also hides and shows its remote-tracking refs")
+GG_TEST("panels", "branches: the menu of a local branch also hides and shows its remote-tracking refs")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "side", "HEAD~1"});
@@ -1934,26 +1930,24 @@ GG_TEST("panels", "branches: the eye of a local branch also hides and shows its 
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     auto& history = s.session()->history();
-    const std::string eye = "//Branches/branch_main/###eye";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(eye.c_str()); }));
+    const std::string row = "//Branches/branch_main/###branch_main";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     const std::string remoteMain = "refs/remotes/origin/main", remoteSide = "refs/remotes/origin/side";
     GG_REQUIRE(history.refVisible("refs/heads/main") && history.refVisible(remoteMain));
-    ctx->ItemClick(eye.c_str());
+    s.toggleVisibility(row.c_str());
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible(remoteMain));
     GG_CHECK(history.refVisible(remoteSide));
-    ctx->ItemClick(eye.c_str());
+    s.toggleVisibility(row.c_str());
     GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible(remoteMain));
     // The remote ref of another branch stays visible.
     GG_CHECK(history.refVisible(remoteSide));
-    // Ctrl-click: only the branch and its remote-tracking refs.
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick(eye.c_str());
-    ctx->KeyUp(ImGuiMod_Ctrl);
+    // Ctrl: only the branch and its remote-tracking refs.
+    s.toggleVisibility(row.c_str(), true);
     GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible(remoteMain));
     GG_CHECK(!history.refVisible("refs/heads/side") && !history.refVisible(remoteSide));
 }
 
-GG_TEST("panels", "branches: a folder group's eye and Hide all / Show all cover the remote-tracking refs of the branches")
+GG_TEST("panels", "branches: a folder group's menu and Hide all / Show all cover the remote-tracking refs of the branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
@@ -1962,15 +1956,15 @@ GG_TEST("panels", "branches: a folder group's eye and Hide all / Show all cover 
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     auto& history = s.session()->history();
-    const std::string groupEye = "//Branches/group_local:feature:/###eye";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()); }));
+    const std::string groupRow = "//Branches/###group_local:feature:";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupRow.c_str()); }));
     const std::string oneRemote = "refs/remotes/origin/feature/one";
     GG_REQUIRE(history.refVisible(oneRemote));
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible("refs/heads/feature/two"));
     GG_CHECK(!history.refVisible(oneRemote));
     GG_CHECK(history.refVisible("refs/remotes/origin/main"));
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(history.refVisible("refs/heads/feature/one") && history.refVisible(oneRemote));
     ctx->ItemClick("//Branches/###hide_all_branches");
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/remotes/origin/main"));
@@ -1980,7 +1974,7 @@ GG_TEST("panels", "branches: a folder group's eye and Hide all / Show all cover 
     GG_CHECK(history.refVisible("refs/heads/feature/one") && history.refVisible(oneRemote));
 }
 
-GG_TEST("panels", "branches: a remote node's eye hides and shows all its remote-tracking branches")
+GG_TEST("panels", "branches: a remote node's menu hides and shows all its remote-tracking branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
@@ -1989,29 +1983,27 @@ GG_TEST("panels", "branches: a remote node's eye hides and shows all its remote-
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     auto& history = s.session()->history();
-    const std::string nodeEye = "//Branches/remote_group_origin/###eye";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(nodeEye.c_str()); }));
+    const std::string nodeRow = "//Branches/remote_group_origin/origin";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(nodeRow.c_str()); }));
     const std::string main = "refs/remotes/origin/main", one = "refs/remotes/origin/feature/one",
                       two = "refs/remotes/origin/feature/two";
-    ctx->ItemClick(nodeEye.c_str());
+    s.toggleVisibility(nodeRow.c_str());
     GG_CHECK(!history.refVisible(main) && !history.refVisible(one) && !history.refVisible(two));
     GG_CHECK(history.refVisible("refs/heads/main") && history.refVisible("refs/heads/feature/one"));
-    ctx->ItemClick(nodeEye.c_str());
+    s.toggleVisibility(nodeRow.c_str());
     GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
-    // A folder group under the remote has its own eye.
+    // A folder group under the remote has its own menu item.
     GG_REQUIRE(s.openRemote());
-    const std::string folderEye = "//Branches/remote_group_origin/origin/group_remote:origin:feature:/###eye";
-    GG_REQUIRE(s.itemExists(folderEye.c_str()));
-    ctx->ItemClick(folderEye.c_str());
+    const std::string folderRow = "//Branches/remote_group_origin/origin/###group_remote:origin:feature:";
+    GG_REQUIRE(s.itemExists(folderRow.c_str()));
+    s.toggleVisibility(folderRow.c_str());
     GG_CHECK(history.refVisible(main) && !history.refVisible(one) && !history.refVisible(two));
     GG_CHECK(history.refVisible("refs/heads/feature/one"));
-    // Mixed: a click on the remote node shows all.
-    ctx->ItemClick(nodeEye.c_str());
+    // Mixed: the item of the remote node shows all.
+    s.toggleVisibility(nodeRow.c_str());
     GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
-    // Ctrl-click: only the remote's branches.
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick(nodeEye.c_str());
-    ctx->KeyUp(ImGuiMod_Ctrl);
+    // Ctrl: only the remote's branches.
+    s.toggleVisibility(nodeRow.c_str(), true);
     GG_CHECK(history.refVisible(main) && history.refVisible(one) && history.refVisible(two));
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/heads/feature/one"));
 }
@@ -2029,11 +2021,11 @@ GG_TEST("panels", "branches: a new branch is hidden in a group of hidden branche
         s.session()->refresh();
         GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->findBranch(name); }));
     };
-    const std::string groupEye = "//Branches/group_local:feature:/###eye";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()); }));
+    const std::string groupRow = "//Branches/###group_local:feature:";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupRow.c_str()); }));
     GG_CHECK(!s.session()->app().settings().data().branchesHideNew);
     // A group whose branches are all hidden hides a new branch; the top level shows it (the default).
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible("refs/heads/feature/two"));
     create("feature/three");
     create("top-one");
@@ -2044,7 +2036,7 @@ GG_TEST("panels", "branches: a new branch is hidden in a group of hidden branche
     GG_CHECK(!history.refVisible("refs/heads/main"));
     s.contextMenu("//Branches/###hide_all_branches", "Hide new branches");
     GG_CHECK(s.session()->app().settings().data().branchesHideNew);
-    ctx->ItemClick("//Branches/branch_main/###eye");
+    s.toggleVisibility("//Branches/branch_main/###branch_main");
     GG_CHECK(history.refVisible("refs/heads/main"));
     create("top-two");
     GG_CHECK(!history.refVisible("refs/heads/top-two"));
@@ -2071,7 +2063,7 @@ GG_TEST("panels", "branches: a new branch is hidden in a group of hidden branche
     GG_CHECK(!history.refVisible("refs/remotes/origin/top-one"));
 }
 
-GG_TEST("panels", "branches: with a filter typed a group's eye changes only the listed branches")
+GG_TEST("panels", "branches: with a filter typed a group's menu changes only the listed branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
@@ -2080,14 +2072,14 @@ GG_TEST("panels", "branches: with a filter typed a group's eye changes only the 
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     auto& history = s.session()->history();
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_feature:one/###eye"); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_feature:one/###branch_feature:one"); }));
     ctx->ItemInputValue("//Branches/##branch_filter", "feature/o");
-    const std::string groupEye = "//Branches/group_local:feature:/###eye";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupEye.c_str()) && !s.itemExists("//Branches/branch_feature:two/###eye"); }));
-    ctx->ItemClick(groupEye.c_str());
+    const std::string groupRow = "//Branches/###group_local:feature:";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(groupRow.c_str()) && !s.itemExists("//Branches/branch_feature:two/###branch_feature:two"); }));
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(!history.refVisible("refs/heads/feature/one") && !history.refVisible("refs/heads/feature/other"));
     GG_CHECK(history.refVisible("refs/heads/feature/two"));
-    ctx->ItemClick(groupEye.c_str());
+    s.toggleVisibility(groupRow.c_str());
     GG_CHECK(history.refVisible("refs/heads/feature/one") && history.refVisible("refs/heads/feature/other"));
     ctx->ItemInputValue("//Branches/##branch_filter", "");
 }
@@ -2100,7 +2092,7 @@ GG_TEST("panels", "branches: a filter opens a closed group")
     s.git(repo, {"branch", "feature/two", "HEAD~1"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
-    const std::string row = "//Branches/branch_feature:one/###eye";
+    const std::string row = "//Branches/branch_feature:one/###branch_feature:one";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     ctx->ItemClose("//Branches/###group_local:feature:");
     GG_REQUIRE(s.waitUntil([&] { return !s.itemExists(row.c_str()); }));
@@ -2359,16 +2351,16 @@ GG_TEST("panels", "branches: a name too long for the panel is cut at its start; 
     const std::string row = "//Branches/" + id + "/###" + id;
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     ctx->Yield(2);
-    // The row's text starts with an ellipsis, ends with the end of the name, and fits the panel with its eye.
+    // The row's text starts with an ellipsis, ends with the end of the name, and fits the panel.
     // (The test engine keeps 31 characters of an item's label: the drawn text is read instead.)
     const auto drawnWith = [&](const std::string& end) {
         for (const std::string& line : s.drawnText("//Branches"))
             if (line.size() > end.size() && line.compare(line.size() - end.size(), end.size(), end) == 0)
-                return line.substr(line.rfind("<icon> ") + 7); // (a line starts with the eye)
+                return line;
         return std::string();
     };
-    // The eye stays; the group row is there.
-    GG_CHECK(s.itemExists(("//Branches/" + id + "/###eye").c_str()));
+    // The row is there.
+    GG_CHECK(s.itemExists(row.c_str()));
     const std::string group = "//Branches/###group_local:" + groupName + ":";
     GG_REQUIRE(s.itemExists(group.c_str()));
     // A long name wraps in the tooltip: the lines together have it.

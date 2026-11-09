@@ -444,8 +444,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
   its gutter, its line number or its code, and by Alt+Space; the keyboard reaches the code with Down.
 
 ### 4.7 Side panels
-- **K Branches:** Create branch, filter. Click toggles whether the branch is visible in
-  History (Ctrl-click makes it the only one). The current branch is outlined. Context menu:
+- **K Branches:** Create branch, filter. The context menu has Show in History or Hide in History
+  for the branch (Ctrl held while the user chooses it makes the branch the only one). A row has no eye button. The current branch is outlined. Context menu:
   Reveal, Copy name, Check out, Merge into @, Rebase @ onto branch, Push, Push to…,
   Reconcile with remote/branch…, Rename…, Delete ▸ (Local / a given remote / Local and all
   remotes). **N** Set/unset upstream, Fast-forward to upstream, Pull (for the current
@@ -455,11 +455,11 @@ the History panel list newly conflicted commits. See §5, decision R1.
   its menu has a "Remote <name>" submenu: the menu of the remote ref plus "Set as upstream". A
   branch with two or more remote refs is a node: it has no suffix, and its child rows
   (`<remote>  <short ID>`, with "(upstream)", or the full name for a ref of another name) have the
-  same menu. A child row is grey when the ref is hidden. The eye of a local row, and of a folder,
+  same menu. A child row is grey when the ref is hidden. The menu item of a local row, and of a folder,
   also shows or hides the remote refs. The Remotes section of the panel stays: one node for each
-  remote with all its remote-tracking refs, each with its own eye. Each node starts closed. A
+  remote with all its remote-tracking refs, each with its own menu item. Each node starts closed. A
   filter opens a node that has matches. Clearing the filter restores the earlier state.
-- **K Tags:** Create tag, filter, visibility toggle, Reveal, Copy, Delete.
+- **K Tags:** Create tag, filter, Show or Hide in History (menu item), Reveal, Copy, Delete.
   **N** Annotated tags (message), push tag, delete a remote tag.
 - **M Workspaces → Worktrees:** native `git worktree`: list (stale, locked, main), Add…,
   Open here, Open in new window, Open directory, Copy name/path, Reveal HEAD, Remove….

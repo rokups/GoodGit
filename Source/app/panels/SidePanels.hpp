@@ -31,9 +31,10 @@ public:
     void draw(bool* open);
 
 private:
-    void branchMenu(const core::BranchInfo& b);
-    void remoteBranchMenu(const core::RemoteBranchInfo& r);
-    void keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot);
+    // `refs`: the full refs the row shows or hides in History (the menu's Show/Hide in History item).
+    void branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs);
+    void remoteBranchMenu(const core::RemoteBranchInfo& r, const std::vector<std::string>& refs);
+    void keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot, const std::vector<std::string>& refs);
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_filter;
