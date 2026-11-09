@@ -536,7 +536,7 @@ static std::string repoLeafLabel(const std::vector<ggui::RepoNode>& nodes, const
             const std::string inner = repoLeafLabel(n.children, path);
             if (!inner.empty())
                 return inner;
-        } else if (fs::equivalent(n.path, path)) {
+        } else if (gg::worktrees::samePath(n.path, path)) {
             return n.label;
         }
     }
@@ -555,7 +555,7 @@ static std::string repoLeafPath(const std::vector<ggui::RepoNode>& nodes, const 
             const std::string inner = repoLeafPath(n.children, path);
             if (!inner.empty())
                 return "###group_" + colon(n.group) + "/" + inner;
-        } else if (fs::equivalent(n.path, path)) {
+        } else if (gg::worktrees::samePath(n.path, path)) {
             return "repo_" + colon(n.label) + "/###row";
         }
     }
@@ -689,9 +689,9 @@ GG_TEST("panels", "repositories: a click selects, a double-click opens")
     ctx->ItemClick(row.c_str());
     ctx->Yield(3);
     GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), ggui::normalizeRepoPath(second.string()));
-    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
     ctx->ItemDoubleClick(row.c_str());
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), second); }));
 }
 
 GG_TEST("panels", "repositories: Enter opens the selected repository")
@@ -708,20 +708,20 @@ GG_TEST("panels", "repositories: Enter opens the selected repository")
     ctx->KeyPress(ImGuiKey_Enter); // nothing is selected yet
     ctx->Yield(3);
     s.settle();
-    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
     ctx->ItemClick(row.c_str());
     ctx->Yield(3);
     s.settle();
-    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
     // Enter is the panel's only while it has the focus.
     ctx->WindowFocus("//History");
     ctx->KeyPress(ImGuiKey_Enter);
     ctx->Yield(3);
     s.settle();
-    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
     ctx->WindowFocus("//Repositories");
     ctx->KeyPress(ImGuiKey_Enter);
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), second); }));
 }
 
 // The reference of the row of a worktree below the row of the open repository.
@@ -808,21 +808,29 @@ GG_TEST("panels", "repositories: a worktree row selects on a click and opens on 
     ctx->Yield(3);
     s.settle();
     GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), (s.root() / wt1).string());
-    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
     ctx->ItemDoubleClick(wtRow.c_str());
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), s.root() / wt1); }));
 }
 
 // The linked worktree of a closed repository that has a summary with worktrees (nullptr when there is none).
+// The worktree is not prunable and its directory exists.
 static const ggui::core::WorktreeInfo* linkedWorktreeOfSummary(Scenario& s, const fs::path& repo)
 {
     const auto* info = s.app.repoSummary(fs::path(ggui::normalizeRepoPath(repo.string())));
     if (!info)
         return nullptr;
-    for (const auto& w : info->worktrees)
-        if (!w.isMain)
-            return &w;
-    return nullptr;
+    // A fixed rule: the first worktree by path that is not prunable and whose directory exists.
+    // The order of the worktrees in the summary differs between platforms.
+    const ggui::core::WorktreeInfo* best = nullptr;
+    for (const auto& w : info->worktrees) {
+        std::error_code ec;
+        if (w.isMain || w.prunable || !fs::is_directory(w.path, ec))
+            continue;
+        if (!best || w.path < best->path)
+            best = &w;
+    }
+    return best;
 }
 
 GG_TEST("panels", "repositories: a closed repository expands to its linked worktree")
@@ -858,6 +866,7 @@ GG_TEST("panels", "repositories: a worktree row of a closed repository opens on 
     const std::string row = repoRow(s, repo);
     GG_REQUIRE(s.itemExists(row.c_str()));
     const fs::path linkedPath = linkedWorktreeOfSummary(s, repo)->path;
+    GG_REQUIRE(fs::is_directory(linkedPath));
     const std::string wtRow = worktreeRow(row, linkedWorktreeOfSummary(s, repo)->name);
     openRepoNode(ctx, row);
     GG_REQUIRE(s.itemExists(wtRow.c_str()));
@@ -865,9 +874,9 @@ GG_TEST("panels", "repositories: a worktree row of a closed repository opens on 
     ctx->Yield(3);
     s.settle();
     GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), linkedPath.string());
-    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
     ctx->ItemDoubleClick(wtRow.c_str());
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), linkedPath); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), linkedPath); }));
 }
 
 // The labels of the menu of a worktree row, in the Worktrees panel and in the Repositories panel (GG-16).
@@ -921,6 +930,7 @@ GG_TEST("panels", "repositories: the menu of a worktree row of a closed reposito
     const std::string row = repoRow(s, repo);
     GG_REQUIRE(s.itemExists(row.c_str()));
     const fs::path linkedPath = linkedWorktreeOfSummary(s, repo)->path;
+    GG_REQUIRE(fs::is_directory(linkedPath));
     const std::string wtRow = worktreeRow(row, linkedWorktreeOfSummary(s, repo)->name);
     openRepoNode(ctx, row);
     GG_REQUIRE(s.itemExists(wtRow.c_str()));
@@ -941,7 +951,7 @@ GG_TEST("panels", "repositories: the menu of a worktree row of a closed reposito
     }));
     // Open here switches the window to the worktree.
     s.contextMenu(wtRow.c_str(), "Open here");
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), linkedPath); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), linkedPath); }));
 }
 
 GG_TEST("panels", "repositories: a repository without worktrees expands to nothing")
@@ -990,9 +1000,9 @@ GG_TEST("panels", "repositories: a submodule row of the open repository opens on
     ctx->Yield(3);
     s.settle();
     GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), (repo / "sub").string());
-    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
     ctx->ItemDoubleClick(subRow.c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), repo / "sub"); }));
     // A double-click on the row of the open submodule keeps the session.
     s.showPanel("Repositories");
     GG_REQUIRE(s.itemExists(repoRow(s, repo).c_str()));
@@ -1001,7 +1011,7 @@ GG_TEST("panels", "repositories: a submodule row of the open repository opens on
     ctx->Yield(5);
     s.settle();
     GG_CHECK(s.session() == session);
-    GG_CHECK(fs::equivalent(s.session()->path(), repo / "sub"));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo / "sub"));
 }
 
 GG_TEST("panels", "repositories: a closed repository shows its submodules")
@@ -1024,7 +1034,7 @@ GG_TEST("panels", "repositories: a closed repository shows its submodules")
     const std::string subRow = submoduleRow(row, "sub");
     GG_REQUIRE(s.itemExists(subRow.c_str()));
     ctx->ItemDoubleClick(subRow.c_str());
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), repo / "sub"); }));
 }
 
 GG_TEST("panels", "repositories: a nested submodule row nests")
@@ -1062,7 +1072,7 @@ GG_TEST("panels", "repositories: an uninitialized submodule does not open")
     ctx->Yield(5);
     s.settle();
     GG_CHECK(s.session() == session);
-    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
 }
 
 GG_TEST("panels", "repositories: Enter opens the selected submodule row")
@@ -1079,9 +1089,9 @@ GG_TEST("panels", "repositories: Enter opens the selected submodule row")
     ctx->ItemClick(subRow.c_str());
     ctx->Yield(3);
     s.settle();
-    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
     ctx->KeyPress(ImGuiKey_Enter);
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo / "sub"); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), repo / "sub"); }));
 }
 
 GG_TEST("panels", "repositories: Enter on an uninitialized submodule row does nothing")
@@ -1105,7 +1115,7 @@ GG_TEST("panels", "repositories: Enter on an uninitialized submodule row does no
     ctx->Yield(3);
     s.settle();
     GG_CHECK(s.session() == session);
-    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
 }
 
 // The paths in the permanent repository list, as they are stored.
@@ -1131,7 +1141,7 @@ GG_TEST("panels", "repositories: a linked worktree that is opened stays under it
     const std::string wtRow = worktreeRow(row, wt1);
     GG_REQUIRE(s.itemExists(wtRow.c_str()));
     ctx->ItemDoubleClick(wtRow.c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), s.root() / wt1); }));
     s.showPanel("Repositories");
     ctx->Yield(3);
     // The list has no entry for the worktree folder; the main repository is the open row.
@@ -1161,7 +1171,7 @@ GG_TEST("panels", "repositories: a linked worktree that is opened stays under it
     const std::string mainWorktree = worktreeRow(row, "main");
     GG_REQUIRE(s.itemExists(mainWorktree.c_str()));
     ctx->ItemDoubleClick(mainWorktree.c_str());
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), repo); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), repo); }));
     GG_CHECK(listedRepositories(s).size() == 1);
 }
 
@@ -1178,7 +1188,7 @@ GG_TEST("panels", "repositories: opening a linked worktree directly lists its ma
     GG_CHECK(!listed.empty() && listed.front() == ggui::normalizeRepoPath(repo.string()));
     // The recent list keeps the path of the worktree folder.
     GG_CHECK(!s.app.settings().data().recent.empty());
-    GG_CHECK(fs::equivalent(s.app.settings().data().recent.front(), wt1));
+    GG_CHECK(gg::worktrees::samePath(s.app.settings().data().recent.front(), wt1));
 }
 
 GG_TEST("panels", "repositories: a worktree entry in the list stays and opens on a double-click")
@@ -1195,7 +1205,7 @@ GG_TEST("panels", "repositories: a worktree entry in the list stays and opens on
     // The entry of a worktree is a node like any repository (GG-15). Its summary lists the main and the linked worktrees.
     GG_CHECK(ctx->ItemInfo(wtEntry.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
     ctx->ItemDoubleClick(wtEntry.c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), wt1); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), wt1); }));
     s.showPanel("Repositories");
     ctx->Yield(3);
     // A double-click on the plain entry of the worktree that the window shows does not replace the session.
@@ -1249,7 +1259,7 @@ GG_TEST("panels", "repositories: the current and a missing worktree do not open,
     const std::string wt1 = repo.filename().string() + "-wt1";
     ctx->ItemClick(worktreeRow(row, wt1).c_str());
     ctx->KeyPress(ImGuiKey_Enter);
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), s.root() / wt1); }));
 }
 
 GG_TEST("panels", "repositories: a repository row has Add worktree for the open repository only")
@@ -1564,7 +1574,7 @@ GG_TEST("panels", "repositories: Remove from list, and Open in the context menu"
     ctx->Yield(2);
     GG_REQUIRE(s.itemExists(row.c_str()));
     s.contextMenu(row.c_str(), "Open");
-    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), second); }));
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), second); }));
 }
 
 GG_TEST("panels", "remotes: list and copy")
