@@ -24,6 +24,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <set>
 #include <thread>
@@ -92,6 +93,9 @@ App::App(Platform& platform, AppOptions options)
     : m_platform(platform), m_options(std::move(options)), m_settings(m_io)
 {
     g_app = this;
+    if (const std::string ms = getEnv("GGUI_WORKTREE_REFRESH_MS"); !ms.empty())
+        if (const int value = std::atoi(ms.c_str()); value > 0)
+            m_worktreeInterval = std::chrono::milliseconds(value);
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr; // imgui.ini is loaded/saved asynchronously by Settings
     ImGuiSettingsHandler handler;
@@ -332,6 +336,37 @@ void App::pumpSummaries()
                 break;
             }
     }
+}
+
+void App::pumpWorktrees()
+{
+    // The results first: a read of a repository that is not expanded any more still updates its list.
+    for (auto& read : m_summaries.pollWorktrees()) {
+        m_worktreePending.erase(read.key);
+        if (read.worktrees.empty())
+            continue; // the read failed: the list of the last summary stays
+        for (auto* infos : {&m_listInfo, &m_recentInfo})
+            for (auto& info : *infos)
+                if (info.path == read.path && info.exists)
+                    info.worktrees = read.worktrees; // the summary index points at the entry: it stays valid
+    }
+    const std::set<std::string> noted = std::exchange(m_worktreeNoted, {});
+    // A node that is not expanded any more starts over when it is expanded again.
+    std::erase_if(m_worktreeRequested, [&](const auto& entry) { return !noted.count(entry.first); });
+    const auto now = std::chrono::steady_clock::now();
+    std::vector<std::string> due;
+    for (const auto& path : noted) {
+        if (m_worktreePending.count(path))
+            continue;
+        const auto it = m_worktreeRequested.find(path);
+        if (it != m_worktreeRequested.end() && now - it->second < m_worktreeInterval)
+            continue;
+        m_worktreeRequested[path] = now;
+        m_worktreePending.insert(path);
+        due.push_back(path);
+    }
+    if (!due.empty())
+        m_summaries.requestWorktrees(due);
 }
 
 void App::updateLiveSummary()
@@ -648,6 +683,7 @@ void App::frame()
     for (auto& fn : posted)
         fn();
     pumpSummaries();
+    pumpWorktrees();
     // Sessions being closed are destroyed once their engines have no running work.
     std::erase_if(m_closing, [](const std::unique_ptr<Session>& s) { return s->idle(); });
 

@@ -214,6 +214,67 @@ GG_TEST("shell", "repo tree: aliasFromDialog gives the alias to store")
     GG_CHECK_STR_EQ(aliasFromDialog("", "base", "base", "", "base"), "base");
 }
 
+// Every field of the two lists must be the same, as the libgit2 read gives them (isCurrent is false in both).
+static void checkSameWorktrees(const std::vector<ggui::core::WorktreeInfo>& slow, const std::vector<ggui::core::WorktreeInfo>& fast)
+{
+    GG_REQUIRE(slow.size() == fast.size());
+    for (size_t i = 0; i < slow.size(); ++i) {
+        const auto& a = slow[i];
+        const auto& b = fast[i];
+        GG_CHECK_STR_EQ(a.name, b.name);
+        GG_CHECK(a.path == b.path);
+        GG_CHECK_STR_EQ(a.path.string(), b.path.string());
+        GG_CHECK(a.head == b.head);
+        GG_CHECK_STR_EQ(a.branch, b.branch);
+        GG_CHECK_EQ(a.isMain, b.isMain);
+        GG_CHECK_EQ(a.isCurrent, b.isCurrent);
+        GG_CHECK_EQ(a.bare, b.bare);
+        GG_CHECK_EQ(a.locked, b.locked);
+        GG_CHECK_STR_EQ(a.lockReason, b.lockReason);
+        GG_CHECK_EQ(a.missing, b.missing);
+        GG_CHECK_EQ(a.prunable, b.prunable);
+    }
+}
+
+GG_TEST("summary", "readWorktreesFast gives the worktrees that readSummary gives (GG-21)")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const auto slow = ggui::core::readSummary(repo).worktrees;
+    const auto fast = ggui::core::readWorktreesFast(repo);
+    GG_REQUIRE(slow.size() == 4);  // main, wt1, wt2 (locked), wt3 (stale)
+    checkSameWorktrees(slow, fast);
+    // The fixture has a locked and a stale entry: the test would pass for empty flags if these were lost.
+    GG_CHECK(std::any_of(fast.begin(), fast.end(), [](const auto& w) { return w.locked && w.lockReason == "test lock"; }));
+    GG_CHECK(std::any_of(fast.begin(), fast.end(), [](const auto& w) { return w.missing && w.prunable; }));
+    GG_CHECK(std::any_of(fast.begin(), fast.end(), [](const auto& w) { return !w.branch.empty() && !w.isMain; }));
+    GG_CHECK(std::any_of(fast.begin(), fast.end(), [](const auto& w) { return w.branch.empty() && !w.head.isNull() && !w.isMain; }));
+
+    // Packed refs: the head id of a branch comes from packed-refs when there is no loose ref.
+    s.git(repo, {"pack-refs", "--all"});
+    checkSameWorktrees(ggui::core::readSummary(repo).worktrees, ggui::core::readWorktreesFast(repo));
+
+    // A bare repository, a repository with a .git file, and a path that is no repository.
+    const fs::path bare = s.fixture(Recipe::Bare);
+    checkSameWorktrees(ggui::core::readSummary(bare).worktrees, ggui::core::readWorktreesFast(bare));
+    const fs::path gitfile = s.root() / "gitfile-wt";
+    s.git(s.root(), {"init", "-q", "--separate-git-dir", (s.root() / "gitfile-wt.git").string(), gitfile.string()});
+    checkSameWorktrees(ggui::core::readSummary(gitfile).worktrees, ggui::core::readWorktreesFast(gitfile));
+    // A linked worktree: the list is the one of the main repository, with the same path forms.
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    GG_REQUIRE(fs::is_regular_file(wt1 / ".git"));
+    checkSameWorktrees(ggui::core::readSummary(wt1).worktrees, ggui::core::readWorktreesFast(wt1));
+    // A linked worktree of a bare repository: core.bare comes from the config of the common dir.
+    const fs::path bareWt = s.root() / "bare-linked";
+    s.git(bare, {"worktree", "add", "-q", "--detach", bareWt.string()});
+    const auto bareFast = ggui::core::readWorktreesFast(bareWt);
+    GG_REQUIRE(bareFast.size() == 2);
+    GG_CHECK(bareFast.front().bare);
+    checkSameWorktrees(ggui::core::readSummary(bareWt).worktrees, bareFast);
+    checkSameWorktrees(ggui::core::readSummary(bare).worktrees, ggui::core::readWorktreesFast(bare));
+    GG_CHECK(ggui::core::readWorktreesFast(s.root() / "no-such-dir").empty());
+    GG_CHECK(ggui::core::readWorktreesFast(s.root()).empty());
+}
+
 GG_TEST("summary", "readSummary reports why a path is not a usable repository (GG-70)")
 {
     using Health = ggui::core::RepoSummary::Health;

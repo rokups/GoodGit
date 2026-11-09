@@ -475,6 +475,9 @@ the History panel list newly conflicted commits. See §5, decision R1.
 - **N Repositories:** every usable repository in the list is expandable (GG-15), as with submodules. Its worktrees
   are the children, and a click opens one, as in the Worktrees panel. A repository without worktrees and
   submodules expands to nothing.
+  **N** While a closed repository is expanded, its worktrees follow the git directory (GG-21). The application
+  reads the git directory files on a background worker, when the node expands and every 5 seconds. It does not open
+  the repository.
   **N** A worktree row has the context menu of the Worktrees panel. A repository that is not open has
   only the items that need a path enabled: copy, open, open directory. The other items are disabled.
   **N** A repository row has "Add worktree…". It opens the Add dialog for the open repository. For a

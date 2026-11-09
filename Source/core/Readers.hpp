@@ -31,6 +31,12 @@ ReflogPtr readReflog(git_repository* repo, const std::string& ref);
 CommitDetailsPtr readCommitDetails(git_repository* repo, const Oid& id);
 RepoSummary readSummary(const std::filesystem::path& path);
 
+// The worktrees of the repository at `path` as readSummary gives them, but from files only: no libgit2, no
+// session (GG-21). The main one first, then the linked ones by name. Never throws: on an error the list is
+// empty. Differences from the libgit2 read: the head id is empty for a ref that is neither a loose ref nor in
+// packed-refs (a reftable repository), and no entry is current.
+std::vector<WorktreeInfo> readWorktreesFast(const std::filesystem::path& repoPath);
+
 // The submodules of `repo`, sorted by name, with nested submodules in `children` (to a depth of 8).
 // Never throws. A broken .gitmodules or a libgit2 error gives a partial list.
 // Without a .gitmodules file the list is empty, unless `scanIndex` is true: then the gitlink entries of the index

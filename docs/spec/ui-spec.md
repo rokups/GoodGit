@@ -870,7 +870,12 @@ the panel without touching the repository.
   and the linked ones. A double-click on it opens that worktree. When the main repository is bare, or has no `.git`
   entry (a `--separate-git-dir` or submodule repository), the worktree folder is the entry and the open row. The Recent list gets the worktree folder as before.
   The worktrees of a listed repository come from its summary, which the background worker reads with the
-  submodules (at start-up and when a repository closes or opens), not from the file system in the draw loop. Context (repository rows): Open (disabled on the
+  submodules (at start-up and when a repository closes or opens), not from the file system in the draw loop.
+  While the node of a closed repository is expanded and the window is visible, the application re-reads only the
+  worktrees of that repository on a background worker (GG-21). The read starts when the node expands and repeats
+  every 5 seconds. It reads files only: the `.git` file, `commondir`, `config` (core.bare), `HEAD`,
+  `worktrees/<name>/{gitdir,HEAD,locked}`, the loose refs and `packed-refs`. It does not open the repository with libgit2 and it opens no session. The open repository is not
+  read, because its snapshot is live. A failed read keeps the old list. Context (repository rows): Open (disabled on the
   open one) · Set alias… · Add worktree… · Add submodule… · Copy path · Remove from list (also the open one; it
   comes back without its alias at its next open). Add worktree… opens the `Add worktree` dialog of the
   Worktrees panel. It runs in the session of the window, so a repository that is not open has it disabled with the

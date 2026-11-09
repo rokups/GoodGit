@@ -14,6 +14,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <fstream>
@@ -1849,6 +1850,165 @@ RepoSummary readSummary(const fs::path& path)
     s.worktrees = readWorktrees(repo.get(), fs::path(git_repository_commondir(repo.get())).lexically_normal(), std::string());
     git_error_clear();
     return s;
+}
+
+// ---- Fast worktree read (GG-21) -----------------------------------------------------------------
+
+namespace {
+
+// The target of a "gitdir: <path>" line in `file`, or "" when the file has no such line.
+// A relative target is relative to the folder of `file`.
+fs::path readGitdirTarget(const fs::path& file)
+{
+    const std::string text = gg::trim(readFileText(file));
+    if (text.rfind("gitdir:", 0) != 0)
+        return {};
+    fs::path target = fs::path(gg::trim(text.substr(7)));
+    if (target.empty())
+        return {};
+    if (target.is_relative())
+        target = file.parent_path() / target;
+    return target.lexically_normal();
+}
+
+// The id that the branch `branch` has: the loose ref first, then packed-refs. Null when there is none.
+Oid readBranchId(const fs::path& common, const std::string& branch)
+{
+    const std::string ref = "refs/heads/" + branch;
+    const std::string loose = gg::trim(readFileText(common / ref));
+    if (!loose.empty() && loose.rfind("ref:", 0) != 0)
+        return Oid::fromHex(loose);
+    std::istringstream packed(readFileText(common / "packed-refs"));
+    std::string line;
+    while (std::getline(packed, line)) {
+        if (line.empty() || line[0] == '#' || line[0] == '^')
+            continue;
+        const size_t space = line.find(' ');
+        if (space == std::string::npos)
+            continue;
+        if (gg::trim(line.substr(space + 1)) == ref)
+            return Oid::fromHex(line.substr(0, space));
+    }
+    return {};
+}
+
+// The value of core.bare in the file `common`/config: a small parse of the [core] section. The key is not case
+// sensitive. The last value wins. It does not follow includes. False when there is no value.
+bool readCoreBare(const fs::path& common)
+{
+    std::istringstream in(readFileText(common / "config"));
+    std::string line;
+    bool inCore = false;
+    bool bare = false;
+    auto lower = [](std::string text) {
+        for (auto& c : text)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return text;
+    };
+    while (std::getline(in, line)) {
+        const std::string text = gg::trim(line);
+        if (text.empty() || text[0] == '#' || text[0] == ';')
+            continue;
+        if (text[0] == '[') {
+            const size_t close = text.find(']');
+            // "[core]" only: a subsection like [core "x"] is another section.
+            inCore = close != std::string::npos && lower(gg::trim(text.substr(1, close - 1))) == "core";
+            // A key can follow the header on the same line.
+            if (!inCore || close + 1 >= text.size())
+                continue;
+            line = text.substr(close + 1);
+        } else if (!inCore) {
+            continue;
+        } else {
+            line = text;
+        }
+        const size_t eq = line.find('=');
+        const std::string key = lower(gg::trim(line.substr(0, eq)));
+        if (key != "bare")
+            continue;
+        std::string value = eq == std::string::npos ? std::string("true") : line.substr(eq + 1);
+        if (const size_t comment = value.find_first_of("#;"); comment != std::string::npos)
+            value.resize(comment);
+        value = lower(gg::trim(value));
+        bare = value == "true" || value == "yes" || value == "on" || value == "1";
+    }
+    return bare;
+}
+
+// Sets the branch and the head id of `info` from the HEAD file `headFile`.
+void readHeadFile(const fs::path& common, const fs::path& headFile, WorktreeInfo& info)
+{
+    info.branch = headFileBranch(headFile, info.head);
+    if (!info.branch.empty())
+        info.head = readBranchId(common, info.branch);
+}
+
+} // namespace
+
+std::vector<WorktreeInfo> readWorktreesFast(const fs::path& repoPath)
+{
+    std::vector<WorktreeInfo> out;
+    try {
+        std::error_code ec;
+        fs::path common;
+        fs::path start = repoPath.lexically_normal();
+        if (start.filename().empty())
+            start = start.parent_path();
+        const fs::path dotGit = start / ".git";
+        if (fs::is_directory(dotGit, ec)) {
+            common = dotGit;
+        } else if (fs::is_regular_file(dotGit, ec)) {
+            // A linked worktree or a submodule: the file names the git dir. A linked one has a commondir file.
+            const fs::path gitDir = readGitdirTarget(dotGit);
+            if (gitDir.empty())
+                return out;
+            const std::string commonText = gg::trim(readFileText(gitDir / "commondir"));
+            common = commonText.empty() ? gitDir : (gitDir / fs::path(commonText)).lexically_normal();
+        } else if (fs::exists(start / "HEAD", ec) && fs::is_directory(start / "objects", ec)) {
+            common = start;
+        } else {
+            return out;
+        }
+        // The main path as readWorktrees makes it, from the common dir with a trailing separator as libgit2 gives it:
+        // the dir itself when it is bare, else the parent of the parent. The two reads must agree, or a row would
+        // change its path when the summary is read anew. A separate git dir has the odd value of libgit2.
+        const fs::path commonSlash = common / "";
+        const bool bare = readCoreBare(common);
+        WorktreeInfo main;
+        main.name = "main";
+        main.isMain = true;
+        main.bare = bare;
+        main.path = bare ? commonSlash : commonSlash.parent_path().parent_path();
+        readHeadFile(common, common / "HEAD", main);
+        out.push_back(std::move(main));
+
+        std::vector<std::string> names;
+        for (fs::directory_iterator it(common / "worktrees", ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code typeEc;
+            if (it->is_directory(typeEc))
+                names.push_back(it->path().filename().string());
+        }
+        std::sort(names.begin(), names.end());
+        for (const auto& name : names) {
+            const fs::path dir = common / "worktrees" / name;
+            const fs::path gitFile = fs::path(gg::trim(readFileText(dir / "gitdir")));
+            if (gitFile.empty())
+                continue;
+            WorktreeInfo info;
+            info.name = name;
+            info.path = (gitFile.is_relative() ? dir / gitFile : gitFile).parent_path().lexically_normal();
+            info.locked = fs::exists(dir / "locked", ec);
+            if (info.locked)
+                info.lockReason = gg::trim(readFileText(dir / "locked"));
+            info.missing = !fs::exists(info.path, ec);
+            info.prunable = !info.locked && info.missing;
+            readHeadFile(common, dir / "HEAD", info);
+            out.push_back(std::move(info));
+        }
+    } catch (const std::exception&) {
+        out.clear();
+    }
+    return out;
 }
 
 // The form of a repository path in the repository list (as normalizeRepoPath in the app), made on the worker.

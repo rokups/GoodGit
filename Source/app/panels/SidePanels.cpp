@@ -1658,6 +1658,9 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             ImGui::EndPopup();
         }
         if (nodeOpen) {
+            // The summary of a closed repository has its worktrees from the start-up read: the App re-reads them (GG-21).
+            if (!isOpen && info && info->exists)
+                m_session.app().noteExpandedRepository(node.path);
             if (hasWorktrees)
                 drawWorktrees(*worktrees, isOpen, toOpen);
             if (submodules)

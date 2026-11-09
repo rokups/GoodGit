@@ -900,9 +900,14 @@ RequestId Engine::rebasePreview(gg::todo::Todo todo, std::shared_ptr<const gg::t
 SummaryService::SummaryService()
 {
     m_worker = std::make_unique<Worker>("summary", std::filesystem::path(), [this](std::uint64_t) { --m_pending; });
+    m_worktreeWorker = std::make_unique<Worker>("summary-worktrees", std::filesystem::path(), [](std::uint64_t) {});
 }
 
-SummaryService::~SummaryService() { m_worker->stop(); }
+SummaryService::~SummaryService()
+{
+    m_worker->stop();
+    m_worktreeWorker->stop();
+}
 
 void SummaryService::request(const std::vector<std::filesystem::path>& paths)
 {
@@ -942,5 +947,39 @@ std::vector<RepoSummary> SummaryService::poll()
 }
 
 bool SummaryService::idle() const { return m_pending.load() == 0; }
+
+void SummaryService::requestWorktrees(const std::vector<std::string>& keys)
+{
+    Worker::Task task;
+    static std::atomic<std::uint64_t> next{1};
+    task.id = next++;
+    task.fn = [this, keys](Worker&, const gg::CancelToken& token) {
+        std::vector<WorktreeRead> results;
+        for (const auto& key : keys) {
+            if (token.cancelled())
+                break;
+            // An empty list for the key tells the caller that the read ended, so it asks again later.
+            try {
+                const std::filesystem::path path(key);
+                results.push_back(WorktreeRead{key, path, readWorktreesFast(path)});
+            } catch (const std::exception&) {
+                results.push_back(WorktreeRead{key, {}, {}});
+            }
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            for (auto& r : results)
+                m_worktreeResults.push_back(std::move(r));
+        }
+        gg::wakeUi();
+    };
+    m_worktreeWorker->post(std::move(task));
+}
+
+std::vector<SummaryService::WorktreeRead> SummaryService::pollWorktrees()
+{
+    std::lock_guard lock(m_mutex);
+    return std::exchange(m_worktreeResults, {});
+}
 
 } // namespace ggui::core

@@ -440,10 +440,24 @@ public:
     std::vector<RepoSummary> poll();
     bool idle() const;
 
+    // The worktrees of one closed repository, read from its files (GG-21). `key` is the string of the request, so
+    // the caller finds its own entry again; `path` is made from it on the worker.
+    struct WorktreeRead {
+        std::string key;
+        std::filesystem::path path;
+        std::vector<WorktreeInfo> worktrees;
+    };
+    // Reads the worktrees of the repositories `keys` (paths) with readWorktreesFast on a worker of its own, so a slow
+    // summary read does not delay it. A repository without a readable git directory gives an empty list.
+    void requestWorktrees(const std::vector<std::string>& keys);
+    std::vector<WorktreeRead> pollWorktrees();
+
 private:
     std::unique_ptr<Worker> m_worker;
+    std::unique_ptr<Worker> m_worktreeWorker;
     mutable std::mutex m_mutex;
     std::vector<RepoSummary> m_results;
+    std::vector<WorktreeRead> m_worktreeResults;
     std::atomic<int> m_pending{0};
 };
 

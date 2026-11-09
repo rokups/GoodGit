@@ -13,11 +13,13 @@
 #include <core/Engine.hpp>
 #include <core/Services.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -73,6 +75,12 @@ public:
     // one opens; for a linked worktree that is the worktree, not its main repository), else the stored one. Null when
     // there is none yet.
     const core::RepoSummary* repoSummary(const std::filesystem::path& path) const;
+    // The Repositories window tells, in its draw, that the node of the closed repository `path` is expanded (GG-21).
+    // The App then re-reads the worktrees of it from its files: at once, and again each refresh interval
+    // while the window keeps telling. The draw does no file system work. A frame without the call ends it.
+    void noteExpandedRepository(const std::string& path) { m_worktreeNoted.insert(path); }
+    // Tests: the time between two reads of an expanded node (default 5 s, or GGUI_WORKTREE_REFRESH_MS).
+    void setWorktreeRefreshInterval(std::chrono::milliseconds interval) { m_worktreeInterval = interval; }
     // The detail of a repository row (branch, upstream, ahead/behind; the names elided as History badges are);
     // `elided` tells whether a name was shortened. Empty for no summary.
     std::string recentDetail(const core::RepoSummary* info, bool& elided) const;
@@ -188,6 +196,7 @@ private:
     // so that the automatic opening does not wait for them).
     void requestSummaries();
     void pumpSummaries();
+    void pumpWorktrees(); // the refresh of the worktrees of the expanded closed repositories (GG-21)
     void indexSummaries();
     void updateLiveSummary();
     void pumpAskpass();
@@ -240,6 +249,11 @@ private:
     bool m_updateResultTaken = false;
     bool m_autoOpenDone = false;
     bool m_summariesRequested = false;   // requestSummaries() ran at least once
+    // GG-21: the refresh of the worktrees of the closed repositories that are expanded in the Repositories window.
+    std::set<std::string> m_worktreeNoted;                                            // told in the last draw
+    std::map<std::string, std::chrono::steady_clock::time_point> m_worktreeRequested; // expanded: last request time
+    std::set<std::string> m_worktreePending;                                          // requested, no result yet
+    std::chrono::milliseconds m_worktreeInterval{5000};                               // GGUI_WORKTREE_REFRESH_MS (tests)
     bool m_unavailableToastDone = false; // the start-up toast about unusable listed repositories was decided
     bool m_layoutPending = false;
     float m_zoomWheel = 0.0f; // Ctrl+wheel notches not yet turned into whole percents

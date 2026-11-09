@@ -854,6 +854,28 @@ GG_TEST("panels", "repositories: a closed repository expands to its linked workt
     GG_REQUIRE(s.itemExists(wtRow.c_str()));
 }
 
+GG_TEST("panels", "repositories: an expanded closed repository follows its worktrees on disk (GG-21)")
+{
+    s.app.settings().data().repositories.clear();
+    s.app.setWorktreeRefreshInterval(std::chrono::milliseconds(200));
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees, "followwt");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return linkedWorktreeOfSummary(s, repo) != nullptr; }));
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const fs::path added = s.root() / "followwt-added";
+    const std::string addedRow = worktreeRow(row, added.filename().string());
+    GG_CHECK(!s.itemExists(addedRow.c_str()));
+    s.git(repo, {"worktree", "add", "-q", "-b", "followed", added.string()});
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(addedRow.c_str()); }, static_cast<float>(timeBudgetMs(10000) / 1000.0)));
+    s.git(repo, {"worktree", "remove", "--force", added.string()});
+    GG_CHECK(s.waitUntil([&] { return !s.itemExists(addedRow.c_str()); }, static_cast<float>(timeBudgetMs(10000) / 1000.0)));
+}
+
 GG_TEST("panels", "repositories: a worktree row of a closed repository opens on a double-click")
 {
     s.app.settings().data().repositories.clear();
