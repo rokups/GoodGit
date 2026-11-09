@@ -353,20 +353,48 @@ void visibilityMenuItem(HistoryPanel& history, const std::vector<std::string>& r
         toggleRefs(history, refs, visible);
 }
 
-// The context menu of a group row (the last item): the menu item that shows or hides the refs below the row.
-void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::string>& refs)
+// The branches below a group row that its Delete menu acts on.
+struct GroupDelete {
+    Session* session = nullptr;
+    std::vector<std::string> names;         // the branches of the group, in row order
+    std::vector<std::string> upstreamNames; // the branches of `names` that have an upstream
+};
+
+// The context menu of a group row: the menu item that shows or hides the refs below the row.
+// With branches in `del`, the Delete menu follows after a separator.
+void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::string>& refs,
+    const GroupDelete& del = {})
 {
     if (!beginContextMenu(strId))
         return;
     visibilityMenuItem(history, refs, refsState(history, refs).all);
+    if (del.session && !del.names.empty()) {
+        const bool free = del.session->actions().busy().empty();
+        ImGui::Separator();
+        if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
+            if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, free))
+                del.session->showDeleteBranchesDialog(del.names, 0);
+            if (menuItem(ICON_MS_DELETE, "On its remote", nullptr, false, !del.upstreamNames.empty()))
+                del.session->showDeleteBranchesDialog(del.upstreamNames, 1);
+            if (menuItem(ICON_MS_DELETE, "Local and all remotes", nullptr, false, free))
+                del.session->showDeleteBranchesDialog(del.names, 2);
+            ImGui::EndMenu();
+        }
+    }
     ImGui::EndPopup();
 }
 
 // Branches: group rows act on the full refs below them. `refOf` maps a leaf index to its full refs
 // (a local branch has its own ref and its remote-tracking refs).
+// `nameOf` maps a leaf index to its branch name. With `session` and `snapshot` set, the menu of a group of
+// local branches has Delete items.
 struct GroupRefs {
     HistoryPanel& history;
     std::function<std::vector<std::string>(size_t)> refOf;
+    RefKind kind;
+    std::function<std::string(size_t)> nameOf;
+    Session* session = nullptr;
+    const core::Snapshot* snapshot = nullptr;
 };
 
 // The full refs of the leaves under `entries`, in the order they are drawn.
@@ -378,6 +406,20 @@ void collectRefs(const std::vector<NameTree::Entry>& entries, const GroupRefs& g
         else
             for (auto& ref : groupRefs.refOf(e.item))
                 out.push_back(std::move(ref));
+    }
+}
+
+// The branch names of the leaves under `entries`, once each, in the order they are drawn.
+void collectNames(const std::vector<NameTree::Entry>& entries, const GroupRefs& groupRefs, std::vector<std::string>& out)
+{
+    for (const auto& e : entries) {
+        if (e.group) {
+            collectNames(e.children, groupRefs, out);
+            continue;
+        }
+        std::string name = groupRefs.nameOf(e.item);
+        if (std::find(out.begin(), out.end(), name) == out.end())
+            out.push_back(std::move(name));
     }
 }
 
@@ -419,8 +461,19 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             if (hidden)
                 ImGui::PopStyleColor();
         }
-        if (groupRefs)
-            groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below);
+        if (groupRefs) {
+            GroupDelete del;
+            if (groupRefs->kind == RefKind::LocalBranch && groupRefs->session && groupRefs->snapshot) {
+                del.session = groupRefs->session;
+                collectNames(e.children, *groupRefs, del.names);
+                for (const auto& name : del.names) {
+                    const auto* b = groupRefs->snapshot->findBranch(name);
+                    if (b && !b->upstream.empty())
+                        del.upstreamNames.push_back(name);
+                }
+            }
+            groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below, del);
+        }
         if (!fitted.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", e.label.c_str());
         if (open) {
@@ -941,7 +994,8 @@ void BranchesPanel::draw(bool* open)
                 localRefs[i].push_back("refs/remotes/" + r->name);
         }
     }
-    const GroupRefs localGroupRefs{history, [&](size_t index) { return localRefs[index]; }};
+    const GroupRefs localGroupRefs{history, [&](size_t index) { return localRefs[index]; }, RefKind::LocalBranch,
+        [&](size_t index) { return m_snapshot->branches[index].name; }, &m_session, m_snapshot.get()};
     drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
         const BranchRemotes& branchRemoteRefs = localRemotes[index];
@@ -1079,7 +1133,7 @@ void BranchesPanel::draw(bool* open)
         const auto remoteTree = buildTree(list);
         const GroupRefs remoteGroupRefs{history, [&](size_t index) {
             return std::vector<std::string>{"refs/remotes/" + m_snapshot->remoteBranches[index].name};
-        }};
+        }, RefKind::RemoteBranch, [&](size_t index) { return m_snapshot->remoteBranches[index].name; }};
         std::vector<std::string> listed;
         collectRefs(remoteTree, remoteGroupRefs, listed);
         // A filter opens the node that has matches. The state of the user comes back when the filter is cleared.

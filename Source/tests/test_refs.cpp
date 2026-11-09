@@ -1596,4 +1596,100 @@ GG_TEST("refs", "tooltips wait until scrolling stops also when the hover delay h
     GG_CHECK(s.waitUntil([&] { return tipShown(); }, 5.0f));
 }
 
+GG_TEST("refs", "the group menu of local branches deletes the group branches, subgroups included")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* b : {"feature/one", "feature/two", "feature/sub/x", "feature/sub/y", "other/a", "other/b", "solo"})
+        s.git(repo, {"branch", b, "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("feature/one").c_str()); }));
+    GG_REQUIRE(s.itemExists("//Branches/###group_local:feature:"));
+    s.contextMenu("//Branches/###group_local:feature:", "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    // Exactly the branches of the group, in the order of the rows.
+    const std::vector<std::string> expected{"feature/one", "feature/sub/x", "feature/sub/y", "feature/two"};
+    GG_CHECK(form->checkedOptions("branches") == expected);
+    GG_CHECK(s.waitUntil([&] {
+        const ggui::Form* f = s.app.dialogs().current();
+        return f && f->buttons[0].enabled(*f);
+    }, 5.0f));
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] {
+        for (const auto& b : expected)
+            if (refExists(s, repo, "refs/heads/" + b))
+                return false;
+        return true;
+    }));
+    s.settle();
+    for (const char* b : {"other/a", "other/b", "solo", "main"})
+        GG_CHECK(refExists(s, repo, std::string("refs/heads/") + b));
+}
+
+GG_TEST("refs", "the group menu of a nested subgroup deletes only the subgroup branches")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* b : {"feature/one", "feature/two", "feature/sub/x", "feature/sub/y"})
+        s.git(repo, {"branch", b, "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("feature/sub/x").c_str()); }));
+    s.contextMenu("//Branches/###group_local:feature:/###group_local:feature:sub:", "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    const std::vector<std::string> expected{"feature/sub/x", "feature/sub/y"};
+    GG_CHECK(form->checkedOptions("branches") == expected);
+    s.dialogButton("Delete branches", "Cancel");
+}
+
+GG_TEST("refs", "the group menu item On its remote is enabled only when a group branch has an upstream")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* b : {"up/a", "up/b", "none/a", "none/b"})
+        s.git(repo, {"branch", b, "HEAD~1"});
+    s.git(repo, {"push", "-q", "-u", "origin", "up/a"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("none/b").c_str()); }));
+    const auto disabled = [&](const char* group) -> bool {
+        ctx->ItemClick(group, ImGuiMouseButton_Right);
+        ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Delete");
+        ctx->Yield(2);
+        const ImGuiTestItemInfo info = ctx->ItemInfo("//$FOCUSED/On its remote", ImGuiTestOpFlags_NoError);
+        GG_CHECK(info.ID != 0);
+        ctx->PopupCloseAll();
+        ctx->Yield(2);
+        return (info.ItemFlags & ImGuiItemFlags_Disabled) != 0;
+    };
+    GG_CHECK(disabled("//Branches/###group_local:none:"));
+    GG_CHECK(!disabled("//Branches/###group_local:up:"));
+    // The item sends only the branches that have an upstream.
+    s.contextMenu("//Branches/###group_local:up:", "Delete/On its remote");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    const auto checked = form->checkedOptions("branches");
+    GG_CHECK(checked.size() == 1 && checked.front() == "up/a");
+    s.dialogButton("Delete branches", "Cancel");
+}
+
+GG_TEST("refs", "the group menu of remote branches has no Delete item")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"feature/one", "feature/two"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(remoteRow("origin/feature/one").c_str()); }));
+    const char* group = "//Branches/remote_group_origin/origin/###group_remote:origin:feature:";
+    GG_REQUIRE(s.itemExists(group));
+    ctx->ItemClick(group, ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemExists("//$FOCUSED/###history_visibility"));
+    GG_CHECK(!ctx->ItemExists("//$FOCUSED/Delete"));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+}
+
 } // namespace ggtest
