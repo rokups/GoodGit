@@ -578,8 +578,8 @@ GG_TEST("panels", "repositories: the open repository has the mark, an alias make
     GG_CHECK_STR_EQ(panel.openPath(), ggui::normalizeRepoPath(repo.string()));
     const std::string row = repoRow(s, repo);
     GG_CHECK(s.itemExists(row.c_str()));
-    // With only its main worktree it is a plain row: no expand arrow.
-    GG_CHECK(!(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    // With only its main worktree it is still a node (GG-15): the expansion is empty.
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
     GG_CHECK(panel.selectedPath().empty());
     // The row of the open repository is the one compared for the mark; a double-click on it keeps the session.
     GG_REQUIRE(s.app.settings().data().repositories.size() == 1);
@@ -756,9 +756,9 @@ GG_TEST("panels", "repositories: the open repository expands to its worktrees")
     const std::string row = repoRow(s, repo);
     const std::string plainRow = repoRow(s, plain);
     GG_REQUIRE(s.itemExists(row.c_str()) && s.itemExists(plainRow.c_str()));
-    // Only the open repository has an expand arrow, and its node is closed by default.
+    // Each repository has an expand arrow (GG-15), and its node is closed by default.
     GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
-    GG_CHECK(!(ctx->ItemInfo(plainRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    GG_CHECK(ctx->ItemInfo(plainRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
     for (const auto& w : snapshot->worktrees)
         GG_CHECK(!s.itemExists(worktreeRow(row, w.name).c_str()));
     // A click on the label selects the row and does not open the node; so does a double-click.
@@ -811,6 +811,86 @@ GG_TEST("panels", "repositories: a worktree row selects on a click and opens on 
     GG_CHECK(fs::equivalent(s.session()->path(), repo));
     ctx->ItemDoubleClick(wtRow.c_str());
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), s.root() / wt1); }));
+}
+
+// The linked worktree of a closed repository that has a summary with worktrees (nullptr when there is none).
+static const ggui::core::WorktreeInfo* linkedWorktreeOfSummary(Scenario& s, const fs::path& repo)
+{
+    const auto* info = s.app.repoSummary(fs::path(ggui::normalizeRepoPath(repo.string())));
+    if (!info)
+        return nullptr;
+    for (const auto& w : info->worktrees)
+        if (!w.isMain)
+            return &w;
+    return nullptr;
+}
+
+GG_TEST("panels", "repositories: a closed repository expands to its linked worktree")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees, "closedwt");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return linkedWorktreeOfSummary(s, repo) != nullptr; }));
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    const auto* linked = linkedWorktreeOfSummary(s, repo);
+    GG_REQUIRE(linked);
+    const std::string name = linked->name;
+    const std::string wtRow = worktreeRow(row, name);
+    GG_CHECK(!s.itemExists(wtRow.c_str()));
+    openRepoNode(ctx, row);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+}
+
+GG_TEST("panels", "repositories: a worktree row of a closed repository opens on a double-click")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees, "closedopen");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return linkedWorktreeOfSummary(s, repo) != nullptr; }));
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    const fs::path linkedPath = linkedWorktreeOfSummary(s, repo)->path;
+    const std::string wtRow = worktreeRow(row, linkedWorktreeOfSummary(s, repo)->name);
+    openRepoNode(ctx, row);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+    ctx->ItemClick(wtRow.c_str());
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.session()->repositories().selectedPath(), linkedPath.string());
+    GG_CHECK(fs::equivalent(s.session()->path(), first));
+    ctx->ItemDoubleClick(wtRow.c_str());
+    GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), linkedPath); }));
+}
+
+GG_TEST("panels", "repositories: a repository without worktrees expands to nothing")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path plain = s.fixture(Recipe::Linear, "plain");
+    GG_REQUIRE(s.openRepository(plain));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return s.app.repoSummary(fs::path(ggui::normalizeRepoPath(plain.string()))) != nullptr; }));
+    const std::string row = repoRow(s, plain);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    openRepoNode(ctx, row);
+    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Opened);
+    // No child row: neither a worktree nor a submodule.
+    const auto* info = s.app.repoSummary(fs::path(ggui::normalizeRepoPath(plain.string())));
+    GG_REQUIRE(info);
+    GG_CHECK(info->submodules.empty());
+    for (const auto& w : info->worktrees)
+        GG_CHECK(!s.itemExists(worktreeRow(row, w.name).c_str()));
+    GG_CHECK(s.session()->snapshot() != nullptr);
 }
 
 // The reference of the row of a submodule below the row of its repository (or of its parent submodule).
@@ -1027,7 +1107,7 @@ GG_TEST("panels", "repositories: opening a linked worktree directly lists its ma
     GG_CHECK(fs::equivalent(s.app.settings().data().recent.front(), wt1));
 }
 
-GG_TEST("panels", "repositories: a worktree entry in the list stays, opens on a double-click and is a plain row")
+GG_TEST("panels", "repositories: a worktree entry in the list stays and opens on a double-click")
 {
     s.app.settings().data().repositories.clear();
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
@@ -1038,7 +1118,8 @@ GG_TEST("panels", "repositories: a worktree entry in the list stays, opens on a 
     const std::string row = repoRow(s, repo);
     const std::string wtEntry = repoRow(s, wt1);
     GG_REQUIRE(s.itemExists(row.c_str()) && s.itemExists(wtEntry.c_str()));
-    GG_CHECK(!(ctx->ItemInfo(wtEntry.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    // The entry of a worktree is a node like any repository (GG-15). Its summary lists the main and the linked worktrees.
+    GG_CHECK(ctx->ItemInfo(wtEntry.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
     ctx->ItemDoubleClick(wtEntry.c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && fs::equivalent(s.session()->path(), wt1); }));
     s.showPanel("Repositories");

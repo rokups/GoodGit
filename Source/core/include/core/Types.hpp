@@ -546,6 +546,7 @@ struct RepoSummary {
     std::string upstreamRemote;
     int ahead = 0, behind = 0;
     std::vector<SubmoduleInfo> submodules;
+    std::vector<WorktreeInfo> worktrees; // the main one first, then the linked ones; none is current
 };
 
 // ---- Formatting helpers ------------------------------------------------------------------------

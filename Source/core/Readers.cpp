@@ -239,6 +239,60 @@ DescendantsResult readDescendants(git_repository* repo, const Oid& commit, int m
     return DescendantsResult::None;
 }
 
+// The main worktree first, then the linked ones. `worktreeId` is the id of the worktree that `repo` is
+// ("main" for the main one): it sets isCurrent. An empty id marks none as current.
+static std::vector<WorktreeInfo> readWorktrees(git_repository* repo, const fs::path& commonDir, const std::string& worktreeId)
+{
+    std::vector<WorktreeInfo> out;
+    WorktreeInfo main;
+    main.name = "main";
+    main.isMain = true;
+    const fs::path common = commonDir;
+    const bool commonIsBare = [&] {
+        Config cfg = repositoryConfig(repo);
+        auto b = configBool(cfg.get(), "core.bare");
+        return b.value_or(false);
+    }();
+    main.bare = commonIsBare;
+    main.path = commonIsBare ? common : common.parent_path().parent_path(); // common ends with a separator
+    main.branch = headFileBranch(common / "HEAD", main.head);
+    if (!main.branch.empty()) {
+        git_oid oid;
+        if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + main.branch).c_str()) == 0)
+            main.head = toOid(oid);
+    }
+    main.isCurrent = worktreeId == "main";
+    out.push_back(main);
+
+    StrArray names;
+    git_worktree_list(&names.arr, repo); // on failure the list stays empty
+    for (size_t i = 0; i < names.arr.count; ++i) {
+        git_worktree* raw = nullptr;
+        if (git_worktree_lookup(&raw, repo, names.arr.strings[i]) != 0)
+            continue;
+        Worktree wt(raw);
+        WorktreeInfo info;
+        info.name = names.arr.strings[i];
+        info.path = fs::path(git_worktree_path(wt.get())).lexically_normal();
+        Buf reason;
+        info.locked = git_worktree_is_locked(&reason.buf, wt.get()) > 0;
+        info.lockReason = gg::trim(reason.str());
+        info.prunable = !info.locked && git_worktree_validate(wt.get()) != 0;
+        git_error_clear();
+        std::error_code ec;
+        info.missing = !fs::exists(info.path, ec);
+        info.branch = headFileBranch(common / "worktrees" / info.name / "HEAD", info.head);
+        if (!info.branch.empty()) {
+            git_oid oid;
+            if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + info.branch).c_str()) == 0)
+                info.head = toOid(oid);
+        }
+        info.isCurrent = worktreeId == info.name;
+        out.push_back(std::move(info));
+    }
+    return out;
+}
+
 SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const gg::CancelToken& cancel)
 {
     gg::assertNotUiThread("readSnapshot");
@@ -289,54 +343,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
     }
 
     // Worktrees (needed for branch → worktree mapping)
-    {
-        WorktreeInfo main;
-        main.name = "main";
-        main.isMain = true;
-        const fs::path common = snap->commonDir;
-        const bool commonIsBare = [&] {
-            Config cfg = repositoryConfig(repo);
-            auto b = configBool(cfg.get(), "core.bare");
-            return b.value_or(false);
-        }();
-        main.bare = commonIsBare;
-        main.path = commonIsBare ? common : common.parent_path().parent_path(); // common ends with a separator
-        main.branch = headFileBranch(common / "HEAD", main.head);
-        if (!main.branch.empty()) {
-            git_oid oid;
-            if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + main.branch).c_str()) == 0)
-                main.head = toOid(oid);
-        }
-        main.isCurrent = snap->worktreeId == "main";
-        snap->worktrees.push_back(main);
-
-        StrArray names;
-        git_worktree_list(&names.arr, repo); // on failure the list stays empty
-        for (size_t i = 0; i < names.arr.count; ++i) {
-            git_worktree* raw = nullptr;
-            if (git_worktree_lookup(&raw, repo, names.arr.strings[i]) != 0)
-                continue;
-            Worktree wt(raw);
-            WorktreeInfo info;
-            info.name = names.arr.strings[i];
-            info.path = fs::path(git_worktree_path(wt.get())).lexically_normal();
-            Buf reason;
-            info.locked = git_worktree_is_locked(&reason.buf, wt.get()) > 0;
-            info.lockReason = gg::trim(reason.str());
-            info.prunable = !info.locked && git_worktree_validate(wt.get()) != 0;
-            git_error_clear();
-            std::error_code ec;
-            info.missing = !fs::exists(info.path, ec);
-            info.branch = headFileBranch(common / "worktrees" / info.name / "HEAD", info.head);
-            if (!info.branch.empty()) {
-                git_oid oid;
-                if (git_reference_name_to_id(&oid, repo, ("refs/heads/" + info.branch).c_str()) == 0)
-                    info.head = toOid(oid);
-            }
-            info.isCurrent = snap->worktreeId == info.name;
-            snap->worktrees.push_back(std::move(info));
-        }
-    }
+    snap->worktrees = readWorktrees(repo, snap->commonDir, snap->worktreeId);
 
     if (!snap->bare)
         snap->submodules = readSubmodules(repo, true);
@@ -1838,6 +1845,8 @@ RepoSummary readSummary(const fs::path& path)
     }
     // No index scan: a summary is read for every listed repository.
     s.submodules = readSubmodules(repo.get(), false);
+    // The worktrees too (GG-15): the row of a listed repository has them below it, as it has its submodules.
+    s.worktrees = readWorktrees(repo.get(), fs::path(git_repository_commondir(repo.get())).lexically_normal(), std::string());
     git_error_clear();
     return s;
 }

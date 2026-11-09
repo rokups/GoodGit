@@ -855,17 +855,21 @@ the panel without touching the repository.
   shows only here: the toolbar switcher, Welcome and the title bar keep the deduplicated folder names.
   A click selects a row; a double-click, or Enter while the panel has the focus, opens the repository in
   this window. The open repository has the text colour of the current branch and is not opened again.
-  When it has more than its main worktree its row is a tree node, closed by default (the arrow toggles
-  it, a click on the label does not), with one row per worktree, `worktree_<name>/###row` in the row's
+  The row of every usable repository is a tree node (GG-15), closed by default (the arrow toggles
+  it, a click on the label does not). A repository with no worktrees and no submodules has an empty
+  expansion. A repository that has a warning (missing, not a repository, unreadable) is a plain row.
+  Below the node of a repository with more than its main worktree, the open one or a listed one, is one row per worktree, `worktree_<name>/###row` in the row's
   scope: the name, "(main)", then the branch or the short ID; the current one has the text colour of the
   current branch, a missing one is dimmed; a double-click or Enter opens a worktree, not the current or
   a missing one. A linked worktree that this window shows is not a repository entry of its own: the
   application adds its main repository to the list (when that one has a `.git` entry and is not in the
   list yet; a dropped linked worktree folder is not added itself), and the row of the main repository is the open row, with the worktrees below it and the
-  current worktree marked. A worktree entry that is in the list stays as a plain row (no automatic
-  removal); a double-click on it opens that worktree. When the main repository is bare, or has no `.git`
+  current worktree marked. A worktree entry that is in the list stays (no automatic
+  removal). Its row is a node as for any repository (GG-15), and its worktrees come from its summary: the main
+  and the linked ones. A double-click on it opens that worktree. When the main repository is bare, or has no `.git`
   entry (a `--separate-git-dir` or submodule repository), the worktree folder is the entry and the open row. The Recent list gets the worktree folder as before.
-  The other repositories have no arrow. Context (repository rows): Open (disabled on the
+  The worktrees of a listed repository come from its summary, which the background worker reads with the
+  submodules (at start-up and when a repository closes or opens), not from the file system in the draw loop. Context (repository rows): Open (disabled on the
   open one) · Set alias… · Copy path · Remove from list (also the open one; it comes back without its
   alias at its next open).
   Drag and drop: a repository row (not a worktree row) dragged onto a group node goes into that group:

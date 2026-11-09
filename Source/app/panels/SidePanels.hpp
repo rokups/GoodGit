@@ -103,7 +103,9 @@ public:
 
 private:
     void drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen);
-    void drawWorktrees(std::string& toOpen);
+    // The worktree rows of a repository: the live list of the open one, else the list of its summary (GG-15).
+    const std::vector<core::WorktreeInfo>* worktreesOf(const std::string& path) const;
+    void drawWorktrees(const std::vector<core::WorktreeInfo>& list, std::string& toOpen);
     // The submodules of a repository (`path` is a list key): the snapshot list of the open one, else the summary list of a listed one, else null.
     const std::vector<core::SubmoduleInfo>* submodulesOf(const std::string& path) const;
     // The submodules as rows (nested ones as nodes). `toOpen` gets the path of the one that is double-clicked.
@@ -119,6 +121,7 @@ private:
     std::string m_openPath;
     std::string m_sessionPath;                  // the normalised path of the session, as of the last frame drawn
     std::set<std::string> m_openableSubmodules; // the paths of the submodule rows that open, as of the last frame drawn
+    std::set<std::string> m_openableWorktrees;  // the paths of the worktree rows that open, as of the last frame drawn
     std::map<std::string, std::string> m_rowTexts;
 };
 

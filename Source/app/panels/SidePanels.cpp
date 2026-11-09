@@ -1543,9 +1543,10 @@ static bool selectableTreeNode(const char* label, const std::string& detail, boo
 // A group is a tree node, open by default; a repository is a row. `toOpen` gets the path of the one
 // double-clicked. Both ids come from the group path or the label ('/' becomes ':'); equal labels
 // among siblings get a "#n" suffix. The row of the open repository (for a linked worktree: of its main
-// repository, GG-15; a worktree entry in the list is a plain row) is a node, closed by default, with
-// its worktrees below it when it has more than the main one. A repository with submodules is a node too:
-// its submodules follow the worktrees (GG-50). A repository row is a drag source and a
+// repository, GG-15; a worktree entry in the list is a node like any other repository) is a node, closed by default, with
+// its worktrees below it when it has more than the main one. Every usable repository is a node (GG-15): a
+// listed one has the worktrees of its summary, and its expansion is empty when it has none. Its
+// submodules follow the worktrees (GG-50). A repository row is a drag source and a
 // group node a drop target (repoDropTarget): the drop puts the repository in the group.
 void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::string& toOpen)
 {
@@ -1571,18 +1572,21 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         // The open repository has the text colour of the current branch; the selected look is the selection only.
         const bool isOpen = node.path == m_openPath;
         const auto& snap = m_session.snapshot();
-        const bool hasWorktrees = isOpen && snap
-            && (snap->worktrees.size() > 1 || (snap->worktrees.size() == 1 && !snap->worktrees.front().isMain));
+        const core::RepoSummary* info = m_session.app().repoSummary(std::filesystem::path(node.path));
+        const std::vector<core::WorktreeInfo>* worktrees = worktreesOf(node.path);
+        const bool hasWorktrees = worktrees
+            && (worktrees->size() > 1 || (worktrees->size() == 1 && !worktrees->front().isMain));
         const auto* submodules = submodulesOf(node.path);
-        const bool hasChildren = hasWorktrees || (submodules && !submodules->empty());
+        const bool hasContent = hasWorktrees || (submodules && !submodules->empty());
+        // A repository is always a node (GG-15), so its worktrees are one click away: the expansion of one
+        // without worktrees and submodules is empty. Only a repository with a warning is a plain row.
+        const std::string warnPrefix = hasContent ? std::string() : summaryWarnPrefix(info);
+        const bool hasChildren = hasContent || warnPrefix.empty();
         const bool selected = !m_selectedWorktree && node.path == m_selected;
         const std::string label = node.label + "###row";
         // The detail after the label, dimmed, as in the Recent menu (a group has none).
-        const core::RepoSummary* info = m_session.app().repoSummary(std::filesystem::path(node.path));
         bool elided = false;
         const std::string detail = m_session.app().recentDetail(info, elided);
-        // A repository that is missing, not a repository or unreadable has the warning triangle before its name.
-        const std::string warnPrefix = hasChildren ? std::string() : summaryWarnPrefix(info);
         const std::string rowText = warnPrefix + (detail.empty() ? node.label : node.label + "  " + detail);
         m_rowTexts[node.path] = rowText;
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
@@ -1646,7 +1650,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         }
         if (nodeOpen) {
             if (hasWorktrees)
-                drawWorktrees(toOpen);
+                drawWorktrees(*worktrees, toOpen);
             if (submodules)
                 drawSubmodules(*submodules, toOpen);
             ImGui::TreePop();
@@ -1697,11 +1701,11 @@ void RepositoriesPanel::repoDropTarget(const std::string& group)
     ImGui::EndDragDropTarget();
 }
 
-// The worktrees of the open repository as rows below its node. The current one has the text colour of the
+// The worktrees of a repository as rows below its node. The current one has the text colour of the
 // current branch and a missing one is dimmed. A double-click opens a worktree, not the current or a missing one.
-void RepositoriesPanel::drawWorktrees(std::string& toOpen)
+void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& list, std::string& toOpen)
 {
-    for (const auto& w : m_session.snapshot()->worktrees) {
+    for (const auto& w : list) {
         // A missing or prunable worktree has the warning triangle before its name.
         const std::string warnPrefix = warnIconPrefix(w.missing || w.prunable);
         const std::string customName = m_session.worktreeCustomName(w);
@@ -1722,12 +1726,25 @@ void RepositoriesPanel::drawWorktrees(std::string& toOpen)
             m_selectedWorktree = true;
         }
         ImGui::PopStyleColor();
+        if (!w.isCurrent && !w.missing)
+            m_openableWorktrees.insert(path);
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !w.isCurrent && !w.missing)
             toOpen = path;
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", (customName.empty() ? path : path + "\nId: " + w.name).c_str());
         ImGui::PopID();
     }
+}
+
+const std::vector<core::WorktreeInfo>* RepositoriesPanel::worktreesOf(const std::string& path) const
+{
+    // `path` is a list key already: no file system call in the draw loop.
+    if (path == m_openPath) {
+        const auto& snap = m_session.snapshot();
+        return snap ? &snap->worktrees : nullptr;
+    }
+    const core::RepoSummary* info = m_session.app().repoSummary(std::filesystem::path(path));
+    return info ? &info->worktrees : nullptr;
 }
 
 const std::vector<core::SubmoduleInfo>* RepositoriesPanel::submodulesOf(const std::string& path) const
@@ -1849,6 +1866,7 @@ void RepositoriesPanel::draw(bool* open)
         m_openPath = sessionPath; // before the first snapshot
     m_rowTexts.clear();
     m_openableSubmodules.clear();
+    m_openableWorktrees.clear();
     m_sessionPath = sessionPath;
     const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
     std::string toOpen;
@@ -1864,11 +1882,8 @@ void RepositoriesPanel::draw(bool* open)
                 toOpen = m_selected;
         } else if (m_openableSubmodules.count(m_selected)) {
             toOpen = m_selected; // an initialized submodule that is not open, as with a double-click
-        } else if (const auto& snap = m_session.snapshot()) {
-            // The current worktree and a missing one do not open, as with a double-click.
-            for (const auto& w : snap->worktrees)
-                if (w.path.string() == m_selected && !w.isCurrent && !w.missing)
-                    toOpen = m_selected;
+        } else if (m_openableWorktrees.count(m_selected)) {
+            toOpen = m_selected; // not the current worktree and not a missing one, as with a double-click
         }
     }
     // Not the one the session shows: opening it again would replace the session and cancel its work. The
