@@ -469,6 +469,8 @@ the History panel list newly conflicted commits. See §5, decision R1.
   filter opens a node that has matches. Clearing the filter restores the earlier state.
 - **K Tags:** Create tag, filter, Show or Hide in History (menu item), Reveal, Copy, Delete.
   **N** Annotated tags (message), push tag, delete a remote tag.
+  **N** Tags with a "/" in the name group in folders as local branches do.
+  A folder has Show/Hide in History and Delete ▸ Local / On <remote> for the tags below it.
   **N** Tag rows select as branch rows do. Two or more tags: Show/Hide in History, Delete ▸ Local / On <remote>, in the dialog "Delete tags".
 - **M Workspaces → Worktrees:** native `git worktree`: list (stale, locked, main), Add…,
   Open here, Open in new window, Open directory, Copy name/path, Reveal HEAD, Remove….

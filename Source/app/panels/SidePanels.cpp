@@ -353,9 +353,44 @@ void visibilityMenuItem(HistoryPanel& history, const std::vector<std::string>& r
         toggleRefs(history, refs, visible);
 }
 
+// The Delete submenu of tags: Local, and On <remote> for each remote that has some of them.
+// `names` are the tags in the order of the rows, once each. A remote-only tag is not local.
+// The caller adds the separator before the submenu.
+void tagsDeleteMenu(Session& session, const core::Snapshot& snap, const std::vector<std::string>& names)
+{
+    std::vector<std::string> localNames;
+    for (const auto& n : names)
+        if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == n; }))
+            localNames.push_back(n);
+    const bool free = session.actions().busy().empty();
+    if (!beginMenu(ICON_MS_DELETE, "Delete", free))
+        return;
+    if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, !localNames.empty()))
+        session.showDeleteTagsDialog(localNames, "");
+    ImGui::Separator();
+    const auto& remoteTags = session.remoteTags();
+    for (const auto& r : snap.remotes) {
+        // The tags that the remote has. A remote that is not read yet (or failed) may have any of them.
+        auto it = remoteTags.find(r.name);
+        const bool known = it != remoteTags.end() && it->second.ok;
+        std::vector<std::string> onRemote;
+        for (const auto& n : names)
+            if (!known || it->second.tags.count(n))
+                onRemote.push_back(n);
+        if (onRemote.empty())
+            continue;
+        const std::string label = "On " + r.name + (it == remoteTags.end() ? " (checking...)" : known ? "" : " (not checked)");
+        if (menuItem(ICON_MS_DELETE, label.c_str()))
+            session.showDeleteTagsDialog(onRemote, r.name);
+    }
+    ImGui::EndMenu();
+}
+
 // The branches below a group row that its Delete menu acts on.
 struct GroupDelete {
     Session* session = nullptr;
+    const core::Snapshot* snapshot = nullptr; // used with `tags`
+    bool tags = false;                      // the group has tags (local or remote-only) and `names` are tag names
     bool remote = false;                    // the group has remote-tracking branches; `names` are "origin/x"
     std::vector<std::string> names;         // the branches of the group, in row order
     std::vector<std::string> upstreamNames; // the branches of `names` that have an upstream
@@ -368,8 +403,14 @@ void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::
 {
     if (!beginContextMenu(strId))
         return;
-    visibilityMenuItem(history, refs, refsState(history, refs).all);
-    if (del.session && !del.names.empty() && del.remote) {
+    // A group of remote-only tags has no ref that History shows.
+    if (!refs.empty())
+        visibilityMenuItem(history, refs, refsState(history, refs).all);
+    if (del.session && !del.names.empty() && del.tags && del.snapshot) {
+        if (!refs.empty())
+            ImGui::Separator();
+        tagsDeleteMenu(*del.session, *del.snapshot, del.names);
+    } else if (del.session && !del.names.empty() && del.remote) {
         const bool free = del.session->actions().busy().empty();
         ImGui::Separator();
         if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
@@ -479,6 +520,11 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
                     if (b && !b->upstream.empty())
                         del.upstreamNames.push_back(name);
                 }
+            } else if (groupRefs->kind == RefKind::Tag && groupRefs->session && groupRefs->snapshot) {
+                del.session = groupRefs->session;
+                del.snapshot = groupRefs->snapshot;
+                del.tags = true;
+                collectNames(e.children, *groupRefs, del.names);
             } else if (groupRefs->kind == RefKind::RemoteBranch && groupRefs->session) {
                 del.session = groupRefs->session;
                 del.remote = true;
@@ -1275,43 +1321,19 @@ static bool tagMultiMenu(Session& session, const core::Snapshot& snap, const Ref
     // The selected tags in the order of the rows, once each.
     std::vector<std::string> names;
     std::vector<std::string> selectedRefs;
-    std::vector<std::string> localNames;
     for (const auto& row : sel.drawn) {
         if (row.first != RefKind::Tag || !sel.names.count(row.second)
             || std::find(names.begin(), names.end(), row.second) != names.end())
             continue;
         names.push_back(row.second);
         // A remote-only tag has no local ref, so History cannot show or hide it.
-        if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == row.second; })) {
-            localNames.push_back(row.second);
+        if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == row.second; }))
             selectedRefs.push_back("refs/tags/" + row.second);
-        }
     }
     auto& history = session.history();
-    const bool free = session.actions().busy().empty();
     visibilityMenuItem(history, selectedRefs, refsState(history, selectedRefs).all);
     ImGui::Separator();
-    if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
-        if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, !localNames.empty()))
-            session.showDeleteTagsDialog(localNames, "");
-        ImGui::Separator();
-        const auto& remoteTags = session.remoteTags();
-        for (const auto& r : snap.remotes) {
-            // The tags that the remote has. A remote that is not read yet (or failed) may have any of them.
-            auto it = remoteTags.find(r.name);
-            const bool known = it != remoteTags.end() && it->second.ok;
-            std::vector<std::string> onRemote;
-            for (const auto& n : names)
-                if (!known || it->second.tags.count(n))
-                    onRemote.push_back(n);
-            if (onRemote.empty())
-                continue;
-            const std::string label = "On " + r.name + (it == remoteTags.end() ? " (checking...)" : known ? "" : " (not checked)");
-            if (menuItem(ICON_MS_DELETE, label.c_str()))
-                session.showDeleteTagsDialog(onRemote, r.name);
-        }
-        ImGui::EndMenu();
-    }
+    tagsDeleteMenu(session, snap, names);
     return true;
 }
 
@@ -1390,20 +1412,30 @@ void TagsPanel::draw(bool* open)
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    const bool filtering = !m_filter.empty();
+    // A row has its ID directly under the window ("tag_<name>") in each folder.
+    const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
     // Only the list scrolls: the controls above stay put.
     beginList();
     // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
     m_session.requestRemoteTagsIfStale();
     const auto& remoteTags = m_session.remoteTags();
-    for (const auto& t : m_snapshot->tags) {
-        if (!containsNoCase(t.name, m_filter))
-            continue;
+    std::vector<std::pair<size_t, std::string>> localTags;
+    for (size_t i = 0; i < m_snapshot->tags.size(); ++i)
+        if (containsNoCase(m_snapshot->tags[i].name, m_filter))
+            localTags.push_back({i, m_snapshot->tags[i].name});
+    // A folder row acts on the tags below it. Its menu has the same items as the menu of a selection of tags.
+    const GroupRefs tagGroupRefs{history, [&](size_t index) { return std::vector<std::string>{"refs/tags/" + m_snapshot->tags[index].name}; },
+        RefKind::Tag, [&](size_t index) { return m_snapshot->tags[index].name; }, &m_session, m_snapshot.get()};
+    drawTree(buildTree(localTags), "tag:", filtering, [&](size_t index, const std::string& shortName) {
+        const auto& t = m_snapshot->tags[index];
         const std::string full = "refs/tags/" + t.name;
+        ImGui::PushOverrideID(windowId);
         // The hover button does what the menu's Reveal does.
         const RowAction acts[] = {
             {ICON_MS_MY_LOCATION, "act_reveal", "Reveal"},
         };
-        const RowEvents events = visibilityRow("tag_" + t.name, t.name, history.refVisible(full), false,
+        const RowEvents events = visibilityRow("tag_" + t.name, shortName, history.refVisible(full), false,
             theme().palette().tagText, false, acts, {}, nullptr, nullptr, true, selection.add(RefKind::Tag, t.name));
         selection.click(events.clicked, RefKind::Tag, t.name);
         const std::vector<std::string> fullRefs{full};
@@ -1412,9 +1444,14 @@ void TagsPanel::draw(bool* open)
         if (events.action == 0)
             m_session.revealCommit(t.target);
         if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && beginTooltip()) {
-            // The message (it can run to several paragraphs), wrapped and cut after the line limit.
+            // The full name when a folder cuts it, then the message (it can run to several paragraphs),
+            // wrapped and cut after the line limit.
+            if (shortName != t.name)
+                ImGui::TextUnformatted(t.name.c_str());
             tooltipText(t.message);
             ImGui::EndTooltip();
+        } else if (shortName != t.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            tooltip("%s", t.name.c_str());
         }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
             if (!tagMultiMenu(m_session, *m_snapshot, m_selection, t.name)) {
@@ -1424,30 +1461,40 @@ void TagsPanel::draw(bool* open)
             }
             ImGui::EndPopup();
         }
-    }
-    // Tags only on remotes: listed dimmed, with where they are.
-    std::map<std::string, std::vector<std::string>> remoteOnly;
+        ImGui::PopID();
+    }, &tagGroupRefs);
+    // Tags only on remotes are dimmed and show where they are. They group in folders as the local tags do.
+    std::map<std::string, std::vector<std::string>> remoteOnlyMap;
     for (const auto& [remote, r] : remoteTags)
         for (const auto& name : r.tags)
             if (containsNoCase(name, m_filter)
                 && std::none_of(m_snapshot->tags.begin(), m_snapshot->tags.end(), [&](const auto& t) { return t.name == name; }))
-                remoteOnly[name].push_back(remote);
-    for (const auto& [name, remotes] : remoteOnly) {
+                remoteOnlyMap[name].push_back(remote);
+    const std::vector<std::pair<std::string, std::vector<std::string>>> remoteOnly(remoteOnlyMap.begin(), remoteOnlyMap.end());
+    std::vector<std::pair<size_t, std::string>> remoteOnlyItems;
+    for (size_t i = 0; i < remoteOnly.size(); ++i)
+        remoteOnlyItems.push_back({i, remoteOnly[i].first});
+    // These tags have no local ref. A folder of them has no Show or Hide item.
+    const GroupRefs remoteTagGroupRefs{history, [](size_t) { return std::vector<std::string>{}; }, RefKind::Tag,
+        [&](size_t index) { return remoteOnly[index].first; }, &m_session, m_snapshot.get()};
+    drawTree(buildTree(remoteOnlyItems), "rtag:", filtering, [&](size_t index, const std::string& shortName) {
+        const auto& [name, remotes] = remoteOnly[index];
         std::string where;
         for (const auto& r : remotes)
             where += (where.empty() ? "" : ", ") + r;
         const std::string id = "rtag_" + rowId(name);
+        ImGui::PushOverrideID(windowId);
         ImGui::PushID(id.c_str());
         ImGui::TextDisabled(ICON_MS_CLOUD);
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
         // The item spans the room to the list's edge, as the rows of the remote-tracking branches do.
-        const bool pressed = selectableText(name + "  (" + where + ")", id, selection.add(RefKind::Tag, name), ImGuiSelectableFlags_None,
+        const bool pressed = selectableText(shortName + "  (" + where + ")", id, selection.add(RefKind::Tag, name), ImGuiSelectableFlags_None,
             ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 0.0f));
         selection.click(pressed && pressSource() == PressSource::Mouse, RefKind::Tag, name);
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("Only on %s: fetch to get it here", where.c_str());
+            tooltip("%sOnly on %s: fetch to get it here", shortName != name ? (name + "\n").c_str() : "", where.c_str());
         if (beginContextMenu("##rtag_menu")) {
             if (!tagMultiMenu(m_session, *m_snapshot, m_selection, name)) {
                 if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
@@ -1458,7 +1505,8 @@ void TagsPanel::draw(bool* open)
             ImGui::EndPopup();
         }
         ImGui::PopID();
-    }
+        ImGui::PopID();
+    }, &remoteTagGroupRefs);
     m_selection.drawn.swap(selection.drawn);
     endList();
     ImGui::End();

@@ -49,7 +49,11 @@ fs::path repoWithRemoteBranches(Scenario& s, const std::vector<std::string>& nam
     return repo;
 }
 
-std::string tagRow(const std::string& name) { return "//Tags/tag_" + name + "/###tag_" + name; }
+std::string tagRow(std::string name)
+{
+    std::replace(name.begin(), name.end(), '/', ':'); // row IDs have ':' for '/'
+    return "//Tags/tag_" + name + "/###tag_" + name;
+}
 
 bool refExists(Scenario& s, const fs::path& repo, const std::string& ref)
 {
@@ -1755,6 +1759,145 @@ GG_TEST("refs", "the group menu of a nested remote subgroup acts only on the sub
     GG_REQUIRE(form != nullptr);
     GG_CHECK(form->checkedOptions("branches") == (std::vector<std::string>{"origin/feature/sub/x", "origin/feature/sub/y"}));
     s.dialogButton("Forget", "Cancel");
+}
+
+// A repository with the tags release/1.0, release/2.0 and plain (no slash), the first and the third on origin.
+static fs::path repoWithTagFolder(Scenario& s)
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"release/1.0", "release/2.0", "plain"})
+        s.git(repo, {"tag", name});
+    s.git(repo, {"push", "-q", "origin", "release/1.0", "plain"});
+    return repo;
+}
+
+GG_TEST("refs", "Tags: tags with a slash group in folders; the filter opens a closed folder")
+{
+    const fs::path repo = repoWithTagFolder(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("plain").c_str()); }));
+    GG_CHECK(s.itemExists("//Tags/###group_tag:release:"));
+    GG_CHECK_STR_EQ(s.itemText(tagRow("release/1.0").c_str()), "1.0");
+    GG_CHECK_STR_EQ(s.itemText(tagRow("release/2.0").c_str()), "2.0");
+    GG_CHECK_STR_EQ(s.itemText(tagRow("plain").c_str()), "plain");
+    // A closed folder hides its rows; filtering opens it again.
+    ctx->ItemClick("//Tags/###group_tag:release:");
+    ctx->Yield(2);
+    GG_CHECK(!s.itemExists(tagRow("release/1.0").c_str()));
+    GG_CHECK(s.itemExists(tagRow("plain").c_str()));
+    ctx->ItemInputValue("//Tags/##tag_filter", "2.0");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(tagRow("release/2.0").c_str()));
+    GG_CHECK(!s.itemExists(tagRow("release/1.0").c_str()));
+    GG_CHECK(!s.itemExists(tagRow("plain").c_str()));
+    // Clear the filter and open the folder again, so that the rows of the folder are drawn.
+    ctx->ItemInputValue("//Tags/##tag_filter", "");
+    ctx->Yield(2);
+    if (!s.itemExists(tagRow("release/1.0").c_str()))
+        ctx->ItemClick("//Tags/###group_tag:release:");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(tagRow("release/1.0").c_str()));
+}
+
+GG_TEST("refs", "the folder menu of tags shows or hides the tags below it; Ctrl shows only these")
+{
+    const fs::path repo = repoWithTagFolder(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/###group_tag:release:"); }));
+    const auto& history = s.session()->history();
+    const auto visible = [&](const char* name) { return history.refVisible(std::string("refs/tags/") + name); };
+    GG_CHECK(visible("release/1.0") && visible("release/2.0") && visible("plain"));
+    s.contextMenu("//Tags/###group_tag:release:", "###history_visibility");
+    GG_CHECK(s.waitUntil([&] { return !visible("release/1.0") && !visible("release/2.0"); }));
+    GG_CHECK(visible("plain"));
+    s.contextMenu("//Tags/###group_tag:release:", "###history_visibility");
+    GG_CHECK(s.waitUntil([&] { return visible("release/1.0") && visible("release/2.0"); }));
+    // Ctrl: only the tags of the folder show.
+    ctx->ItemClick("//Tags/###group_tag:release:", ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick("//$FOCUSED/###history_visibility");
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_CHECK(s.waitUntil([&] { return !visible("plain"); }));
+    GG_CHECK(visible("release/1.0") && visible("release/2.0"));
+}
+
+GG_TEST("refs", "the folder menu of tags deletes the tags below it locally and on a remote")
+{
+    const fs::path repo = repoWithTagFolder(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/###group_tag:release:"); }));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& tags = s.session()->remoteTags();
+        auto it = tags.find("origin");
+        return it != tags.end() && it->second.ok;
+    }));
+    const std::vector<std::string> both{"release/1.0", "release/2.0"};
+    s.contextMenu("//Tags/###group_tag:release:", "Delete/On origin");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    // Only the tag of the folder that origin has.
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("tags") == (std::vector<std::string>{"release/1.0"}));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these tags on 'origin'?");
+    s.dialogButton("Delete tags", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/release/1.0"); }));
+    s.settle();
+    // The remote keeps the tag that was not in the list, and the local tags stay.
+    GG_CHECK(refExists(s, origin(s, repo), "refs/tags/plain"));
+    GG_CHECK(refExists(s, repo, "refs/tags/release/1.0") && refExists(s, repo, "refs/tags/release/2.0"));
+    s.contextMenu("//Tags/###group_tag:release:", "Delete/Local");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete these tags?");
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("tags") == both);
+    s.dialogButton("Delete tags", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/release/1.0") && !refExists(s, repo, "refs/tags/release/2.0"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/tags/plain"));
+}
+
+GG_TEST("refs", "a Shift click on a tag selects the range of the drawn rows, folders included")
+{
+    const fs::path repo = repoWithTagFolder(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/###group_tag:release:"); }));
+    // Open the folder if an earlier state closed it.
+    if (!s.itemExists(tagRow("release/2.0").c_str()))
+        ctx->ItemOpen("//Tags/###group_tag:release:");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("release/2.0").c_str()); }));
+    // The rows in the order drawn: plain, the folder (not selectable), release/1.0, release/2.0.
+    ctx->ItemClick(tagRow("plain").c_str());
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick(tagRow("release/2.0").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    ctx->Yield(2);
+    const auto& names = s.session()->tags().selection().names;
+    GG_CHECK(names.size() == 3 && names.count("release/1.0") && names.count("release/2.0") && names.count("plain"));
+    GG_CHECK(!names.count("release"));
+}
+
+GG_TEST("refs", "tags only on a remote group in folders, and the folder menu has Delete only")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"far/a", "far/b"})
+        s.git(origin(s, repo), {"tag", name, "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/###group_rtag:far:"); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//Tags/rtag_far:a/###rtag_far:a")); }));
+    GG_CHECK(s.itemText("//Tags/rtag_far:a/###rtag_far:a").rfind("a  (origin)", 0) == 0);
+    ctx->ItemClick("//Tags/###group_rtag:far:", ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/###history_visibility", ImGuiTestOpFlags_NoError).ID == 0);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Delete", ImGuiTestOpFlags_NoError).ID != 0);
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.contextMenu("//Tags/###group_rtag:far:", "Delete/On origin");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("tags") == (std::vector<std::string>{"far/a", "far/b"}));
+    s.dialogButton("Delete tags", "Cancel");
 }
 
 } // namespace ggtest
