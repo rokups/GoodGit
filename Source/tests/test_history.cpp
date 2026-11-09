@@ -108,6 +108,32 @@ GG_TEST("history", "published vs unpublished commits")
     GG_CHECK(s.session()->info().details()->published);
 }
 
+GG_TEST("history", "Working tree menu items have the spacing of the commit menu")
+{
+    // The History table runs with zero vertical item spacing; the menus must not inherit it (GG-20).
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/**/###row_wt"); }));
+    const std::string head = s.head(repo);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(head).c_str()); }));
+    ctx->ItemClick(rowRef(head).c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(3);
+    const float commitPitch = ctx->ItemInfo("//$FOCUSED/Check out").RectFull.Min.y - ctx->ItemInfo("//$FOCUSED/New").RectFull.Min.y;
+    ctx->PopupCloseAll();
+    ctx->Yield(3);
+    ctx->ItemClick("//History/**/###row_wt", ImGuiMouseButton_Right);
+    ctx->Yield(3);
+    const auto commit = ctx->ItemInfo("//$FOCUSED/Commit...");
+    const auto discard = ctx->ItemInfo("//$FOCUSED/Discard changes...");
+    const auto stash = ctx->ItemInfo("//$FOCUSED/Stash changes...");
+    const auto stage = ctx->ItemInfo("//$FOCUSED/Stage all");
+    GG_REQUIRE(commit.ID != 0 && discard.ID != 0 && stash.ID != 0 && stage.ID != 0);
+    GG_CHECK(commitPitch > ImGui::GetTextLineHeight());
+    GG_CHECK(std::fabs((discard.RectFull.Min.y - commit.RectFull.Min.y) - commitPitch) < 0.5f);
+    GG_CHECK(std::fabs((stash.RectFull.Min.y - discard.RectFull.Min.y) - commitPitch) < 0.5f);
+    ctx->PopupCloseAll();
+}
+
 GG_TEST("history", "Working tree and Index rows")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);

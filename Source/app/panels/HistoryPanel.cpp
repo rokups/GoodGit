@@ -1108,6 +1108,8 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
     }
     ImGui::PopStyleColor();
     if (kind == SelKind::WorkingTree && beginContextMenu("##wt_menu")) {
+        // The table runs with zero vertical item spacing; the menu uses the regular one.
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
         auto& actions = m_session.actions();
         const bool free = actions.busy().empty();
         const bool dirty = m_hasWorktreeChanges;
@@ -1116,13 +1118,14 @@ void HistoryPanel::drawVirtualRow(const char* id, const char* label, SelKind kin
             m_session.showCommitDialog();
         if (menuItem(ICON_MS_UNDO, "Discard changes...", nullptr, false, free && dirty && !unborn))
             m_session.showDiscardAllDialog();
-        if (menuItem(ICON_MS_ADD, "Stash changes...", nullptr, false, free && dirty && !unborn))
+        if (menuItem(ICON_MS_INVENTORY_2, "Stash changes...", nullptr, false, free && dirty && !unborn))
             m_session.showStashDialog();
         ImGui::Separator();
         if (menuItem(ICON_MS_ADD, "Stage all", nullptr, false, free && dirty))
             actions.stageAll();
         if (menuItem(ICON_MS_REMOVE, "Unstage all", nullptr, false, free && m_hasStaged))
             actions.unstageAll();
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
     const ImU32 text = (kind == SelKind::WorkingTree && m_nativeConflicts) ? theme().palette().conflict : ImGui::GetColorU32(ImGuiCol_Text);

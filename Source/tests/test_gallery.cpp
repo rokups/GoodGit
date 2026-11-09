@@ -117,6 +117,12 @@ GG_MANUAL_TEST("gallery", "main menus and context menus")
     shot(s, "ctx-history-row-submenu");
     closePopups(s);
 
+    // History working tree row menu.
+    ctx->ItemClick("//History/**/###row_wt", ImGuiMouseButton_Right);
+    ctx->Yield(3);
+    shot(s, "ctx-history-wt");
+    closePopups(s);
+
     // Branches panel.
     s.showPanel("Branches");
     ctx->ItemClick("//Branches/branch_main/###branch_main", ImGuiMouseButton_Right);

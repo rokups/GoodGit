@@ -310,6 +310,7 @@ stays as it is (it is only limited to 50–300 % on load).
   click on the row outside its badges shows the row context menu. The left click and the drag of a badge are as before.
 - Working tree context menu: Commit… · Discard changes… · N: Stash changes… ·
   Stage all · Unstage all.
+  Its items have the item spacing of the row context menu, not the zero spacing of the table.
 - Drag and drop (Phase 3): commit→commit (Move before/after, Squash, Rebase). A drop on the edge of a row, between
   two rows, moves the commit there. On the middle of a row Shift = move after, Ctrl+Shift = move before,
   Ctrl = squash, Alt = rebase, none = chooser popup `##dnd_chooser`. A drop of a branch
