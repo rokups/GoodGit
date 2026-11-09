@@ -1056,33 +1056,46 @@ void Actions::renameBranch(const std::string& from, const std::string& to)
 
 void Actions::deleteBranch(const std::string& name, bool force, const std::vector<std::string>& remotes, bool local)
 {
-    run("delete branch " + name,
-        [name, force, remotes, local](MutationContext& ctx) {
-            for (const auto& r : remotes) {
-                ctx.git({"push", "--progress", r, "--delete", name}, {}, true);
-                // The remote branch is gone: a local branch that tracked it tracks nothing now. (%(upstream)
-                // comes from the config, so it names the deleted ref still.) The branch that this operation
-                // deletes too is left alone.
-                const std::string gone = "refs/remotes/" + r + "/" + name;
-                const auto heads = ctx.gitMayFail({"for-each-ref", "--format=%(refname:lstrip=2)%00%(upstream)", "refs/heads"});
-                for (size_t from = 0; from < heads.out.size();) {
-                    size_t end = heads.out.find('\n', from);
-                    if (end == std::string::npos)
-                        end = heads.out.size();
-                    const std::string line = heads.out.substr(from, end - from);
-                    from = end + 1;
-                    const size_t nul = line.find('\0');
-                    if (nul == std::string::npos || line.compare(nul + 1, std::string::npos, gone) != 0)
-                        continue;
-                    const std::string tracker = line.substr(0, nul);
-                    if (!(local && tracker == name))
-                        ctx.git({"branch", "--unset-upstream", tracker});
+    deleteBranches({BranchDelete{name, force, remotes, local}});
+}
+
+void Actions::deleteBranches(std::vector<BranchDelete> items)
+{
+    if (items.empty())
+        return;
+    const std::string label = items.size() == 1 ? "delete branch " + items[0].name : "delete " + std::to_string(items.size()) + " branches";
+    bool network = false;
+    for (const auto& item : items)
+        network = network || !item.remotes.empty();
+    run(label,
+        [items = std::move(items)](MutationContext& ctx) {
+            for (const auto& item : items) {
+                for (const auto& r : item.remotes) {
+                    ctx.git({"push", "--progress", r, "--delete", item.name}, {}, true);
+                    // The remote branch is gone: a local branch that tracked it tracks nothing now. (%(upstream)
+                    // comes from the config, so it names the deleted ref still.) The branch that this operation
+                    // deletes too is left alone.
+                    const std::string gone = "refs/remotes/" + r + "/" + item.name;
+                    const auto heads = ctx.gitMayFail({"for-each-ref", "--format=%(refname:lstrip=2)%00%(upstream)", "refs/heads"});
+                    for (size_t from = 0; from < heads.out.size();) {
+                        size_t end = heads.out.find('\n', from);
+                        if (end == std::string::npos)
+                            end = heads.out.size();
+                        const std::string line = heads.out.substr(from, end - from);
+                        from = end + 1;
+                        const size_t nul = line.find('\0');
+                        if (nul == std::string::npos || line.compare(nul + 1, std::string::npos, gone) != 0)
+                            continue;
+                        const std::string tracker = line.substr(0, nul);
+                        if (!(item.local && tracker == item.name))
+                            ctx.git({"branch", "--unset-upstream", tracker});
+                    }
                 }
+                if (item.local)
+                    ctx.git({"branch", item.force ? "-D" : "-d", item.name});
             }
-            if (local)
-                ctx.git({"branch", force ? "-D" : "-d", name});
         },
-        {}, !remotes.empty());
+        {}, network);
 }
 
 void Actions::moveBranch(const std::string& name, const std::string& to)
@@ -1244,7 +1257,19 @@ void Actions::createTag(const std::string& name, const std::string& at, const st
 
 void Actions::deleteTag(const std::string& name)
 {
-    run("delete tag " + name, [name](MutationContext& ctx) { ctx.git({"tag", "-d", name}); });
+    deleteTags({name});
+}
+
+void Actions::deleteTags(std::vector<std::string> names)
+{
+    if (names.empty())
+        return;
+    const std::string label = names.size() == 1 ? "delete tag " + names[0] : "delete " + std::to_string(names.size()) + " tags";
+    run(label, [names = std::move(names)](MutationContext& ctx) {
+        std::vector<std::string> args{"tag", "-d"};
+        args.insert(args.end(), names.begin(), names.end());
+        ctx.git(args);
+    });
 }
 
 void Actions::pushTag(const std::string& remote, const std::string& tag, bool submodulesOnDemand)
@@ -1269,8 +1294,22 @@ void Actions::pushTag(const std::string& remote, const std::string& tag, bool su
 
 void Actions::deleteRemoteTag(const std::string& remote, const std::string& tag)
 {
-    run("delete tag " + tag + " on " + remote,
-        [remote, tag](MutationContext& ctx) { ctx.git({"push", "--progress", remote, "--delete", "refs/tags/" + tag}, {}, true); },
+    deleteRemoteTags(remote, {tag});
+}
+
+void Actions::deleteRemoteTags(const std::string& remote, std::vector<std::string> tags)
+{
+    if (tags.empty())
+        return;
+    const std::string label = tags.size() == 1 ? "delete tag " + tags[0] + " on " + remote
+                                               : "delete " + std::to_string(tags.size()) + " tags on " + remote;
+    run(label,
+        [remote, tags = std::move(tags)](MutationContext& ctx) {
+            std::vector<std::string> args{"push", "--progress", remote, "--delete"};
+            for (const auto& t : tags)
+                args.push_back("refs/tags/" + t);
+            ctx.git(args, {}, true);
+        },
         {}, true);
 }
 
@@ -1490,13 +1529,27 @@ void Actions::fetchRefs(const std::string& remote, std::vector<std::string> bran
 
 void Actions::forgetRefs(const std::string& remote, std::vector<std::string> branches, std::vector<std::string> tags)
 {
-    if (branches.empty() && tags.empty())
+    std::vector<std::string> refs;
+    for (const auto& b : branches)
+        refs.push_back("refs/remotes/" + remote + "/" + b);
+    for (const auto& t : tags)
+        refs.push_back("refs/tags/" + t);
+    forgetRefsAs("forget from " + remote, std::move(refs));
+}
+
+void Actions::forgetRefs(std::vector<std::string> fullRefs)
+{
+    const std::string label = "forget " + std::to_string(fullRefs.size()) + " refs";
+    forgetRefsAs(label, std::move(fullRefs));
+}
+
+void Actions::forgetRefsAs(const std::string& label, std::vector<std::string> fullRefs)
+{
+    if (fullRefs.empty())
         return;
-    run("forget from " + remote, [remote, branches = std::move(branches), tags = std::move(tags)](MutationContext& ctx) {
-        for (const auto& b : branches)
-            ctx.git({"update-ref", "-d", "refs/remotes/" + remote + "/" + b});
-        for (const auto& t : tags)
-            ctx.git({"update-ref", "-d", "refs/tags/" + t}); // a ref that is already gone is no error
+    run(label, [fullRefs = std::move(fullRefs)](MutationContext& ctx) {
+        for (const auto& ref : fullRefs)
+            ctx.git({"update-ref", "-d", ref}); // a ref that is already gone is no error
     });
 }
 

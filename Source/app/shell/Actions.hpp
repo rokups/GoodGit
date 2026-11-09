@@ -27,6 +27,14 @@ struct StagedDiscard {
     bool remove = false;
 };
 
+// One branch to delete: on the listed remotes and, when `local` is set, locally.
+struct BranchDelete {
+    std::string name;
+    bool force;
+    std::vector<std::string> remotes;
+    bool local;
+};
+
 // A submodule row to discard: the submodule goes back to the commit that the superproject expects.
 // `staged`: the gitlink change is staged (the index goes back to HEAD first); `kind` is the kind of
 // the staged change. `clean`: untracked files inside the submodule are deleted too.
@@ -116,6 +124,8 @@ public:
     void createBranch(const std::string& name, const std::string& at, bool checkoutAfter);
     void renameBranch(const std::string& from, const std::string& to);
     void deleteBranch(const std::string& name, bool force, const std::vector<std::string>& remotes, bool local);
+    // Deletes all the branches in one journaled operation. Undo restores all of them.
+    void deleteBranches(std::vector<BranchDelete> items);
     void moveBranch(const std::string& name, const std::string& to);
     // git reset --soft|--mixed|--hard <commit>: the current branch `branch` moves to `commit`. A hard reset
     // that would discard changes of tracked files, or an untracked file that `commit` also has, is refused
@@ -127,8 +137,12 @@ public:
     void fastForward(const std::string& branch);
     void createTag(const std::string& name, const std::string& at, const std::string& message);
     void deleteTag(const std::string& name);
+    // Deletes the local tags with one `git tag -d` call.
+    void deleteTags(std::vector<std::string> names);
     void pushTag(const std::string& remote, const std::string& tag, bool submodulesOnDemand = false);
     void deleteRemoteTag(const std::string& remote, const std::string& tag);
+    // Deletes the tags on one remote with one `git push --delete` call.
+    void deleteRemoteTags(const std::string& remote, std::vector<std::string> tags);
     void addRemote(const std::string& name, const std::string& url);
     void removeRemote(const std::string& name);
     void setRemoteUrl(const std::string& name, const std::string& url);
@@ -233,6 +247,9 @@ public:
     // Deletes the named remote-tracking branches of one remote and the named local tags.
     // It does nothing when both lists are empty. Undo restores the refs.
     void forgetRefs(const std::string& remote, std::vector<std::string> branches, std::vector<std::string> tags);
+    // Deletes the named full refs (for example refs/remotes/origin/x or refs/tags/t) with update-ref -d.
+    // It does nothing when the list is empty. Undo restores the refs.
+    void forgetRefs(std::vector<std::string> fullRefs);
     // <remote>/HEAD, the remote's default branch: re-read from the remote (remove = false) or deleted.
     void pull(PullMode mode, bool autostash = false);
     // Submodule commands for the submodule at `path`, relative to the working directory (GG-60). They
@@ -310,6 +327,8 @@ public:
     void mergeTool(const std::string& path);
 
 private:
+    // Runs update-ref -d for each full ref as one operation with the given journal label.
+    void forgetRefsAs(const std::string& label, std::vector<std::string> fullRefs);
     void handleDefault(const core::MutationFinishedEvent& event);
     // Opens the "Submodules not pushed" form when `event` is that refusal; false for any other result.
     bool handleUnpushedSubmodules(const core::MutationFinishedEvent& event, std::function<void()> pushOnDemand);
