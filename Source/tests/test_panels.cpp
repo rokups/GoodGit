@@ -2294,8 +2294,8 @@ GG_TEST("panels", "stashes: hover actions Apply and Pop leave the selection alon
     ctx->MouseMove(stashRowRef(2).c_str());
     ctx->Yield(3);
     ctx->ItemClick(stashButton(2, "act_apply").c_str());
-    GG_CHECK(s.waitUntil([&] { return s.read(repo, "a.txt") == "a changed\n"; }));
-    s.settle();
+    s.settle(); // git rewrites a.txt: read it once, after the action ends
+    GG_CHECK_EQ(s.read(repo, "a.txt"), "a changed\n");
     GG_CHECK_EQ(stashes(), 3u);
     GG_CHECK(s.session()->selection().kind == selected.kind && s.session()->selection().id == selected.id);
     s.git(repo, {"checkout", "--", "a.txt"});
@@ -2303,8 +2303,8 @@ GG_TEST("panels", "stashes: hover actions Apply and Pop leave the selection alon
     ctx->MouseMove(stashRowRef(0).c_str());
     ctx->Yield(3);
     ctx->ItemClick(stashButton(0, "act_pop").c_str());
-    GG_CHECK(s.waitUntil([&] { return stashes() == 2; }));
     s.settle();
+    GG_CHECK_EQ(stashes(), 2u);
     GG_CHECK(fs::exists(repo / "new.txt"));
     GG_CHECK(s.session()->selection().kind == selected.kind && s.session()->selection().id == selected.id);
 }

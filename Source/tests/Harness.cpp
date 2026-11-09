@@ -117,10 +117,25 @@ void Scenario::write(const fs::path& repo, const std::string& rel, const std::st
 
 std::string Scenario::read(const fs::path& repo, const std::string& rel)
 {
+#ifdef _WIN32
+    // Share all access, so git can replace the file while this read is open.
+    const HANDLE h = CreateFileW((repo / rel).c_str(), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+        return {};
+    std::string out;
+    char buf[4096];
+    DWORD got = 0;
+    while (ReadFile(h, buf, sizeof buf, &got, nullptr) && got > 0)
+        out.append(buf, got);
+    CloseHandle(h);
+    return out;
+#else
     std::ifstream f(repo / rel, std::ios::binary);
     std::ostringstream ss;
     ss << f.rdbuf();
     return ss.str();
+#endif
 }
 
 void Scenario::commitFile(const fs::path& repo, const std::string& rel, const std::string& content, const std::string& message)
