@@ -102,6 +102,143 @@ GG_TEST("refs", "the row menu of an unselected branch stays the single menu")
     s.dialogButton("Rename branch", "Cancel");
 }
 
+namespace {
+
+// Selects the local branches `names` in the Branches panel: a click on the first, Ctrl+click on the others.
+void selectBranches(Scenario& s, const std::vector<std::string>& names)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    ctx->ItemClick(branchRow(names.front()).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    for (size_t i = 1; i < names.size(); ++i)
+        ctx->ItemClick(branchRow(names[i]).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+}
+
+// A repository with the branches a and b (with an upstream) and c and d (without one).
+fs::path repoWithUpstreams(Scenario& s)
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    for (const char* name : {"a", "b", "c", "d"})
+        s.git(repo, {"branch", name, "HEAD~1"});
+    s.git(repo, {"branch", "--set-upstream-to=origin/main", "a"});
+    s.git(repo, {"push", "-q", "-u", "origin", "b"});
+    return repo;
+}
+
+} // namespace
+
+GG_TEST("refs", "the multi menu deletes on the remote only the selected branches that have an upstream")
+{
+    const fs::path repo = repoWithUpstreams(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("d").c_str()); }));
+    selectBranches(s, {"b", "c"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    s.contextMenu(branchRow("c").c_str(), "Delete/On its remote");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    // Only the branch with an upstream is in the list.
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    GG_CHECK_STR_EQ(form->message, "Delete 1 branch on their remotes?");
+    const auto checked = form->checkedOptions("branches");
+    GG_CHECK(checked.size() == 1 && checked.front() == "b");
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "b"}).empty(); }));
+    s.settle();
+    // The local branches stay.
+    GG_CHECK(refExists(s, repo, "refs/heads/b"));
+    GG_CHECK(refExists(s, repo, "refs/heads/c"));
+}
+
+GG_TEST("refs", "the multi menu item On its remote is disabled when no selected branch has an upstream")
+{
+    const fs::path repo = repoWithUpstreams(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("d").c_str()); }));
+    const auto disabled = [&](const char* item) -> bool {
+        const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + item).c_str(), ImGuiTestOpFlags_NoError);
+        GG_CHECK(info.ID != 0);
+        return (info.ItemFlags & ImGuiItemFlags_Disabled) != 0;
+    };
+    const auto openDelete = [&](const char* row) {
+        ctx->ItemClick(row, ImGuiMouseButton_Right);
+        ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Delete");
+        ctx->Yield(2);
+    };
+    const auto closeMenus = [&] {
+        ctx->PopupCloseAll();
+        ctx->Yield(2);
+    };
+    // No upstream: the item is disabled and the other two are not.
+    selectBranches(s, {"c", "d"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    openDelete(branchRow("d").c_str());
+    GG_CHECK(disabled("On its remote"));
+    GG_CHECK(!disabled("Local"));
+    GG_CHECK(!disabled("Local and all remotes"));
+    closeMenus();
+    GG_CHECK(!s.dialogOpen("Delete branches", 0.5f));
+    // One selected branch with an upstream enables the item.
+    selectBranches(s, {"a", "d"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    openDelete(branchRow("d").c_str());
+    GG_CHECK(!disabled("On its remote"));
+    closeMenus();
+}
+
+GG_TEST("refs", "the multi menu deletes the selected branches locally and on all remotes")
+{
+    const fs::path repo = repoWithUpstreams(s);
+    s.git(repo, {"push", "-q", "origin", "c"}); // c has a remote branch of its name, without an upstream
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("d").c_str()); }));
+    selectBranches(s, {"b", "c"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    s.contextMenu(branchRow("c").c_str(), "Delete/Local and all remotes");
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    GG_CHECK_STR_EQ(form->message, "Delete 2 branches and every remote branch with the same name?");
+    GG_CHECK(form->checkedOptions("branches").size() == 2);
+    GG_CHECK(s.waitUntil([&] {
+        const ggui::Form* f = s.app.dialogs().current();
+        return f && f->buttons[0].enabled(*f);
+    }, 5.0f));
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/b") && !refExists(s, repo, "refs/heads/c"); }));
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "b", "c"}).empty(); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/a"));
+    GG_CHECK(refExists(s, repo, "refs/heads/d"));
+}
+
+GG_TEST("refs", "the multi menu shows or hides all selected branches in History")
+{
+    const fs::path repo = repoWithUpstreams(s);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("d").c_str()); }));
+    const auto& history = s.session()->history();
+    const auto visible = [&](const char* name) { return history.refVisible(std::string("refs/heads/") + name); };
+    GG_CHECK(visible("a") && visible("b") && visible("c"));
+    selectBranches(s, {"a", "b"});
+    GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
+    // Hide: both selected branches and the remote-tracking ref of b go. The others stay.
+    s.toggleVisibility(branchRow("b").c_str());
+    GG_CHECK(s.waitUntil([&] { return !visible("a") && !visible("b"); }));
+    GG_CHECK(!history.refVisible("refs/remotes/origin/b"));
+    GG_CHECK(visible("c") && visible("d") && visible("main"));
+    // Show: both come back.
+    s.toggleVisibility(branchRow("b").c_str());
+    GG_CHECK(s.waitUntil([&] { return visible("a") && visible("b"); }));
+    GG_CHECK(history.refVisible("refs/remotes/origin/b"));
+}
+
 GG_TEST("refs", "create, check out, rename and delete branches")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
