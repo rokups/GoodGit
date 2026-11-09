@@ -37,7 +37,8 @@ constexpr int kSlotDescendants = 0;
 constexpr int kSlotOperations = 3;
 constexpr int kSlotConfig = 4;
 constexpr int kSlotCommitWarnings = 7;
-constexpr int kSlotBranchMerged = 8;
+// Slot 0 never coalesces: the Delete branches dialog asks about many branches at once.
+constexpr int kSlotBranchMerged = 0;
 constexpr int kSlotReconcile = 6;
 constexpr int kSlotRebasePreview = 1;
 constexpr int kSlotRemoteTags = 1;

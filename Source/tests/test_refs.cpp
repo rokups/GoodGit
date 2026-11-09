@@ -318,6 +318,55 @@ GG_TEST("refs", "Delete branch warns about an unmerged branch and deletes it any
     s.settle();
 }
 
+GG_TEST("refs", "delete branches dialog deletes the checked branches in one undo step")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* name : {"a", "b", "c"})
+        s.git(repo, {"branch", name, "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteBranchesDialog({"a", "b", "c"}, 0);
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    // Delete waits for the merged check of every checked branch.
+    GG_CHECK(s.waitUntil([&] {
+        const ggui::Form* form = s.app.dialogs().current();
+        return form && form->buttons[0].enabled(*form);
+    }, 5.0f));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete 3 local branches?");
+    GG_CHECK(deleteWarning(s).empty());
+    ctx->ItemUncheck("//Delete branches/**/c##branches_c");
+    GG_CHECK(s.app.dialogs().current()->checkedOptions("branches").size() == 2);
+    s.dialogButton("Delete branches", "Delete");
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/a") && !refExists(s, repo, "refs/heads/b"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/c"));
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/heads/a") && refExists(s, repo, "refs/heads/b"); }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/c"));
+}
+
+GG_TEST("refs", "delete branches dialog leaves out the current branch")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "a", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteBranchesDialog({"main", "a"}, 0);
+    GG_REQUIRE(s.dialogOpen("Delete branches"));
+    const ggui::Form* form = s.app.dialogs().current();
+    const ggui::Field* list = form->field("branches");
+    GG_REQUIRE(list != nullptr);
+    GG_CHECK(list->options == std::vector<std::string>{"a"});
+    const ggui::Field* note = form->field("head_note");
+    GG_REQUIRE(note != nullptr);
+    GG_CHECK_STR_EQ(note->text, "The current branch 'main' is not in the list.");
+    s.dialogButton("Delete branches", "Cancel");
+    s.settle();
+    // Only the current branch: no dialog.
+    s.session()->showDeleteBranchesDialog({"main"}, 2);
+    s.settle();
+    GG_CHECK(!s.dialogOpen("Delete branches"));
+}
+
 GG_TEST("refs", "Delete branch: a branch merged into its local upstream has no warning and is deleted")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

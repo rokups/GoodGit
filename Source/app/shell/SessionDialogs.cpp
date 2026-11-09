@@ -780,6 +780,123 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
     m_app.dialogs().open(std::move(f));
 }
 
+void Session::showDeleteBranchesDialog(std::vector<std::string> branches, int mode)
+{
+    // The current branch cannot go: git refuses to delete the branch that HEAD names.
+    std::string skipped;
+    if (mode != 1 && !m_snapshot->headBranch.empty()) {
+        const auto head = std::find(branches.begin(), branches.end(), m_snapshot->headBranch);
+        if (head != branches.end()) {
+            skipped = *head;
+            branches.erase(head);
+        }
+    }
+    if (branches.empty())
+        return;
+    // The remotes that hold a branch of this name, as the single dialog finds them.
+    auto remotesOf = [this, mode](const std::string& branch) {
+        std::vector<std::string> remotes;
+        if (mode > 0) {
+            const auto* b = m_snapshot->findBranch(branch);
+            for (const auto& r : m_snapshot->remoteBranches) {
+                const std::string name = r.name.substr(r.remote.size() + 1);
+                if (name == branch && (mode == 2 || (b && b->upstream == r.name)))
+                    remotes.push_back(r.remote);
+            }
+        }
+        return remotes;
+    };
+    Form f;
+    f.title = "Delete branches";
+    const std::string count = std::to_string(branches.size());
+    const std::string noun = branches.size() == 1 ? " branch" : " branches";
+    f.message = mode == 0 ? "Delete " + count + " local" + noun + "?"
+        : mode == 1       ? "Delete " + count + noun + " on their remotes?"
+                          : "Delete " + count + noun + " and every remote branch with the same name?";
+    if (!skipped.empty())
+        f.add(Field{Field::Info, "head_note", "", "The current branch '" + skipped + "' is not in the list."});
+    Field list{Field::CheckList, "branches", "Branches"};
+    list.setOptions(branches);
+    list.checks.assign(branches.size(), 1);
+    f.add(std::move(list));
+    // The merged check of each branch. Its target follows the rule of the single dialog.
+    auto requests = std::make_shared<std::map<std::string, core::RequestId>>();
+    auto shown = std::make_shared<std::map<std::string, std::string>>();
+    if (mode != 1) {
+        const std::string localPrefix = "refs/heads/";
+        for (const auto& branch : branches) {
+            const auto* b = m_snapshot->findBranch(branch);
+            const bool upstreamOk = b && !b->upstream.empty() && !b->upstreamGone;
+            bool useUpstream = upstreamOk;
+            for (const auto& r : remotesOf(branch))
+                if (upstreamOk && b->upstream == r + "/" + branch)
+                    useUpstream = false;
+            std::string target = "HEAD";
+            std::string name = "HEAD";
+            if (useUpstream) {
+                target = b->upstream.rfind("refs/", 0) == 0 ? b->upstream : "refs/remotes/" + b->upstream;
+                name = b->upstream.rfind(localPrefix, 0) == 0 ? b->upstream.substr(localPrefix.size()) : b->upstream;
+            }
+            shown->emplace(branch, std::move(name));
+            const core::RequestId request = m_engine->readBranchMerged(branch, target);
+            m_branchMerged.emplace(request, MergedState::Unknown);
+            requests->emplace(branch, request);
+        }
+    }
+    // The warning follows the checked branches: the form updates its text on every frame.
+    auto warningText = std::make_shared<std::string>();
+    f.onFrame = [this, requests, shown, warningText](Form& form) {
+        std::string names;
+        std::set<std::string> targets;
+        for (const auto& branch : form.checkedOptions("branches")) {
+            const auto it = requests->find(branch);
+            if (it == requests->end() || branchMerged(it->second) != MergedState::NotMerged)
+                continue;
+            names += (names.empty() ? "" : ", ") + branch;
+            targets.insert((*shown)[branch]);
+        }
+        // Each branch has its own target: name it when all are the same.
+        const std::string target = targets.size() == 1 ? *targets.begin() : "their upstream or HEAD";
+        *warningText = names.empty() ? std::string()
+                                     : "Not merged into " + target + ": " + names + ". The delete operation can lose their commits.";
+    };
+    if (mode != 1) {
+        Field warning;
+        warning.kind = Field::Warning;
+        warning.id = "unmerged_warning";
+        warning.live = [warningText] { return *warningText; };
+        f.add(std::move(warning));
+    }
+    // Not merged: `git branch -d` would refuse, so the action uses -D; the warning says so.
+    FormButton del{"Delete", [this, mode, requests, remotesOf](Form& form) {
+                       std::vector<BranchDelete> items;
+                       for (const auto& branch : form.checkedOptions("branches")) {
+                           const auto it = requests->find(branch);
+                           const bool unmerged = it != requests->end() && branchMerged(it->second) == MergedState::NotMerged;
+                           items.push_back({branch, mode != 1 && unmerged, remotesOf(branch), mode != 1});
+                       }
+                       m_actions->deleteBranches(std::move(items));
+                   }};
+    del.danger = true;
+    // The merged state decides how each branch goes: wait for every answer.
+    del.enabled = [this, mode, requests](const Form& form) {
+        const auto checked = form.checkedOptions("branches");
+        if (checked.empty())
+            return false;
+        if (mode == 1)
+            return true;
+        for (const auto& branch : checked) {
+            const auto it = requests->find(branch);
+            if (it != requests->end() && branchMerged(it->second) == MergedState::Unknown)
+                return false;
+        }
+        return true;
+    };
+    f.buttons.push_back(std::move(del));
+    f.buttons.push_back({"Cancel", {}});
+    m_app.dialogs().open(std::move(f));
+}
+
 void Session::showDeleteRemoteBranchDialog(const std::string& remoteBranch)
 {
     std::string remote;
