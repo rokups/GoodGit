@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <fstream>
 #include <optional>
+#include <string_view>
 #include <set>
 #include <sstream>
 
@@ -1703,6 +1704,24 @@ void Actions::pull(PullMode mode, bool autostash)
                 args.emplace_back("--ff-only");
             if (autostash)
                 args.emplace_back("--autostash");
+            // A pull without a refspec uses the default refspec of the remote. That brings back the
+            // remote-tracking branches that the user forgot. Name the upstream branch to avoid this.
+            const auto head = ctx.gitMayFail({"symbolic-ref", "-q", "--short", "HEAD"});
+            if (head.ok()) {
+                const std::string branch = gg::trim(head.out);
+                const auto remote = ctx.gitMayFail({"config", "--get", "branch." + branch + ".remote"});
+                const auto merge = ctx.gitMayFail({"config", "--get", "branch." + branch + ".merge"});
+                const std::string remoteName = gg::trim(remote.out);
+                std::string remoteBranch = gg::trim(merge.out);
+                constexpr std::string_view headsPrefix = "refs/heads/";
+                if (remote.ok() && merge.ok() && remoteName != "." && !remoteName.empty()
+                    && remoteBranch.compare(0, headsPrefix.size(), headsPrefix) == 0) {
+                    remoteBranch.erase(0, headsPrefix.size());
+                    args.emplace_back("--no-tags");
+                    args.push_back(remoteName);
+                    args.push_back(remoteBranch);
+                }
+            }
             ctx.env.emplace_back("GIT_EDITOR", "true");
             ctx.git(args, {}, true);
             ctx.worktreeFollowsIndex = true;

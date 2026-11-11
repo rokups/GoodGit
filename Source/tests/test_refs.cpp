@@ -779,6 +779,26 @@ GG_TEST("refs", "a plain fetch does not bring forgotten refs back; Fetch more li
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
 }
 
+GG_TEST("refs", "Pull does not bring forgotten refs back and still merges new upstream commits")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2"});
+    const std::string branch = s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"});
+    const fs::path other = s.path("other-clone");
+    s.git(s.root(), {"clone", "-q", origin(s, repo).string(), other.string()});
+    s.commitFile(other, "pulled.txt", "pulled\n", "Upstream commit");
+    s.git(other, {"push", "-q", "origin", "HEAD:refs/heads/" + branch});
+    const std::string upstreamHead = s.head(other);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().forgetRefs({"refs/remotes/origin/f1", "refs/remotes/origin/f2"});
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/f1") && !refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    s.session()->actions().pull(ggui::PullMode::Merge);
+    GG_REQUIRE(s.settle());
+    GG_CHECK(s.gitMayFail(repo, {"merge-base", "--is-ancestor", upstreamHead, "HEAD"}).ok());
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/f1"));
+    GG_CHECK(!refExists(s, repo, "refs/remotes/origin/f2"));
+}
+
 GG_TEST("refs", "a remote-tracking branch with a slash in its name can be forgotten and deleted on the remote")
 {
     const fs::path repo = repoWithRemoteBranches(s, {"feature/x", "feature/y"});
