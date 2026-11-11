@@ -20,10 +20,41 @@
 #include <libgg/Thread.hpp>
 
 #include <chrono>
+#include <fstream>
 #include <cstdlib>
 #include <string_view>
 
 namespace ggui {
+
+bool isSubmoduleWorkTree(const std::filesystem::path& dir)
+{
+    std::error_code ec;
+    const std::filesystem::path dotGit = dir / ".git";
+    if (!std::filesystem::is_regular_file(dotGit, ec) || ec)
+        return false;
+    std::ifstream in(dotGit);
+    std::string line;
+    if (!in || !std::getline(in, line))
+        return false;
+    constexpr std::string_view prefix = "gitdir:";
+    if (line.compare(0, prefix.size(), prefix) != 0)
+        return false;
+    size_t begin = prefix.size();
+    while (begin < line.size() && (line[begin] == ' ' || line[begin] == '\t'))
+        ++begin;
+    size_t end = line.size();
+    while (end > begin && (line[end - 1] == '\r' || line[end - 1] == '\n' || line[end - 1] == ' '))
+        --end;
+    // The last "modules" or "worktrees" part of the git directory tells the kind of the work tree.
+    bool submodule = false;
+    for (const auto& part : std::filesystem::path(line.substr(begin, end - begin))) {
+        if (part == "modules")
+            submodule = true;
+        else if (part == "worktrees")
+            submodule = false;
+    }
+    return submodule;
+}
 
 Session::Session(App& app, std::filesystem::path path) : m_app(app), m_path(std::move(path))
 {

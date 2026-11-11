@@ -1036,6 +1036,40 @@ GG_TEST("panels", "repositories: a submodule row of the open repository opens on
     GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo / "sub"));
 }
 
+GG_TEST("panels", "repositories: an opened submodule is recent but not in the repository list")
+{
+    auto& data = s.app.settings().data();
+    data.repositories.clear();
+    data.recent.clear();
+    const fs::path repo = s.fixture(Recipe::Submodules, "listed");
+    const std::string repoKey = ggui::normalizeRepoPath(repo.string());
+    const std::string subKey = ggui::normalizeRepoPath((repo / "sub").string());
+    const auto listed = [&](const std::string& key) {
+        for (const auto& entry : data.repositories)
+            if (entry.path == key)
+                return true;
+        return false;
+    };
+    GG_REQUIRE(s.openRepository(repo));
+    // A normal repository is in the repository list.
+    GG_REQUIRE(s.waitUntil([&] { return listed(repoKey); }));
+    GG_CHECK(!ggui::isSubmoduleWorkTree(repo));
+    GG_CHECK(ggui::isSubmoduleWorkTree(repo / "sub"));
+    s.showPanel("Repositories");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    ctx->ItemDoubleClick(subRow.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), repo / "sub"); }));
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK(std::find(data.recent.begin(), data.recent.end(), subKey) != data.recent.end());
+    GG_CHECK(!listed(subKey));
+    GG_CHECK(listed(repoKey));
+}
+
 GG_TEST("panels", "repositories: a closed repository shows its submodules")
 {
     s.app.settings().data().repositories.clear();

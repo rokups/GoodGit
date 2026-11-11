@@ -21,6 +21,11 @@
 
 namespace ggui {
 
+// True when `dir` is a submodule work tree: its .git is a file with a gitdir line that points into a
+// "modules" directory of a superproject. A linked worktree (gitdir in "worktrees") is not a submodule.
+// A missing or unreadable .git file gives false.
+bool isSubmoduleWorkTree(const std::filesystem::path& dir);
+
 class App;
 class HistoryPanel;
 class ChangesPanel;

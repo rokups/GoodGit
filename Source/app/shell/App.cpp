@@ -705,9 +705,13 @@ void App::frame()
                 const std::string listPath = m_session->repositoryListPath();
                 if (!listPath.empty()) {
                     m_recordedRepository = m_session->path().string();
-                    m_settings.addRepository(listPath);
-                    if (listPath != currentRepoKey())
-                        requestSummaries();
+                    // A submodule stays out of the repository list; it is in the recent list only (GG-26).
+                    // An entry that is in the list already stays.
+                    if (!isSubmoduleWorkTree(m_session->path())) {
+                        m_settings.addRepository(listPath);
+                        if (listPath != currentRepoKey())
+                            requestSummaries();
+                    }
                 }
             }
         }
