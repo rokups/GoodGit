@@ -411,16 +411,38 @@ ggui::core::WatchEvent worktreeEvent()
 
 } // namespace
 
-GG_TEST("engine", "window state: a focused window scans for every watcher event")
+GG_TEST("engine", "window state: a focused window scans for every watcher event when the interval is 0")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     ggui::core::Engine::Options options{repo, false};
+    options.focusedStatusInterval = std::chrono::milliseconds(0);
     ggui::core::Engine engine(options);
     ScanCounter scans{engine};
     for (int i = 1; i <= 3; ++i) {
         engine.onWatchEvent(worktreeEvent());
         GG_CHECK(s.waitUntil([&] { return scans.count() == i; }, 10.0f));
     }
+    engine.cancelAll();
+}
+
+GG_TEST("engine", "window state: a focused window scans at most once in each interval, plus one trailing scan")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    ggui::core::Engine::Options options{repo, false};
+    options.focusedStatusInterval = std::chrono::milliseconds(600);
+    ggui::core::Engine engine(options);
+    ScanCounter scans{engine};
+    // A burst: the first event scans at once, the others wait for the end of the interval.
+    for (int i = 0; i < 6; ++i)
+        engine.onWatchEvent(worktreeEvent());
+    GG_CHECK(s.waitUntil([&] { return scans.count() >= 1; }, 10.0f));
+    // poll() runs the held scan when the interval ends: one trailing scan for the whole burst.
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
+    s.waitUntil([] { return false; }, 1.5f);
+    GG_CHECK_EQ(scans.count(), 2);
+    // After a quiet period, the next event scans at once.
+    engine.onWatchEvent(worktreeEvent());
+    GG_CHECK(s.waitUntil([&] { return scans.count() == 3; }, 10.0f));
     engine.cancelAll();
 }
 

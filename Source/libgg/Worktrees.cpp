@@ -176,7 +176,7 @@ std::string check(const fs::path& cwd, const journal::WorktreeChange& c, const s
                 + (e->branch.empty() ? e->head.substr(0, 10) : shortBranch(e->branch)) + ")";
         std::error_code ec;
         if (fs::exists(e->path, ec)) {
-            const RunResult st = git(e->path, {"status", "--porcelain", "-z", "--untracked-files=all"});
+            const RunResult st = git(e->path, {"--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"});
             if (!st.ok())
                 return st.message();
             if (!st.out.empty())

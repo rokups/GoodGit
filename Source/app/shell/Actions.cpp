@@ -1086,7 +1086,7 @@ void Actions::resetBranch(const std::string& branch, const core::Oid& commit, Re
                 // out: git treats them as expendable (as `checkout` does).
                 std::vector<std::string> tracked, clash;
                 std::vector<std::string> untracked;
-                const auto st = ctx.git({"status", "--porcelain=v1", "-z", "--untracked-files=all"});
+                const auto st = ctx.git({"--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"});
                 size_t pos = 0;
                 while (pos < st.out.size()) {
                     size_t end = st.out.find('\0', pos);

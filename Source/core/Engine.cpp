@@ -262,6 +262,12 @@ bool Engine::ownIndexWrite() const
                                     && std::chrono::steady_clock::now() - m_selfEnded < kSelfWriteWindow);
 }
 
+std::chrono::milliseconds Engine::watcherStatusInterval() const
+{
+    // The caller holds m_windowMutex.
+    return m_windowState == WindowState::Focused ? m_options.focusedStatusInterval : m_options.unfocusedStatusInterval;
+}
+
 void Engine::requestWatcherStatus()
 {
     bool run = false;
@@ -270,11 +276,9 @@ void Engine::requestWatcherStatus()
         const auto now = std::chrono::steady_clock::now();
         switch (m_windowState) {
         case WindowState::Focused:
-            run = true;
-            break;
         case WindowState::Unfocused:
             run = m_lastWatcherStatus == std::chrono::steady_clock::time_point{}
-                || now - m_lastWatcherStatus >= m_options.unfocusedStatusInterval;
+                || now - m_lastWatcherStatus >= watcherStatusInterval();
             break;
         case WindowState::Minimized:
             break;
@@ -292,9 +296,9 @@ void Engine::runHeldWatcherStatus()
     bool run = false;
     {
         std::lock_guard lock(m_windowMutex);
-        if (m_statusHeld && m_windowState == WindowState::Unfocused) {
+        if (m_statusHeld && m_windowState != WindowState::Minimized) {
             const auto now = std::chrono::steady_clock::now();
-            if (now - m_lastWatcherStatus >= m_options.unfocusedStatusInterval) {
+            if (now - m_lastWatcherStatus >= watcherStatusInterval()) {
                 run = true;
                 m_statusHeld = false;
                 m_lastWatcherStatus = now;

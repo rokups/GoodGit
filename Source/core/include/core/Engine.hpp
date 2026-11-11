@@ -307,6 +307,9 @@ public:
     struct Options {
         std::filesystem::path path;
         bool watch = true;
+        // Focused window: at most one status refresh from the watcher in this time. A request
+        // inside the interval is held and runs when the interval ends.
+        std::chrono::milliseconds focusedStatusInterval{500};
         // Unfocused window: at most one status refresh from the watcher in this time.
         std::chrono::milliseconds unfocusedStatusInterval{2000};
         // How the working tree status is read.
@@ -365,7 +368,8 @@ public:
         gg::todo::Options options);
 
     // The window state, from any thread. The status refreshes that the watcher asks for follow it.
-    // Focused: each one runs. Unfocused: at most one in each `unfocusedStatusInterval`; poll() runs
+    // Focused: at most one in each `focusedStatusInterval`. Unfocused: at most one in each
+    // `unfocusedStatusInterval`. poll() runs
     // the held one when the time ends. Minimized: all are held. A focus gain or a restore runs
     // exactly one refresh when any was held. Mutation and user refreshes are not affected.
     void setWindowState(WindowState state);
@@ -396,6 +400,7 @@ private:
     void finish(RequestId id, bool cancelled, bool failed);
     void requestWatcherStatus();
     void runHeldWatcherStatus();
+    std::chrono::milliseconds watcherStatusInterval() const;
     // True when an index-only watcher notice comes from a write of our own mutation (see onWatchEvent).
     bool ownIndexWrite() const;
 
