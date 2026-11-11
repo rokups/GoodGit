@@ -901,6 +901,25 @@ GG_TEST("panels", "repositories: a worktree row of a closed repository opens on 
     GG_CHECK(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), linkedPath); }));
 }
 
+GG_TEST("panels", "repositories: a worktree row of a closed repository shows its display name (GG-28)")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees, "closedalias");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return linkedWorktreeOfSummary(s, repo) != nullptr; }));
+    const std::string id = linkedWorktreeOfSummary(s, repo)->name;
+    // The key of the closed repository: the one the Rename dialog uses when this repository is open.
+    s.app.settings().setWorktreeName(ggui::repoStateKey(repo / ".git"), id, "Closed alias");
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    GG_REQUIRE(s.itemExists(worktreeRow(row, id).c_str()));
+    GG_CHECK(s.waitUntil([&] { return s.textShown("Repositories", "Closed alias"); }));
+}
+
 // The labels of the menu of a worktree row, in the Worktrees panel and in the Repositories panel (GG-16).
 static const char* const kWorktreeMenuLabels[] = {"Copy name", "Copy path", "Reveal HEAD", "Open directory", "Open here",
     "Open in new window", "Add...", "Remove...", "Lock...", "Rename...", "Prune...", "Repair..."};

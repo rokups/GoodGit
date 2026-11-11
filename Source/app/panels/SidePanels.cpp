@@ -1717,10 +1717,15 @@ void RepositoriesPanel::repoDropTarget(const std::string& group)
 // current branch and a missing one is dimmed. A double-click opens a worktree, not the current or a missing one.
 void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& list, bool own, std::string& toOpen)
 {
+    // The display names are stored under the key of the repository of the rows. For a closed repository the key
+    // comes from its main worktree: the main path is the common directory when bare, else its ".git" child.
+    std::string stateKey = own ? m_session.repoStateKey() : std::string();
+    if (!own && !list.empty() && list.front().isMain)
+        stateKey = repoStateKey(list.front().bare ? list.front().path : list.front().path / ".git");
     for (const auto& w : list) {
         // A missing or prunable worktree has the warning triangle before its name.
         const std::string warnPrefix = warnIconPrefix(w.missing || w.prunable);
-        const std::string customName = m_session.worktreeCustomName(w);
+        const std::string customName = m_session.app().settings().worktreeName(stateKey, w.name);
         std::string label = warnPrefix + (customName.empty() ? w.name : customName);
         if (w.isMain)
             label += " (main)";
