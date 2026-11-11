@@ -41,13 +41,14 @@ std::vector<std::string> withPaths(std::vector<std::string> args, const std::vec
     return args;
 }
 
-// The push option for submodules (GG-61); empty without a .gitmodules file, so other repositories push as before.
-static std::string pushRecurseOption(const MutationContext& ctx, bool onDemand)
+// The push option for submodules (GG-22); empty without a .gitmodules file, so other repositories push as before.
+// "on-demand" pushes the submodules first, then the main repository.
+static std::string pushRecurseOption(const MutationContext& ctx)
 {
     std::error_code ec;
     if (!fs::exists(ctx.cwd() / ".gitmodules", ec))
         return {};
-    return onDemand ? "--recurse-submodules=on-demand" : "--recurse-submodules=check";
+    return "--recurse-submodules=on-demand";
 }
 
 // The first line of a git error, for a short message.
@@ -130,52 +131,6 @@ void Actions::onFinished(const core::MutationFinishedEvent& event)
         return;
     }
     handleDefault(event);
-}
-
-std::vector<std::string> Actions::unpushedSubmodulePaths(const std::string& text)
-{
-    // git: "The following submodule paths contain changes that can\nnot be found on any remote:\n  sub\n\nPlease try ..."
-    if (text.find("submodule") == std::string::npos || (text.find("contain") == std::string::npos && text.find("not pushed") == std::string::npos))
-        return {};
-    std::vector<std::string> paths;
-    std::istringstream in(text);
-    std::string line;
-    bool listing = false;
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
-        if (!listing) {
-            listing = line.find("not be found on any remote") != std::string::npos;
-            continue;
-        }
-        if (line.empty() || (line[0] != ' ' && line[0] != '\t'))
-            break;
-        paths.push_back(gg::trim(line));
-    }
-    return paths;
-}
-
-bool Actions::handleUnpushedSubmodules(const core::MutationFinishedEvent& event, std::function<void()> pushOnDemand)
-{
-    if (event.outcome != Outcome::Failed)
-        return false;
-    const std::vector<std::string> paths = unpushedSubmodulePaths(event.detail.empty() ? event.message : event.detail);
-    if (paths.empty())
-        return false;
-    std::string list;
-    for (const auto& p : paths)
-        list += "  " + p + "\n";
-    Form f;
-    f.title = "Submodules not pushed";
-    f.message = "The push records submodule commits that are on no remote:\n\n" + list
-        + "\n\"Push submodules first\" pushes the submodule commits, then this push. "
-          "It can fail when the HEAD of a submodule is detached. Push from a branch of the submodule then.";
-    f.buttons.push_back({"Push submodules first", [pushOnDemand](Form&) { pushOnDemand(); }});
-    const std::string first = paths.front();
-    f.buttons.push_back({"Open submodule", [this, first](Form&) { m_session.app().openRepository(m_session.path() / first); }});
-    f.buttons.push_back({"Cancel", {}});
-    m_session.app().dialogs().open(std::move(f));
-    return true;
 }
 
 void Actions::handleDefault(const core::MutationFinishedEvent& event)
@@ -1272,23 +1227,19 @@ void Actions::deleteTags(std::vector<std::string> names)
     });
 }
 
-void Actions::pushTag(const std::string& remote, const std::string& tag, bool submodulesOnDemand)
+void Actions::pushTag(const std::string& remote, const std::string& tag)
 {
     run("push tag " + tag,
-        [remote, tag, submodulesOnDemand](MutationContext& ctx) {
+        [remote, tag](MutationContext& ctx) {
             std::vector<std::string> args{"push", "--progress"};
-            const std::string recurse = pushRecurseOption(ctx, submodulesOnDemand);
+            const std::string recurse = pushRecurseOption(ctx);
             if (!recurse.empty())
                 args.push_back(recurse);
             args.push_back(remote);
             args.push_back("refs/tags/" + tag);
             ctx.git(args, {}, true);
         },
-        [this, remote, tag, submodulesOnDemand](const core::MutationFinishedEvent& e) {
-            if (!submodulesOnDemand && handleUnpushedSubmodules(e, [this, remote, tag] { pushTag(remote, tag, true); }))
-                return;
-            handleDefault(e);
-        },
+        [this](const core::MutationFinishedEvent& e) { handleDefault(e); },
         true);
 }
 
@@ -1773,10 +1724,10 @@ void Actions::pull(PullMode mode, bool autostash)
 }
 
 void Actions::push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
-    bool setUpstream, bool forceWithLease, bool tags, bool submodulesOnDemand)
+    bool setUpstream, bool forceWithLease, bool tags)
 {
     run(tags ? "push tags to " + remote : "push " + localBranch + " to " + remote,
-        [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags, submodulesOnDemand](MutationContext& ctx) {
+        [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags](MutationContext& ctx) {
             if (!tags) {
                 // Never push first-class conflicts (§4.10 Safety, P1): refuse before git runs.
                 const std::string local = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
@@ -1813,7 +1764,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 args.emplace_back("--set-upstream");
             if (forceWithLease)
                 args.emplace_back("--force-with-lease");
-            const std::string recurse = pushRecurseOption(ctx, submodulesOnDemand);
+            const std::string recurse = pushRecurseOption(ctx);
             if (!recurse.empty())
                 args.push_back(recurse);
             args.push_back(remote);
@@ -1823,17 +1774,11 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 args.push_back("refs/heads/" + localBranch + ":refs/heads/" + remoteBranch);
             ctx.git(args, {}, true);
         },
-        [this, remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags, submodulesOnDemand](
-            const core::MutationFinishedEvent& e) {
+        [this, remote, localBranch, remoteBranch](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Refused) {
                 m_session.app().dialogs().pushRefused(m_session, e.message, e.detail);
                 return;
             }
-            if (!submodulesOnDemand
-                && handleUnpushedSubmodules(e, [this, remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags] {
-                       push(remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags, true);
-                   }))
-                return;
             if (e.outcome == Outcome::PushRejected) {
                 Form f;
                 f.title = "Push rejected";
@@ -1844,7 +1789,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                                  ctx.env.emplace_back("GIT_EDITOR", "true");
                                                  ctx.git({"pull", "--progress", "--no-rebase", remote, remoteBranch}, {}, true);
                                                  std::vector<std::string> pushArgs{"push", "--progress"};
-                                                 const std::string recurse = pushRecurseOption(ctx, false);
+                                                 const std::string recurse = pushRecurseOption(ctx);
                                                  if (!recurse.empty())
                                                      pushArgs.push_back(recurse);
                                                  pushArgs.push_back(remote);
@@ -1853,13 +1798,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                                  ctx.worktreeFollowsIndex = true;
                                                  ctx.submodules = SubmoduleSync::Update;
                                              },
-                                             [this, remote, localBranch, remoteBranch](const core::MutationFinishedEvent& pe) {
-                                                 // The pull is done; "Push submodules first" pushes the branch again.
-                                                 if (!handleUnpushedSubmodules(pe, [this, remote, localBranch, remoteBranch] {
-                                                         push(remote, localBranch, remoteBranch, false, false, false, true);
-                                                     }))
-                                                     handleDefault(pe);
-                                             },
+                                             [this](const core::MutationFinishedEvent& pe) { handleDefault(pe); },
                                              true, true, true, true); // the pull can merge on a detached HEAD
                                      }});
                 f.buttons.push_back({"Force with lease...", [this, remote, localBranch, remoteBranch](Form&) {

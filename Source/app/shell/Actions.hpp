@@ -139,7 +139,7 @@ public:
     void deleteTag(const std::string& name);
     // Deletes the local tags with one `git tag -d` call.
     void deleteTags(std::vector<std::string> names);
-    void pushTag(const std::string& remote, const std::string& tag, bool submodulesOnDemand = false);
+    void pushTag(const std::string& remote, const std::string& tag);
     void deleteRemoteTag(const std::string& remote, const std::string& tag);
     // Deletes the tags on one remote with one `git push --delete` call.
     void deleteRemoteTags(const std::string& remote, std::vector<std::string> tags);
@@ -266,11 +266,8 @@ public:
     // "" when `path` can be the path of a new submodule; else the reason it cannot (empty, absolute or with "..").
     static std::string submodulePathProblem(const std::string& path);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
-        bool setUpstream, bool forceWithLease, bool tags = false, bool submodulesOnDemand = false);
-    // GG-61: a push checks that the submodule commits it records are on a remote
-    // (--recurse-submodules=check, only with a .gitmodules file). `submodulesOnDemand` pushes them first.
-    // The submodule paths of git's refusal in `text`; empty when `text` is another failure.
-    static std::vector<std::string> unpushedSubmodulePaths(const std::string& text);
+        bool setUpstream, bool forceWithLease, bool tags = false);
+    // GG-22: a push with a .gitmodules file uses --recurse-submodules=on-demand: git pushes the submodules first.
 
     // ---- stash (§4.9) ---------------------------------------------------------------------
     void stashPush(const std::string& message, bool keepIndex, bool untracked, bool stagedOnly,
@@ -330,8 +327,6 @@ private:
     // Runs update-ref -d for each full ref as one operation with the given journal label.
     void forgetRefsAs(const std::string& label, std::vector<std::string> fullRefs);
     void handleDefault(const core::MutationFinishedEvent& event);
-    // Opens the "Submodules not pushed" form when `event` is that refusal; false for any other result.
-    bool handleUnpushedSubmodules(const core::MutationFinishedEvent& event, std::function<void()> pushOnDemand);
     // A step of a stopped rebase finished: stopping again shows git's message, errors a popup.
     void onRebaseStep(const core::MutationFinishedEvent& event);
 
