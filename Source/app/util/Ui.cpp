@@ -472,6 +472,9 @@ void badgeSameLineIfFits(const char* label)
     const float lineStart = ImGui::GetWindowPos().x + ImGui::GetCursorStartPos().x;
     if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <= lineStart + tooltipWrapWidth())
         ImGui::SameLine();
+    else
+        // A wrapped row: a small gap, so the pill rows do not touch.
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round(ImGui::GetFontSize() * 0.25f));
 }
 
 IdCopyChoice idCopyChoice(const std::string& hex, bool longId, bool onPrefix, bool shift)

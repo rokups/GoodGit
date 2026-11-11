@@ -1085,6 +1085,17 @@ GG_TEST("history", "the row tooltip lists every shown ref as a badge with its wh
         maxY = std::max(maxY, info.RectFull.Min.y);
     }
     GG_CHECK(maxY - minY > ImGui::GetTextLineHeight());
+    // The pill rows do not touch: the gap between the bottom of a row and the top of the next is at least 4 px.
+    std::vector<ImGuiTestItemInfo> pills;
+    for (int i = 0; i < 8; ++i)
+        pills.push_back(ctx->ItemInfo((tipRef + "another-long-branch-name-number-" + std::to_string(i)).c_str()));
+    float minGap = 1e9f;
+    for (const auto& a : pills)
+        for (const auto& b : pills)
+            if (b.RectFull.Min.y > a.RectFull.Max.y - 1.0f)
+                minGap = std::min(minGap, b.RectFull.Min.y - a.RectFull.Max.y);
+    GG_CHECK(minGap < 1e8f);
+    GG_CHECK(minGap >= 4.0f);
 }
 
 GG_TEST("history", "first rows of a large history appear quickly")
