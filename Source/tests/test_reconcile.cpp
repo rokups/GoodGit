@@ -70,6 +70,16 @@ const gg::journal::RefChange* refChange(const gg::journal::Operation& op, const 
     return nullptr;
 }
 
+// Log the label and the ended state of each git operation. A count failure then shows
+// if the journal has too many or too few operations.
+void logGitOps(ImGuiTestContext* ctx, const fs::path& repo, size_t expected)
+{
+    const auto ops = gitOps(repo);
+    ctx->LogError("expected %zu git operations, found %zu", expected, ops.size());
+    for (size_t i = 0; i < ops.size(); ++i)
+        ctx->LogError("  op %zu: '%s' ended=%d", i, ops[i].label.c_str(), ops[i].ended ? 1 : 0);
+}
+
 } // namespace
 
 GG_TEST("reconcile", "plain git changes without hooks are journaled and Undo restores them")
@@ -1186,9 +1196,17 @@ GG_TEST("reconcile", "a plain git rebase --apply stopped at a conflict and conti
     s.git(repo, {"add", "c.txt"});
     s.git(repo, {"rebase", "--continue"});
     GG_REQUIRE(!fs::exists(repo / ".git" / "rebase-apply"));
-    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).back().ended; }));
+    // Wait for the one new operation to exist and end, let the watcher settle,
+    // then check that no other operation appears.
+    const auto oneNewEnded = [&] {
+        const auto g = gitOps(repo);
+        return g.size() == opsBefore + 1 && g.back().ended;
+    };
+    GG_CHECK(s.waitUntil(oneNewEnded));
     s.settle();
     ctx->Yield(10);
+    if (gitOps(repo).size() != opsBefore + 1)
+        logGitOps(ctx, repo, opsBefore + 1);
     const auto ops = gitOps(repo);
     GG_REQUIRE(ops.size() == opsBefore + 1);
     GG_CHECK_STR_EQ(ops.back().label, "git rebase");
