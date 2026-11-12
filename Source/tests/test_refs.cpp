@@ -890,6 +890,30 @@ GG_TEST("refs", "delete tags dialog deletes the checked local tags; one undo res
     GG_CHECK(refExists(s, repo, "refs/tags/t3"));
 }
 
+GG_TEST("refs", "deleting the same tag twice in one request deletes it once")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* name : {"t1", "t2"})
+        s.git(repo, {"tag", name});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().deleteTags({"t1", "t2", "t1"});
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/t1") && !refExists(s, repo, "refs/tags/t2"); }));
+    s.settle();
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/tags/t1") && refExists(s, repo, "refs/tags/t2"); }));
+}
+
+GG_TEST("refs", "forgetting the same ref twice in one request forgets it once")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().forgetRefs({"refs/remotes/origin/f1", "refs/remotes/origin/f2", "refs/remotes/origin/f1"});
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/remotes/origin/f1") && !refExists(s, repo, "refs/remotes/origin/f2"); }));
+    s.settle();
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
+}
+
 GG_TEST("refs", "deleting many tags with long names needs no long command line; one undo restores them")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

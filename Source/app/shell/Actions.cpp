@@ -44,6 +44,17 @@ std::vector<std::string> withPaths(std::vector<std::string> args, const std::vec
 
 // The push option for submodules (GG-22); empty without a .gitmodules file, so other repositories push as before.
 // "on-demand" pushes the submodules first, then the main repository.
+// Git rejects a batched update-ref with the same ref twice. Keeps the first of each name.
+static std::string deleteCommands(const std::vector<std::string>& refs, const std::string& prefix)
+{
+    std::set<std::string> seen;
+    std::string commands;
+    for (const auto& r : refs)
+        if (seen.insert(r).second)
+            commands += "delete " + prefix + r + "\n";
+    return commands;
+}
+
 static std::string pushRecurseOption(const MutationContext& ctx)
 {
     std::error_code ec;
@@ -1238,10 +1249,7 @@ void Actions::deleteTags(std::vector<std::string> names)
     const std::string label = names.size() == 1 ? "delete tag " + names[0] : "delete " + std::to_string(names.size()) + " tags";
     run(label, [names = std::move(names)](MutationContext& ctx) {
         // One update-ref call with the names on stdin: a command line with many tags is too long.
-        std::string commands;
-        for (const auto& n : names)
-            commands += "delete refs/tags/" + n + "\n";
-        ctx.git({"update-ref", "--stdin"}, commands);
+        ctx.git({"update-ref", "--stdin"}, deleteCommands(names, "refs/tags/"));
     });
 }
 
@@ -1518,10 +1526,7 @@ void Actions::forgetRefsAs(const std::string& label, std::vector<std::string> fu
         return;
     run(label, [fullRefs = std::move(fullRefs)](MutationContext& ctx) {
         // One call for all refs. A ref that is already gone is no error.
-        std::string commands;
-        for (const auto& ref : fullRefs)
-            commands += "delete " + ref + "\n";
-        ctx.git({"update-ref", "--stdin"}, commands);
+        ctx.git({"update-ref", "--stdin"}, deleteCommands(fullRefs, ""));
     });
 }
 
