@@ -1417,9 +1417,8 @@ void TagsPanel::draw(bool* open)
     const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
     // Only the list scrolls: the controls above stay put.
     beginList();
-    // Tags on the remotes: read while this panel is shown (and again after fetch, pull or push).
+    // The menus offer Delete on the remotes that have the tag: read them while this panel is shown.
     m_session.requestRemoteTagsIfStale();
-    const auto& remoteTags = m_session.remoteTags();
     std::vector<std::pair<size_t, std::string>> localTags;
     for (size_t i = 0; i < m_snapshot->tags.size(); ++i)
         if (containsNoCase(m_snapshot->tags[i].name, m_filter))
@@ -1463,50 +1462,6 @@ void TagsPanel::draw(bool* open)
         }
         ImGui::PopID();
     }, &tagGroupRefs);
-    // Tags only on remotes are dimmed and show where they are. They group in folders as the local tags do.
-    std::map<std::string, std::vector<std::string>> remoteOnlyMap;
-    for (const auto& [remote, r] : remoteTags)
-        for (const auto& name : r.tags)
-            if (containsNoCase(name, m_filter)
-                && std::none_of(m_snapshot->tags.begin(), m_snapshot->tags.end(), [&](const auto& t) { return t.name == name; }))
-                remoteOnlyMap[name].push_back(remote);
-    const std::vector<std::pair<std::string, std::vector<std::string>>> remoteOnly(remoteOnlyMap.begin(), remoteOnlyMap.end());
-    std::vector<std::pair<size_t, std::string>> remoteOnlyItems;
-    for (size_t i = 0; i < remoteOnly.size(); ++i)
-        remoteOnlyItems.push_back({i, remoteOnly[i].first});
-    // These tags have no local ref. A folder of them has no Show or Hide item.
-    const GroupRefs remoteTagGroupRefs{history, [](size_t) { return std::vector<std::string>{}; }, RefKind::Tag,
-        [&](size_t index) { return remoteOnly[index].first; }, &m_session, m_snapshot.get()};
-    drawTree(buildTree(remoteOnlyItems), "rtag:", filtering, [&](size_t index, const std::string& shortName) {
-        const auto& [name, remotes] = remoteOnly[index];
-        std::string where;
-        for (const auto& r : remotes)
-            where += (where.empty() ? "" : ", ") + r;
-        const std::string id = "rtag_" + rowId(name);
-        ImGui::PushOverrideID(windowId);
-        ImGui::PushID(id.c_str());
-        ImGui::TextDisabled(ICON_MS_CLOUD);
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-        // The item spans the room to the list's edge, as the rows of the remote-tracking branches do.
-        const bool pressed = selectableText(shortName + "  (" + where + ")", id, selection.add(RefKind::Tag, name), ImGuiSelectableFlags_None,
-            ImVec2(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 0.0f));
-        selection.click(pressed && pressSource() == PressSource::Mouse, RefKind::Tag, name);
-        ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            tooltip("%sOnly on %s: fetch to get it here", shortName != name ? (name + "\n").c_str() : "", where.c_str());
-        if (beginContextMenu("##rtag_menu")) {
-            if (!tagMultiMenu(m_session, *m_snapshot, m_selection, name)) {
-                if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-                    ImGui::SetClipboardText(name.c_str());
-                ImGui::Separator();
-                tagDeleteItems(m_session, *m_snapshot, name, false);
-            }
-            ImGui::EndPopup();
-        }
-        ImGui::PopID();
-        ImGui::PopID();
-    }, &remoteTagGroupRefs);
     m_selection.drawn.swap(selection.drawn);
     endList();
     ImGui::End();

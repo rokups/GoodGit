@@ -826,16 +826,16 @@ the panel without touching the repository.
   appears later, after a fetch say, is shown or hidden in History; stored in `[GGUIView][Tags] HideNew`, default shown),
   filter (N annotated with message). These controls stay while the list scrolls. Tags group in folders on "/" as
   local branches do. The tree, the look, the open state and the keys are the same. The filter opens the folders
-  that have matches. A folder row `###group_tag:<path>` is not selectable. Remote-only tags group the same way.
-  Their folder rows are `###group_rtag:<path>`. A row is `tag_<name>` with the full name in the ID. The label is
+  that have matches. A folder row `###group_tag:<path>` is not selectable. The list has only the tags known here.
+  A tag that exists only on a remote is not listed. Fetch more... brings it in. A row is `tag_<name>` with the full name in the ID. The label is
   the name below the folder. The tooltip has the full name when a folder cuts it. The tooltip of an annotated
   tag also shows its message.
   A row has the menu item Show/Hide in History. The keys are the same as in Branches.
   The context menu of a row has: Reveal · Copy name · Delete · N: Push tag · Delete on remote.
   A folder row has the menu item `###history_visibility`. It shows or hides all tags below the folder.
   Ctrl shows only these tags. A folder row also has Delete ▸ Local / On <remote> for all tags below it.
-  These items are the same as the items of the menu of a selection. A folder of remote-only tags has Delete only.
-  Selection (**N**): rows select as in Branches (click, Ctrl-click, Shift-click in the order drawn, Esc), local and remote-only tag rows. With two or
+  These items are the same as the items of the menu of a selection.
+  Selection (**N**): rows select as in Branches (click, Ctrl-click, Shift-click in the order drawn, Esc) of tag rows. With two or
   more selected tags the menu is: Show/Hide in History · Delete ▸ Local / On <remote> (one item for each remote; its label
   adds "(checking...)" or "(not checked)" while the tags on the remote are unknown). Each item opens the dialog `Delete tags`.
 - **Repositories** `"Repositories"` (N): the permanent repository list of the settings (`repositories`:

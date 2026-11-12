@@ -1383,7 +1383,7 @@ GG_TEST("refs", "tags: a long annotated tag message is wrapped and cut after 10 
     GG_CHECK(tip->Size.y <= fontSize * 2.0f + style.WindowPadding.y * 2.0f + 1.0f);
 }
 
-GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; tags only on a remote")
+GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     // A tag only on origin.
@@ -1395,22 +1395,10 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; t
         auto it = tags.find("origin");
         return it != tags.end() && it->second.ok && it->second.tags.count(tag) != 0;
     };
-    // Listed (read with git ls-remote while the panel is shown); Delete ▸ Local is disabled for it.
+    // A tag only on origin is not listed: the panel shows the local tags.
     GG_REQUIRE(s.waitUntil([&] { return remoteHas("remote-only"); }));
-    const std::string remoteOnly = "//Tags/rtag_remote-only/###rtag_remote-only";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(remoteOnly.c_str()); }));
-    GG_CHECK(s.itemText(remoteOnly.c_str()).rfind("remote-only  (origin)", 0) == 0);
-    s.contextMenu(remoteOnly.c_str(), "Copy name");
-    GG_CHECK_STR_EQ(s.clipboard(), "remote-only");
-    ctx->ItemClick(remoteOnly.c_str(), ImGuiMouseButton_Right);
-    ctx->MenuAction(ImGuiTestAction_Hover, "//$FOCUSED/Delete");
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Local").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
-    s.contextMenu(remoteOnly.c_str(), "Delete/origin");
-    GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/remote-only"); }));
-    GG_CHECK(s.waitUntil([&] { return !s.itemExists(remoteOnly.c_str()); }));
     s.settle();
+    GG_CHECK(!s.itemExists(tagRow("remote-only").c_str()));
     ctx->ItemClick("//Tags/###create_tag");
     GG_REQUIRE(s.dialogOpen("Create tag"));
     s.dialogText("Create tag", "name", "v9");
@@ -1437,10 +1425,11 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote; t
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/v10"); }));
     s.settle();
     GG_CHECK(refExists(s, origin(s, repo), "refs/tags/v10"));
-    // Now only on origin: deleted there from its row.
-    const std::string v10 = "//Tags/rtag_v10/###rtag_v10";
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(v10.c_str()); }));
-    s.contextMenu(v10.c_str(), "Delete/origin");
+    // Now only on origin: it has no row. Delete it there with its local copy back.
+    GG_CHECK(!s.itemExists(tagRow("v10").c_str()));
+    s.git(repo, {"fetch", "-q", "origin", "refs/tags/v10:refs/tags/v10"});
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("v10").c_str()); }));
+    s.contextMenu(tagRow("v10").c_str(), "Delete/origin");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/v10"); }));
     s.settle();
     GG_REQUIRE(s.waitUntil([&] { return !remoteHas("v10"); }));
@@ -1953,28 +1942,6 @@ GG_TEST("refs", "a Shift click on a tag selects the range of the drawn rows, fol
     const auto& names = s.session()->tags().selection().names;
     GG_CHECK(names.size() == 3 && names.count("release/1.0") && names.count("release/2.0") && names.count("plain"));
     GG_CHECK(!names.count("release"));
-}
-
-GG_TEST("refs", "tags only on a remote group in folders, and the folder menu has Delete only")
-{
-    const fs::path repo = s.fixture(Recipe::WithRemote);
-    for (const char* name : {"far/a", "far/b"})
-        s.git(origin(s, repo), {"tag", name, "main"});
-    GG_REQUIRE(s.openRepository(repo));
-    s.showPanel("Tags");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Tags/###group_rtag:far:"); }));
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//Tags/rtag_far:a/###rtag_far:a")); }));
-    GG_CHECK(s.itemText("//Tags/rtag_far:a/###rtag_far:a").rfind("a  (origin)", 0) == 0);
-    ctx->ItemClick("//Tags/###group_rtag:far:", ImGuiMouseButton_Right);
-    ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/###history_visibility", ImGuiTestOpFlags_NoError).ID == 0);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Delete", ImGuiTestOpFlags_NoError).ID != 0);
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
-    s.contextMenu("//Tags/###group_rtag:far:", "Delete/On origin");
-    GG_REQUIRE(s.dialogOpen("Delete tags"));
-    GG_CHECK(s.app.dialogs().current()->checkedOptions("tags") == (std::vector<std::string>{"far/a", "far/b"}));
-    s.dialogButton("Delete tags", "Cancel");
 }
 
 } // namespace ggtest

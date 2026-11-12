@@ -379,6 +379,35 @@ GG_TEST("network", "fetch more: dialog lists only what is new; Fetch takes the t
     GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "main"}));
 }
 
+GG_TEST("network", "a tag only on the remote is not in the Tags panel until Fetch more brings it")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(origin(s, repo), {"tag", "t-remote", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    auto hasRef = [&](const std::string& ref) { return s.gitMayFail(repo, {"rev-parse", "-q", "--verify", ref}).ok(); };
+    const std::string row = "//Tags/tag_t-remote/###tag_t-remote";
+    // The panel knows the tag of the remote, but lists only the local tags.
+    GG_CHECK(s.waitUntil([&] {
+        const auto& tags = s.session()->remoteTags();
+        auto it = tags.find("origin");
+        return it != tags.end() && it->second.ok && it->second.tags.count("t-remote") != 0;
+    }));
+    s.settle();
+    GG_CHECK(!s.itemExists(row.c_str()));
+    GG_CHECK(!hasRef("refs/tags/t-remote"));
+
+    popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch more...");
+    GG_REQUIRE(s.dialogOpen("Fetch more"));
+    const std::string tagRow = "//Fetch more/**/t-remote##tags_t-remote";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow.c_str()); }, 10.0f));
+    ctx->ItemCheck(tagRow.c_str());
+    s.dialogButton("Fetch more", "Fetch");
+    GG_CHECK(s.waitUntil([&] { return hasRef("refs/tags/t-remote"); }));
+    s.settle();
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+}
+
 GG_TEST("network", "forget: dialog lists the fetched branches and tags; Forget removes the ticked ones; Undo restores them")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
