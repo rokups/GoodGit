@@ -667,7 +667,7 @@ static std::string resolveCommit(git_repository* repo, const std::string& rev)
 void Actions::squash(const core::Oid& commit, const std::string& target, bool combineMessages)
 {
     const std::string id = commit.hex();
-    rewrite("squash " + id.substr(0, 10), [id, target, combineMessages](git_repository* repo) {
+    rewriteOlder("squash " + id.substr(0, 10), [id, target, combineMessages](git_repository* repo) {
         const auto parents = parentsOf(repo, id);
         if (parents.size() != 1)
             refuse(parents.empty() ? "a root commit has no parent to squash into" : "a merge commit cannot be squashed");
@@ -704,7 +704,7 @@ void Actions::squashRange(const std::vector<core::Oid>& commits, const std::stri
     std::vector<std::string> ids; // oldest first
     for (auto it = commits.rbegin(); it != commits.rend(); ++it)
         ids.push_back(it->hex());
-    rewrite("squash " + std::to_string(ids.size()) + " commits", [ids, message](git_repository* repo) {
+    rewriteOlder("squash " + std::to_string(ids.size()) + " commits", [ids, message](git_repository* repo) {
         if (ids.size() < 2)
             refuse("nothing to squash");
         for (size_t i = 0; i < ids.size(); ++i) {
@@ -776,7 +776,7 @@ void Actions::split(const core::Oid& commit, const std::vector<std::string>& pat
     std::string msg = firstMessage;
     if (!msg.empty() && msg.back() != '\n')
         msg.push_back('\n');
-    rewrite("split " + id.substr(0, 10), [id, paths, msg](git_repository* repo) {
+    rewriteOlder("split " + id.substr(0, 10), [id, paths, msg](git_repository* repo) {
         rw::Plan plan = rw::replayPlan(repo, {id});
         plan.reflogMessage = "ggui: split";
         for (size_t i = 0; i < plan.steps.size(); ++i) {
@@ -802,31 +802,36 @@ void Actions::split(const core::Oid& commit, const std::vector<std::string>& pat
 void Actions::abandon(const core::Oid& commit, bool withDescendants, std::function<void()> then)
 {
     const std::string id = commit.hex();
-    rewrite(std::string(withDescendants ? "drop commit and descendants from " : "drop commit ") + id.substr(0, 10),
-        [id, withDescendants](git_repository* repo) {
-            rw::Plan plan;
-            plan.reflogMessage = "ggui: drop";
-            if (withDescendants) {
-                plan.dropped = rw::descendants(repo, {id});
-                return plan;
-            }
-            plan = replayWithout(repo, {id}, {id});
-            plan.reflogMessage = "ggui: drop";
-            plan.dropped = {id};
+    const std::string label = std::string(withDescendants ? "drop commit and descendants from " : "drop commit ") + id.substr(0, 10);
+    PlanBuilder build = [id, withDescendants](git_repository* repo) {
+        rw::Plan plan;
+        plan.reflogMessage = "ggui: drop";
+        if (withDescendants) {
+            plan.dropped = rw::descendants(repo, {id});
             return plan;
-        },
-        [this, then](const core::MutationFinishedEvent& e) {
-            if (e.outcome == Outcome::Ok && then)
-                then();
-            else
-                handleDefault(e);
-        });
+        }
+        plan = replayWithout(repo, {id}, {id});
+        plan.reflogMessage = "ggui: drop";
+        plan.dropped = {id};
+        return plan;
+    };
+    Callback done = [this, then](const core::MutationFinishedEvent& e) {
+        if (e.outcome == Outcome::Ok && then)
+            then();
+        else
+            handleDefault(e);
+    };
+    // Dropping with descendants removes other branches' commits: no scope question.
+    if (withDescendants)
+        rewrite(label, std::move(build), std::move(done));
+    else
+        rewriteOlder(label, std::move(build), std::move(done));
 }
 
 void Actions::restorePaths(const core::Oid& commit, const std::string& from, const std::vector<std::string>& paths)
 {
     const std::string id = commit.hex();
-    rewrite("restore " + std::to_string(paths.size()) + " path(s) in " + id.substr(0, 10), [id, from, paths](git_repository* repo) {
+    rewriteOlder("restore " + std::to_string(paths.size()) + " path(s) in " + id.substr(0, 10), [id, from, paths](git_repository* repo) {
         using namespace gg::git2;
         const std::string source = resolveCommit(repo, from);
         Commit c = lookupCommit(repo, *fromHex(id));

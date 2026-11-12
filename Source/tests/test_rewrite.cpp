@@ -1016,6 +1016,24 @@ GG_TEST("rewrite", "reword asks the scope: Cancel changes nothing")
     GG_CHECK_STR_EQ(everything(s, r.path), before);
 }
 
+GG_TEST("rewrite", "drop asks the scope: Only main leaves the side branch with the old commit")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.b);
+    ctx->KeyPress(ImGuiKey_A);
+    GG_REQUIRE(s.dialogOpen("Drop commit"));
+    s.dialogButton("Drop commit", "Drop");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") != r.c; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), r.b);
+    GG_CHECK(s.gitOut(r.path, {"log", "--format=%s", "main"}) == "C\nA");
+}
+
 GG_TEST("rewrite", "reword asks no scope without commits off the HEAD path")
 {
     HeadPathRepo r = makeScopeRepo(s);

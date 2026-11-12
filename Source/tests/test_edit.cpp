@@ -579,6 +579,8 @@ GG_TEST("edit", "squash three adjacent selected commits into one replacing exact
     GG_REQUIRE(s.dialogOpen("Squash"));
     GG_CHECK_STR_EQ(currentForm(s)->text("message"), "c2 add b\n\nc3 change a\n\nc4 add c and d");
     s.dialogButton("Squash", "Squash");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Rebase all descendants");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~1"), r.c1);
@@ -628,9 +630,29 @@ GG_TEST("edit", "Squash is disabled for a gapped selection and for the root comm
     GG_REQUIRE(s.dialogOpen("Squash"));
     GG_CHECK_STR_EQ(currentForm(s)->text("message"), "c1 add a\n\nc2 add b");
     s.dialogButton("Squash", "Squash");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Rebase all descendants");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c3 change a", "c1 add a"}));
+}
+
+GG_TEST("edit", "squash asks the scope: Only main leaves the side branch alone")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiKey_S);
+    GG_REQUIRE(s.dialogOpen("Squash"));
+    s.dialogButton("Squash", "Squash");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_CHECK(changed(s, r.path, r.c4));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.s1);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), r.c2);
+    GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c2 add b", "c1 add a"}));
 }
 
 GG_TEST("edit", "split a commit by files (Alt+S)")
