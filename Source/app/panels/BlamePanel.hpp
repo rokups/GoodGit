@@ -3,6 +3,7 @@
 
 #include "shell/Session.hpp"
 #include "util/Ui.hpp"
+#include "util/FilterExpr.hpp"
 
 #include <core/Engine.hpp>
 

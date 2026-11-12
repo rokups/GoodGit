@@ -4,6 +4,7 @@
 
 #include "panels/HistoryPanel.hpp"
 #include "shell/Session.hpp"
+#include "util/FilterExpr.hpp"
 
 #include <core/Engine.hpp>
 
@@ -135,7 +136,7 @@ private:
     std::string m_wantedPath;
     bool m_scrollToCurrent = false; // an automatic selection: the next draw scrolls to the current row
     bool m_navOnFileNow = false; // this frame: the nav cursor is on a file row
-    std::string m_filter;
+    mutable FilterInput m_filter; // mutable: visibleRows() const parses the text on demand
     std::string m_compareText;   // the "Compare with" field
     CompareTarget m_compare;     // applied: the whole commit is compared with it (not while m_pair is set)
     std::optional<HistoryPanel::CommitPair> m_pair; // two commits selected in History: they are compared

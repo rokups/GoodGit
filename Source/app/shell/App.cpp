@@ -195,7 +195,7 @@ void App::resetForTest()
     m_listInfo.clear();
     m_liveValid = false;
     indexSummaries();
-    m_recentFilter.clear();
+    m_recentFilter.text.clear();
     m_welcomePath.clear();
     m_autoOpenDone = true;
     m_iniApplied = false;

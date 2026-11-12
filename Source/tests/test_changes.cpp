@@ -121,6 +121,15 @@ GG_TEST("changes", "commit files, filter, compare with HEAD, header")
     ctx->Yield(2);
     GG_CHECK(!s.itemExists(fileRef(s, nullptr, "f1.txt").c_str()));
     GG_CHECK(s.itemExists(fileRef(s, nullptr, "sub/x.txt").c_str()));
+    // Terms: all must match; a leading - excludes.
+    ctx->ItemInputValue("//Changes/##changes_filter", "txt, f1");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(fileRef(s, nullptr, "f1.txt").c_str()));
+    GG_CHECK(!s.itemExists(fileRef(s, nullptr, "sub/x.txt").c_str()));
+    ctx->ItemInputValue("//Changes/##changes_filter", "txt,-sub");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(fileRef(s, nullptr, "f1.txt").c_str()));
+    GG_CHECK(!s.itemExists(fileRef(s, nullptr, "sub/x.txt").c_str()));
     ctx->ItemInputValue("//Changes/##changes_filter", "");
     // Compare an older commit with HEAD: everything that differs between them.
     selectCommit(s, s.revParse(repo, "HEAD~3"));

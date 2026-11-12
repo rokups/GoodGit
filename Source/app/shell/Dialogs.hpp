@@ -3,6 +3,8 @@
 // time; later ones queue.
 #pragma once
 
+#include "util/FilterExpr.hpp"
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -42,7 +44,7 @@ struct Field {
     std::string hint;
     std::function<std::string()> live;
     bool filterable = false;  // Combo: a filter field at the top of the list (Enter picks the first match)
-    std::string filter;
+    FilterInput filter;
     // Shown only while this returns true (empty: always); a hidden field keeps its value.
     std::function<bool(const Form&)> visible;
     // Check: called after the user toggles it (the form may change other fields).

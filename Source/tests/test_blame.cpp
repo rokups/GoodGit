@@ -287,6 +287,16 @@ GG_TEST("blame", "filter, history, tooltips")
     ctx->ItemInputValue("//Blame/##blame_filter", "");
     ctx->Yield(2);
     GG_CHECK_EQ(s.session()->blame().matchCount(), 0);
+    // A negated term marks the lines that do not match it; all terms must hold.
+    ctx->ItemInputValue("//Blame/##blame_filter", "L,-edited");
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 4);
+    ctx->ItemInputValue("//Blame/##blame_filter", "-edited");
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 4);
+    ctx->ItemInputValue("//Blame/##blame_filter", "");
+    ctx->Yield(2);
+    GG_CHECK_EQ(s.session()->blame().matchCount(), 0);
     // Tooltip with the commit summary.
     ctx->MouseMove(lineRef(s, 3).c_str());
     ctx->SleepNoSkip(1.0f, 0.1f);

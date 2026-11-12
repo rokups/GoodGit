@@ -465,8 +465,9 @@ const FileRow* ChangesPanel::current() const
 std::vector<const FileRow*> ChangesPanel::visibleRows() const
 {
     std::vector<const FileRow*> out;
+    const FilterExpr& filter = m_filter.expr();
     for (const auto& r : m_rows)
-        if (containsNoCase(r.path, m_filter) || containsNoCase(r.oldPath, m_filter))
+        if (filter.matches({r.path, r.oldPath}))
             out.push_back(&r);
     return out;
 }
@@ -1239,7 +1240,9 @@ void ChangesPanel::draw(bool* open)
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
     ImGui::SetNextItemWidth(std::max(filterMin, half));
-    ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
     sameLineIfFits(compareMin);
     // Compares the whole commit with a revision or the working tree; the working tree and index
     // already compare with HEAD's side.

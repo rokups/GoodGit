@@ -465,13 +465,13 @@ void BlamePanel::applyFilter(bool scroll)
         m_matchPos = -1;
         m_matchVisited = false;
     }
-    if (m_filter.empty())
+    const FilterExpr filter(m_filter);
+    if (filter.empty())
         return;
     const ImU32 color = theme().palette().warning;
     for (size_t i = 0; i < m_blame->lines.size(); ++i) {
         const auto& l = m_blame->lines[i];
-        if (!containsNoCase(l.text, m_filter) && !containsNoCase(l.author, m_filter) && !containsNoCase(l.commit.hex(), m_filter)
-            && !containsNoCase(l.summary, m_filter))
+        if (!filter.matches({l.text, l.author, l.commit.hex(), l.summary}))
             continue;
         m_matches.push_back(static_cast<int>(i));
         m_editor->AddMarker(static_cast<int>(i), withAlpha(color, 0x60), withAlpha(color, 0x38), "", "");
@@ -672,6 +672,8 @@ void BlamePanel::draw(bool* open)
     io.ConfigInputTextEnterKeepActive = true;
     const bool enter = ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter, ImGuiInputTextFlags_EnterReturnsTrue);
     io.ConfigInputTextEnterKeepActive = keepActive;
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
     if (!m_blame) {
         ImGui::TextDisabled("Use \"Blame file\" on a file to see who changed each line.");
         ImGui::End();

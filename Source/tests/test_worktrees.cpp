@@ -237,6 +237,14 @@ GG_TEST("worktrees", "add: an existing branch without checkout (Undo refuses unt
     ctx->Yield(2);
     GG_CHECK(ctx->ItemExists("//$FOCUSED/spare"));
     GG_CHECK(!ctx->ItemExists("//$FOCUSED/side"));
+    // A negated term excludes a branch.
+    ctx->KeyCharsAppend(",-pare");
+    ctx->Yield(2);
+    GG_CHECK(!ctx->ItemExists("//$FOCUSED/spare"));
+    for (int i = 0; i < 6; ++i)
+        ctx->KeyPress(ImGuiKey_Backspace);
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemExists("//$FOCUSED/spare"));
     ctx->KeyPress(ImGuiKey_Enter);
     ctx->Yield(2);
     s.dialogButton("Add worktree", "Add");

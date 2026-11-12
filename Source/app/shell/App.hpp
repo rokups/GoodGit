@@ -260,7 +260,7 @@ private:
     bool m_iniApplied = false;
     int m_pendingOpens = 0;
     std::string m_welcomePath;
-    std::string m_recentFilter;
+    FilterInput m_recentFilter;
     // Alt tap -> main menu bar (see handleMenuBarKey): nav state at the end of the previous frame, and the
     // window to hand focus back to once the menu bar is left.
     struct NavSnapshot {

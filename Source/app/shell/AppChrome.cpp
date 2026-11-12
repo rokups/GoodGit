@@ -280,7 +280,7 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
 {
     // The filter belongs to one opening of a list: the other place does not inherit it.
     if (ImGui::IsWindowAppearing())
-        m_recentFilter.clear();
+        m_recentFilter.text.clear();
     const auto& recent = m_settings.data().recent;
     const auto names = uniqueRecentNames(recent);
     const auto infos = recentInfos();
@@ -312,11 +312,14 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
     const float bar = scrollArea ? ImGui::GetStyle().ScrollbarSize : 0.0f;
     const float width = std::max({ImGui::GetFontSize() * 16, minWidth, widest + bar});
     ImGui::SetNextItemWidth(width);
-    ImGui::InputTextWithHint(filterId, "Filter", &m_recentFilter);
+    ImGui::InputTextWithHint(filterId, "Filter", &m_recentFilter.text);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+    const FilterExpr& recentFilter = m_recentFilter.expr();
 
     std::vector<const Row*> visible;
     for (const Row& row : rows)
-        if (m_recentFilter.empty() || containsNoCase(recent[row.index], m_recentFilter))
+        if (recentFilter.matches({recent[row.index], names[row.index].text()}))
             visible.push_back(&row);
     const bool hasCurrent = std::any_of(visible.begin(), visible.end(), [&](const Row* r) { return recent[r->index] == currentKey; });
     std::string forget;

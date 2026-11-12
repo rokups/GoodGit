@@ -747,6 +747,10 @@ GG_TEST("shell", "recent repositories: Welcome list, Recent menu, switcher")
     // Repository ▸ Recent ▸ with a filter.
     ctx->MenuClick("//##MainMenuBar/Repository/Recent");
     const std::string menu = "//###Menu_01"; // submenu windows are "<label>###Menu_<depth>"
+    ctx->ItemInputValue((menu + "/##recent_filter").c_str(), "-with-remote");
+    ctx->Yield(2);
+    GG_CHECK(ctx->ItemExists((menu + "/###recent_menu_0").c_str()));
+    GG_CHECK(!ctx->ItemExists((menu + "/###recent_menu_1").c_str()));
     ctx->ItemInputValue((menu + "/##recent_filter").c_str(), "with-remote");
     ctx->Yield(2);
     GG_CHECK(!ctx->ItemExists((menu + "/###recent_menu_0").c_str()));

@@ -242,15 +242,15 @@ void Dialogs::draw()
                 bool pickFirst = false;
                 if (f.filterable) {
                     if (ImGui::IsWindowAppearing()) {
-                        f.filter.clear();
+                        f.filter.text.clear();
                         ImGui::SetKeyboardFocusHere();
                     }
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    pickFirst = ImGui::InputTextWithHint("##filter", ICON_MS_SEARCH " Filter", &f.filter,
+                    pickFirst = ImGui::InputTextWithHint("##filter", ICON_MS_SEARCH " Filter", &f.filter.text,
                         ImGuiInputTextFlags_EnterReturnsTrue);
                 }
                 for (size_t k = 0; k < f.options.size(); ++k) {
-                    if (!containsNoCase(f.options[k], f.filter))
+                    if (!f.filter.expr().matches(f.options[k]))
                         continue;
                     if (pickFirst) {
                         f.choice = static_cast<int>(k);
@@ -269,13 +269,13 @@ void Dialogs::draw()
                 ImGui::TextUnformatted(f.label.c_str());
             f.checks.resize(f.options.size(), 0);
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputTextWithHint(("##" + f.id + "_filter").c_str(), ICON_MS_SEARCH " Filter", &f.filter);
+            ImGui::InputTextWithHint(("##" + f.id + "_filter").c_str(), ICON_MS_SEARCH " Filter", &f.filter.text);
             if (ImGui::BeginChild(("##" + f.id + "_list").c_str(), ImVec2(-FLT_MIN, ImGui::GetTextLineHeightWithSpacing() * 8),
                     ImGuiChildFlags_Borders)) {
                 if (f.options.empty())
                     ImGui::TextDisabled("%s", f.hint.c_str());
                 for (size_t k = 0; k < f.options.size(); ++k) {
-                    if (!containsNoCase(f.options[k], f.filter))
+                    if (!f.filter.expr().matches(f.options[k]))
                         continue;
                     bool on = f.checks[k] != 0;
                     if (ImGui::Checkbox((f.options[k] + "##" + f.id + "_" + f.options[k]).c_str(), &on))
