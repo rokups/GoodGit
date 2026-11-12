@@ -511,6 +511,8 @@ void Actions::amendNow(const std::string& message, bool noVerify, bool messageOn
             // refuses before the commit (and its hooks) run. Should it still fail afterwards (a
             // hook changed the commit), HEAD goes back to the original commit. All of it is one
             // operation, undone in one step.
+            // An amend always restacks the descendants and never asks for a scope (GG-48). The edit
+            // session follows the amended commit: without the restack it points outside its branch.
             const auto desc = gg::rewrite::descendants(ctx.repo(), {before});
             if (desc.size() > 1) {
                 gg::rewrite::Plan pre = gg::rewrite::replayPlan(ctx.repo(), {before});
