@@ -1773,6 +1773,8 @@ void HistoryPanel::draw(bool* open)
     filterChanged = acceptCommitDrop(m_filter) || filterChanged;
     if (filterChanged)
         applyFilter();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
     sameLineIfFits(buttonWidth(ICON_MS_MY_LOCATION, "HEAD"));
     ImGui::BeginDisabled(m_snapshot->head.isNull());
     if (smallButton(ICON_MS_MY_LOCATION, "HEAD##hist_head"))

@@ -1,9 +1,9 @@
-#include "util/FilterExpr.hpp"
+#include "libgg/FilterExpr.hpp"
 
 #include <algorithm>
 #include <cctype>
 
-namespace ggui {
+namespace gg {
 
 namespace {
 
@@ -68,4 +68,12 @@ bool FilterExpr::matches(std::initializer_list<std::string_view> fields) const
     return true;
 }
 
-} // namespace ggui
+bool FilterExpr::matchesLowered(std::string_view field) const
+{
+    for (const Term& t : m_terms)
+        if ((field.find(t.text) != std::string_view::npos) == t.negated)
+            return false;
+    return true;
+}
+
+} // namespace gg

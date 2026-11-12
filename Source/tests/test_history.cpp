@@ -252,6 +252,36 @@ GG_TEST("history", "row highlights span the whole row pitch: adjacent rows leave
     GG_CHECK(std::abs(ia.RectFull.Max.y - ib.RectFull.Min.y) < 0.51f);
 }
 
+GG_TEST("history", "filter expression: terms, negation, whitespace and empty")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(s.revParse(repo, "main")));
+    auto& history = s.session()->history();
+    const size_t total = history.rows().size();
+    auto expectCount = [&](const char* text, size_t count) {
+        ctx->ItemInputValue("//History/##hist_filter", text);
+        const bool ok = s.waitUntil([&] { return history.visibleIds().size() == count; });
+        if (!ok)
+            ctx->LogError("filter '%s': %zu visible rows, expected %zu", text, history.visibleIds().size(), count);
+        GG_CHECK(ok);
+    };
+    GG_REQUIRE(total == 7);
+    expectCount("topic", 1);
+    expectCount("base,topic", 0); // All terms must match.
+    expectCount("topic,base", 0);
+    expectCount("feature", 3);
+    expectCount("feature,-merge", 2); // A term and a negated term.
+    expectCount("-merge,feature", 2);
+    expectCount("-topic", total - 1); // A single negated term includes all other commits.
+    expectCount("-topic,-base", total - 2);
+    expectCount("  Base ,  ", 1); // Whitespace and empty terms are ignored; case does not matter.
+    expectCount(" TOPIC , - base ", 1);
+    expectCount(",", total); // No term includes everything.
+    expectCount("-", total);
+    expectCount("", total);
+}
+
 GG_TEST("history", "search by message, ID, branch and tag; no graph while filtering")
 {
     const fs::path repo = s.fixture(Recipe::Merges);

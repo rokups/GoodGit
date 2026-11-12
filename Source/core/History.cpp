@@ -2,6 +2,7 @@
 
 #include "Readers.hpp"
 
+#include <libgg/FilterExpr.hpp>
 #include <libgg/Keep.hpp>
 #include <libgg/Thread.hpp>
 
@@ -481,13 +482,12 @@ HistoryRevealResult historyReveal(git_repository* repo, HistoryState& st, const 
 std::vector<Oid> historySearch(const HistoryState& st, const std::string& text, const gg::CancelToken& cancel)
 {
     std::vector<Oid> matches;
-    const std::string needle = lower(text);
-    if (needle.empty())
-        return matches;
+    // Parse once; the terms are lowercase and the index strings are lowercase.
+    const gg::FilterExpr expr(text);
     for (size_t i = 0; i < st.searchText.size(); ++i) {
         if ((i & 4095) == 0)
             gg::throwIfCancelled(cancel);
-        if (st.searchText[i].find(needle) != std::string::npos)
+        if (expr.matchesLowered(st.searchText[i]))
             matches.push_back(st.order[i]);
     }
     return matches;
