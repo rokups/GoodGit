@@ -1237,9 +1237,11 @@ void Actions::deleteTags(std::vector<std::string> names)
         return;
     const std::string label = names.size() == 1 ? "delete tag " + names[0] : "delete " + std::to_string(names.size()) + " tags";
     run(label, [names = std::move(names)](MutationContext& ctx) {
-        std::vector<std::string> args{"tag", "-d"};
-        args.insert(args.end(), names.begin(), names.end());
-        ctx.git(args);
+        // One update-ref call with the names on stdin: a command line with many tags is too long.
+        std::string commands;
+        for (const auto& n : names)
+            commands += "delete refs/tags/" + n + "\n";
+        ctx.git({"update-ref", "--stdin"}, commands);
     });
 }
 

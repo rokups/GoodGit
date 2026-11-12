@@ -5,6 +5,7 @@
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+#include <libgg/GitRunner.hpp>
 
 namespace ggtest {
 
@@ -839,6 +840,28 @@ GG_TEST("refs", "delete tags dialog deletes the checked local tags; one undo res
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/tags/t1") && refExists(s, repo, "refs/tags/t2"); }));
     s.settle();
     GG_CHECK(refExists(s, repo, "refs/tags/t3"));
+}
+
+GG_TEST("refs", "deleting many tags with long names needs no long command line; one undo restores them")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string head = s.head(repo);
+    const std::string pad(60, 'x');
+    std::vector<std::string> names;
+    std::string create;
+    for (int i = 0; i < 3000; ++i) {
+        names.push_back("many-" + pad + "-" + std::to_string(i));
+        create += "create refs/tags/" + names.back() + " " + head + "\n";
+    }
+    s.git(repo, {"update-ref", "--stdin"}, create);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().deleteTags(names); // over 180 KB of names
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"tag", "--list", "many-*"}).empty(); }, 30.0f));
+    s.settle();
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/tags/" + names.front()) && refExists(s, repo, "refs/tags/" + names.back()); }, 30.0f));
+    s.settle();
+    GG_CHECK(s.gitOut(repo, {"tag", "--list", "many-*"}).size() > 3000 * 60);
 }
 
 GG_TEST("refs", "delete tags dialog with a remote deletes the checked tags on that remote")

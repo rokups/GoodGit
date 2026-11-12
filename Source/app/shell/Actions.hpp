@@ -137,7 +137,7 @@ public:
     void fastForward(const std::string& branch);
     void createTag(const std::string& name, const std::string& at, const std::string& message);
     void deleteTag(const std::string& name);
-    // Deletes the local tags with one `git tag -d` call.
+    // Deletes the local tags with one `git update-ref --stdin` call.
     void deleteTags(std::vector<std::string> names);
     void pushTag(const std::string& remote, const std::string& tag);
     void deleteRemoteTag(const std::string& remote, const std::string& tag);
