@@ -497,7 +497,7 @@ void Actions::reword(const core::Oid& commit, const std::string& message)
     std::string text = message;
     if (!text.empty() && text.back() != '\n')
         text.push_back('\n');
-    rewrite("reword " + id.substr(0, 10), [id, text](git_repository* repo) {
+    rewriteOlder("reword " + id.substr(0, 10), [id, text](git_repository* repo) {
         rw::Plan plan = rw::replayPlan(repo, {id});
         for (auto& s : plan.steps)
             if (s.source == id)
@@ -511,7 +511,7 @@ void Actions::reword(const core::Oid& commit, const std::string& message)
 void Actions::editAuthor(const core::Oid& commit, const std::string& name, const std::string& email)
 {
     const std::string id = commit.hex();
-    rewrite("edit author of " + id.substr(0, 10), [id, name, email](git_repository* repo) {
+    rewriteOlder("edit author of " + id.substr(0, 10), [id, name, email](git_repository* repo) {
         rw::Plan plan = rw::replayPlan(repo, {id});
         gg::git2::Commit c = gg::git2::lookupCommit(repo, *gg::git2::fromHex(id));
         const git_signature* old = git_commit_author(c.get());

@@ -308,6 +308,8 @@ GG_TEST("rewrite", "in a linked worktree: its own branch follows quietly, the ma
     selectCommit(s, target);
     s.setText("//Change information/##message", "Reworded from the linked worktree");
     ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Rebase all descendants");
     GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
     const ggui::Form* f = s.app.dialogs().current();
     GG_REQUIRE(f != nullptr);
@@ -950,6 +952,139 @@ GG_TEST("rewrite", "head path plan guard: a non-plain off-path step gives nothin
     plan = gg::rewrite::replayPlan(repo.get(), {r.a});
     plan.keepBranches = true;
     GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
+}
+
+// HeadPathRepo plus a branch stack on B.
+HeadPathRepo makeScopeRepo(Scenario& s)
+{
+    HeadPathRepo r = makeHeadPath(s);
+    s.git(r.path, {"branch", "stack", r.b});
+    return r;
+}
+
+void rewordFromUi(Scenario& s, const std::string& id, const char* text)
+{
+    selectCommit(s, id);
+    s.setText("//Change information/##message", text);
+    s.ctx->ItemClick("//Change information/###save_message");
+}
+
+GG_TEST("rewrite", "reword asks the scope: Only main leaves the side branch alone")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    const std::string stack = s.revParse(r.path, "stack");
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    rewordFromUi(s, r.a, "Reworded A");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_CHECK(s.waitUntil([&] { return info(s, r.path, "main~2", "%s") == "Reworded A"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), r.b);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~2"), r.a);
+    GG_CHECK(s.revParse(r.path, "main") != r.c);
+    GG_CHECK(s.revParse(r.path, "stack") != stack);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "stack"), s.revParse(r.path, "main~1"));
+    // A is a root: the new history shares no commit with side.
+    GG_CHECK(!s.gitMayFail(r.path, {"merge-base", "main", "side"}).ok());
+}
+
+GG_TEST("rewrite", "reword asks the scope: Rebase all descendants moves the side branch")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    rewordFromUi(s, r.a, "Reworded A");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Rebase all descendants");
+    GG_CHECK(s.waitUntil([&] { return info(s, r.path, "side~2", "%s") == "Reworded A"; }));
+    s.settle();
+    GG_CHECK(s.revParse(r.path, "side") != side);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), s.revParse(r.path, "main~1"));
+}
+
+GG_TEST("rewrite", "reword asks the scope: Cancel changes nothing")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    const std::string before = everything(s, r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    rewordFromUi(s, r.a, "Reworded A");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(everything(s, r.path), before);
+}
+
+GG_TEST("rewrite", "reword asks no scope without commits off the HEAD path")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    rewordFromUi(s, r.c, "Reworded C");
+    GG_CHECK(s.waitUntil([&] { return info(s, r.path, "main", "%s") == "Reworded C"; }));
+    GG_CHECK(!s.dialogOpen("Rewrite other branches?", 0.5f));
+}
+
+GG_TEST("rewrite", "reword asks no scope in a repository without a side branch")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    s.git(r.path, {"branch", "-q", "-D", "side"});
+    GG_REQUIRE(s.openRepository(r.path));
+    rewordFromUi(s, r.a, "Reworded A");
+    GG_CHECK(s.waitUntil([&] { return info(s, r.path, "main~2", "%s") == "Reworded A"; }));
+    GG_CHECK(!s.dialogOpen("Rewrite other branches?", 0.5f));
+}
+
+GG_TEST("rewrite", "reword on a detached HEAD: Only current path leaves the side branch alone")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    s.git(r.path, {"checkout", "-q", "--detach", r.c});
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    rewordFromUi(s, r.a, "Reworded A");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only current path");
+    GG_CHECK(s.waitUntil([&] { return info(s, r.path, "HEAD~2", "%s") == "Reworded A"; }));
+    s.settle();
+    GG_CHECK(s.head(r.path) != r.c);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+}
+
+GG_TEST("rewrite", "the scope dialog comes before the published history dialog")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string published = s.revParse(repo, "origin/main~1");
+    s.git(repo, {"checkout", "-q", "-b", "side", published});
+    s.commitFile(repo, "side.txt", "s\n", "Side");
+    const std::string side = s.head(repo);
+    s.git(repo, {"checkout", "-q", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    rewordFromUi(s, published, "Rewrite what is on the remote");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "side"), side);
+}
+
+GG_TEST("rewrite", "edit author asks the scope: Only main leaves the side branch alone")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.a);
+    s.contextMenu("//Change information/**/###author", "Edit author...");
+    GG_REQUIRE(s.dialogOpen("Edit author"));
+    s.dialogText("Edit author", "name", "Someone Else");
+    s.dialogText("Edit author", "email", "someone@example.com");
+    s.dialogButton("Edit author", "Save");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_CHECK(s.waitUntil([&] { return info(s, r.path, "main~2", "%an") == "Someone Else"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+    GG_CHECK_STR_EQ(info(s, r.path, "side~2", "%an"), "Test User");
 }
 
 } // namespace ggtest
