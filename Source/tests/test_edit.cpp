@@ -1151,7 +1151,7 @@ GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a 
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), s.head(r.path)); // the branch at the old tip follows
 }
 
-GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch")
+GG_TEST("edit", "by mouse: the commit menu's items, create tag, new commit, a conflict in Change information, blame lines, take theirs, stash apply, reflog branch")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));

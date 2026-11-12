@@ -172,6 +172,31 @@ GG_TEST("new", "New commit on a clean tree is empty")
     GG_CHECK(s.statusPorcelain(repo).empty());
 }
 
+GG_TEST("new", "Undo after New (staged files) stages the staged file again and keeps the other unstaged")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string main = s.head(repo);
+    const std::string tracked = gg::trim(s.gitOut(repo, {"ls-files"}).substr(0, s.gitOut(repo, {"ls-files"}).find('\n')));
+    GG_REQUIRE(!tracked.empty());
+    s.write(repo, "staged.txt", "staged\n");
+    s.git(repo, {"add", "staged.txt"});
+    s.write(repo, tracked, "changed\n");
+    s.session()->refresh();
+    s.settle();
+    const std::string status = s.gitOut(repo, {"status", "--porcelain"});
+    GG_REQUIRE(status.find("A  staged.txt") != std::string::npos);
+    ctx->MenuClick("//##MainMenuBar/Commit/New commit");
+    GG_REQUIRE(headMoved(s, repo, main));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return headIs(s, repo, main); }));
+    s.settle();
+    GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
+    GG_CHECK_STR_EQ(s.revParse(repo, "main"), main);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), status);
+    GG_CHECK_STR_EQ(s.read(repo, tracked), "changed\n");
+}
+
 GG_TEST("new", "menu items follow the selection: single-commit items need one commit, ranges need adjacent ones")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

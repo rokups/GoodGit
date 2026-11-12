@@ -62,7 +62,7 @@ the current repository is marked; the number of recent repositories has no limit
 Copy path · Close repository `Ctrl+W` · Refresh `F5` · — · **N** Fetch · Fetch more… · Forget… · Pull · Push · — ·
 Settings… · Quit `Ctrl+Q`.
 
-**Commit** (M, renamed from "Change"): New commit `Ctrl+N` · New detached commit · Commit… ·
+**Commit** (M, renamed from "Change"): New commit `Ctrl+N` · Commit… ·
 — · the selected-commit actions of §4
 (below) · Interactive rebase… (N, Phase 3: asks for the base in the `Interactive rebase onto` dialog,
 then opens the todo editor for HEAD, §4.13).
@@ -273,7 +273,7 @@ stays as it is (it is only limited to 50–300 % on load).
   With exactly two commits selected, Changes and Diff show the diff between them.
   A range of adjacent commits enables *Interactive rebase selection…* and Squash. Shift with an arrow key onto the
   Working tree or Index row does not select it (the selection stays); a Shift-click on it does.
-- Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `Alt+N` new detached, `E` edit commit, `D`/`Shift+D` duplicate
+- Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop
   commit/drop commit and descendants, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
 - Double click on a row (outside its badges; not with Ctrl or Shift, not on the Working tree and Index rows, only
@@ -285,7 +285,7 @@ stays as it is (it is only limited to 50–300 % on load).
   remote branch badge checks out the local branch of the short name, or opens *Create branch* with the remote
   branch as the start point and the short name as the name; a tag badge asks as above, then detaches at the tag's
   commit; any other badge acts as the row.
-- Row context menu, in groups with separators: New · New detached · Check out ▸ (the branches at the commit, then after a
+- Row context menu, in groups with separators: New · Check out ▸ (the branches at the commit, then after a
   separator *Detached* (no dialog: chosen by name); enabled with a single selected commit, also without a branch) ·
   Create branch… · Create tag… · Move branch ▸ | Merge into HEAD… · Rebase onto… · Interactive rebase… ·
   *Reset \<branch\> to here…* (id `###reset_here`; "Reset to here…" and disabled with a detached or unborn HEAD, also disabled while a merge, rebase, cherry-pick, revert or bisect is in progress) ·
