@@ -2124,16 +2124,13 @@ void RemotesPanel::draw(bool* open)
             label += "  (prune)";
         ImGui::SetNextItemAllowOverlap();
         selectableTextDimRange(label, "row", dimBegin, label.size(), false, ImGuiSelectableFlags_AllowOverlap);
-        // The hover buttons do what the menu's Fetch and Pull do.
+        // The hover button does what the menu's Fetch does.
         const RowAction acts[] = {
             {ICON_MS_DOWNLOAD, "act_fetch", "Fetch", free},
-            {ICON_MS_ARROW_DOWNWARD, "act_pull", "Pull", remotePullable(*snap, r, free)},
         };
         const int action = rowActions(acts);
         if (action == 0)
             actions.fetch(r.name, false, false);
-        else if (action == 1)
-            actions.pull(PullMode::Config);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;

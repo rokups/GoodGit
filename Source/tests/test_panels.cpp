@@ -2481,12 +2481,10 @@ GG_TEST("panels", "tags: show all and hide all; the menu of the buttons sets whe
     GG_CHECK(history.refVisible("refs/tags/v5.0"));
 }
 
-GG_TEST("panels", "remotes: hover actions Fetch and Pull on the hovered row only")
+GG_TEST("panels", "remotes: hover action Fetch on the hovered row only")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     s.git(repo, {"remote", "add", "backup", "https://example.invalid/backup.git"});
-    // On origin/main, so that the pull below is a fast-forward.
-    s.git(repo, {"reset", "-q", "--hard", "origin/main"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Remotes");
     const std::string origin = "//Remotes/remote_origin/###row";
@@ -2497,20 +2495,18 @@ GG_TEST("panels", "remotes: hover actions Fetch and Pull on the hovered row only
     ctx->MouseMove("//Remotes/Fetch all##fetch_all");
     ctx->Yield(3);
     GG_CHECK(!s.itemExists("//Remotes/remote_origin/###act_fetch"));
-    GG_CHECK(!s.itemExists("//Remotes/remote_origin/###act_pull"));
-    // Hovered: both, on that row only. main tracks origin/main, so Pull is there; backup has no tracking branch.
+    // Hovered: Fetch on that row only, and no Pull.
     ctx->MouseMove(origin.c_str());
     ctx->Yield(3);
     GG_CHECK(s.itemExists("//Remotes/remote_origin/###act_fetch"));
-    GG_CHECK(s.itemExists("//Remotes/remote_origin/###act_pull"));
+    GG_CHECK(!s.itemExists("//Remotes/remote_origin/###act_pull"));
     GG_CHECK(!s.itemExists("//Remotes/remote_backup/###act_fetch"));
     GG_CHECK(!disabled("//Remotes/remote_origin/###act_fetch"));
-    GG_CHECK(!disabled("//Remotes/remote_origin/###act_pull"));
     ctx->MouseMove(backup.c_str());
     ctx->Yield(3);
-    GG_REQUIRE(s.itemExists("//Remotes/remote_backup/###act_pull"));
+    GG_REQUIRE(s.itemExists("//Remotes/remote_backup/###act_fetch"));
     GG_CHECK(!disabled("//Remotes/remote_backup/###act_fetch"));
-    GG_CHECK(disabled("//Remotes/remote_backup/###act_pull"));
+    GG_CHECK(!s.itemExists("//Remotes/remote_backup/###act_pull"));
     // Fetch does what the menu item does: a commit pushed to the remote since arrives as origin/main.
     const fs::path other = s.root() / (repo.filename().string() + "-other");
     s.commitFile(other, "later.txt", "later\n", "Later on the remote");
@@ -2522,13 +2518,9 @@ GG_TEST("panels", "remotes: hover actions Fetch and Pull on the hovered row only
     ctx->Yield(3);
     ctx->ItemClick("//Remotes/remote_origin/###act_fetch");
     GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "origin/main") == pushed; }));
-    // A fetch only: the branch stays where it was until Pull.
+    // A fetch only: the branch stays where it was.
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), before);
-    ctx->MouseMove(origin.c_str());
-    ctx->Yield(3);
-    ctx->ItemClick("//Remotes/remote_origin/###act_pull");
-    GG_CHECK(s.waitUntil([&] { return s.head(repo) == pushed; }));
 }
 
 GG_TEST("panels", "stashes: hover actions Apply and Pop leave the selection alone")
