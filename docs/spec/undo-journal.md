@@ -220,7 +220,9 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
     that owns the recorder passes it to `OperationRecorder::setKeepExtra` (`MutationContext::keepExtra`
     in ggui, the recorder itself in git-gg), so the one maintenance of `finish` keeps the replacement
     unless a branch, remote-tracking branch or tag reaches it or it is not a tip; a rewrite also
-    names the commit it puts a detached HEAD on, not one it puts a branch on. Dropping a
+    names the commit it puts a detached HEAD on, not one it puts a branch on. The scope choice
+    *Only \<branch\>* (ui-spec §4) does not change this rule: the journal records the refs that
+    move. A keep ref that does not move is not in the operation. Dropping a
     kept tip whose parent is on a branch leaves no keep ref; above another unreachable commit it
     keeps that commit. The deletion and the creation are the rewrite's own entries: no `keep refs`
     operation, and Undo and Redo restore them as any other keep entries (below).

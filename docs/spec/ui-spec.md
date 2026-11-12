@@ -438,7 +438,24 @@ New commit, Check out (a branch, or detached), Edit commit (checkout detached) (
 commit/branch, Rebase…, Interactive rebase…, Reset \<branch\> to here… (dialog *Reset branch*: the commit and a *Mode* Soft, Mixed (default) or Hard; Hard asks first in the dialog *Discard changes* (buttons *Reset hard* and *Cancel*) when it would discard staged, unstaged or conflicted changes, or an untracked file that the commit also has; other untracked files stay), Squash…/with descendants, Split…, Restore…,
 Drop commit…/Drop commit and descendants…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
-plan §4.3 table. *Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
+plan §4.3 table.
+
+**Rewrite scope.** A rewrite can also rewrite commits that are not in the history of HEAD.
+Then the action asks for a scope. When nothing else would move, there is no prompt. The dialog
+*Rewrite other branches?* tells how many commits are outside the history of HEAD and lists up to
+five of their branches. It has three buttons: *Rebase all descendants* (default), *Only \<branch\>*
+(*Only current path* when HEAD is detached) and *Cancel*. The scope dialog comes before the
+*Rewrite published history?* warning.
+- *Rebase all descendants* moves the other commits and their branches onto the new commits.
+- *Only \<branch\>* rewrites only the history of HEAD. The off-path commits keep their old parents.
+  Their branches and keep refs do not move. A stacked branch whose tip is on the path moves.
+- The user chooses again for each rewrite. The choice is not saved.
+- Actions that ask: reword, edit author, squash, squash range, split, drop (single commit),
+  restore paths, move changes, absorb, and revert changes with a commit.
+- Actions that do not ask define their own scope: duplicate, drop with descendants, reorder,
+  rebase, merge, amend and the CLI.
+
+*Interactive rebase from here…* (key `I`) opens the todo editor (§4.x) for the
 commit and its descendants up to HEAD, or up to the first local branch (by name) that contains it
 when HEAD does not; a commit on neither is refused. The *Rebase onto* dialog (a destination field) has the rebase source of the selected commit.
 The rule, in this order:
