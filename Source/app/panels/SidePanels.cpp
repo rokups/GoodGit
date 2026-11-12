@@ -1029,7 +1029,7 @@ void BranchesPanel::draw(bool* open)
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     const FilterExpr& filter = m_filter.expr();
     const Palette& p = theme().palette();
     const bool filtering = !filter.empty();
@@ -1416,7 +1416,7 @@ void TagsPanel::draw(bool* open)
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     const FilterExpr& filter = m_filter.expr();
     const bool filtering = !filter.empty();
     // A row has its ID directly under the window ("tag_<name>") in each folder.
@@ -2323,7 +2323,7 @@ void ReflogPanel::draw(bool* open)
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     acceptCommitDrop(m_filter.text);
     const FilterExpr& filter = m_filter.expr();
     if (m_reflog) {

@@ -673,7 +673,7 @@ void BlamePanel::draw(bool* open)
     const bool enter = ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter, ImGuiInputTextFlags_EnterReturnsTrue);
     io.ConfigInputTextEnterKeepActive = keepActive;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     if (!m_blame) {
         ImGui::TextDisabled("Use \"Blame file\" on a file to see who changed each line.");
         ImGui::End();

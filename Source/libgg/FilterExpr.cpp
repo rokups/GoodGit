@@ -9,15 +9,6 @@ namespace {
 
 char lower(char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
 
-std::string_view trim(std::string_view s)
-{
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())))
-        s.remove_prefix(1);
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back())))
-        s.remove_suffix(1);
-    return s;
-}
-
 } // namespace
 
 bool containsNoCaseView(std::string_view haystack, std::string_view needle)
@@ -31,26 +22,74 @@ bool containsNoCaseView(std::string_view haystack, std::string_view needle)
 
 FilterExpr::FilterExpr(std::string_view text)
 {
-    while (true) {
-        const size_t comma = text.find(',');
-        std::string_view term = trim(text.substr(0, comma));
+    struct Ch {
+        char c;
+        bool escaped;
+    };
+    std::vector<Ch> term;
+    const auto flush = [&] {
+        const auto isSpace = [](const Ch& x) { return !x.escaped && std::isspace(static_cast<unsigned char>(x.c)); };
+        size_t b = 0;
+        size_t e = term.size();
+        while (b < e && isSpace(term[b]))
+            ++b;
+        while (e > b && isSpace(term[e - 1]))
+            --e;
         bool negated = false;
-        if (!term.empty() && term.front() == '-') {
+        if (b < e && !term[b].escaped && term[b].c == '-') {
             negated = true;
-            term = trim(term.substr(1));
+            ++b;
+            while (b < e && isSpace(term[b]))
+                ++b;
         }
-        if (!term.empty()) {
+        if (b < e) {
             Term t;
             t.negated = negated;
-            t.text.reserve(term.size());
-            for (const char c : term)
-                t.text.push_back(lower(c));
+            t.text.reserve(e - b);
+            for (size_t i = b; i < e; ++i)
+                t.text.push_back(lower(term[i].c));
             m_terms.push_back(std::move(t));
         }
-        if (comma == std::string_view::npos)
-            break;
-        text.remove_prefix(comma + 1);
+        term.clear();
+    };
+    for (size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if (c == ',') {
+            flush();
+        } else if (c == '\\' && i + 1 < text.size()) {
+            const char n = text[i + 1];
+            if (n == ',' || n == '-' || n == '\\' || std::isspace(static_cast<unsigned char>(n))) {
+                term.push_back({n, true});
+                ++i;
+            } else {
+                term.push_back({c, false}); // unknown escape: the backslash stays
+            }
+        } else {
+            term.push_back({c, false});
+        }
     }
+    flush();
+}
+
+std::string FilterExpr::escape(std::string_view text)
+{
+    const auto isSpace = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
+    size_t lead = 0;
+    while (lead < text.size() && isSpace(text[lead]))
+        ++lead;
+    size_t trail = text.size();
+    while (trail > lead && isSpace(text[trail - 1]))
+        --trail;
+    std::string out;
+    out.reserve(text.size() + 4);
+    for (size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        const bool edgeSpace = isSpace(c) && (i < lead || i >= trail);
+        if (c == '\\' || c == ',' || edgeSpace || (c == '-' && i == 0))
+            out.push_back('\\');
+        out.push_back(c);
+    }
+    return out;
 }
 
 bool FilterExpr::matches(std::initializer_list<std::string_view> fields) const

@@ -1351,7 +1351,7 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     ImGui::Separator();
     drawGoToItems(row, single);
     if (menuItem(ICON_MS_PERSON_SEARCH, "Filter by author", nullptr, false, single && !row.author.empty())) {
-        m_filter = row.author;
+        m_filter = gg::FilterExpr::escape(row.author);
         applyFilter();
     }
     needOne();
@@ -1834,7 +1834,7 @@ void HistoryPanel::draw(bool* open)
     if (filterChanged)
         applyFilter();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     sameLineIfFits(buttonWidth(ICON_MS_MY_LOCATION, "HEAD"));
     ImGui::BeginDisabled(m_snapshot->head.isNull());
     if (smallButton(ICON_MS_MY_LOCATION, "HEAD##hist_head"))

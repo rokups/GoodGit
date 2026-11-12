@@ -322,7 +322,7 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   Split…, Simplify parents, Drop commit… | Go to parent, Go to child, Filter by author, Copy ▸ (ID, full description), Expand / Collapse merged history.
   **N** The header has a HEAD button that reveals and selects the HEAD commit. Go to parent and Go to child
   (a submenu for a merge or for several children) reveal and select the commit, as Reveal does; Filter by author sets the filter
-  to the author's name. No keyboard shortcut.
+  to the author's name (escaped, so a comma in the name stays text). No keyboard shortcut.
   The menu of a branch badge has the branch actions.
 - **K** Working-tree context menu: Commit…, Discard changes….
   **N** Stash changes…, Stage all, Unstage all.

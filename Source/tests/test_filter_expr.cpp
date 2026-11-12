@@ -57,4 +57,42 @@ GG_TEST("filter_expr", "terms, negation, whitespace and fields")
     GG_CHECK(in.expr().matches("ab"));
 }
 
+GG_TEST("filter_expr", "backslash escapes and the escape helper")
+{
+    using ggui::FilterExpr;
+    const auto pass = [](const char* expr, std::string_view field) { return FilterExpr(expr).matches(field); };
+    // Escaped comma: one literal term.
+    GG_CHECK(pass("a\\,b", "xa,bx"));
+    GG_CHECK(!pass("a\\,b", "a b"));
+    // Escaped leading minus: a literal term, not a negation.
+    GG_CHECK(pass("\\-x", "a -x"));
+    GG_CHECK(!pass("\\-x", "x"));
+    // Escaped backslash.
+    GG_CHECK(pass("a\\\\b", "a\\b"));
+    GG_CHECK(!pass("a\\\\b", "ab"));
+    // A lone trailing backslash is a literal backslash.
+    GG_CHECK(pass("a\\", "xa\\"));
+    GG_CHECK(!pass("a\\", "xa"));
+    // An unknown escape keeps the backslash.
+    GG_CHECK(pass("a\\b", "a\\b"));
+    GG_CHECK(!pass("a\\b", "ab"));
+    // A minus inside a term is plain text; an escaped term still combines with others.
+    GG_CHECK(pass("\\-x,y", "-x y"));
+    GG_CHECK(!pass("\\-x,y", "-x"));
+
+    // Round trip: the escaped text matches exactly the strings that contain the text.
+    const char* texts[] = {"a", "a,b", "-x", "\\", " lead", "x\\", "trail ", " ", "a\\,b", "-", ",", "A-b"};
+    const char* hay[] = {"a", "xa,bx", "ab", "-x", "x", "\\", "x\\y", " lead", "lead", "a lead", "trail ", "trail",
+        " ", "", "a\\,b", "-", ",", "a-b", "A-B"};
+    for (const char* t : texts) {
+        const std::string esc = FilterExpr::escape(t);
+        const FilterExpr expr(esc);
+        for (const char* h : hay)
+            GG_CHECK(expr.matches(h) == gg::containsNoCaseView(h, t));
+    }
+    GG_CHECK_STR_EQ(FilterExpr::escape("a,b"), "a\\,b");
+    GG_CHECK_STR_EQ(FilterExpr::escape("-x"), "\\-x");
+    GG_CHECK_STR_EQ(FilterExpr::escape("x-"), "x-");
+}
+
 } // namespace ggtest

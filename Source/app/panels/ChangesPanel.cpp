@@ -1242,7 +1242,7 @@ void ChangesPanel::draw(bool* open)
     ImGui::SetNextItemWidth(std::max(filterMin, half));
     ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     sameLineIfFits(compareMin);
     // Compares the whole commit with a revision or the working tree; the working tree and index
     // already compare with HEAD's side.

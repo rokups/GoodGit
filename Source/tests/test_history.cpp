@@ -2307,6 +2307,23 @@ GG_TEST("history", "Filter by author leaves the commits of that author")
         GG_CHECK(id.hex() != head);
 }
 
+GG_TEST("history", "Filter by author escapes a comma in the name")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "other.txt", "x\n");
+    s.git(repo, {"add", "other.txt"});
+    s.git(repo, {"commit", "-q", "--author=Doe, Jane <jane@example.com>", "-m", "Add a file"});
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    const std::string head = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(head).c_str()); }));
+    GG_CHECK_STR_EQ(findRow(s, head)->author, "Doe, Jane");
+    s.contextMenu(rowRef(head).c_str(), "Filter by author");
+    GG_CHECK(s.waitUntil([&] { return history.visibleIds().size() == 1; }));
+    GG_CHECK_STR_EQ(history.filterText(), "Doe\\, Jane");
+    GG_CHECK_STR_EQ(history.visibleIds()[0].hex(), head);
+}
+
 GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick, with the row menu closed and open")
 {
     const fs::path repo = s.fixture(Recipe::Empty);

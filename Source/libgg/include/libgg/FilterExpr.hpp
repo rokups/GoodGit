@@ -1,6 +1,8 @@
 // Filter expressions (GG-25): "a, b, -c" lists terms. Each term is a case-insensitive substring.
 // A term with a "-" prefix must not match. An item passes when all terms hold.
-// The grammar has no escape: a comma always ends a term and a leading "-" always negates.
+// A backslash escapes the next character: "\," is a comma, "\-" at the start of a term is a minus,
+// "\\" is a backslash and a backslash before a space makes a space that trimming keeps.
+// A backslash before any other character stays a backslash. A lone trailing backslash stays.
 #pragma once
 
 #include <initializer_list>
@@ -14,6 +16,9 @@ class FilterExpr {
 public:
     FilterExpr() = default;
     explicit FilterExpr(std::string_view text);
+
+    // Returns text that parses as one literal term: it matches the strings that contain `text`.
+    static std::string escape(std::string_view text);
 
     // True when the expression has no term. Such an expression includes everything.
     bool empty() const { return m_terms.empty(); }

@@ -302,7 +302,8 @@ stays as it is (it is only limited to 50–300 % on load).
   an item "\<short ID\> \<subject\>" each (ids `###go_<ID>`). *Go to parent* is disabled for a root commit
   ("The commit has no parent."), *Go to child* when no loaded row has the commit as a parent ("No child in the
   loaded history."). *Filter by author* (single selected commit) puts the author's name in the filter field and
-  filters as a typed text does (the search text has name and email).
+  filters as a typed text does (the search text has name and email). The name goes through `FilterExpr::escape`, so a
+  comma or a leading minus in the name stays text. In every filter a backslash escapes the next `,`, `-`, `\` or space.
 - Badge context menu: a right click on a badge selects the row (as a right click on the row does) and shows the
   menu of the badge's ref, with the items of the ref's menu in its side panel (the same code): a local branch the
   Branches panel's branch menu (`##badge_branch_menu`), a remote-tracking branch the remote-tracking branch menu

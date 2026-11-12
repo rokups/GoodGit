@@ -314,7 +314,7 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
     ImGui::SetNextItemWidth(width);
     ImGui::InputTextWithHint(filterId, "Filter", &m_recentFilter.text);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+        tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     const FilterExpr& recentFilter = m_recentFilter.expr();
 
     std::vector<const Row*> visible;
