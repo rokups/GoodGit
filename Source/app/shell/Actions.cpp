@@ -42,8 +42,6 @@ std::vector<std::string> withPaths(std::vector<std::string> args, const std::vec
     return args;
 }
 
-// The push option for submodules (GG-22); empty without a .gitmodules file, so other repositories push as before.
-// "on-demand" pushes the submodules first, then the main repository.
 // Git rejects a batched update-ref with the same ref twice. Keeps the first of each name.
 static std::string deleteCommands(const std::vector<std::string>& refs, const std::string& prefix)
 {
@@ -55,6 +53,8 @@ static std::string deleteCommands(const std::vector<std::string>& refs, const st
     return commands;
 }
 
+// The push option for submodules (GG-22); empty without a .gitmodules file, so other repositories push as before.
+// "on-demand" pushes the submodules first, then the main repository.
 static std::string pushRecurseOption(const MutationContext& ctx)
 {
     std::error_code ec;
