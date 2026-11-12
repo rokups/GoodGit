@@ -273,7 +273,10 @@ stays as it is (it is only limited to 50–300 % on load).
   With exactly two commits selected, Changes and Diff show the diff between them.
   A range of adjacent commits enables *Interactive rebase selection…* and Squash. Shift with an arrow key onto the
   Working tree or Index row does not select it (the selection stays); a Shift-click on it does.
-- Keys: ↑/↓ select, Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `E` edit commit, `D`/`Shift+D` duplicate
+- Keys: ↑/↓ select the next commit on the same branch path as the selected commit: ↓ goes to its first parent, ↑ to the
+  child that has it as first parent (the child on the same lane first). Commits of other lanes are skipped. At the end of a
+  path the selection stays. `Alt+↑`/`Alt+↓` select the previous or next row in list order, on any lane. While the graph is
+  hidden (a filter is active) ↑/↓ move row by row. Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `E` edit commit, `D`/`Shift+D` duplicate
   commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop
   commit/drop commit and descendants, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
 - Double click on a row (outside its badges; not with Ctrl or Shift, not on the Working tree and Index rows, only

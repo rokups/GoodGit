@@ -301,6 +301,56 @@ void HistoryPanel::selectConflicted(int direction)
     }
 }
 
+int HistoryPanel::stepTarget(int direction, bool rowOrder, int& pos) const
+{
+    const Selection& sel = m_session.selection();
+    pos = -1;
+    if (sel.kind != SelKind::Commit)
+        return -1;
+    const auto at = [&](int i) -> const core::HistoryRow& { return m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(i)])]; };
+    for (size_t i = 0; i < m_visible.size(); ++i)
+        if (at(static_cast<int>(i)).id == sel.id)
+            pos = static_cast<int>(i);
+    if (pos < 0)
+        return -1;
+    int target = -1;
+    const core::HistoryRow& cur = at(pos);
+    if (rowOrder) {
+        target = pos + direction;
+    } else if (direction > 0) {
+        // Down: the first parent continues the path of the commit.
+        if (!cur.parents.empty())
+            for (int i = pos + 1; i < static_cast<int>(m_visible.size()); ++i)
+                if (at(i).id == cur.parents[0]) {
+                    target = i;
+                    break;
+                }
+    } else {
+        // Up: a child that has this commit as its first parent; the child on the same lane first, else the nearest.
+        for (int i = pos - 1; i >= 0; --i) {
+            const auto& r = at(i);
+            if (r.parents.empty() || r.parents[0] != cur.id)
+                continue;
+            if (target < 0 || (r.lane == cur.lane && at(target).lane != cur.lane))
+                target = i;
+        }
+    }
+    return target >= 0 && target < static_cast<int>(m_visible.size()) ? target : -1;
+}
+
+void HistoryPanel::selectStep(int direction, bool rowOrder)
+{
+    int pos = -1;
+    const int target = stepTarget(direction, rowOrder, pos);
+    if (target < 0)
+        return; // the end of the path: the selection stays
+    const core::Oid id = m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(target)])].id;
+    m_extra.clear();
+    m_session.selectCommit(id);
+    m_rangeAnchor = id;
+    m_scrollToSelection = true;
+}
+
 void HistoryPanel::onReveal(const core::RevealEvent& event)
 {
     if (event.request != m_revealRequest)
@@ -1836,6 +1886,20 @@ void HistoryPanel::draw(bool* open)
         const ImGuiIO& io = ImGui::GetIO();
         const Selection& sel = m_session.selection();
         const bool free = m_session.actions().busy().empty();
+        // Up / Down follow the path of the selected commit in the graph; Alt+Up / Alt+Down take the next row.
+        // Routed shortcuts own the keys: ImGui nav does not move and releasing Alt does not toggle the menu.
+        // A flat list (filter) and the other chords (Shift, Ctrl) stay with ImGui nav.
+        if (sel.kind == SelKind::Commit && m_appliedFilter.empty() && !conflictedOnly()) {
+            constexpr ImGuiInputFlags keyFlags = ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat;
+            if (hotkey(ImGuiMod_Alt | ImGuiKey_DownArrow, keyFlags))
+                selectStep(+1, true);
+            else if (hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, keyFlags))
+                selectStep(-1, true);
+            else if (hotkey(ImGuiKey_DownArrow, keyFlags))
+                selectStep(+1, false);
+            else if (int pos = -1; (stepTarget(-1, false, pos) >= 0 || pos > 0) && hotkey(ImGuiKey_UpArrow, keyFlags))
+                selectStep(-1, false); // at the top row, ImGui nav goes on to the Index and Working tree rows
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_F7, false))
             selectConflicted(io.KeyShift ? -1 : +1);
         // Squash (S) also takes a range of adjacent selected commits.

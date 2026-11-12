@@ -98,6 +98,10 @@ public:
     bool conflictedOnly() const; // the "Conflicted only" filter (a view setting, kept in imgui.ini); false while gg.firstClassConflicts is off
     // Selects the next (+1) / previous (-1) conflicted commit (F7 / Shift+F7).
     void selectConflicted(int direction);
+    // Up / Down: one step along the first-parent path, or (rowOrder) to the next row in list order.
+    void selectStep(int direction, bool rowOrder);
+    // The visible index of the step target (-1: none); pos is the visible index of the selected commit.
+    int stepTarget(int direction, bool rowOrder, int& pos) const;
     bool loading() const { return m_loading; }
     bool truncated() const { return m_truncated; }
     // Indexes into rows() of the rows currently shown, in order.

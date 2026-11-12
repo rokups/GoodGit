@@ -629,11 +629,11 @@ GG_TEST("history", "keyboard only: nav into the list, select by arrows, Alt+Spac
     ctx->KeyPress(ImGuiKey_Space);
     ctx->Yield(2);
     GG_CHECK_EQ(history.extraSelection().size(), static_cast<size_t>(1));
-    // A plain move collapses it to the cursor row.
+    // A plain move collapses it to one commit: from the primary one, along its branch path (HEAD~1 -> HEAD~2).
     ctx->KeyPress(ImGuiKey_DownArrow);
     ctx->Yield(2);
     GG_CHECK(history.extraSelection().empty());
-    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.revParse(repo, "HEAD~3"));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s.revParse(repo, "HEAD~2"));
     // End jumps the cursor (and the selection) to the last loaded row, past the clipper's range.
     ctx->KeyPress(ImGuiKey_End);
     ctx->Yield(5);
@@ -2342,6 +2342,102 @@ GG_TEST("history", "a worktree pill shows the alias of the worktree")
     s.app.settings().setWorktreeName(s.session()->repoStateKey(), linked->name, "My alias");
     GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, head, linked->name); }));
     GG_CHECK(endsWith(badgeText(s, head, linked->name), "My alias"));
+}
+
+namespace {
+
+// Main and a side branch commit in turn, then the side branch merges: the lanes interleave in the list.
+// Returns the merge commit.
+std::string interleavedLanes(Scenario& s, const fs::path& repo)
+{
+    s.git(repo, {"switch", "-q", "-c", "side"});
+    s.commitFile(repo, "s1.txt", "s1", "side 1");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "m1.txt", "m1", "main 1");
+    s.git(repo, {"switch", "-q", "side"});
+    s.commitFile(repo, "s2.txt", "s2", "side 2");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "m2.txt", "m2", "main 2");
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "Merge side", "side"});
+    return s.head(repo);
+}
+
+} // namespace
+
+GG_TEST("history", "arrows follow the branch path; Alt+arrows take the next row")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string root = s.revParse(repo, "HEAD~4");
+    const std::string merge = interleavedLanes(s, repo);
+    const std::string m2 = s.revParse(repo, "main^");
+    const std::string m1 = s.revParse(repo, "main^^");
+    const std::string s2 = s.revParse(repo, "side");
+    const std::string s1 = s.revParse(repo, "side^");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(root).c_str()); }));
+    const auto& rows = s.session()->history().rows();
+    // Precondition: the side commit s2 sits between the main commits m2 and m1.
+    const auto indexOf = [&](const std::string& hex) {
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i].id.hex() == hex)
+                return static_cast<int>(i);
+        return -1;
+    };
+    GG_REQUIRE(indexOf(m1) >= 0 && indexOf(s2) >= 0 && indexOf(m2) >= 0);
+    GG_REQUIRE(indexOf(s2) > indexOf(m2) && indexOf(s2) < indexOf(m1));
+    const auto selected = [&] { return s.session()->selection().id.hex(); };
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, m2);
+    ctx->KeyPress(ImGuiKey_DownArrow); // main 2 -> main 1: the side commit between them is skipped
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), m1);
+    ctx->KeyPress(ImGuiKey_UpArrow); // and back
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), m2);
+    GG_CHECK(selectedCommits(s) == std::set<std::string>{m2});
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_DownArrow); // the next row in list order
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), s2);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), m2);
+    // The side path: side 2 -> side 1 -> the commit it branched from.
+    clickRow(s, s2);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), s1);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), s2);
+    // The end of a path: the root has no parent.
+    clickRow(s, root);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(selected(), root);
+    // Shift+arrow still extends by row order.
+    clickRow(s, m2);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK((selectedCommits(s) == std::set<std::string>{m2, s2}));
+}
+
+GG_TEST("history", "arrows move row by row in a filtered list")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string merge = interleavedLanes(s, repo);
+    const std::string s2 = s.revParse(repo, "side");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(merge));
+    auto& history = s.session()->history();
+    ctx->ItemInputValue("//History/##hist_filter", "side");
+    GG_REQUIRE(s.waitUntil([&] { return !history.graphShown() && history.visibleIds().size() == 3; }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(merge).c_str()) && s.itemExists(rowRef(s2).c_str()); }));
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, merge); // its first parent is hidden by the filter: the next row is taken
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
 }
 
 } // namespace ggtest
