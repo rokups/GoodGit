@@ -743,4 +743,42 @@ GG_TEST("worktrees", "detach and check out: when the rollback fails too, the err
     GG_CHECK_STR_EQ(s.gitOut(wt1, {"rev-parse", "--abbrev-ref", "HEAD"}), "HEAD");
 }
 
+GG_TEST("worktrees", "a double-click opens a worktree here, Shift+double-click in a new window; the current and a missing one stay (GG-36)")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const std::string n1 = repo.filename().string() + "-wt1";
+    const std::string n3 = repo.filename().string() + "-wt3";
+    const fs::path wt1 = s.root() / n1;
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Worktrees");
+    s.fakeTool("ggui-stub");
+    ggui::setEnv("GG_GGUI", s.toolPath("ggui-stub").string());
+    auto stubLines = [&] { return gg::splitLines(s.read(s.root(), "ggui-stub.log")); };
+    auto shiftDoubleClick = [&](const std::string& row) {
+        ctx->KeyDown(ImGuiMod_Shift);
+        ctx->ItemDoubleClick(row.c_str());
+        ctx->KeyUp(ImGuiMod_Shift);
+    };
+    // Shift+double-click: another window, and this window keeps its worktree.
+    shiftDoubleClick(wtRow(n1));
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLines(); return l.size() == 1 && gg::worktrees::samePath(l[0], wt1); }));
+    s.settle();
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
+    // The current worktree and a missing one: nothing starts and this window stays.
+    shiftDoubleClick(wtRow("main"));
+    shiftDoubleClick(wtRow(n3));
+    ctx->ItemDoubleClick(wtRow(n3).c_str());
+    ctx->Yield(5);
+    s.settle();
+    GG_CHECK_EQ(stubLines().size(), size_t(1));
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
+    // Double-click: this window shows the worktree.
+    ctx->ItemDoubleClick(wtRow(n1).c_str());
+    GG_CHECK(s.waitUntil([&] {
+        auto* session = s.session();
+        return session && session->opened() && gg::worktrees::samePath(session->path(), wt1);
+    }));
+    GG_CHECK_EQ(stubLines().size(), size_t(1));
+}
+
 } // namespace ggtest

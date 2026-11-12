@@ -2096,6 +2096,11 @@ void WorktreesPanel::draw(bool* open)
             m_session.actions().openInNewWindow(w.path.string());
         else if (action == 2)
             openInFileManager(w.path);
+        // A double-click opens the worktree here, with Shift in a new window; not the current one, not a missing one.
+        std::string toOpen;
+        rowDoubleClickOpen(m_session, w.path.string(), !w.isCurrent && !w.missing, toOpen);
+        if (!toOpen.empty())
+            m_session.app().openRepository(w.path);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             tooltip("%s%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 std::string text = w.path.string();

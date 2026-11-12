@@ -2937,4 +2937,32 @@ GG_TEST("panels", "repositories: the hover button and Shift+double-click open a 
     GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
 }
 
+GG_TEST("panels", "repositories: the hover button and Shift+double-click open a worktree in a new window (GG-36)")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees, "wtwindow");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    GG_REQUIRE(s.waitUntil([&] { return linkedWorktreeOfSummary(s, repo) != nullptr; }));
+    s.fakeTool("ggui-stub");
+    ggui::setEnv("GG_GGUI", s.toolPath("ggui-stub").string());
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    const fs::path linkedPath = linkedWorktreeOfSummary(s, repo)->path;
+    const std::string wtRow = worktreeRow(row, linkedWorktreeOfSummary(s, repo)->name);
+    openRepoNode(ctx, row);
+    GG_REQUIRE(s.itemExists(wtRow.c_str()));
+    ctx->MouseMove(wtRow.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(openWindowButton(wtRow).c_str()));
+    ctx->ItemClick(openWindowButton(wtRow).c_str());
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLog(s); return l.size() == 1 && gg::worktrees::samePath(l[0], linkedPath); }));
+    shiftDoubleClick(ctx, wtRow);
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLog(s); return l.size() == 2 && gg::worktrees::samePath(l[1], linkedPath); }));
+    s.settle();
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
+}
+
 } // namespace ggtest
