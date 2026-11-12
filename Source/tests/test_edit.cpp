@@ -1133,6 +1133,8 @@ GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a 
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(bRow.c_str()); }));
     const std::string tip = s.head(r.path);
     drag(bRow, rowRef(r.c2), 0);
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Rebase all descendants");
     GG_CHECK(changed(s, r.path, tip));
     GG_CHECK(!s.gitMayFail(r.path, {"cat-file", "-e", "HEAD:b.txt"}).ok());
     GG_CHECK(s.statusPorcelain(r.path).empty());

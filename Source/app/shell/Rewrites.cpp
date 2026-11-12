@@ -1307,7 +1307,7 @@ void Actions::revertChanges(const core::Oid& commit, const std::vector<std::stri
         return;
     }
     // In memory, like revertOrPick: one new commit on HEAD, one ref update, one Undo.
-    rewrite(label, [id, paths, patch](git_repository* repo) {
+    rewriteOlder(label, [id, paths, patch](git_repository* repo) {
         const std::string head = pickOnto(repo, id, true);
         const SelectionTrees trees = selectionTrees(repo, id, paths, patch);
         const std::string without = trees.backward(repo, trees.ownTree);
@@ -1575,7 +1575,7 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
     const std::string id = commit.hex();
     static const char* names[] = {"to parent", "to child", "to the active commit", "to the working tree", "discard"};
     const std::string what = patch.empty() ? std::to_string(paths.size()) + " file(s)" : std::string("lines");
-    rewrite((to == MoveTo::Discard ? "discard " + what + " of " : "move " + what + " of ") + id.substr(0, 10) + " "
+    rewriteOlder((to == MoveTo::Discard ? "discard " + what + " of " : "move " + what + " of ") + id.substr(0, 10) + " "
             + (to == MoveTo::Discard ? "" : names[static_cast<int>(to)]),
         [id, to, paths, patch](git_repository* repo) {
             using namespace gg::git2;
@@ -1654,7 +1654,7 @@ namespace ggui {
 void Actions::absorb(const core::Oid& commit, const std::vector<std::string>& paths)
 {
     const std::string id = commit.hex();
-    rewrite("fold " + std::to_string(paths.size()) + " file(s) into " + id.substr(0, 10), [id, paths](git_repository* repo) {
+    rewriteOlder("fold " + std::to_string(paths.size()) + " file(s) into " + id.substr(0, 10), [id, paths](git_repository* repo) {
         const char* wd = git_repository_workdir(repo);
         if (!wd)
             refuse("a bare repository has no working tree");

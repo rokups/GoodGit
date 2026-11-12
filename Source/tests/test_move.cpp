@@ -377,6 +377,25 @@ GG_TEST("move", "revert: the file and line menus have Revert (a commit) and Reve
     checkRevertMenu(s, body(s) + "/###hunk_1", "Revert line(s)", "Revert line(s) (no commit)", "Revert line(s) and commit");
 }
 
+GG_TEST("move", "files to the parent ask the scope: Only main leaves the side branch alone")
+{
+    const MoveRepo r = makeRepo(s);
+    // side holds Y and one more commit Z: Z is off the HEAD path.
+    s.git(r.path, {"checkout", "-q", "-b", "side"});
+    s.commitFile(r.path, "e.txt", "e\n", "Z");
+    s.git(r.path, {"checkout", "-q", "-"});
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.x, 3);
+    s.contextMenu(fileRef(s, "c.txt").c_str(), "Move to parent");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_CHECK(moved(s, r.path, r.y));
+    GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~2"), "a.txt c.txt");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side~1"), r.y);
+}
+
 GG_TEST("move", "revert: a commit's file undone in a new commit on HEAD; one Undo")
 {
     const MoveRepo r = makeRepo(s);
