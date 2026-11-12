@@ -229,13 +229,16 @@ int main(int argc, char** argv)
         if (platform.quitRequested())
             break;
         platform.beginFrame();
+        const double cpuStart = ggui::threadCpuMs();
         const auto frameStart = std::chrono::steady_clock::now();
         app->frame();
         const auto appEnd = std::chrono::steady_clock::now();
+        const double cpuEnd = ggui::threadCpuMs();
         platform.endFrame();
         const auto presentEnd = std::chrono::steady_clock::now();
-        ggui::frameProbe().record(std::chrono::duration<double, std::milli>(appEnd - frameStart).count(),
-            std::chrono::duration<double, std::milli>(presentEnd - appEnd).count());
+        const double appWallMs = std::chrono::duration<double, std::milli>(appEnd - frameStart).count();
+        ggui::frameProbe().record(appWallMs, std::chrono::duration<double, std::milli>(presentEnd - appEnd).count(),
+            ggui::cpuDeltaMs(cpuStart, cpuEnd, appWallMs));
 #ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
         if (tests) {
             tests->postSwap();

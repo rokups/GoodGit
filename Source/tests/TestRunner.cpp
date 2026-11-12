@@ -512,13 +512,21 @@ bool frameBudgetMet(ImGuiTestContext* ctx, const ggui::FrameProbe& probe, double
     const double p50 = probe.percentileAppMs(50.0);
     const double p95 = probe.percentileAppMs(95.0);
     const double p99 = probe.percentileAppMs(99.0);
-    ctx->LogInfo("app frame ms: baseline %.1f, p50 %.1f, p95 %.1f, p99 %.1f, max %.1f, limit %.1f", baselineMs, p50,
-        p95, p99, probe.maxAppMs, limit);
+    ctx->LogInfo("app frame CPU ms: baseline %.1f, p50 %.1f, p95 %.1f, p99 %.1f, max %.1f, limit %.1f; wall ms: "
+                 "p50 %.1f, p99 %.1f, max %.1f",
+        baselineMs, p50, p95, p99, probe.maxAppMs, limit, probe.percentileWallMs(50.0), probe.percentileWallMs(99.0),
+        probe.maxWallMs);
     bool ok = p99 < limit;
     if (strict)
         ok = ok && probe.maxAppMs < budgetMs;
     else
         ok = ok && probe.maxAppMs < limit * 5.0;
+    // Loose guard on the wall time: a blocking wait in frame() costs wall time and no CPU time.
+    const double wallLimit = timeBudgetMs(1000.0);
+    if (probe.maxWallMs >= wallLimit) {
+        ctx->LogError("an app frame blocks: wall time %.1f ms, limit %.1f ms", probe.maxWallMs, wallLimit);
+        ok = false;
+    }
     if (!ok)
         ctx->LogError("app frames too slow: p99 %.1f ms, max %.1f ms (frame %lld of %lld, %.0f ms after the "
                       "start of the measured window), baseline %.1f ms, limit %.1f ms",

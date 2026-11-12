@@ -133,9 +133,9 @@ GG_TEST("engine", "responsiveness on the large repository")
     s.waitIdle(30.0f);
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
     ctx->LogInfo("frames %lld, app max %.1f ms (frame %lld at %.0f ms), present max %.1f ms, total max %.1f ms, "
-                 "app > 33 ms: %lld",
+                 "app > 33 ms: %lld, wall max %.1f ms",
         probe.frames, probe.maxAppMs, probe.worstFrame, probe.worstAtMs, probe.maxPresentMs, probe.maxTotalMs,
-        probe.slowFrames);
+        probe.slowFrames, probe.maxWallMs);
     GG_CHECK(probe.frames > 50);
     GG_CHECK(frameBudgetMet(ctx, probe, baselineMs));
 }
