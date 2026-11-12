@@ -53,7 +53,13 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
     const gg::todo::Context& context, const gg::todo::Options& options, const gg::CancelToken& cancel);
 
 // True when `id` is reachable from any remote-tracking ref.
+// The rewrite warning uses this rule: it is conservative, a commit on any remote is never silent.
 bool isPublished(git_repository* repo, const git_oid& id);
+
+// The rule of the history colour (GG-38): a commit that HEAD reaches is published only when the upstream
+// of the checked-out branch reaches it. Detached HEAD or no upstream: same as isPublished(). The commit
+// details panel uses this rule.
+bool isPublishedByHead(git_repository* repo, const git_oid& id);
 
 // Whether `commit` has a child among the commits of all branches, remote branches, tags and HEAD.
 // The walk goes from the tips, newest first, and visits at most `maxVisits` commits. It checks `cancel`

@@ -104,6 +104,49 @@ GG_TEST("history", "unpublished color follows the upstream of the checked-out br
     GG_CHECK(findRow(s, s.revParse(repo, "origin/main"))->published);
 }
 
+GG_TEST("history", "details panel follows the upstream rule of the history colour")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"switch", "-q", "-c", "b1", "origin/main"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "commit A"});
+    const std::string a = s.revParse(repo, "HEAD");
+    s.git(repo, {"switch", "-q", "-c", "b2"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "commit B"});
+    const std::string b = s.revParse(repo, "HEAD");
+    s.git(repo, {"push", "-q", "origin", "b2"});
+    s.git(repo, {"switch", "-q", "b1"});
+    s.git(repo, {"branch", "-q", "-u", "origin/main", "b1"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, a) != nullptr && findRow(s, b) != nullptr; }));
+    const auto selectPublished = [&](const std::string& hex) {
+        ctx->ItemClick(rowRef(hex).c_str());
+        const bool shown = s.waitUntil([&] {
+            return s.session()->info().details() && s.session()->info().details()->id.hex() == hex;
+        });
+        return shown && s.session()->info().details()->published;
+    };
+    // A is on origin/b2 only: unpublished for the checked-out b1. B is not reached by HEAD: any remote.
+    GG_CHECK(!selectPublished(a));
+    GG_CHECK(selectPublished(b));
+    GG_CHECK(selectPublished(s.revParse(repo, "origin/main")));
+}
+
+GG_TEST("history", "details panel and colour use any remote ref on a detached HEAD")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"switch", "-q", "-c", "b2", "origin/main"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "commit A"});
+    const std::string a = s.revParse(repo, "HEAD");
+    s.git(repo, {"push", "-q", "origin", "b2"});
+    s.git(repo, {"switch", "-q", "--detach", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, a) != nullptr; }));
+    GG_CHECK(findRow(s, a)->published);
+    ctx->ItemClick(rowRef(a).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->info().details() && s.session()->info().details()->id.hex() == a; }));
+    GG_CHECK(s.session()->info().details()->published);
+}
+
 GG_TEST("history", "published vs unpublished commits")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

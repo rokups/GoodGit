@@ -933,6 +933,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             if (std::any_of(beforePaths.begin(), beforePaths.end(), [&](const std::string& p) { return !afterPaths.count(p); }))
                 result.resolved.push_back(now);
         }
+        // Conservative on purpose (GG-43): a commit on any remote ref asks first. The history colour and the
+        // details panel use the upstream of HEAD only (isPublishedByHead); a rewrite must not use it.
         std::vector<git_oid> remoteTips;
         forEachReference(m->repo.get(), [&](git_reference* ref) {
             if (std::string(git_reference_name(ref)).rfind("refs/remotes/", 0) == 0 && git_reference_type(ref) == GIT_REFERENCE_DIRECT)

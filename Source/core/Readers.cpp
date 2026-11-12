@@ -2,6 +2,7 @@
 #include "History.hpp"
 #include "StatusPorcelain.hpp"
 
+#include <memory>
 #include <libgg/Keep.hpp>
 #include <libgg/Todo.hpp>
 
@@ -169,6 +170,20 @@ RepoState detectState(git_repository* repo, std::string& detail)
     return RepoState::None;
 }
 
+namespace {
+bool reachableFromAnyTip(git_repository* repo, const git_oid& id, const std::vector<git_oid>& tips)
+{
+    for (const auto& t : tips)
+        if (git_oid_equal(&t, &id))
+            return true;
+    if (tips.empty())
+        return false;
+    const bool r = git_graph_reachable_from_any(repo, &id, tips.data(), tips.size()) == 1;
+    git_error_clear();
+    return r;
+}
+} // namespace
+
 bool isPublished(git_repository* repo, const git_oid& id)
 {
     std::vector<git_oid> tips;
@@ -178,12 +193,36 @@ bool isPublished(git_repository* repo, const git_oid& id)
             tips.push_back(*git_reference_target(ref));
         return true;
     });
-    if (tips.empty())
-        return false;
-    for (const auto& t : tips)
-        if (git_oid_equal(&t, &id))
-            return true;
-    return git_graph_reachable_from_any(repo, &id, tips.data(), tips.size()) == 1;
+    return reachableFromAnyTip(repo, id, tips);
+}
+
+bool isPublishedByHead(git_repository* repo, const git_oid& id)
+{
+    // Same rule as the history walk (HistoryState::headUpstream): a commit that HEAD reaches is
+    // published only when the upstream of the checked-out branch reaches it.
+    // Detached HEAD, no upstream or a missing upstream ref: any remote ref counts.
+    git_reference* rawHead = nullptr;
+    if (git_repository_head(&rawHead, repo) == 0) {
+        std::unique_ptr<git_reference, decltype(&git_reference_free)> head(rawHead, &git_reference_free);
+        git_reference* rawUp = nullptr;
+        if (git_reference_is_branch(head.get()) && git_branch_upstream(&rawUp, head.get()) == 0) {
+            std::unique_ptr<git_reference, decltype(&git_reference_free)> up(rawUp, &git_reference_free);
+            git_reference* rawRes = nullptr;
+            if (git_reference_resolve(&rawRes, up.get()) == 0) {
+                std::unique_ptr<git_reference, decltype(&git_reference_free)> res(rawRes, &git_reference_free);
+                const git_oid headId = *git_reference_target(head.get());
+                const git_oid upId = *git_reference_target(res.get());
+                const bool reached = git_oid_equal(&headId, &id)
+                    || git_graph_descendant_of(repo, &headId, &id) == 1;
+                git_error_clear();
+                if (reached)
+                    return reachableFromAnyTip(repo, id, {upId});
+            }
+        } else
+            git_error_clear();
+    } else
+        git_error_clear();
+    return isPublished(repo, id);
 }
 
 DescendantsResult readDescendants(git_repository* repo, const Oid& commit, int maxVisits, const gg::CancelToken& cancel)
@@ -1793,7 +1832,7 @@ CommitDetailsPtr readCommitDetails(git_repository* repo, const Oid& id)
     d->committerTime = m->when.time;
     for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
         d->parents.push_back(toOid(*git_commit_parent_id(c.get(), i)));
-    d->published = isPublished(repo, oid);
+    d->published = isPublishedByHead(repo, oid);
     return d;
 }
 

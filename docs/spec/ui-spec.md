@@ -656,7 +656,7 @@ the panel without touching the repository.
   (`<field id>_sizer`, e.g. `##message_sizer`) resizes it by whole lines (2–40, double click resets to 6); the
   height is shared by the fields and persistent (`[GGUIView][Info] MessageLines`).
 - Author line (plain text) with menu Copy name / Copy email / Edit author… (Phase 3); Committer line when it
-  differs (N); Date; published/lock state ("Published" / "Not published").
+  differs (N); Date; published/lock state ("Published" / "Not published"). The state follows the History colour: a commit that HEAD reaches is published when the upstream of the checked-out branch reaches it; otherwise any remote-tracking ref counts. The *Rewrite published history* warning stays conservative: any remote-tracking ref counts.
 - Commit ID `###commit_id_text` (a short ID: 3 characters in the text colour, 4
   dimmed; clickable text, see the general rules; no Copy button) with the one copy-ID context
   menu item; Parents list
