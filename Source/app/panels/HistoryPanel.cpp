@@ -1891,14 +1891,17 @@ void HistoryPanel::draw(bool* open)
         // A flat list (filter) and the other chords (Shift, Ctrl) stay with ImGui nav.
         if (sel.kind == SelKind::Commit && m_appliedFilter.empty() && !conflictedOnly()) {
             constexpr ImGuiInputFlags keyFlags = ImGuiInputFlags_RouteFocused | ImGuiInputFlags_Repeat;
-            if (hotkey(ImGuiMod_Alt | ImGuiKey_DownArrow, keyFlags))
+            // A chord without a target is not claimed: at the top row, ImGui nav goes on to the Index and
+            // Working tree rows.
+            int pos = -1;
+            if (stepTarget(+1, true, pos) >= 0 && hotkey(ImGuiMod_Alt | ImGuiKey_DownArrow, keyFlags))
                 selectStep(+1, true);
-            else if (hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, keyFlags))
+            else if (stepTarget(-1, true, pos) >= 0 && hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, keyFlags))
                 selectStep(-1, true);
             else if (hotkey(ImGuiKey_DownArrow, keyFlags))
                 selectStep(+1, false);
-            else if (int pos = -1; (stepTarget(-1, false, pos) >= 0 || pos > 0) && hotkey(ImGuiKey_UpArrow, keyFlags))
-                selectStep(-1, false); // at the top row, ImGui nav goes on to the Index and Working tree rows
+            else if ((stepTarget(-1, false, pos) >= 0 || pos > 0) && hotkey(ImGuiKey_UpArrow, keyFlags))
+                selectStep(-1, false);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_F7, false))
             selectConflicted(io.KeyShift ? -1 : +1);

@@ -2422,6 +2422,73 @@ GG_TEST("history", "arrows follow the branch path; Alt+arrows take the next row"
     GG_CHECK((selectedCommits(s) == std::set<std::string>{m2, s2}));
 }
 
+GG_TEST("history", "Alt+Up at the top commit moves the nav cursor to the Working tree row")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, s.head(repo));
+    ctx->KeyDown(ImGuiMod_Alt); // Alt goes down a frame earlier, as with a hand: the menu layer stays off
+    ctx->Yield(2);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    ctx->KeyUp(ImGuiMod_Alt);
+    ctx->Yield(2);
+    GG_CHECK(s.session()->selection().kind == ggui::SelKind::WorkingTree);
+    GG_CHECK(g.NavId == ctx->ItemInfo("//History/**/###row_wt").ID);
+}
+
+GG_TEST("history", "Up prefers the child on the same lane")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string merge = interleavedLanes(s, repo);
+    const std::string base = s.revParse(repo, "side~2");
+    const std::string m1 = s.revParse(repo, "main~2");
+    const std::string s1 = s.revParse(repo, "side^");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(base).c_str()); }));
+    const auto& rows = s.session()->history().rows();
+    const auto laneOf = [&](const std::string& hex) {
+        for (const auto& r : rows)
+            if (r.id.hex() == hex)
+                return r.lane;
+        return -1;
+    };
+    // Precondition: both children have the base as first parent; only the main one shares its lane.
+    GG_REQUIRE(laneOf(m1) == laneOf(base) && laneOf(s1) != laneOf(base));
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, base);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), m1);
+}
+
+GG_TEST("history", "Down goes to the first parent of a merge")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"switch", "-q", "-c", "side"});
+    s.commitFile(repo, "s1.txt", "s1", "side 1");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "m1.txt", "m1", "main 1");
+    s.git(repo, {"switch", "-q", "side"});
+    s.commitFile(repo, "s2.txt", "s2", "side 2");
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "Merge main", "main"});
+    const std::string merge = s.head(repo);
+    const std::string first = s.revParse(repo, "HEAD^1");
+    const std::string second = s.revParse(repo, "HEAD^2");
+    GG_REQUIRE(first != second);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(first).c_str()) && s.itemExists(rowRef(second).c_str()); }));
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, merge);
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), first);
+}
+
 GG_TEST("history", "arrows move row by row in a filtered list")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
