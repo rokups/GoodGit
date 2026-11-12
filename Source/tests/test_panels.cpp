@@ -2871,8 +2871,11 @@ GG_TEST("panels", "repositories: the hover button and Shift+double-click open a 
     s.app.settings().data().repositories.clear();
     const fs::path first = s.fixture(Recipe::Linear, "first");
     const fs::path second = s.fixture(Recipe::Merges, "second");
+    // Listed before the switch: closing a repository reads the summaries of the list.
+    const fs::path gone = s.root() / "gone-repo";
+    s.app.settings().addRepository(gone.string());
+    GG_REQUIRE(s.openRepository(second));
     GG_REQUIRE(s.openRepository(first));
-    s.app.settings().addRepository(second.string());
     s.showPanel("Repositories");
     // The stand-in for the ggui program logs its arguments.
     s.fakeTool("ggui-stub");
@@ -2895,6 +2898,17 @@ GG_TEST("panels", "repositories: the hover button and Shift+double-click open a 
     ctx->Yield(3);
     GG_CHECK(!s.itemExists(openWindowButton(own).c_str()));
     shiftDoubleClick(ctx, own);
+    ctx->Yield(5);
+    GG_CHECK_EQ(stubLog(s).size(), size_t(2));
+    // A repository whose directory is gone: Shift+double-click starts nothing.
+    const std::string goneRow = repoRow(s, gone);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(goneRow.c_str()); }));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto* info = s.app.repoSummary(fs::path(gone.string()));
+        return info && !info->exists;
+    }));
+    ctx->Yield(3);
+    shiftDoubleClick(ctx, goneRow);
     ctx->Yield(5);
     GG_CHECK_EQ(stubLog(s).size(), size_t(2));
 }

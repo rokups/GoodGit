@@ -1544,14 +1544,16 @@ static bool selectableTreeNode(const char* label, const std::string& detail, boo
 }
 
 // The double-click on a row opens `path` in this window. With Shift it opens a new window (GG-35): the new
-// ggui focuses the window that shows the path already. Call right after the row's item.
-static void rowDoubleClickOpen(Session& session, const std::string& path, bool canOpen, std::string& toOpen)
+// ggui focuses the window that shows the path already. Call right after the row's item. `canOpenNew` is false
+// for a path that does not exist: Shift+double-click then does nothing.
+static void rowDoubleClickOpen(Session& session, const std::string& path, bool canOpen, std::string& toOpen, bool canOpenNew = true)
 {
     if (!canOpen || !ImGui::IsItemHovered() || !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
         return;
-    if (ImGui::GetIO().KeyShift)
-        session.actions().openInNewWindow(path);
-    else
+    if (ImGui::GetIO().KeyShift) {
+        if (canOpenNew)
+            session.actions().openInNewWindow(path);
+    } else
         toOpen = path;
 }
 
@@ -1634,7 +1636,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             ImGui::TextUnformatted(node.label.c_str());
             ImGui::EndDragDropSource();
         }
-        rowDoubleClickOpen(m_session, node.path, !isOpen, toOpen);
+        rowDoubleClickOpen(m_session, node.path, !isOpen, toOpen, !info || info->exists);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string text = elided ? node.path + summaryNamesText(*info) : node.path;
             if (!warnPrefix.empty())
