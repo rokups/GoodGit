@@ -624,7 +624,10 @@ bool textElided(std::string_view text, const char* id, bool tooltip, float width
         [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext(); // used by the test-engine hook
         IMGUI_TEST_ENGINE_ITEM_INFO(itemId, id, ImGuiItemStatusFlags_None);
     }
-    ImGui::RenderTextEllipsis(window->DrawList, bb.Min, bb.Max, bb.Max.x, begin, end, &size);
+    // The box width (Max.x - Min.x) can come out a little less than the text width: a float sum with the position
+    // loses low bits. ImGui then takes text that fits as cut and draws an ellipsis. Text that fits is not cut.
+    const ImVec2 known = cut ? size : ImVec2(std::min(size.x, bb.Max.x - bb.Min.x), size.y);
+    ImGui::RenderTextEllipsis(window->DrawList, bb.Min, bb.Max, bb.Max.x, begin, end, &known);
     if (cut && tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && beginTooltip()) {
         tooltipText(line);
         ImGui::EndTooltip();

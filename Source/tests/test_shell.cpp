@@ -1051,6 +1051,41 @@ GG_TEST("shell", "Ctrl+wheel over a window that takes the wheel does not change 
     ctx->Yield(2);
 }
 
+GG_TEST("shell", "textElided draws no ellipsis for text that fits, at any fractional position")
+{
+    // A message that fits is clipped to its own width. The width must survive the float sum with the position.
+    const std::string text = "XXXXXXX-XXXXX: Render layers plugin.\n";
+    std::vector<int> glyphVertices;
+    std::vector<ImVec2> lastGlyphUv;
+    ctx->Test->GuiFunc = [&](ImGuiTestContext*) {
+        ImGui::SetNextWindowPos(ImVec2(50.0f, 50.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(600.0f, 120.0f), ImGuiCond_Always);
+        ImGui::Begin("ElideProbe", nullptr, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking);
+        glyphVertices.clear();
+        lastGlyphUv.clear();
+        for (int i = 0; i < 400; ++i) {
+            ImGui::SetCursorScreenPos(ImVec2(60.0f + static_cast<float>(i) * 0.0371f, 60.0f));
+            const int before = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+            // The width is exactly the width of the text, as in a table cell that is as wide as the text.
+            const float width = ImGui::CalcTextSize("XXXXXXX-XXXXX: Render layers plugin.").x;
+            ggui::textElided(text, nullptr, false, width);
+            glyphVertices.push_back(ImGui::GetWindowDrawList()->VtxBuffer.Size - before);
+            // The last glyph is the final "." of the text, or the ellipsis when the text is cut.
+            lastGlyphUv.push_back(ImGui::GetWindowDrawList()->VtxBuffer.back().uv);
+        }
+        ImGui::End();
+    };
+    ctx->Yield(3);
+    ctx->Test->GuiFunc = nullptr;
+    ctx->Yield(2);
+    GG_REQUIRE(!glyphVertices.empty());
+    GG_CHECK(glyphVertices.front() > 0);
+    for (const int v : glyphVertices)
+        GG_CHECK_EQ(v, glyphVertices.front());
+    for (const ImVec2& uv : lastGlyphUv)
+        GG_CHECK(uv.x == lastGlyphUv.front().x && uv.y == lastGlyphUv.front().y);
+}
+
 GG_TEST("shell", "view settings persist across a restart")
 {
     // Stashes (History) and the Diff controls are stored in imgui.ini ([GGUIView]), not settings.json.
