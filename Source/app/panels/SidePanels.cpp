@@ -354,7 +354,7 @@ void visibilityMenuItem(HistoryPanel& history, const std::vector<std::string>& r
 }
 
 // The Delete submenu of tags: Local, and On <remote> for each remote that has some of them.
-// `names` are the tags in the order of the rows, once each. A remote-only tag is not local.
+// `names` are the tags in the order of the rows, once each.
 // The caller adds the separator before the submenu.
 void tagsDeleteMenu(Session& session, const core::Snapshot& snap, const std::vector<std::string>& names)
 {
@@ -390,7 +390,7 @@ void tagsDeleteMenu(Session& session, const core::Snapshot& snap, const std::vec
 struct GroupDelete {
     Session* session = nullptr;
     const core::Snapshot* snapshot = nullptr; // used with `tags`
-    bool tags = false;                      // the group has tags (local or remote-only) and `names` are tag names
+    bool tags = false;                      // the group has tags and `names` are tag names
     bool remote = false;                    // the group has remote-tracking branches; `names` are "origin/x"
     std::vector<std::string> names;         // the branches of the group, in row order
     std::vector<std::string> upstreamNames; // the branches of `names` that have an upstream
@@ -403,7 +403,6 @@ void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::
 {
     if (!beginContextMenu(strId))
         return;
-    // A group of remote-only tags has no ref that History shows.
     if (!refs.empty())
         visibilityMenuItem(history, refs, refsState(history, refs).all);
     if (del.session && !del.names.empty() && del.tags && del.snapshot) {
@@ -1279,7 +1278,7 @@ void BranchesPanel::draw(bool* open)
 // Delete in a tag's menu: one item for a tag only here; a submenu (Local, then each remote that has it)
 // when a remote has it too. A remote whose tags are still being read or could not be read is offered
 // with a note (the tag may be there).
-static void tagDeleteItems(Session& session, const core::Snapshot& snap, const std::string& name, bool local)
+static void tagDeleteItems(Session& session, const core::Snapshot& snap, const std::string& name)
 {
     auto& actions = session.actions();
     const bool free = actions.busy().empty();
@@ -1299,14 +1298,14 @@ static void tagDeleteItems(Session& session, const core::Snapshot& snap, const s
             names.push_back(r.name);
         }
     }
-    if (local && remotes.empty()) {
+    if (remotes.empty()) {
         if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
             actions.deleteTag(name);
         return;
     }
     if (!beginMenu(ICON_MS_DELETE, "Delete", free))
         return;
-    if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, local))
+    if (menuItem(ICON_MS_DELETE, "Local"))
         actions.deleteTag(name);
     ImGui::Separator();
     for (size_t i = 0; i < remotes.size(); ++i)
@@ -1329,7 +1328,7 @@ static bool tagMultiMenu(Session& session, const core::Snapshot& snap, const Ref
             || std::find(names.begin(), names.end(), row.second) != names.end())
             continue;
         names.push_back(row.second);
-        // A remote-only tag has no local ref, so History cannot show or hide it.
+        // A tag that is not in the snapshot has no ref that History shows.
         if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == row.second; }))
             selectedRefs.push_back("refs/tags/" + row.second);
     }
@@ -1350,7 +1349,7 @@ void tagMenuItems(Session& session, const core::Snapshot& snap, const core::TagI
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
         ImGui::SetClipboardText(t.name.c_str());
     ImGui::Separator();
-    tagDeleteItems(session, snap, t.name, true);
+    tagDeleteItems(session, snap, t.name);
     if (beginMenu(ICON_MS_UPLOAD, "Push tag", free && !snap.remotes.empty())) {
         for (const auto& r : snap.remotes)
             if (menuItem(ICON_MS_UPLOAD, r.name.c_str()))
