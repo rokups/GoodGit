@@ -1517,8 +1517,11 @@ void Actions::forgetRefsAs(const std::string& label, std::vector<std::string> fu
     if (fullRefs.empty())
         return;
     run(label, [fullRefs = std::move(fullRefs)](MutationContext& ctx) {
+        // One call for all refs. A ref that is already gone is no error.
+        std::string commands;
         for (const auto& ref : fullRefs)
-            ctx.git({"update-ref", "-d", ref}); // a ref that is already gone is no error
+            commands += "delete " + ref + "\n";
+        ctx.git({"update-ref", "--stdin"}, commands);
     });
 }
 

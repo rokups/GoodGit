@@ -780,6 +780,40 @@ GG_TEST("refs", "a plain fetch does not bring forgotten refs back; Fetch more li
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/remotes/origin/f1") && refExists(s, repo, "refs/remotes/origin/f2"); }));
 }
 
+GG_TEST("refs", "forgetting many remote-tracking branches uses one update-ref call; one undo restores them")
+{
+    std::vector<std::string> names;
+    std::vector<std::string> refs;
+    for (int i = 0; i < 300; ++i) {
+        names.push_back("bulk" + std::to_string(i));
+        refs.push_back("refs/remotes/origin/" + names.back());
+    }
+    const fs::path repo = repoWithRemoteBranches(s, {"keep"});
+    {
+        std::vector<std::string> args{"push", "-q", "origin"};
+        for (const auto& n : names)
+            args.push_back("HEAD~1:refs/heads/" + n);
+        s.git(repo, args);
+        s.git(repo, {"fetch", "-q", "origin"});
+    }
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.settle());
+    GG_REQUIRE(refExists(s, repo, refs.back()));
+    gg::clearCommandLog();
+    s.session()->actions().forgetRefs(refs);
+    GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, refs.front()) && !refExists(s, repo, refs.back()); }, 30.0f));
+    s.settle();
+    GG_CHECK(s.gitOut(repo, {"for-each-ref", "refs/remotes/origin/bulk*"}).empty());
+    GG_CHECK(refExists(s, repo, "refs/remotes/origin/keep"));
+    int updateRefCalls = 0;
+    for (const auto& e : gg::commandLog())
+        if (std::find(e.args.begin(), e.args.end(), "update-ref") != e.args.end())
+            ++updateRefCalls;
+    GG_CHECK(updateRefCalls == 1);
+    s.session()->actions().undo(false);
+    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, refs.front()) && refExists(s, repo, refs.back()); }, 30.0f));
+}
+
 GG_TEST("refs", "Pull does not bring forgotten refs back and still merges new upstream commits")
 {
     const fs::path repo = repoWithRemoteBranches(s, {"f1", "f2"});
