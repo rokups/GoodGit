@@ -1027,9 +1027,12 @@ void BranchesPanel::draw(bool* open)
     newBranchMenu("##hide_all_menu");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter);
+    ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+    const FilterExpr& filter = m_filter.expr();
     const Palette& p = theme().palette();
-    const bool filtering = !m_filter.empty();
+    const bool filtering = !filter.empty();
     // Rows keep IDs directly under the window ("branch_<name>") whatever group they sit in.
     const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
     // Only the list scrolls: the controls above stay put.
@@ -1037,7 +1040,7 @@ void BranchesPanel::draw(bool* open)
 
     std::vector<std::pair<size_t, std::string>> locals;
     for (size_t i = 0; i < m_snapshot->branches.size(); ++i)
-        if (containsNoCase(m_snapshot->branches[i].name, m_filter))
+        if (filter.matches(m_snapshot->branches[i].name))
             locals.push_back({i, m_snapshot->branches[i].name});
     // The refs of a local branch row: the branch and its remote-tracking refs. Built once for the frame.
     std::vector<std::vector<std::string>> localRefs(m_snapshot->branches.size());
@@ -1121,7 +1124,7 @@ void BranchesPanel::draw(bool* open)
     // Kept commits (a detached HEAD's commits no branch reaches) between the local and the remote branches.
     std::vector<const core::KeptInfo*> kept;
     for (const auto& k : m_snapshot->kept)
-        if (containsNoCase(k.id.hex(), m_filter) || containsNoCase(k.summary, m_filter))
+        if (filter.matches({k.id.hex(), k.summary}))
             kept.push_back(&k);
     if (!kept.empty()) {
         ImGui::PushID("detached_group");
@@ -1179,7 +1182,7 @@ void BranchesPanel::draw(bool* open)
     std::map<std::string, std::vector<std::pair<size_t, std::string>>> byRemote;
     for (size_t i = 0; i < m_snapshot->remoteBranches.size(); ++i) {
         const auto& r = m_snapshot->remoteBranches[i];
-        if (containsNoCase(r.name, m_filter))
+        if (filter.matches(r.name))
             byRemote[r.remote].push_back({i, r.name.substr(std::min(r.name.size(), r.remote.size() + 1))});
     }
     for (const auto& [remote, list] : byRemote) {
@@ -1411,8 +1414,11 @@ void TagsPanel::draw(bool* open)
     newTagMenu("##hide_all_menu");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter);
-    const bool filtering = !m_filter.empty();
+    ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+    const FilterExpr& filter = m_filter.expr();
+    const bool filtering = !filter.empty();
     // A row has its ID directly under the window ("tag_<name>") in each folder.
     const ImGuiID windowId = ImGui::GetCurrentWindow()->ID;
     // Only the list scrolls: the controls above stay put.
@@ -1421,7 +1427,7 @@ void TagsPanel::draw(bool* open)
     m_session.requestRemoteTagsIfStale();
     std::vector<std::pair<size_t, std::string>> localTags;
     for (size_t i = 0; i < m_snapshot->tags.size(); ++i)
-        if (containsNoCase(m_snapshot->tags[i].name, m_filter))
+        if (filter.matches(m_snapshot->tags[i].name))
             localTags.push_back({i, m_snapshot->tags[i].name});
     // A folder row acts on the tags below it. Its menu has the same items as the menu of a selection of tags.
     const GroupRefs tagGroupRefs{history, [&](size_t index) { return std::vector<std::string>{"refs/tags/" + m_snapshot->tags[index].name}; },
@@ -2315,8 +2321,11 @@ void ReflogPanel::draw(bool* open)
     }
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter);
-    acceptCommitDrop(m_filter);
+    ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        tooltip("Comma separates terms, all must match. A leading - excludes a term.");
+    acceptCommitDrop(m_filter.text);
+    const FilterExpr& filter = m_filter.expr();
     if (m_reflog) {
         flattenNextTable(); // the entries are part of the panel's nav layer: the arrows walk them
         if (ImGui::BeginTable("##reflog_table", 3,
@@ -2328,8 +2337,7 @@ void ReflogPanel::draw(bool* open)
             ImGui::TableHeadersRow();
             for (size_t i = 0; i < m_reflog->entries.size(); ++i) {
                 const auto& e = m_reflog->entries[i];
-                if (!containsNoCase(e.message, m_filter) && !containsNoCase(e.newId.hex(), m_filter)
-                    && !containsNoCase(e.oldId.hex(), m_filter))
+                if (!filter.matches({e.message, e.newId.hex(), e.oldId.hex()}))
                     continue;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);

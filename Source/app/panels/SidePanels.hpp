@@ -4,6 +4,7 @@
 
 #include "shell/RepoTree.hpp"
 #include "shell/Session.hpp"
+#include "util/FilterExpr.hpp"
 #include "util/Ui.hpp"
 
 #include <core/Engine.hpp>
@@ -66,7 +67,7 @@ private:
     void keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot, const std::vector<std::string>& refs);
     Session& m_session;
     core::SnapshotPtr m_snapshot;
-    std::string m_filter;
+    FilterInput m_filter;
     // Remote nodes opened by the filter: the open state each had before it, put back when the filter is cleared.
     std::map<std::string, bool> m_remoteOpenBeforeFilter;
     RefSelection m_selection;
@@ -82,7 +83,7 @@ public:
 private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
-    std::string m_filter;
+    FilterInput m_filter;
     RefSelection m_selection;
 };
 
@@ -175,7 +176,7 @@ private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_ref = "HEAD";
-    std::string m_filter;
+    FilterInput m_filter;
     core::RequestId m_request = 0;
     core::ReflogPtr m_reflog;
     bool m_requested = false;

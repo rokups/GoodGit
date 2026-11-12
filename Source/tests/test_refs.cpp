@@ -345,6 +345,20 @@ GG_TEST("refs", "Branches: a tree split on '/', groups named by their common pre
     ctx->Yield(2);
     GG_CHECK(s.itemExists(branchRow("user/rk/b").c_str()));
     GG_CHECK(!s.itemExists(branchRow("feature/one").c_str()));
+    // Terms are separated by a comma and all must match; a leading minus excludes.
+    ctx->ItemInputValue("//Branches/##branch_filter", "user, b");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(branchRow("user/rk/b").c_str()));
+    GG_CHECK(!s.itemExists(branchRow("user/rk/a").c_str()));
+    GG_CHECK(!s.itemExists(branchRow("feature/one").c_str()));
+    ctx->ItemInputValue("//Branches/##branch_filter", "feature,-two");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(branchRow("feature/one").c_str()));
+    GG_CHECK(!s.itemExists(branchRow("feature/two").c_str()));
+    ctx->ItemInputValue("//Branches/##branch_filter", "-feature");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(branchRow("main").c_str()));
+    GG_CHECK(!s.itemExists(branchRow("feature/one").c_str()));
     ctx->ItemInputValue("//Branches/##branch_filter", "");
     ctx->Yield(2);
     // Double-click checks a branch out.
@@ -1857,6 +1871,15 @@ GG_TEST("refs", "Tags: tags with a slash group in folders; the filter opens a cl
     GG_CHECK(s.itemExists(tagRow("release/2.0").c_str()));
     GG_CHECK(!s.itemExists(tagRow("release/1.0").c_str()));
     GG_CHECK(!s.itemExists(tagRow("plain").c_str()));
+    ctx->ItemInputValue("//Tags/##tag_filter", "release,-2.0");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(tagRow("release/1.0").c_str()));
+    GG_CHECK(!s.itemExists(tagRow("release/2.0").c_str()));
+    GG_CHECK(!s.itemExists(tagRow("plain").c_str()));
+    ctx->ItemInputValue("//Tags/##tag_filter", "-release");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(tagRow("plain").c_str()));
+    GG_CHECK(!s.itemExists(tagRow("release/1.0").c_str()));
     // Clear the filter and open the folder again, so that the rows of the folder are drawn.
     ctx->ItemInputValue("//Tags/##tag_filter", "");
     ctx->Yield(2);
