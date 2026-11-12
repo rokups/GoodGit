@@ -1658,8 +1658,16 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
         // under the cells to the right (a right click there is on the row).
         ImRect shownRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         shownRect.ClipWithFull(ImGui::GetCurrentWindow()->ClipRect);
-        if (shownRect.GetWidth() > 0 && shownRect.GetHeight() > 0)
+        if (shownRect.GetWidth() > 0 && shownRect.GetHeight() > 0) {
             m_badgeRects[row.id].push_back({shownRect, pill.target.kind, pill.target.name});
+            // The pill under the mouse gets a 1 px outline on its edge, in the badge text color. It has the
+            // size of the drawn pill (see drawBadge), so it does not change the layout.
+            if (ImGui::IsWindowHovered() && shownRect.Contains(ImGui::GetIO().MousePos)) {
+                const float rounding = ImGui::GetFontSize() * 0.25f;
+                ImGui::GetWindowDrawList()->AddRect(ImVec2(shownRect.Min.x + 0.5f, shownRect.Min.y - 0.5f),
+                    ImVec2(shownRect.Max.x - 0.5f, shownRect.Max.y + 0.5f), p.badgeText, rounding, 0, 1.0f);
+            }
+        }
     }
     ImGui::SameLine();
     drawMergeIcon(row);
