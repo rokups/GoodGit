@@ -31,6 +31,12 @@ struct Actions::RewriteState {
     PlanBuilder build;
     Callback done;
     bool autostash = false;
+    // rewriteOlder(): the user may limit the rewrite to the history of HEAD.
+    bool offerScope = false;
+    std::optional<bool> onlyHeadPath; // empty until the user chooses
+    size_t leftOut = 0;               // commits outside the path of HEAD
+    std::vector<std::string> otherBranches;
+    std::string headName; // short branch name, empty when HEAD is detached
     std::map<std::string, rw::Resolution> resolutions; // pre-flight decisions so far
     // Commits that become empty: the plan asks (Emptied::Ask) until the user answers.
     bool askEmpty = false;
@@ -128,6 +134,37 @@ struct Prepared {
 thread_local std::optional<Prepared> t_prepared;
 thread_local std::uint64_t t_preparedCount = 0;
 
+// Builds the plan of a rewrite. With `offerScope` it records what a restriction to the history
+// of HEAD leaves out, and returns the restricted plan after the user chose it.
+template <class State>
+rw::Plan scopedPlan(State& state, git_repository* repo)
+{
+    rw::Plan plan = state.build(repo);
+    if (!state.offerScope)
+        return plan;
+    std::optional<rw::HeadPath> path = rw::headPathPlan(repo, plan);
+    if (!path)
+        return plan;
+    if (!state.onlyHeadPath) {
+        state.leftOut = path->leftOut;
+        state.otherBranches.clear();
+        for (const auto& b : path->branches)
+            state.otherBranches.push_back(b.rfind("refs/heads/", 0) == 0 ? b.substr(11) : b);
+        state.headName.clear();
+        git_reference* head = nullptr;
+        if (git_repository_head_detached(repo) == 0 && git_repository_head(&head, repo) == 0) {
+            if (git_reference_is_branch(head))
+                state.headName = git_reference_shorthand(head);
+        }
+        if (head)
+            git_reference_free(head);
+        return plan;
+    }
+    if (*state.onlyHeadPath)
+        return std::move(path->plan);
+    return plan;
+}
+
 } // namespace
 
 void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done, bool autostash)
@@ -137,6 +174,17 @@ void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done
     state->build = std::move(build);
     state->done = std::move(done);
     state->autostash = autostash;
+    rewritePrepare(state);
+}
+
+void Actions::rewriteOlder(const std::string& label, PlanBuilder build, Callback done, bool autostash)
+{
+    auto state = std::make_shared<RewriteState>();
+    state->label = label;
+    state->build = std::move(build);
+    state->done = std::move(done);
+    state->autostash = autostash;
+    state->offerScope = true;
     rewritePrepare(state);
 }
 
@@ -150,7 +198,7 @@ void Actions::rewritePrepare(const std::shared_ptr<RewriteState>& state)
             state->prepared = 0;
             // Before the plan is built: a change after this point shows when the rewrite applies.
             std::string inputs = rewriteInputs(ctx.repo(), state->resolutions);
-            rw::Plan plan = state->build(ctx.repo());
+            rw::Plan plan = scopedPlan(*state, ctx.repo());
             plan.resolutions = state->resolutions;
             state->askEmpty = plan.emptied == rw::Emptied::Ask;
             if (state->emptied)
@@ -195,6 +243,37 @@ void Actions::rewriteDecide(const std::shared_ptr<RewriteState>& state)
                       "Use a native interactive rebase, or turn first-class conflicts on.");
             return;
         }
+    }
+    // 0b. Scope: other branches would be rewritten too.
+    if (state->offerScope && !state->onlyHeadPath && state->leftOut > 0) {
+        const std::string where = state->headName.empty() ? "the detached HEAD" : state->headName;
+        Form f;
+        f.title = "Rewrite other branches?";
+        f.message = "This change also rewrites " + std::to_string(state->leftOut)
+            + " commits that are not in the history of " + where + ".";
+        if (!state->otherBranches.empty()) {
+            f.message += "\nBranches: ";
+            const size_t shown = std::min<size_t>(state->otherBranches.size(), 5);
+            for (size_t i = 0; i < shown; ++i)
+                f.message += (i ? ", " : "") + state->otherBranches[i];
+            if (state->otherBranches.size() > shown)
+                f.message += " and " + std::to_string(state->otherBranches.size() - shown) + " more";
+        }
+        f.message += "\n\"Rebase all descendants\" moves those commits and their branches onto the new commits."
+                     "\n\"Only " + (state->headName.empty() ? std::string("current path") : state->headName)
+            + "\" leaves them where they are.";
+        f.buttons.push_back({"Rebase all descendants", [this, state](Form&) {
+                                 state->onlyHeadPath = false;
+                                 rewriteDecide(state);
+                             }});
+        f.buttons.push_back({"Only " + (state->headName.empty() ? std::string("current path") : state->headName),
+            [this, state](Form&) {
+                state->onlyHeadPath = true;
+                rewritePrepare(state);
+            }});
+        f.buttons.push_back({"Cancel", {}});
+        dialogs.open(std::move(f));
+        return;
     }
     // 1. Non-text conflicts: every one needs a decision before anything is written.
     if (!r.unresolved.empty()) {
@@ -322,7 +401,7 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
             if (prepared && (prepared->id != state->prepared || prepared->cwd != ctx.cwd()))
                 prepared.reset();
             const std::string inputs = prepared ? rewriteInputs(ctx.repo(), state->resolutions) : std::string();
-            rw::Plan plan = state->build(ctx.repo());
+            rw::Plan plan = scopedPlan(*state, ctx.repo());
             plan.resolutions = state->resolutions;
             if (state->emptied)
                 plan.emptied = *state->emptied;

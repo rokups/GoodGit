@@ -185,6 +185,9 @@ public:
     // operation. Newly conflicted commits are reported in a notification. With `autostash`
     // local changes are stashed before applying and popped after, in the same operation.
     void rewrite(const std::string& label, PlanBuilder build, Callback done = {}, bool autostash = false);
+    // Like rewrite(), but first asks whether to rewrite the other branches that descend from the
+    // changed commits too, or only the history of HEAD.
+    void rewriteOlder(const std::string& label, PlanBuilder build, Callback done = {}, bool autostash = false);
     void reword(const core::Oid& commit, const std::string& message);
     void editAuthor(const core::Oid& commit, const std::string& name, const std::string& email);
     // A detached copy of the commit (or of it and its descendants) on its parent.
