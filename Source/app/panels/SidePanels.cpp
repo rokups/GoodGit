@@ -1517,7 +1517,7 @@ void TagsPanel::draw(bool* open)
 // A tree node with the look of a selected row: the selection colours of selectable(). The arrow opens
 // it, so a click or a double-click on the label does not toggle it (the keyboard does: Enter or Space
 // on the focused node, and the arrow keys, as on any tree node). `detail` follows the label, dimmed.
-static bool selectableTreeNode(const char* label, const std::string& detail, bool selected)
+static bool selectableTreeNode(const char* label, const std::string& detail, bool selected, bool allowOverlap = false)
 {
     if (selected) {
         const Palette& p = theme().palette();
@@ -1525,8 +1525,11 @@ static bool selectableTreeNode(const char* label, const std::string& detail, boo
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, p.selectionHovered);
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, p.selectionHovered);
     }
+    if (allowOverlap)
+        ImGui::SetNextItemAllowOverlap();
     const bool open = ImGui::TreeNodeEx(label,
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | (selected ? ImGuiTreeNodeFlags_Selected : 0));
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | (selected ? ImGuiTreeNodeFlags_Selected : 0)
+            | (allowOverlap ? ImGuiTreeNodeFlags_AllowOverlap : 0));
     if (selected)
         ImGui::PopStyleColor(3);
     if (!detail.empty() && ImGui::IsItemVisible()) {
@@ -1538,6 +1541,18 @@ static bool selectableTreeNode(const char* label, const std::string& detail, boo
         drawDimRange(ImVec2(x, min.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f), text.c_str(), text.c_str() + text.size(), 0, text.size());
     }
     return open;
+}
+
+// The double-click on a row opens `path` in this window. With Shift it opens a new window (GG-35): the new
+// ggui focuses the window that shows the path already. Call right after the row's item.
+static void rowDoubleClickOpen(Session& session, const std::string& path, bool canOpen, std::string& toOpen)
+{
+    if (!canOpen || !ImGui::IsItemHovered() || !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        return;
+    if (ImGui::GetIO().KeyShift)
+        session.actions().openInNewWindow(path);
+    else
+        toOpen = path;
 }
 
 // A group is a tree node, open by default; a repository is a row. `toOpen` gets the path of the one
@@ -1589,20 +1604,29 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         const std::string detail = m_session.app().recentDetail(info, elided);
         const std::string rowText = warnPrefix + (detail.empty() ? node.label : node.label + "  " + detail);
         m_rowTexts[node.path] = rowText;
+        // The hover button opens the repository in a new window, as a Shift+double-click does (GG-35).
+        const RowAction acts[] = {
+            {ICON_MS_OPEN_IN_NEW, "act_open_window", "Open in new window", !info || info->exists, !isOpen},
+        };
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
         bool nodeOpen = false;
         if (hasChildren) {
-            nodeOpen = selectableTreeNode(label.c_str(), detail, selected);
+            nodeOpen = selectableTreeNode(label.c_str(), detail, selected, true);
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
                 m_selected = node.path;
                 m_selectedWorktree = false;
             }
-        } else if (selectableTextDimRanges(rowText, "row", {{warnPrefix.size() + node.label.size(), rowText.size()}}, selected,
-                       0, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
-            m_selected = node.path;
-            m_selectedWorktree = false;
+        } else {
+            ImGui::SetNextItemAllowOverlap();
+            if (selectableTextDimRanges(rowText, "row", {{warnPrefix.size() + node.label.size(), rowText.size()}}, selected,
+                    ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
+                m_selected = node.path;
+                m_selectedWorktree = false;
+            }
         }
         ImGui::PopStyleColor();
+        if (rowActions(acts, selected) == 0)
+            m_session.actions().openInNewWindow(node.path);
         // Drag the repository onto a group: the payload is its path, the preview its label.
         if (beginOpaqueDragSource()) {
             m_dragLabel = node.label;
@@ -1610,8 +1634,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             ImGui::TextUnformatted(node.label.c_str());
             ImGui::EndDragDropSource();
         }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !isOpen)
-            toOpen = node.path;
+        rowDoubleClickOpen(m_session, node.path, !isOpen, toOpen);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string text = elided ? node.path + summaryNamesText(*info) : node.path;
             if (!warnPrefix.empty())
@@ -1737,16 +1760,19 @@ void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& lis
         const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
                                         : ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        if (selectableTextDimRanges(label, "row", {}, m_selectedWorktree && path == m_selected, 0, ImVec2(0, 0), warnPrefix.size(),
-                summaryWarnColor())) {
+        const RowAction acts[] = {{ICON_MS_OPEN_IN_NEW, "act_open_window", "Open in new window", !w.missing, !w.isCurrent}};
+        ImGui::SetNextItemAllowOverlap();
+        if (selectableTextDimRanges(label, "row", {}, m_selectedWorktree && path == m_selected, ImGuiSelectableFlags_AllowOverlap,
+                ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
             m_selected = path;
             m_selectedWorktree = true;
         }
         ImGui::PopStyleColor();
+        if (rowActions(acts, m_selectedWorktree && path == m_selected) == 0)
+            m_session.actions().openInNewWindow(path);
         if (!w.isCurrent && !w.missing)
             m_openableWorktrees.insert(path);
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !w.isCurrent && !w.missing)
-            toOpen = path;
+        rowDoubleClickOpen(m_session, path, !w.isCurrent && !w.missing, toOpen);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
             tooltip("%s", (customName.empty() ? path : path + "\nId: " + w.name).c_str());
         if (beginContextMenu("##worktree_menu")) {
@@ -1833,9 +1859,11 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
         const ImU32 color = isSession ? theme().palette().branchCurrentText
                                       : ImGui::GetColorU32(sm.initialized ? ImGuiCol_Text : ImGuiCol_TextDisabled);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
+        // The hover button opens the submodule in a new window, as a Shift+double-click does (GG-35).
+        const RowAction acts[] = {{ICON_MS_OPEN_IN_NEW, "act_open_window", "Open in new window", true, canOpen}};
         bool nodeOpen = false;
         if (isNode) {
-            nodeOpen = selectableTreeNode((sm.name + "###row").c_str(), detail, selected);
+            nodeOpen = selectableTreeNode((sm.name + "###row").c_str(), detail, selected, true);
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
                 m_selected = path;
                 m_selectedWorktree = true;
@@ -1844,17 +1872,20 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
             // A submodule whose directory is gone, or that has no .gitmodules entry, has the warning triangle before its name.
             const std::string warnPrefix = warnIconPrefix(sm.missing || sm.gitmodulesMissing);
             const std::string label = warnPrefix + sm.name + (sm.missing ? " (missing)" : "") + "  ";
-            detail = elideMiddleToWidth(detail, ImGui::GetContentRegionAvail().x - textWidth(label));
-            if (selectableTextDimRanges(label + detail, "row", {}, selected, 0, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
+            detail = elideMiddleToWidth(detail, ImGui::GetContentRegionAvail().x - textWidth(label) - rowActionsReserve(acts));
+            ImGui::SetNextItemAllowOverlap();
+            if (selectableTextDimRanges(label + detail, "row", {}, selected, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 0),
+                    warnPrefix.size(), summaryWarnColor())) {
                 m_selected = path;
                 m_selectedWorktree = true;
             }
         }
         ImGui::PopStyleColor();
+        if (rowActions(acts, selected) == 0)
+            m_session.actions().openInNewWindow(path);
         if (canOpen)
             m_openableSubmodules.insert(path);
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && canOpen)
-            toOpen = path;
+        rowDoubleClickOpen(m_session, path, canOpen, toOpen);
         if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
             std::string text = sm.missing ? path + "\nThe directory is gone." : sm.initialized ? path : "Not initialized";
             if (sm.gitmodulesMissing)

@@ -7,6 +7,7 @@
 #include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
 
+#include "util/Env.hpp"
 #include "util/Ui.hpp"
 
 #include <libgg/Worktrees.hpp>
@@ -2844,6 +2845,82 @@ GG_TEST("panels", "branches: a Shift range counts the rows drawn, also for a rem
     const auto& selection = s.session()->branches().selection();
     GG_CHECK(selection.kind == ggui::RefKind::RemoteBranch);
     GG_CHECK(selection.names == (std::set<std::string>{"origin/main", "second/main", "origin/zeta"}));
+}
+
+// The path of the "Open in new window" hover button of the row `row` (a path that ends in "###row").
+static std::string openWindowButton(const std::string& row)
+{
+    return row.substr(0, row.size() - std::string("###row").size()) + "###act_open_window";
+}
+
+static std::vector<std::string> stubLog(Scenario& s)
+{
+    return gg::splitLines(s.read(s.root(), "ggui-stub.log"));
+}
+
+// Shift+double-click on `row`.
+static void shiftDoubleClick(ImGuiTestContext* ctx, const std::string& row)
+{
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemDoubleClick(row.c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+}
+
+GG_TEST("panels", "repositories: the hover button and Shift+double-click open a repository in a new window")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Merges, "second");
+    GG_REQUIRE(s.openRepository(first));
+    s.app.settings().addRepository(second.string());
+    s.showPanel("Repositories");
+    // The stand-in for the ggui program logs its arguments.
+    s.fakeTool("ggui-stub");
+    ggui::setEnv("GG_GGUI", s.toolPath("ggui-stub").string());
+    const std::string row = repoRow(s, second);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(openWindowButton(row).c_str()));
+    ctx->ItemClick(openWindowButton(row).c_str());
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLog(s); return l.size() == 1 && gg::worktrees::samePath(l[0], second); }));
+    // Shift+double-click: another window, and this window keeps its repository.
+    shiftDoubleClick(ctx, row);
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLog(s); return l.size() == 2 && gg::worktrees::samePath(l[1], second); }));
+    s.settle();
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), first));
+    // The repository of this window has no button, and Shift+double-click on its row starts nothing.
+    const std::string own = repoRow(s, first);
+    ctx->MouseMove(own.c_str());
+    ctx->Yield(3);
+    GG_CHECK(!s.itemExists(openWindowButton(own).c_str()));
+    shiftDoubleClick(ctx, own);
+    ctx->Yield(5);
+    GG_CHECK_EQ(stubLog(s).size(), size_t(2));
+}
+
+GG_TEST("panels", "repositories: the hover button and Shift+double-click open a submodule in a new window")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Repositories");
+    s.fakeTool("ggui-stub");
+    ggui::setEnv("GG_GGUI", s.toolPath("ggui-stub").string());
+    const std::string row = repoRow(s, repo);
+    GG_REQUIRE(s.itemExists(row.c_str()));
+    openRepoNode(ctx, row);
+    const std::string subRow = submoduleRow(row, "sub");
+    GG_REQUIRE(s.itemExists(subRow.c_str()));
+    ctx->MouseMove(subRow.c_str());
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(openWindowButton(subRow).c_str()));
+    ctx->ItemClick(openWindowButton(subRow).c_str());
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLog(s); return l.size() == 1 && gg::worktrees::samePath(l[0], repo / "sub"); }));
+    shiftDoubleClick(ctx, subRow);
+    GG_CHECK(s.waitUntil([&] { const auto l = stubLog(s); return l.size() == 2 && gg::worktrees::samePath(l[1], repo / "sub"); }));
+    s.settle();
+    GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
 }
 
 } // namespace ggtest
