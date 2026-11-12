@@ -197,6 +197,80 @@ GG_TEST("new", "Undo after New (staged files) stages the staged file again and k
     GG_CHECK_STR_EQ(s.read(repo, tracked), "changed\n");
 }
 
+namespace {
+
+std::string firstTracked(Scenario& s, const fs::path& repo)
+{
+    const std::string files = s.gitOut(repo, {"ls-files"});
+    return gg::trim(files.substr(0, files.find('\n')));
+}
+
+// New on HEAD, then Undo, then Redo. Undo gives back the status and the file contents of before New.
+// Redo gives back the commit and the status of after New. `files` holds each path and its content.
+void newUndoRedo(Scenario& s, ImGuiTestContext* ctx, const fs::path& repo,
+    const std::vector<std::pair<std::string, std::string>>& files)
+{
+    s.session()->refresh();
+    s.settle();
+    const std::string main = s.head(repo);
+    const std::string status = s.gitOut(repo, {"status", "--porcelain"});
+    ctx->MenuClick("//##MainMenuBar/Commit/New commit");
+    GG_REQUIRE(headMoved(s, repo, main));
+    const std::string made = s.head(repo);
+    const std::string madeStatus = s.gitOut(repo, {"status", "--porcelain"});
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return headIs(s, repo, main); }));
+    s.settle();
+    GG_CHECK_STR_EQ(symbolicHead(s, repo), "main");
+    GG_CHECK_STR_EQ(s.revParse(repo, "main"), main);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), status);
+    for (const auto& [path, content] : files)
+        GG_CHECK_STR_EQ(s.read(repo, path), content);
+    ctx->MenuClick("//##MainMenuBar/Edit/Redo");
+    GG_REQUIRE(s.waitUntil([&] { return headIs(s, repo, made); }));
+    s.settle();
+    GG_CHECK_STR_EQ(symbolicHead(s, repo), "(detached)");
+    GG_CHECK_STR_EQ(s.revParse(repo, "main"), main);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), madeStatus);
+    for (const auto& [path, content] : files)
+        GG_CHECK_STR_EQ(s.read(repo, path), content);
+}
+
+} // namespace
+
+GG_TEST("new", "Undo after New (all files) keeps an unstaged edit of a tracked file; Redo takes it again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tracked = firstTracked(s, repo);
+    GG_REQUIRE(!tracked.empty());
+    s.write(repo, tracked, "edited\n");
+    GG_REQUIRE(gg::trim(s.gitOut(repo, {"status", "--porcelain"})) == "M " + tracked);
+    newUndoRedo(s, ctx, repo, {{tracked, "edited\n"}});
+}
+
+GG_TEST("new", "Undo after New (all files) leaves an untracked file untracked; Redo takes it again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.write(repo, "x.txt", "untracked\n");
+    GG_REQUIRE(gg::trim(s.gitOut(repo, {"status", "--porcelain"})) == "?? x.txt");
+    newUndoRedo(s, ctx, repo, {{"x.txt", "untracked\n"}});
+}
+
+GG_TEST("new", "Undo after New (staged files) gives back staged, unstaged and untracked files; Redo works")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tracked = firstTracked(s, repo);
+    GG_REQUIRE(!tracked.empty());
+    s.write(repo, "staged.txt", "staged\n");
+    s.git(repo, {"add", "staged.txt"});
+    s.write(repo, tracked, "edited\n");
+    s.write(repo, "x.txt", "untracked\n");
+    newUndoRedo(s, ctx, repo, {{"staged.txt", "staged\n"}, {tracked, "edited\n"}, {"x.txt", "untracked\n"}});
+}
+
 GG_TEST("new", "menu items follow the selection: single-commit items need one commit, ranges need adjacent ones")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

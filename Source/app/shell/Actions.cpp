@@ -667,6 +667,9 @@ void Actions::newCommit(const std::vector<std::string>& parents, bool detach, co
         opts.message = message;
         // A detached commit on HEAD takes the working tree changes: the staged ones, else all of them
         // (untracked files too). Elsewhere the parent's tree is used and `git switch` carries local changes.
+        // On HEAD the working tree does not change: Undo and Redo then change the index only, so they keep
+        // the files on disk (an untracked file that `add -A` took is untracked again after Undo).
+        bool onHead = false;
         if (detach && git_repository_is_bare(ctx.repo()) != 1) {
             const auto head = ctx.gitMayFail({"rev-parse", "-q", "--verify", "HEAD^{commit}"});
             const auto parent = ctx.gitMayFail({"rev-parse", "-q", "--verify", (parents.empty() ? std::string("HEAD") : parents.front()) + "^{commit}"});
@@ -674,13 +677,14 @@ void Actions::newCommit(const std::vector<std::string>& parents, bool detach, co
                 if (ctx.gitMayFail({"diff", "--cached", "--quiet"}).ok())
                     ctx.git({"add", "-A"});
                 opts.tree = gg::trim(ctx.git({"write-tree"}).out);
+                onHead = true;
             }
         }
         const auto result = gg::newCommit(ctx.repo(), opts);
         if (!result.ok)
             throw MutationError{core::classifyFailure(result.error), result.error, result.error};
         ctx.result = result.commit;
-        ctx.worktreeFollowsIndex = true;
+        ctx.worktreeFollowsIndex = !onHead;
     }, {}, false, true, true, true);
 }
 
