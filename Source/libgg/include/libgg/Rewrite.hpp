@@ -242,6 +242,21 @@ std::vector<std::string> rangeToMove(git_repository* repo, const std::string& ti
 // A Plan that replays `changed` and their descendants with the given per-commit edits.
 Plan replayPlan(git_repository* repo, const std::vector<std::string>& changed);
 
+// A plan cut down to the commits on HEAD's history path (HEAD's ancestors inside the plan).
+// The steps of other commits leave the plan: `leftOut` counts them and `branches` lists the
+// local branches (full names) whose tip is one of them. Those commits get no replacement, so
+// their branches and kept refs stay where they are.
+struct HeadPath {
+    Plan plan;
+    size_t leftOut = 0;
+    std::vector<std::string> branches;
+};
+
+// nullopt when HEAD is unborn or outside the plan, when no step is off the path, or when the
+// cut is not safe: an off-path step is not a plain step, a dropped commit is off the path,
+// a remaining step or redirect names a removed step, or keepBranches or keepHead is set.
+std::optional<HeadPath> headPathPlan(git_repository* repo, const Plan& plan);
+
 // A tree with a unified patch (old → new, as `git diff` writes it) applied to it.
 std::string applyPatchToTree(git_repository* repo, const std::string& tree, const std::string& patch);
 // ggui's patch of some lines of one file (the patch builder's output) as a plain change of the

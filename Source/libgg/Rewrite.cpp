@@ -1192,6 +1192,89 @@ Plan replayPlan(git_repository* repo, const std::vector<std::string>& changed)
     return plan;
 }
 
+std::optional<HeadPath> headPathPlan(git_repository* repo, const Plan& plan)
+{
+    assertNotUiThread("rewrite::headPathPlan");
+    if (plan.keepBranches || plan.keepHead)
+        return std::nullopt;
+    std::set<std::string> inPlan(plan.dropped.begin(), plan.dropped.end());
+    for (const auto& step : plan.steps)
+        if (!step.source.empty())
+            inPlan.insert(step.source);
+    git_oid head;
+    if (git_reference_name_to_id(&head, repo, "HEAD") != 0) { // (unborn)
+        git_error_clear();
+        return std::nullopt;
+    }
+    if (!inPlan.count(toHex(head)))
+        return std::nullopt;
+    std::set<std::string> onPath;
+    std::vector<std::string> stack{toHex(head)};
+    while (!stack.empty()) {
+        const std::string id = stack.back();
+        stack.pop_back();
+        if (!inPlan.count(id) || !onPath.insert(id).second)
+            continue;
+        const auto oid = fromHex(id);
+        if (!oid)
+            continue;
+        git_commit* raw = nullptr;
+        if (git_commit_lookup(&raw, repo, &*oid) != 0)
+            continue;
+        Commit commit(raw);
+        for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)
+            stack.push_back(toHex(*git_commit_parent_id(commit.get(), i)));
+    }
+    git_error_clear();
+    HeadPath out;
+    out.plan = plan;
+    out.plan.steps.clear();
+    std::set<std::string> removed;
+    for (const auto& step : plan.steps) {
+        if (step.source.empty() || onPath.count(step.source)) {
+            out.plan.steps.push_back(step);
+            continue;
+        }
+        Step plain;
+        plain.source = step.source;
+        if (!(step == plain))
+            return std::nullopt;
+        removed.insert(step.source);
+        ++out.leftOut;
+    }
+    if (removed.empty())
+        return std::nullopt;
+    for (const auto& d : plan.dropped)
+        if (!onPath.count(d))
+            return std::nullopt;
+    const auto isRemoved = [&](const std::string& name) {
+        return removed.count(name) != 0 || (!name.empty() && name[0] == '=' && removed.count(name.substr(1)) != 0);
+    };
+    for (const auto& step : out.plan.steps) {
+        if (isRemoved(step.key))
+            return std::nullopt;
+        for (const auto& parent : step.parents)
+            if (isRemoved(parent))
+                return std::nullopt;
+    }
+    for (const auto& [ref, target] : plan.refsToSteps)
+        if (isRemoved(target))
+            return std::nullopt;
+    for (const auto& [from, to] : plan.parentRedirect)
+        if (isRemoved(from) || isRemoved(to))
+            return std::nullopt;
+    if (isRemoved(plan.detachHeadAt))
+        return std::nullopt;
+    forEachReference(repo, [&](git_reference* ref) {
+        if (std::string(git_reference_name(ref)).rfind("refs/heads/", 0) == 0 && git_reference_type(ref) == GIT_REFERENCE_DIRECT
+            && removed.count(toHex(*git_reference_target(ref))))
+            out.branches.push_back(git_reference_name(ref));
+        return true;
+    });
+    git_error_clear();
+    return out;
+}
+
 Plan insertPlan(git_repository* repo, const std::string& at, bool before, const std::string& message)
 {
     std::string msg = message;

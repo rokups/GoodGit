@@ -863,4 +863,93 @@ GG_TEST("rewrite", "rewrite: a pick packs only the objects it creates, not the w
     GG_CHECK(s.gitOut(repo, {"fsck", "--no-dangling"}).find("missing") == std::string::npos);
 }
 
+// A-B-C on main, side is B-D, HEAD on main.
+struct HeadPathRepo {
+    fs::path path;
+    std::string a, b, c, d;
+};
+
+HeadPathRepo makeHeadPath(Scenario& s)
+{
+    HeadPathRepo r;
+    r.path = s.fixture(Recipe::Empty);
+    s.commitFile(r.path, "a.txt", "a\n", "A");
+    r.a = s.head(r.path);
+    s.commitFile(r.path, "b.txt", "b\n", "B");
+    r.b = s.head(r.path);
+    s.commitFile(r.path, "c.txt", "c\n", "C");
+    r.c = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "-b", "side", r.b});
+    s.commitFile(r.path, "d.txt", "d\n", "D");
+    r.d = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "main"});
+    return r;
+}
+
+std::vector<std::string> sources(const gg::rewrite::Plan& plan)
+{
+    std::vector<std::string> out;
+    for (const auto& step : plan.steps)
+        out.push_back(step.source);
+    return out;
+}
+
+GG_TEST("rewrite", "head path plan leaves out the steps off the HEAD path")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    const auto plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    GG_REQUIRE(plan.steps.size() == 4);
+    const auto cut = gg::rewrite::headPathPlan(repo.get(), plan);
+    GG_REQUIRE(cut.has_value());
+    GG_CHECK_EQ(cut->leftOut, size_t(1));
+    GG_CHECK(cut->branches == std::vector<std::string>{"refs/heads/side"});
+    GG_CHECK(sources(cut->plan) == (std::vector<std::string>{r.a, r.b, r.c}));
+}
+
+GG_TEST("rewrite", "head path plan gives nothing when every step is on the path")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), gg::rewrite::replayPlan(repo.get(), {r.c})).has_value());
+}
+
+GG_TEST("rewrite", "head path plan gives nothing when HEAD is on the side branch with a changed C")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    s.git(r.path, {"checkout", "-q", "side"});
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    auto plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    for (auto& step : plan.steps)
+        if (step.source == r.c)
+            step.message = "Changed\n";
+    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
+}
+
+GG_TEST("rewrite", "head path plan with a detached HEAD matches the branch result")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    s.git(r.path, {"checkout", "-q", "--detach", r.c});
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    const auto cut = gg::rewrite::headPathPlan(repo.get(), gg::rewrite::replayPlan(repo.get(), {r.a}));
+    GG_REQUIRE(cut.has_value());
+    GG_CHECK_EQ(cut->leftOut, size_t(1));
+    GG_CHECK(cut->branches == std::vector<std::string>{"refs/heads/side"});
+    GG_CHECK(sources(cut->plan) == (std::vector<std::string>{r.a, r.b, r.c}));
+}
+
+GG_TEST("rewrite", "head path plan guard: a non-plain off-path step gives nothing")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    auto plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    for (auto& step : plan.steps)
+        if (step.source == r.d)
+            step.message = "Changed\n";
+    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
+    plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    plan.keepBranches = true;
+    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
+}
+
 } // namespace ggtest
