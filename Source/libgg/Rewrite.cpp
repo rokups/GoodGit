@@ -1230,11 +1230,17 @@ std::optional<HeadPath> headPathPlan(git_repository* repo, const Plan& plan)
     out.plan = plan;
     out.plan.steps.clear();
     std::set<std::string> removed;
+    bool previousRemoved = false;
     for (const auto& step : plan.steps) {
         if (step.source.empty() || onPath.count(step.source)) {
+            // A squash step folds into the step before it: that step must stay.
+            if (step.kind == Step::Kind::Squash && previousRemoved)
+                return std::nullopt;
+            previousRemoved = false;
             out.plan.steps.push_back(step);
             continue;
         }
+        previousRemoved = true;
         Step plain;
         plain.source = step.source;
         if (!(step == plain))

@@ -142,12 +142,18 @@ rw::Plan scopedPlan(State& state, git_repository* repo)
     rw::Plan plan = state.build(repo);
     if (!state.offerScope)
         return plan;
+    // The dialog data always comes from this call: never keep data of an older plan.
+    state.leftOut = 0;
+    state.otherBranches.clear();
     std::optional<rw::HeadPath> path = rw::headPathPlan(repo, plan);
-    if (!path)
+    if (!path) {
+        // The user chose "Only" for a plan that no longer has a restricted form.
+        if (state.onlyHeadPath && *state.onlyHeadPath)
+            throw MutationError{Outcome::Refused, "the history changed while deciding; try again", {}};
         return plan;
+    }
     if (!state.onlyHeadPath) {
         state.leftOut = path->leftOut;
-        state.otherBranches.clear();
         for (const auto& b : path->branches)
             state.otherBranches.push_back(b.rfind("refs/heads/", 0) == 0 ? b.substr(11) : b);
         state.headName.clear();

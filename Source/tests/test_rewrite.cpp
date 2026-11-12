@@ -1105,4 +1105,59 @@ GG_TEST("rewrite", "edit author asks the scope: Only main leaves the side branch
     GG_CHECK_STR_EQ(info(s, r.path, "side~2", "%an"), "Test User");
 }
 
+GG_TEST("rewrite", "reword asks the scope: undo after Only main restores every ref")
+{
+    HeadPathRepo r = makeScopeRepo(s);
+    const std::string side = s.revParse(r.path, "side");
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string before = everything(s, r.path);
+    rewordFromUi(s, r.a, "Reworded A");
+    GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
+    s.dialogButton("Rewrite other branches?", "Only main");
+    GG_REQUIRE(s.waitUntil([&] { return info(s, r.path, "main~2", "%s") == "Reworded A"; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return everything(s, r.path) == before; }));
+    s.settle();
+    GG_CHECK_STR_EQ(everything(s, r.path), before);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), side);
+}
+
+GG_TEST("rewrite", "head path plan keeps a merged branch on the path and counts only off-path steps")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    s.git(r.path, {"checkout", "-q", "-b", "feat", r.b});
+    s.commitFile(r.path, "e.txt", "e\n", "E");
+    const std::string e = s.head(r.path);
+    s.git(r.path, {"checkout", "-q", "main"});
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "M", "feat"});
+    const std::string m = s.head(r.path);
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    const auto plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    const auto cut = gg::rewrite::headPathPlan(repo.get(), plan);
+    GG_REQUIRE(cut.has_value());
+    GG_CHECK_EQ(cut->leftOut, size_t(1)); // only D of side
+    const auto kept = sources(cut->plan);
+    GG_CHECK(std::find(kept.begin(), kept.end(), e) != kept.end());
+    GG_CHECK(std::find(kept.begin(), kept.end(), m) != kept.end());
+    GG_CHECK(std::find(kept.begin(), kept.end(), r.d) == kept.end());
+    GG_CHECK(std::find(cut->branches.begin(), cut->branches.end(), "refs/heads/side") != cut->branches.end());
+}
+
+GG_TEST("rewrite", "head path plan guard: a kept squash after a removed step gives nothing")
+{
+    HeadPathRepo r = makeHeadPath(s);
+    gg::git2::Repository repo = gg::git2::openRepository(r.path);
+    gg::rewrite::Plan plan;
+    gg::rewrite::Step off;
+    off.source = r.d;
+    gg::rewrite::Step kept;
+    kept.source = r.c;
+    plan.steps = {off, kept};
+    GG_CHECK(gg::rewrite::headPathPlan(repo.get(), plan).has_value());
+    plan.steps[1].kind = gg::rewrite::Step::Kind::Squash;
+    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
+}
+
 } // namespace ggtest
