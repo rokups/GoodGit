@@ -41,7 +41,14 @@ NewCommitResult newCommit(git_repository* repo, const NewCommitOptions& options)
 
     // Tree: the first parent's (empty tree for a root commit).
     Tree tree;
-    if (!parents.empty()) {
+    if (!options.tree.empty()) {
+        const auto treeId = git2::resolve(repo, options.tree);
+        if (!treeId) {
+            result.error = "unknown tree '" + options.tree + "'";
+            return result;
+        }
+        tree = lookupTree(repo, *treeId);
+    } else if (!parents.empty()) {
         tree = commitTree(parents.front().get());
     } else {
         git_treebuilder* rawBuilder = nullptr;
@@ -113,7 +120,7 @@ NewCommitResult newCommit(git_repository* repo, const NewCommitOptions& options)
         const std::string old = unborn ? std::string(hexSize(oidType(repo)), '0') : headCommit;
         r = git(cwd, {"update-ref", "--create-reflog", "-m", "gg new", headTarget, result.commit, old});
         result.movedBranch = headTarget;
-    } else if (bare) {
+    } else if (bare || !options.tree.empty()) {
         r = git(cwd, {"update-ref", "--no-deref", "-m", "gg new", "HEAD", result.commit});
     } else {
         r = git(cwd, {"switch", "--quiet", "--detach", result.commit});

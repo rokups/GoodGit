@@ -77,7 +77,7 @@ GG_TEST("cli", "git gg undo, redo and op log")
     GG_CHECK(lines[0].find("[git-gg] redo \"new commit\"") != std::string::npos); // newest first
     GG_CHECK(r.out.find("[git-gg] undo \"new commit\"") != std::string::npos);
     GG_CHECK(r.out.find("[ggui] new commit") != std::string::npos);
-    GG_CHECK(r.out.find("refs/heads/main: ") != std::string::npos);
+    GG_CHECK(r.out.find("HEAD: ") != std::string::npos); // the new commit is detached: main stays
     // The UI lists the same operations.
     GG_CHECK(s.waitUntil([&] { return s.session()->operations().size() == 3; }));
 }

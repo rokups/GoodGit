@@ -183,12 +183,24 @@ bool becomes(Scenario& s, const fs::path& repo, const std::string& expected)
 
 std::string rowRef(const std::string& hex) { return "//History/**/###row_" + hex; }
 
-// "New detached commit" on the commit `id` (its row is selected first).
+// "New commit" on the commit `id` (its row is selected first).
 void newDetachedOn(ImGuiTestContext* ctx, Scenario& s, const std::string& id)
 {
     s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(id)) != nullptr; });
     ctx->ItemClick(rowRef(id).c_str());
-    ctx->MenuClick("//##MainMenuBar/Commit/New detached commit");
+    ctx->MenuClick("//##MainMenuBar/Commit/New commit");
+}
+
+// A commit on the attached branch made through the app: the toolbar's Commit with one staged file.
+void commitOnBranch(ImGuiTestContext* ctx, Scenario& s, const fs::path& repo)
+{
+    s.write(repo, "app-commit.txt", "x\n");
+    s.git(repo, {"add", "app-commit.txt"});
+    s.settle();
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    s.dialogOpen("Commit");
+    s.dialogText("Commit", "message", "App commit");
+    s.dialogButton("Commit", "Commit");
 }
 
 bool commitReadable(Scenario& s, const fs::path& repo, const std::string& id)
@@ -951,7 +963,7 @@ GG_TEST("keep", "Undo and Redo pass over a keep-only operation: main's commit is
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     const std::string tip = s.head(repo);
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N); // main's commit, through the app
+    commitOnBranch(ctx, s, repo); // main's commit, through the app
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
 
@@ -996,7 +1008,7 @@ GG_TEST("keep", "the Operations panel lists a keep-only operation with its Resto
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     const std::string tip = s.head(repo);
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N); // an ordinary, restorable operation
+    commitOnBranch(ctx, s, repo); // an ordinary, restorable operation
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
     const auto ordinary = s.session()->operations().back().id;
@@ -1105,7 +1117,7 @@ GG_TEST("keep", "two worktrees: Undo in main does not undo a detached commit mad
     s.settle();
     const std::string tip = s.head(repo);
     const std::string wtStart = s.head(wt);
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N); // main's own commit, through the app
+    commitOnBranch(ctx, s, repo); // main's own commit, through the app
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
 
@@ -1242,7 +1254,7 @@ GG_TEST("keep", "Redo passes over a keep-only operation that lies above the undo
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     const std::string tip = s.head(repo);
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    commitOnBranch(ctx, s, repo);
     GG_REQUIRE(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
     const std::string committed = s.head(repo);

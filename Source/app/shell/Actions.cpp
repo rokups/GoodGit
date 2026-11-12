@@ -659,12 +659,23 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
 
 void Actions::newCommit(const std::vector<std::string>& parents, bool detach, const std::string& message, const std::string& branch)
 {
-    run(detach ? "new detached commit" : "new commit", [parents, detach, message, branch](MutationContext& ctx) {
+    run("new commit", [parents, detach, message, branch](MutationContext& ctx) {
         gg::NewCommitOptions opts;
         opts.branch = branch;
         opts.parents = parents;
         opts.detach = detach;
         opts.message = message;
+        // A detached commit on HEAD takes the working tree changes: the staged ones, else all of them
+        // (untracked files too). Elsewhere the parent's tree is used and `git switch` carries local changes.
+        if (detach && git_repository_is_bare(ctx.repo()) != 1) {
+            const auto head = ctx.gitMayFail({"rev-parse", "-q", "--verify", "HEAD^{commit}"});
+            const auto parent = ctx.gitMayFail({"rev-parse", "-q", "--verify", (parents.empty() ? std::string("HEAD") : parents.front()) + "^{commit}"});
+            if (head.ok() && parent.ok() && gg::trim(head.out) == gg::trim(parent.out)) {
+                if (ctx.gitMayFail({"diff", "--cached", "--quiet"}).ok())
+                    ctx.git({"add", "-A"});
+                opts.tree = gg::trim(ctx.git({"write-tree"}).out);
+            }
+        }
         const auto result = gg::newCommit(ctx.repo(), opts);
         if (!result.ok)
             throw MutationError{core::classifyFailure(result.error), result.error, result.error};

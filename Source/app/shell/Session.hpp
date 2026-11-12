@@ -260,12 +260,9 @@ public:
     void showRenameWorktreeDialog(const core::WorktreeInfo& w);
     void showPruneWorktreesDialog();
     void showRepairWorktreeDialog(const core::WorktreeInfo& w);
-    // New: an empty commit on `parent` (null = HEAD). Attached, the branch at `parent` advances (see
-    // newCommitBranch) and HEAD follows it; `detach`, or no such branch, leaves branches alone.
-    void newCommitOn(const core::Oid& parent, bool detach);
-    // The branch a non-detached New on `at` (null = HEAD) advances: HEAD's branch when `at` is HEAD,
-    // else the only local branch pointing at `at`. Empty when New there can only be detached.
-    std::string newCommitBranch(const core::Oid& at) const;
+    // New: a commit on `parent` (null = HEAD), checked out detached; no branch moves. When `parent` is
+    // HEAD, the commit takes the staged changes, or all changes (untracked files too) if none is staged.
+    void newCommitOn(const core::Oid& parent);
     void pushCurrent();
     void popStash();
 

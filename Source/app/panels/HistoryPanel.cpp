@@ -1244,18 +1244,9 @@ void HistoryPanel::drawRowMenu(const core::HistoryRow& row)
     for (const auto& b : m_snapshot->branches)
         if (b.target == row.id)
             branchesHere.push_back(b.name);
-    // "New" advances a branch (HEAD's, or the only one here); elsewhere only "New detached" exists.
-    // Holding Alt swaps "New" for "New detached" (the same variants as the N / Alt+N hotkeys).
-    const bool attach = !m_session.newCommitBranch(row.id).empty();
-    if (attach && !ImGui::GetIO().KeyAlt) {
-        if (menuItem(ICON_MS_ADD, "New", "N", false, free && single))
-            m_session.newCommitOn(row.id, false);
-    } else {
-        if (menuItem(ICON_MS_ADD_CIRCLE, "New detached", attach ? "Alt+N" : "N", false, free && single))
-            m_session.newCommitOn(row.id, true);
-        if (!attach)
-            disabledHint(true, "Only a branch's tip (HEAD's branch, or a commit with exactly one branch) can get a new attached commit; here it is detached.");
-    }
+    // "New" makes a commit on this one and checks it out detached; no branch moves.
+    if (menuItem(ICON_MS_ADD, "New", "N", false, free && single))
+        m_session.newCommitOn(row.id);
     if (!single)
         disabledHint(true, "Needs a single selected commit.");
     // Items acting on the row: disabled unless it is the only selected commit.
@@ -1842,11 +1833,8 @@ void HistoryPanel::draw(bool* open)
         // The commit keys act on a single selected commit: the selection, not the nav cursor (after Ctrl+arrow
         // the cursor may be elsewhere).
         if (sel.kind == SelKind::Commit && free && !io.KeyCtrl && m_extra.empty()) {
-            // Alt+N is a routed shortcut: releasing Alt does not toggle the menu layer.
-            if (hotkey(ImGuiMod_Alt | ImGuiKey_N, ImGuiInputFlags_RouteFocused))
-                m_session.newCommitOn(sel.id, true);
-            else if (ImGui::IsKeyPressed(ImGuiKey_N, false) && !io.KeyAlt)
-                m_session.newCommitOn(sel.id, false);
+            if (ImGui::IsKeyPressed(ImGuiKey_N, false) && !io.KeyAlt)
+                m_session.newCommitOn(sel.id);
             else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyAlt)
                 m_session.actions().editCommit(sel.id);
             else if (const auto* r = row(sel.id))

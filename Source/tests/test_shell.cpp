@@ -1372,11 +1372,6 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     s.write(repo, "stashed.txt", "stash me\n");
     s.git(repo, {"add", "stashed.txt"});
     s.git(repo, {"stash", "push", "-q", "-m", "a stash"});
-    s.write(repo, "staged.txt", "staged\n");
-    s.git(repo, {"add", "staged.txt"});
-    s.write(repo, "untracked.txt", "untracked\n");
-    const std::string tracked = gg::splitLines(s.gitOut(repo, {"ls-files"})).front();
-    s.write(repo, tracked, s.read(repo, tracked) + "unstaged\n");
     // The commit waits in pre-commit until the test lets it go.
     const fs::path go = s.root() / "go";
     s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
@@ -1384,6 +1379,16 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_REQUIRE(s.openRepository(repo));
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N); // an operation for the Operations panel
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty(); }));
+    s.settle();
+    // The changes come after the commit: a new commit takes the working tree changes.
+    s.write(repo, "staged.txt", "staged\n");
+    s.git(repo, {"add", "staged.txt"});
+    s.write(repo, "untracked.txt", "untracked\n");
+    const std::string tracked = gg::splitLines(s.gitOut(repo, {"ls-files"})).front();
+    s.write(repo, tracked, s.read(repo, tracked) + "unstaged\n");
+    GG_REQUIRE(s.waitUntil([&] {
+        return s.itemExists((s.child("//Changes", "##files") + "/Untracked/untracked.txt/###file_untracked.txt").c_str());
+    }));
     s.settle();
     const std::string head = s.head(repo);
     const std::string refsBefore = s.gitOut(repo, {"for-each-ref"});

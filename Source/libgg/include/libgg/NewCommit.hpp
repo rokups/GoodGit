@@ -14,6 +14,8 @@ struct NewCommitOptions {
     std::vector<std::string> parents; // revisions; empty = HEAD (none for an unborn HEAD)
     std::string message;
     bool detach = false;              // leave branches alone; HEAD detaches at the new commit
+    std::string tree;                 // tree of the new commit (empty = the first parent's tree); with
+                                      // `detach`, HEAD moves without touching the work tree or the index
     std::string branch;               // local branch at the first parent to advance and switch to
                                       // (empty = HEAD's branch, when the first parent is HEAD)
 };

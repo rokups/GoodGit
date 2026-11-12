@@ -1219,7 +1219,7 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new detached com
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "v-row"), r.c1);
     const std::string beforeDetached = s.head(r.path);
-    ctx->MenuClick("//##MainMenuBar/Commit/New detached commit");
+    ctx->MenuClick("//##MainMenuBar/Commit/New commit");
     GG_CHECK(changed(s, r.path, beforeDetached));
     GG_CHECK(s.session()->snapshot()->headDetached);
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^"), r.c1); // on the selected commit

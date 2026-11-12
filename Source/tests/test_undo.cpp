@@ -44,6 +44,22 @@ bool undone(Scenario& s, const fs::path& repo, const std::string& expected)
 
 } // namespace
 
+namespace {
+
+// A commit on the attached branch made through the app: the toolbar's Commit with one staged file.
+void commitOnBranch(ImGuiTestContext* ctx, Scenario& s, const fs::path& repo, const std::string& file)
+{
+    s.write(repo, file, "x\n");
+    s.git(repo, {"add", file});
+    s.settle();
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    s.dialogOpen("Commit");
+    s.dialogText("Commit", "message", "App commit");
+    s.dialogButton("Commit", "Commit");
+}
+
+} // namespace
+
 GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists sources and restores")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -146,14 +162,23 @@ GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local cha
     GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "line 1\n");
 
     // A locked ref: the mutation fails cleanly and leaves nothing half done.
+    s.write(repo, "locked.txt", "x\n");
+    s.git(repo, {"add", "locked.txt"});
+    s.settle();
     const std::string locked = repoState(s, repo);
     const fs::path lock = repo / ".git" / "refs" / "heads" / "main.lock";
     std::ofstream(lock) << "";
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    s.dialogOpen("Commit");
+    s.dialogText("Commit", "message", "App commit");
+    s.dialogButton("Commit", "Commit");
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("lock") != std::string::npos);
     fs::remove(lock);
     GG_CHECK_STR_EQ(repoState(s, repo), locked);
+    s.git(repo, {"rm", "-q", "-f", "--cached", "locked.txt"});
+    fs::remove(repo / "locked.txt");
+    s.settle();
 
     // Undo of a checkout while HEAD is locked: the ref update fails and the working tree and
     // index it had already carried back are put back too.
@@ -478,11 +503,11 @@ GG_TEST("undo", "in a linked worktree: its HEAD and branch are undone; the main 
     s.git(repo, {"branch", "side", "main"});
     // A commit in the main worktree, then one in wt1.
     GG_REQUIRE(s.openRepository(repo));
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    commitOnBranch(ctx, s, repo, "in-main.txt");
     GG_REQUIRE(s.waitUntil([&] { return s.revParse(repo, "main") != mainBefore; }));
     s.settle();
     GG_REQUIRE(s.openRepository(wt1));
-    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    commitOnBranch(ctx, s, wt1, "in-wt1.txt");
     GG_REQUIRE(s.waitUntil([&] { return s.revParse(repo, "wt1") != wt1Before; }));
     s.settle();
     // Undo in wt1: its own commit first (its HEAD and branch)...
