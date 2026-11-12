@@ -2273,4 +2273,23 @@ GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick
     GG_CHECK(shapeMs < timeBudgetMs(15));
 }
 
+GG_TEST("history", "a worktree pill shows the alias of the worktree")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    GG_REQUIRE(s.openRepository(repo));
+    const auto snap = s.session()->snapshot();
+    const ggui::core::WorktreeInfo* linked = nullptr;
+    for (const auto& w : snap->worktrees)
+        if (!w.isCurrent && !w.bare && !w.head.isNull() && !linked)
+            linked = &w;
+    GG_REQUIRE(linked != nullptr);
+    const std::string head = linked->head.hex();
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, head, linked->name); }));
+    // Without an alias the pill shows the name.
+    GG_CHECK(endsWith(badgeText(s, head, linked->name), linked->name));
+    s.app.settings().setWorktreeName(s.session()->repoStateKey(), linked->name, "My alias");
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, head, linked->name); }));
+    GG_CHECK(endsWith(badgeText(s, head, linked->name), "My alias"));
+}
+
 } // namespace ggtest

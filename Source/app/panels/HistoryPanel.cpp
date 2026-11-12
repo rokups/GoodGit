@@ -1487,11 +1487,18 @@ std::string HistoryPanel::badgeLabel(const RefPill& pill, bool full) const
     // A long name is shortened in the middle; the ID keeps the full name. A kept commit shows its short ID.
     // `full` (the tooltip) shows every name whole.
     const auto& settings = m_session.app().settings().data();
-    std::string shown = pill.shortName;
+    // A worktree badge shows the custom name of the worktree when it has one.
+    std::string name = pill.shortName;
+    if (ref.kind == core::RefKind::Worktree) {
+        const std::string custom = m_session.app().settings().worktreeName(m_session.repoStateKey(), ref.name);
+        if (!custom.empty())
+            name = custom;
+    }
+    std::string shown = name;
     if (!full)
         shown = ref.kind == core::RefKind::Keep
             ? pill.shortName.substr(0, core::kShortIdLength)
-            : elideMiddle(pill.shortName, settings.historyBadgePrefix, settings.historyBadgeSuffix);
+            : elideMiddle(name, settings.historyBadgePrefix, settings.historyBadgeSuffix);
     for (const auto& r : pill.remotes)
         shown += "@" + r.remote;
     return std::string(icon) + (icon[0] ? " " : "") + shown + "###badge_" + ref.name;
