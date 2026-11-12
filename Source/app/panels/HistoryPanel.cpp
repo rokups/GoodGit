@@ -9,6 +9,7 @@
 #include "util/Frames.hpp"
 #include "util/Ui.hpp"
 
+#include <libgg/FilterExpr.hpp>
 #include <libgg/Keep.hpp>
 
 #include <imgui.h>
@@ -1174,7 +1175,8 @@ void HistoryPanel::selectForMenu(const core::HistoryRow& row)
 
 void HistoryPanel::applyFilter()
 {
-    m_appliedFilter = m_filter;
+    // An expression without terms includes everything: treat it as no filter.
+    m_appliedFilter = gg::FilterExpr(m_filter).empty() ? std::string() : m_filter;
     m_matches.clear();
     m_visibleDirty = true;
     if (!m_appliedFilter.empty())

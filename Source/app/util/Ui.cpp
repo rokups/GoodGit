@@ -78,15 +78,6 @@ float labelledWidth(float fieldWidth, const char* label)
     return fieldWidth + (text > 0.0f ? ImGui::GetStyle().ItemInnerSpacing.x + text : 0.0f);
 }
 
-bool containsNoCase(const std::string& haystack, const std::string& needle)
-{
-    if (needle.empty())
-        return true;
-    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-        [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
-    return it != haystack.end();
-}
-
 std::string trackedName(const std::string& branch, const std::string& upstream, const std::string& remote)
 {
     if (remote.empty() || upstream.compare(0, remote.size(), remote) != 0 || upstream.size() == remote.size())

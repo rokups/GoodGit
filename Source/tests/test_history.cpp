@@ -278,7 +278,9 @@ GG_TEST("history", "filter expression: terms, negation, whitespace and empty")
     expectCount("  Base ,  ", 1); // Whitespace and empty terms are ignored; case does not matter.
     expectCount(" TOPIC , - base ", 1);
     expectCount(",", total); // No term includes everything.
+    GG_CHECK(s.waitUntil([&] { return history.graphShown(); })); // And it is not a filter: the graph stays.
     expectCount("-", total);
+    GG_CHECK(s.waitUntil([&] { return history.graphShown(); }));
     expectCount("", total);
 }
 

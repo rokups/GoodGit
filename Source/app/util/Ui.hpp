@@ -18,7 +18,6 @@ namespace ggui {
 // The host of a remote URL ("github.com" for https://user@github.com:443/o/r.git, ssh://git@github.com/o/r
 // and git@github.com:o/r.git), without user or port; empty for local paths and file:// URLs.
 std::string remoteHost(const std::string& url);
-bool containsNoCase(const std::string& haystack, const std::string& needle);
 // How a branch row names the branch it tracks: "origin" for origin/main on main, else the whole "origin/other".
 std::string trackedName(const std::string& branch, const std::string& upstream, const std::string& remote);
 // "main@origin ↑1 ↓2" style summary of a recent repository. With `elidePrefix` > 0 the branch and the
