@@ -84,6 +84,26 @@ GG_TEST("history", "graph, rows, badges and short IDs")
     GG_CHECK(s.itemText(rowRef(mergeHex).c_str()).rfind(merge->shortId + " Merge feature", 0) == 0);
 }
 
+GG_TEST("history", "unpublished color follows the upstream of the checked-out branch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"switch", "-q", "-c", "b1", "origin/main"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "commit A"});
+    const std::string a = s.revParse(repo, "HEAD");
+    s.git(repo, {"switch", "-q", "-c", "b2"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "commit B"});
+    const std::string b = s.revParse(repo, "HEAD");
+    // B2 pushes A and B to its own remote branch. B1 tracks origin/main, which has neither.
+    s.git(repo, {"push", "-q", "origin", "b2"});
+    s.git(repo, {"switch", "-q", "b1"});
+    s.git(repo, {"branch", "-q", "-u", "origin/main", "b1"});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, a) != nullptr && findRow(s, b) != nullptr; }));
+    GG_CHECK(!findRow(s, a)->published);
+    GG_CHECK(findRow(s, b)->published);
+    GG_CHECK(findRow(s, s.revParse(repo, "origin/main"))->published);
+}
+
 GG_TEST("history", "published vs unpublished commits")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

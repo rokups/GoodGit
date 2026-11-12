@@ -58,6 +58,13 @@ struct HistoryState {
     std::unordered_set<Oid, OidHash> remoteTips;
     std::unordered_set<Oid, OidHash> inScope;     // propagated from children
     std::unordered_set<Oid, OidHash> published;   // propagated from children
+    // The checked-out branch has an upstream: a commit reachable from HEAD is published only when
+    // it is reachable from that upstream ref. Other commits use any remote ref.
+    bool headUpstream = false;
+    Oid headTip;
+    Oid upstreamTip;
+    std::unordered_set<Oid, OidHash> headReach;   // propagated from children
+    std::unordered_set<Oid, OidHash> upstreamPublished; // propagated from children
     std::unordered_set<Oid, OidHash> reach;       // shown through a visible child (edge not collapsed)
     std::unordered_map<Oid, Oid, OidHash> hiddenOwner; // pending hidden commit → collapsed merge hiding it
     std::unordered_map<Oid, Oid, OidHash> hiddenBy; // commit dropped by a collapsed merge → that merge
