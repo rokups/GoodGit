@@ -1889,7 +1889,7 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     const std::string rbranch = "//Branches/remote_group_origin/origin/rbranch_origin:main/###rbranch_origin:main";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rbranch.c_str()); }));
     s.contextMenu(rbranch.c_str(), "Copy name");
-    GG_CHECK_STR_EQ(s.clipboard(), "origin/main");
+    GG_CHECK_STR_EQ(s.clipboard(), "main");
     s.contextMenu(rbranch.c_str(), "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "origin/main"); }));
     auto& history = s.session()->history();

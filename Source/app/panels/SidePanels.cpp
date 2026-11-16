@@ -627,7 +627,7 @@ void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core
     if (menuItem(ICON_MS_MY_LOCATION, "Reveal"))
         session.revealCommit(r.target);
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy name"))
-        ImGui::SetClipboardText(r.name.c_str());
+        ImGui::SetClipboardText(shortName.c_str());
     ImGui::Separator();
     if (options.checkout) {
         // A local branch of that name is checked out; otherwise the Create branch dialog opens (so "...").
