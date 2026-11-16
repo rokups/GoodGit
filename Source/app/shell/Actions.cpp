@@ -833,7 +833,8 @@ std::optional<RemoteBranch> remoteBranchFor(MutationContext& ctx, const std::str
 
 } // namespace
 
-void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit, const std::string& detachOther)
+void Actions::checkout(const std::string& target, bool detach, bool stashFirst, bool edit, const std::string& detachOther,
+    const std::string& fastForwardTo)
 {
     // A local branch that another worktree has: git refuses the switch. Ask to detach that worktree first.
     // A missing, prunable or bare worktree is not offered: the switch runs and git gives its error.
@@ -850,8 +851,8 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                 f.title = "Check out branch";
                 f.message = target + " is checked out in worktree " + w.name + " (" + otherPath
                     + "). Detach that worktree first?";
-                f.buttons.push_back({"Detach and check out", [this, target, stashFirst, otherPath](Form&) {
-                                         checkout(target, false, stashFirst, false, otherPath);
+                f.buttons.push_back({"Detach and check out", [this, target, stashFirst, otherPath, fastForwardTo](Form&) {
+                                         checkout(target, false, stashFirst, false, otherPath, fastForwardTo);
                                      }});
                 f.buttons.push_back({"Cancel", {}});
                 m_session.app().dialogs().open(std::move(f));
@@ -864,7 +865,7 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                                     : "switch to " + target;
     const bool expand = m_session.app().settings().data().expandConflictStages;
     run(label,
-        [target, detach, stashFirst, expand, edit, detachOther](MutationContext& ctx) {
+        [target, detach, stashFirst, expand, edit, detachOther, fastForwardTo](MutationContext& ctx) {
             // Edit commit: the branch to return to is the one HEAD is on (or the current edit
             // session's) if it contains the commit, else the first local branch that does, else
             // a local branch made (or fast-forwarded) from the first remote-tracking branch that
@@ -954,6 +955,23 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             else
                 ctx.git({"switch", "-q", target});
             ctx.worktreeFollowsIndex = true;
+            if (!fastForwardTo.empty() && !detach && !edit) {
+                // A remote-tracking branch that is ahead: the branch just switched to moves to it. Only a
+                // strictly behind branch moves; an equal, diverged or ahead one stays as it is.
+                const std::string oldId = gg::trim(ctx.git({"rev-parse", "--verify", "HEAD"}).out);
+                const std::string newId = gg::trim(ctx.gitMayFail({"rev-parse", "-q", "--verify", fastForwardTo + "^{commit}"}).out);
+                if (!newId.empty() && newId != oldId
+                    && ctx.gitMayFail({"merge-base", "--is-ancestor", oldId, newId}).ok()) {
+                    ctx.git({"merge", "-q", "--ff-only", newId});
+                    // --keep never overwrites a change of the working tree.
+                    ctx.rollback.push_back([oldId, newId](MutationContext& c) {
+                        if (gg::trim(c.gitMayFail({"rev-parse", "-q", "--verify", "HEAD"}).out) != newId)
+                            return std::string();
+                        const auto res = c.gitMayFail({"reset", "-q", "--keep", oldId});
+                        return res.ok() ? std::string() : firstLineOf(res.message());
+                    });
+                }
+            }
             if (remote) {
                 const std::string ref = "refs/heads/" + remote->name;
                 if (remote->create) {
@@ -992,7 +1010,7 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
             }
             ctx.submodules = SubmoduleSync::Update;
         },
-        [this, label, target, detach, edit, detachOther](const core::MutationFinishedEvent& e) {
+        [this, label, target, detach, edit, detachOther, fastForwardTo](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Ok && !e.message.empty()) {
                 m_session.app().notify(App::Notice::Warning, label, e.message);
                 return;
@@ -1004,7 +1022,9 @@ void Actions::checkout(const std::string& target, bool detach, bool stashFirst, 
                     + "\n\nStash them first and then switch?";
                 f.buttons.push_back(
                     {"Stash and switch",
-                     [this, target, detach, edit, detachOther](Form&) { checkout(target, detach, true, edit, detachOther); }});
+                     [this, target, detach, edit, detachOther, fastForwardTo](Form&) {
+                         checkout(target, detach, true, edit, detachOther, fastForwardTo);
+                     }});
                 f.buttons.push_back({"Cancel", {}});
                 m_session.app().dialogs().open(std::move(f));
                 return;

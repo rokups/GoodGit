@@ -936,8 +936,9 @@ void HistoryPanel::checkoutOnDoubleClick(const core::HistoryRow& row, const Badg
                 if (r.name == badge->name) {
                     const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
                     if (const auto* b = snap.findBranch(shortName)) {
+                        // The current branch is not switched to, so it does not move either.
                         if (!b->isHead)
-                            actions.checkout(b->name, false);
+                            actions.checkout(b->name, false, false, false, {}, r.name);
                     } else {
                         m_session.showCreateBranchDialog(r.name, shortName);
                     }

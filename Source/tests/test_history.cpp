@@ -1579,6 +1579,33 @@ GG_TEST("history", "a double click on a remote branch badge makes or checks out 
     GG_CHECK_STR_EQ(s.revParse(repo, "topic"), first);
 }
 
+GG_TEST("history", "a double click on a remote badge that is ahead moves the local branch, then checks it out")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string first = s.revParse(repo, "origin/main~1");
+    const std::string second = s.revParse(repo, "origin/main~2");
+    const std::string split = s.gitOut(repo, {"commit-tree", "-m", "Split", second + "^{tree}", "-p", second});
+    s.git(repo, {"update-ref", "refs/remotes/origin/ahead", first});
+    s.git(repo, {"update-ref", "refs/remotes/origin/split", first});
+    s.git(repo, {"branch", "ahead", second});
+    s.git(repo, {"branch", "split", split});
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, first, "origin/ahead"); }));
+    // The local branch is strictly behind: it moves to the remote commit and is checked out.
+    doubleClickBadge(s, first, "origin/ahead");
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "ahead"); }));
+    GG_CHECK_STR_EQ(s.revParse(repo, "ahead"), first);
+    GG_CHECK_STR_EQ(s.head(repo), first);
+    s.settle();
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    waitOutDoubleClick(s);
+    // The local branch has diverged: it is only checked out and stays where it is.
+    GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, first, "origin/split"); }));
+    doubleClickBadge(s, first, "origin/split");
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "split"); }));
+    GG_CHECK_STR_EQ(s.revParse(repo, "split"), split);
+}
+
 GG_TEST("history", "a remote branch shows as one pill: the short name and @remote")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

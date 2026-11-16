@@ -285,7 +285,8 @@ stays as it is (it is only limited to 50–300 % on load).
   detached* names the short ID, says that HEAD becomes detached and has *Checkout* and *Cancel*; *Detached* in the
   popup asks the same way. Nothing happens when HEAD is on a branch of the commit or, when the commit has no local branch, HEAD is detached at it.
 - Double click on a badge: a local branch badge checks that branch out (nothing for the current branch); a
-  remote branch badge checks out the local branch of the short name, or opens *Create branch* with the remote
+  remote branch badge checks out the local branch of the short name (first moving that branch to the remote
+  branch when it is strictly behind it; an equal, diverged or ahead branch does not move), or opens *Create branch* with the remote
   branch as the start point and the short name as the name; a tag badge asks as above, then detaches at the tag's
   commit; any other badge acts as the row.
 - Row context menu, in groups with separators: New · Check out ▸ (the branches at the commit, then after a

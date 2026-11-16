@@ -116,8 +116,10 @@ public:
     // `edit`: Edit commit (the target detached, with an edit session to return from).
     // A branch that another worktree has: a dialog asks to detach that worktree first. `detachOther` is the
     // path of that worktree after the user agrees: the mutation detaches it and then switches (all or nothing).
+    // `fastForwardTo`: a remote-tracking branch; when `target` is strictly behind it, `target` moves to it
+    // after the switch (no other case moves it).
     void checkout(const std::string& target, bool detach, bool stashFirst = false, bool edit = false,
-        const std::string& detachOther = {});
+        const std::string& detachOther = {}, const std::string& fastForwardTo = {});
     void editCommit(const core::Oid& id);
 
     // ---- branches, tags, remotes (§4.7) ---------------------------------------------------

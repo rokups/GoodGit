@@ -596,14 +596,15 @@ void pushBranch(Session& session, const core::BranchInfo& b)
     }
 }
 
-// Check out on a remote-tracking branch's row or menu: a local branch of that name is checked out;
+// Check out on a remote-tracking branch's row or menu: a local branch of that name is checked out (after it
+// is fast-forwarded to the remote-tracking branch, when it is strictly behind);
 // otherwise the Create branch dialog opens (name: the short name, at: the remote-tracking branch, with the
 // check out on); nothing is created before the user confirms.
 void checkoutRemoteBranch(Session& session, const core::Snapshot& snapshot, const core::RemoteBranchInfo& r)
 {
     const std::string shortName = r.name.substr(std::min(r.name.size(), r.remote.size() + 1));
     if (snapshot.findBranch(shortName))
-        session.actions().checkout(shortName, false);
+        session.actions().checkout(shortName, false, false, false, {}, r.name);
     else
         session.showCreateBranchDialog(r.name, shortName);
 }
