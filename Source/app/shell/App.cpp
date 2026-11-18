@@ -206,6 +206,21 @@ void App::resetForTest()
     m_io.pump();
 }
 
+// The ini load binds each window that was active in the last frame to its saved dock node
+// (DockContextBuildAddWindowsToNodes). Dear ImGui does not check that the node is a leaf.
+// A saved DockId of a hidden window can name a split node. Remove such a window from the node.
+static void undockWindowsOnSplitNodes()
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    const std::vector<ImGuiWindow*> windows(g.Windows.begin(), g.Windows.end());
+    for (ImGuiWindow* w : windows) {
+        if (!w->DockNode || !w->DockNode->IsSplitNode())
+            continue;
+        ImGui::DockContextProcessUndockWindow(&g, w, false); // false: the node stays
+        w->DockId = 0;
+    }
+}
+
 void App::onSettingsLoaded(const std::string& iniText)
 {
     spdlog::info("settings loaded from {}: scale={:.2f} theme={} recent={}", Settings::prefDir().string(),
@@ -217,8 +232,10 @@ void App::onSettingsLoaded(const std::string& iniText)
         notify(Notice::Warning, "Settings", m_settings.data().loadWarning);
         m_settings.data().loadWarning.clear();
     }
-    if (!iniText.empty())
+    if (!iniText.empty()) {
         ImGui::LoadIniSettingsFromMemory(iniText.c_str(), iniText.size());
+        undockWindowsOnSplitNodes();
+    }
     m_layoutPending = iniText.find("[Docking]") == std::string::npos;
     m_iniApplied = true;
     const auto& d = m_settings.data();

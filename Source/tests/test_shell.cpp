@@ -961,6 +961,36 @@ GG_TEST("shell", "View menu: panels, next/previous changed file, reset layout")
     GG_CHECK(dockOf(ctx, "//Diff") != nullptr && dockOf(ctx, "//Blame") == dockOf(ctx, "//Diff"));
 }
 
+GG_TEST("shell", "ini load skips split dock nodes")
+{
+    // A hidden window can save a DockId that names a split node. The ini load must not bind it.
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->MenuClick("//##MainMenuBar/View/Diff");
+    ctx->Yield(2);
+    s.showPanel("Blame");
+    ctx->DockClear("Blame", nullptr);
+    ctx->Yield(2);
+    ImGuiWindow* diff = ImGui::FindWindowByName("Diff");
+    GG_REQUIRE(diff != nullptr);
+    GG_REQUIRE(diff->DockNode == nullptr && diff->DockId != 0);
+    ImGuiDockNode* saved = ImGui::DockBuilderGetNode(diff->DockId);
+    GG_REQUIRE(saved != nullptr && saved->IsSplitNode());
+    ImGui::GetIO().WantSaveIniSettings = true;
+    ctx->Yield(2);
+    GG_REQUIRE(s.waitIdle());
+    s.showPanel("Diff");
+    ctx->Yield(2);
+    s.app.resetForTest();
+    ImGuiContext& g = *ctx->UiContext;
+    for (int i = 0; i < g.DockContext.Nodes.Data.Size; i++) {
+        auto* node = static_cast<ImGuiDockNode*>(g.DockContext.Nodes.Data[i].val_p);
+        if (node && node->IsSplitNode())
+            GG_CHECK(node->Windows.Size == 0 && node->TabBar == nullptr);
+    }
+    s.app.resetForTest();
+}
+
 GG_TEST("shell", "settings persist across restarts")
 {
     s.app.openSettings();
