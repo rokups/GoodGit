@@ -199,9 +199,7 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
         const git_oid oid = toGit(id);
         const bool inScope = st.scopeTips.count(id) || st.inScope.count(id);
         const bool anyPublished = st.remoteTips.count(id) || st.published.count(id);
-        const bool fromHead = st.headUpstream && (id == st.headTip || st.headReach.count(id));
-        const bool upstreamPublished = st.headUpstream && (id == st.upstreamTip || st.upstreamPublished.count(id));
-        const bool published = fromHead ? upstreamPublished : anyPublished;
+        const bool published = anyPublished;
         Commit commit = lookupCommit(repo, oid);
         const unsigned parentCount = git_commit_parentcount(commit.get());
         std::vector<Oid> parents;
@@ -220,15 +218,9 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
                 st.inScope.insert(p);
             if (anyPublished)
                 st.published.insert(p);
-            if (fromHead)
-                st.headReach.insert(p);
-            if (upstreamPublished)
-                st.upstreamPublished.insert(p);
         }
         st.inScope.erase(id);
         st.published.erase(id);
-        st.headReach.erase(id);
-        st.upstreamPublished.erase(id);
         if (!inScope)
             continue;
 
@@ -426,14 +418,6 @@ void historyStart(git_repository* repo, HistoryState& st, std::uint64_t query, c
         push(b.target, refVisible(scope, "refs/heads/" + b.name), false);
     for (const auto& r : s.remoteBranches)
         push(r.target, refVisible(scope, "refs/remotes/" + r.name), true);
-    if (const BranchInfo* cur = s.headDetached ? nullptr : s.currentBranch(); cur && !s.head.isNull()) {
-        for (const auto& r : s.remoteBranches)
-            if (r.name == cur->upstream && !r.target.isNull()) {
-                st.headUpstream = true;
-                st.headTip = s.head;
-                st.upstreamTip = r.target;
-            }
-    }
     for (const auto& t : s.tags)
         push(t.target, refVisible(scope, "refs/tags/" + t.name), false);
     for (const auto& k : s.kept)
