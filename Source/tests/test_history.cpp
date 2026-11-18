@@ -1563,7 +1563,8 @@ GG_TEST("history", "a double click on a remote badge that is ahead moves the loc
     GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, first, "origin/ahead"); }));
     // The local branch is strictly behind: it moves to the remote commit and is checked out.
     doubleClickBadge(s, first, "origin/ahead");
-    GG_CHECK(s.waitUntil([&] { return onBranch(s, "ahead"); }));
+    // The switch and the fast-forward are two git steps: wait for the final state, not only the branch.
+    GG_CHECK(s.waitUntil([&] { return onBranch(s, "ahead") && s.revParse(repo, "ahead") == first; }));
     GG_CHECK_STR_EQ(s.revParse(repo, "ahead"), first);
     GG_CHECK_STR_EQ(s.head(repo), first);
     s.settle();
