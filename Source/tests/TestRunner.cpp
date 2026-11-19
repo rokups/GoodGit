@@ -47,7 +47,6 @@
 namespace ggtest {
 namespace {
 
-TestRunner* g_runner = nullptr;
 ggui::App* g_app = nullptr;
 fs::path g_root;       // per-process test root
 fs::path g_artifacts;  // failure output
@@ -611,7 +610,6 @@ int listTests()
 
 TestRunner::TestRunner(ggui::App& app, ggui::Platform& platform) : m_app(app), m_platform(platform)
 {
-    g_runner = this;
     g_app = &app;
     m_engine = ImGuiTestEngine_CreateContext();
     ImGuiTestEngineIO& io = ImGuiTestEngine_GetIO(m_engine);
@@ -634,7 +632,6 @@ TestRunner::~TestRunner()
 {
     if (m_engine)
         ImGuiTestEngine_DestroyContext(m_engine);
-    g_runner = nullptr;
     g_app = nullptr;
 }
 
