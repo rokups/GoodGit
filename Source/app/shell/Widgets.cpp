@@ -820,6 +820,14 @@ bool treeNode(const char* label, bool has_children, TreeFlags flags)
         open = forced != 0;
         storage->SetInt(id, forced);
     }
+    // The test engine finds the node by its label and opens or closes it by these status flags.
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (has_children) {
+        g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Openable;
+        if (open)
+            g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Opened;
+    }
+    IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);
     bool hovered = false, held = false;
     if (added) {
         const bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held,
@@ -930,7 +938,13 @@ bool treeLeafMarker()
     const ImGuiID id = window->GetID("###expand");
     ImGuiStorage* storage = ImGui::GetStateStorage();
     bool open = storage->GetInt(id, 0) != 0;
-    if (ImGui::ItemAdd(bb, id)) {
+    const bool markerAdded = ImGui::ItemAdd(bb, id);
+    {
+        ImGuiContext& g = *ImGui::GetCurrentContext();
+        g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Openable | (open ? ImGuiItemStatusFlags_Opened : 0);
+        IMGUI_TEST_ENGINE_ITEM_INFO(id, "###expand", g.LastItemData.StatusFlags);
+    }
+    if (markerAdded) {
         bool hovered, held;
         if (ImGui::ButtonBehavior(bb, id, &hovered, &held, ImGuiButtonFlags_PressedOnClick)) {
             open = !open;

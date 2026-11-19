@@ -579,8 +579,8 @@ GG_TEST("panels", "repositories: the open repository has the mark, an alias make
     GG_CHECK_STR_EQ(panel.openPath(), ggui::normalizeRepoPath(repo.string()));
     const std::string row = repoRow(s, repo);
     GG_CHECK(s.itemExists(row.c_str()));
-    // With only its main worktree it is still a node (GG-15): the expansion is empty.
-    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    // With only its main worktree it has no children: a plain row without a marker.
+    GG_CHECK(!(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
     GG_CHECK(panel.selectedPath().empty());
     // The row of the open repository is the one compared for the mark; a double-click on it keeps the session.
     GG_REQUIRE(s.app.settings().data().repositories.size() == 1);
@@ -737,8 +737,7 @@ static void openRepoNode(ImGuiTestContext* ctx, const std::string& row)
     const ImGuiTestItemInfo info = ctx->ItemInfo(row.c_str());
     if (info.StatusFlags & ImGuiItemStatusFlags_Opened)
         return;
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float x = info.RectFull.Min.x + style.FramePadding.x + ImGui::GetFontSize() * 0.5f;
+    const float x = info.RectFull.Min.x + ggui::treeLabelOffset() * 0.5f; // the centre of the marker
     ctx->MouseMoveToPos(ImVec2(x, (info.RectFull.Min.y + info.RectFull.Max.y) * 0.5f));
     ctx->MouseClick(0);
     ctx->Yield(2);
@@ -757,9 +756,9 @@ GG_TEST("panels", "repositories: the open repository expands to its worktrees")
     const std::string row = repoRow(s, repo);
     const std::string plainRow = repoRow(s, plain);
     GG_REQUIRE(s.itemExists(row.c_str()) && s.itemExists(plainRow.c_str()));
-    // Each repository has an expand arrow (GG-15), and its node is closed by default.
+    // A repository with worktrees has a marker, and its node is closed by default. A plain one has no marker.
     GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
-    GG_CHECK(ctx->ItemInfo(plainRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    GG_CHECK(!(ctx->ItemInfo(plainRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
     for (const auto& w : snapshot->worktrees)
         GG_CHECK(!s.itemExists(worktreeRow(row, w.name).c_str()));
     // A click on the label selects the row and does not open the node; so does a double-click.
@@ -1007,9 +1006,9 @@ GG_TEST("panels", "repositories: a repository without worktrees expands to nothi
     GG_REQUIRE(s.waitUntil([&] { return s.app.repoSummary(fs::path(ggui::normalizeRepoPath(plain.string()))) != nullptr; }));
     const std::string row = repoRow(s, plain);
     GG_REQUIRE(s.itemExists(row.c_str()));
-    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
-    openRepoNode(ctx, row);
-    GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Opened);
+    // A repository without worktrees and submodules is a plain row: no marker, nothing to open.
+    GG_CHECK(!(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    GG_CHECK(!(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Opened));
     // No child row: neither a worktree nor a submodule.
     const auto* info = s.app.repoSummary(fs::path(ggui::normalizeRepoPath(plain.string())));
     GG_REQUIRE(info);
@@ -1273,13 +1272,17 @@ GG_TEST("panels", "repositories: a worktree entry in the list stays and opens on
     const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
     const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
     s.app.settings().addRepository(wt1.string());
+    // Closing the session reads the summaries again, so the entry of the worktree gets its summary.
+    GG_REQUIRE(s.openRepository(repo));
+    s.app.closeRepository();
+    ctx->Yield(2);
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Repositories");
     const std::string row = repoRow(s, repo);
     const std::string wtEntry = repoRow(s, wt1);
     GG_REQUIRE(s.itemExists(row.c_str()) && s.itemExists(wtEntry.c_str()));
-    // The entry of a worktree is a node like any repository (GG-15). Its summary lists the main and the linked worktrees.
-    GG_CHECK(ctx->ItemInfo(wtEntry.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
+    // The entry of a worktree is a node when its summary lists the main and the linked worktrees. The summary loads later.
+    GG_CHECK(s.waitUntil([&] { return ctx->ItemInfo(wtEntry.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable; }));
     ctx->ItemDoubleClick(wtEntry.c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.session() && s.session()->opened() && gg::worktrees::samePath(s.session()->path(), wt1); }));
     s.showPanel("Repositories");
