@@ -821,12 +821,14 @@ bool treeNode(const char* label, bool has_children, TreeFlags flags)
         storage->SetInt(id, forced);
     }
     // The test engine finds the node by its label and opens or closes it by these status flags.
-    ImGuiContext& g = *ImGui::GetCurrentContext();
+    [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext();
+#ifdef IMGUI_ENABLE_TEST_ENGINE // imgui declares Openable and Opened only with the test engine
     if (has_children) {
         g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Openable;
         if (open)
             g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Opened;
     }
+#endif
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);
     bool hovered = false, held = false;
     if (added) {
@@ -940,8 +942,10 @@ bool treeLeafMarker()
     bool open = storage->GetInt(id, 0) != 0;
     const bool markerAdded = ImGui::ItemAdd(bb, id);
     {
-        ImGuiContext& g = *ImGui::GetCurrentContext();
+        [[maybe_unused]] ImGuiContext& g = *ImGui::GetCurrentContext();
+#ifdef IMGUI_ENABLE_TEST_ENGINE
         g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Openable | (open ? ImGuiItemStatusFlags_Opened : 0);
+#endif
         IMGUI_TEST_ENGINE_ITEM_INFO(id, "###expand", g.LastItemData.StatusFlags);
     }
     if (markerAdded) {
