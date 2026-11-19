@@ -38,6 +38,9 @@ void popPrimaryColors();
 // Icon-only square-ish button (`id` like "##name", ID = ImGui::GetID(id)) that centres the
 // glyph's drawn bounds in the frame, ignoring the icon font's baseline GlyphOffset and advance.
 bool iconButton(const char* icon, const char* id, ImVec2 size);
+// ImGui::Button with only the corners in `corners` (ImDrawFlags_RoundCorners*) rounded, for buttons that share one
+// shape. The label is the plain ImGui label (an icon glyph may lead it).
+bool buttonCorners(const char* label, ImDrawFlags corners);
 // ImGui::SmallButton counterpart: same ID/icon contract as button(), fits within a text line.
 bool smallButton(const char* icon, const char* label);
 // ImGui::Selectable that stays highlighted while hovered when selected (ImGui draws a hovered row with

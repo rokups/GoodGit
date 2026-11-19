@@ -292,6 +292,7 @@ private:
 };
 
 // Draws a toolbar button: `icon` (and label) as its text, `id` ("##name") as its stable ID, `tooltip` on hover.
-bool iconButton(const char* icon, const char* id, const char* tooltip, bool enabled = true);
+// `corners` is an ImDrawFlags_RoundCorners* value for grouped buttons that make one shape. 0 rounds all corners.
+bool iconButton(const char* icon, const char* id, const char* tooltip, bool enabled = true, int corners = 0);
 
 } // namespace ggui

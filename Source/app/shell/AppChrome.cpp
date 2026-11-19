@@ -498,10 +498,10 @@ void App::drawRepositoryButtons()
             free && !s->snapshot()->bare))
         s->showCommitDialog();
     ImGui::SameLine();
-    if (iconButton(ICON_MS_UNDO, "##tb_undo", tip("Undo (Ctrl+Z)"), free))
+    if (iconButton(ICON_MS_UNDO, "##tb_undo", tip("Undo (Ctrl+Z)"), free, ImDrawFlags_RoundCornersLeft))
         s->actions().undo(false);
-    ImGui::SameLine();
-    if (iconButton(ICON_MS_REDO, "##tb_redo", tip("Redo (Ctrl+Y)"), free))
+    ImGui::SameLine(0, 0);
+    if (iconButton(ICON_MS_REDO, "##tb_redo", tip("Redo (Ctrl+Y)"), free, ImDrawFlags_RoundCornersRight))
         s->actions().undo(true);
     ImGui::SameLine();
     if (iconButton(ICON_MS_REFRESH, "##tb_refresh", "Refresh (F5)", s != nullptr))
@@ -510,10 +510,10 @@ void App::drawRepositoryButtons()
     // Fetch / Pull / Push
     ImGui::SameLine();
     const bool hasRemotes = s && !s->snapshot()->remotes.empty();
-    if (iconButton(ICON_MS_DOWNLOAD " Fetch", "##tb_fetch", tip("Fetch all remotes"), free && hasRemotes))
+    if (iconButton(ICON_MS_DOWNLOAD " Fetch", "##tb_fetch", tip("Fetch all remotes"), free && hasRemotes, ImDrawFlags_RoundCornersLeft))
         s->actions().fetch("", false, false);
-    ImGui::SameLine(0, 1);
-    if (iconButton(ICON_MS_EXPAND_MORE, "##tb_fetch_menu", tip("Fetch options"), free && hasRemotes))
+    ImGui::SameLine(0, 0);
+    if (iconButton(ICON_MS_EXPAND_MORE, "##tb_fetch_menu", tip("Fetch options"), free && hasRemotes, ImDrawFlags_RoundCornersRight))
         ImGui::OpenPopup("##fetch_menu");
     if (ImGui::BeginPopup("##fetch_menu")) {
         for (const auto& r : s->snapshot()->remotes)
@@ -536,10 +536,10 @@ void App::drawRepositoryButtons()
     const int incoming = s ? s->incoming() : 0;
     const std::string pullLabel = std::string(ICON_MS_ARROW_DOWNWARD) + " Pull" + (incoming ? " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(incoming) : "");
     if (iconButton(pullLabel.c_str(), "##tb_pull", !busy.empty() ? busy.c_str() : canPull ? "Pull from the upstream" : pullReason.c_str(),
-            free && canPull))
+            free && canPull, ImDrawFlags_RoundCornersLeft))
         s->actions().pull(PullMode::Config);
-    ImGui::SameLine(0, 1);
-    if (iconButton(ICON_MS_EXPAND_MORE, "##tb_pull_menu", tip("Pull options"), free && canPull))
+    ImGui::SameLine(0, 0);
+    if (iconButton(ICON_MS_EXPAND_MORE, "##tb_pull_menu", tip("Pull options"), free && canPull, ImDrawFlags_RoundCornersRight))
         ImGui::OpenPopup("##pull_menu");
     if (ImGui::BeginPopup("##pull_menu")) {
         if (menuItem(ICON_MS_MERGE, "Pull (merge)"))
@@ -554,10 +554,10 @@ void App::drawRepositoryButtons()
     const bool canPush = s && !s->snapshot()->headDetached && !s->snapshot()->headUnborn && hasRemotes;
     const int outgoing = s ? s->outgoing() : 0;
     const std::string pushLabel = std::string(ICON_MS_UPLOAD) + " Push" + (outgoing ? " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(outgoing) : "");
-    if (iconButton(pushLabel.c_str(), "##tb_push", tip("Push the current branch"), free && canPush))
+    if (iconButton(pushLabel.c_str(), "##tb_push", tip("Push the current branch"), free && canPush, ImDrawFlags_RoundCornersLeft))
         s->pushCurrent();
-    ImGui::SameLine(0, 1);
-    if (iconButton(ICON_MS_EXPAND_MORE, "##tb_push_menu", tip("Push options"), free && hasRemotes))
+    ImGui::SameLine(0, 0);
+    if (iconButton(ICON_MS_EXPAND_MORE, "##tb_push_menu", tip("Push options"), free && hasRemotes, ImDrawFlags_RoundCornersRight))
         ImGui::OpenPopup("##push_menu");
     if (ImGui::BeginPopup("##push_menu")) {
         if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, canPush))
@@ -590,10 +590,11 @@ void App::drawRepositoryButtons()
     // Stash / Pop
     ImGui::SameLine();
     const bool dirty = s && s->status() && !s->status()->empty();
-    if (iconButton(ICON_MS_INVENTORY_2, "##tb_stash", tip("Stash changes..."), free && dirty))
+    if (iconButton(ICON_MS_ARROW_CIRCLE_DOWN, "##tb_stash", tip("Stash changes..."), free && dirty, ImDrawFlags_RoundCornersLeft))
         s->showStashDialog();
-    ImGui::SameLine();
-    if (iconButton(ICON_MS_OUTBOX, "##tb_pop", tip("Pop the latest stash"), free && !s->snapshot()->stashes.empty()))
+    ImGui::SameLine(0, 0);
+    if (iconButton(ICON_MS_ARROW_CIRCLE_UP, "##tb_pop", tip("Pop the latest stash"), free && !s->snapshot()->stashes.empty(),
+            ImDrawFlags_RoundCornersRight))
         s->popStash();
 }
 

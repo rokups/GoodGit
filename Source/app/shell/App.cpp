@@ -76,13 +76,13 @@ void iniWriteAll(ImGuiContext*, ImGuiSettingsHandler* handler, ImGuiTextBuffer* 
 
 } // namespace
 
-bool iconButton(const char* icon, const char* id, const char* tooltip, bool enabled)
+bool iconButton(const char* icon, const char* id, const char* tooltip, bool enabled, int corners)
 {
     ImGui::BeginDisabled(!enabled);
     // The "##tb_x" ids become "###tb_x": the ID does not depend on the icon glyph.
     char label[128];
     std::snprintf(label, sizeof(label), "%s#%s", icon, id);
-    const bool clicked = ImGui::Button(label);
+    const bool clicked = corners == 0 ? ImGui::Button(label) : ggui::buttonCorners(label, corners);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
         ggui::tooltip("%s", tooltip);

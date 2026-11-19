@@ -2164,9 +2164,9 @@ void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& ba
         actions.stashApply(s.index, false, false);
     if (menuItem(ICON_MS_UNARCHIVE, "Apply (restore index)", nullptr, false, free))
         actions.stashApply(s.index, false, true);
-    if (menuItem(ICON_MS_OUTBOX, "Pop", nullptr, false, free))
+    if (menuItem(ICON_MS_ARROW_CIRCLE_UP, "Pop", nullptr, false, free))
         actions.stashApply(s.index, true, false);
-    if (menuItem(ICON_MS_OUTBOX, "Pop (restore index)", nullptr, false, free))
+    if (menuItem(ICON_MS_ARROW_CIRCLE_UP, "Pop (restore index)", nullptr, false, free))
         actions.stashApply(s.index, true, true);
     ImGui::Separator();
     if (menuItem(ICON_MS_FORK_RIGHT, "Branch from stash...", nullptr, false, free))
@@ -2199,14 +2199,14 @@ void StashesPanel::draw(bool* open)
                 popIndex = s.index;
     const bool hasStashes = !m_snapshot->stashes.empty();
     ImGui::BeginDisabled(!free || !status || status->empty());
-    if (button(ICON_MS_INVENTORY_2, "Push##stash_push"))
+    if (button(ICON_MS_ARROW_CIRCLE_DOWN, "Push##stash_push"))
         m_session.showStashDialog();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
         tooltip("Stash the changes in the working tree...");
-    sameLineIfFits(buttonWidth(ICON_MS_OUTBOX, "Pop"));
+    sameLineIfFits(buttonWidth(ICON_MS_ARROW_CIRCLE_UP, "Pop"));
     ImGui::BeginDisabled(!free || !hasStashes);
-    if (button(ICON_MS_OUTBOX, "Pop##stash_pop"))
+    if (button(ICON_MS_ARROW_CIRCLE_UP, "Pop##stash_pop"))
         actions.stashApply(popIndex, true, false);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
@@ -2230,7 +2230,7 @@ void StashesPanel::draw(bool* open)
         // The hover buttons do what the menu's Apply and Pop do; their strip is left free while the row is hovered.
         const RowAction acts[] = {
             {ICON_MS_UNARCHIVE, "act_apply", "Apply", free},
-            {ICON_MS_OUTBOX, "act_pop", "Pop", free},
+            {ICON_MS_ARROW_CIRCLE_UP, "act_pop", "Pop", free},
         };
         const float room = std::max(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(prefix.c_str()).x
                 - ImGui::CalcTextSize(trailing.c_str()).x - ImGui::GetStyle().ItemSpacing.x - rowActionsReserve(acts),
