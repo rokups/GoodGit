@@ -11,9 +11,11 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cmath>
 #include <span>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -208,7 +210,13 @@ bool selectable(const char* label, bool selected, ImGuiSelectableFlags flags, Im
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, p.selectionHovered);
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, p.selectionHovered);
     }
+    // In a tree, the highlight reaches left of the label by 2 pixels (not half the item spacing): it stays off the trunk.
+    const bool inTree = treeActive();
+    if (inTree)
+        ImGui::PushStyleVarX(ImGuiStyleVar_ItemSpacing, treeHighlightPad() * 2.0f);
     const bool pressed = ImGui::Selectable(label, selected, flags, size);
+    if (inTree)
+        ImGui::PopStyleVar();
     if (selected)
         ImGui::PopStyleColor(3);
     return pressed;
@@ -633,6 +641,316 @@ bool textElided(std::string_view text, const char* id, bool tooltip, float width
         ImGui::EndTooltip();
     }
     return cut;
+}
+
+namespace {
+
+constexpr int kTreeMaxDepth = 32;
+
+// The state of one depth: the line of the children of a row. `startY` is under the marker and `lastY` is the
+// y of the last child branch; the trunk joins them.
+struct TreeLevel {
+    float trunkX = 0;
+    float startY = 0;
+    float lastY = 0;
+    float midY = 0;
+    ImGuiID markerId = 0;
+    bool hasMarker = false;
+    bool hasChild = false;
+    // The last child branch waits here. It is a straight branch if a sibling follows, a rounded corner if not.
+    float pendingEndX = 0;
+    bool hasPending = false;
+};
+
+struct TreeState {
+    TreeLevel level[kTreeMaxDepth];
+    int depth = 0;
+    int nextOpen = -1;
+    bool toggled = false;
+};
+
+TreeState& treeState()
+{
+    static TreeState state;
+    return state;
+}
+
+// Return the level slot of a depth, or null when the depth is outside the table. Deeper nodes draw no lines.
+TreeLevel* levelAt(int depth)
+{
+    return (depth >= 0 && depth < kTreeMaxDepth) ? &treeState().level[depth] : nullptr;
+}
+
+// The lines come from the text colour, so they show on a dark and on a light theme.
+ImU32 treeLineColor()
+{
+    ImVec4 c = ImGui::GetStyle().Colors[ImGuiCol_Text];
+    c.w *= 0.4f;
+    return ImGui::ColorConvertFloat4ToU32(c);
+}
+
+// One pixel at 100 percent scale, more at a larger font.
+float treeLineThickness() { return std::max(1.0f, std::floor(ImGui::GetFontSize() / 14.0f + 0.5f)); }
+
+// The centre of a line of thickness t on pixel centres: a sharp line.
+float treeSnap(float v)
+{
+    const float t = treeLineThickness();
+    return (static_cast<int>(t) % 2 == 1) ? std::floor(v) + 0.5f : std::floor(v + 0.5f);
+}
+
+float treeMarkerRadius() { return ImGui::GetFontSize() * 0.19f; }
+
+// Draw a straight branch from the trunk of the level to `endX` at `midY`.
+void treeStraightBranch(const TreeLevel& level, float midY, float endX)
+{
+    if (endX > level.trunkX && ImGui::IsRectVisible(ImVec2(level.trunkX, midY - 1.0f), ImVec2(endX, midY + 1.0f)))
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(treeSnap(level.trunkX), treeSnap(midY)), ImVec2(std::floor(endX), treeSnap(midY)),
+            treeLineColor(), treeLineThickness());
+}
+
+// Record the branch of a child. The y is recorded also for a row that is not in view, so the trunk is
+// complete. The branch of the previous sibling is not the last one, so it is drawn now as a straight branch.
+void treeBranch(float midY, float endX)
+{
+    TreeState& s = treeState();
+    if (s.depth <= 0)
+        return;
+    TreeLevel* parentPtr = levelAt(s.depth - 1);
+    if (!parentPtr)
+        return;
+    TreeLevel& parent = *parentPtr;
+    if (parent.hasPending)
+        treeStraightBranch(parent, parent.lastY, parent.pendingEndX);
+    parent.hasChild = true;
+    parent.lastY = midY;
+    parent.pendingEndX = endX;
+    parent.hasPending = true;
+}
+
+// Draw the trunk and the last branch. With a marker, the last branch has a rounded corner.
+void treeTrunk(const TreeLevel& level)
+{
+    if (!level.hasPending)
+        return;
+    const float by = treeSnap(level.lastY);
+    const float tx = treeSnap(level.trunkX);
+    const float ex = std::floor(level.pendingEndX);
+    if (!level.hasMarker || level.lastY <= level.startY) {
+        treeStraightBranch(level, level.lastY, level.pendingEndX);
+        return;
+    }
+    if (!ImGui::IsRectVisible(ImVec2(tx - 1.0f, level.startY), ImVec2(std::max(ex, tx) + 1.0f, by + 1.0f)))
+        return;
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const float startY = std::floor(level.startY);
+    const float r = std::min({ImGui::GetFontSize() * 0.3f, ex - tx, by - startY});
+    if (r < 1.0f) {
+        // No room for an arc: a plain corner.
+        list->PathLineTo(ImVec2(tx, startY));
+        list->PathLineTo(ImVec2(tx, by));
+        if (ex > tx)
+            list->PathLineTo(ImVec2(ex, by));
+    } else {
+        list->PathLineTo(ImVec2(tx, startY));
+        // The centre is right of the trunk and above the branch. The arc goes from the left point
+        // (angle pi) to the bottom point (angle pi/2, y down).
+        list->PathArcTo(ImVec2(tx + r, by - r), r, IM_PI, IM_PI * 0.5f);
+        list->PathLineTo(ImVec2(ex, by));
+    }
+    list->PathStroke(treeLineColor(), ImDrawFlags_None, treeLineThickness());
+}
+
+void treeMarker(float x, float y, bool open)
+{
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+    if (open)
+        list->AddCircle(ImVec2(x, y), treeMarkerRadius(), color, 0, 1.5f);
+    else
+        list->AddCircleFilled(ImVec2(x, y), treeMarkerRadius(), color);
+}
+
+} // namespace
+
+// The indent step of a depth. The marker (radius 0.19, centred at half the step) and its trunk fit in it.
+float treeLabelOffset() { return ImGui::GetFontSize() * 0.95f; }
+
+// The room that a highlight keeps left of a label: 2 pixels at 14 pixel font size.
+float treeHighlightPad() { return std::max(1.0f, std::floor(ImGui::GetFontSize() / 7.0f + 0.5f)); }
+
+bool treeActive() { return treeState().depth > 0; }
+
+void treeSetNextOpen(bool open) { treeState().nextOpen = open ? 1 : 0; }
+
+bool treeNodeToggled() { return treeState().toggled; }
+
+// Show the hand cursor when the mouse is over the marker rectangle of the current window.
+static void treeMarkerHandCursor(const ImRect& markerRect)
+{
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(markerRect.Min, markerRect.Max))
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+}
+
+bool treeNode(const char* label, bool has_children, TreeFlags flags)
+{
+    TreeState& s = treeState();
+    const int forced = std::exchange(s.nextOpen, -1);
+    s.toggled = false;
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+    const float step = treeLabelOffset();
+    const float radius = treeMarkerRadius();
+    const ImVec2 pos = window->DC.CursorPos;
+    const float height = ImGui::GetTextLineHeight();
+    const ImRect bb(pos, ImVec2(std::max(window->WorkRect.Max.x, pos.x + step + 1.0f), pos.y + height));
+    const float midY = pos.y + height * 0.5f;
+    const float markerX = std::floor(pos.x + step * 0.5f) + 0.5f;
+    const ImGuiID id = window->GetID(label);
+
+    ImGui::ItemSize(bb.GetSize(), 0.0f);
+    if (flags & TreeAllowOverlap)
+        ImGui::SetNextItemAllowOverlap();
+    const bool added = ImGui::ItemAdd(bb, id);
+
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    bool open = storage->GetInt(id, (flags & TreeDefaultOpen) ? 1 : 0) != 0;
+    if (forced >= 0) {
+        open = forced != 0;
+        storage->SetInt(id, forced);
+    }
+    bool hovered = false, held = false;
+    if (added) {
+        const bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held,
+            ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_PressedOnDragDropHold
+                | ((flags & TreeAllowOverlap) ? ImGuiButtonFlags_AllowOverlap : 0));
+        bool toggle = false;
+        if (has_children) {
+            if (pressed) {
+                const bool byMouse = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+                toggle = !(flags & TreeToggleOnMarker) || !byMouse || ImGui::GetIO().MousePos.x < pos.x + step;
+            }
+            if (ImGui::IsItemFocused() && ImGui::GetIO().KeyMods == 0) {
+                if ((ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !open) || (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && open))
+                    toggle = true;
+            }
+        }
+        if (toggle) {
+            open = !open;
+            storage->SetInt(id, open ? 1 : 0);
+            s.toggled = true;
+        }
+        // The highlight starts at the label, so it does not cover the marker, the branch or the trunk.
+        if ((flags & TreeSelected) || hovered || held)
+            window->DrawList->AddRectFilled(ImVec2(pos.x + step - treeHighlightPad(), bb.Min.y), bb.Max,
+                ImGui::GetColorU32((held && hovered) ? ImGuiCol_HeaderActive : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header));
+        ImGui::RenderNavCursor(bb, id);
+        if (has_children) {
+            treeMarker(markerX, midY, open);
+            treeMarkerHandCursor(ImRect(pos, ImVec2(pos.x + step, pos.y + height)));
+        }
+        ImGui::RenderText(ImVec2(pos.x + step, pos.y), label, ImGui::FindRenderedTextEnd(label));
+    }
+    treeBranch(midY, has_children ? markerX - radius - 1.0f : pos.x + step - ImGui::GetFontSize() * 0.25f);
+
+    if (!has_children || !open)
+        return false;
+    if (TreeLevel* level = levelAt(s.depth))
+        *level = TreeLevel{markerX, midY + radius, 0.0f, midY, id, true, false};
+    ++s.depth;
+    ImGui::Indent(step);
+    ImGui::PushOverrideID(id);
+    return true;
+}
+
+void treeNodeEnd()
+{
+    TreeState& s = treeState();
+    assert(s.depth > 0 && "treeNodeEnd without an open treeNode");
+    if (s.depth <= 0)
+        return;
+    --s.depth;
+    if (const TreeLevel* level = levelAt(s.depth))
+        treeTrunk(*level);
+    ImGui::PopID();
+    ImGui::Unindent(treeLabelOffset());
+}
+
+TreeLeaf treeLeafBegin()
+{
+    TreeState& s = treeState();
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float step = treeLabelOffset();
+    if (TreeLevel* level = levelAt(s.depth))
+        *level = TreeLevel{std::floor(at.x + step * 0.5f) + 0.5f, 0.0f, 0.0f, 0.0f, 0, false, false};
+    ++s.depth;
+    ImGui::Indent(step);
+    return {at.x, at.y};
+}
+
+void treeLeafEnd(TreeLeaf leaf)
+{
+    TreeState& s = treeState();
+    assert(s.depth > 0 && "treeLeafEnd without treeLeafBegin");
+    if (s.depth <= 0)
+        return;
+    --s.depth;
+    const TreeLevel* levelPtr = levelAt(s.depth);
+    const float step = treeLabelOffset();
+    if (!levelPtr) {
+        ImGui::Unindent(step);
+        return;
+    }
+    const TreeLevel level = *levelPtr;
+    const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+    if (level.hasMarker)
+        treeBranch(level.midY, level.trunkX - treeMarkerRadius() - 1.0f);
+    else if (bottom > leaf.y)
+        treeBranch((leaf.y + bottom) * 0.5f, leaf.x + step - ImGui::GetFontSize() * 0.25f);
+    treeTrunk(level);
+    ImGui::Unindent(step);
+}
+
+bool treeLeafMarker()
+{
+    TreeState& s = treeState();
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (s.depth <= 0 || window->SkipItems)
+        return false;
+    TreeLevel* levelPtr = levelAt(s.depth - 1);
+    if (!levelPtr)
+        return false;
+    TreeLevel& level = *levelPtr;
+    const ImVec2 pos = window->DC.CursorPos;
+    const float step = treeLabelOffset();
+    const float height = ImGui::GetTextLineHeight();
+    const float midY = pos.y + height * 0.5f;
+    const ImRect bb(ImVec2(pos.x - step, pos.y), ImVec2(pos.x - std::ceil(ImGui::GetStyle().ItemSpacing.x * 0.5f), pos.y + height));
+    const ImGuiID id = window->GetID("###expand");
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    bool open = storage->GetInt(id, 0) != 0;
+    if (ImGui::ItemAdd(bb, id)) {
+        bool hovered, held;
+        if (ImGui::ButtonBehavior(bb, id, &hovered, &held, ImGuiButtonFlags_PressedOnClick)) {
+            open = !open;
+            storage->SetInt(id, open ? 1 : 0);
+        }
+        treeMarker(level.trunkX, midY, open);
+        treeMarkerHandCursor(bb);
+    }
+    level.hasMarker = true;
+    level.markerId = id;
+    level.midY = midY;
+    level.startY = midY + treeMarkerRadius();
+    return open;
+}
+
+void treeLeafSetOpen(bool open)
+{
+    TreeState& s = treeState();
+    if (const TreeLevel* level = s.depth > 0 ? levelAt(s.depth - 1) : nullptr)
+        ImGui::GetStateStorage()->SetInt(level->markerId, open ? 1 : 0);
 }
 
 } // namespace ggui

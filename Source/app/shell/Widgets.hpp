@@ -126,4 +126,45 @@ std::string elideMiddleToWidth(const std::string& text, float width);
 // Returns true when the text was cut.
 bool textElided(std::string_view text, const char* id = nullptr, bool tooltip = true, float width = 0);
 
+// A custom-drawn tree (no ImGui tree widget): a thin trunk line from the parent, a short branch line to each row,
+// and a marker dot on the line of a node that has children (filled: closed, ring: open). A row without children
+// has no marker. All rows take the same height, and the indent step of a depth is fixed (treeLabelOffset()).
+// Rows of one depth have their labels at the same x. A tree has no heap allocation per frame.
+using TreeFlags = int;
+enum : TreeFlags {
+    TreeDefaultOpen = 1,     // the node is open until the user closes it
+    TreeSelected = 2,        // the row has the colour ImGuiCol_Header as its background
+    TreeAllowOverlap = 4,    // other items (hover buttons) can overlap the row
+    TreeToggleOnMarker = 8,  // a mouse click toggles the node on the marker only (the label is for selection)
+};
+// The x distance from the start of a row to its label (and the indent step of a depth).
+float treeLabelOffset();
+// The room that a highlight keeps left of a label. True while a tree level is open.
+float treeHighlightPad();
+bool treeActive();
+// A node row with a label. Returns true when the node has children and is open: then the caller draws the
+// child rows and calls treeNodeEnd(). The row is the last item. `has_children` false: no marker, returns false.
+// The open state is in the ImGui state storage (key: the ID of the label).
+bool treeNode(const char* label, bool has_children, TreeFlags flags = 0);
+void treeNodeEnd();
+// The next treeNode() takes this open state (as ImGui::SetNextItemOpen with ImGuiCond_Always).
+void treeSetNextOpen(bool open);
+// True when the last treeNode() changed its open state with a click or a key.
+bool treeNodeToggled();
+
+// A leaf row (a row that the caller draws): treeLeafBegin() before it, treeLeafEnd() after it. The label of the
+// row starts at the cursor x that treeLeafBegin() leaves. A leaf row has a branch line at its middle.
+struct TreeLeaf {
+    float x = 0;
+    float y = 0;
+};
+TreeLeaf treeLeafBegin();
+void treeLeafEnd(TreeLeaf leaf);
+// A leaf row that is a node too: call it between treeLeafBegin() and the row's label, with the cursor at the
+// start of the row. It draws the marker and handles the click. Returns the open state. The child rows are
+// leaf rows (treeLeafBegin()) between the row and treeLeafEnd().
+bool treeLeafMarker();
+// Sets the open state of the node of treeLeafMarker() (a key press).
+void treeLeafSetOpen(bool open);
+
 } // namespace ggui

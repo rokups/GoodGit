@@ -175,7 +175,7 @@ struct ExpandSlot {
 // `dim` must be empty with `parts`.
 // `clickable`: the label is a Selectable (a row with a double-click action always is), and a mouse click on it sets
 // `RowEvents::clicked`. `selected`: the row shows as selected.
-// `expand`: the row has an arrow before the label. A click on the arrow, and Right or Left on the
+// `expand`: the row has a marker before the label (it must sit in treeLeafBegin/End). A click on the marker, and Right or Left on the
 // focused label, open or close the node. The caller draws the child rows when `expand->open` is set.
 RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool visible, bool outlined, ImU32 color,
     bool doubleClickable, std::span<const RowAction> acts = {}, std::pair<size_t, size_t> dim = {},
@@ -185,17 +185,12 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     RowEvents events;
     const std::string id = rowId(rawId);
     ImGui::PushID(id.c_str());
-    ImGuiID expandId = 0;
     if (expand) {
-        // The arrow is for the mouse: the label is the row's one nav stop, and the keys act on it (below).
+        // The marker sits in the room that a tree leaf row leaves for it (see treeLeafBegin), so the labels align.
+        // The marker is for the mouse: the label is the row's one nav stop, and the keys act on it (below).
         ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
-        {
-            const SectionHeaderColors neutral;
-            expand->open = ImGui::TreeNodeEx("###expand", ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_NoTreePushOnOpen);
-        }
+        expand->open = treeLeafMarker();
         ImGui::PopItemFlag();
-        expandId = ImGui::GetItemID();
-        ImGui::SameLine();
     }
     events.labelLeft = ImGui::GetCursorScreenPos().x;
     // The room from the label to the list's edge, less the hover buttons' while the row is hovered;
@@ -241,7 +236,7 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
         const bool right = ImGui::IsKeyPressed(ImGuiKey_RightArrow), left = ImGui::IsKeyPressed(ImGuiKey_LeftArrow);
         if ((right && !expand->open) || (left && expand->open)) {
             expand->open = right;
-            ImGui::GetStateStorage()->SetInt(expandId, expand->open ? 1 : 0);
+            treeLeafSetOpen(expand->open);
         }
     }
     if (outlined) {
@@ -479,7 +474,9 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
 {
     for (const auto& e : entries) {
         if (!e.group) {
+            const TreeLeaf place = treeLeafBegin();
             leaf(e.item, e.label);
+            treeLeafEnd(place);
             continue;
         }
         const std::string id = idPrefix + e.label + "/";
@@ -487,10 +484,10 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
         if (groupRefs)
             collectRefs(e.children, *groupRefs, below);
         if (filtering)
-            ImGui::SetNextItemOpen(true);
+            treeSetNextOpen(true);
         // A group's name is cut at its start where it does not fit; the tooltip has the whole name.
         std::string fitted;
-        const float room = ImGui::GetContentRegionAvail().x - ImGui::GetTreeNodeToLabelSpacing();
+        const float room = ImGui::GetContentRegionAvail().x - treeLabelOffset();
         const ImVec2 at = ImGui::GetCursorScreenPos();
         if (ImGui::IsRectVisible(at, ImVec2(at.x + std::max(room, 1.0f), at.y + ImGui::GetTextLineHeight()))
             && ImGui::CalcTextSize(e.label.c_str()).x > room) {
@@ -504,8 +501,8 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             const bool hidden = groupRefs && refsState(groupRefs->history, below).none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            open = ImGui::TreeNodeEx(((fitted.empty() ? e.label : fitted) + "###group_" + rowId(id)).c_str(),
-                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            open = treeNode(((fitted.empty() ? e.label : fitted) + "###group_" + rowId(id)).c_str(), !e.children.empty(),
+                TreeDefaultOpen);
             if (hidden)
                 ImGui::PopStyleColor();
         }
@@ -535,7 +532,7 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             tooltip("%s", e.label.c_str());
         if (open) {
             drawTree(e.children, id, filtering, leaf, groupRefs);
-            ImGui::TreePop();
+            treeNodeEnd();
         }
     }
 }
@@ -658,12 +655,11 @@ void remoteRefMenuItems(Session& session, const core::Snapshot& snap, const core
 // start of its label. The ID of a row is "remote_<remote>" in the ID scope of the branch row. A row has no
 // visibility item (the menu of the branch covers it) and no hover button. A row is selectable (RemoteBranch). Its menu is the one of the ref with Set as upstream.
 void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPanel& history, const core::BranchInfo& b,
-    const BranchRemotes& remotes, float labelLeft, ImU32 color, SelectionFrame& selection)
+    const BranchRemotes& remotes, ImU32 color, SelectionFrame& selection)
 {
-    const float indent = std::max(labelLeft - ImGui::GetCursorScreenPos().x, 0.0f);
     ImGui::PushID(rowId("branch_" + b.name).c_str());
-    ImGui::Indent(indent);
     for (const auto* r : remotes.refs) {
+        const TreeLeaf place = treeLeafBegin();
         // The usual ref is "<remote>/<branch>": its row shows the remote and has the ID "remote_<remote>". Another
         // ref (the upstream "origin/other" of "main") shows its whole name and has the ID "remote_<ref name>". A
         // remote has one usual ref, and ref names differ, so the IDs differ.
@@ -685,8 +681,8 @@ void drawRemoteChildren(Session& session, const core::Snapshot& snap, HistoryPan
             remoteRefMenuItems(session, snap, *r, {false, false, &b});
             ImGui::EndPopup();
         }
+        treeLeafEnd(place);
     }
-    ImGui::Unindent(indent);
     ImGui::PopID();
 }
 
@@ -1116,7 +1112,7 @@ void BranchesPanel::draw(bool* open)
             pushBranch(m_session, b);
         branchMenu(b, localRefs[index], localRefs);
         if (expandable && expand.open)
-            drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, events.labelLeft, p.remoteText,
+            drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, p.remoteText,
                 selection);
         ImGui::PopID();
     }, &localGroupRefs);
@@ -1137,13 +1133,14 @@ void BranchesPanel::draw(bool* open)
             const bool hidden = refsState(history, listed).none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            nodeOpen = ImGui::TreeNodeEx("Detached", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+            nodeOpen = treeNode("Detached", !kept.empty(), TreeDefaultOpen);
             if (hidden)
                 ImGui::PopStyleColor();
         }
         groupMenu(history, "##detached_menu", listed);
         if (nodeOpen) {
             for (const auto* k : kept) {
+                const TreeLeaf place = treeLeafBegin();
                 const std::string hex = k->id.hex();
                 const std::string full = gg::keep::refName(hex);
                 const bool current = m_snapshot->headDetached && m_snapshot->head == k->id;
@@ -1172,8 +1169,9 @@ void BranchesPanel::draw(bool* open)
                 keptMenu(*k, current, idSlotAt(events.labelLeft, shortId, kIdPrefixLength), fullRefs);
                 ImGui::PopID();
                 ImGui::PopID();
+                treeLeafEnd(place);
             }
-            ImGui::TreePop();
+            treeNodeEnd();
         }
         ImGui::PopID();
     }
@@ -1201,9 +1199,9 @@ void BranchesPanel::draw(bool* open)
         const auto before = m_remoteOpenBeforeFilter.find(remote);
         if (filtering && before == m_remoteOpenBeforeFilter.end()) {
             m_remoteOpenBeforeFilter[remote] = ImGui::GetStateStorage()->GetInt(ImGui::GetID(remote.c_str()), 0) != 0;
-            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+            treeSetNextOpen(true);
         } else if (!filtering && before != m_remoteOpenBeforeFilter.end()) {
-            ImGui::SetNextItemOpen(before->second, ImGuiCond_Always);
+            treeSetNextOpen(before->second);
             m_remoteOpenBeforeFilter.erase(before);
         }
         bool nodeOpen;
@@ -1212,7 +1210,7 @@ void BranchesPanel::draw(bool* open)
             const bool hidden = refsState(history, listed).none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            nodeOpen = ImGui::TreeNodeEx(remote.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
+            nodeOpen = treeNode(remote.c_str(), !remoteTree.empty());
             if (hidden)
                 ImGui::PopStyleColor();
         }
@@ -1262,7 +1260,7 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PopID();
                 ImGui::PopID();
             }, &remoteGroupRefs);
-            ImGui::TreePop();
+            treeNodeEnd();
         }
         ImGui::PopID();
     }
@@ -1475,7 +1473,7 @@ void TagsPanel::draw(bool* open)
 
 // ---- Repositories -------------------------------------------------------------------------------
 
-// A tree node with the look of a selected row: the selection colours of selectable(). The arrow opens
+// A tree node with the look of a selected row: the selection colours of selectable(). The marker opens
 // it, so a click or a double-click on the label does not toggle it (the keyboard does: Enter or Space
 // on the focused node, and the arrow keys, as on any tree node). `detail` follows the label, dimmed.
 static bool selectableTreeNode(const char* label, const std::string& detail, bool selected, bool allowOverlap = false)
@@ -1486,18 +1484,14 @@ static bool selectableTreeNode(const char* label, const std::string& detail, boo
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, p.selectionHovered);
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, p.selectionHovered);
     }
-    if (allowOverlap)
-        ImGui::SetNextItemAllowOverlap();
-    const bool open = ImGui::TreeNodeEx(label,
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | (selected ? ImGuiTreeNodeFlags_Selected : 0)
-            | (allowOverlap ? ImGuiTreeNodeFlags_AllowOverlap : 0));
+    const bool open = treeNode(label, true,
+        TreeToggleOnMarker | (selected ? TreeSelected : 0) | (allowOverlap ? TreeAllowOverlap : 0));
     if (selected)
         ImGui::PopStyleColor(3);
     if (!detail.empty() && ImGui::IsItemVisible()) {
-        // Where TreeNodeEx puts its text: after the arrow, in the item's line.
-        const ImGuiStyle& style = ImGui::GetStyle();
+        // Where treeNode puts its text: after the marker slot, in the item's line.
         const ImVec2 min = ImGui::GetItemRectMin();
-        const float x = min.x + ImGui::GetFontSize() + style.FramePadding.x * 2 + ImGui::CalcTextSize(label, ImGui::FindRenderedTextEnd(label)).x;
+        const float x = min.x + treeLabelOffset() + ImGui::CalcTextSize(label, ImGui::FindRenderedTextEnd(label)).x;
         const std::string text = "  " + detail;
         drawDimRange(ImVec2(x, min.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f), text.c_str(), text.c_str() + text.size(), 0, text.size());
     }
@@ -1534,13 +1528,12 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             bool open;
             {
                 const SectionHeaderColors neutral;
-                open = ImGui::TreeNodeEx((node.label + "###group_" + rowId(node.group)).c_str(),
-                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+                open = treeNode((node.label + "###group_" + rowId(node.group)).c_str(), !node.children.empty(), TreeDefaultOpen);
             }
             repoDropTarget(node.group);
             if (open) {
                 drawNodes(node.children, toOpen);
-                ImGui::TreePop();
+                treeNodeEnd();
             }
             continue;
         }
@@ -1556,10 +1549,9 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             && (worktrees->size() > 1 || (worktrees->size() == 1 && !worktrees->front().isMain));
         const auto* submodules = submodulesOf(node.path);
         const bool hasContent = hasWorktrees || (submodules && !submodules->empty());
-        // A repository is always a node (GG-15), so its worktrees are one click away: the expansion of one
-        // without worktrees and submodules is empty. Only a repository with a warning is a plain row.
+        // A repository with no worktrees and no submodules has no children: it is a plain row without a marker.
         const std::string warnPrefix = hasContent ? std::string() : summaryWarnPrefix(info);
-        const bool hasChildren = hasContent || warnPrefix.empty();
+        const bool hasChildren = hasContent;
         const bool selected = !m_selectedWorktree && node.path == m_selected;
         const std::string label = node.label + "###row";
         // The detail after the label, dimmed, as in the Recent menu (a group has none).
@@ -1573,13 +1565,15 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
         };
         ImGui::PushStyleColor(ImGuiCol_Text, isOpen ? theme().palette().branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text));
         bool nodeOpen = false;
+        TreeLeaf place;
         if (hasChildren) {
             nodeOpen = selectableTreeNode(label.c_str(), detail, selected, true);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !treeNodeToggled()) {
                 m_selected = node.path;
                 m_selectedWorktree = false;
             }
         } else {
+            place = treeLeafBegin();
             ImGui::SetNextItemAllowOverlap();
             if (selectableTextDimRanges(rowText, "row", {{warnPrefix.size() + node.label.size(), rowText.size()}}, selected,
                     ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor())) {
@@ -1651,8 +1645,10 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
                 drawWorktrees(*worktrees, isOpen, toOpen);
             if (submodules)
                 drawSubmodules(*submodules, toOpen);
-            ImGui::TreePop();
+            treeNodeEnd();
         }
+        if (!hasChildren)
+            treeLeafEnd(place);
         ImGui::PopID();
     }
 }
@@ -1722,6 +1718,7 @@ void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& lis
         ImGui::PushID(("worktree_" + w.name).c_str());
         const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
                                         : ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+        const TreeLeaf place = treeLeafBegin();
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         const RowAction acts[] = {{ICON_MS_OPEN_IN_NEW, "act_open_window", "Open in new window", !w.missing, !w.isCurrent}};
         ImGui::SetNextItemAllowOverlap();
@@ -1742,6 +1739,7 @@ void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& lis
             repositoryWorktreeMenuItems(m_session, own, w);
             ImGui::EndPopup();
         }
+        treeLeafEnd(place);
         ImGui::PopID();
     }
 }
@@ -1825,9 +1823,10 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
         // The hover button opens the submodule in a new window, as a Shift+double-click does (GG-35).
         const RowAction acts[] = {{ICON_MS_OPEN_IN_NEW, "act_open_window", "Open in new window", true, canOpen}};
         bool nodeOpen = false;
+        TreeLeaf place;
         if (isNode) {
             nodeOpen = selectableTreeNode((sm.name + "###row").c_str(), detail, selected, true);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !treeNodeToggled()) {
                 m_selected = path;
                 m_selectedWorktree = true;
             }
@@ -1835,6 +1834,7 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
             // A submodule whose directory is gone, or that has no .gitmodules entry, has the warning triangle before its name.
             const std::string warnPrefix = warnIconPrefix(sm.missing || sm.gitmodulesMissing);
             const std::string label = warnPrefix + sm.name + (sm.missing ? " (missing)" : "") + "  ";
+            place = treeLeafBegin();
             detail = elideMiddleToWidth(detail, ImGui::GetContentRegionAvail().x - textWidth(label) - rowActionsReserve(acts));
             ImGui::SetNextItemAllowOverlap();
             if (selectableTextDimRanges(label + detail, "row", {}, selected, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 0),
@@ -1861,8 +1861,10 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
         }
         if (nodeOpen) {
             drawSubmodules(*inner, toOpen);
-            ImGui::TreePop();
+            treeNodeEnd();
         }
+        if (!isNode)
+            treeLeafEnd(place);
         ImGui::PopID();
     }
 }
