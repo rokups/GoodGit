@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <charconv>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -39,12 +40,20 @@ std::string hexKey(const std::string& k)
     return out;
 }
 
-std::string unhexKey(const std::string& h)
+// Returns false for odd length or a non-hex digit: the caller skips the damaged line.
+bool unhexKey(const std::string& h, std::string& out)
 {
-    std::string out;
-    for (size_t i = 0; i + 1 < h.size(); i += 2)
-        out.push_back(static_cast<char>(std::stoi(h.substr(i, 2), nullptr, 16)));
-    return out;
+    out.clear();
+    if (h.size() % 2 != 0)
+        return false;
+    for (size_t i = 0; i < h.size(); i += 2) {
+        unsigned v = 0;
+        const auto r = std::from_chars(h.data() + i, h.data() + i + 2, v, 16);
+        if (r.ec != std::errc() || r.ptr != h.data() + i + 2)
+            return false;
+        out.push_back(static_cast<char>(v));
+    }
+    return true;
 }
 
 // A failed lookup (for example a missing blob in a partial clone) is unknown: clear `complete`.
@@ -167,7 +176,9 @@ bool Cache::read()
         if (line == kTrailer)
             return true;
         if (line.rfind("T ", 0) == 0) {
-            current = &trees[unhexKey(line.substr(2))];
+            std::string k;
+            // A damaged key is a cache miss: skip its files, the app computes them again.
+            current = unhexKey(line.substr(2), k) && !k.empty() ? &trees[k] : nullptr;
         } else if (current && !line.empty()) {
             const auto tab = line.find('\t');
             if (tab == std::string::npos)
