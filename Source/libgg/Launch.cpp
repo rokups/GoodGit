@@ -158,7 +158,7 @@ bool spawnScriptDetached(const fs::path& script, const std::vector<std::string>&
         error = "cannot find cmd.exe";
         return false;
     }
-    std::wstring cmd = L"\"" + comspec + L"\" /d /s /c \"\"" + script.native() + L"\"";
+    std::wstring cmd = L"\"" + comspec + L"\" /d /v:off /s /c \"\"" + script.native() + L"\"";
     for (const auto& a : args) {
         cmd += L' ';
         cmd.append(a.begin(), a.end()); // ASCII only
