@@ -170,6 +170,7 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
     ctx->ItemClick((body(s) + "/###hunk_0").c_str());
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Discard line(s)");
+    s.dialogButton("Discard changes", "Discard");
     GG_CHECK(moved(s, r.path, tip));
     GG_CHECK(s.read(r.path, "a.txt").find("LINE 2") == std::string::npos);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
@@ -227,6 +228,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
         GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
         ctx->ItemClick((body(s) + "/###hunk_0").c_str());
         s.contextMenu((body(s) + "/###hunk_0").c_str(), "Discard line(s)");
+        s.dialogButton("Discard changes", "Discard");
         const bool ok = moved(s, repo, y);
         if (!ok)
             ctx->LogError("reverting the lines of %s changed nothing", path.c_str());
@@ -330,6 +332,7 @@ GG_TEST("move", "discard: a hunk's button in commit mode rewrites the commit wit
     s.showPanel("Diff");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###discard_hunk_0").c_str()); }));
     ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(moved(s, r.path, r.y));
     const std::string a = s.gitOut(r.path, {"show", "HEAD~1:a.txt"});
     GG_CHECK(a.find("LINE 2\n") == std::string::npos); // the first hunk is gone

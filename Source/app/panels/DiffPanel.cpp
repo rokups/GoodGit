@@ -217,6 +217,23 @@ std::vector<int> DiffPanel::selectedRows() const
     return rows;
 }
 
+// Every discard path asks here first: the lost lines cannot come back.
+void DiffPanel::confirmDiscard(const LineSet& lines, std::function<void()> run)
+{
+    const core::DiffFile& f = m_diff->files.front();
+    size_t changed = 0;
+    for (const auto& [h, l] : lines)
+        changed += f.hunks[static_cast<size_t>(h)].lines[static_cast<size_t>(l)].origin != ' ';
+    Form form;
+    form.title = "Discard changes";
+    form.message = "Discard " + std::to_string(changed) + (changed == 1 ? " line" : " lines") + " in " + f.path()
+        + "? This cannot be undone.";
+    form.buttons.push_back({"Discard", [run = std::move(run)](Form&) { run(); }});
+    form.buttons.back().danger = true;
+    form.buttons.push_back({"Cancel", {}});
+    m_session.app().dialogs().open(std::move(form));
+}
+
 void DiffPanel::applyLines(const LineSet& lines, StagingAction action)
 {
     const core::DiffFile& f = m_diff->files.front();
@@ -229,7 +246,9 @@ void DiffPanel::applyLines(const LineSet& lines, StagingAction action)
         actions.applyPatch("unstage lines of " + f.path(), buildPatch(f, lines, true), true, true);
         break;
     case StagingAction::Discard:
-        actions.applyPatch("discard lines of " + f.path(), buildPatch(f, lines, true), false, true);
+        confirmDiscard(lines, [&actions, path = f.path(), patch = buildPatch(f, lines, true)] {
+            actions.applyPatch("discard lines of " + path, patch, false, true);
+        });
         break;
     }
     m_anchorRow = -1;
@@ -788,7 +807,10 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
                 applyLines(hunkLines(f, l.hunk), StagingAction::Unstage);
         } else if (commitMode) {
             if (iconButton(ICON_MS_UNDO, "discard_hunk_" + n, "Discard hunk"))
-                m_session.actions().moveChanges(m_selection.id, Actions::MoveTo::Discard, {}, buildPatch(f, hunkLines(f, l.hunk), false));
+                confirmDiscard(hunkLines(f, l.hunk), [&actions = m_session.actions(), id = m_selection.id,
+                                                         patch = buildPatch(f, hunkLines(f, l.hunk), false)] {
+                    actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
+                });
         }
         ImGui::EndDisabled();
         ImGui::PopStyleVar();
@@ -1070,10 +1092,10 @@ void DiffPanel::drawMenuItems()
         if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", "Undo the selected lines of this change in the index and working tree, without committing. Conflicts stop as in a revert.");
         if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, can))
-            actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
+            confirmDiscard(lines, [&actions, id, patch] { actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch); });
         const std::string hunkPatch = hunks.empty() ? std::string() : buildPatch(m_diff->files.front(), hunks, false);
         if (menuItem(ICON_MS_UNDO, "Discard hunk(s)", nullptr, false, free && !hunkPatch.empty()))
-            actions.moveChanges(id, Actions::MoveTo::Discard, {}, hunkPatch);
+            confirmDiscard(hunks, [&actions, id, hunkPatch] { actions.moveChanges(id, Actions::MoveTo::Discard, {}, hunkPatch); });
     }
 }
 
