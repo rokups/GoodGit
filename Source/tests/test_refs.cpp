@@ -266,12 +266,12 @@ GG_TEST("refs", "the multi menu shows or hides all selected branches in History"
     selectBranches(s, {"a", "b"});
     GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
     // Hide: both selected branches and the remote-tracking ref of b go. The others stay.
-    s.toggleVisibility(branchRow("b").c_str());
+    s.contextMenu(branchRow("b").c_str(), "###history_visibility");
     GG_CHECK(s.waitUntil([&] { return !visible("a") && !visible("b"); }));
     GG_CHECK(!history.refVisible("refs/remotes/origin/b"));
     GG_CHECK(visible("c") && visible("d") && visible("main"));
     // Show: both come back.
-    s.toggleVisibility(branchRow("b").c_str());
+    s.contextMenu(branchRow("b").c_str(), "###history_visibility");
     GG_CHECK(s.waitUntil([&] { return visible("a") && visible("b"); }));
     GG_CHECK(history.refVisible("refs/remotes/origin/b"));
 }
@@ -1559,10 +1559,10 @@ GG_TEST("refs", "the multi menu of tags shows or hides all selected tags in Hist
     GG_CHECK(visible("t1") && visible("t2") && visible("t3"));
     selectTags(s, {"t1", "t2"});
     GG_REQUIRE(s.session()->tags().selection().names.size() == 2);
-    s.toggleVisibility(tagRow("t2").c_str());
+    s.contextMenu(tagRow("t2").c_str(), "###history_visibility");
     GG_CHECK(s.waitUntil([&] { return !visible("t1") && !visible("t2"); }));
     GG_CHECK(visible("t3"));
-    s.toggleVisibility(tagRow("t2").c_str());
+    s.contextMenu(tagRow("t2").c_str(), "###history_visibility");
     GG_CHECK(s.waitUntil([&] { return visible("t1") && visible("t2"); }));
 }
 
@@ -1797,7 +1797,7 @@ GG_TEST("refs", "the group menu of remote branches forgets the group refs; one u
     GG_REQUIRE(s.itemExists(group));
     ctx->ItemClick(group, ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemExists("//$FOCUSED/###history_visibility"));
+    GG_CHECK(!ctx->ItemExists("//$FOCUSED/###history_visibility"));
     GG_CHECK(ctx->ItemExists("//$FOCUSED/Delete on remote..."));
     GG_CHECK(ctx->ItemExists("//$FOCUSED/Forget..."));
     GG_CHECK(!ctx->ItemExists("//$FOCUSED/Delete"));
@@ -1924,17 +1924,13 @@ GG_TEST("refs", "the folder menu of tags shows or hides the tags below it; Ctrl 
     const auto& history = s.session()->history();
     const auto visible = [&](const char* name) { return history.refVisible(std::string("refs/tags/") + name); };
     GG_CHECK(visible("release/1.0") && visible("release/2.0") && visible("plain"));
-    s.contextMenu("//Tags/###group_tag:release:", "###history_visibility");
+    s.toggleVisibility("//Tags/###group_tag:release:");
     GG_CHECK(s.waitUntil([&] { return !visible("release/1.0") && !visible("release/2.0"); }));
     GG_CHECK(visible("plain"));
-    s.contextMenu("//Tags/###group_tag:release:", "###history_visibility");
+    s.toggleVisibility("//Tags/###group_tag:release:");
     GG_CHECK(s.waitUntil([&] { return visible("release/1.0") && visible("release/2.0"); }));
     // Ctrl: only the tags of the folder show.
-    ctx->ItemClick("//Tags/###group_tag:release:", ImGuiMouseButton_Right);
-    ctx->Yield(2);
-    ctx->KeyDown(ImGuiMod_Ctrl);
-    ctx->ItemClick("//$FOCUSED/###history_visibility");
-    ctx->KeyUp(ImGuiMod_Ctrl);
+    s.toggleVisibility("//Tags/###group_tag:release:", true);
     GG_CHECK(s.waitUntil([&] { return !visible("plain"); }));
     GG_CHECK(visible("release/1.0") && visible("release/2.0"));
 }

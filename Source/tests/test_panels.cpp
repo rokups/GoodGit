@@ -2282,6 +2282,35 @@ GG_TEST("panels", "branches: a folder group's menu hides and shows all its branc
     GG_CHECK(!history.refVisible("refs/heads/main") && !history.refVisible("refs/remotes/origin/main"));
 }
 
+GG_TEST("panels", "branches: the eye button of a row and of a group row hides the refs; the menu has no visibility item")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"});
+    s.git(repo, {"branch", "feature/one", "HEAD~1"});
+    s.git(repo, {"branch", "feature/two", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    auto& history = s.session()->history();
+    const std::string groupRow = "//Branches/###group_local:feature:";
+    const std::string row = "//Branches/branch_feature:one/###branch_feature:one";
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
+    const std::string one = "refs/heads/feature/one", two = "refs/heads/feature/two";
+    ctx->MouseMove(row.c_str());
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists("//Branches/branch_feature:one/###act_visibility"));
+    s.toggleVisibility(row.c_str());
+    GG_CHECK(!history.refVisible(one) && history.refVisible(two));
+    ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    GG_CHECK(!ctx->ItemExists("//$FOCUSED/###history_visibility"));
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    s.toggleVisibility(groupRow.c_str());
+    GG_CHECK(s.waitUntil([&] { return history.refVisible(one) && history.refVisible(two); }));
+    s.toggleVisibility(groupRow.c_str());
+    GG_CHECK(s.waitUntil([&] { return !history.refVisible(one) && !history.refVisible(two); }));
+}
+
 GG_TEST("panels", "branches: the menu of a local branch also hides and shows its remote-tracking refs")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

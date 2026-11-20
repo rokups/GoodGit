@@ -884,12 +884,17 @@ void Scenario::contextMenu(const char* ref, const char* path, bool shift)
 
 void Scenario::toggleVisibility(const char* ref, bool ctrl)
 {
-    ctx->ItemClick(ref, ImGuiMouseButton_Right);
+    // The button shows while the row is hovered. A group node has it under its own ID, a ref row under the row's scope.
+    ctx->MouseMove(ref);
+    ctx->Yield(3);
+    std::string button = std::string(ref) + "/###act_visibility";
+    if (!itemExists(button.c_str()))
+        button = std::string(ref).substr(0, std::string(ref).rfind('/')) + "/###act_visibility";
     if (ctrl) {
         ctx->KeyDown(ImGuiMod_Ctrl);
         ctx->Yield(2);
     }
-    ctx->MenuClick("//$FOCUSED/###history_visibility");
+    ctx->ItemClick(button.c_str());
     if (ctrl)
         ctx->KeyUp(ImGuiMod_Ctrl);
 }

@@ -351,6 +351,28 @@ void visibilityMenuItem(HistoryPanel& history, const std::vector<std::string>& r
         toggleRefs(history, refs, visible);
 }
 
+// The eye hover button of a ref row or a group row, the last one of the row. The icon shows the state now.
+// `shown`: the refs are shown (all of them for a group), so a click hides them.
+RowAction visibilityAction(bool shown)
+{
+    return {shown ? ICON_MS_VISIBILITY : ICON_MS_VISIBILITY_OFF, "act_visibility",
+        shown ? "Hide in History\nCtrl+click: show only this" : "Show in History\nCtrl+click: show only this"};
+}
+
+// The eye button of a group row. Call right after the node's treeNode, which needs TreeAllowOverlap. The ID is
+// the node's, as for the rows below it, so the button has the same ID whether the node is open or not.
+void groupVisibilityButton(HistoryPanel& history, const std::vector<std::string>& refs)
+{
+    if (refs.empty())
+        return;
+    const bool all = refsState(history, refs).all;
+    const RowAction acts[] = {visibilityAction(all)};
+    ImGui::PushOverrideID(ImGui::GetItemID());
+    if (rowActions(acts, false, false) == 0)
+        toggleRefs(history, refs, all);
+    ImGui::PopID();
+}
+
 // The Delete submenu of tags: Local, and On <remote> for each remote that has some of them.
 // `names` are the tags in the order of the rows, once each.
 // The caller adds the separator before the submenu.
@@ -394,31 +416,23 @@ struct GroupDelete {
     std::vector<std::string> upstreamNames; // the branches of `names` that have an upstream
 };
 
-// The context menu of a group row: the menu item that shows or hides the refs below the row.
-// With branches in `makeDel`, the Delete menu follows after a separator. `makeDel` runs only while
+// The context menu of a group row: the Delete menu of the refs below the row. `makeDel` runs only while
 // the menu is open: it is costly on a repository with many branches.
-void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::string>& refs,
-    const std::function<GroupDelete()>& makeDel = {})
+void groupMenu(const char* strId, const std::function<GroupDelete()>& makeDel)
 {
     if (!beginContextMenu(strId))
         return;
     const GroupDelete del = makeDel ? makeDel() : GroupDelete{};
-    if (!refs.empty())
-        visibilityMenuItem(history, refs, refsState(history, refs).all);
     if (del.session && !del.names.empty() && del.tags && del.snapshot) {
-        if (!refs.empty())
-            ImGui::Separator();
         tagsDeleteMenu(*del.session, *del.snapshot, del.names);
     } else if (del.session && !del.names.empty() && del.remote) {
         const bool free = del.session->actions().busy().empty();
-        ImGui::Separator();
         if (menuItem(ICON_MS_DELETE, "Delete on remote...", nullptr, false, free))
             del.session->showDeleteRemoteBranchesDialog(del.names);
         if (menuItem(ICON_MS_DELETE_SWEEP, "Forget...", nullptr, false, free))
             del.session->showForgetRefsDialog(del.names);
     } else if (del.session && !del.names.empty()) {
         const bool free = del.session->actions().busy().empty();
-        ImGui::Separator();
         if (beginMenu(ICON_MS_DELETE, "Delete", free)) {
             if (menuItem(ICON_MS_DELETE, "Local", nullptr, false, free))
                 del.session->showDeleteBranchesDialog(del.names, 0);
@@ -492,7 +506,8 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             treeSetNextOpen(true);
         // A group's name is cut at its start where it does not fit; the tooltip has the whole name.
         std::string fitted;
-        const float room = ImGui::GetContentRegionAvail().x - treeLabelOffset();
+        const RowAction eye[] = {visibilityAction(true)}; // only its width counts
+        const float room = ImGui::GetContentRegionAvail().x - treeLabelOffset() - (below.empty() ? 0.0f : rowActionsReserve(eye));
         const ImVec2 at = ImGui::GetCursorScreenPos();
         if (ImGui::IsRectVisible(at, ImVec2(at.x + std::max(room, 1.0f), at.y + ImGui::GetTextLineHeight()))
             && ImGui::CalcTextSize(e.label.c_str()).x > room) {
@@ -507,11 +522,12 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             open = treeNode(((fitted.empty() ? e.label : fitted) + "###group_" + rowId(id)).c_str(), !e.children.empty(),
-                TreeDefaultOpen);
+                TreeDefaultOpen | TreeAllowOverlap);
             if (hidden)
                 ImGui::PopStyleColor();
         }
         if (groupRefs) {
+            groupVisibilityButton(groupRefs->history, below);
             const auto makeDel = [&] {
             GroupDelete del;
             if (groupRefs->kind == RefKind::LocalBranch && groupRefs->session && groupRefs->snapshot) {
@@ -534,7 +550,7 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             }
             return del;
             };
-            groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below, makeDel);
+            groupMenu(("##group_menu_" + rowId(id)).c_str(), makeDel);
         }
         if (!fitted.empty() && itemHoveredForTooltip())
             tooltip("%s", e.label.c_str());
@@ -857,8 +873,7 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
     }
 }
 
-void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std::string>& refs,
-    const std::vector<std::vector<std::string>>& allRefs)
+void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std::vector<std::string>>& allRefs)
 {
     if (!beginContextMenu(("##branch_menu_" + rowId(b.name)).c_str()))
         return;
@@ -899,9 +914,6 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std:
         return;
     }
     branchMenuItems(m_session, *m_snapshot, b);
-    ImGui::Separator();
-    // The branch decides: one click hides or shows the branch with its remote-tracking refs.
-    visibilityMenuItem(m_session.history(), refs, m_session.history().refStoredVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -910,7 +922,7 @@ void remoteBranchMenuItems(Session& session, const core::Snapshot& snap, const c
     remoteRefMenuItems(session, snap, r, {true, true, nullptr, true});
 }
 
-void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r, const std::vector<std::string>& refs)
+void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
 {
     if (!beginContextMenu(("##rbranch_menu_" + rowId(r.name)).c_str()))
         return;
@@ -937,8 +949,6 @@ void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r, const std:
         return;
     }
     remoteBranchMenuItems(m_session, *m_snapshot, r);
-    ImGui::Separator();
-    visibilityMenuItem(m_session.history(), refs, m_session.history().refStoredVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -961,13 +971,11 @@ void keptMenuItems(Session& session, const core::KeptInfo& k, bool current, cons
         showAbandonDialog(session, k.id);
 }
 
-void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot, const std::vector<std::string>& refs)
+void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot& idSlot)
 {
     if (!beginContextMenu(("##kept_menu_" + k.id.hex()).c_str()))
         return;
     keptMenuItems(m_session, k, current, idSlot);
-    ImGui::Separator();
-    visibilityMenuItem(m_session.history(), refs, m_session.history().refStoredVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -1094,6 +1102,7 @@ void BranchesPanel::draw(bool* open)
         const RowAction acts[] = {
             {ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free && !b.isHead, !b.isHead},
             {ICON_MS_UPLOAD, "act_push", "Push", free && !m_snapshot->remotes.empty()},
+            visibilityAction(history.refStoredVisible(full)),
         };
         ExpandSlot expand;
         const RowEvents events = visibilityRow("branch_" + b.name, label, history.refVisible(full), b.isHead,
@@ -1118,7 +1127,9 @@ void BranchesPanel::draw(bool* open)
             m_session.actions().checkout(b.name, false);
         else if (events.action == 1)
             pushBranch(m_session, b);
-        branchMenu(b, localRefs[index], localRefs);
+        else if (events.action == 2)
+            toggleRefs(history, localRefs[index], history.refStoredVisible(full));
+        branchMenu(b, localRefs);
         if (expandable && expand.open)
             drawRemoteChildren(m_session, *m_snapshot, history, b, branchRemoteRefs, p.remoteText,
                 selection);
@@ -1141,11 +1152,11 @@ void BranchesPanel::draw(bool* open)
             const bool hidden = refsState(history, listed).none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            nodeOpen = treeNode("Detached", !kept.empty(), TreeDefaultOpen);
+            nodeOpen = treeNode("Detached", !kept.empty(), TreeDefaultOpen | TreeAllowOverlap);
             if (hidden)
                 ImGui::PopStyleColor();
         }
-        groupMenu(history, "##detached_menu", listed);
+        groupVisibilityButton(history, listed);
         if (nodeOpen) {
             for (const auto* k : kept) {
                 const TreeLeaf place = treeLeafBegin();
@@ -1162,6 +1173,7 @@ void BranchesPanel::draw(bool* open)
                 const RowAction acts[] = {
                     {ICON_MS_SWAP_HORIZ, "act_checkout", "Check out", free && !current, !current},
                     {ICON_MS_ADD, "act_branch", "Create branch here...", free},
+                    visibilityAction(history.refStoredVisible(full)),
                 };
                 const RowEvents events = visibilityRow("detached_" + hex, label, history.refVisible(full), current,
                     current ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts,
@@ -1174,7 +1186,9 @@ void BranchesPanel::draw(bool* open)
                     m_session.actions().checkout(hex, true);
                 else if (events.action == 1)
                     m_session.showCreateBranchDialog(hex);
-                keptMenu(*k, current, idSlotAt(events.labelLeft, shortId, kIdPrefixLength), fullRefs);
+                else if (events.action == 2)
+                    toggleRefs(history, fullRefs, history.refStoredVisible(full));
+                keptMenu(*k, current, idSlotAt(events.labelLeft, shortId, kIdPrefixLength));
                 ImGui::PopID();
                 ImGui::PopID();
                 treeLeafEnd(place);
@@ -1218,27 +1232,14 @@ void BranchesPanel::draw(bool* open)
             const bool hidden = refsState(history, listed).none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            nodeOpen = treeNode(remote.c_str(), !remoteTree.empty());
+            nodeOpen = treeNode(remote.c_str(), !remoteTree.empty(), TreeAllowOverlap);
             if (hidden)
                 ImGui::PopStyleColor();
         }
-        // The remote has the Remotes panel's menu, plus History visibility of its branches. The node of a
-        // remote that is not in the list has the visibility item only.
-        if (beginContextMenu("##remote_menu")) {
-            if (info) {
-                remoteMenuItems(m_session, *info);
-                ImGui::Separator();
-            }
-            visibilityMenuItem(history, listed, refsState(history, listed).all);
-            ImGui::Separator();
-            std::vector<std::string> refs;
-            for (const auto& r : m_snapshot->remoteBranches)
-                if (r.remote == remote)
-                    refs.push_back("refs/remotes/" + r.name);
-            if (menuItem(ICON_MS_VISIBILITY, "Show all branches in History"))
-                history.setRefsVisible(refs, true);
-            if (menuItem(ICON_MS_VISIBILITY_OFF, "Hide all branches in History"))
-                history.setRefsVisible(refs, false);
+        groupVisibilityButton(history, listed);
+        // The remote has the Remotes panel's menu; the node of a remote that is not in the list has none.
+        if (info && beginContextMenu("##remote_menu")) {
+            remoteMenuItems(m_session, *info);
             ImGui::EndPopup();
         }
         if (nodeOpen) {
@@ -1250,7 +1251,8 @@ void BranchesPanel::draw(bool* open)
                 ImGui::PushID(("remote_group_" + remote).c_str());
                 ImGui::PushID(remote.c_str());
                 const bool hasLocal = m_snapshot->findBranch(r.name.substr(std::min(r.name.size(), r.remote.size() + 1))) != nullptr;
-                const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", hasLocal ? "Check out" : "Check out...", free}};
+                const RowAction acts[] = {{ICON_MS_SWAP_HORIZ, "act_checkout", hasLocal ? "Check out" : "Check out...", free},
+                    visibilityAction(history.refStoredVisible(full))};
                 const BranchLabelParts parts{shortName, {}, {}, {}};
                 const RowEvents events = visibilityRow("rbranch_" + r.name, shortName,
                     history.refVisible(full), false, p.remoteText, false, acts, {}, &parts, nullptr, true,
@@ -1263,7 +1265,9 @@ void BranchesPanel::draw(bool* open)
                     toggleRefs(history, fullRefs, history.refStoredVisible(full));
                 if (events.action == 0)
                     checkoutRemoteBranch(m_session, *m_snapshot, r);
-                remoteBranchMenu(r, fullRefs);
+                else if (events.action == 1)
+                    toggleRefs(history, fullRefs, history.refStoredVisible(full));
+                remoteBranchMenu(r);
                 ImGui::PopID();
                 ImGui::PopID();
                 ImGui::PopID();
@@ -1445,6 +1449,7 @@ void TagsPanel::draw(bool* open)
         // The hover button does what the menu's Reveal does.
         const RowAction acts[] = {
             {ICON_MS_MY_LOCATION, "act_reveal", "Reveal"},
+            visibilityAction(history.refStoredVisible(full)),
         };
         const RowEvents events = visibilityRow("tag_" + t.name, shortName, history.refVisible(full), false,
             theme().palette().tagText, false, acts, {}, nullptr, nullptr, true, selection.add(RefKind::Tag, t.name));
@@ -1454,6 +1459,8 @@ void TagsPanel::draw(bool* open)
             toggleRefs(history, fullRefs, history.refStoredVisible(full));
         if (events.action == 0)
             m_session.revealCommit(t.target);
+        else if (events.action == 1)
+            toggleRefs(history, fullRefs, history.refStoredVisible(full));
         if (t.annotated && itemHoveredForTooltip() && !t.message.empty() && beginTooltip()) {
             // The full name when a folder cuts it, then the message (it can run to several paragraphs),
             // wrapped and cut after the line limit.
@@ -1467,8 +1474,6 @@ void TagsPanel::draw(bool* open)
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
             if (!tagMultiMenu(m_session, *m_snapshot, m_selection, t.name)) {
                 tagMenuItems(m_session, *m_snapshot, t);
-                ImGui::Separator();
-                visibilityMenuItem(history, fullRefs, history.refStoredVisible(full));
             }
             ImGui::EndPopup();
         }
