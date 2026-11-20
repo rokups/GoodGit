@@ -177,6 +177,9 @@ DiffPanel::StagingMode DiffPanel::stagingMode() const
     // Only asked while a diff is shown (so there is a file).
     if (m_fileCompare.kind != CompareTarget::None)
         return StagingMode::None;
+    // A patch of a cut-off diff would stage only the loaded lines.
+    if (m_diff->files.empty() || m_diff->files.front().truncated)
+        return StagingMode::None;
     if (m_diff->query.kind == core::DiffKind::Unstaged
         && (m_file->group == FileGroup::Unstaged || m_file->group == FileGroup::Untracked))
         return StagingMode::Unstaged;
@@ -345,7 +348,7 @@ void DiffPanel::buildRows()
         prevNewEnd = hunk.newStart + hunk.newLines - (hunk.newLines == 0 ? 0 : 1);
         prevOldEnd = hunk.oldStart + hunk.oldLines - (hunk.oldLines == 0 ? 0 : 1);
     }
-    if (!f.hunks.empty() && total >= 0)
+    if (!f.hunks.empty() && total >= 0 && !f.truncated) // else the dropped lines are changes
         addGap(prevNewEnd + 1, total, prevOldEnd - prevNewEnd);
 }
 
