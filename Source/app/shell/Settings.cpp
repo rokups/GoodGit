@@ -134,19 +134,6 @@ void writeAtomically(const fs::path& p, const std::string& text)
 {
     std::error_code ec;
     fs::create_directories(p.parent_path(), ec);
-    const fs::path tmp = p.string() + ".tmp";
-    bool written = false;
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        f << text;
-        f.flush();
-        written = bool(f);
-    }
-    if (!written) {
-        spdlog::warn("cannot write {}", tmp.string());
-        fs::remove(tmp, ec); // not left behind
-        return;
-    }
     // replaceFile gives up after a short time. On Windows a scanner can hold a file that was just written for
     // longer than that: there the write goes on for about 2 seconds. This is the I/O thread, not the UI's: the
     // jobs queued behind this one (and the exit, which waits for the thread) are late by that much at most.
@@ -156,12 +143,11 @@ void writeAtomically(const fs::path& p, const std::string& text)
     constexpr int kRounds = 1;
 #endif
     for (int round = 0; round < kRounds; ++round) {
-        ec = gg::replaceFile(tmp, p);
+        ec = gg::writeFileAtomic(p, text);
         if (!ec)
             return;
     }
     spdlog::warn("cannot write {}: {}", p.string(), ec.message());
-    fs::remove(tmp, ec); // not left behind
 }
 
 // "repoState": {key: {"hiddenRefs": [names], "worktreeHidden": {id: [names]}, "worktreeNames": {id: name}}}.

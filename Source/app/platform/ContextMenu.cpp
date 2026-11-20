@@ -148,34 +148,12 @@ std::string writeContextMenu(
         fs::create_directories(file.parent_path(), ec);
         if (ec)
             return "Cannot create " + file.parent_path().string() + ": " + ec.message();
-        const fs::path tmp = file.string() + ".tmp";
-        {
-            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-            if (!out)
-                return "Cannot write " + tmp.string() + ": " + std::strerror(errno);
-            out << f.content;
-            out.flush();
-            if (!out) {
-                out.close();
-                fs::remove(tmp, ec);
-                return "Cannot write " + tmp.string() + ".";
-            }
-        }
         using fs::perms;
         const perms mode = perms::owner_read | perms::owner_write | perms::group_read | perms::others_read
             | (f.executable ? perms::owner_exec | perms::group_exec | perms::others_exec : perms::none);
-        fs::permissions(tmp, mode, ec);
-        if (ec) {
-            std::error_code ignore;
-            fs::remove(tmp, ignore);
-            return "Cannot set the permissions of " + tmp.string() + ": " + ec.message();
-        }
-        ec = gg::replaceFile(tmp, file);
-        if (ec) {
-            std::error_code ignore;
-            fs::remove(tmp, ignore);
+        ec = gg::writeFileAtomic(file, f.content, mode);
+        if (ec)
             return "Cannot write " + file.string() + ": " + ec.message();
-        }
     }
     return {};
 }
