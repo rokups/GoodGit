@@ -35,6 +35,14 @@ std::string rowId(std::string id)
     return id;
 }
 
+// The ID scope of a worktree row. The name is enough while it is unique in the list. The main worktree and a
+// linked one can share a name (GG-125): then the path, which is unique, tells them apart.
+std::string worktreeRowId(const std::vector<core::WorktreeInfo>& list, const core::WorktreeInfo& w)
+{
+    const auto sameName = std::count_if(list.begin(), list.end(), [&](const auto& o) { return o.name == w.name; });
+    return "worktree_" + (sameName > 1 ? w.name + "@" + rowId(w.path.string()) : w.name);
+}
+
 // The refs-panel selection of the rows drawn in one frame. `drawn` collects the rows of this frame; the panel
 // moves it into RefSelection::drawn at the end of the frame.
 struct SelectionFrame {
@@ -1733,7 +1741,7 @@ void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& lis
         label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength))
                                   : elideMiddleToWidth(w.branch, ImGui::GetContentRegionAvail().x - textWidth(label));
         const std::string path = w.path.string();
-        ImGui::PushID(("worktree_" + w.name).c_str());
+        ImGui::PushID(worktreeRowId(list, w).c_str());
         const ImU32 color = w.isCurrent ? theme().palette().branchCurrentText
                                         : ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text);
         const TreeLeaf place = treeLeafBegin();
@@ -2064,7 +2072,7 @@ void WorktreesPanel::draw(bool* open)
         label += w.branch.empty() ? (w.head.isNull() ? std::string("-") : w.head.shortHex(kShortIdLength))
                                   : elideMiddleToWidth(w.branch,
                                       ImGui::GetContentRegionAvail().x - textWidth(label) - rowActionsReserve(acts));
-        ImGui::PushID(("worktree_" + w.name).c_str());
+        ImGui::PushID(worktreeRowId(snap->worktrees, w).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(w.missing ? ImGuiCol_TextDisabled : ImGuiCol_Text));
         ImGui::SetNextItemAllowOverlap();
         selectableTextDimRanges(label, "row", {{dimFrom, dimTo}}, w.isCurrent, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 0),
