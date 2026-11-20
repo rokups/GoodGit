@@ -605,11 +605,9 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
             // (which stages the result). If the tool gives up, the index goes back to HEAD for
             // the path. On an N-sided file (N >= 3) success folds the resolved pair into one
             // term and leaves the file a first-class conflict with one side fewer.
-            std::ifstream in(ctx.cwd() / path, std::ios::binary);
-            std::ostringstream ss;
-            ss << in.rdbuf();
-            in.close();
-            const std::string text = ss.str();
+            std::string text;
+            if (!gg::readFile(ctx.cwd() / path, text))
+                throw MutationError{Outcome::Failed, "cannot read " + path, {}};
             gg::markers::Merge m = gg::markers::toMerge(text);
             const int n = static_cast<int>(m.adds.size());
             if (n < 2)
@@ -636,24 +634,18 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
                 ctx.gitMayFail({"reset", "-q", "--", path});
                 if (n > 2) {
                     // The tool may have written into the working tree file before giving up.
-                    std::ifstream check(ctx.cwd() / path, std::ios::binary);
-                    std::ostringstream cs;
-                    cs << check.rdbuf();
-                    check.close();
-                    if (cs.str() != text) {
-                        std::ofstream restore(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
-                        restore << text;
-                    }
+                    std::string now;
+                    if (!gg::readFile(ctx.cwd() / path, now) || now != text)
+                        (void)gg::writeFileAtomic(ctx.cwd() / path, text); // best effort: the merge tool error is reported
                 }
                 throw MutationError{Outcome::Failed, r.message(), r.message()};
             }
             if (n > 2) {
-                std::ifstream res(ctx.cwd() / path, std::ios::binary);
-                std::ostringstream rs;
-                rs << res.rdbuf();
-                res.close();
+                std::string result;
+                if (!gg::readFile(ctx.cwd() / path, result))
+                    throw MutationError{Outcome::Failed, "cannot read " + path, {}};
                 gg::markers::Merge folded = m;
-                folded.adds[static_cast<size_t>(pair)] = rs.str();
+                folded.adds[static_cast<size_t>(pair)] = std::move(result);
                 folded.adds.erase(folded.adds.begin() + pair + 1);
                 folded.removes.erase(folded.removes.begin() + pair);
                 // Surviving sides keep their old labels (the pair just resolved has no single
@@ -661,9 +653,8 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
                 auto options = gg::conflicts::writeOptions(ctx.repo(), path);
                 options.termLabels = gg::markers::termLabels(text);
                 const std::string materialized = gg::markers::materialize(std::move(folded), options);
-                std::ofstream out(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
-                out << materialized;
-                out.close();
+                if (const auto ec = gg::writeFileAtomic(ctx.cwd() / path, materialized))
+                    throw MutationError{Outcome::Failed, "cannot write " + path + ": " + ec.message(), {}};
                 ctx.gitMayFail({"reset", "-q", "--", path});
             }
         },
@@ -2232,10 +2223,8 @@ void Actions::saveMergeMessage(const std::string& message)
     const auto snap = m_session.snapshot();
     const fs::path file = snap->gitDir / "MERGE_MSG";
     run("edit merge message", [file, message](MutationContext&) {
-        std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << message;
-        if (!out)
-            throw MutationError{Outcome::Failed, "cannot write " + file.string(), {}};
+        if (const auto ec = gg::writeFileAtomic(file, message))
+            throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
     }, {}, false, false);
 }
 
