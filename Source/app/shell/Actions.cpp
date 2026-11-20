@@ -1847,7 +1847,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
     run(tags ? "push tags to " + remote : "push " + localBranch + " to " + remote,
         [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags, checkedOid, leaseOid](MutationContext& ctx) {
             // Never push first-class conflicts (§4.10 Safety, P1): refuse before git runs.
-            const auto refuseConflicted = [&ctx, &remote](const std::string& local, const std::string& remoteOid,
+            const auto refuseConflicted = [&ctx](const std::string& local, const std::string& remoteOid,
                                               const std::string& hideRemote) {
                 const auto conflicted = gg::outgoing::conflictedOutgoing(ctx.cwd(), local, hideRemote, remoteOid);
                 if (conflicted.empty())

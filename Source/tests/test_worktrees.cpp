@@ -351,7 +351,7 @@ GG_TEST("worktrees", "a linked worktree in a folder named like the main worktree
     GG_CHECK_STR_EQ(mainWt->name, twin->name);
     // The ID of a shared name has the path in it: "/" in the path is ":" there.
     auto rowOf = [](const ggui::core::WorktreeInfo& w) {
-        std::string p = w.path.string();
+        std::string p = w.path.generic_string(); // "\\" would escape in a test reference
         std::replace(p.begin(), p.end(), '/', ':');
         return "//Worktrees/worktree_" + w.name + "@" + p + "/###row";
     };
