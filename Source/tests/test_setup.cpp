@@ -157,8 +157,10 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     GG_CHECK(s.waitUntil([&] { return config("--global", "core.editor") == "editor-for-user"; }));
     s.comboSelect((tab + "Pull method##pull_method").c_str(), "Rebase, keeping merges");
     GG_CHECK(s.waitUntil([&] { return config("--global", "pull.rebase") == "merges"; }));
+    s.settle(); // the fields stay disabled while the write action is busy
     s.comboSelect((tab + "Same-change resolution##same_change").c_str(), "Keep");
     GG_CHECK(s.waitUntil([&] { return config("--global", "gg.sameChange") == "keep"; }));
+    s.settle();
     // Repository scope: the user values show as hints until overridden.
     tab = scope("Repository");
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "Ui User  (User)"); }));
@@ -212,6 +214,7 @@ GG_TEST("setup", "Settings ▸ Git: scope tabs, one field per option, inherited 
     ctx->ItemCheck(worktreeSettings.c_str());
     GG_CHECK(s.waitUntil([&] { return config("--local", "extensions.worktreeConfig") == "true"; }));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Settings/##settings_tabs/Git/##config_scope/Worktree"); }));
+    s.settle();
     tab = scope("Worktree");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((tab + "core.editor##core.editor").c_str()); }));
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "editor-for-repo  (Repository)"); }));
