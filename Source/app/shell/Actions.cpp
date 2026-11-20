@@ -2196,6 +2196,12 @@ void Actions::commitWithConflicts()
         }
         std::vector<std::pair<std::string, std::string>> contents;
         for (const auto& p : paths) {
+            // A file with no conflict marker line was resolved by hand: keep it, only stage it.
+            std::string current;
+            if (!gg::readFile(ctx.cwd() / p, current))
+                throw MutationError{Outcome::Failed, "cannot read " + p, {}};
+            if (current.rfind("<<<<<<< ", 0) != 0 && current.find("\n<<<<<<< ") == std::string::npos)
+                continue;
             auto stage = [&](int n) {
                 const auto r = ctx.gitMayFail({"show", ":" + std::to_string(n) + ":" + p});
                 return r.ok() ? std::optional<std::string>(r.out) : std::nullopt;
