@@ -728,11 +728,8 @@ void TestRunner::stop()
     }
     // A skipped test ends early without errors: the engine counts it as a success.
     std::fprintf(stderr, "ggui: %d/%d tests passed", summary.CountSuccess - skipped, summary.CountTested - skipped);
-    const char* sep = ", ";
-    for (const auto& [reason, count] : skipReasons) {
-        std::fprintf(stderr, "%s%d skipped (%s)", sep, count, reason.c_str());
-        sep = ", ";
-    }
+    for (const auto& [reason, count] : skipReasons)
+        std::fprintf(stderr, ", %d skipped (%s)", count, reason.c_str());
     std::fprintf(stderr, "\n");
     if (m_queued > 0)
         m_exitCode = (summary.CountSuccess == summary.CountTested && failed == 0) ? 0 : 1;

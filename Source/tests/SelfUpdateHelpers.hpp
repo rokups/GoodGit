@@ -168,7 +168,7 @@ inline std::string realGitGg()
         if ((gitGg).empty()) {                                                           \
             const char* const require = std::getenv("GGUI_REQUIRE_GITGG");               \
             if (require && std::string(require) == "1")                                  \
-                GG_CHECK(!"git-gg is not next to the test binary (GGUI_REQUIRE_GITGG)"); \
+                GG_CHECK(!(gitGg).empty()); /* GGUI_REQUIRE_GITGG: git-gg next to ggui */ \
             else                                                                         \
                 markCurrentTestSkipped("git-gg not built");                              \
             return;                                                                      \

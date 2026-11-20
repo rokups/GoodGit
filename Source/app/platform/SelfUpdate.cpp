@@ -471,8 +471,6 @@ std::string lowerCase(std::string text)
     return text;
 }
 
-// Splits a ZIP entry name into its parts when it is a plain relative path. A folder entry may end
-// in one "/".
 // A Windows device name, with or without an extension: Windows opens the device, not a file.
 bool isReservedName(const std::string& part)
 {
@@ -483,6 +481,8 @@ bool isReservedName(const std::string& part)
            stem[3] >= '1' && stem[3] <= '9';
 }
 
+// Splits a ZIP entry name into its parts when it is a plain relative path. A folder entry may end
+// in one "/".
 bool splitEntryName(const std::string& name, std::vector<std::string>& parts)
 {
     parts.clear();
