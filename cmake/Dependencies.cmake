@@ -22,7 +22,7 @@ endif()
 CPMAddPackage(
     NAME libgit2
     GITHUB_REPOSITORY libgit2/libgit2
-    GIT_TAG v1.9.6
+    GIT_TAG 26055f5af74ab1cf636d272e8a34315496d3f06f # v1.9.6
     ${GGUI_LIBGIT2_PATCH_COMMAND}
     OPTIONS
         "BUILD_SHARED_LIBS OFF"
@@ -45,11 +45,11 @@ target_compile_definitions(ggui_libgit2 INTERFACE GIT_EXPERIMENTAL_SHA256=1)
 # ---------------------------------------------------------------------------------------------
 # CLI11 (git-gg), spdlog, nlohmann/json
 # ---------------------------------------------------------------------------------------------
-CPMAddPackage(NAME CLI11 GITHUB_REPOSITORY CLIUtils/CLI11 GIT_TAG v2.6.2
+CPMAddPackage(NAME CLI11 GITHUB_REPOSITORY CLIUtils/CLI11 GIT_TAG 37bb6edc5317e99af72ef48405e65d9ca5218861 # v2.6.2
     OPTIONS "CLI11_BUILD_TESTS OFF" "CLI11_BUILD_EXAMPLES OFF" "CLI11_BUILD_DOCS OFF")
-CPMAddPackage(NAME spdlog GITHUB_REPOSITORY gabime/spdlog GIT_TAG v1.17.0
+CPMAddPackage(NAME spdlog GITHUB_REPOSITORY gabime/spdlog GIT_TAG 79524ddd08a4ec981b7fea76afd08ee05f83755d # v1.17.0
     OPTIONS "SPDLOG_BUILD_EXAMPLE OFF" "SPDLOG_BUILD_TESTS OFF")
-CPMAddPackage(NAME nlohmann_json GITHUB_REPOSITORY nlohmann/json GIT_TAG v3.12.0
+CPMAddPackage(NAME nlohmann_json GITHUB_REPOSITORY nlohmann/json GIT_TAG 55f93686c01528224f448c19128836e7df245f72 # v3.12.0
     OPTIONS "JSON_BuildTests OFF" "JSON_Install OFF")
 
 if(NOT GGUI_BUILD_APP)
@@ -59,7 +59,7 @@ endif()
 # ---------------------------------------------------------------------------------------------
 # miniz 3.1.2: unpacks the self-update ZIP (ggui only). Only the library is built.
 # ---------------------------------------------------------------------------------------------
-CPMAddPackage(NAME miniz GITHUB_REPOSITORY richgel999/miniz GIT_TAG 3.1.2
+CPMAddPackage(NAME miniz GITHUB_REPOSITORY richgel999/miniz GIT_TAG 77d0dce8627735138c51770d1799a1ef48f2117d # 3.1.2
     OPTIONS "BUILD_SHARED_LIBS OFF" "BUILD_EXAMPLES OFF" "BUILD_TESTS OFF" "BUILD_FUZZERS OFF"
             "BUILD_HEADER_ONLY OFF" "AMALGAMATE_SOURCES OFF" "INSTALL_PROJECT OFF")
 # miniz.h and the generated miniz_export.h as SYSTEM includes: no first-party warnings in them.
@@ -72,12 +72,12 @@ target_include_directories(ggui_miniz SYSTEM INTERFACE ${miniz_SOURCE_DIR} ${min
 # ---------------------------------------------------------------------------------------------
 # SDL3 (static), efsw, nativefiledialog-extended
 # ---------------------------------------------------------------------------------------------
-CPMAddPackage(NAME SDL3 GITHUB_REPOSITORY libsdl-org/SDL GIT_TAG release-3.4.4
+CPMAddPackage(NAME SDL3 GITHUB_REPOSITORY libsdl-org/SDL GIT_TAG 5848e584a1b606de26e3dbd1c7e4ecbc34f807a6 # release-3.4.4
     OPTIONS "SDL_SHARED OFF" "SDL_STATIC ON" "SDL_TEST_LIBRARY OFF" "SDL_TESTS OFF"
             "SDL_EXAMPLES OFF" "SDL_INSTALL OFF")
-CPMAddPackage(NAME efsw GITHUB_REPOSITORY SpartanJ/efsw GIT_TAG 1.6.3
+CPMAddPackage(NAME efsw GITHUB_REPOSITORY SpartanJ/efsw GIT_TAG 49596346078f5903af250b39d9b183e9f3db9733 # 1.6.3
     OPTIONS "BUILD_SHARED_LIBS OFF" "BUILD_TEST_APP OFF" "EFSW_INSTALL OFF")
-CPMAddPackage(NAME nfd GITHUB_REPOSITORY btzy/nativefiledialog-extended GIT_TAG v1.3.0
+CPMAddPackage(NAME nfd GITHUB_REPOSITORY btzy/nativefiledialog-extended GIT_TAG fc168e8605bfa51aaec22ab0c4e46b9de665a437 # v1.3.0
     OPTIONS "NFD_PORTAL ON" "NFD_BUILD_TESTS OFF" "NFD_INSTALL OFF")
 
 # ---------------------------------------------------------------------------------------------
