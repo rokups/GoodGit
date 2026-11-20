@@ -1066,18 +1066,24 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error, const
         error = refs.message();
         return false;
     }
-    // 5. The working tree follows HEAD (or only the index does).
+    // 5. The working tree follows HEAD (or only the index does). A failure puts the refs back.
+    auto failAndRollback = [&](const RunResult& failed) {
+        const RunResult back = transaction(false);
+        error = failed.message();
+        if (!back.ok())
+            error += "; refs not restored: " + back.message();
+        return false;
+    };
     if (headMoved && plan.keepWorktree) {
-        git(m->cwd, {"read-tree", result.headAfter + "^{tree}"});
+        const RunResult r = git(m->cwd, {"read-tree", result.headAfter + "^{tree}"});
+        if (!r.ok())
+            return failAndRollback(r);
         git(m->cwd, {"update-index", "-q", "--refresh"});
     }
     if (moveWorktree) {
         const RunResult r = git(m->cwd, {"read-tree", "-m", "-u", oldTree, newTree});
-        if (!r.ok()) {
-            transaction(false);
-            error = r.message();
-            return false;
-        }
+        if (!r.ok())
+            return failAndRollback(r);
     }
     // 6. Hooks git would have run, and the mapping in the journal.
     std::vector<std::pair<std::string, std::string>> rewrites;

@@ -90,6 +90,35 @@ bool hasFile(Scenario& s, const fs::path& repo, const std::string& rev, const st
     return std::find(files.begin(), files.end(), file) != files.end();
 }
 
+// A reference-transaction hook: after the first committed transaction it holds .git/index.lock, so
+// the step that follows the ref update fails. With `refuseRollback` it then refuses every later one.
+void lockIndexAfterRefs(Scenario& s, const fs::path& repo, bool refuseRollback)
+{
+    const std::string git = (repo / ".git").generic_string();
+    std::string body = "#!/bin/sh\n";
+    if (refuseRollback)
+        body += "[ \"$1\" = prepared ] && [ -e \"" + git + "/fwd\" ] && { echo 'rollback refused' >&2; exit 1; }\n";
+    body += "[ \"$1\" = committed ] && [ ! -e \"" + git + "/fwd\" ] && { : > \"" + git + "/fwd\"; : > \"" + git + "/index.lock\"; }\nexit 0\n";
+    s.write(repo, ".git/hooks/reference-transaction", body);
+    fs::permissions(repo / ".git" / "hooks" / "reference-transaction", fs::perms::owner_all, fs::perm_options::add);
+}
+
+// Applies a reword of HEAD~2 (HEAD moves). Returns whether apply succeeded.
+bool applyReword(Scenario& s, const fs::path& repo, bool keepWorktree, std::string& error)
+{
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const std::string target = s.revParse(repo, "HEAD~2");
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {target});
+    for (auto& step : plan.steps)
+        if (step.source == target)
+            step.message = "Reworded\n";
+    plan.reflogMessage = "test: reword";
+    plan.keepWorktree = keepWorktree;
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    return result.ok && result.changed() && rewriter.apply(plan, result, error, gg::CancelToken());
+}
+
 } // namespace
 
 GG_TEST("rewrite", "reword a commit in the middle: descendants rebased, the rest untouched, one Undo")
@@ -783,6 +812,39 @@ GG_TEST("rewrite", "rebase tip onto: a merge with its first parent outside the s
     for (const auto& file : gg::splitLines(s.gitOut(repo, {"ls-tree", "-r", "--name-only", "main"})))
         GG_CHECK(hasFile(s, repo, "topic", file));
     GG_CHECK(hasFile(s, repo, "topic", "s.txt"));
+}
+
+// mode 0: the working tree step fails; 1: the rollback is refused too; 2: keepWorktree, the index step fails.
+void applyFails(Scenario& s, int mode)
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string before = everything(s, repo);
+    lockIndexAfterRefs(s, repo, mode == 1);
+    std::string error;
+    GG_CHECK(!applyReword(s, repo, mode == 2, error));
+    GG_CHECK(!error.empty());
+    GG_CHECK((error.find("refs not restored") != std::string::npos) == (mode == 1));
+    fs::remove(repo / ".git" / "index.lock");
+    fs::remove(repo / ".git" / "hooks" / "reference-transaction");
+    if (mode == 1)
+        GG_CHECK(s.revParse(repo, "main") != s.revParse(repo, "main@{1}")); // the refs stay moved
+    else
+        GG_CHECK_STR_EQ(everything(s, repo), before);
+}
+
+GG_TEST("rewrite", "apply: a failing working tree step rolls the refs back")
+{
+    applyFails(s, 0);
+}
+
+GG_TEST("rewrite", "apply: a failing rollback is reported as refs not restored")
+{
+    applyFails(s, 1);
+}
+
+GG_TEST("rewrite", "apply: a failing index step in keep-working-tree mode rolls the refs back")
+{
+    applyFails(s, 2);
 }
 
 GG_TEST("rewrite", "a cancel before the refs change leaves refs, index and working tree as they were")
