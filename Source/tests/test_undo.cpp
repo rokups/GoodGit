@@ -393,7 +393,12 @@ GG_TEST("undo", "journal variants: foreign, torn and future records are skipped;
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("journal written by a newer ggui (format 99)") != std::string::npos);
     // Start a fresh journal with one operation, so the empty list below is a real change.
-    fs::remove(repo / ".git" / "gg" / "journal");
+    // A reload can still read the file: Windows then refuses the delete for a moment.
+    GG_REQUIRE(s.waitUntil([&] {
+        std::error_code ec;
+        fs::remove(repo / ".git" / "gg" / "journal", ec);
+        return !ec;
+    }));
     ctx->KeyPress(ImGuiKey_F5);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty(); }));
