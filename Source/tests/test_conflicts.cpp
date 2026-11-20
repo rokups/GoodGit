@@ -1571,3 +1571,103 @@ GG_TEST("conflicts", "cache: damaged or truncated file is ignored, a missing blo
 }
 
 } // namespace ggtest
+
+namespace ggtest {
+
+namespace {
+
+// Runs Actions::absorb of `paths` into HEAD and waits for the event.
+std::optional<ggui::core::MutationFinishedEvent> absorbHead(Scenario& s, const fs::path& repo, const std::vector<std::string>& paths)
+{
+    std::optional<ggui::core::MutationFinishedEvent> event;
+    s.session()->actions().absorb(ggui::core::Oid::fromHex(s.revParse(repo, "HEAD")), paths,
+        [&](const ggui::core::MutationFinishedEvent& e) { event = e; });
+    if (!s.waitUntil([&] { return event.has_value(); }))
+        return std::nullopt;
+    s.settle();
+    return event;
+}
+
+} // namespace
+
+GG_TEST("conflicts", "absorb refuses an unreadable file and a symbolic link (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string files = s.gitOut(repo, {"ls-files"});
+    const std::string file = files.substr(0, files.find('\n'));
+    const std::string head = s.revParse(repo, "HEAD");
+    if (geteuid() != 0) {
+        fs::permissions(repo / file, fs::perms::none);
+        const auto e = absorbHead(s, repo, {file});
+        fs::permissions(repo / file, fs::perms::owner_read | fs::perms::owner_write);
+        GG_REQUIRE(e.has_value());
+        GG_CHECK(e->outcome != ggui::core::Outcome::Ok);
+        GG_CHECK_STR_EQ(s.revParse(repo, "HEAD"), head);
+    }
+    fs::remove(repo / file);
+    fs::create_symlink("elsewhere", repo / file);
+    const auto e = absorbHead(s, repo, {file});
+    GG_REQUIRE(e.has_value());
+    GG_CHECK(e->outcome != ggui::core::Outcome::Ok);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD"), head);
+}
+
+GG_TEST("conflicts", "absorb stores the clean content of a file with an eol attribute (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, ".gitattributes", "*.crlf text eol=crlf\n");
+    s.write(repo, "a.crlf", "one\ntwo\n");
+    s.git(repo, {"add", "-A"});
+    s.git(repo, {"commit", "-q", "-m", "crlf file"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.writeCrlf(repo, "a.crlf", "one\nthree\n");
+    const auto e = absorbHead(s, repo, {"a.crlf"});
+    GG_REQUIRE(e.has_value());
+    GG_CHECK(e->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:a.crlf"}), "one\nthree");
+}
+
+GG_TEST("conflicts", "commit with conflicts keeps a file the user resolved by hand (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    s.write(repo, "f.txt", "hand edited\n");
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "hand edited");
+    GG_CHECK_STR_EQ(s.read(repo, "f.txt"), "hand edited\n");
+}
+
+GG_TEST("conflicts", "commit with conflicts rebuilds a file whose markers have the conflict-marker-size (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    s.write(repo, ".gitattributes", "f.txt conflict-marker-size=9\n");
+    s.write(repo, "f.txt", "<<<<<<<<< ours\nx\n=========\ny\n>>>>>>>>> theirs\n");
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
+    s.settle();
+    const std::string committed = s.gitOut(repo, {"show", "HEAD:f.txt"});
+    GG_CHECK(committed.find("|||||||||") != std::string::npos);
+    GG_CHECK(committed.find("<<<<<<<<< ") != std::string::npos);
+}
+
+GG_TEST("conflicts", "commit with conflicts keeps a hand-resolved file with a line of equal signs (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    const std::string text = "Title\n=======\nhand edited\n>>>>>>> note\n";
+    s.write(repo, "f.txt", text);
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "Title\n=======\nhand edited\n>>>>>>> note");
+    GG_CHECK_STR_EQ(s.read(repo, "f.txt"), text);
+}
+
+} // namespace ggtest
