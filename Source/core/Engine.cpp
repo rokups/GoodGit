@@ -374,6 +374,8 @@ RequestId Engine::refreshStatus(bool cancelRunning)
 
 RequestId Engine::loadHistory(const HistoryScope& scope, int limit, SnapshotPtr snapshot)
 {
+    // A reveal or Show more runs in slot 0 and would block the new walk for a long time.
+    m_workers[static_cast<int>(Queue::History)]->cancelAll();
     auto state = m_history;
     return submit(Queue::History, "Loading history", kSlotHistoryQuery, true,
         [this, state, scope, limit, snapshot = std::move(snapshot)](Job& job) {
