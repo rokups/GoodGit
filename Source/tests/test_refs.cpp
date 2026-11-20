@@ -928,11 +928,13 @@ GG_TEST("refs", "deleting many tags with long names needs no long command line; 
     s.git(repo, {"update-ref", "--stdin"}, create);
     GG_REQUIRE(s.openRepository(repo));
     s.session()->actions().deleteTags(names); // over 180 KB of names
-    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"tag", "--list", "many-*"}).empty(); }, 30.0f));
-    s.settle();
+    // Wait for idle, not with git polls: "git tag --list" during the ref rewrite can fail
+    // with "Duplicated ref", and a failed test git call ends the test.
+    GG_CHECK(s.settle(30.0f));
+    GG_CHECK(s.gitOut(repo, {"tag", "--list", "many-*"}).empty());
     s.session()->actions().undo(false);
-    GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/tags/" + names.front()) && refExists(s, repo, "refs/tags/" + names.back()); }, 30.0f));
-    s.settle();
+    GG_CHECK(s.settle(30.0f));
+    GG_CHECK(refExists(s, repo, "refs/tags/" + names.front()) && refExists(s, repo, "refs/tags/" + names.back()));
     GG_CHECK(s.gitOut(repo, {"tag", "--list", "many-*"}).size() > 3000 * 60);
 }
 
