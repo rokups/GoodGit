@@ -65,6 +65,7 @@ StatusPtr compareBackends(ImGuiTestContext* ctx, const fs::path& repo)
     const auto viaLibgit2 = readStatus(handle.get(), 1, cancel, nullptr, StatusBackend::Libgit2);
     if (!viaGit || !viaLibgit2) {
         ctx->LogError("a status backend returned no result");
+        GG_CHECK(false);
         return nullptr;
     }
     std::string report;

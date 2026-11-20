@@ -311,11 +311,19 @@ GG_TEST("edges", "marker-like text: only complete regions are conflicts (CRLF, n
     const auto r = s.gitgg(repo, {"conflicts", "HEAD"});
     GG_CHECK_EQ(r.exitCode, 1);
     for (const auto& [name, text] : regions)
-        if (r.out.find(name + " (2 sides)") == std::string::npos)
+    {
+        const bool found = r.out.find(name + " (2 sides)") != std::string::npos;
+        if (!found)
             ctx->LogError("%s: not a conflict:\n%s", name.c_str(), r.out.c_str());
+        GG_CHECK(found);
+    }
     for (const auto& [name, text] : plain)
-        if (r.out.find(name) != std::string::npos)
+    {
+        const bool taken = r.out.find(name) != std::string::npos;
+        if (taken)
             ctx->LogError("%s: taken for a conflict", name.c_str());
+        GG_CHECK(!taken);
+    }
     GG_CHECK_EQ(gg::splitLines(gg::trim(r.out)).size(), regions.size());
     // ggui's scan of the working tree agrees.
     for (const auto& [name, text] : regions)

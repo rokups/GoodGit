@@ -174,6 +174,7 @@ const Preview* previewReady(Scenario& s, float seconds = 30.0f)
     s.ctx->Yield(2);
     if (ok && !e.preview()->ok)
         s.ctx->LogError("preview: %s", e.preview()->error.c_str());
+    IM_CHECK_NO_RET(!ok || e.preview()->ok);
     return ok ? e.preview().get() : nullptr;
 }
 

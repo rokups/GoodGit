@@ -114,6 +114,7 @@ Imgui prepareImgui(Scenario& s)
         const size_t at = text.find(from);
         if (at == std::string::npos) {
             s.ctx->LogError("readme: anchor not found in %s", rel.c_str());
+            GG_CHECK(false);
             return;
         }
         text.replace(at, from.size(), to);
@@ -129,8 +130,10 @@ Imgui prepareImgui(Scenario& s)
         const std::string date = "2026-09-30T10:" + std::string(minute < 10 ? "0" : "") + std::to_string(minute) + ":00+0200";
         req.env.emplace_back("GIT_AUTHOR_DATE", date);
         req.env.emplace_back("GIT_COMMITTER_DATE", date);
-        if (!gg::run(req).ok())
+        const bool committed = gg::run(req).ok();
+        if (!committed)
             s.ctx->LogError("readme: commit '%s' failed", message.c_str());
+        GG_CHECK(committed);
         return s.head(dest);
     };
     s.git(dest, {"switch", "-q", "-c", kBranch});

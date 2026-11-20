@@ -240,6 +240,7 @@ GG_TEST("diff", "text is selectable with the mouse in both views")
     showFile(s, r.change, "code.cpp");
     auto drag = [&](const std::string& windowRef) -> std::string {
         ImGuiWindow* w = ctx->GetWindowByRef(windowRef.c_str());
+        GG_CHECK(w != nullptr);
         if (!w) {
             ctx->LogError("no editor window %s", windowRef.c_str());
             return {};

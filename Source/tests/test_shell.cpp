@@ -1156,8 +1156,12 @@ GG_TEST("shell", "view settings persist across a restart")
     const char* raw = ImGui::SaveIniSettingsToMemory(&n);
     const std::string ini(raw, n);
     for (const char* want : {"[GGUIView][History]", "Stashes=0", "ConflictedOnly=1", "[GGUIView][Diff]", "SideBySide=1", "Whitespace=2", "Context=5", "[GGUIView][Rebase]", "NewestFirst=1", "[GGUIView][Branches]", "HideNew=1", "[GGUIView][Tags]"})
-        if (ini.find(want) == std::string::npos)
+    {
+        const bool found = ini.find(want) != std::string::npos;
+        if (!found)
             ctx->LogError("imgui.ini lacks %s:\n%s", want, ini.c_str());
+        GG_CHECK(found);
+    }
     // The imgui.ini write is requested by MarkIniSettingsDirty (WantSaveIniSettings): force it here.
     ImGui::GetIO().WantSaveIniSettings = true;
     ctx->Yield(2);
