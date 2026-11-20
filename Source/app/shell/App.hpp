@@ -208,6 +208,7 @@ private:
     // Runs `git --version` off the UI thread, then `done(ok)`. When git is missing or too old a
     // blocking prompt offers Retry (calls `retry`) and Quit.
     void checkGit(std::function<void(bool ok)> done, std::function<void()> retry);
+    void retireSession(); // closes all dialogs, then moves the session to m_closing
     void openNow(const std::filesystem::path& path);
     // Opens `path` unless another ggui has its repository open (that window is raised instead).
     // `quiet`: no notice then (the automatic opening of the recent repository).
