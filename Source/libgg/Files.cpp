@@ -3,7 +3,8 @@
 #include <cerrno>
 #include <chrono>
 #include <fstream>
-#include <iterator>
+#include <functional>
+#include <string>
 #include <thread>
 
 namespace gg {
@@ -30,20 +31,28 @@ bool readFile(const fs::path& path, std::string& out)
     std::ifstream in(path, std::ios::binary);
     if (!in)
         return false;
-    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    return !in.bad();
+    std::string data;
+    char buf[65536];
+    while (in.read(buf, sizeof buf) || in.gcount() > 0)
+        data.append(buf, static_cast<size_t>(in.gcount()));
+    if (in.bad() || !in.eof()) // a directory opens, then fails at the first read
+        return false;
+    out = std::move(data);
+    return true;
 }
 
 std::error_code writeFileAtomic(const fs::path& path, std::string_view text)
 {
-    const fs::path tmp = path.parent_path() / (path.filename().string() + ".gg-tmp");
+    // A unique name: it must not hit a user file or the tmp file of a concurrent writer.
+    fs::path tmp = path;
+    tmp += "." + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-"
+        + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         out.write(text.data(), static_cast<std::streamsize>(text.size()));
-        out.flush();
+        out.close();
         if (!out) {
             std::error_code ec(errno ? errno : EIO, std::generic_category());
-            out.close();
             std::error_code ignore;
             fs::remove(tmp, ignore);
             return ec;
