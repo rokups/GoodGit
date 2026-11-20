@@ -97,6 +97,7 @@ private:
     // Scrolls the list to the row `key` once, after an automatic selection (called while the row is drawn).
     void scrollToCurrent(const std::string& key);
     void drawGroup(FileGroup group, const char* title, int count);
+    void drawFiles(const std::vector<const FileRow*>& rows);
     void drawFile(const FileRow& row, int flatIndex);
     void drawFileMenu(const FileRow& row);
     // Double-click: new files open in the editor, others in the diff tool against the parent.

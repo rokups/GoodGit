@@ -491,7 +491,7 @@ void ChangesPanel::scrollToCurrent(const std::string& key)
     if (!m_scrollToCurrent || key != m_current)
         return;
     m_scrollToCurrent = false;
-    ImGui::SetScrollHereY(0.5f); // the list draws every row (no clipper), so the row has its position now
+    ImGui::SetScrollHereY(0.5f); // drawFiles() keeps this row inside the clipper range
 }
 
 void ChangesPanel::moveCurrent(int direction)
@@ -1136,6 +1136,22 @@ void ChangesPanel::dropTarget(FileGroup group)
     ImGui::EndDragDropTarget();
 }
 
+// Draws only the rows in view. The row that waits for a scroll is always drawn: the scroll needs its position.
+void ChangesPanel::drawFiles(const std::vector<const FileRow*>& rows)
+{
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(rows.size()));
+    if (m_scrollToCurrent)
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i]->key() == m_current) {
+                clipper.IncludeItemByIndex(static_cast<int>(i));
+                break;
+            }
+    while (clipper.Step())
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+            drawFile(*rows[static_cast<size_t>(i)], i);
+}
+
 void ChangesPanel::drawGroup(FileGroup group, const char* title, int count)
 {
     const bool worktreeGroup = group == FileGroup::Staged || group == FileGroup::Unstaged;
@@ -1173,10 +1189,11 @@ void ChangesPanel::drawGroup(FileGroup group, const char* title, int count)
     }
     ImGui::EndDisabled();
     if (open) {
-        int i = 0;
+        std::vector<const FileRow*> rows;
         for (const FileRow* r : m_visible)
             if (r->group == group)
-                drawFile(*r, i++);
+                rows.push_back(r);
+        drawFiles(rows);
     }
     ImGui::PopID();
 }
@@ -1336,9 +1353,7 @@ void ChangesPanel::draw(bool* open)
         drawGroup(FileGroup::StashIndex, "Index", counts[static_cast<int>(FileGroup::StashIndex)]);
         drawGroup(FileGroup::StashUntracked, "Untracked", counts[static_cast<int>(FileGroup::StashUntracked)]);
     } else {
-        int i = 0;
-        for (const FileRow* r : m_visible)
-            drawFile(*r, i++);
+        drawFiles(m_visible);
         if (m_rows.empty() && !m_loading && m_selection.kind == SelKind::Commit)
             ImGui::TextDisabled("No file changes");
     }

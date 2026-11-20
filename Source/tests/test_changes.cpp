@@ -492,6 +492,8 @@ GG_TEST("changes", "the remembered file: a rename selects the renamed row, a fil
     // A file near the end of a long list: the list scrolls to its row after a commit with one file.
     selectCommit(s, m1);
     GG_REQUIRE(s.waitUntil([&] { return changes.rows().size() == 60 && shows("m/m00.txt"); }));
+    ctx->ScrollToBottom(s.child("//Changes", "##files").c_str()); // the list draws only the rows in view
+    ctx->Yield(2);
     ctx->ItemClick(fileRef(s, nullptr, "m/m55.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return shows("m/m55.txt"); }));
     selectCommit(s, c);
@@ -922,7 +924,7 @@ GG_TEST("changes", "file tooltips wait until scrolling stops")
     for (int i = 0; i < 80; ++i)
         s.write(repo, "dir/file" + std::to_string(100 + i) + ".txt", "x\n");
     GG_REQUIRE(s.openRepository(repo));
-    const std::string row = fileRef(s, "Untracked", "dir/file110.txt");
+    const std::string row = fileRef(s, "Untracked", "dir/file101.txt");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     auto tipShown = [&] {
         ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
