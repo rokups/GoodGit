@@ -395,12 +395,14 @@ struct GroupDelete {
 };
 
 // The context menu of a group row: the menu item that shows or hides the refs below the row.
-// With branches in `del`, the Delete menu follows after a separator.
+// With branches in `makeDel`, the Delete menu follows after a separator. `makeDel` runs only while
+// the menu is open: it is costly on a repository with many branches.
 void groupMenu(HistoryPanel& history, const char* strId, const std::vector<std::string>& refs,
-    const GroupDelete& del = {})
+    const std::function<GroupDelete()>& makeDel = {})
 {
     if (!beginContextMenu(strId))
         return;
+    const GroupDelete del = makeDel ? makeDel() : GroupDelete{};
     if (!refs.empty())
         visibilityMenuItem(history, refs, refsState(history, refs).all);
     if (del.session && !del.names.empty() && del.tags && del.snapshot) {
@@ -510,6 +512,7 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
                 ImGui::PopStyleColor();
         }
         if (groupRefs) {
+            const auto makeDel = [&] {
             GroupDelete del;
             if (groupRefs->kind == RefKind::LocalBranch && groupRefs->session && groupRefs->snapshot) {
                 del.session = groupRefs->session;
@@ -529,7 +532,9 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
                 del.remote = true;
                 collectNames(e.children, *groupRefs, del.names);
             }
-            groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below, del);
+            return del;
+            };
+            groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below, makeDel);
         }
         if (!fitted.empty() && itemHoveredForTooltip())
             tooltip("%s", e.label.c_str());

@@ -61,7 +61,10 @@ public:
     bool refStoredVisible(const std::string& fullName) const { return !m_hidden.count(fullName); }
     bool refVisible(const std::string& fullName) const
     {
-        if (m_snapshot && !m_snapshot->headDetached && fullName == "refs/heads/" + m_snapshot->headBranch)
+        // No string is built here: the side panels call this for each ref in each frame.
+        constexpr std::string_view heads = "refs/heads/";
+        if (m_snapshot && !m_snapshot->headDetached && fullName.size() == heads.size() + m_snapshot->headBranch.size()
+            && fullName.compare(0, heads.size(), heads) == 0 && fullName.compare(heads.size(), std::string::npos, m_snapshot->headBranch) == 0)
             return true;
         return !m_hidden.count(fullName);
     }
