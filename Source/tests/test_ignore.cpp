@@ -90,6 +90,8 @@ GG_TEST("ignore", "Ignore all by extension, folder and .git/info/exclude")
     s.contextMenu(fileRef(s, "Untracked", "sub/y.dat").c_str(), "Ignore/Ignore folder");
     GG_CHECK(s.waitUntil([&] { return !hasRow(s, "sub/y.dat"); }, 20.0f));
     GG_CHECK_STR_EQ(s.read(repo, ".gitignore"), "*.log\n/sub/\n");
+    ctx->ScrollToBottom(s.child("//Changes", "##files").c_str()); // the list draws only the rows in view
+    ctx->Yield(2);
     s.contextMenu(fileRef(s, "Untracked", "v.txt").c_str(), "Ignore/Add to .git\\/info\\/exclude");
     GG_CHECK(s.waitUntil([&] { return !hasRow(s, "v.txt"); }, 20.0f));
     GG_CHECK(s.read(repo, ".git/info/exclude").ends_with("/v.txt\n"));
