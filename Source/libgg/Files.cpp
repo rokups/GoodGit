@@ -55,8 +55,9 @@ bool readFile(const fs::path& path, std::string& out)
 
 namespace {
 
-// Creates a new file (it fails when the name exists), writes all data, flushes it to disk.
-std::error_code writeTempFile(const fs::path& tmp, std::string_view text)
+// Creates a new file (it fails when the name exists), writes all data, flushes it to disk. A private file
+// gets its final mode later, so it is never readable by others before that.
+std::error_code writeTempFile(const fs::path& tmp, std::string_view text, [[maybe_unused]] bool privateFile)
 {
 #ifdef _WIN32
     HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -67,8 +68,11 @@ std::error_code writeTempFile(const fs::path& tmp, std::string_view text)
     while (!ec && done < text.size()) {
         DWORD n = 0;
         const DWORD want = static_cast<DWORD>(std::min<size_t>(text.size() - done, 1u << 30));
-        if (!WriteFile(h, text.data() + done, want, &n, nullptr) || n == 0)
-            ec = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+        if (!WriteFile(h, text.data() + done, want, &n, nullptr) || n == 0) {
+            const DWORD err = GetLastError(); // 0 after a write of no bytes: still an error, else no progress
+            ec = err ? std::error_code(static_cast<int>(err), std::system_category())
+                     : std::make_error_code(std::errc::io_error);
+        }
         done += n;
     }
     if (!ec && !FlushFileBuffers(h))
@@ -76,7 +80,7 @@ std::error_code writeTempFile(const fs::path& tmp, std::string_view text)
     CloseHandle(h);
     return ec;
 #else
-    const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+    const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, privateFile ? 0600 : 0666);
     if (fd < 0)
         return std::error_code(errno, std::generic_category());
     std::error_code ec;
@@ -111,13 +115,12 @@ std::error_code writeFileAtomic(const fs::path& path, std::string_view text, std
 #endif
     fs::path tmp = path;
     tmp += "." + std::to_string(pid) + "-" + std::to_string(counter.fetch_add(1)) + ".tmp";
-    std::error_code ec = writeTempFile(tmp, text);
-    if (!ec) {
-        std::error_code ignore;
-        const fs::perms perms = mode ? *mode : fs::status(path, ignore).permissions();
-        if (mode || !ignore)
-            fs::permissions(tmp, perms, ec);
-    }
+    std::error_code noTarget;
+    const fs::perms perms = mode ? *mode : fs::status(path, noTarget).permissions();
+    const bool setMode = mode || !noTarget;
+    std::error_code ec = writeTempFile(tmp, text, setMode);
+    if (!ec && setMode)
+        fs::permissions(tmp, perms, ec);
     if (!ec)
         ec = replaceFile(tmp, path);
     if (ec) {
