@@ -22,6 +22,7 @@
 #include <cctype>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 namespace ggui {
 
@@ -302,12 +303,12 @@ void ChangesPanel::rebuildFromStatus()
     std::set<std::string> keys;
     for (const auto& r : m_rows)
         keys.insert(r.key());
+    std::unordered_map<std::string, std::string> keyByPath; // the first row of a path wins
+    for (const auto& r : m_rows)
+        keyByPath.emplace(r.path, r.key());
     const auto follow = [&](const std::string& key) {
-        const std::string path = key.substr(key.find(':') + 1);
-        for (const auto& r : m_rows)
-            if (r.path == path)
-                return r.key();
-        return std::string();
+        const auto it = keyByPath.find(key.substr(key.find(':') + 1));
+        return it == keyByPath.end() ? std::string() : it->second;
     };
     std::set<std::string> kept;
     for (const auto& k : m_selected) {
