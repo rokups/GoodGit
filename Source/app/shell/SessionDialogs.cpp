@@ -20,6 +20,9 @@ namespace {
 
 bool nonEmpty(const Form& f, const char* id) { return !gg::trim(f.text(id)).empty(); }
 
+// A name or revision that starts with - is read by git as an option, so the dialog refuses it.
+bool refText(const Form& f, const char* id) { return nonEmpty(f, id) && gg::trim(f.text(id))[0] != '-'; }
+
 std::vector<std::string> remoteNames(const core::SnapshotPtr& snap)
 {
     std::vector<std::string> names;
@@ -280,7 +283,7 @@ void Session::showCreateBranchDialog(const std::string& at, const std::string& n
     f.add(checkout);
     f.buttons.push_back({"Create",
         [this](Form& form) { m_actions->createBranch(gg::trim(form.text("name")), gg::trim(form.text("at")), form.checked("checkout")); },
-        [](const Form& form) { return nonEmpty(form, "name") && nonEmpty(form, "at"); }});
+        [](const Form& form) { return refText(form, "name") && refText(form, "at"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -302,7 +305,7 @@ void Session::showCreateTagDialog(const std::string& at)
                 message = gg::trim(form.text("name"));
             m_actions->createTag(gg::trim(form.text("name")), gg::trim(form.text("at")), message);
         },
-        [](const Form& form) { return nonEmpty(form, "name") && nonEmpty(form, "at"); }});
+        [](const Form& form) { return refText(form, "name") && refText(form, "at"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -648,6 +651,7 @@ void Session::showApplyPatchDialog()
                                  std::vector<std::string> args{"apply", "--whitespace=nowarn"};
                                  if (cached)
                                      args.emplace_back("--cached");
+                                 args.emplace_back("--");
                                  args.push_back(file);
                                  ctx.git(args);
                              });
@@ -662,7 +666,7 @@ void Session::showRenameBranchDialog(const std::string& branch)
     f.title = "Rename branch";
     f.add(Field{Field::Text, "name", "New name for " + branch, branch});
     f.buttons.push_back({"Rename", [this, branch](Form& form) { m_actions->renameBranch(branch, gg::trim(form.text("name"))); },
-        [branch](const Form& form) { return nonEmpty(form, "name") && gg::trim(form.text("name")) != branch; }});
+        [branch](const Form& form) { return refText(form, "name") && gg::trim(form.text("name")) != branch; }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

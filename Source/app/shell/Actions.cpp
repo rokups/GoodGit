@@ -1044,18 +1044,18 @@ void Actions::createBranch(const std::string& name, const std::string& at, bool 
 {
     run("create branch " + name, [name, at, checkoutAfter](MutationContext& ctx) {
         if (checkoutAfter) {
-            ctx.git({"switch", "-q", "-c", name, at});
+            ctx.git({"switch", "-q", "-c", name, "--end-of-options", at});
             ctx.worktreeFollowsIndex = true;
             ctx.submodules = SubmoduleSync::Update;
         } else {
-            ctx.git({"branch", name, at});
+            ctx.git({"branch", "--", name, at});
         }
     });
 }
 
 void Actions::renameBranch(const std::string& from, const std::string& to)
 {
-    run("rename branch " + from, [from, to](MutationContext& ctx) { ctx.git({"branch", "-m", from, to}); });
+    run("rename branch " + from, [from, to](MutationContext& ctx) { ctx.git({"branch", "-m", "--", from, to}); });
 }
 
 void Actions::deleteBranch(const std::string& name, bool force, const std::vector<std::string>& remotes, bool local)
@@ -1253,9 +1253,9 @@ void Actions::createTag(const std::string& name, const std::string& at, const st
 {
     run("create tag " + name, [name, at, message](MutationContext& ctx) {
         if (message.empty())
-            ctx.git({"tag", name, at});
+            ctx.git({"tag", "--", name, at});
         else
-            ctx.git({"tag", "-a", "-F", "-", name, at}, message);
+            ctx.git({"tag", "-a", "-F", "-", "--", name, at}, message);
     });
 }
 

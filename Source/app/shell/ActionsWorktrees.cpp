@@ -69,13 +69,13 @@ void Actions::addWorktree(AddWorktree req, Callback done)
             const std::string start = req.start.empty() ? std::string("HEAD") : req.start;
             switch (req.mode) {
             case AddWorktree::Mode::NewBranch:
-                args.insert(args.end(), {"-b", req.branch, req.path, start});
+                args.insert(args.end(), {"-b", req.branch, "--", req.path, start});
                 break;
             case AddWorktree::Mode::ExistingBranch:
-                args.insert(args.end(), {req.path, req.branch});
+                args.insert(args.end(), {"--", req.path, req.branch});
                 break;
             case AddWorktree::Mode::Detached:
-                args.insert(args.end(), {"--detach", req.path, start});
+                args.insert(args.end(), {"--detach", "--", req.path, start});
                 break;
             }
             ctx.git(args);
