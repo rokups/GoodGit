@@ -292,4 +292,19 @@ GG_TEST("cli", "gg::run kills a cancelled child group that ignores SIGTERM after
     GG_CHECK(secs < 5.0);
 }
 
+GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all input")
+{
+    gg::RunRequest r;
+    r.args = {"sh", "-c", "exec 0<&-; sleep 1"};
+    r.input.assign(1 << 20, 'x');
+    gg::RunResult result;
+    const auto start = std::chrono::steady_clock::now();
+    std::thread worker([&] { result = gg::run(r); });
+    worker.join();
+    const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(!result.startFailed);
+    GG_CHECK_EQ(result.exitCode, 0); // no 128 + SIGPIPE
+    GG_CHECK(secs > 0.5 && secs < 5.0);
+}
+
 } // namespace ggtest

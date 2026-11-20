@@ -369,6 +369,9 @@ RunResult runProcess(const RunRequest& request)
         return result;
     }
 
+    // A child that closes stdin early must give EPIPE, not kill this process.
+    static const bool sigpipeIgnored = (std::signal(SIGPIPE, SIG_IGN), true);
+    (void)sigpipeIgnored;
     setNonBlocking(inPipe[1]);
     setNonBlocking(outPipe[0]);
     setNonBlocking(errPipe[0]);
@@ -444,14 +447,15 @@ RunResult runProcess(const RunRequest& request)
             }
         }
         if (iIn >= 0 && fds[iIn].revents) {
-            const ssize_t w = (fds[iIn].revents & POLLOUT)
-                ? write(inFd, request.input.data() + inOff, request.input.size() - inOff)
-                : -1;
-            if (w > 0)
-                inOff += static_cast<size_t>(w);
-            if (w < 0 && errno == EAGAIN)
-                continue;
-            if (w < 0 || inOff >= request.input.size()) {
+            // Write only on POLLOUT; errno is stale otherwise. Any other event means the reader is gone.
+            bool done = !(fds[iIn].revents & POLLOUT);
+            if (!done) {
+                const ssize_t w = write(inFd, request.input.data() + inOff, request.input.size() - inOff);
+                if (w > 0)
+                    inOff += static_cast<size_t>(w);
+                done = (w < 0 && errno != EAGAIN && errno != EINTR) || inOff >= request.input.size();
+            }
+            if (done) {
                 close(inFd);
                 inFd = -1;
             }
