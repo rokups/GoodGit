@@ -386,7 +386,7 @@ jobs:
           notes="Built by CI from master at ${GITHUB_SHA::7} (all tests passed). Replaced on every successful master build."
           # The release is made anew: an edit of the target failed with 403 (the workflow token), and self-update
           # reads target_commitish, so an upload into the old release would point the updater at the wrong commit.
-          # The create retries: between the delete and a create, clients see no update, which does no harm.
+          # The create retries: between the delete and a create, clients report a failed update check.
           gh release delete latest --yes || true
           for i in 1 2 3; do
             gh release create latest dist/* --prerelease --title "Latest build" --notes "$notes" --target "$GITHUB_SHA" && break
