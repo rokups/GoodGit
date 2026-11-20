@@ -1094,6 +1094,7 @@ GG_TEST("edit", "dialog edge cases: split one file, push and set upstream withou
     s.dialogButton("Create tag", "Create");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"cat-file", "-t", "v-annotated"}).out == "tag\n"; }));
     GG_CHECK_STR_EQ(s.gitOut(repo, {"tag", "-l", "--format=%(contents:subject)", "v-annotated"}), "v-annotated");
+    s.settle(); // the Add remote button stays disabled while the tag write is busy
     // The first remote is suggested as "origin".
     s.showPanel("Remotes");
     ctx->ItemClick("//Remotes/###add_remote");
