@@ -270,6 +270,8 @@ public:
     void submoduleAdd(const std::string& url, const std::string& path, const std::string& branch);
     // "" when `path` can be the path of a new submodule; else the reason it cannot (empty, absolute or with "..").
     static std::string submodulePathProblem(const std::string& path);
+    // "" when `url` holds no password; else the reason (scheme://user:password@host). GG-103: .gitmodules is committed.
+    static std::string submoduleUrlProblem(const std::string& url);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
         bool setUpstream, bool forceWithLease, bool tags = false);
     // GG-22: a push with a .gitmodules file uses --recurse-submodules=on-demand: git pushes the submodules first.
