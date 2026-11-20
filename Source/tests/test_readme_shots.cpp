@@ -69,19 +69,42 @@ Imgui prepareImgui(Scenario& s)
     s.git(dest, {"config", "user.name", "Rokas Kupstys"});
     s.git(dest, {"config", "user.email", "rokupstys@gmail.com"});
     s.git(dest, {"reset", "-q", "--hard", kPinned});
-    // Keep master, docking and a feature branch; drop the remaining remote-tracking branches.
+    // Freeze the remote-tracking branches at the pinned date. Master goes to kPinned. Docking and
+    // the feature branches go to their last commit on or before the date of kPinned. The other
+    // branches are removed.
+    const std::string pinnedDate = s.gitOut(dest, {"log", "-1", "--format=%cI", kPinned});
+    const std::string pinnedRev = s.revParse(dest, kPinned);
     for (const std::string& ref : s.refs(dest)) {
         const std::string name = ref.substr(0, ref.find(' '));
         const std::string prefix = "refs/remotes/origin/";
         if (name.rfind(prefix, 0) != 0)
             continue;
         const std::string branch = name.substr(prefix.size());
-        bool keep = branch == "master" || branch == "HEAD";
+        if (branch == "HEAD")
+            continue;
+        if (branch == "master") {
+            s.git(dest, {"update-ref", name, pinnedRev});
+            continue;
+        }
+        bool keep = false;
         for (const char* k : kKeepRemotes)
             keep = keep || branch == k;
-        if (!keep)
+        if (!keep) {
             s.git(dest, {"update-ref", "-d", name});
+            continue;
+        }
+        // Nothing to do when the branch has no commit that is not in kPinned.
+        if (s.gitOut(dest, {"rev-list", "-1", name, "^" + pinnedRev}).empty())
+            continue;
+        const std::string older = s.gitOut(dest, {"rev-list", "-1", "--first-parent", "--before=" + pinnedDate, name});
+        if (older.empty())
+            s.git(dest, {"update-ref", "-d", name});
+        else
+            s.git(dest, {"update-ref", name, older});
     }
+    // Remove the tags of releases that are newer than kPinned.
+    for (const auto& tag : gg::splitLines(s.gitOut(dest, {"tag", "--no-merged", pinnedRev})))
+        s.git(dest, {"tag", "-d", tag});
     s.git(dest, {"remote", "set-url", "origin", "https://github.com/ocornut/imgui.git"});
     r.path = dest;
     r.shown = s.revParse(dest, kShown);
