@@ -162,7 +162,7 @@ std::string summaryNamesText(const core::RepoSummary& s)
 void disabledMenuItem(const char* icon, const char* label, const char* reason, const char* shortcut)
 {
     ImGui::MenuItemEx(label, icon, shortcut, false, false);
-    if (reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (reason && itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("%s", reason);
 }
 
@@ -391,6 +391,8 @@ bool listScrolling()
 }
 
 bool tooltipAllowed() { return !listScrolling(); }
+
+bool itemHoveredForTooltip(ImGuiHoveredFlags extra) { return ImGui::IsItemHovered(extra | ImGuiHoveredFlags_DelayNormal); }
 
 bool beginTooltip() { return tooltipAllowed() && ImGui::BeginTooltip(); }
 
@@ -663,7 +665,7 @@ void openInFileManager(const std::filesystem::path& path)
 void helpMarker(const char* text)
 {
     ImGui::TextDisabled("(?)");
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip())
         tooltip("%s", text);
 }
 

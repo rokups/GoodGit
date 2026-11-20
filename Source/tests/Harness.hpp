@@ -13,6 +13,7 @@
 #pragma once
 
 #include "util/FrameProbe.hpp"
+#include "util/Ui.hpp"
 
 #include <libgg/GitRunner.hpp>
 
@@ -40,6 +41,9 @@ class Session;
 namespace ggtest {
 
 namespace fs = std::filesystem;
+
+// Seconds a test waits over an item for its tooltip: the tooltip delay and a margin.
+constexpr float kTooltipWait = ggui::kTooltipDelay + 0.5f;
 
 // The separator of PATH's entries, and the program ggui opens folders with (a test fakes it).
 #ifdef _WIN32

@@ -65,6 +65,12 @@ bool listScrolling();
 // Updates the scroll record of every window; the app calls it once at the end of each frame, so listScrolling
 // compares with the previous frame whenever it is asked.
 void trackScrolling();
+// Seconds an item stays hovered before its tooltip shows.
+constexpr float kTooltipDelay = 2.0f;
+// Use this, not ImGui::IsItemHovered, to gate every tooltip. It uses ImGuiHoveredFlags_DelayNormal, which no
+// other code uses; Theme sets style.HoverDelayNormal to kTooltipDelay with every style. `extra` adds flags, for example
+// ImGuiHoveredFlags_AllowWhenDisabled.
+bool itemHoveredForTooltip(ImGuiHoveredFlags extra = 0);
 // Tooltips never show over a scrolling list or editor gutter, only once it is stationary.
 bool tooltipAllowed();
 // ImGui::BeginTooltip() that does nothing (false) while the list is scrolling; every tooltip goes through it.

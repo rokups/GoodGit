@@ -133,7 +133,7 @@ void App::drawGitConfigSettings(Session& s)
         setConfig("--local", {{"extensions.worktreeConfig", worktreeConfig ? "true" : ""}});
     }
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Sets extensions.worktreeConfig: each worktree of this repository can then override "
                 "settings in its own config (the Worktree tab). Off: one config for all worktrees.");
     if (!ImGui::BeginTabBar("##config_scope"))
@@ -166,7 +166,7 @@ void App::drawGitConfigSettings(Session& s)
             ImGui::BeginDisabled(!editable);
             const bool clicked = smallButton(ICON_MS_RESTART_ALT, (std::string("Inherit##") + id).c_str());
             ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                 tooltip("Clear this override and use %s from %s", lower.c_str(), from);
             return clicked;
         };
@@ -305,7 +305,7 @@ void App::drawGitConfigSettings(Session& s)
             }
         }
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("Sets sequence.editor = %s: plain git rebase -i shows its list in ggui (this window, or a new "
                     "one) and goes on with the list you save. Needs git-gg on PATH.",
                 kGguiSequenceEditor);
@@ -343,11 +343,11 @@ void App::drawPathSetting()
     }
     ImGui::EndDisabled();
     if (!pathSetupUsable(support)) {
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", pathSetupUnavailableReason(support).c_str());
         return;
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled)) {
         if (support == PathSetupSupport::Registry) {
             tooltip("Puts %s, which holds git-gg, on your user PATH. "
                     "Takes effect in new terminals; already open ones keep the old PATH.", dir.c_str());
@@ -403,7 +403,7 @@ void App::drawUpdateSetting()
         ImGui::BeginDisabled();
         ImGui::Button("Check for updates##update_check");
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", up.offReason().c_str());
         break;
     case State::Idle:
@@ -501,11 +501,11 @@ void App::drawContextMenuSetting()
     }
     ImGui::EndDisabled();
     if (support != ContextMenuSupport::Available) {
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", contextMenuUnavailableReason(support).c_str());
         return;
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled)) {
         tooltip("Adds \"Open in GoodGit\" for folders to the context menus of Dolphin, Nemo and Nautilus "
                 "(under Scripts), for this user only.");
     }
@@ -595,7 +595,7 @@ void App::drawSettingsWindow()
                 setLogLevel(d.logTrace);
                 m_settings.save();
             }
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                 tooltip("How much ggui writes to the log file. Debug is the default. Trace adds more detail and makes "
                         "the file grow faster. The file is in the logs folder of the settings directory.");
             ImGui::SameLine();
@@ -650,7 +650,7 @@ void App::drawSettingsWindow()
                     }, false, false);
                 }
                 ImGui::EndDisabled();
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                     tooltip("Experimental, non-standard git behavior. "
                             "Rewrites write text conflicts into the files as first-class conflicts and continue. "
                             "Off: merge, rebase, cherry-pick and revert run as plain git and stop at the first conflict; "
@@ -661,7 +661,7 @@ void App::drawSettingsWindow()
                 if (ImGui::Checkbox("Expand to index stages on checkout##expand_stages", &d.expandConflictStages))
                     m_settings.save();
                 ImGui::EndDisabled();
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+                if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                     tooltip("Two-sided first-class conflicts also get index stages 1-3 (git mergetool works on them); "
                             "ggui collapses them again before switching away.");
             }

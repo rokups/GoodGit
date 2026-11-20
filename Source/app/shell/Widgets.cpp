@@ -352,7 +352,7 @@ int rowActions(std::span<const RowAction> actions, bool rowSelected, bool padded
         if (ImGui::Button(labels[k].c_str(), ImVec2(widths[k], bandBottom - bandTop)))
             clicked = static_cast<int>(shown[k]);
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_AllowWhenDisabled))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", a.tip);
         x += widths[k];
     }
@@ -665,7 +665,7 @@ bool textElided(std::string_view text, const char* id, bool tooltip, float width
     // loses low bits. ImGui then takes text that fits as cut and draws an ellipsis. Text that fits is not cut.
     const ImVec2 known = cut ? size : ImVec2(std::min(size.x, bb.Max.x - bb.Min.x), size.y);
     ImGui::RenderTextEllipsis(window->DrawList, bb.Min, bb.Max, bb.Max.x, begin, end, &known);
-    if (cut && tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && beginTooltip()) {
+    if (cut && tooltip && itemHoveredForTooltip() && beginTooltip()) {
         tooltipText(line);
         ImGui::EndTooltip();
     }

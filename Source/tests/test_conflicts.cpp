@@ -917,7 +917,7 @@ GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Chang
     // Not shown under Conflicted: it is an ordinary Modified row carrying the warning.
     GG_CHECK(!s.itemExists((s.child("//Changes", "##files") + "/Conflicted/conflict.txt/###file_conflict.txt").c_str()));
     ctx->MouseMove(row.c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Conflict markers left at line 2, 7"));
 }
 

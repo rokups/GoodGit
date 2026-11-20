@@ -936,16 +936,16 @@ void RebasePanel::drawHeader()
         ImGui::EndDisabled();
         return;
     }
-    if (m_sequence && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (m_sequence && startable && itemHoveredForTooltip())
         tooltip("Hand the list to %s, which goes on with it", m_sequence->remaining ? "git rebase --edit-todo" : "git rebase -i");
-    else if (m_remaining && startable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    else if (m_remaining && startable && itemHoveredForTooltip())
         tooltip("Write git-rebase-todo (through git rebase --edit-todo); Continue goes on from there");
     ImGui::EndDisabled();
-    if (!startable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (!startable && itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("%s", reason.c_str());
     ImGui::SameLine();
     const bool cancel = button(ICON_MS_CLOSE, "Cancel###ir_cancel");
-    if (m_sequence && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (m_sequence && itemHoveredForTooltip())
         tooltip("%s", m_sequence->remaining ? "git rebase --edit-todo keeps the list as it was"
                                             : "git rebase -i stops and nothing changes (git gets an empty list)");
     if (cancel) {
@@ -976,7 +976,7 @@ void RebasePanel::drawHeader()
         const std::string text = "Commit " + base + " and its ancestors have no keep ref after this rebase. "
             "Only the reflog keeps them. Create a branch at " + base + " to keep them.";
         plainText((std::string(ICON_MS_WARNING " ") + text + "###ir_keep_warning").c_str());
-        const bool hovered = ImGui::IsItemHovered();
+        const bool hovered = itemHoveredForTooltip();
         ImGui::PopStyleColor();
         if (hovered)
             tooltip("%s", text.c_str()); // the line is cut at the panel's edge, like an issue line
@@ -987,7 +987,7 @@ void RebasePanel::drawHeader()
         auto warn = [&](const std::string& text, const char* id) {
             ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
             plainText(std::string(ICON_MS_WARNING " ") + text, id);
-            const bool hovered = ImGui::IsItemHovered();
+            const bool hovered = itemHoveredForTooltip();
             ImGui::PopStyleColor();
             if (hovered)
                 tooltip("%s", text.c_str()); // the line is cut at the panel's edge
@@ -1040,7 +1040,7 @@ void RebasePanel::drawRunOptions()
         r.onto = gg::trim(m_onto);
         read(r, true);
     }
-    if (ImGui::IsItemHovered())
+    if (itemHoveredForTooltip())
         tooltip("New base (branch, tag or commit); Enter applies. Empty = the upstream.");
     sameLineIfFits(checkboxWidth("Autosquash"));
     bool autosquash = m_state.autosquash;
@@ -1054,7 +1054,7 @@ void RebasePanel::drawRunOptions()
     bool rebaseMerges = m_state.rebaseMerges;
     if (ImGui::Checkbox("Rebase merges###ir_rebase_merges", &rebaseMerges))
         setRebaseMerges(rebaseMerges);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip())
         tooltip("git rebase --rebase-merges: keep the merges. The list gets label, reset and merge rows "
                 "(Git's list, so the edits so far are replaced) and runs through git rebase.");
     sameLineIfFits(checkboxWidth("Autostash"));
@@ -1077,7 +1077,7 @@ void RebasePanel::drawRunOptions()
     if (ImGui::Combo("Committer date###ir_committer_date", &date, dates, 2))
         m_options.keepCommitterDate = date == 1;
     ImGui::EndDisabled();
-    if (native && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (native && itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("git rebase sets the committer date to now; Keep original needs the in-memory engine.");
     const char* emptyChoices[] = {"Keep", "Drop", "Ask"}; // gg::rewrite::Emptied order
     const float emptyWidth = comboWidth({emptyChoices[0], emptyChoices[1], emptyChoices[2]});
@@ -1088,7 +1088,7 @@ void RebasePanel::drawRunOptions()
         m_options.emptied = static_cast<gg::rewrite::Emptied>(emptied);
         onTodoChanged();
     }
-    if (ImGui::IsItemHovered())
+    if (itemHoveredForTooltip())
         tooltip("Commits whose changes are already in the new base (git rebase --empty): keep them as "
                 "empty commits, drop them, or ask at Start (Git's default).");
 }
@@ -1100,24 +1100,24 @@ void RebasePanel::drawTools()
     if (ImGui::Button(ICON_MS_UNDO "###ir_undo"))
         undo(false);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Undo (Ctrl+Z)");
     sameLineIfFits(ImGui::GetFrameHeight());
     ImGui::BeginDisabled(m_redo.empty());
     if (ImGui::Button(ICON_MS_REDO "###ir_redo"))
         undo(true);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Redo (Ctrl+Y)");
     sameLineIfFits(buttonWidth(ICON_MS_TERMINAL, "Insert exec"));
     if (button(ICON_MS_TERMINAL, "Insert exec###ir_insert_exec"))
         insertRow(Action::Exec);
-    if (ImGui::IsItemHovered())
+    if (itemHoveredForTooltip())
         tooltip("After the selected rows (x)");
     sameLineIfFits(buttonWidth(ICON_MS_PAUSE, "Insert break"));
     if (button(ICON_MS_PAUSE, "Insert break###ir_insert_break"))
         insertRow(Action::Break);
-    if (ImGui::IsItemHovered())
+    if (itemHoveredForTooltip())
         tooltip("After the selected rows (b)");
     if (m_state.rebaseMerges || todo::hasMergeRows(m_state.todo)) {
         struct Insert {
@@ -1135,7 +1135,7 @@ void RebasePanel::drawTools()
             sameLineIfFits(buttonWidth(in.icon, in.label));
             if (button(in.icon, in.label))
                 insertRow(in.action);
-            if (ImGui::IsItemHovered())
+            if (itemHoveredForTooltip())
                 tooltip("%s", in.tip);
         }
     }
@@ -1243,7 +1243,7 @@ void RebasePanel::drawPreview()
         ImGui::PushStyleColor(ImGuiCol_Text, p.warning);
         plainText(("Stay on the old commits: " + staying + "###irp_staying").c_str());
         ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered())
+        if (itemHoveredForTooltip())
             tooltip("Without an update-ref row these branches keep pointing at the commits before the rebase.");
     }
     for (size_t k = 0; k < pv.aside.size(); ++k) {
@@ -1252,7 +1252,7 @@ void RebasePanel::drawPreview()
         const std::string head = a.branch + ": " + shortHex(a.id, n) + " ", tail = ", before the squash";
         const float room = std::max(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize((head + tail).c_str()).x, ImGui::GetFontSize() * 6);
         plainText((head + fitText(std::string(firstLine(a.subject)), room) + tail + "###irp_aside_" + std::to_string(k)).c_str());
-        if (ImGui::IsItemHovered())
+        if (itemHoveredForTooltip())
             tooltip("Its update-ref row comes before squash/fixup rows: the branch keeps the commit as it was "
                     "then, and the squash/fixup amends a copy (as git rebase -i does).");
     }
@@ -1322,7 +1322,7 @@ void RebasePanel::drawPreview()
                 }
             }
         }
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && itemHoveredForTooltip()) {
             // The preview is replaced as a whole; the row's ID tells the rows of one preview apart.
             const void* previewAt = m_preview.get();
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(),
@@ -1525,7 +1525,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         }
         ImGui::EndDragDropTarget();
     }
-    if (hasInfo && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (hasInfo && tooltipAllowed() && itemHoveredForTooltip())
         // The row's ID carries its index, and a move puts another commit under the cursor: the commit is the revision.
         idTooltip(item.commit, cachedTooltipText(ImGui::GetItemID(), ImHashStr(item.commit.c_str()), [&] {
             return info->second.authorName + " <" + info->second.authorEmail + ">"
@@ -1568,7 +1568,7 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
             ImGui::PushStyleColor(ImGuiCol_Text, issue.error() ? p.errorText : p.warning);
             ImGui::TextUnformatted(issue.error() ? ICON_MS_ERROR : ICON_MS_WARNING);
             ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered())
+            if (itemHoveredForTooltip())
                 tooltip("%s", issue.message.c_str());
             ImGui::SameLine();
             break;

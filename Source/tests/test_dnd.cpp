@@ -488,7 +488,7 @@ GG_TEST("dnd", "a branch of another worktree moves through the Move branch dialo
     GG_CHECK(itemDisabled(s, "###rebase"));
     GG_CHECK(!itemDisabled(s, "###move"));
     ctx->MouseMove("//$FOCUSED/###rebase");
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "side is checked out in the worktree"));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);

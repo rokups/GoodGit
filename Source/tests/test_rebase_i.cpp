@@ -1386,10 +1386,10 @@ GG_TEST("rebase-i", "live preview: first-class conflicts and moving branches, th
     ctx->ItemClick((previewPane(s) + "/**/###irp_row_1").c_str());
     GG_CHECK(editor(s).selection() == (std::set<size_t>{2}));
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_1").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "First-class conflicts in:"));
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_0").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "New commit from"));
 
     // Every commit dropped: the branches go to the base.
@@ -1461,7 +1461,7 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     GG_CHECK(p->rows[0].conflicts.empty());
     GG_CHECK(previewShows(s, "2 need a decision"));
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_0").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "bin.dat (binary)"));
     // Start asks about exactly those; Cancel leaves everything as it was.
     const std::string tip = s.head(path);
@@ -1496,10 +1496,10 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     GG_CHECK(previewShows(s, "5 commit(s), 2 empty"));
     s.screenshot("rebase-i-preview-empty");
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_4").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Becomes empty"));
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_2").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "it was empty before"));
     // Start asks about the commit that becomes empty (git rebase -i stops there); Cancel changes
     // nothing, "Keep them" gives the previewed result.
@@ -1862,7 +1862,7 @@ GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the f
     GG_CHECK_STR_EQ(p->aside[0].subject, "c3 add c");
     GG_CHECK(previewShows(s, "part1: "));
     ctx->MouseMove((previewPane(s) + "/**/###irp_aside_0").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "the squash/fixup amends a copy"));
     const Preview expected = *p;
     const std::string todoText = todo::format(editor(s).todo());
@@ -2216,7 +2216,7 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
         GG_CHECK(row.unchanged && !row.newConflicts && row.resolved.empty());
     GG_CHECK(conflictPaths(p->rows[1]) == (Rows{"a.txt"}) && conflictPaths(p->rows[2]) == (Rows{"a.txt"}));
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_2").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Conflicts carried along in:"));
     key(s, c4a, ImGuiKey_F);
     key(s, c5a, ImGuiKey_R);
@@ -2268,7 +2268,7 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
         GG_CHECK(row.conflicts.empty() && row.resolved == (Rows{"a.txt"}));
     GG_CHECK(previewShows(s, "2 commit(s), 2 resolve conflicts"));
     ctx->MouseMove((previewPane(s) + "/**/###irp_row_0").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Conflicts resolved in:"));
     const Preview resolved = *p;
     const fs::path copy2 = copyRepo(s, path, "git-copy-2");

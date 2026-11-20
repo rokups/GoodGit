@@ -1262,7 +1262,7 @@ GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
     ctx->MouseMove("//###Toolbar/###tb_head");
     GG_CHECK(!s.itemDrawsBackground("//###Toolbar/###tb_head") && !s.itemDrawsBackground("//###Toolbar/###tb_branch"));
     // No tooltip on the HEAD ID.
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     ImGuiWindow* headTip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_CHECK(headTip == nullptr || !headTip->Active);
     // The window navigator (Ctrl+Tab) lists the toolbar by its title, not "(Untitled)".
@@ -1317,7 +1317,7 @@ GG_TEST("shell", "activity spinner, task tooltip and Cancel")
     ctx->KeyPress(ImGuiKey_F6); // selects a file: the diff request is now slow
     GG_CHECK(s.waitUntil([&] { return s.itemExists("//###Toolbar/##tb_activity"); }, 5.0f));
     ctx->MouseMove("//###Toolbar/##tb_activity");
-    ctx->Yield(3);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f); // the slow git request runs for 10 s
     ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_CHECK(tip != nullptr && tip->Active);
     GG_CHECK(!s.session()->activities().empty());

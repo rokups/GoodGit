@@ -756,7 +756,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             : &f.hunks[static_cast<size_t>(l.hunk)].lines[static_cast<size_t>(l.line)];
         if (hl && hl->noNewline) {
             dl->AddText(ImVec2(pos.x + width - ImGui::CalcTextSize("\\").x, pos.y), p.dim, "\\");
-            if (ImGui::IsItemHovered())
+            if (itemHoveredForTooltip())
                 tooltip("No newline at end of file");
         }
         break;
@@ -773,7 +773,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             ImGui::SameLine(0, 0);
             // One text line tall, so the glyph keeps the editor line's baseline.
             const bool clicked = ImGui::Button((std::string(icon) + "###" + id).c_str(), ImVec2(button, ImGui::GetTextLineHeight()));
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                 tooltip("%s", tip);
             return clicked;
         };
@@ -813,7 +813,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
                         shown.*side += 10;
                     m_viewsDirty = true;
                 }
-                if (ImGui::IsItemHovered())
+                if (itemHoveredForTooltip())
                     tooltip("%s", tip);
             };
             if (!first)
@@ -867,14 +867,14 @@ void DiffPanel::drawToolbar()
         d.diffContext -= step;
         contextChanged = true;
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Fewer context lines (Ctrl+click: 5)");
     ImGui::SameLine(0, style.ItemInnerSpacing.x);
     if (iconButton(ICON_MS_ADD, "##diff_context_inc", ImVec2(square, square))) {
         d.diffContext += step;
         contextChanged = true;
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("More context lines (Ctrl+click: 5)");
     if (contextChanged) {
         d.diffContext = std::clamp(d.diffContext, 0, 100);
@@ -887,14 +887,14 @@ void DiffPanel::drawToolbar()
     if (iconButton(ICON_MS_KEYBOARD_ARROW_UP, "##diff_prev_hunk", ImVec2(square, square)))
         goToHunk(false);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Previous hunk (Alt+Up)");
     ImGui::SameLine(0, style.ItemInnerSpacing.x);
     ImGui::BeginDisabled(hunkTarget(true) < 0);
     if (iconButton(ICON_MS_KEYBOARD_ARROW_DOWN, "##diff_next_hunk", ImVec2(square, square)))
         goToHunk(true);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Next hunk (Alt+Down)");
     if (const int sides = termSides(); sides > 0) {
         // First-class conflict: the raw markers, or what one side changed against the base.
@@ -1063,11 +1063,11 @@ void DiffPanel::drawMenuItems()
         const bool canRevert = can && !m_session.snapshot()->headUnborn;
         if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert line(s)###revert", nullptr, false, canRevert))
             actions.revertChanges(id, {}, patch, true);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", "A new commit on HEAD that undoes the selected lines of this change. Text conflicts become first-class conflicts.");
         if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert line(s) (no commit)###revert_no_commit", nullptr, false, canRevert))
             actions.revertChanges(id, {}, patch, false);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", "Undo the selected lines of this change in the index and working tree, without committing. Conflicts stop as in a revert.");
         if (menuItem(ICON_MS_UNDO, "Discard line(s)", nullptr, false, can))
             actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);

@@ -130,7 +130,7 @@ SelectionShape selectionShape(Session& s)
 
 void disabledHint(bool disabled, const char* why)
 {
-    if (disabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (disabled && itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("%s", why);
 }
 
@@ -224,7 +224,7 @@ void drawCommitPickItems(Session& session, const core::HistoryRow& row)
         label += std::string("###") + id;
         if (menuItem(icon, label.c_str(), nullptr, false, c.free && count > 0 && enabled))
             session.actions().revertOrPick(c.sel.ids, revert, commit);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled)) {
             std::string tip = what;
             if (c.merge)
                 tip += "\nA merge commit: its change against its first parent (-m 1).";

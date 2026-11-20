@@ -1833,7 +1833,7 @@ GG_TEST("keep", "the Operations tooltip names a keep ref as detached <short ID>"
     const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + kept[0].id + "/###row";
     GG_REQUIRE(s.itemExists(row.c_str()));
     ctx->MouseMove(row.c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "detached " + w.substr(0, 10)));
     GG_CHECK(!s.textShown("//##Tooltip_00", gg::keep::kPrefix));
 }

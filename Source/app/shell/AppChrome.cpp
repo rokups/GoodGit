@@ -313,7 +313,7 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
     const float width = std::max({ImGui::GetFontSize() * 16, minWidth, widest + bar});
     ImGui::SetNextItemWidth(width);
     ImGui::InputTextWithHint(filterId, "Filter", &m_recentFilter.text);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     const FilterExpr& recentFilter = m_recentFilter.expr();
 
@@ -351,7 +351,7 @@ void App::drawRecentList(const char* filterId, const char* idPrefix, float minWi
             }
             if (focusRow && (current || (!hasCurrent && row == visible.front())))
                 ImGui::SetItemDefaultFocus();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+            if (itemHoveredForTooltip()) {
                 std::string text = path;
                 if (row->warnLength)
                     text += "\n" + summaryWarningText(*row->info);
@@ -634,7 +634,7 @@ void App::drawStateBadge()
     drawBadge((badge + "###tb_state").c_str(), theme().palette().conflictFill);
     // While git waits for the todo list (ggui as sequence.editor) the rebase has not started yet.
     const bool free = s.actions().busy().empty() && !editingForGit();
-    if (editingForGit() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (editingForGit() && itemHoveredForTooltip())
         tooltip("git rebase -i waits for the list in the todo editor: Save or Cancel it first");
     ImGui::BeginDisabled(!free);
     const bool bisect = snap.state == core::RepoState::Bisecting;
@@ -654,7 +654,7 @@ void App::drawStateBadge()
         ImGui::SameLine();
         if (smallButton(ICON_MS_CHECK_CIRCLE, "Commit with conflicts##tb_commit_conflicts"))
             s.actions().commitWithConflicts();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip())
             tooltip("Record the text conflicts as first-class conflicts in the commit and finish the %s",
                 core::repoStateBadge(snap.state));
     }
@@ -664,7 +664,7 @@ void App::drawStateBadge()
             ImGui::SameLine();
             if (smallButton(ICON_MS_EDIT_NOTE, "Amend and continue##tb_amend_continue"))
                 s.actions().amendAndContinue();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            if (itemHoveredForTooltip())
                 tooltip("Amend HEAD with the staged changes (git commit --amend), then continue the rebase");
         }
         ImGui::SameLine();
@@ -766,7 +766,7 @@ void App::drawToolbar()
     const float comboWidth = std::max(fontSize * kRepoComboMinEm, ImGui::CalcTextSize(shown.c_str()).x + chrome);
     ImGui::SetNextItemWidth(comboWidth);
     const bool popup = ImGui::BeginCombo("##tb_repo", shown.c_str(), ImGuiComboFlags_HeightLarge); // the list scrolls inside, not the popup
-    if (!popup && shown != current && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+    if (!popup && shown != current && itemHoveredForTooltip())
         tooltip("%s", current.c_str());
     if (popup) {
         // The popup is at least as wide as the combo: the field fills the content width.
@@ -808,7 +808,7 @@ void App::drawToolbar()
     if (!activities.empty()) {
         ImGui::SameLine();
         spinner("##tb_activity", ImGui::GetFontSize() * 0.45f);
-        if (ImGui::IsItemHovered() && beginTooltip()) {
+        if (itemHoveredForTooltip() && beginTooltip()) {
             for (const auto& a : activities) {
                 if (a.percent >= 0)
                     tooltipText(a.label + " (" + std::to_string(a.percent) + "%)");

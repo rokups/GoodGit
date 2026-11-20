@@ -569,7 +569,7 @@ GG_TEST("history", "copy ID and full description; tooltip ID")
     GG_CHECK_STR_EQ(s.clipboard(), id.substr(0, 7));
     // The row tooltip starts with the full ID: 7 characters in the text colour, the rest dimmed.
     ctx->MouseMove(rowRef(id).c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.idShownDimmed("//##Tooltip_00", id, 7));
     s.contextMenu(rowRef(id).c_str(), "Copy/Full description");
     const std::string desc = s.clipboard();
@@ -972,7 +972,7 @@ GG_TEST("history", "tooltip text is built once while the tooltip stays shown")
     };
     const int start = ggui::tooltipTextBuilds();
     ctx->MouseMove(rowRef(first).c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(tipShown());
     GG_CHECK(ggui::tooltipTextBuilds() > start);
     // Shown for many more frames: its text was built when it appeared, and not again.
@@ -982,7 +982,7 @@ GG_TEST("history", "tooltip text is built once while the tooltip stays shown")
     GG_CHECK_EQ(ggui::tooltipTextBuilds(), built);
     // The next row's tooltip is another text: built once more, then kept.
     ctx->MouseMove(rowRef(second).c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(tipShown());
     GG_CHECK_EQ(ggui::tooltipTextBuilds(), built + 1);
     ctx->Yield(10);
@@ -1130,7 +1130,7 @@ GG_TEST("history", "the row tooltip lists every shown ref as a badge with its wh
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->history().loading() && findRow(s, tip) != nullptr; }));
     ctx->Yield(2);
     ctx->MouseMove(rowRef(tip).c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     const std::string tipRef = "//##Tooltip_00/###badge_";
     GG_REQUIRE(s.itemExists((tipRef + "main").c_str()));
     GG_CHECK(!s.itemExists((tipRef + "hiddenone").c_str()));

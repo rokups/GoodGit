@@ -1,5 +1,7 @@
 #include "shell/Theme.hpp"
 
+#include "util/Ui.hpp"
+
 #include <imgui_internal.h>
 
 #include <algorithm>
@@ -115,6 +117,7 @@ void ThemeManager::apply(Theme t, float scale)
     m_theme = t;
     m_scale = scale;
     ImGuiStyle style;
+    style.HoverDelayNormal = kTooltipDelay; // the delay of itemHoveredForTooltip
     if (t == Theme::Dark)
         ImGui::StyleColorsDark(&style);
     else

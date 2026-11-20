@@ -1401,7 +1401,7 @@ GG_TEST("refs", "tags: a long annotated tag message is wrapped and cut after 10 
     const float fontSize = ImGui::GetFontSize();
 
     ctx->MouseMove(tagRow("long-tag").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_REQUIRE(tip != nullptr && tip->Active);
     // At most the wrap width (40 font sizes) plus padding; at most 10 lines plus padding, and all 10 are used.
@@ -1413,7 +1413,7 @@ GG_TEST("refs", "tags: a long annotated tag message is wrapped and cut after 10 
     GG_CHECK(!s.textShown("//##Tooltip_00", lastWord));
 
     ctx->MouseMove(tagRow("short-tag").c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     tip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_REQUIRE(tip != nullptr && tip->Active);
     GG_CHECK(s.textShown("//##Tooltip_00", "A short message"));

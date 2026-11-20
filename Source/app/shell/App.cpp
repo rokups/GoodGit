@@ -84,7 +84,7 @@ bool iconButton(const char* icon, const char* id, const char* tooltip, bool enab
     std::snprintf(label, sizeof(label), "%s#%s", icon, id);
     const bool clicked = corners == 0 ? ImGui::Button(label) : ggui::buttonCorners(label, corners);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         ggui::tooltip("%s", tooltip);
     return clicked;
 }

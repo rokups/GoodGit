@@ -299,7 +299,7 @@ GG_TEST("blame", "filter, history, tooltips")
     GG_CHECK_EQ(s.session()->blame().matchCount(), 0);
     // Tooltip with the commit summary.
     ctx->MouseMove(lineRef(s, 3).c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
     GG_CHECK(tip != nullptr && tip->Active);
     GG_CHECK(s.idShownDimmed("//##Tooltip_00", r.c2, 7));
@@ -1461,7 +1461,7 @@ GG_TEST("blame", "gutter tooltip waits until scrolling stops")
         return tip != nullptr && tip->Active;
     };
     ctx->MouseMove(lineRef(s, 50).c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(tipShown());
     // The wheel over the gutter scrolls the editor: no tooltip while it does, whatever line is under the mouse.
     ctx->MouseWheelY(-1.0f);
@@ -1471,7 +1471,7 @@ GG_TEST("blame", "gutter tooltip waits until scrolling stops")
     ctx->SleepNoSkip(0.15f, 0.05f);
     GG_CHECK(!tipShown());
     // Once it stops, the tooltip comes back.
-    ctx->SleepNoSkip(1.2f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(tipShown());
 }
 

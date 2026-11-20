@@ -230,7 +230,7 @@ void Dialogs::draw()
             if (ImGui::Checkbox((f.label + id).c_str(), &f.checked) && f.onChange)
                 f.onChange(form);
             ImGui::EndDisabled();
-            if (!reason.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+            if (!reason.empty() && itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                 tooltip("%s", reason.c_str());
             break;
         }

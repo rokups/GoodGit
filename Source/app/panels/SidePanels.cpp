@@ -528,7 +528,7 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
             }
             groupMenu(groupRefs->history, ("##group_menu_" + rowId(id)).c_str(), below, del);
         }
-        if (!fitted.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        if (!fitted.empty() && itemHoveredForTooltip())
             tooltip("%s", e.label.c_str());
         if (open) {
             drawTree(e.children, id, filtering, leaf, groupRefs);
@@ -974,7 +974,7 @@ void BranchesPanel::draw(bool* open)
     if (ImGui::Button(ICON_MS_ADD "###create_branch"))
         m_session.showCreateBranchDialog(m_snapshot->head.hex());
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Create branch at HEAD...");
     auto& history = m_session.history();
     // The selection keeps the rows that the last frame drew. This frame collects its own rows.
@@ -1012,19 +1012,19 @@ void BranchesPanel::draw(bool* open)
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_branches"))
         history.setRefsVisible(all, true);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Show all branches in History (right-click: new branches)");
     newBranchMenu("##show_all_menu");
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_branches"))
         history.setRefsVisible(all, false);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Hide all branches in History (right-click: new branches)");
     newBranchMenu("##hide_all_menu");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##branch_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     const FilterExpr& filter = m_filter.expr();
     const Palette& p = theme().palette();
@@ -1092,7 +1092,7 @@ void BranchesPanel::draw(bool* open)
             b.isHead ? p.branchCurrentText : ImGui::GetColorU32(ImGuiCol_Text), true, acts, {}, &parts,
             expandable ? &expand : nullptr, true, selection.add(RefKind::LocalBranch, b.name));
         selection.click(events.clicked, RefKind::LocalBranch, b.name);
-        if ((shortName != b.name || events.elided) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if ((shortName != b.name || events.elided) && itemHoveredForTooltip()) {
             if (events.elided && !b.upstream.empty())
                 tooltip("%s\n%s %s", b.name.c_str(), ICON_MS_ARROW_RIGHT_ALT, b.upstream.c_str());
             else if (events.elided && !remote.empty())
@@ -1248,7 +1248,7 @@ void BranchesPanel::draw(bool* open)
                     history.refVisible(full), false, p.remoteText, false, acts, {}, &parts, nullptr, true,
                     selection.add(RefKind::RemoteBranch, r.name));
                 selection.click(events.clicked, RefKind::RemoteBranch, r.name);
-                if (events.elided && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                if (events.elided && itemHoveredForTooltip())
                     tooltip("%s", r.name.c_str());
                 const std::vector<std::string> fullRefs{full};
                 if (events.toggle)
@@ -1368,7 +1368,7 @@ void TagsPanel::draw(bool* open)
     if (ImGui::Button(ICON_MS_ADD "###create_tag"))
         m_session.showCreateTagDialog(m_snapshot->head.hex());
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Create tag at HEAD...");
     auto& history = m_session.history();
     // The selection keeps the rows that the last frame drew. This frame collects its own rows.
@@ -1401,19 +1401,19 @@ void TagsPanel::draw(bool* open)
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY "###show_all_tags"))
         history.setRefsVisible(all, true);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Show all tags in History (right-click: new tags)");
     newTagMenu("##show_all_menu");
     sameLineIfFits(ImGui::GetFrameHeight());
     if (ImGui::Button(ICON_MS_VISIBILITY_OFF "###hide_all_tags"))
         history.setRefsVisible(all, false);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Hide all tags in History (right-click: new tags)");
     newTagMenu("##hide_all_menu");
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##tag_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     const FilterExpr& filter = m_filter.expr();
     const bool filtering = !filter.empty();
@@ -1446,14 +1446,14 @@ void TagsPanel::draw(bool* open)
             toggleRefs(history, fullRefs, history.refVisible(full));
         if (events.action == 0)
             m_session.revealCommit(t.target);
-        if (t.annotated && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !t.message.empty() && beginTooltip()) {
+        if (t.annotated && itemHoveredForTooltip() && !t.message.empty() && beginTooltip()) {
             // The full name when a folder cuts it, then the message (it can run to several paragraphs),
             // wrapped and cut after the line limit.
             if (shortName != t.name)
                 ImGui::TextUnformatted(t.name.c_str());
             tooltipText(t.message);
             ImGui::EndTooltip();
-        } else if (shortName != t.name && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        } else if (shortName != t.name && itemHoveredForTooltip()) {
             tooltip("%s", t.name.c_str());
         }
         if (beginContextMenu(("##tag_menu_" + rowId(t.name)).c_str())) {
@@ -1592,7 +1592,7 @@ void RepositoriesPanel::drawNodes(const std::vector<RepoNode>& nodes, std::strin
             ImGui::EndDragDropSource();
         }
         rowDoubleClickOpen(m_session, node.path, !isOpen, toOpen, !info || info->exists);
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && itemHoveredForTooltip()) {
             std::string text = elided ? node.path + summaryNamesText(*info) : node.path;
             if (!warnPrefix.empty())
                 text += "\n" + summaryWarningText(*info) + "\nThe context menu has \"Remove from list\".";
@@ -1733,7 +1733,7 @@ void RepositoriesPanel::drawWorktrees(const std::vector<core::WorktreeInfo>& lis
         if (!w.isCurrent && !w.missing)
             m_openableWorktrees.insert(path);
         rowDoubleClickOpen(m_session, path, !w.isCurrent && !w.missing, toOpen);
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        if (tooltipAllowed() && itemHoveredForTooltip())
             tooltip("%s", (customName.empty() ? path : path + "\nId: " + w.name).c_str());
         if (beginContextMenu("##worktree_menu")) {
             repositoryWorktreeMenuItems(m_session, own, w);
@@ -1849,7 +1849,7 @@ void RepositoriesPanel::drawSubmodules(const std::vector<core::SubmoduleInfo>& l
         if (canOpen)
             m_openableSubmodules.insert(path);
         rowDoubleClickOpen(m_session, path, canOpen, toOpen);
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && itemHoveredForTooltip()) {
             std::string text = sm.missing ? path + "\nThe directory is gone." : sm.initialized ? path : "Not initialized";
             if (sm.gitmodulesMissing)
                 text += "\nThe .gitmodules file is missing. The index lists this submodule.";
@@ -2010,7 +2010,7 @@ void WorktreesPanel::draw(bool* open)
     if (ImGui::Button(ICON_MS_ADD "###add_worktree"))
         m_session.showAddWorktreeDialog();
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip(snap->headUnborn ? "Add worktree... (HEAD has no commit yet)" : "Add worktree...");
     // Only the list scrolls: the controls above stay put.
     beginList();
@@ -2064,7 +2064,7 @@ void WorktreesPanel::draw(bool* open)
         rowDoubleClickOpen(m_session, w.path.string(), !w.isCurrent && !w.missing, toOpen);
         if (!toOpen.empty())
             m_session.app().openRepository(w.path);
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && itemHoveredForTooltip()) {
             tooltip("%s%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 std::string text = w.path.string();
                 if (w.isCurrent)
@@ -2105,7 +2105,7 @@ void RemotesPanel::draw(bool* open)
     ImGui::BeginDisabled(!free);
     if (ImGui::Button(ICON_MS_ADD "###add_remote"))
         m_session.showAddRemoteDialog();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Add remote...");
     sameLineIfFits(buttonWidth(ICON_MS_DOWNLOAD, "Fetch all"));
     if (button(ICON_MS_DOWNLOAD, "Fetch all##fetch_all") && !snap->remotes.empty())
@@ -2132,7 +2132,7 @@ void RemotesPanel::draw(bool* open)
         const int action = rowActions(acts);
         if (action == 0)
             actions.fetch(r.name, false, false);
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        if (tooltipAllowed() && itemHoveredForTooltip()) {
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
                 const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
                 std::string text = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
@@ -2202,14 +2202,14 @@ void StashesPanel::draw(bool* open)
     if (button(ICON_MS_ARROW_CIRCLE_DOWN, "Push##stash_push"))
         m_session.showStashDialog();
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Stash the changes in the working tree...");
     sameLineIfFits(buttonWidth(ICON_MS_ARROW_CIRCLE_UP, "Pop"));
     ImGui::BeginDisabled(!free || !hasStashes);
     if (button(ICON_MS_ARROW_CIRCLE_UP, "Pop##stash_pop"))
         actions.stashApply(popIndex, true, false);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Apply stash@{%d} and drop it", popIndex);
     sameLineIfFits(buttonWidth(ICON_MS_DELETE_SWEEP, "Clear all..."));
     ImGui::BeginDisabled(!free || m_snapshot->stashes.empty());
@@ -2242,7 +2242,7 @@ void StashesPanel::draw(bool* open)
         if (selectableText(label, "row", selected, ImGuiSelectableFlags_SelectOnNav | ImGuiSelectableFlags_AllowOverlap))
             m_session.select(Selection{SelKind::Stash, s.commit, s.index});
         const ImGuiLastItemData rowItem = ImGui::GetCurrentContext()->LastItemData;
-        if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        if (tooltipAllowed() && itemHoveredForTooltip())
             idTooltip(s.commit.hex(), cachedTooltipText(ImGui::GetItemID(), m_snapshot->generation, [&] {
                 return "base " + m_session.shortId(s.base) + "\n" + core::formatTime(s.time)
                     + (s.hasIndexChanges ? "\nhas index changes" : "") + (s.hasUntracked ? "\nhas untracked files" : "");
@@ -2324,7 +2324,7 @@ void ReflogPanel::draw(bool* open)
     sameLineIfFits(ImGui::GetFontSize() * 6);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##reflog_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     acceptCommitDrop(m_filter.text);
     const FilterExpr& filter = m_filter.expr();
@@ -2428,7 +2428,7 @@ void OperationsPanel::draw(bool* open)
             ImGui::PushID(("op_" + op.id).c_str());
             const std::string time = core::formatTime(op.time / 1000, true);
             selectable((time + "###row").c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !op.refs.empty() && beginTooltip()) {
+            if (itemHoveredForTooltip() && !op.refs.empty() && beginTooltip()) {
                 // A running operation records its refs as it goes (merged per ref: the new value changes): the revision
                 // follows them. The text is the lines joined with '\n', drawn one tooltipText per line as before.
                 ImGuiID revision = ImHashData(&op.ended, sizeof op.ended, static_cast<ImGuiID>(op.refs.size()));

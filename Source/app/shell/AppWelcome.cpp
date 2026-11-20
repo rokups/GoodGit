@@ -159,7 +159,7 @@ void App::drawWelcome()
         if (selectableTextDimRanges(text, "row", {{warnPrefix.size(), warnPrefix.size() + names[i].prefix.size()}}, m_recentFocus == static_cast<int>(i),
                 ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor()))
             post([this, path] { openRepository(path); });
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+        if (itemHoveredForTooltip())
             tooltip("%s%s\nDel removes", path.c_str(), infos[i] && summaryWarns(*infos[i]) ? ("\n" + summaryWarningText(*infos[i])).c_str() : "");
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);

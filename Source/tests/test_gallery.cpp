@@ -168,10 +168,10 @@ GG_MANUAL_TEST("gallery", "toolbar dropdowns and tooltip")
         closePopups(s);
     }
     ctx->MouseMove("//###Toolbar/###tb_commit");
-    ctx->SleepNoSkip(1.2f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     shot(s, "tooltip-toolbar-commit");
     ctx->MouseMove("//###Toolbar/###tb_push");
-    ctx->SleepNoSkip(1.2f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     shot(s, "tooltip-toolbar-push");
 }
 
@@ -296,7 +296,7 @@ GG_MANUAL_TEST("gallery", "interactive rebase and blame")
     shot(s, "blame-panel");
     const std::string blameLine = s.child("//Blame", "##blame_editor") + "/###blame_line_3";
     ctx->MouseMove(blameLine.c_str());
-    ctx->SleepNoSkip(1.2f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     shot(s, "blame-tooltip");
     ctx->MouseMove(blameLine.c_str());
     ctx->ItemClick(blameLine.c_str(), ImGuiMouseButton_Right);

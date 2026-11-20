@@ -547,7 +547,7 @@ void BlamePanel::drawGutter(int index, float width, float height, float glyph)
         ImGui::OpenPopupEx(kMenuId);
     }
     // The tooltip is on the gutter only: over the code it would be in the way of selecting text.
-    if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+    if (tooltipAllowed() && itemHoveredForTooltip()) {
         if (committed)
             // The gutter's IDs are the same in every blame: the revision counts the loaded blames.
             idTooltip(l.commit.hex(),
@@ -672,7 +672,7 @@ void BlamePanel::draw(bool* open)
     io.ConfigInputTextEnterKeepActive = true;
     const bool enter = ImGui::InputTextWithHint("##blame_filter", ICON_MS_SEARCH " Filter", &m_filter, ImGuiInputTextFlags_EnterReturnsTrue);
     io.ConfigInputTextEnterKeepActive = keepActive;
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     if (!m_blame) {
         ImGui::TextDisabled("Use \"Blame file\" on a file to see who changed each line.");

@@ -1402,7 +1402,7 @@ void HistoryPanel::drawMergeIcon(const core::HistoryRow& row)
     ImGui::GetWindowDrawList()->AddText(pos, color, ICON_MS_CALL_MERGE);
     if (hovered && toggle)
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-    if (hovered && !m_scrolling) {
+    if (itemHoveredForTooltip() && !m_scrolling) {
         const size_t n = row.parents.size();
         if (!toggle)
             tooltip("Merge commit \xE2\x80\x94 %d parents", static_cast<int>(n));
@@ -1644,7 +1644,7 @@ void HistoryPanel::drawRow(const core::HistoryRow& row, int index, float laneWid
     }
     // One pill per branch (with its remotes of the same short name) and one for every other shown ref.
     const auto pills = refPills(row.refs, [this](const core::RefBadge& r) { return refShown(r); }, *m_snapshot);
-    if (!m_scrolling && tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (!m_scrolling && tooltipAllowed() && itemHoveredForTooltip())
         // The row's ID is its commit's, and a commit does not change: no revision.
         idTooltip(
             row.id.hex(),
@@ -1834,14 +1834,14 @@ void HistoryPanel::draw(bool* open)
     filterChanged = acceptCommitDrop(m_filter) || filterChanged;
     if (filterChanged)
         applyFilter();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     sameLineIfFits(buttonWidth(ICON_MS_MY_LOCATION, "HEAD"));
     ImGui::BeginDisabled(m_snapshot->head.isNull());
     if (smallButton(ICON_MS_MY_LOCATION, "HEAD##hist_head"))
         m_session.revealCommit(m_snapshot->head);
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Go to the HEAD commit");
     if (firstClassOn()) {
         sameLineIfFits(checkboxWidth("Conflicted only"));

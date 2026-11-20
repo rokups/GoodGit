@@ -242,7 +242,7 @@ void InfoPanel::draw(bool* open)
                 m_session.actions().commitWorktree(m_commitMessage, done);
         }
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", index ? "Commit the staged changes (git commit)"
                                 : "Commit only the unstaged and untracked changes; the staged changes stay staged");
         if (index && !nothing) {
@@ -302,7 +302,7 @@ void InfoPanel::draw(bool* open)
             m_session.actions().reword(d.id, m_message);
     }
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled)) {
         std::string tip = stash  ? "Change the stash message; its content and position stay"
                         : isHead ? "Reword HEAD (git commit --amend --only)"
                                  : "Reword this commit; its descendants are rebased onto it";

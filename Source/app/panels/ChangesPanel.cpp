@@ -75,7 +75,7 @@ bool compareWithField(const char* id, std::string& text)
     bool apply = ImGui::InputTextWithHint(id, "Compare with", &text, ImGuiInputTextFlags_EnterReturnsTrue);
     apply = apply || ImGui::IsItemDeactivatedAfterEdit();
     apply = acceptCommitDrop(text) || apply;
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("HEAD, a commit ID or ref, or Work Tree (Enter applies; empty: the parent)");
     if (beginContextMenu((std::string(id) + "_menu").c_str())) {
         for (const char* choice : {"HEAD", "Work Tree"})
@@ -811,7 +811,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             // the lower one against the upper one).
             if (menuItem(ICON_MS_OPEN_IN_NEW, "Compare", nullptr, false, menuOn))
                 actions.externalDiff(row.path, commitDiffRevs(id));
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+            if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 if (m_pair)
                     tooltip("Compare the file in the lower selected commit with the file in the upper one");
                 else if (rev)
@@ -849,16 +849,16 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
         const bool canRevert = free && !m_session.snapshot()->headUnborn;
         if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert###revert", nullptr, false, canRevert))
             actions.revertChanges(id, paths, {}, true);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", "A new commit on HEAD that undoes this change to the selected files. Text conflicts become first-class conflicts.");
         if (menuItem(ICON_MS_SETTINGS_BACKUP_RESTORE, "Revert (no commit)###revert_no_commit", nullptr, false, canRevert))
             actions.revertChanges(id, paths, {}, false);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("%s", "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
                           "added or deleted files may not apply (\"Revert\" handles them).");
         if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
             actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("Rewrites the commit so it no longer makes this change (its descendants are rebased). Undo restores it.");
     }
     if (m_selection.kind == SelKind::Stash && row.group != FileGroup::StashIndex) {
@@ -1063,7 +1063,7 @@ void ChangesPanel::drawFile(const FileRow& row, int)
         }
     }
     ImGui::PopStyleColor();
-    if (tooltipAllowed() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+    if (tooltipAllowed() && itemHoveredForTooltip()) {
         if (broken) {
             // The row's ID is its path; the marker lines change when the status is read again.
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(),
@@ -1241,7 +1241,7 @@ void ChangesPanel::draw(bool* open)
     const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
     ImGui::SetNextItemWidth(std::max(filterMin, half));
     ImGui::InputTextWithHint("##changes_filter", ICON_MS_SEARCH " Filter", &m_filter.text);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (itemHoveredForTooltip())
         tooltip("Comma separates terms. All terms must match. A leading - excludes a term. Use \\ before , or - to match it as text.");
     sameLineIfFits(compareMin);
     // Compares the whole commit with a revision or the working tree; the working tree and index
@@ -1254,7 +1254,7 @@ void ChangesPanel::draw(bool* open)
         ImGui::BeginDisabled();
         ImGui::InputText("##compare_pair", &pairText, ImGuiInputTextFlags_ReadOnly);
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayNormal))
+        if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("Two commits are selected: the changes from the lower one (Before) to the upper one (After)");
     } else if (compareWithField("##compare_with", m_compareText)) {
         const CompareTarget target = CompareTarget::parse(m_compareText);

@@ -1700,11 +1700,11 @@ GG_TEST("panels", "remotes: name@host label with the host dimmed, tooltip shows 
     GG_CHECK(s.textShown("//Remotes", "origin"));
     GG_CHECK(!s.textShown("//Remotes", "origin@"));
     ctx->MouseMove("//Remotes/remote_backup/###row");
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "https://user@example.invalid:8443/backup.git"));
     GG_CHECK(s.drawnText("//##Tooltip_00").size() == 1);
     ctx->MouseMove("//Remotes/remote_split/###row");
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Fetch: https://example.invalid/fetch.git"));
     GG_CHECK(s.textShown("//##Tooltip_00", "Push: ssh://git@example.invalid/push.git"));
 }
@@ -1873,6 +1873,23 @@ GG_TEST("panels", "stashes: copy the stash's ID and its base's ID")
     ctx->SetInputMode(ImGuiInputSource_Mouse);
 }
 
+GG_TEST("panels", "a tooltip shows only after the item stays hovered for the tooltip delay")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"remote", "add", "backup", "https://user@example.invalid:8443/backup.git"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Remotes");
+    auto tipShown = [&] {
+        ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
+        return tip != nullptr && tip->Active;
+    };
+    ctx->MouseMove("//Remotes/remote_backup/###row");
+    ctx->SleepNoSkip(ggui::kTooltipDelay - 0.5f, 0.1f);
+    GG_CHECK(!tipShown());
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK(tipShown());
+}
+
 GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, reflog by ID, Operations buttons and a failed operation")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
@@ -1883,7 +1900,7 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     GG_REQUIRE(s.openRepository(repo));
     auto hover = [&](const std::string& ref) {
         ctx->MouseMove(ref.c_str());
-        ctx->SleepNoSkip(1.0f, 0.1f);
+        ctx->SleepNoSkip(kTooltipWait, 0.1f);
     };
 
     // A remote-tracking branch: its menu, and its visibility in History.
@@ -2696,7 +2713,7 @@ GG_TEST("panels", "branches: a name too long for the panel is cut at its start; 
     GG_CHECK(item.RectFull.Max.x <= list.RectFull.Max.x + 0.5f);
     // The tooltip has the whole name.
     ctx->MouseMove(row.c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(tooltipHas(longName));
 
     // A group of long names is cut the same way and has a tooltip too.
@@ -2705,12 +2722,12 @@ GG_TEST("panels", "branches: a name too long for the panel is cut at its start; 
     GG_REQUIRE(!groupShown.empty());
     GG_CHECK(groupShown.compare(0, dots.size(), dots) == 0);
     ctx->MouseMove(group.c_str());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(tooltipHas(groupName));
 
     // A short name is not cut and has no tooltip.
     ctx->MouseMove("//Branches/branch_main/###branch_main");
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(!tooltipHas("main"));
 }
 
