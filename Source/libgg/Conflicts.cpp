@@ -204,7 +204,10 @@ void Cache::save()
             return;
         }
     }
-    replaceFile(tmp, m_file);
+    if (replaceFile(tmp, m_file)) { // failed: keep dirty so the next save retries
+        fs::remove(tmp, ec);
+        return;
+    }
     dirty = false;
 }
 

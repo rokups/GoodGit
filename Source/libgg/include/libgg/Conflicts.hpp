@@ -89,7 +89,7 @@ std::string ineligibleReason(git_repository* repo, const git_oid* commit, const 
 // conflict-marker-size attribute (invalid or absent: the default minimum, 7).
 gg::markers::WriteOptions writeOptions(git_repository* repo, const std::string& path);
 
-// Sides of a conflicted blob content (0 = not conflicted, -1 = unknown: memory only).
+// Sides of a conflicted blob content (0 = not conflicted).
 int contentSides(std::string_view content);
 
 } // namespace gg::conflicts
