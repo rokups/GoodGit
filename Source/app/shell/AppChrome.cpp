@@ -570,7 +570,8 @@ void App::drawRepositoryButtons()
                 f.title = "Force push";
                 f.message = "Overwrite " + b->upstream + " with " + b->name + " (--force-with-lease)?";
                 const std::string remote = b->upstream.substr(0, slash), rb = b->upstream.substr(slash + 1), local = b->name;
-                f.buttons.push_back({"Force push", [s, remote, local, rb](Form&) { s->actions().push(remote, local, rb, false, true); }});
+                const std::string lease = s->actions().trackingOid(remote, rb);
+                f.buttons.push_back({"Force push", [s, remote, local, rb, lease](Form&) { s->actions().push(remote, local, rb, false, true, false, {}, lease); }});
                 f.buttons.back().danger = true;
                 f.buttons.push_back({"Cancel", {}});
                 m_dialogs.open(std::move(f));

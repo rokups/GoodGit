@@ -661,6 +661,49 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
     s.settle();
 }
 
+GG_TEST("network", "push sends the checked oid when the branch moves after the guard")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.commitFile(repo, "checked.txt", "c\n", "Checked");
+    const std::string checked = s.head(repo);
+    s.commitFile(repo, "moved.txt", "m\n", "Moved after the check");
+    GG_REQUIRE(s.head(repo) != checked);
+    s.session()->actions().push("origin", "main", "main", false, false, false, checked);
+    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", checked); }));
+    s.settle();
+    GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
+}
+
+GG_TEST("network", "push --set-upstream still sets the upstream with an oid source")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"branch", "topic"});
+    s.session()->actions().push("origin", "topic", "topic", true, false);
+    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "topic", s.revParse(repo, "topic")); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "branch.topic.merge"}), "refs/heads/topic");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"config", "branch.topic.remote"}), "origin");
+}
+
+GG_TEST("network", "force push keeps the remote commit that a fetch brought after the dialog opened")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.commitFile(repo, "mine.txt", "mine\n", "Mine");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->outgoing() == 1; }));
+    s.settle();
+    popupItem(s, "//###Toolbar/###tb_push_menu", "Force with lease...");
+    GG_REQUIRE(s.dialogOpen("Force push"));
+    remoteCommit(s, repo, "unseen.txt", "unseen\n");
+    const std::string remoteHead = s.gitOut(origin(s, repo), {"rev-parse", "main"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.dialogButton("Force push", "Force push");
+    s.settle();
+    GG_CHECK(originHas(s, repo, "main", remoteHead));
+}
+
 GG_TEST("network", "a push pushes the submodule branch first and then the superproject")
 {
     fs::path subRemote;
