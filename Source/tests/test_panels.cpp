@@ -1946,10 +1946,18 @@ GG_TEST("panels", "a tooltip shows only after the item stays hovered for the too
         ImGuiWindow* tip = ctx->GetWindowByRef("//##Tooltip_00");
         return tip != nullptr && tip->Active;
     };
+    // An earlier test can hover the same row ID. Dear ImGui keeps that delay timer until the mouse is away for 0.3 s.
+    ctx->MouseMoveToPos(ImVec2(0.0f, 0.0f));
+    ctx->SleepNoSkip(0.5f, 0.1f);
     ctx->MouseMove("//Remotes/remote_backup/###row");
-    ctx->SleepNoSkip(ggui::kTooltipDelay - 0.5f, 0.1f);
+    // Wait on the hover timer of Dear ImGui, not on a sleep time. Frames before the sleep add real time under load.
+    auto waitHoverTimer = [&](float seconds) {
+        for (int i = 0; i < 100 && ctx->UiContext->HoverItemDelayTimer < seconds; i++)
+            ctx->SleepNoSkip(0.1f, 0.1f);
+    };
+    waitHoverTimer(ggui::kTooltipDelay - 0.5f);
     GG_CHECK(!tipShown());
-    ctx->SleepNoSkip(1.0f, 0.1f);
+    waitHoverTimer(ggui::kTooltipDelay + 0.5f);
     GG_CHECK(tipShown());
 }
 
