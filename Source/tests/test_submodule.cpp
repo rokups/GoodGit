@@ -914,6 +914,40 @@ GG_TEST("submodule", "Remove is refused for the path .")
     GG_CHECK_STR_EQ(porcelain(s, repo), before);
 }
 
+GG_TEST("submodule", "Remove is refused when the submodule has a modified or untracked file")
+{
+    for (const bool untracked : {false, true}) {
+        const fs::path repo = s.fixture(Recipe::Submodules);
+        const char* file = untracked ? "new.txt" : "s3.txt";
+        s.write(repo / "sub", file, "dirty\n");
+        const std::string before = porcelain(s, repo);
+        GG_REQUIRE(s.openRepository(repo));
+        s.session()->actions().submoduleRemove("sub", false);
+        GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+        s.dialogButton("remove submodule sub", "OK");
+        GG_REQUIRE(s.settle());
+        GG_CHECK_STR_EQ(s.read(repo / "sub", file), "dirty\n");
+        GG_CHECK_STR_EQ(porcelain(s, repo), before);
+    }
+}
+
+GG_TEST("submodule", "Update to remote branch is refused when a detached HEAD has a local commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path subOrigin = repo.parent_path() / (repo.filename().string() + "-sub");
+    s.commitFile(subOrigin, "s4.txt", "s4\n", "Sub s4");
+    s.git(repo / "sub", {"checkout", "-q", "--detach"});
+    s.commitFile(repo / "sub", "detached.txt", "detached\n", "Detached only");
+    const std::string local = s.head(repo / "sub");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleUpdateRemote("sub");
+    GG_REQUIRE(s.dialogOpen("update submodule sub to remote branch"));
+    s.dialogButton("update submodule sub to remote branch", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), local);
+    GG_CHECK(fs::exists(repo / "sub" / "detached.txt"));
+}
+
 GG_TEST("submodule", "Add stages .gitmodules and the gitlink and populates the submodule")
 {
     const fs::path repo = s.fixture(Recipe::Submodules);
