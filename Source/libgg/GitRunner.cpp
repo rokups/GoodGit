@@ -406,8 +406,8 @@ RunResult runProcess(const RunRequest& request)
             iIn = n;
             fds[n++] = pollfd{inFd, POLLOUT, 0};
         }
-        const int pr = poll(fds, static_cast<nfds_t>(n), 20);
-        if (request.cancel.cancelled() && !killed) {
+        poll(fds, static_cast<nfds_t>(n), 20);
+        if (!reaped && request.cancel.cancelled() && !killed) {
             kill(-pid, SIGTERM);
             killed = true;
             result.cancelled = true;
@@ -432,16 +432,6 @@ RunResult runProcess(const RunRequest& request)
             reaped = true;
             exitDrainEnd = Clock::now() + std::chrono::milliseconds(500);
         }
-        if (reaped && Clock::now() >= exitDrainEnd) {
-            if (outFd >= 0)
-                close(outFd);
-            if (errFd >= 0)
-                close(errFd);
-            outFd = errFd = -1;
-            break;
-        }
-        if (pr <= 0)
-            continue;
         if (iOut >= 0 && fds[iOut].revents) {
             const ssize_t r = read(outFd, buf, sizeof(buf));
             if (r > 0)
@@ -474,6 +464,15 @@ RunResult runProcess(const RunRequest& request)
                 close(inFd);
                 inFd = -1;
             }
+        }
+        // Check the deadline after the reads, so data that is ready at the deadline is kept.
+        if (reaped && Clock::now() >= exitDrainEnd) {
+            if (outFd >= 0)
+                close(outFd);
+            if (errFd >= 0)
+                close(errFd);
+            outFd = errFd = -1;
+            break;
         }
     }
     if (inFd >= 0)
