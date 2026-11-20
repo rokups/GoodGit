@@ -333,10 +333,13 @@ struct RefsState {
 
 RefsState refsState(HistoryPanel& history, std::span<const std::string> refs)
 {
-    size_t visible = 0;
-    for (const auto& r : refs)
+    // `all` drives the toggle and uses the stored setting; `none` dims a row and uses what History shows.
+    size_t visible = 0, stored = 0;
+    for (const auto& r : refs) {
         visible += history.refVisible(r) ? 1 : 0;
-    return {visible == refs.size(), visible == 0 && !refs.empty()};
+        stored += history.refStoredVisible(r) ? 1 : 0;
+    }
+    return {stored == refs.size(), visible == 0 && !refs.empty()};
 }
 
 // The menu item of a ref row or a group row: shows or hides `refs` in History. The ID stays whatever the label says.
@@ -893,7 +896,7 @@ void BranchesPanel::branchMenu(const core::BranchInfo& b, const std::vector<std:
     branchMenuItems(m_session, *m_snapshot, b);
     ImGui::Separator();
     // The branch decides: one click hides or shows the branch with its remote-tracking refs.
-    visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));
+    visibilityMenuItem(m_session.history(), refs, m_session.history().refStoredVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -930,7 +933,7 @@ void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r, const std:
     }
     remoteBranchMenuItems(m_session, *m_snapshot, r);
     ImGui::Separator();
-    visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));
+    visibilityMenuItem(m_session.history(), refs, m_session.history().refStoredVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -959,7 +962,7 @@ void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot
         return;
     keptMenuItems(m_session, k, current, idSlot);
     ImGui::Separator();
-    visibilityMenuItem(m_session.history(), refs, m_session.history().refVisible(refs.front()));
+    visibilityMenuItem(m_session.history(), refs, m_session.history().refStoredVisible(refs.front()));
     ImGui::EndPopup();
 }
 
@@ -1102,7 +1105,7 @@ void BranchesPanel::draw(bool* open)
         }
         // Space on the row shows or hides the branch and its remote-tracking refs together.
         if (events.toggle)
-            toggleRefs(history, localRefs[index], history.refVisible(full));
+            toggleRefs(history, localRefs[index], history.refStoredVisible(full));
         // Double-click checks the branch out.
         if (events.doubleClicked && free && !b.isHead)
             m_session.actions().checkout(b.name, false);
@@ -1160,7 +1163,7 @@ void BranchesPanel::draw(bool* open)
                     {kIdPrefixLength, kShortIdLength});
                 const std::vector<std::string> fullRefs{full};
                 if (events.toggle)
-                    toggleRefs(history, fullRefs, history.refVisible(full));
+                    toggleRefs(history, fullRefs, history.refStoredVisible(full));
                 // Double-click checks the commit out.
                 if ((events.doubleClicked && free && !current) || events.action == 0)
                     m_session.actions().checkout(hex, true);
@@ -1252,7 +1255,7 @@ void BranchesPanel::draw(bool* open)
                     tooltip("%s", r.name.c_str());
                 const std::vector<std::string> fullRefs{full};
                 if (events.toggle)
-                    toggleRefs(history, fullRefs, history.refVisible(full));
+                    toggleRefs(history, fullRefs, history.refStoredVisible(full));
                 if (events.action == 0)
                     checkoutRemoteBranch(m_session, *m_snapshot, r);
                 remoteBranchMenu(r, fullRefs);
@@ -1443,7 +1446,7 @@ void TagsPanel::draw(bool* open)
         selection.click(events.clicked, RefKind::Tag, t.name);
         const std::vector<std::string> fullRefs{full};
         if (events.toggle)
-            toggleRefs(history, fullRefs, history.refVisible(full));
+            toggleRefs(history, fullRefs, history.refStoredVisible(full));
         if (events.action == 0)
             m_session.revealCommit(t.target);
         if (t.annotated && itemHoveredForTooltip() && !t.message.empty() && beginTooltip()) {
@@ -1460,7 +1463,7 @@ void TagsPanel::draw(bool* open)
             if (!tagMultiMenu(m_session, *m_snapshot, m_selection, t.name)) {
                 tagMenuItems(m_session, *m_snapshot, t);
                 ImGui::Separator();
-                visibilityMenuItem(history, fullRefs, history.refVisible(full));
+                visibilityMenuItem(history, fullRefs, history.refStoredVisible(full));
             }
             ImGui::EndPopup();
         }

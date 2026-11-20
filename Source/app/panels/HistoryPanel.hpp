@@ -56,7 +56,15 @@ public:
     void showMore();
 
     // Scope (side panels): visibility of refs by full name.
-    bool refVisible(const std::string& fullName) const { return !m_hidden.count(fullName); }
+    // The checked-out branch always counts as visible. The stored hidden set does not change for it.
+    // The stored setting only. Toggles use it, so a click can unhide the checked-out branch.
+    bool refStoredVisible(const std::string& fullName) const { return !m_hidden.count(fullName); }
+    bool refVisible(const std::string& fullName) const
+    {
+        if (m_snapshot && !m_snapshot->headDetached && fullName == "refs/heads/" + m_snapshot->headBranch)
+            return true;
+        return !m_hidden.count(fullName);
+    }
     void toggleRef(const std::string& fullName, bool only);
     // Hides every branch, remote-tracking branch and tag except `fullNames` (toggleRef's Ctrl-click).
     void showOnlyRefs(const std::vector<std::string>& fullNames);

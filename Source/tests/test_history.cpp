@@ -201,6 +201,7 @@ GG_TEST("history", "scope follows the side panels: the menu item toggles, Ctrl s
 {
     const fs::path repo = s.fixture(Recipe::Merges);
     s.git(repo, {"branch", "alias", "main"});
+    s.git(repo, {"checkout", "-q", "--orphan", "elsewhere"}); // an unborn branch: the checked-out branch cannot be hidden
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     const std::string topic = s.revParse(repo, "topic");
@@ -1609,6 +1610,7 @@ GG_TEST("history", "a branch and its remotes on one commit share one pill")
     const std::string tip = s.revParse(repo, "main");
     s.git(repo, {"update-ref", "refs/remotes/origin/main", tip});
     s.git(repo, {"update-ref", "refs/remotes/upstream/main", tip});
+    s.git(repo, {"checkout", "-q", "--detach", "HEAD~1"}); // the checked-out branch cannot be hidden
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     GG_REQUIRE(s.waitUntil([&] { return badgeShown(s, tip, "main"); }));

@@ -59,6 +59,7 @@ GG_TEST("panels", "branches: filter, current, upstream, reveal, copy")
 GG_TEST("panels", "branches: a branch with two remote refs is a closed node with a child row for each ref")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"}); // the checked-out branch cannot be hidden
     s.git(repo, {"branch", "other"});
     s.git(repo, {"branch", "--set-upstream-to=origin/main", "other"}); // one remote ref: the upstream
     s.git(repo, {"remote", "add", "second", (s.root() / (repo.filename().string() + "-origin.git")).string()});
@@ -245,6 +246,7 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy")
     s.git(repo, {"tag", "v1.0", "HEAD~3"});
     s.git(repo, {"tag", "-a", "-m", "Release two", "v2.0", "HEAD~1"});
     s.git(repo, {"branch", "-f", "side", "HEAD~3"});
+    s.git(repo, {"checkout", "-q", "side"}); // on the commit of v1.0, so main can be hidden
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Tags");
     const auto snapshot = s.session()->snapshot(); // keeps tags alive while the UI refreshes
@@ -261,7 +263,7 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy")
     s.contextMenu("//Tags/tag_v2.0/###tag_v2.0", "Copy name");
     GG_CHECK_STR_EQ(s.clipboard(), "v2.0");
     s.contextMenu("//Tags/tag_v2.0/###tag_v2.0", "Reveal");
-    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "HEAD~1"); }));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.revParse(repo, "main~1"); }));
     // Visibility: the menu item with Ctrl held shows only this tag's history.
     ctx->ItemInputValue("//Tags/##tag_filter", "");
     ctx->Yield(2);
@@ -308,6 +310,67 @@ GG_TEST("panels", "visibility: hidden refs survive a restart; refs that no longe
     // Show all leaves nothing stored for the repository.
     after.showAllRefs();
     GG_CHECK(s.app.settings().data().repoState.count(key) == 0);
+}
+
+GG_TEST("panels", "visibility: the checked-out branch shows although hidden; the stored setting stays")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"checkout", "-b", "side"});
+    s.git(repo, {"commit", "--allow-empty", "-m", "side only"});
+    const std::string tip = s.revParse(repo, "side");
+    s.git(repo, {"checkout", "main"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    auto& history = s.session()->history();
+    const auto tipOid = ggui::core::Oid::fromHex(tip);
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading() && history.row(tipOid) == nullptr; }));
+    const std::string key = s.session()->repoStateKey();
+    const std::set<std::string> stored{"refs/heads/side"};
+    GG_CHECK(!history.refVisible("refs/heads/side"));
+    // Check out the hidden branch: it shows in the panel and in History, the stored setting is the same.
+    s.git(repo, {"checkout", "side"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "side"; }));
+    ctx->Yield(2);
+    GG_CHECK(history.refVisible("refs/heads/side"));
+    GG_CHECK(s.waitUntil([&] { return !history.loading() && history.row(tipOid) != nullptr; }));
+    GG_CHECK(s.app.settings().hiddenRefs(key, "main") == stored);
+    // Check out another branch: the hidden branch is hidden again.
+    s.git(repo, {"checkout", "main"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "main"; }));
+    ctx->Yield(2);
+    GG_CHECK(!history.refVisible("refs/heads/side"));
+    GG_CHECK(s.waitUntil([&] { return !history.loading() && history.row(tipOid) == nullptr; }));
+    GG_CHECK(s.app.settings().hiddenRefs(key, "main") == stored);
+}
+
+GG_TEST("panels", "visibility: the menu item toggles the stored setting of the checked-out branch")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    auto& history = s.session()->history();
+    const std::string key = s.session()->repoStateKey();
+    s.git(repo, {"checkout", "side"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "side"; }));
+    ctx->Yield(2);
+    GG_CHECK(history.refVisible("refs/heads/side") && !history.refStoredVisible("refs/heads/side"));
+    // The click clears the stored setting, and the branch stays visible.
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    GG_CHECK(history.refVisible("refs/heads/side") && history.refStoredVisible("refs/heads/side"));
+    GG_CHECK(s.app.settings().hiddenRefs(key, "main").count("refs/heads/side") == 0);
+    s.git(repo, {"checkout", "main"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "main"; }));
+    ctx->Yield(2);
+    GG_CHECK(history.refVisible("refs/heads/side"));
 }
 
 GG_TEST("panels", "visibility: each worktree of a repository has its own hidden refs")
@@ -2181,6 +2244,7 @@ GG_TEST("panels", "branches: Create branch... in a remote-tracking branch's menu
 GG_TEST("panels", "branches: a folder group's menu hides and shows all its branches; Ctrl shows only them")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"}); // the checked-out branch cannot be hidden
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
     s.git(repo, {"branch", "feature/two", "HEAD~1"});
     s.git(repo, {"branch", "feature/three", "HEAD~1"});
@@ -2213,6 +2277,7 @@ GG_TEST("panels", "branches: a folder group's menu hides and shows all its branc
 GG_TEST("panels", "branches: the menu of a local branch also hides and shows its remote-tracking refs")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"}); // the checked-out branch cannot be hidden
     s.git(repo, {"branch", "side", "HEAD~1"});
     s.git(repo, {"push", "-q", "origin", "side"});
     GG_REQUIRE(s.openRepository(repo));
@@ -2238,6 +2303,7 @@ GG_TEST("panels", "branches: the menu of a local branch also hides and shows its
 GG_TEST("panels", "branches: a folder group's menu and Hide all / Show all cover the remote-tracking refs of the branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"}); // the checked-out branch cannot be hidden
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
     s.git(repo, {"branch", "feature/two", "HEAD~1"});
     s.git(repo, {"push", "-q", "origin", "feature/one"});
@@ -2265,6 +2331,7 @@ GG_TEST("panels", "branches: a folder group's menu and Hide all / Show all cover
 GG_TEST("panels", "branches: a remote node's menu hides and shows all its remote-tracking branches")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"}); // the checked-out branch cannot be hidden
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
     s.git(repo, {"branch", "feature/two", "HEAD~1"});
     s.git(repo, {"push", "-q", "origin", "feature/one", "feature/two"});
@@ -2299,6 +2366,8 @@ GG_TEST("panels", "branches: a remote node's menu hides and shows all its remote
 GG_TEST("panels", "branches: a new branch is hidden in a group of hidden branches and by the hide-new setting")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    // HEAD is on another branch: the checked-out branch always shows, which would hide the effect of "hide".
+    s.git(repo, {"checkout", "-q", "-b", "elsewhere"});
     s.git(repo, {"branch", "feature/one", "HEAD~1"});
     s.git(repo, {"branch", "feature/two", "HEAD~1"});
     GG_REQUIRE(s.openRepository(repo));
