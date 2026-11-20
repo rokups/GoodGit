@@ -607,13 +607,16 @@ RequestId Engine::mutate(MutationSpec spec)
         const std::filesystem::path cwd = bare ? std::filesystem::path(git_repository_path(repo))
                                                : std::filesystem::path(git_repository_workdir(repo));
         std::optional<gg::OperationRecorder> recorder;
-        if (spec.journal) {
-            recorder.emplace(repo, "ggui", spec.label, spec.captureIndex && !bare);
-            recorder->setCreatesCommits(spec.createsCommits);
-            recorder->begin();
-        }
+        bool began = false;
         MutationContext ctx(*this, job.id, repo, cwd, job.token);
         try {
+            // An exception here must still clear m_busy and send the event.
+            if (spec.journal) {
+                recorder.emplace(repo, "ggui", spec.label, spec.captureIndex && !bare);
+                recorder->setCreatesCommits(spec.createsCommits);
+                recorder->begin();
+                began = true;
+            }
             spec.run(ctx);
             if (ctx.submodules != SubmoduleSync::None && spec.submodulesAutoUpdate && !bare
                 && std::filesystem::exists(cwd / ".gitmodules")) {
@@ -682,13 +685,17 @@ RequestId Engine::mutate(MutationSpec spec)
                 }
             }
         }
-        if (recorder) {
-            for (auto& w : ctx.worktrees)
-                recorder->addWorktree(std::move(w));
-            recorder->setKeepExtra(std::move(ctx.keepExtra));
-            recorder->finish(ev.outcome == Outcome::Ok, ctx.worktreeFollowsIndex);
-            ev.operation = recorder->id();
-            ev.journalError = recorder->journalError();
+        if (began) {
+            try {
+                for (auto& w : ctx.worktrees)
+                    recorder->addWorktree(std::move(w));
+                recorder->setKeepExtra(std::move(ctx.keepExtra));
+                recorder->finish(ev.outcome == Outcome::Ok, ctx.worktreeFollowsIndex);
+                ev.operation = recorder->id();
+                ev.journalError = recorder->journalError();
+            } catch (const std::exception& e) {
+                ev.journalError = e.what();
+            }
         }
         {
             std::lock_guard lock(m_mutex);
