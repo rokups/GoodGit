@@ -5,10 +5,12 @@
 #include "libgg/Thread.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 namespace gg::conflicts {
 
@@ -45,13 +47,16 @@ std::string unhexKey(const std::string& h)
     return out;
 }
 
-// A failed lookup (for example a missing blob in a partial clone) is unknown: clear `complete`
-// and do not cache it.
+// A failed lookup (for example a missing blob in a partial clone) is unknown: clear `complete`.
+// The miss is kept in memory only (-1), so a scan does not repeat the lookup. Save never writes it.
 int blobSides(git_repository* repo, const git_oid& id, Cache& cache, bool& complete)
 {
     const std::string k = key(id);
-    if (auto it = cache.blobs.find(k); it != cache.blobs.end())
-        return it->second;
+    if (auto it = cache.blobs.find(k); it != cache.blobs.end()) {
+        if (it->second < 0)
+            complete = false;
+        return std::max(it->second, 0);
+    }
     int sides = 0;
     git_blob* raw = nullptr;
     if (git_blob_lookup(&raw, repo, &id) == 0) {
@@ -61,6 +66,7 @@ int blobSides(git_repository* repo, const git_oid& id, Cache& cache, bool& compl
     } else {
         git_error_clear();
         complete = false;
+        cache.blobs[k] = -1;
         return 0;
     }
     cache.blobs[k] = sides;
@@ -178,7 +184,10 @@ void Cache::save()
         return;
     std::error_code ec;
     fs::create_directories(m_file.parent_path(), ec);
-    const fs::path tmp = m_file.string() + ".tmp";
+    // A unique name: concurrent savers must not share one tmp file.
+    fs::path tmp = m_file;
+    tmp += "." + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-"
+        + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         out << kHeader << '\n';

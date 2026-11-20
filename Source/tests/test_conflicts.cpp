@@ -1521,11 +1521,31 @@ GG_TEST("conflicts", "cache: damaged or truncated file is ignored, a missing blo
     GG_REQUIRE(git_treebuilder_write(&tree, builder) == 0);
     git_treebuilder_free(builder);
     git_libgit2_opts(GIT_OPT_ENABLE_STRICT_OBJECT_CREATION, 1);
-    gg::conflicts::Cache cache;
+    gg::conflicts::Cache cache(common);
     gg::CancelToken cancel;
     GG_CHECK(gg::conflicts::scanTree(handle.get(), tree, cache, cancel).empty());
     GG_CHECK(cache.trees.empty());
-    GG_CHECK(cache.blobs.empty());
+    // The miss is remembered in memory: a second scan is also unknown and still not cached.
+    GG_CHECK(gg::conflicts::scanTree(handle.get(), tree, cache, cancel).empty());
+    GG_CHECK(cache.trees.empty());
+    cache.save();
+    {
+        std::ifstream in(cache.file(), std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        GG_CHECK(text.find("T ") == std::string::npos);
+    }
+
+    // A nested subtree with a missing blob: no ancestor tree is cached.
+    git_libgit2_opts(GIT_OPT_ENABLE_STRICT_OBJECT_CREATION, 0);
+    git_oid top;
+    GG_REQUIRE(git_treebuilder_new(&builder, handle.get(), nullptr) == 0);
+    GG_REQUIRE(git_treebuilder_insert(nullptr, builder, "dir", &tree, GIT_FILEMODE_TREE) == 0);
+    GG_REQUIRE(git_treebuilder_write(&top, builder) == 0);
+    git_treebuilder_free(builder);
+    git_libgit2_opts(GIT_OPT_ENABLE_STRICT_OBJECT_CREATION, 1);
+    gg::conflicts::Cache nested;
+    GG_CHECK(gg::conflicts::scanTree(handle.get(), top, nested, cancel).empty());
+    GG_CHECK(nested.trees.empty());
 }
 
 } // namespace ggtest

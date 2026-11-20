@@ -1991,4 +1991,31 @@ GG_TEST("refs", "a Shift click on a tag selects the range of the drawn rows, fol
     GG_CHECK(!names.count("release"));
 }
 
+GG_TEST("refs", "a branch or tag name that starts with a dash is refused by the dialog and harmless in the action")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showCreateBranchDialog("HEAD", "-D");
+    GG_REQUIRE(s.dialogOpen("Create branch"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    GG_CHECK(!form->buttons[0].enabled(*form));
+    s.dialogButton("Create branch", "Cancel");
+    s.session()->showCreateTagDialog("HEAD");
+    GG_REQUIRE(s.dialogOpen("Create tag"));
+    form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    const_cast<ggui::Form*>(form)->fields[0].text = "-f";
+    GG_CHECK(!form->buttons[0].enabled(*form));
+    s.dialogButton("Create tag", "Cancel");
+
+    // The actions put -- before the name: git refuses the name and no option runs.
+    const std::string before = s.gitOut(repo, {"branch", "--list"});
+    s.session()->actions().createBranch("-D", "HEAD", false);
+    s.session()->actions().createTag("-f", "HEAD", "");
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"branch", "--list"}), before);
+    GG_CHECK(s.gitOut(repo, {"tag", "--list"}).empty());
+}
+
 } // namespace ggtest

@@ -49,7 +49,7 @@ public:
 
     // Raw (attribute-free) results per tree id (binary id bytes as key).
     std::unordered_map<std::string, std::vector<ConflictedFile>> trees;
-    std::unordered_map<std::string, int> blobs; // blob id → sides (0 = not conflicted)
+    std::unordered_map<std::string, int> blobs; // blob id → sides (0 = not conflicted, -1 = unknown: memory only)
     bool dirty = false;
 
     // Working-tree files scanned by the status refresh, by path. Memory only: a file is read again
@@ -89,7 +89,7 @@ std::string ineligibleReason(git_repository* repo, const git_oid* commit, const 
 // conflict-marker-size attribute (invalid or absent: the default minimum, 7).
 gg::markers::WriteOptions writeOptions(git_repository* repo, const std::string& path);
 
-// Sides of a conflicted blob content (0 = not conflicted).
+// Sides of a conflicted blob content (0 = not conflicted, -1 = unknown: memory only).
 int contentSides(std::string_view content);
 
 } // namespace gg::conflicts
