@@ -131,6 +131,7 @@ App::~App()
 
 void App::shutdown()
 {
+    m_pickerGate->close(); // first: no picker result may queue a callback for a closing Session
     m_askpass.cancelAll();
     m_sequenceEditor.cancelAll();
     m_clone.cancel();
@@ -139,7 +140,6 @@ void App::shutdown()
         m_session.reset();
     }
     m_closing.clear();
-    m_pickerGate->close();
     m_sequenceEditor.stop();
     m_sequenceOpen = 0;
     if (m_settings.loaded()) {
