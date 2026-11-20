@@ -593,4 +593,92 @@ GG_TEST("undo", "failed operations are passed over by Undo and Redo")
     s.settle();
 }
 
+#ifndef _WIN32
+// Waits until the newest journal operation is `id` (after a refresh that runs the reconciler).
+bool journalHas(Scenario& s, ImGuiTestContext* ctx, const std::string& id)
+{
+    ctx->KeyPress(ImGuiKey_F5);
+    return s.waitUntil([&] {
+        const auto& ops = s.session()->operations();
+        return !ops.empty() && ops.back().id == id;
+    });
+}
+
+GG_TEST("undo", "a worktree step that fails part-way puts the refs, the index and the working tree back (GG-65)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tip = s.head(repo), parent = s.revParse(repo, "HEAD~1");
+    const std::string tipTree = s.gitOut(repo, {"rev-parse", "HEAD^{tree}"});
+    const std::string parentTree = s.gitOut(repo, {"rev-parse", "HEAD~1^{tree}"});
+    const fs::path added = s.root() / (repo.filename().string() + "-gg65");
+    s.track(added);
+    // One journaled operation that moved a branch, the index with the working tree, and removed a worktree.
+    std::ofstream(repo / ".git" / "gg" / "journal", std::ios::app | std::ios::binary)
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"g65-1\",\"src\":\"ggui\",\"label\":\"mixed\",\"wt\":\"main\"}\n"
+        << "{\"v\":1,\"t\":\"refs\",\"op\":\"g65-1\",\"u\":[[\"refs/heads/side\",\"" << parent << "\",\"" << tip << "\"]]}\n"
+        << "{\"v\":1,\"t\":\"index\",\"op\":\"g65-1\",\"wt\":\"main\",\"before\":\"" << parentTree << "\",\"after\":\"" << tipTree
+        << "\",\"worktree\":true}\n"
+        << "{\"v\":1,\"t\":\"worktree\",\"op\":\"g65-1\",\"do\":\"remove\",\"path\":" << nlohmann::json(added.string()).dump()
+        << ",\"head\":\"" << parent << "\",\"branch\":\"refs/heads/side\"}\n"
+        << "{\"v\":1,\"t\":\"end\",\"op\":\"g65-1\"}\n";
+    GG_REQUIRE(journalHas(s, ctx, "g65-1"));
+    s.settle();
+    // The worktree add runs the post-checkout hook, which fails.
+    s.write(repo / ".git" / "hooks", "post-checkout", "#!/bin/sh\nexit 1\n");
+    fs::permissions(repo / ".git" / "hooks" / "post-checkout", fs::perms::owner_all);
+    const std::string state = repoState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.dismissError());
+    GG_CHECK_STR_EQ(repoState(s, repo), state);
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    GG_CHECK_STR_EQ(s.revParse(repo, "side"), tip);
+    GG_CHECK(fs::exists(repo / "f5.txt"));
+}
+#endif
+
+GG_TEST("undo", "undo puts a symbolic HEAD back on its branch (GG-65)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string before = repoState(s, repo);
+    s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
+    GG_REQUIRE(s.waitUntil([&] { return s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out.empty(); }));
+    s.settle();
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& ops = s.session()->operations();
+        return !ops.empty() && ops.back().src == "git";
+    }));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(undone(s, repo, before));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/main");
+}
+
+#ifndef _WIN32
+GG_TEST("undo", "undo refuses a symbolic ref that was changed meanwhile (GG-65)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "other"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& ops = s.session()->operations();
+        return !ops.empty() && ops.back().src == "git";
+    }));
+    s.settle();
+    // HEAD is pointed at another branch while a fresh ref lock keeps the reconciler from journaling it.
+    s.write(repo / ".git" / "refs" / "heads", "zz.lock", "");
+    s.git(repo, {"symbolic-ref", "HEAD", "refs/heads/other"});
+    const std::string state = repoState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.dismissError());
+    fs::remove(repo / ".git" / "refs" / "heads" / "zz.lock");
+    GG_CHECK_STR_EQ(repoState(s, repo), state);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/other");
+}
+#endif
+
 } // namespace ggtest
