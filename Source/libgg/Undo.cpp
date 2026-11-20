@@ -273,7 +273,7 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         }
         if (!r.ok()) {
             result.wouldLoseData = plan.index->worktree;
-            result.error = r.message();
+            result.error = r.message() + keptWorktrees();
             recorder.finish(false);
             return result;
         }
@@ -282,7 +282,8 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     // A HEAD whose earlier value is unknown (recorded as the null id) cannot be restored.
     for (const auto& c : plan.restore)
         if (c.ref == journal::headKey(wt) && isZero(c.newValue)) {
-            result.error = "the previous value of HEAD was not recorded; use the Reflog to go back";
+            result.error = "the previous value of HEAD was not recorded; use the Reflog to go back"
+                + keptWorktrees();
             recorder.finish(false);
             if (plan.index && !bare) // nothing else changed yet except the index
                 restoreIndex();
@@ -357,7 +358,7 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         // Put the index back the way it was.
         if (plan.index && !bare)
             restoreIndex();
-        result.error = r.message();
+        result.error = r.message() + keptWorktrees();
         recorder.finish(false);
         return result;
     }

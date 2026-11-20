@@ -668,8 +668,9 @@ GG_TEST("undo", "a failed worktree step puts a re-attached HEAD and its branch b
     fs::permissions(repo / ".git" / "hooks" / "post-checkout", fs::perms::owner_all);
     const std::string state = repoState(s, repo);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
-    GG_CHECK(s.dismissError());
+    GG_REQUIRE(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
     GG_CHECK(s.app.errorMessage().find("worktrees not restored") == std::string::npos); // (the add itself failed: none was done)
+    GG_CHECK(s.dismissError());
     GG_CHECK_STR_EQ(repoState(s, repo), state);
     GG_CHECK(s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out.empty()); // still detached
     GG_CHECK_STR_EQ(s.head(repo), parent);
