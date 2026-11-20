@@ -361,11 +361,11 @@ RowAction visibilityAction(bool shown)
 
 // The eye button of a group row. Call right after the node's treeNode, which needs TreeAllowOverlap. The ID is
 // the node's, as for the rows below it, so the button has the same ID whether the node is open or not.
-void groupVisibilityButton(HistoryPanel& history, const std::vector<std::string>& refs)
+// `all` comes from the caller's refsState(), so a group row scans its refs once a frame.
+void groupVisibilityButton(HistoryPanel& history, const std::vector<std::string>& refs, bool all)
 {
     if (refs.empty())
         return;
-    const bool all = refsState(history, refs).all;
     const RowAction acts[] = {visibilityAction(all)};
     ImGui::PushOverrideID(ImGui::GetItemID());
     if (rowActions(acts, false, false) == 0)
@@ -516,9 +516,12 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
                 fitted.clear();
         }
         bool open;
+        RefsState state;
         {
             const SectionHeaderColors neutral;
-            const bool hidden = groupRefs && refsState(groupRefs->history, below).none;
+            if (groupRefs)
+                state = refsState(groupRefs->history, below);
+            const bool hidden = state.none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             open = treeNode(((fitted.empty() ? e.label : fitted) + "###group_" + rowId(id)).c_str(), !e.children.empty(),
@@ -527,7 +530,7 @@ void drawTree(const std::vector<NameTree::Entry>& entries, const std::string& id
                 ImGui::PopStyleColor();
         }
         if (groupRefs) {
-            groupVisibilityButton(groupRefs->history, below);
+            groupVisibilityButton(groupRefs->history, below, state.all);
             const auto makeDel = [&] {
             GroupDelete del;
             if (groupRefs->kind == RefKind::LocalBranch && groupRefs->session && groupRefs->snapshot) {
@@ -1147,16 +1150,17 @@ void BranchesPanel::draw(bool* open)
         for (const auto* k : kept)
             listed.push_back(gg::keep::refName(k->id.hex()));
         bool nodeOpen;
+        const RefsState state = refsState(history, listed);
         {
             const SectionHeaderColors neutral;
-            const bool hidden = refsState(history, listed).none;
+            const bool hidden = state.none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             nodeOpen = treeNode("Detached", !kept.empty(), TreeDefaultOpen | TreeAllowOverlap);
             if (hidden)
                 ImGui::PopStyleColor();
         }
-        groupVisibilityButton(history, listed);
+        groupVisibilityButton(history, listed, state.all);
         if (nodeOpen) {
             for (const auto* k : kept) {
                 const TreeLeaf place = treeLeafBegin();
@@ -1227,16 +1231,17 @@ void BranchesPanel::draw(bool* open)
             m_remoteOpenBeforeFilter.erase(before);
         }
         bool nodeOpen;
+        const RefsState state = refsState(history, listed);
         {
             const SectionHeaderColors neutral;
-            const bool hidden = refsState(history, listed).none;
+            const bool hidden = state.none;
             if (hidden)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
             nodeOpen = treeNode(remote.c_str(), !remoteTree.empty(), TreeAllowOverlap);
             if (hidden)
                 ImGui::PopStyleColor();
         }
-        groupVisibilityButton(history, listed);
+        groupVisibilityButton(history, listed, state.all);
         // The remote has the Remotes panel's menu; the node of a remote that is not in the list has none.
         if (info && beginContextMenu("##remote_menu")) {
             remoteMenuItems(m_session, *info);
