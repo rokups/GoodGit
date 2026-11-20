@@ -1316,17 +1316,17 @@ static void tagDeleteItems(Session& session, const core::Snapshot& snap, const s
     }
     if (remotes.empty()) {
         if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
-            actions.deleteTag(name);
+            session.showDeleteTagsDialog({name}, "");
         return;
     }
     if (!beginMenu(ICON_MS_DELETE, "Delete", free))
         return;
     if (menuItem(ICON_MS_DELETE, "Local"))
-        actions.deleteTag(name);
+        session.showDeleteTagsDialog({name}, "");
     ImGui::Separator();
     for (size_t i = 0; i < remotes.size(); ++i)
         if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
-            actions.deleteRemoteTag(names[i], name);
+            session.showDeleteTagsDialog({name}, names[i]);
     ImGui::EndMenu();
 }
 

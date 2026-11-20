@@ -1127,7 +1127,7 @@ void Actions::resetBranch(const std::string& branch, const core::Oid& commit, Re
                 // out: git treats them as expendable (as `checkout` does).
                 std::vector<std::string> tracked, clash;
                 std::vector<std::string> untracked;
-                const auto st = ctx.git({"--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"});
+                const auto st = ctx.git({"--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignore-submodules=none", "--untracked-files=all"});
                 size_t pos = 0;
                 while (pos < st.out.size()) {
                     size_t end = st.out.find('\0', pos);
@@ -1544,6 +1544,21 @@ void Actions::forgetRefsAs(const std::string& label, std::vector<std::string> fu
     });
 }
 
+// Refuses when a populated submodule has commits that no branch or remote has: an update would orphan them.
+// An uninitialized submodule has no commits to lose.
+static void refuseOrphanedCommits(MutationContext& ctx, const std::string& path)
+{
+    if (!fs::exists(ctx.cwd() / path / ".git"))
+        return;
+    const auto r = ctx.gitMayFail({"-C", path, "rev-list", "HEAD", "--not", "--branches", "--remotes", "-1"});
+    if (!r.ok())
+        throw MutationError{Outcome::Refused, "The commits of the submodule " + path + " cannot be checked: " + firstLineOf(r.message()), {}};
+    if (!gg::trim(r.out).empty())
+        throw MutationError{Outcome::Refused,
+            "The submodule " + path + " has commits on a detached HEAD that no branch has. An update would orphan them: create a branch for them first.",
+            {}};
+}
+
 void Actions::submoduleInit(const std::string& path)
 {
     run("initialize submodule " + path,
@@ -1554,14 +1569,18 @@ void Actions::submoduleInit(const std::string& path)
 void Actions::submoduleUpdate(const std::string& path)
 {
     run("update submodule " + path,
-        [path](MutationContext& ctx) { ctx.git({"submodule", "update", "--recursive", "--progress", "--", path}, {}, true); }, {},
-        true);
+        [path](MutationContext& ctx) {
+            refuseOrphanedCommits(ctx, path);
+            ctx.git({"submodule", "update", "--recursive", "--progress", "--", path}, {}, true);
+        },
+        {}, true);
 }
 
 void Actions::submoduleUpdateRemote(const std::string& path)
 {
     run("update submodule " + path + " to remote branch",
         [path](MutationContext& ctx) {
+            refuseOrphanedCommits(ctx, path);
             ctx.git({"submodule", "update", "--remote", "--recursive", "--progress", "--", path}, {}, true);
         },
         {}, true);
@@ -1656,6 +1675,17 @@ void Actions::submoduleRemove(const std::string& path, bool deleteData)
             // Nothing changes before this check: the data folder must be a strict child of .git/modules.
             if (!strictChildOf(data, gitPath("modules")))
                 throw MutationError{Outcome::Refused, "The repository data of the submodule is not below .git/modules: " + data.string(), {}};
+            // deinit -f discards the working tree: refuse when it has changes, untracked files or a stash.
+            if (fs::exists(ctx.cwd() / path / ".git")) {
+                const auto st = ctx.gitMayFail({"-C", path, "status", "--porcelain", "--untracked-files=all"});
+                const auto sl = ctx.gitMayFail({"-C", path, "stash", "list"});
+                if (!st.ok() || !sl.ok())
+                    throw MutationError{Outcome::Refused, "The submodule " + path + " cannot be checked: " + firstLineOf((st.ok() ? sl : st).message()), {}};
+                if (!gg::trim(st.out).empty() || !gg::trim(sl.out).empty())
+                    throw MutationError{Outcome::Refused,
+                        "The submodule " + path + " has changes, untracked files or a stash. Commit, discard or stash them in the submodule first.",
+                        {}};
+            }
             const bool hasData = deleteData && fs::is_directory(data);
             if (hasData) {
                 // The commits that no remote has: on a branch, on HEAD (a detached one) or in the stash.
@@ -1711,12 +1741,34 @@ std::string Actions::submodulePathProblem(const std::string& path)
     return {};
 }
 
+std::string Actions::submoduleUrlProblem(const std::string& url)
+{
+    const size_t scheme = url.find("://");
+    if (scheme == std::string::npos)
+        return {};
+    const size_t end = url.find_first_of("/?#", scheme + 3);
+    const std::string authority = url.substr(scheme + 3, end == std::string::npos ? end : end - scheme - 3);
+    const size_t at = authority.rfind('@');
+    if (at == std::string::npos)
+        return {};
+    std::string user = authority.substr(0, at);
+    // A percent-encoded colon is a colon for git.
+    for (size_t i; (i = std::min(user.find("%3A"), user.find("%3a"))) != std::string::npos;)
+        user.replace(i, 3, ":");
+    const size_t colon = user.find(':');
+    if (colon == std::string::npos || colon + 1 == user.size())
+        return {};
+    return "The URL contains a password. Remove it and use a credential helper.";
+}
+
 void Actions::submoduleAdd(const std::string& url, const std::string& path, const std::string& branch)
 {
     run("add submodule " + path,
         [url = gg::trim(url), path = gg::trim(path), branch](MutationContext& ctx) {
             if (url.empty())
                 throw MutationError{Outcome::Refused, "The URL is empty", {}};
+            if (const std::string problem = submoduleUrlProblem(url); !problem.empty())
+                throw MutationError{Outcome::Refused, problem, {}};
             if (const std::string problem = submodulePathProblem(path); !problem.empty())
                 throw MutationError{Outcome::Refused, problem, {}};
             std::vector<std::string> args{"submodule", "add", "--progress"};
@@ -2196,6 +2248,24 @@ void Actions::commitWithConflicts()
         }
         std::vector<std::pair<std::string, std::string>> contents;
         for (const auto& p : paths) {
+            // A file with no conflict marker line was resolved by hand: keep it, only stage it.
+            std::string current;
+            if (!gg::readFile(ctx.cwd() / p, current))
+                throw MutationError{Outcome::Failed, "cannot read " + p, {}};
+            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
+            bool marked = false; // a line of markerSize or more "<", then a space or the line end
+            for (size_t at = 0; at < current.size() && !marked;) {
+                size_t run = 0;
+                while (at + run < current.size() && current[at + run] == '<')
+                    ++run;
+                const size_t after = at + run;
+                marked = run >= static_cast<size_t>(options.markerSize)
+                    && (after == current.size() || current[after] == ' ' || current[after] == '\r' || current[after] == '\n');
+                const size_t eol = current.find('\n', at);
+                at = eol == std::string::npos ? current.size() : eol + 1;
+            }
+            if (!marked)
+                continue;
             auto stage = [&](int n) {
                 const auto r = ctx.gitMayFail({"show", ":" + std::to_string(n) + ":" + p});
                 return r.ok() ? std::optional<std::string>(r.out) : std::nullopt;
@@ -2208,7 +2278,6 @@ void Actions::commitWithConflicts()
             if (gg::markers::looksBinary(*ours) || gg::markers::looksBinary(*theirs)
                 || (base && gg::markers::looksBinary(*base)))
                 throw MutationError{Outcome::Refused, p + " is binary: resolve binary conflicts first", {}};
-            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
             options.sideLabels = {oursLabel, theirsLabel};
             options.baseLabels = {"base"};
             contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs, options));

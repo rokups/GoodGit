@@ -12,7 +12,14 @@ using socklen_t = int;
 #include <unistd.h>
 #endif
 
+#include <chrono>
 #include <cstring>
+
+#ifdef SOCK_CLOEXEC
+constexpr int kCloexec = SOCK_CLOEXEC;
+#else
+constexpr int kCloexec = 0; // Windows: noInherit() does it
+#endif
 
 namespace gg::net {
 
@@ -28,6 +35,26 @@ bool waitReadable(Socket s, int timeoutMs)
 #else
     pollfd p{static_cast<int>(s), POLLIN, 0};
     return poll(&p, 1, timeoutMs) > 0;
+#endif
+}
+
+#ifdef _WIN32
+// A child process (git) must not keep an accepted socket open.
+Socket noInherit(Socket s)
+{
+    if (s != kInvalid)
+        SetHandleInformation(reinterpret_cast<HANDLE>(s), HANDLE_FLAG_INHERIT, 0);
+    return s;
+}
+#endif
+
+// Created not inheritable from the start: no window for a child process started at the same time.
+Socket newSocket()
+{
+#ifdef _WIN32
+    return static_cast<Socket>(::WSASocketW(AF_INET, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT));
+#else
+    return static_cast<Socket>(::socket(AF_INET, SOCK_STREAM | kCloexec, 0));
 #endif
 }
 
@@ -49,7 +76,7 @@ bool startup()
 Socket listenLoopback(int& port)
 {
     startup();
-    const auto s = static_cast<Socket>(::socket(AF_INET, SOCK_STREAM, 0));
+    const auto s = newSocket();
     if (s == kInvalid)
         return kInvalid;
     sockaddr_in addr{};
@@ -71,14 +98,17 @@ Socket acceptWithTimeout(Socket listener, int timeoutMs)
 {
     if (!waitReadable(listener, timeoutMs))
         return kInvalid;
-    const auto c = static_cast<Socket>(::accept(static_cast<int>(listener), nullptr, nullptr));
-    return c;
+#ifdef _WIN32
+    return noInherit(static_cast<Socket>(::accept(static_cast<int>(listener), nullptr, nullptr)));
+#else
+    return static_cast<Socket>(::accept4(static_cast<int>(listener), nullptr, nullptr, SOCK_CLOEXEC));
+#endif
 }
 
 Socket connectLoopback(int port)
 {
     startup();
-    const auto s = static_cast<Socket>(::socket(AF_INET, SOCK_STREAM, 0));
+    const auto s = newSocket();
     if (s == kInvalid)
         return kInvalid;
     sockaddr_in addr{};
@@ -113,14 +143,23 @@ bool recvLine(Socket s, std::string& line, int timeoutMs)
 {
     line.clear();
     char c = 0;
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     for (;;) {
-        if (!waitReadable(s, timeoutMs))
+        int left = -1; // no deadline
+        if (timeoutMs >= 0) {
+            left = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(end - std::chrono::steady_clock::now()).count());
+            if (left < 0)
+                return false;
+        }
+        if (!waitReadable(s, left))
             return false;
         const auto n = ::recv(static_cast<int>(s), &c, 1, 0);
         if (n <= 0)
             return !line.empty();
         if (c == '\n')
             return true;
+        if (line.size() >= kMaxLine)
+            return false;
         line.push_back(c);
     }
 }

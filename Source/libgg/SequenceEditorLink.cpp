@@ -9,7 +9,13 @@
 #include <fstream>
 #include <sstream>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -32,8 +38,33 @@ fs::path registryDir()
         dir = fs::temp_directory_path(ec) / ("ggui-" + std::to_string(static_cast<long long>(getuid())));
 #endif
     ec.clear();
+#ifndef _WIN32
+    // The directory must be ours and private. Another owner or a symlink: use a fresh private
+    // directory (other processes cannot find it, so they fall back to git's own editor).
+    // mkdir with 0700: no window where another user can plant a file (the parent exists).
+    ::mkdir(dir.c_str(), 0700);
+    struct stat st{};
+    if (::lstat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != getuid()) {
+        static const fs::path fresh = [] {
+            std::error_code e;
+            static std::string tmpl; // static: the exit handler below reads it
+            tmpl = (fs::temp_directory_path(e) / "ggui-XXXXXX").string();
+            if (!mkdtemp(tmpl.data()))
+                return fs::path(); // empty: the registry is off
+            std::atexit([] {
+                std::error_code rm;
+                fs::remove_all(tmpl, rm);
+            });
+            return fs::path(tmpl);
+        }();
+        return fresh;
+    }
+    if ((st.st_mode & 0777) != 0700)
+        ::chmod(dir.c_str(), 0700);
+#else
     if (fs::create_directories(dir, ec))
         fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
+#endif
     return dir;
 }
 
@@ -57,26 +88,76 @@ namespace {
 
 fs::path instanceFile(long long pid) { return registryDir() / (std::to_string(pid) + ".instance"); }
 
+bool processAlive(long long pid)
+{
+#ifdef _WIN32
+    HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+    if (!h)
+        return GetLastError() == ERROR_ACCESS_DENIED;
+    const bool alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+    CloseHandle(h);
+    return alive;
+#else
+    return ::kill(static_cast<pid_t>(pid), 0) == 0 || errno != ESRCH;
+#endif
+}
+
 } // namespace
+
+void removeDeadInstances(long long exceptPid)
+{
+    std::error_code ec;
+    const fs::path dir = registryDir();
+    if (dir.empty())
+        return;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        const fs::path& p = it->path();
+        const long long pid = std::atoll(p.stem().string().c_str());
+        if (p.extension() == ".instance" && pid > 0 && pid != exceptPid && !processAlive(pid)) {
+            std::error_code rm;
+            fs::remove(p, rm);
+        }
+    }
+}
 
 bool writeInstance(const Instance& instance)
 {
+    if (registryDir().empty())
+        return false;
     const fs::path file = instanceFile(instance.pid);
     const fs::path tmp = file.string() + ".tmp";
+    std::error_code ec;
+    const std::string text = std::to_string(instance.port) + "\n" + instance.token + "\n" + instance.gitDir + "\n";
+#ifdef _WIN32
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << instance.port << "\n" << instance.token << "\n" << instance.gitDir << "\n";
+        out << text;
         if (!out)
             return false;
     }
-    std::error_code ec;
     fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+#else
+    // Created new (O_EXCL) and 0600: the token is never readable by others and a planted link is not followed.
+    fs::remove(tmp, ec);
+    const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    if (fd < 0)
+        return false;
+    const bool wrote = ::write(fd, text.data(), text.size()) == static_cast<ssize_t>(text.size());
+    ::close(fd);
+    if (!wrote) {
+        fs::remove(tmp, ec);
+        return false;
+    }
+#endif
+    removeDeadInstances(instance.pid);
     ec = replaceFile(tmp, file);
     return !ec;
 }
 
 void removeInstance(long long pid)
 {
+    if (registryDir().empty())
+        return;
     std::error_code ec;
     fs::remove(instanceFile(pid), ec);
 }
@@ -85,10 +166,19 @@ std::vector<Instance> instances()
 {
     std::vector<Instance> out;
     std::error_code ec;
-    for (fs::directory_iterator it(registryDir(), ec), end; !ec && it != end; it.increment(ec)) {
+    const fs::path dir = registryDir();
+    if (dir.empty())
+        return out;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         const fs::path& p = it->path();
         if (p.extension() != ".instance")
             continue;
+#ifndef _WIN32
+        // Only a regular file of ours: not a link and not a file another user planted.
+        struct stat st{};
+        if (::lstat(p.c_str(), &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != getuid())
+            continue;
+#endif
         std::ifstream in(p, std::ios::binary);
         Instance i;
         std::string port;

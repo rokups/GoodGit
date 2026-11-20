@@ -237,7 +237,7 @@ public:
     void moveChanges(const core::Oid& commit, MoveTo to, const std::vector<std::string>& paths, const std::string& patch);
     // Working tree files folded into `commit` (its descendants rebased; the files stay as they
     // are on disk).
-    void absorb(const core::Oid& commit, const std::vector<std::string>& paths);
+    void absorb(const core::Oid& commit, const std::vector<std::string>& paths, Callback done = {});
     // Moves (or copies) `commit` right after `anchor` (or before it) in a linear chain.
     void reorder(const core::Oid& commit, const core::Oid& anchor, bool after, bool copy);
 
@@ -270,6 +270,8 @@ public:
     void submoduleAdd(const std::string& url, const std::string& path, const std::string& branch);
     // "" when `path` can be the path of a new submodule; else the reason it cannot (empty, absolute or with "..").
     static std::string submodulePathProblem(const std::string& path);
+    // "" when `url` holds no password; else the reason (scheme://user:password@host). GG-103: .gitmodules is committed.
+    static std::string submoduleUrlProblem(const std::string& url);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
         bool setUpstream, bool forceWithLease, bool tags = false);
     // GG-22: a push with a .gitmodules file uses --recurse-submodules=on-demand: git pushes the submodules first.
