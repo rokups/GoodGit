@@ -229,8 +229,14 @@ GG_TEST("network", "fetch: toolbar, dropdown, menu, Remotes panel, Branches; onl
     GG_CHECK(!hasRef("refs/remotes/second/extra"));
 
     // The branch disappears on the remote: a plain fetch keeps it, "Fetch and prune" deletes it.
+    // A second tracked branch that moves on the remote proves that the plain fetch ran,
+    // so the kept ref is not a leftover.
+    s.git(second, {"branch", "moves", "main~2"});
+    s.git(repo, {"fetch", "-q", "second", "+refs/heads/moves:refs/remotes/second/moves"});
+    s.git(second, {"branch", "-f", "moves", "main"});
     s.git(second, {"branch", "-D", "only-second"});
     popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch second");
+    GG_CHECK(s.waitUntil([&] { return s.revParse(repo, "second/moves") == s.gitOut(second, {"rev-parse", "main"}); }));
     s.settle();
     GG_CHECK(hasRef("refs/remotes/second/only-second"));
     popupItem(s, "//###Toolbar/###tb_fetch_menu", "Fetch and prune");
@@ -918,6 +924,7 @@ GG_TEST("network", "clone over git://: the server's progress shows its phase, no
     }, 60.0f));
     s.settle();
     s.track(dest);
+    // The set can be empty: a fast clone ends between two frames, and pumpClone clears the phase.
     GG_CHECK(!phases.count("remote"));
     GG_CHECK_STR_EQ(s.head(dest), s.revParse(src, "main"));
 }

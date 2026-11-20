@@ -352,16 +352,20 @@ GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out
         return out;
     };
     GG_CHECK(s.waitUntil([&] { return files(longMarkers).count("long.txt") == 1; }));
+    // The negative checks need a scanned commit with a non-empty list, else they pass on nothing.
+    GG_REQUIRE(s.session()->conflictsOf(Oid::fromHex(malformed)) != nullptr && !files(malformed).empty());
+    GG_REQUIRE(s.session()->conflictsOf(Oid::fromHex(optout)) != nullptr && !files(optout).empty());
     GG_CHECK(files(malformed).count("broken.txt") == 0);
     GG_CHECK(files(optout).count("optout.txt") == 0);
     const auto before = files(optout);
+    GG_REQUIRE(!before.empty());
     // The cache under .git/gg is disposable: without it the same is reported.
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
     removeAll(repo / ".git" / "gg");
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(scanned(s, nway));
-    GG_CHECK(s.waitUntil([&] { return files(optout) == before; }));
+    GG_CHECK(s.waitUntil([&] { return !files(optout).empty() && files(optout) == before; }));
 }
 
 GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute are applied by writes")

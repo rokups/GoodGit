@@ -999,11 +999,15 @@ GG_TEST("shell", "ini load skips split dock nodes")
     ctx->Yield(2);
     s.app.resetForTest();
     ImGuiContext& g = *ctx->UiContext;
+    bool sawSplit = false;
     for (int i = 0; i < g.DockContext.Nodes.Data.Size; i++) {
         auto* node = static_cast<ImGuiDockNode*>(g.DockContext.Nodes.Data[i].val_p);
-        if (node && node->IsSplitNode())
+        if (node && node->IsSplitNode()) {
+            sawSplit = true;
             GG_CHECK(node->Windows.Size == 0 && node->TabBar == nullptr);
+        }
     }
+    GG_CHECK(sawSplit);
     s.app.resetForTest();
 }
 

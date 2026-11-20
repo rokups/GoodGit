@@ -296,7 +296,7 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
     auto& rng = s.rng();
     const fs::path repo = s.fixture(Recipe::Empty, "random");
     std::vector<std::string> lines;
-    const int n = 12 + static_cast<int>(rng() % 20);
+    const int n = 60 + static_cast<int>(rng() % 20); // many separate hunks, so rounds 0-2 never run dry
     const bool crlf = rng() % 3 == 0;
     const std::string eol = crlf ? "\r\n" : "\n";
     for (int i = 0; i < n; ++i)
@@ -306,7 +306,7 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
         original += l;
     s.commitFile(repo, "r.txt", original, "Random base");
     // Random edits: replace, insert, delete.
-    for (int e = 0; e < 6; ++e) {
+    for (int e = 0; e < 12; ++e) {
         const size_t at = rng() % lines.size();
         switch (rng() % 3) {
         case 0: lines[at] = randomWord(rng) + eol; break;
@@ -322,12 +322,13 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
     s.write(repo, "r.txt", modified);
     ctx->LogInfo("seed %llu: %d lines, crlf=%d", static_cast<unsigned long long>(s.seed()), n, crlf ? 1 : 0);
     GG_REQUIRE(s.openRepository(repo));
+    int checkedRounds = 0;
     for (int round = 0; round < 4; ++round) {
         const bool unstage = round == 3;
         if (!showFile(s, unstage ? "Staged" : "Unstaged", "r.txt"))
             break;
         const ggui::core::DiffFile file = *diffFile(s);
-        const std::string base = s.git(repo, {"show", unstage ? ":r.txt" : ":r.txt"}).out;
+        const std::string base = s.git(repo, {"show", ":r.txt"}).out;
         // Rows as the Diff panel lays them out: per hunk its lines, with the header row directly
         // above the first changed line.
         auto leadOf = [](const ggui::core::DiffHunk& hk) {
@@ -364,7 +365,13 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
                 prevNewEnd = hk.newStart + hk.newLines - (hk.newLines == 0 ? 0 : 1);
             }
         }
-        size_t a = rng() % rows.size();
+        // Start on a header or a changed line, so a round does not select context only and skip.
+        std::vector<size_t> starts;
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i].second < 0 || file.hunks[static_cast<size_t>(rows[i].first)].lines[static_cast<size_t>(rows[i].second)].origin != ' ')
+                starts.push_back(i);
+        GG_REQUIRE(!starts.empty());
+        size_t a = starts[rng() % starts.size()];
         size_t b = std::min(rows.size() - 1, a + rng() % 5);
         std::set<std::pair<int, int>> selected;
         bool changes = false;
@@ -408,8 +415,11 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
             ctx->LogError("round %d (seed %llu): index differs from the model", round,
                 static_cast<unsigned long long>(s.seed()));
         GG_CHECK(ok);
+        ++checkedRounds;
         s.settle();
     }
+    // Skipped rounds must not let the test pass without a real check.
+    GG_CHECK(checkedRounds >= 3);
     // The working tree never changes while staging.
     GG_CHECK(s.read(repo, "r.txt") == modified);
 }
