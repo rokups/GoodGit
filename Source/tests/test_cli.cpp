@@ -8,6 +8,9 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <chrono>
+#include <thread>
+
 namespace ggtest {
 
 namespace {
@@ -267,6 +270,26 @@ GG_TEST("cli", "git gg hooks install and status only print that the managed hook
     const auto r = s.gitgg(repo, {"hooks", "uninstall"});
     GG_CHECK_EQ(r.exitCode, 0);
     GG_CHECK(r.out.find("nothing to do") != std::string::npos);
+}
+
+GG_TEST("cli", "gg::run kills a cancelled child group that ignores SIGTERM after a deadline")
+{
+    const fs::path dir = s.path("stubborn-bin");
+    fs::create_directories(dir);
+    Scenario::writeTool(dir, "stubborn", "#!/bin/sh\ntrap '' TERM\nsleep 600 &\nwait\n");
+    gg::RunRequest r;
+    r.args = {(dir / "stubborn").string()};
+    gg::CancelToken token;
+    r.cancel = token;
+    gg::RunResult result;
+    const auto start = std::chrono::steady_clock::now();
+    std::thread worker([&] { result = gg::run(r); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    token.cancel();
+    worker.join();
+    const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(result.cancelled);
+    GG_CHECK(secs < 5.0);
 }
 
 } // namespace ggtest

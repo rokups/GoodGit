@@ -381,7 +381,9 @@ RunResult runProcess(const RunRequest& request)
     int outFd = outPipe[0];
     int errFd = errPipe[0];
     ProgressSplitter splitter(request.onProgress);
-    bool killed = false;
+    bool killed = false, sentKill = false;
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point killAt, drainEnd;
     char buf[65536];
     while (outFd >= 0 || errFd >= 0) {
         pollfd fds[3];
@@ -404,6 +406,21 @@ RunResult runProcess(const RunRequest& request)
             kill(-pid, SIGTERM);
             killed = true;
             result.cancelled = true;
+            killAt = Clock::now() + std::chrono::seconds(2);
+        }
+        if (killed && !sentKill && Clock::now() >= killAt) {
+            kill(-pid, SIGKILL);
+            sentKill = true;
+            drainEnd = Clock::now() + std::chrono::milliseconds(500);
+        }
+        if (sentKill && Clock::now() >= drainEnd) {
+            // A grandchild that left the group can still hold a pipe open.
+            if (outFd >= 0)
+                close(outFd);
+            if (errFd >= 0)
+                close(errFd);
+            outFd = errFd = -1;
+            break;
         }
         if (pr <= 0)
             continue;
@@ -443,17 +460,17 @@ RunResult runProcess(const RunRequest& request)
     if (inFd >= 0)
         close(inFd);
     int status = 0;
-    for (int waited = 0;; ++waited) {
-        const pid_t w = waitpid(pid, &status, killed ? WNOHANG : 0);
-        if (w == pid)
-            break;
-        if (w < 0 && errno != EINTR)
-            break;
-        if (killed && w == 0) {
-            if (waited == 50)
-                kill(-pid, SIGKILL);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    for (;;) {
+        if (killed && !sentKill && Clock::now() >= killAt) {
+            kill(-pid, SIGKILL);
+            sentKill = true;
         }
+        // Until the deadline, poll so a child that ignores SIGTERM cannot block the wait.
+        const pid_t w = waitpid(pid, &status, killed && !sentKill ? WNOHANG : 0);
+        if (w == pid || (w < 0 && errno != EINTR))
+            break;
+        if (w == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     if (killed)
         kill(-pid, SIGKILL); // leftover grandchildren
