@@ -243,6 +243,10 @@ void SequenceEditorServer::loop()
         const auto client = gg::net::acceptWithTimeout(m_listener, 50);
         if (client == gg::net::kInvalid)
             continue;
+        if (m_clients.size() >= 16) { // a flood of connections must not start a thread for each
+            gg::net::closeSocket(client);
+            continue;
+        }
         auto finished = std::make_shared<std::atomic<bool>>(false);
         m_clients.push_back({std::thread([this, client, finished] {
                                  try {
