@@ -1572,6 +1572,8 @@ GG_TEST("conflicts", "cache: damaged or truncated file is ignored, a missing blo
 
 } // namespace ggtest
 
+namespace ggtest {
+
 namespace {
 
 // Runs Actions::absorb of `paths` into HEAD and waits for the event.
@@ -1623,7 +1625,7 @@ GG_TEST("conflicts", "absorb stores the clean content of a file with an eol attr
     const auto e = absorbHead(s, repo, {"a.crlf"});
     GG_REQUIRE(e.has_value());
     GG_CHECK(e->outcome == ggui::core::Outcome::Ok);
-    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:a.crlf"}), "one\nthree\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:a.crlf"}), "one\nthree");
 }
 
 GG_TEST("conflicts", "commit with conflicts keeps a file the user resolved by hand (GG-88)")
@@ -1635,6 +1637,8 @@ GG_TEST("conflicts", "commit with conflicts keeps a file the user resolved by ha
     ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
     GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
     s.settle();
-    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "hand edited\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "hand edited");
     GG_CHECK_STR_EQ(s.read(repo, "f.txt"), "hand edited\n");
 }
+
+} // namespace ggtest

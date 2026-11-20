@@ -1691,9 +1691,9 @@ void Actions::absorb(const core::Oid& commit, const std::vector<std::string>& pa
                     } else if (std::filesystem::exists(file)) {
                         // Clean filters and autocrlf apply; libgit2 cannot run external filter commands.
                         const auto hashed = gg::git(wd, {"hash-object", "-w", "--path=" + p, "--", p});
-                        git_oid blobId;
-                        if (!hashed.ok() || git_oid_fromstr(&blobId, hashed.out.substr(0, hashed.out.find('\n')).c_str()) != 0)
+                        if (!hashed.ok())
                             refuse("cannot read " + p + ": " + hashed.message());
+                        const git_oid blobId = fromHexOrThrow(hashed.out.substr(0, hashed.out.find('\n')));
                         git_blob* blob = nullptr;
                         if (git_blob_lookup(&blob, repo, &blobId) != 0)
                             refuse("cannot read " + p);
