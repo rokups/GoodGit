@@ -1311,6 +1311,31 @@ GG_TEST("refs", "a remote name with a slash gives the right remote for its branc
     GG_CHECK_STR_EQ(b->upstreamRemote, "team/fork");
 }
 
+GG_TEST("refs", "upstream: a branch tracking a local branch does not crash and disables the push items")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "feature", "main"});
+    s.git(repo, {"branch", "-u", "main", "feature"});
+    s.git(repo, {"checkout", "-q", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(branchRow("feature").c_str()); }));
+    const auto* b = s.session()->snapshot()->findBranch("feature");
+    GG_REQUIRE(b != nullptr);
+    GG_CHECK(b->upstreamLocal);
+    GG_CHECK(b->upstreamRemote.empty());
+    GG_CHECK(b->remoteBranchPart().empty());
+    GG_CHECK(s.itemText(branchRow("feature").c_str()).find("main") != std::string::npos);
+    GG_CHECK(s.itemText(branchRow("feature").c_str()).find("refs") == std::string::npos);
+    GG_CHECK(ctx->ItemInfo("//###Toolbar/###tb_push").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->ItemClick("//###Toolbar/###tb_push_menu");
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Force with lease...").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->PopupCloseAll();
+    ctx->ItemClick(branchRow("feature").c_str(), ImGuiMouseButton_Right);
+    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Push").ItemFlags & ImGuiItemFlags_Disabled);
+    ctx->PopupCloseAll();
+}
+
 GG_TEST("refs", "branches: Check out on a remote-tracking branch opens Create branch when no local branch has its name")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

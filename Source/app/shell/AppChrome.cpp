@@ -554,7 +554,10 @@ void App::drawRepositoryButtons()
     const bool canPush = s && !s->snapshot()->headDetached && !s->snapshot()->headUnborn && hasRemotes;
     const int outgoing = s ? s->outgoing() : 0;
     const std::string pushLabel = std::string(ICON_MS_UPLOAD) + " Push" + (outgoing ? " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(outgoing) : "");
-    if (iconButton(pushLabel.c_str(), "##tb_push", tip("Push the current branch"), free && canPush, ImDrawFlags_RoundCornersLeft))
+    const auto* curBranch = s ? s->snapshot()->currentBranch() : nullptr;
+    const bool localUp = curBranch && curBranch->upstreamLocal;
+    if (iconButton(pushLabel.c_str(), "##tb_push", localUp ? "The upstream is a local branch" : tip("Push the current branch"),
+            free && canPush && !localUp, ImDrawFlags_RoundCornersLeft))
         s->pushCurrent();
     ImGui::SameLine(0, 0);
     if (iconButton(ICON_MS_EXPAND_MORE, "##tb_push_menu", tip("Push options"), free && hasRemotes, ImDrawFlags_RoundCornersRight))
@@ -562,14 +565,13 @@ void App::drawRepositoryButtons()
     if (ImGui::BeginPopup("##push_menu")) {
         if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, canPush))
             s->showPushToDialog();
-        if (menuItem(ICON_MS_WARNING, "Force with lease...", nullptr, false, canPush)) {
+        if (menuItem(ICON_MS_WARNING, "Force with lease...", nullptr, false, canPush && !localUp)) {
             const auto* b = s->snapshot()->currentBranch();
-            if (b && !b->upstream.empty()) {
-                const size_t slash = b->upstreamRemote.size();
+            if (b && !b->remoteBranchPart().empty()) {
                 Form f;
                 f.title = "Force push";
                 f.message = "Overwrite " + b->upstream + " with " + b->name + " (--force-with-lease)?";
-                const std::string remote = b->upstream.substr(0, slash), rb = b->upstream.substr(slash + 1), local = b->name;
+                const std::string remote = b->upstreamRemote, rb = b->remoteBranchPart(), local = b->name;
                 const std::string lease = s->actions().trackingOid(remote, rb);
                 f.buttons.push_back({"Force push", [s, remote, local, rb, lease](Form&) { s->actions().push(remote, local, rb, false, true, false, {}, lease); }});
                 f.buttons.back().danger = true;
@@ -582,7 +584,7 @@ void App::drawRepositoryButtons()
         if (menuItem(ICON_MS_SELL, "Push tags")) {
             const auto* b = s->snapshot()->currentBranch();
             std::string remote = s->snapshot()->remotes.front().name;
-            if (b && !b->upstream.empty())
+            if (b && !b->upstreamRemote.empty())
                 remote = b->upstreamRemote;
             s->actions().push(remote, "", "", false, false, true);
         }
