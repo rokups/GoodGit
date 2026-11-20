@@ -256,6 +256,8 @@ GG_TEST("rewrite", "a ref that moves while the rewrite asks: the rewrite is comp
     GG_CHECK(s.fsck(repo));
 }
 
+} // namespace ggtest
+
 namespace ggtest {
 
 GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD moves")
