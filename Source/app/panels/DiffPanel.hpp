@@ -48,7 +48,7 @@ public:
     LineSet selectedLines() const;
     void applyLines(const LineSet& lines, StagingAction action);
     // Opens a danger-button dialog; `run` executes only on "Discard".
-    void confirmDiscard(const LineSet& lines, std::function<void()> run);
+    void confirmDiscard(const LineSet& lines, bool inCommit, std::function<void()> run);
 
     const core::DiffPtr& diff() const { return m_diff; }
     const std::optional<FileRow>& file() const { return m_file; }
