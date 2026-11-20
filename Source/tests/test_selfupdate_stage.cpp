@@ -107,10 +107,7 @@ bool stage(const TempRoot& root, const std::vector<Entry>& entries, std::string&
 GG_TEST("selfupdate", "stage unpacks a good update into new/")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     std::string error = "unset";
     GG_REQUIRE(stage(root, packageEntries("ggui-1-test", gitGg), error));
@@ -137,10 +134,7 @@ GG_TEST("selfupdate", "stage unpacks a good update into new/")
 GG_TEST("selfupdate", "stage replaces an old stage and accepts an upper case digest")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     const fs::path stale = up::stageDir(root.installDir()) / "new" / "stale.txt";
     std::error_code ec;
@@ -160,10 +154,7 @@ GG_TEST("selfupdate", "stage replaces an old stage and accepts an upper case dig
 GG_TEST("selfupdate", "stage refuses a wrong size or digest and keeps nothing")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     GG_REQUIRE(writeZip(root.zipFile(), packageEntries("ggui-1-test", gitGg)));
     up::Asset asset = assetFor(root.zipFile());
@@ -187,12 +178,11 @@ GG_TEST("selfupdate", "stage refuses a wrong size or digest and keeps nothing")
 GG_TEST("selfupdate", "stage refuses unsafe entry names")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     const char* const names[] = {"../evil", "ggui-1-test/../../evil", "/evil", "C:/evil", "ggui-1-test\\evil",
-                                 "ggui-1-test/./x", "ggui-1-test//x"};
+                                 "ggui-1-test/./x", "ggui-1-test//x", "ggui-1-test/..", "ggui-1-test\\..\\x",
+                                 "ggui-1-test/x:stream", "ggui-1-test/CON", "ggui-1-test/NUL", "ggui-1-test/com1.txt",
+                                 "ggui-1-test/lpt9"};
     for (const char* name : names) {
         TempRoot root;
         std::vector<Entry> entries = packageEntries("ggui-1-test", gitGg);
@@ -209,10 +199,7 @@ GG_TEST("selfupdate", "stage refuses unsafe entry names")
 GG_TEST("selfupdate", "stage refuses a duplicate name, too many entries and a file at the top")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     std::string error;
     {
         TempRoot root;
@@ -247,10 +234,7 @@ GG_TEST("selfupdate", "stage refuses a duplicate name, too many entries and a fi
 GG_TEST("selfupdate", "stage refuses two top folders")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     std::vector<Entry> entries = packageEntries("ggui-1-test", gitGg);
     entries.push_back({"other/file.txt", "x"});
@@ -263,10 +247,7 @@ GG_TEST("selfupdate", "stage refuses two top folders")
 GG_TEST("selfupdate", "stage refuses a package without git-gg or ggui")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     const std::string missing[] = {kGitGg, kGgui};
     for (const std::string& name : missing) {
         TempRoot root;
@@ -319,10 +300,7 @@ const std::string kTop = "ggui-1-test/";
 GG_TEST("selfupdate", "stage refuses a file that does not match its checksum")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     std::string error = "unset";
     // Stored without compression: the first "ggui bytes" in the file is the data of ggui.
@@ -335,10 +313,7 @@ GG_TEST("selfupdate", "stage refuses a file that does not match its checksum")
 GG_TEST("selfupdate", "stage refuses an entry that holds more data than its header says")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     std::vector<Entry> entries = packageEntries("ggui-1-test", gitGg);
     entries.push_back({kTop + "extra.bin", std::string(100000, 'a')});
@@ -356,10 +331,7 @@ GG_TEST("selfupdate", "stage refuses an entry that holds more data than its head
 GG_TEST("selfupdate", "stage refuses header sizes over the limit")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     std::vector<Entry> entries = packageEntries("ggui-1-test", gitGg);
     entries.push_back({kTop + "extra.bin", std::string(1000, 'a')});
@@ -377,10 +349,7 @@ GG_TEST("selfupdate", "stage refuses header sizes over the limit")
 GG_TEST("selfupdate", "stage refuses a link and a special file")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     // Symbolic link, FIFO, character device, socket.
     for (const std::uint32_t mode : {0120777u, 0010644u, 0020644u, 0140755u}) {
         TempRoot root;
@@ -400,10 +369,7 @@ GG_TEST("selfupdate", "stage refuses a link and a special file")
 GG_TEST("selfupdate", "stage refuses a folder entry with data")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     TempRoot root;
     std::vector<Entry> entries = packageEntries("ggui-1-test", gitGg);
     entries.push_back({kTop + "dir/", "x"});
@@ -416,10 +382,7 @@ GG_TEST("selfupdate", "stage refuses a folder entry with data")
 GG_TEST("selfupdate", "stage refuses odd names")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     // Non-ASCII (UTF-8), a control character, a name that ends in "." and one that ends in a space.
     const std::string names[] = {kTop + "\xC3\xA4.txt", kTop + "a\x01" "b", kTop + "x.", kTop + "x "};
     for (const std::string& name : names) {
@@ -436,10 +399,7 @@ GG_TEST("selfupdate", "stage refuses odd names")
 GG_TEST("selfupdate", "stage refuses a file and a folder with the same name")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     const std::vector<Entry> clashes[] = {
         {{kTop + "clash", "a"}, {kTop + "clash/inner", "b"}},  // the file first
         {{kTop + "clash/inner", "b"}, {kTop + "clash", "a"}},  // the folder first

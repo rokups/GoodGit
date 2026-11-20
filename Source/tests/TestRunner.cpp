@@ -712,6 +712,7 @@ void TestRunner::stop()
     ImGuiTestEngine_GetTestList(m_engine, &tests);
     int failed = 0;
     int skipped = 0;
+    std::map<std::string, int> skipReasons;
     for (ImGuiTest* t : tests) {
         if (t->Output.Status == ImGuiTestStatus_Error) {
             ++failed;
@@ -721,13 +722,17 @@ void TestRunner::stop()
         const auto skip = info == g_infoByTest.end() ? g_skipped.end() : g_skipped.find(info->second);
         if (skip != g_skipped.end() && t->Output.Status == ImGuiTestStatus_Success) {
             ++skipped;
+            ++skipReasons[skip->second];
             std::fprintf(stderr, "SKIPPED: %s/%s: %s\n", t->Category, t->Name, skip->second.c_str());
         }
     }
     // A skipped test ends early without errors: the engine counts it as a success.
     std::fprintf(stderr, "ggui: %d/%d tests passed", summary.CountSuccess - skipped, summary.CountTested - skipped);
-    if (skipped > 0)
-        std::fprintf(stderr, ", %d skipped (git too old)", skipped);
+    const char* sep = ", ";
+    for (const auto& [reason, count] : skipReasons) {
+        std::fprintf(stderr, "%s%d skipped (%s)", sep, count, reason.c_str());
+        sep = ", ";
+    }
     std::fprintf(stderr, "\n");
     if (m_queued > 0)
         m_exitCode = (summary.CountSuccess == summary.CountTested && failed == 0) ? 0 : 1;

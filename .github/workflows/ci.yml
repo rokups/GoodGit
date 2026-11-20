@@ -28,6 +28,8 @@ env:
   # rendering, coverage, slow process start); the release gate runs them unscaled
   # (docs/release-checklist.md).
   GGUI_TIMING_SLACK: "3"
+  # A missing git-gg fails the selfupdate tests instead of skipping them.
+  GGUI_REQUIRE_GITGG: "1"
 
 jobs:
   git-min:
