@@ -293,6 +293,8 @@ std::vector<ConflictedFile> commitConflicts(git_repository* repo, const git_oid&
     const CancelToken& cancel)
 {
     assertNotUiThread("conflicts::commitConflicts");
+    if (!enabled(repo))
+        return {}; // every path is ineligible, so skip the blob scan
     Commit c = lookupCommit(repo, commit);
     bool complete = true;
     std::vector<ConflictedFile> files = scan(repo, *git_commit_tree_id(c.get()), cache, cancel, complete);

@@ -368,6 +368,30 @@ GG_TEST("conflicts", "marker parsing: N sides, marker length, malformed, opt-out
     GG_CHECK(s.waitUntil([&] { return !files(optout).empty() && files(optout) == before; }));
 }
 
+GG_TEST("conflicts", "commitConflicts with the feature off returns empty and scans no blob")
+{
+    const fs::path repo = s.fixture(Recipe::ConflictedN);
+    const std::string head = s.head(repo);
+    // A worker thread, as the engine runs it. The cache fills only when the scan runs.
+    auto run = [&](gg::conflicts::Cache& cache) {
+        std::vector<gg::conflicts::ConflictedFile> files;
+        std::thread([&] {
+            const auto r = gg::git2::openRepository(repo);
+            files = gg::conflicts::commitConflicts(r.get(), gg::git2::resolve(r.get(), head).value(), cache);
+        }).join();
+        return files;
+    };
+    s.setFirstClassConflicts(repo, false);
+    gg::conflicts::Cache off;
+    GG_CHECK(run(off).empty());
+    GG_CHECK(off.trees.empty());
+    GG_CHECK(off.blobs.empty());
+    s.setFirstClassConflicts(repo, true);
+    gg::conflicts::Cache on;
+    GG_CHECK(!run(on).empty());
+    GG_CHECK(!on.trees.empty());
+}
+
 GG_TEST("conflicts", "gg.sameChange setting and conflict-marker-size attribute are applied by writes")
 {
     // gg::conflicts::writeOptions(repo, path) is what every write site (Rewrite.cpp, Actions.cpp)
