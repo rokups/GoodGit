@@ -60,7 +60,7 @@ struct Rewriter::Impl {
     Result last;
 
     // ---- helpers ------------------------------------------------------------------------------
-    Commit commit(const std::string& id) { return lookupCommit(repo.get(), *fromHex(id)); }
+    Commit commit(const std::string& id) { return lookupCommit(repo.get(), fromHexOrThrow(id)); }
 
     std::string treeOf(const std::string& commitId) { return toHex(*git_commit_tree_id(commit(commitId).get())); }
 
@@ -148,8 +148,8 @@ struct Rewriter::Impl {
     // A tree with the source's change restricted to (or excluding) some paths, against `base`.
     std::string filteredChange(const std::string& baseTree, const std::string& sourceTree, const std::vector<std::string>& only)
     {
-        Tree base = lookupTree(repo.get(), *fromHex(baseTree));
-        Tree source = lookupTree(repo.get(), *fromHex(sourceTree));
+        Tree base = lookupTree(repo.get(), fromHexOrThrow(baseTree));
+        Tree source = lookupTree(repo.get(), fromHexOrThrow(sourceTree));
         git_diff* rawDiff = nullptr;
         check(git_diff_tree_to_tree(&rawDiff, repo.get(), base.get(), source.get(), nullptr), "git_diff_tree_to_tree");
         Diff diff(rawDiff);
@@ -194,15 +194,15 @@ struct Rewriter::Impl {
             return theirsTree;
         if (theirsTree == baseTree || theirsTree == oursTree)
             return oursTree;
-        Tree base = lookupTree(repo.get(), *fromHex(baseTree));
-        Tree ours = lookupTree(repo.get(), *fromHex(oursTree));
-        Tree theirs = lookupTree(repo.get(), *fromHex(theirsTree));
+        Tree base = lookupTree(repo.get(), fromHexOrThrow(baseTree));
+        Tree ours = lookupTree(repo.get(), fromHexOrThrow(oursTree));
+        Tree theirs = lookupTree(repo.get(), fromHexOrThrow(theirsTree));
         git_merge_options opts = GIT_MERGE_OPTIONS_INIT;
         opts.flags = GIT_MERGE_FIND_RENAMES;
         git_index* rawIndex = nullptr;
         check(git_merge_trees(&rawIndex, repo.get(), base.get(), ours.get(), theirs.get(), &opts), "git_merge_trees");
         Index index(rawIndex);
-        const git_oid sourceOid = *fromHex(sourceCommit);
+        const git_oid sourceOid = fromHexOrThrow(sourceCommit);
         const std::string subject = firstLine(commitMessage(commit(sourceCommit).get()));
 
         // 1. Conflicts reported by libgit2.
@@ -458,7 +458,7 @@ struct Rewriter::Impl {
             parentCommits.push_back(commit(p));
             ptrs.push_back(parentCommits.back().get());
         }
-        Tree t = lookupTree(repo.get(), *fromHex(tree));
+        Tree t = lookupTree(repo.get(), fromHexOrThrow(tree));
         git_oid id;
         check(git_commit_create(&id, repo.get(), nullptr, author ? author : defaultAuthor.get(), committer.get(), nullptr,
                   message.c_str(), t.get(), ptrs.size(), ptrs.data()),
@@ -689,7 +689,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 auto contains = [&](const std::string& tip, const std::string& id) {
                     if (tip == id)
                         return true;
-                    const git_oid a = *fromHex(tip), b = *fromHex(id);
+                    const git_oid a = fromHexOrThrow(tip), b = fromHexOrThrow(id);
                     const bool yes = git_graph_descendant_of(m->repo.get(), &a, &b) == 1;
                     git_error_clear();
                     return yes;
@@ -729,7 +729,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 // Parents merged pairwise onto the first, each against the merge base.
                 p.tree = newBaseTree;
                 for (size_t k = 1; k < p.parents.size(); ++k) {
-                    git_oid a = *fromHex(p.parents.front()), b = *fromHex(p.parents[k]), mb;
+                    git_oid a = fromHexOrThrow(p.parents.front()), b = fromHexOrThrow(p.parents[k]), mb;
                     std::string baseTree = m->emptyTree();
                     std::string baseCommit;
                     if (git_merge_base(&mb, m->repo.get(), &a, &b) == 0) {
@@ -781,7 +781,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 }
             }
             if (!step.setFiles.empty() || !step.setGitlinks.empty()) {
-                Tree t = lookupTree(m->repo.get(), *fromHex(p.tree));
+                Tree t = lookupTree(m->repo.get(), fromHexOrThrow(p.tree));
                 std::vector<git_tree_update> updates;
                 for (const auto& [path, content] : step.setFiles) {
                     git_tree_update u{};
@@ -806,7 +806,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     git_tree_update u{};
                     u.path = path.c_str();
                     u.action = GIT_TREE_UPDATE_UPSERT;
-                    u.id = *fromHex(commit);
+                    u.id = fromHexOrThrow(commit);
                     u.filemode = GIT_FILEMODE_COMMIT;
                     updates.push_back(u);
                 }
@@ -918,13 +918,13 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             std::set<std::pair<std::string, int>> before;
             std::set<std::string> beforePaths;
             for (const auto& src : sources)
-                for (const auto& f : gg::conflicts::commitConflicts(m->repo.get(), *fromHex(src), m->conflictCache)) {
+                for (const auto& f : gg::conflicts::commitConflicts(m->repo.get(), fromHexOrThrow(src), m->conflictCache)) {
                     before.emplace(f.path, f.sides);
                     beforePaths.insert(f.path);
                 }
             std::set<std::string> afterPaths;
             bool gained = false;
-            for (const auto& f : gg::conflicts::commitConflicts(m->repo.get(), *fromHex(now), m->conflictCache)) {
+            for (const auto& f : gg::conflicts::commitConflicts(m->repo.get(), fromHexOrThrow(now), m->conflictCache)) {
                 afterPaths.insert(f.path);
                 gained = gained || !before.count({f.path, f.sides});
             }
@@ -942,7 +942,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         });
         if (!remoteTips.empty())
             for (const auto& [orig, now] : result.mapping) {
-                const git_oid o = *fromHex(orig);
+                const git_oid o = fromHexOrThrow(orig);
                 if (git_graph_reachable_from_any(m->repo.get(), &o, remoteTips.data(), remoteTips.size()) == 1)
                     result.published.push_back(orig);
                 git_error_clear();
@@ -1136,7 +1136,7 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
         if (const auto id = fromHex(kept))
             git_revwalk_push(walk.get(), &*id);
     for (const auto& c : changed) {
-        Commit commit = lookupCommit(repo, *fromHex(c));
+        Commit commit = lookupCommit(repo, fromHexOrThrow(c));
         for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)
             if (!affected.count(toHex(*git_commit_parent_id(commit.get(), i)))) // (a changed parent stays in)
                 git_revwalk_hide(walk.get(), git_commit_parent_id(commit.get(), i));
@@ -1165,8 +1165,8 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
 std::vector<std::string> rangeToMove(git_repository* repo, const std::string& tip, const std::string& dest)
 {
     assertNotUiThread("rewrite::rangeToMove");
-    const git_oid tipId = *git_commit_id(lookupCommit(repo, *fromHex(tip)).get()); // (fails on a bad id)
-    const git_oid destId = *git_commit_id(lookupCommit(repo, *fromHex(dest)).get());
+    const git_oid tipId = *git_commit_id(lookupCommit(repo, fromHexOrThrow(tip)).get()); // (fails on a bad id)
+    const git_oid destId = *git_commit_id(lookupCommit(repo, fromHexOrThrow(dest)).get());
     git_revwalk* raw = nullptr;
     check(git_revwalk_new(&raw, repo), "git_revwalk_new");
     Revwalk walk(raw);
@@ -1287,7 +1287,7 @@ Plan insertPlan(git_repository* repo, const std::string& at, bool before, const 
     std::string msg = message;
     if (!msg.empty() && msg.back() != '\n')
         msg.push_back('\n');
-    Commit atCommit = lookupCommit(repo, *fromHex(at));
+    Commit atCommit = lookupCommit(repo, fromHexOrThrow(at));
     std::vector<std::string> atParents;
     for (unsigned i = 0; i < git_commit_parentcount(atCommit.get()); ++i)
         atParents.push_back(toHex(*git_commit_parent_id(atCommit.get(), i)));
@@ -1348,7 +1348,7 @@ std::string applyPatchToTree(git_repository* repo, const std::string& tree, cons
     parse.oid_type = oidType(repo);
     check(git_diff_from_buffer(&rawDiff, patch.data(), patch.size(), &parse), "git_diff_from_buffer");
     Diff diff(rawDiff);
-    Tree base = lookupTree(repo, *fromHex(tree));
+    Tree base = lookupTree(repo, fromHexOrThrow(tree));
     git_index* rawIndex = nullptr;
     git_apply_options opts = GIT_APPLY_OPTIONS_INIT;
     check(git_apply_to_tree(&rawIndex, repo, base.get(), diff.get(), &opts), "git_apply_to_tree");

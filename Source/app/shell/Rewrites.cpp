@@ -519,7 +519,7 @@ void Actions::editAuthor(const core::Oid& commit, const std::string& name, const
     const std::string id = commit.hex();
     rewriteOlder("edit author of " + id.substr(0, 10), [id, name, email](git_repository* repo) {
         rw::Plan plan = rw::replayPlan(repo, {id});
-        gg::git2::Commit c = gg::git2::lookupCommit(repo, *gg::git2::fromHex(id));
+        gg::git2::Commit c = gg::git2::lookupCommit(repo, gg::git2::fromHexOrThrow(id));
         const git_signature* old = git_commit_author(c.get());
         for (auto& s : plan.steps)
             if (s.source == id)
@@ -537,13 +537,13 @@ namespace ggui {
 namespace {
 
 using gg::git2::Commit;
-using gg::git2::fromHex;
+using gg::git2::fromHexOrThrow;
 using gg::git2::lookupCommit;
 using gg::git2::toHex;
 
 std::vector<std::string> parentsOf(git_repository* repo, const std::string& id)
 {
-    Commit c = lookupCommit(repo, *fromHex(id));
+    Commit c = lookupCommit(repo, fromHexOrThrow(id));
     std::vector<std::string> out;
     for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
         out.push_back(toHex(*git_commit_parent_id(c.get(), i)));
@@ -552,14 +552,14 @@ std::vector<std::string> parentsOf(git_repository* repo, const std::string& id)
 
 std::string messageOf(git_repository* repo, const std::string& id)
 {
-    return gg::git2::commitMessage(lookupCommit(repo, *fromHex(id)).get());
+    return gg::git2::commitMessage(lookupCommit(repo, fromHexOrThrow(id)).get());
 }
 
 bool isAncestor(git_repository* repo, const std::string& ancestor, const std::string& of)
 {
     if (ancestor == of)
         return true;
-    const git_oid a = *fromHex(ancestor), b = *fromHex(of);
+    const git_oid a = fromHexOrThrow(ancestor), b = fromHexOrThrow(of);
     const int r = git_graph_descendant_of(repo, &b, &a);
     git_error_clear();
     return r == 1;
@@ -840,8 +840,8 @@ void Actions::restorePaths(const core::Oid& commit, const std::string& from, con
     rewriteOlder("restore " + std::to_string(paths.size()) + " path(s) in " + id.substr(0, 10), [id, from, paths](git_repository* repo) {
         using namespace gg::git2;
         const std::string source = resolveCommit(repo, from);
-        Commit c = lookupCommit(repo, *fromHex(id));
-        Commit s = lookupCommit(repo, *fromHex(source));
+        Commit c = lookupCommit(repo, fromHexOrThrow(id));
+        Commit s = lookupCommit(repo, fromHexOrThrow(source));
         Tree target = commitTree(c.get());
         Tree src = commitTree(s.get());
         std::vector<git_tree_update> updates;
@@ -889,7 +889,7 @@ void Actions::simplifyParents(const core::Oid& commit)
             refuse("no parent is redundant");
         rw::Plan plan = rw::replayPlan(repo, {id});
         plan.reflogMessage = "ggui: simplify parents";
-        gg::git2::Commit c = gg::git2::lookupCommit(repo, *fromHex(id));
+        gg::git2::Commit c = gg::git2::lookupCommit(repo, fromHexOrThrow(id));
         for (auto& s : plan.steps)
             if (s.source == id) {
                 s.sourceParents = false;
@@ -934,7 +934,7 @@ void Actions::mergeIntoHead(const std::string& branch, const std::string& messag
         // A branch (local or remote-tracking) by name, else any revision (a commit from History).
         if (git_reference_name_to_id(&other, repo, ("refs/heads/" + branch).c_str()) != 0
             && git_reference_name_to_id(&other, repo, ("refs/remotes/" + branch).c_str()) != 0)
-            other = *fromHex(resolveCommit(repo, branch));
+            other = fromHexOrThrow(resolveCommit(repo, branch));
         git_error_clear();
         if (isAncestor(repo, toHex(other), toHex(head)))
             refuse(shownRev(branch) + " is already merged");
@@ -999,8 +999,8 @@ struct SelectionTrees {
     std::string withFiles(git_repository* repo, const std::string& tree, const std::string& fromTree) const
     {
         using namespace gg::git2;
-        Tree target = lookupTree(repo, *fromHex(tree));
-        Tree source = lookupTree(repo, *fromHex(fromTree));
+        Tree target = lookupTree(repo, fromHexOrThrow(tree));
+        Tree source = lookupTree(repo, fromHexOrThrow(fromTree));
         std::vector<git_tree_update> updates;
         std::vector<TreeEntry> keep;
         for (const auto& p : paths) {
@@ -1048,8 +1048,8 @@ SelectionTrees selectionTrees(git_repository* repo, const std::string& id, const
         refuse("the commit has no parent");
     SelectionTrees t;
     t.parent = parents.front();
-    t.parentTree = toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(t.parent)).get()));
-    t.ownTree = toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(id)).get()));
+    t.parentTree = toHex(*git_commit_tree_id(lookupCommit(repo, fromHexOrThrow(t.parent)).get()));
+    t.ownTree = toHex(*git_commit_tree_id(lookupCommit(repo, fromHexOrThrow(id)).get()));
     t.paths = paths;
     t.patch = patch;
     return t;
@@ -1596,7 +1596,7 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
             auto backward = [&](const std::string& tree) { return sel.backward(repo, tree); };
             rw::Plan plan;
             plan.reflogMessage = "ggui: move changes";
-            auto treeOf = [&](const std::string& c) { return toHex(*git_commit_tree_id(lookupCommit(repo, *fromHex(c)).get())); };
+            auto treeOf = [&](const std::string& c) { return toHex(*git_commit_tree_id(lookupCommit(repo, fromHexOrThrow(c)).get())); };
             switch (to) {
             case MoveTo::Parent: {
                 // The parent gains them; this commit keeps its tree (so it no longer changes them).

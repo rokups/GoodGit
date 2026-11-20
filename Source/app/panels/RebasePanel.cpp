@@ -82,7 +82,7 @@ std::string branchName(const std::string& ref) { return ref.rfind("refs/heads/",
 // (name order in each group). A commit on neither is an error.
 std::string tipContaining(git_repository* repo, const std::string& commit, bool tipOnCommitFirst)
 {
-    const git_oid target = *gg::git2::fromHex(commit);
+    const git_oid target = gg::git2::fromHexOrThrow(commit);
     auto contains = [&](const git_oid& tip) {
         const bool yes = git_oid_equal(&tip, &target) == 1 || git_graph_descendant_of(repo, &tip, &target) == 1;
         git_error_clear();

@@ -313,7 +313,7 @@ bool published(git_repository* repo, const std::string& id, const std::vector<gi
 {
     if (tips.empty())
         return false;
-    const git_oid oid = *fromHex(id);
+    const git_oid oid = fromHexOrThrow(id);
     const bool reachable = std::any_of(tips.begin(), tips.end(), [&](const git_oid& t) { return git_oid_equal(&t, &oid); })
         || git_graph_reachable_from_any(repo, &oid, tips.data(), tips.size()) == 1;
     git_error_clear();
@@ -436,7 +436,7 @@ struct Labels {
     {
         git_object* raw = nullptr;
         std::string out = id.substr(0, 7);
-        const git_oid oid = *fromHex(id);
+        const git_oid oid = fromHexOrThrow(id);
         if (git_object_lookup(&raw, repo, &oid, GIT_OBJECT_ANY) == 0) {
             Object obj(raw);
             git_buf buf = GIT_BUF_INIT;
@@ -512,7 +512,7 @@ struct Labels {
 // Git's one-line title of a commit (the first paragraph).
 std::string oneline(git_repository* repo, const std::string& id)
 {
-    Commit c = lookupCommit(repo, *fromHex(id));
+    Commit c = lookupCommit(repo, fromHexOrThrow(id));
     const char* s = git_commit_summary(c.get());
     return s ? s : "";
 }
@@ -532,7 +532,7 @@ Todo mergesTodo(git_repository* repo, Context& context, const std::vector<std::s
     const std::set<std::string> interesting(order.begin(), order.end());
     std::map<std::string, std::vector<std::string>> parentsOf;
     for (const auto& id : order) {
-        Commit c = lookupCommit(repo, *fromHex(id));
+        Commit c = lookupCommit(repo, fromHexOrThrow(id));
         for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
             parentsOf[id].push_back(toHex(*git_commit_parent_id(c.get(), i)));
     }
@@ -721,10 +721,10 @@ Context read(git_repository* repo, const ReadOptions& options)
     for (const auto& id : graphOrder) {
         if (context.commits.count(id) || samePatch.count(id))
             continue;
-        Commit c = lookupCommit(repo, *fromHex(id));
+        Commit c = lookupCommit(repo, fromHexOrThrow(id));
         if (git_commit_parentcount(c.get()) > 1) {
             context.merges.push_back(id);
-            addCommit(repo, context, *fromHex(id), tips);
+            addCommit(repo, context, fromHexOrThrow(id), tips);
         }
     }
 
@@ -751,7 +751,7 @@ Context read(git_repository* repo, const ReadOptions& options)
             const bool inner = std::any_of(info.parents.begin(), info.parents.end(),
                 [&](const std::string& parent) { return context.commits.count(parent) != 0; });
             if (!inner)
-                roots.push_back(*fromHex(id));
+                roots.push_back(fromHexOrThrow(id));
         }
         std::vector<std::string> names; // candidate branches (short names) and their branchTips
         std::vector<git_oid> branchTips;
@@ -856,7 +856,7 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
             oid = fromHex(item.commit);
         } else if (item.commit.size() >= 4 && isHex(item.commit)) {
             git_object* raw = nullptr;
-            const git_oid padded = *fromHex(item.commit + std::string(fullSize - item.commit.size(), '0'));
+            const git_oid padded = fromHexOrThrow(item.commit + std::string(fullSize - item.commit.size(), '0'));
             const int rc = git_object_lookup_prefix(&raw, repo, &padded, item.commit.size(), GIT_OBJECT_COMMIT);
             if (rc == GIT_EAMBIGUOUS) {
                 problems.push_back({static_cast<int>(i + 1), "short commit id " + item.commit + " is ambiguous"});

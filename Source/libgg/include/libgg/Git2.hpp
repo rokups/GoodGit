@@ -115,6 +115,8 @@ Repository openRepositoryExact(const std::filesystem::path& path);
 std::string toHex(const git_oid& oid);
 // Parses a full hex id (40 or 64 characters).
 std::optional<git_oid> fromHex(std::string_view hex);
+// Like fromHex(), but throws Error for a bad id.
+git_oid fromHexOrThrow(std::string_view hex);
 git_oid_t oidType(git_repository* repo);
 size_t hexSize(git_oid_t type);
 bool isZero(const git_oid& oid);
