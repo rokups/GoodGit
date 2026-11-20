@@ -67,6 +67,14 @@ struct BranchInfo {
     std::string upstream;        // e.g. "origin/main" ("" = none)
     std::string upstreamRemote;  // the remote part of upstream, e.g. "origin" ("" = none)
     bool upstreamGone = false;   // configured but the ref does not exist
+    bool upstreamLocal = false;  // the upstream is a local branch (remote "."), upstream keeps "refs/heads/..."
+    // The branch name on the remote, e.g. "main" for "origin/main". Empty without a remote part.
+    std::string remoteBranchPart() const
+    {
+        if (upstreamRemote.empty() || upstream.size() <= upstreamRemote.size() + 1 || upstream[upstreamRemote.size()] != '/')
+            return {};
+        return upstream.substr(upstreamRemote.size() + 1);
+    }
     int ahead = 0;
     int behind = 0;
     bool isHead = false;         // checked out in this worktree
