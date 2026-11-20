@@ -32,4 +32,18 @@ GG_TEST("submodule", "Add is refused for a URL with a password")
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":.gitmodules"}), modules);
 }
 
+GG_TEST("submodule", "Add dialog does not run for a URL with a password")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showAddSubmoduleDialog();
+    GG_REQUIRE(s.dialogOpen("Add submodule"));
+    s.dialogText("Add submodule", "url", "https://user:TOKEN@example.invalid/r.git");
+    s.dialogText("Add submodule", "path", "other");
+    s.dialogButton("Add submodule", "Add");
+    GG_REQUIRE(s.settle());
+    // The button is disabled: no action runs and no error dialog opens.
+    GG_CHECK(!s.dialogOpen("add submodule other", 1.0f));
+}
+
 } // namespace ggtest
