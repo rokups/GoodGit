@@ -57,6 +57,8 @@ public:
 
     // Scope (side panels): visibility of refs by full name.
     // The checked-out branch always counts as visible. The stored hidden set does not change for it.
+    // The stored setting only. Toggles use it, so a click can unhide the checked-out branch.
+    bool refStoredVisible(const std::string& fullName) const { return !m_hidden.count(fullName); }
     bool refVisible(const std::string& fullName) const
     {
         if (m_snapshot && !m_snapshot->headDetached && fullName == "refs/heads/" + m_snapshot->headBranch)

@@ -347,6 +347,32 @@ GG_TEST("panels", "visibility: the checked-out branch shows although hidden; the
     GG_CHECK(s.app.settings().hiddenRefs(key, "main") == stored);
 }
 
+GG_TEST("panels", "visibility: the menu item toggles the stored setting of the checked-out branch")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    auto& history = s.session()->history();
+    const std::string key = s.session()->repoStateKey();
+    s.git(repo, {"checkout", "side"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "side"; }));
+    ctx->Yield(2);
+    GG_CHECK(history.refVisible("refs/heads/side") && !history.refStoredVisible("refs/heads/side"));
+    // The click clears the stored setting, and the branch stays visible.
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    GG_CHECK(history.refVisible("refs/heads/side") && history.refStoredVisible("refs/heads/side"));
+    GG_CHECK(s.app.settings().hiddenRefs(key, "main").count("refs/heads/side") == 0);
+    s.git(repo, {"checkout", "main"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot() && s.session()->snapshot()->headBranch == "main"; }));
+    ctx->Yield(2);
+    GG_CHECK(history.refVisible("refs/heads/side"));
+}
+
 GG_TEST("panels", "visibility: each worktree of a repository has its own hidden refs")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
