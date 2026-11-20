@@ -120,12 +120,14 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                         std::erase_if(rowOf, [&](const auto& e) { return e.second == gone; });
                         std::erase_if(amended, [&](const auto& e) { return e.second == gone; });
                         for (auto& e : rowOf)
-                            e.second -= e.second > gone;
+                            if (e.second > gone)
+                                --e.second;
                         for (auto& e : amended)
-                            e.second -= e.second > gone;
+                            if (e.second > gone)
+                                --e.second;
                         for (auto& e : labelRow) {
                             if (e.second && *e.second == gone)
-                                e.second.reset();
+                                e.second.reset(); // shortcut: the base, not the row before; exact only if that row was the base
                             else if (e.second && *e.second > gone)
                                 --*e.second;
                         }
