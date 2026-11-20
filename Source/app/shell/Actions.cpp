@@ -1812,7 +1812,7 @@ std::string Actions::trackingOid(const std::string& remote, const std::string& b
 }
 
 void Actions::push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
-    bool setUpstream, bool forceWithLease, bool tags, std::string checkedOid, std::string leaseOid)
+    bool setUpstream, bool forceWithLease, bool tags, std::string checkedOid, std::optional<std::string> leaseOid)
 {
     run(tags ? "push tags to " + remote : "push " + localBranch + " to " + remote,
         [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags, checkedOid, leaseOid](MutationContext& ctx) {
@@ -1841,14 +1841,13 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 }
             }
             std::string local = checkedOid; // the guard checks this oid and the push sends this oid
-            std::string lease = leaseOid;
+            std::string lease; // "" = the remote ref must not exist
             if (!tags) {
                 if (local.empty())
                     local = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
                 const auto remoteOid = ctx.gitMayFail({"rev-parse", "--verify", "-q", "refs/remotes/" + remote + "/" + remoteBranch});
                 const std::string tracking = remoteOid.ok() ? gg::trim(remoteOid.out) : std::string();
-                if (lease.empty())
-                    lease = tracking;
+                lease = leaseOid ? *leaseOid : tracking;
                 // No tracking ref: hide the commits that any remote ref holds, not the whole history.
                 const std::string hideRemote = tracking.empty() ? "*" : remote;
                 refuseConflicted(local, tracking, hideRemote);
@@ -1888,8 +1887,10 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
             }
             ctx.git(args, {}, true);
             if (setUpstream && !tags) {
-                ctx.git({"config", "branch." + localBranch + ".remote", remote});
-                ctx.git({"config", "branch." + localBranch + ".merge", "refs/heads/" + remoteBranch});
+                const bool ok = ctx.gitMayFail({"config", "branch." + localBranch + ".remote", remote}).ok()
+                    && ctx.gitMayFail({"config", "branch." + localBranch + ".merge", "refs/heads/" + remoteBranch}).ok();
+                if (!ok)
+                    throw MutationError{Outcome::Refused, "The push worked but the upstream was not set", "Set it in the branch menu."};
             }
         },
         [this, remote, localBranch, remoteBranch](const core::MutationFinishedEvent& e) {
@@ -1911,8 +1912,9 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                                  if (!recurse.empty())
                                                      pushArgs.push_back(recurse);
                                                  pushArgs.push_back(remote);
-                                                 pushArgs.push_back(gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out)
-                                                     + ":refs/heads/" + remoteBranch);
+                                                 const std::string pulled = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
+                                                 // Submodule pushes need a ref name as the source; the oid is for a repo without them.
+                                                 pushArgs.push_back((recurse.empty() ? pulled : "refs/heads/" + localBranch) + ":refs/heads/" + remoteBranch);
                                                  ctx.git(pushArgs, {}, true);
                                                  ctx.worktreeFollowsIndex = true;
                                                  ctx.submodules = SubmoduleSync::Update;
