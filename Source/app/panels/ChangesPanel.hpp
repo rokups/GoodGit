@@ -97,6 +97,7 @@ private:
     // Scrolls the list to the row `key` once, after an automatic selection (called while the row is drawn).
     void scrollToCurrent(const std::string& key);
     void drawGroup(FileGroup group, const char* title, int count);
+    void drawFiles(const std::vector<const FileRow*>& rows);
     void drawFile(const FileRow& row, int flatIndex);
     void drawFileMenu(const FileRow& row);
     // Double-click: new files open in the editor, others in the diff tool against the parent.
@@ -120,6 +121,7 @@ private:
         m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged, plan.submodules);
     }
     std::vector<const FileRow*> visibleRows() const;
+    std::vector<const FileRow*> m_visible; // visibleRows() of the current frame, set once in draw()
     core::DiffQuery patchQuery(const FileRow& row) const;
     // The commit shown on the right: the upper one of two selected commits, else the selection itself.
     Selection effectiveSelection() const;

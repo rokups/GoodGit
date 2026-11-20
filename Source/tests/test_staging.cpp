@@ -6,6 +6,7 @@
 #include "util/Env.hpp"
 
 #include <algorithm>
+#include <chrono>
 
 namespace ggtest {
 
@@ -147,6 +148,29 @@ GG_TEST("staging", "Space and Enter toggle staging")
     ctx->ItemClick(fileRef(s, "Staged", "b.txt").c_str());
     ctx->KeyPress(ImGuiKey_Enter);
     GG_CHECK(waitXY(s, repo, "b.txt", ".M"));
+}
+
+GG_TEST("staging", "select all and stage all stay fast with many untracked files")
+{
+    constexpr int kFiles = 5000;
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int i = 0; i < kFiles; ++i)
+        s.write(repo, "many/f" + std::to_string(10000 + i) + ".txt", "x\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == kFiles; }, 30.0f));
+    ctx->ItemClick(fileRef(s, "Untracked", "many/f10000.txt").c_str());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_A);
+    const auto start = std::chrono::steady_clock::now();
+    ctx->ItemClick((groupRef(s, "Untracked") + "/Stage all##stage_all").c_str());
+    const auto staged = [&] {
+        const auto& rows = s.session()->changes().rows();
+        return rows.size() == kFiles && std::all_of(rows.begin(), rows.end(), [](const auto& r) { return r.group == FileGroup::Staged; });
+    };
+    GG_CHECK(s.waitUntil(staged, 60.0f));
+    s.settle();
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    ctx->LogInfo("select all + stage all of %d files: %.0f ms", kFiles, ms);
+    GG_CHECK(ms < timeBudgetMs(8000));
 }
 
 GG_TEST("staging", "stage all, unstage all, stage modified")
