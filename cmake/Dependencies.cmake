@@ -165,10 +165,24 @@ target_include_directories(icon_font_headers SYSTEM INTERFACE ${IconFontCppHeade
 # Fonts (downloaded once, embedded at build time by EmbedFont.cmake)
 # ---------------------------------------------------------------------------------------------
 set(GGUI_FONT_DIR ${CMAKE_BINARY_DIR}/fonts)
+# file(DOWNLOAD) with up to 3 tries; a hash mismatch or a network error fails the configure.
+function(ggui_download url dest sha256)
+    foreach(try RANGE 1 3)
+        file(DOWNLOAD ${url} ${dest} EXPECTED_HASH SHA256=${sha256} TLS_VERIFY ON STATUS st)
+        list(GET st 0 code)
+        if(code EQUAL 0)
+            return()
+        endif()
+        file(REMOVE ${dest})
+        message(WARNING "Download of ${url} failed (try ${try}/3): ${st}")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E sleep 5)
+    endforeach()
+    message(FATAL_ERROR "Download of ${url} failed: ${st}")
+endfunction()
 function(ggui_fetch_font out url sha256)
     set(dest ${GGUI_FONT_DIR}/${out})
     if(NOT EXISTS ${dest})
-        file(DOWNLOAD ${url} ${dest} EXPECTED_HASH SHA256=${sha256} TLS_VERIFY ON)
+        ggui_download(${url} ${dest} ${sha256})
     endif()
 endfunction()
 ggui_fetch_font(MaterialSymbolsOutlined.ttf
@@ -178,8 +192,8 @@ ggui_fetch_font(NotoSansMono.ttf
     "https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosansmono/NotoSansMono%5Bwdth%2Cwght%5D.ttf"
     2cb2adb378a8f574213e23df697050b83c54c27df465a2015552740b2769a081)
 if(NOT EXISTS ${GGUI_FONT_DIR}/JetBrainsMono.ttf)
-    file(DOWNLOAD https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
-        ${GGUI_FONT_DIR}/jb.zip EXPECTED_HASH SHA256=6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf)
+    ggui_download(https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
+        ${GGUI_FONT_DIR}/jb.zip 6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf)
     file(ARCHIVE_EXTRACT INPUT ${GGUI_FONT_DIR}/jb.zip DESTINATION ${GGUI_FONT_DIR}/jb
         PATTERNS fonts/ttf/JetBrainsMono-Regular.ttf)
     file(COPY_FILE ${GGUI_FONT_DIR}/jb/fonts/ttf/JetBrainsMono-Regular.ttf ${GGUI_FONT_DIR}/JetBrainsMono.ttf)

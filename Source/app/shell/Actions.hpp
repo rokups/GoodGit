@@ -237,7 +237,7 @@ public:
     void moveChanges(const core::Oid& commit, MoveTo to, const std::vector<std::string>& paths, const std::string& patch);
     // Working tree files folded into `commit` (its descendants rebased; the files stay as they
     // are on disk).
-    void absorb(const core::Oid& commit, const std::vector<std::string>& paths);
+    void absorb(const core::Oid& commit, const std::vector<std::string>& paths, Callback done = {});
     // Moves (or copies) `commit` right after `anchor` (or before it) in a linear chain.
     void reorder(const core::Oid& commit, const core::Oid& anchor, bool after, bool copy);
 

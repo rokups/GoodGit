@@ -160,217 +160,223 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
             gg::throwIfCancelled(cancel);
     };
 
-    while (!st.complete && st.emitted < limit) {
-        checkCancel();
-        // Find the next commit to emit: the newest explored commit without a pending child, after
-        // the commits that are not too old are explored (see HistoryState::kClockSkewSlack).
-        bool exhausted = false;
-        for (;;) {
-            // Stale entry: the commit was emitted or got a new pending child after it was queued.
-            while (!st.ready.empty()) {
-                const HistoryState::Node& n = st.nodes[st.ready.top().id];
-                if (!n.processed && n.pendingChildren == 0)
-                    break;
-                st.ready.pop();
-            }
-            if (st.ready.empty()) {
-                if (st.explore.empty()) {
-                    exhausted = true;
-                    break;
+    try {
+        while (!st.complete && st.emitted < limit) {
+            checkCancel();
+            // Find the next commit to emit: the newest explored commit without a pending child, after
+            // the commits that are not too old are explored (see HistoryState::kClockSkewSlack).
+            bool exhausted = false;
+            for (;;) {
+                // Stale entry: the commit was emitted or got a new pending child after it was queued.
+                while (!st.ready.empty()) {
+                    const HistoryState::Node& n = st.nodes[st.ready.top().id];
+                    if (!n.processed && n.pendingChildren == 0)
+                        break;
+                    st.ready.pop();
                 }
-                checkCancel();
-                exploreOne(repo, st);
-                continue;
-            }
-            if (!st.explore.empty() && st.explore.top().time >= st.ready.top().time - HistoryState::kClockSkewSlack) {
-                checkCancel();
-                exploreOne(repo, st);
-                continue;
-            }
-            break;
-        }
-        if (exhausted) {
-            st.complete = true;
-            break;
-        }
-        const Oid id = st.ready.top().id;
-        st.ready.pop();
-        st.nodes[id].processed = true;
-        const git_oid oid = toGit(id);
-        const bool inScope = st.scopeTips.count(id) || st.inScope.count(id);
-        const bool anyPublished = st.remoteTips.count(id) || st.published.count(id);
-        const bool published = anyPublished;
-        Commit commit = lookupCommit(repo, oid);
-        const unsigned parentCount = git_commit_parentcount(commit.get());
-        std::vector<Oid> parents;
-        parents.reserve(parentCount);
-        for (unsigned i = 0; i < parentCount; ++i) {
-            parents.push_back(toOid(*git_commit_parent_id(commit.get(), i)));
-        }
-        // The commit is done for the walk, in scope or not: its parents lose a pending child.
-        for (const auto& p : parents) {
-            HistoryState::Node& pn = st.nodes[p];
-            if (--pn.pendingChildren == 0 && pn.explored && !pn.processed)
-                st.ready.push({pn.time, st.queueOrder++, p});
-        }
-        for (const auto& p : parents) {
-            if (inScope)
-                st.inScope.insert(p);
-            if (anyPublished)
-                st.published.insert(p);
-        }
-        st.inScope.erase(id);
-        st.published.erase(id);
-        if (!inScope)
-            continue;
-
-        // Shown when a ref points at it or a shown child leads to it; otherwise it lies on the side
-        // of a collapsed merge. Children come first (see HistoryState::kClockSkewSlack).
-        const bool visible = st.scopeTips.count(id) || st.reach.count(id);
-        st.reach.erase(id);
-        if (!visible) {
-            auto owner = st.hiddenOwner.find(id);
-            if (owner != st.hiddenOwner.end()) {
-                const Oid merge = owner->second;
-                st.hiddenOwner.erase(owner);
-                st.hiddenBy[id] = merge;
-                ++st.collapsedCount[merge];
-                st.countsChanged.insert(merge);
-                for (const auto& p : parents)
-                    if (!st.reach.count(p))
-                        st.hiddenOwner.emplace(p, merge);
-            }
-            // Continue any lane waiting for it through its first parent.
-            for (auto& lane : st.lanes)
-                if (lane && *lane == id)
-                    lane = parents.empty() ? std::nullopt : std::optional<Oid>(parents[0]);
-            // A commit being revealed that a collapsed merge hides gets no row: the caller expands the merge.
-            if (stop && stop(id))
-                break;
-            continue;
-        }
-        st.hiddenOwner.erase(id);
-
-        HistoryRow row;
-        row.id = id;
-        row.parents = parents;
-        const char* summary = git_commit_summary(commit.get());
-        row.subject = summary ? summary : "";
-        const git_signature* author = git_commit_author(commit.get());
-        row.author = author->name;
-        row.authorEmail = author->email;
-        row.time = author->when.time;
-        row.published = published;
-        row.shortId = id.shortHex(kShortIdLength);
-        if (auto it = st.badges.find(id); it != st.badges.end())
-            row.refs = it->second;
-        if (parents.size() > 1) {
-            // Collapsing hides nothing when every merged-in parent is shown anyway (a ref points at
-            // it, a shown child already leads to it, or it is shown): such a merge stays expanded.
-            for (size_t i = 1; i < parents.size(); ++i)
-                if (!st.scopeTips.count(parents[i]) && !st.reach.count(parents[i]) && !st.rowOf.count(parents[i]))
-                    row.collapsible = true;
-            const bool toggled = std::find(st.scope.toggledMerges.begin(), st.scope.toggledMerges.end(), id)
-                != st.scope.toggledMerges.end();
-            row.collapsed = row.collapsible && st.scope.mergesCollapsed != toggled;
-        }
-        for (size_t i = 0; i < parents.size(); ++i) {
-            if (i == 0 || !row.collapsed)
-                st.reach.insert(parents[i]);
-            else if (!st.reach.count(parents[i]))
-                st.hiddenOwner.emplace(parents[i], id);
-        }
-
-        // ---- lane layout ------------------------------------------------------------------
-        std::vector<Oid> layoutParents = parents;
-        if (row.collapsed && !layoutParents.empty())
-            layoutParents.resize(1);
-        // A parent already shown gets no edge. The walk emitted it before this child, which the
-        // order guarantee of HistoryState::kClockSkewSlack does not exclude (large clock skew).
-        layoutParents.erase(std::remove_if(layoutParents.begin(), layoutParents.end(),
-                                [&](const Oid& p) { return st.rowOf.count(p) != 0; }),
-            layoutParents.end());
-
-        int lane = -1;
-        for (size_t i = 0; i < st.lanes.size(); ++i)
-            if (st.lanes[i] && *st.lanes[i] == id) {
-                lane = static_cast<int>(i);
+                if (st.ready.empty()) {
+                    if (st.explore.empty()) {
+                        exhausted = true;
+                        break;
+                    }
+                    checkCancel();
+                    exploreOne(repo, st);
+                    continue;
+                }
+                if (!st.explore.empty() && st.explore.top().time >= st.ready.top().time - HistoryState::kClockSkewSlack) {
+                    checkCancel();
+                    exploreOne(repo, st);
+                    continue;
+                }
                 break;
             }
-        const bool expected = lane >= 0;
-        if (!expected)
-            lane = allocLane(st);
-        row.lane = lane;
-        row.color = st.laneColors[static_cast<size_t>(lane)];
-        if (expected)
-            row.lines.push_back(GraphLine{static_cast<std::int16_t>(lane), static_cast<std::int16_t>(lane), 0, 1, row.color});
-        // Other lanes converging into this commit; pass-through for the rest.
-        std::vector<bool> active(st.lanes.size(), false);
-        for (size_t k = 0; k < st.lanes.size(); ++k) {
-            if (static_cast<int>(k) == lane || !st.lanes[k])
-                continue;
-            if (*st.lanes[k] == id) {
-                row.lines.push_back(GraphLine{static_cast<std::int16_t>(k), static_cast<std::int16_t>(lane), 0, 1,
-                    st.laneColors[k]});
-                st.lanes[k].reset();
-            } else {
-                active[k] = true;
+            if (exhausted) {
+                st.complete = true;
+                break;
             }
-        }
-        st.lanes[static_cast<size_t>(lane)].reset();
-        // Parents
-        for (size_t pi = 0; pi < layoutParents.size(); ++pi) {
-            const Oid& p = layoutParents[pi];
-            int target = -1;
-            for (size_t k = 0; k < st.lanes.size(); ++k)
-                if (st.lanes[k] && *st.lanes[k] == p) {
-                    target = static_cast<int>(k);
+            const Oid id = st.ready.top().id;
+            st.ready.pop();
+            st.nodes[id].processed = true;
+            const git_oid oid = toGit(id);
+            const bool inScope = st.scopeTips.count(id) || st.inScope.count(id);
+            const bool anyPublished = st.remoteTips.count(id) || st.published.count(id);
+            const bool published = anyPublished;
+            Commit commit = lookupCommit(repo, oid);
+            const unsigned parentCount = git_commit_parentcount(commit.get());
+            std::vector<Oid> parents;
+            parents.reserve(parentCount);
+            for (unsigned i = 0; i < parentCount; ++i) {
+                parents.push_back(toOid(*git_commit_parent_id(commit.get(), i)));
+            }
+            // The commit is done for the walk, in scope or not: its parents lose a pending child.
+            for (const auto& p : parents) {
+                HistoryState::Node& pn = st.nodes[p];
+                if (--pn.pendingChildren == 0 && pn.explored && !pn.processed)
+                    st.ready.push({pn.time, st.queueOrder++, p});
+            }
+            for (const auto& p : parents) {
+                if (inScope)
+                    st.inScope.insert(p);
+                if (anyPublished)
+                    st.published.insert(p);
+            }
+            st.inScope.erase(id);
+            st.published.erase(id);
+            if (!inScope)
+                continue;
+
+            // Shown when a ref points at it or a shown child leads to it; otherwise it lies on the side
+            // of a collapsed merge. Children come first (see HistoryState::kClockSkewSlack).
+            const bool visible = st.scopeTips.count(id) || st.reach.count(id);
+            st.reach.erase(id);
+            if (!visible) {
+                auto owner = st.hiddenOwner.find(id);
+                if (owner != st.hiddenOwner.end()) {
+                    const Oid merge = owner->second;
+                    st.hiddenOwner.erase(owner);
+                    st.hiddenBy[id] = merge;
+                    ++st.collapsedCount[merge];
+                    st.countsChanged.insert(merge);
+                    for (const auto& p : parents)
+                        if (!st.reach.count(p))
+                            st.hiddenOwner.emplace(p, merge);
+                }
+                // Continue any lane waiting for it through its first parent.
+                for (auto& lane : st.lanes)
+                    if (lane && *lane == id)
+                        lane = parents.empty() ? std::nullopt : std::optional<Oid>(parents[0]);
+                // A commit being revealed that a collapsed merge hides gets no row: the caller expands the merge.
+                if (stop && stop(id))
+                    break;
+                continue;
+            }
+            st.hiddenOwner.erase(id);
+
+            HistoryRow row;
+            row.id = id;
+            row.parents = parents;
+            const char* summary = git_commit_summary(commit.get());
+            row.subject = summary ? summary : "";
+            const git_signature* author = git_commit_author(commit.get());
+            row.author = author->name;
+            row.authorEmail = author->email;
+            row.time = author->when.time;
+            row.published = published;
+            row.shortId = id.shortHex(kShortIdLength);
+            if (auto it = st.badges.find(id); it != st.badges.end())
+                row.refs = it->second;
+            if (parents.size() > 1) {
+                // Collapsing hides nothing when every merged-in parent is shown anyway (a ref points at
+                // it, a shown child already leads to it, or it is shown): such a merge stays expanded.
+                for (size_t i = 1; i < parents.size(); ++i)
+                    if (!st.scopeTips.count(parents[i]) && !st.reach.count(parents[i]) && !st.rowOf.count(parents[i]))
+                        row.collapsible = true;
+                const bool toggled = std::find(st.scope.toggledMerges.begin(), st.scope.toggledMerges.end(), id)
+                    != st.scope.toggledMerges.end();
+                row.collapsed = row.collapsible && st.scope.mergesCollapsed != toggled;
+            }
+            for (size_t i = 0; i < parents.size(); ++i) {
+                if (i == 0 || !row.collapsed)
+                    st.reach.insert(parents[i]);
+                else if (!st.reach.count(parents[i]))
+                    st.hiddenOwner.emplace(parents[i], id);
+            }
+
+            // ---- lane layout ------------------------------------------------------------------
+            std::vector<Oid> layoutParents = parents;
+            if (row.collapsed && !layoutParents.empty())
+                layoutParents.resize(1);
+            // A parent already shown gets no edge. The walk emitted it before this child, which the
+            // order guarantee of HistoryState::kClockSkewSlack does not exclude (large clock skew).
+            layoutParents.erase(std::remove_if(layoutParents.begin(), layoutParents.end(),
+                                    [&](const Oid& p) { return st.rowOf.count(p) != 0; }),
+                layoutParents.end());
+
+            int lane = -1;
+            for (size_t i = 0; i < st.lanes.size(); ++i)
+                if (st.lanes[i] && *st.lanes[i] == id) {
+                    lane = static_cast<int>(i);
                     break;
                 }
-            if (target > lane && pi == 0 && !st.lanes[static_cast<size_t>(lane)]) {
-                // The first parent is already awaited further right: keep the first-parent chain in
-                // this column too. Both lanes run down to the parent, whose row takes the leftmost
-                // one; the other converges into it there.
-                st.lanes[static_cast<size_t>(lane)] = p;
-                target = lane;
-            } else if (target < 0) {
-                if (pi == 0 && !st.lanes[static_cast<size_t>(lane)]) {
-                    target = lane;
+            const bool expected = lane >= 0;
+            if (!expected)
+                lane = allocLane(st);
+            row.lane = lane;
+            row.color = st.laneColors[static_cast<size_t>(lane)];
+            if (expected)
+                row.lines.push_back(GraphLine{static_cast<std::int16_t>(lane), static_cast<std::int16_t>(lane), 0, 1, row.color});
+            // Other lanes converging into this commit; pass-through for the rest.
+            std::vector<bool> active(st.lanes.size(), false);
+            for (size_t k = 0; k < st.lanes.size(); ++k) {
+                if (static_cast<int>(k) == lane || !st.lanes[k])
+                    continue;
+                if (*st.lanes[k] == id) {
+                    row.lines.push_back(GraphLine{static_cast<std::int16_t>(k), static_cast<std::int16_t>(lane), 0, 1,
+                        st.laneColors[k]});
+                    st.lanes[k].reset();
                 } else {
-                    target = allocLane(st);
-                    if (static_cast<size_t>(target) >= active.size())
-                        active.resize(static_cast<size_t>(target) + 1, false);
+                    active[k] = true;
                 }
-                st.lanes[static_cast<size_t>(target)] = p;
             }
-            const std::uint8_t color = target == lane ? row.color : st.laneColors[static_cast<size_t>(target)];
-            row.lines.push_back(GraphLine{static_cast<std::int16_t>(lane), static_cast<std::int16_t>(target), 1, 2, color});
-        }
-        for (size_t k = 0; k < active.size() && k < st.lanes.size(); ++k)
-            if (active[k])
-                row.lines.push_back(GraphLine{static_cast<std::int16_t>(k), static_cast<std::int16_t>(k), 0, 2,
-                    st.laneColors[k]});
-        while (!st.lanes.empty() && !st.lanes.back()) {
-            st.lanes.pop_back();
-            st.laneColors.pop_back();
-        }
-        st.maxLanes = std::max<int>(st.maxLanes, std::max<int>(lane + 1, static_cast<int>(st.lanes.size())));
+            st.lanes[static_cast<size_t>(lane)].reset();
+            // Parents
+            for (size_t pi = 0; pi < layoutParents.size(); ++pi) {
+                const Oid& p = layoutParents[pi];
+                int target = -1;
+                for (size_t k = 0; k < st.lanes.size(); ++k)
+                    if (st.lanes[k] && *st.lanes[k] == p) {
+                        target = static_cast<int>(k);
+                        break;
+                    }
+                if (target > lane && pi == 0 && !st.lanes[static_cast<size_t>(lane)]) {
+                    // The first parent is already awaited further right: keep the first-parent chain in
+                    // this column too. Both lanes run down to the parent, whose row takes the leftmost
+                    // one; the other converges into it there.
+                    st.lanes[static_cast<size_t>(lane)] = p;
+                    target = lane;
+                } else if (target < 0) {
+                    if (pi == 0 && !st.lanes[static_cast<size_t>(lane)]) {
+                        target = lane;
+                    } else {
+                        target = allocLane(st);
+                        if (static_cast<size_t>(target) >= active.size())
+                            active.resize(static_cast<size_t>(target) + 1, false);
+                    }
+                    st.lanes[static_cast<size_t>(target)] = p;
+                }
+                const std::uint8_t color = target == lane ? row.color : st.laneColors[static_cast<size_t>(target)];
+                row.lines.push_back(GraphLine{static_cast<std::int16_t>(lane), static_cast<std::int16_t>(target), 1, 2, color});
+            }
+            for (size_t k = 0; k < active.size() && k < st.lanes.size(); ++k)
+                if (active[k])
+                    row.lines.push_back(GraphLine{static_cast<std::int16_t>(k), static_cast<std::int16_t>(k), 0, 2,
+                        st.laneColors[k]});
+            while (!st.lanes.empty() && !st.lanes.back()) {
+                st.lanes.pop_back();
+                st.laneColors.pop_back();
+            }
+            st.maxLanes = std::max<int>(st.maxLanes, std::max<int>(lane + 1, static_cast<int>(st.lanes.size())));
 
-        // ---- search index -----------------------------------------------------------------
-        std::string text = id.hex() + " " + git_commit_message(commit.get()) + " " + row.author + " " + row.authorEmail;
-        for (const auto& r : row.refs)
-            text += " " + r.name;
-        st.searchText.push_back(lower(std::move(text)));
-        st.rowOf[id] = static_cast<int>(st.order.size());
-        st.order.push_back(id);
-        ++st.emitted;
+            // ---- search index -----------------------------------------------------------------
+            std::string text = id.hex() + " " + git_commit_message(commit.get()) + " " + row.author + " " + row.authorEmail;
+            for (const auto& r : row.refs)
+                text += " " + r.name;
+            st.searchText.push_back(lower(std::move(text)));
+            st.rowOf[id] = static_cast<int>(st.order.size());
+            st.order.push_back(id);
+            ++st.emitted;
 
-        batch->rows.push_back(std::move(row));
-        const bool hit = stop && stop(id);
-        if (static_cast<int>(batch->rows.size()) >= batchLimit)
-            flush(false);
-        if (hit)
-            break;
+            batch->rows.push_back(std::move(row));
+            const bool hit = stop && stop(id);
+            if (static_cast<int>(batch->rows.size()) >= batchLimit)
+                flush(false);
+            if (hit)
+                break;
+        }
+    } catch (const gg::Cancelled&) {
+        // The state counts these rows already: send them, or Show more continues after a gap.
+        flush(true);
+        throw;
     }
     flush(true);
 }

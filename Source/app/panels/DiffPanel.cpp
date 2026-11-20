@@ -588,6 +588,9 @@ void DiffPanel::buildViews()
         const int bottom = g.all ? 0 : std::min(g.bottom, r.gapCount - top);
         auto line = [&](int k) {
             const int newNo = r.gapStart + k;
+            // The file may have changed since the hunks were read.
+            if (!f.newText || newNo < 1 || static_cast<size_t>(newNo) > f.newText->size())
+                return;
             EditorLine l{EditorLine::GapLine};
             l.gap = r.gap;
             l.newNo = newNo;
