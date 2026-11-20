@@ -1656,4 +1656,18 @@ GG_TEST("conflicts", "commit with conflicts rebuilds a file whose markers have t
     GG_CHECK(committed.find("<<<<<<<<< ") != std::string::npos);
 }
 
+GG_TEST("conflicts", "commit with conflicts keeps a hand-resolved file with a line of equal signs (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    const std::string text = "Title\n=======\nhand edited\n>>>>>>> note\n";
+    s.write(repo, "f.txt", text);
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:f.txt"}), "Title\n=======\nhand edited\n>>>>>>> note");
+    GG_CHECK_STR_EQ(s.read(repo, "f.txt"), text);
+}
+
 } // namespace ggtest

@@ -2201,13 +2201,16 @@ void Actions::commitWithConflicts()
             if (!gg::readFile(ctx.cwd() / p, current))
                 throw MutationError{Outcome::Failed, "cannot read " + p, {}};
             auto options = gg::conflicts::writeOptions(ctx.repo(), p);
-            bool marked = false; // a line that starts with markerSize or more of "<", "=" or ">"
-            for (size_t at = 0; at < current.size() && !marked; at = current.find('\n', at) == std::string::npos ? current.size() : current.find('\n', at) + 1) {
-                const char c = current[at];
+            bool marked = false; // a line of markerSize or more "<", then a space or the line end
+            for (size_t at = 0; at < current.size() && !marked;) {
                 size_t run = 0;
-                while (at + run < current.size() && current[at + run] == c)
+                while (at + run < current.size() && current[at + run] == '<')
                     ++run;
-                marked = (c == '<' || c == '=' || c == '>') && run >= static_cast<size_t>(options.markerSize);
+                const size_t after = at + run;
+                marked = run >= static_cast<size_t>(options.markerSize)
+                    && (after == current.size() || current[after] == ' ' || current[after] == '\r' || current[after] == '\n');
+                const size_t eol = current.find('\n', at);
+                at = eol == std::string::npos ? current.size() : eol + 1;
             }
             if (!marked)
                 continue;
