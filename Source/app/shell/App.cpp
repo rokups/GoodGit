@@ -139,6 +139,7 @@ void App::shutdown()
         m_session.reset();
     }
     m_closing.clear();
+    m_pickerGate->close();
     m_sequenceEditor.stop();
     m_sequenceOpen = 0;
     if (m_settings.loaded()) {
@@ -546,7 +547,7 @@ void App::pickFolder(const std::string& title, std::function<void(std::string)> 
     }
     // COVERAGE_EXCL_START: native picker integration (needs a desktop session).
     ++m_pickersRunning;
-    std::thread([this, title, done] {
+    std::thread([this, gate = m_pickerGate, title, done] {
         std::string result;
         if (NFD_Init() == NFD_OKAY) {
             nfdu8char_t* out = nullptr;
@@ -558,11 +559,14 @@ void App::pickFolder(const std::string& title, std::function<void(std::string)> 
             NFD_Quit();
         }
         (void)title;
-        m_io.post([this, done, result]() -> std::function<void()> {
-            return [this, done, result] {
-                --m_pickersRunning;
-                done(result);
-            };
+        // The gate is closed in shutdown, so a late dialog result does not reach m_io.
+        gate->post([this, done, result] {
+            m_io.post([this, done, result]() -> std::function<void()> {
+                return [this, done, result] {
+                    --m_pickersRunning;
+                    done(result);
+                };
+            });
         });
     }).detach();
     // COVERAGE_EXCL_STOP
@@ -577,7 +581,7 @@ void App::pickSaveFile(const std::string& title, const std::string& defaultName,
     }
     // COVERAGE_EXCL_START: native picker integration (needs a desktop session).
     ++m_pickersRunning;
-    std::thread([this, title, defaultName, done] {
+    std::thread([this, gate = m_pickerGate, title, defaultName, done] {
         std::string result;
         if (NFD_Init() == NFD_OKAY) {
             nfdu8char_t* out = nullptr;
@@ -590,11 +594,14 @@ void App::pickSaveFile(const std::string& title, const std::string& defaultName,
             NFD_Quit();
         }
         (void)title;
-        m_io.post([this, done, result]() -> std::function<void()> {
-            return [this, done, result] {
-                --m_pickersRunning;
-                done(result);
-            };
+        // The gate is closed in shutdown, so a late dialog result does not reach m_io.
+        gate->post([this, done, result] {
+            m_io.post([this, done, result]() -> std::function<void()> {
+                return [this, done, result] {
+                    --m_pickersRunning;
+                    done(result);
+                };
+            });
         });
     }).detach();
     // COVERAGE_EXCL_STOP

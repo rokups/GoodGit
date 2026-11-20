@@ -9,6 +9,7 @@
 #include "shell/Dialogs.hpp"
 #include "shell/Settings.hpp"
 #include "util/Frames.hpp"
+#include "util/PickerGate.hpp"
 
 #include <core/Engine.hpp>
 #include <core/Services.hpp>
@@ -281,6 +282,7 @@ private:
     std::uint64_t m_nextToast = 1;
     std::string m_title;
     int m_pickersRunning = 0;
+    std::shared_ptr<PickerGate> m_pickerGate = std::make_shared<PickerGate>();
     int m_recentFocus = -1;
     int m_quitRequests = 0;
     // Settings window: editable git config values (key "scope|name") and the value they were
