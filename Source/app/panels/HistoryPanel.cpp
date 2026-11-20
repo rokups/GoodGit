@@ -112,7 +112,7 @@ bool HistoryPanel::hideNewRefs(const core::Snapshot& before, const core::Snapsho
     std::set<std::string> known;
     for (const auto& r : branchRefs(before)) {
         known.insert(r.full);
-        const bool shown = refVisible(r.full);
+        const bool shown = !m_hidden.count(r.full); // the stored setting, not the HEAD rule
         for (const auto& key : scopes(r)) {
             Tally& t = tally[key];
             ++t.count;
