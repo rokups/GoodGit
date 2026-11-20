@@ -471,6 +471,16 @@ std::string lowerCase(std::string text)
     return text;
 }
 
+// A Windows device name, with or without an extension: Windows opens the device, not a file.
+bool isReservedName(const std::string& part)
+{
+    const std::string stem = lowerCase(part.substr(0, part.find('.')));
+    if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul")
+        return true;
+    return stem.size() == 4 && (stem.compare(0, 3, "com") == 0 || stem.compare(0, 3, "lpt") == 0) &&
+           stem[3] >= '1' && stem[3] <= '9';
+}
+
 // Splits a ZIP entry name into its parts when it is a plain relative path. A folder entry may end
 // in one "/".
 bool splitEntryName(const std::string& name, std::vector<std::string>& parts)
@@ -484,7 +494,8 @@ bool splitEntryName(const std::string& name, std::vector<std::string>& parts)
     while (true) {
         const size_t end = text.find('/', start);
         const std::string part = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        if (part.empty() || part == "." || part == ".." || part.back() == '.' || part.back() == ' ') {
+        if (part.empty() || part == "." || part == ".." || part.back() == '.' || part.back() == ' ' ||
+            isReservedName(part)) {
             return false;
         }
         for (const char c : part) {

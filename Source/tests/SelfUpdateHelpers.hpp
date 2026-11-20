@@ -8,6 +8,7 @@
 #include <miniz.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -160,6 +161,19 @@ inline std::string realGitGg()
     }
     return readFile(self.parent_path() / kGitGg);
 }
+
+// Ends the test when git-gg is missing: a failure when GGUI_REQUIRE_GITGG=1 (CI), else a skip.
+#define GG_NEED_GITGG(gitGg)                                                             \
+    do {                                                                                 \
+        if ((gitGg).empty()) {                                                           \
+            const char* const require = std::getenv("GGUI_REQUIRE_GITGG");               \
+            if (require && std::string(require) == "1")                                  \
+                GG_CHECK(!(gitGg).empty()); /* GGUI_REQUIRE_GITGG: git-gg next to ggui */ \
+            else                                                                         \
+                markCurrentTestSkipped("git-gg not built");                              \
+            return;                                                                      \
+        }                                                                                \
+    } while (0)
 
 // The files of a package: ggui, git-gg and a file that the update does not use.
 inline std::vector<Entry> packageEntries(const std::string& top, const std::string& gitGg)

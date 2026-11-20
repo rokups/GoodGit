@@ -332,10 +332,7 @@ GG_TEST("selfupdate", "updater refuses an action in the wrong state")
 GG_TEST("selfupdate", "updater download stages the update and gets ready")
 {
     const std::string gitGg = realGitGg();
-    if (gitGg.empty()) {
-        markCurrentTestSkipped("git-gg is not next to the test binary");
-        return;
-    }
+    GG_NEED_GITGG(gitGg);
     Fixture f(gitGg);
     SelfUpdater updater(f.config());
     GG_CHECK(!updater.restartPending());
