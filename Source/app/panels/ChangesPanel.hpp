@@ -120,6 +120,7 @@ private:
         m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged, plan.submodules);
     }
     std::vector<const FileRow*> visibleRows() const;
+    std::vector<const FileRow*> m_visible; // visibleRows() of the current frame, set once in draw()
     core::DiffQuery patchQuery(const FileRow& row) const;
     // The commit shown on the right: the upper one of two selected commits, else the selection itself.
     Selection effectiveSelection() const;

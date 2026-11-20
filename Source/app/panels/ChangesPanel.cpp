@@ -1174,7 +1174,7 @@ void ChangesPanel::drawGroup(FileGroup group, const char* title, int count)
     ImGui::EndDisabled();
     if (open) {
         int i = 0;
-        for (const FileRow* r : visibleRows())
+        for (const FileRow* r : m_visible)
             if (r->group == group)
                 drawFile(*r, i++);
     }
@@ -1279,6 +1279,7 @@ void ChangesPanel::draw(bool* open)
     // Nav-flattened: the rows are part of the panel's nav layer, so the arrows walk them.
     beginListChild("##files");
     const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput;
+    m_visible = visibleRows();
     const bool navOnFile = m_navOnFileNow || ImGui::GetCurrentContext()->NavId == 0; // last frame's cursor; 0 = mouse-only
     m_navOnFileNow = false;
     if (focused) {
@@ -1286,7 +1287,7 @@ void ChangesPanel::draw(bool* open)
         // reaching a row into a selection.
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A)) {
             m_selected.clear();
-            for (const FileRow* r : visibleRows())
+            for (const FileRow* r : m_visible)
                 m_selected.insert(r->key());
         }
         // Plain Space / Enter keep activating the focused row through ImGui's nav as well; Alt+Space is the
@@ -1336,7 +1337,7 @@ void ChangesPanel::draw(bool* open)
         drawGroup(FileGroup::StashUntracked, "Untracked", counts[static_cast<int>(FileGroup::StashUntracked)]);
     } else {
         int i = 0;
-        for (const FileRow* r : visibleRows())
+        for (const FileRow* r : m_visible)
             drawFile(*r, i++);
         if (m_rows.empty() && !m_loading && m_selection.kind == SelKind::Commit)
             ImGui::TextDisabled("No file changes");
