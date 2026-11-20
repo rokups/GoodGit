@@ -219,6 +219,22 @@ GG_TEST("shell", "opening shows progress and can be cancelled")
     GG_CHECK(s.waitIdle());
 }
 
+GG_TEST("shell", "a repository under a non-ASCII folder name opens and its path round-trips through settings.json (GG-59)")
+{
+    const std::string name = "J\xC3\xB3zef-\xC3\xBCn\xC3\xAF";
+    const fs::path repo = s.fixture(Recipe::Linear, name);
+    s.track(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    GG_CHECK(fs::equivalent(s.session()->path(), repo));
+    GG_REQUIRE(s.waitIdle());
+    const nlohmann::json stored = nlohmann::json::parse(s.read(s.root() / "prefs", "settings.json"));
+    GG_REQUIRE(stored.contains("recent") && !stored["recent"].empty());
+    const std::string first = stored["recent"][0].get<std::string>();
+    GG_CHECK(first.find(name) != std::string::npos);
+    GG_CHECK(fs::equivalent(first, repo));
+}
+
 GG_TEST("shell", "recent repositories: unique short display names")
 {
     using ggui::uniqueRecentNames;
