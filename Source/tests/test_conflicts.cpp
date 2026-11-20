@@ -1196,6 +1196,30 @@ void age(const fs::path& file, int hoursAgo)
 
 } // namespace
 
+GG_TEST("conflicts", "conflict cache: damaged lines are skipped and never throw")
+{
+    const fs::path dir = s.fixture(Recipe::Linear);
+    const fs::path file = dir / ".git" / "gg" / "cache" / "conflicts-v1";
+    fs::create_directories(file.parent_path());
+    {
+        std::ofstream out(file, std::ios::binary);
+        out << "gg-conflict-cache 1\nT 6161\n3\ta.txt\nT zz\n2\tlost.txt\n"
+            << "T " << std::string(401, 'f') << "\n\nT \nT 6262\n2\tb.txt\ngg-conflict-cache end\n";
+    }
+    bool threw = false;
+    gg::conflicts::Cache cache(dir / ".git");
+    try {
+        gg::conflicts::Cache again(dir / ".git");
+    } catch (...) {
+        threw = true;
+    }
+    GG_CHECK(!threw);
+    GG_CHECK_EQ(static_cast<int>(cache.trees.size()), 2);
+    GG_CHECK_EQ(static_cast<int>(cache.trees["aa"].size()), 1);
+    GG_CHECK_EQ(static_cast<int>(cache.trees["bb"].size()), 1);
+    cache.dirty = false;
+}
+
 GG_TEST("conflicts", "status scan cache: a refresh without file changes reads no content")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
