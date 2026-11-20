@@ -379,6 +379,23 @@ GG_TEST("network", "fetch more: dialog lists only what is new; Fetch takes the t
     GG_CHECK_STR_EQ(s.revParse(repo, "second/only-second"), s.gitOut(second, {"rev-parse", "main"}));
 }
 
+GG_TEST("network", "a remote name that starts with a dash is not read as a git option")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string marker = s.path("upload-pack-ran").string();
+    // The remote name has no space: git rejects a space in a remote name.
+    const fs::path script = s.path("upload-pack.sh");
+    s.write(s.root(), "upload-pack.sh", "#!/bin/sh\ntouch '" + marker + "'\n");
+    fs::permissions(script, fs::perms::owner_all);
+    const std::string name = "--upload-pack=" + script.string();
+    s.git(repo, {"remote", "add", "--", name, "https://invalid.invalid/r.git"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_CHECK(s.waitUntil([&] { return s.session()->remoteTags().count(name) != 0; }));
+    s.settle();
+    GG_CHECK(!fs::exists(marker));
+}
+
 GG_TEST("network", "a tag only on the remote is not in the Tags panel until Fetch more brings it")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

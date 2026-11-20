@@ -804,7 +804,7 @@ RequestId Engine::readRemoteTags(std::vector<std::string> remotes)
             for (const auto& remote : remotes) {
                 gg::throwIfCancelled(job.token);
                 gg::RunRequest r;
-                r.args = {"git", "ls-remote", "--tags", "--refs", remote};
+                r.args = {"git", "ls-remote", "--tags", "--refs", "--", remote};
                 r.cwd = path();
                 r.cancel = job.token;
                 // No prompt: ggui's credentials dialog is for what the user started.
@@ -834,7 +834,7 @@ RequestId Engine::readRemoteBranches(std::string remote)
     return submit(Queue::Remote, "Reading branches on " + remote, kSlotRemoteBranches, true,
         [this, remote = std::move(remote)](Job& job) {
             gg::RunRequest r;
-            r.args = {"git", "ls-remote", "--heads", "--refs", remote};
+            r.args = {"git", "ls-remote", "--heads", "--refs", "--", remote};
             r.cwd = path();
             r.cancel = job.token;
             // No prompt: ggui's credentials dialog is for what the user started.

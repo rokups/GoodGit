@@ -1314,7 +1314,7 @@ void Actions::deleteRemoteTags(const std::string& remote, std::vector<std::strin
 
 void Actions::addRemote(const std::string& name, const std::string& url)
 {
-    run("add remote " + name, [name, url](MutationContext& ctx) { ctx.git({"remote", "add", name, url}); });
+    run("add remote " + name, [name, url](MutationContext& ctx) { ctx.git({"remote", "add", "--", name, url}); });
 }
 
 void Actions::removeRemote(const std::string& name)
