@@ -114,7 +114,21 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                         amended[out->rows[*current].id] = *current;
                     }
                     if (dropped.count(key)) {
-                        out->rows.erase(out->rows.begin() + static_cast<std::ptrdiff_t>(*current));
+                        // The row is not the last one after a reset: later rows move up one.
+                        const size_t gone = *current;
+                        out->rows.erase(out->rows.begin() + static_cast<std::ptrdiff_t>(gone));
+                        std::erase_if(rowOf, [&](const auto& e) { return e.second == gone; });
+                        std::erase_if(amended, [&](const auto& e) { return e.second == gone; });
+                        for (auto& e : rowOf)
+                            e.second -= e.second > gone;
+                        for (auto& e : amended)
+                            e.second -= e.second > gone;
+                        for (auto& e : labelRow) {
+                            if (e.second && *e.second == gone)
+                                e.second.reset();
+                            else if (e.second && *e.second > gone)
+                                --*e.second;
+                        }
                         current.reset();
                         skipping = true;
                         break;
