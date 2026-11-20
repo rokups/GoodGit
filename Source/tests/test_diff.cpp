@@ -699,7 +699,8 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
     showFile(s, commit, "huge.txt");
     GG_REQUIRE(file(s) != nullptr);
     GG_CHECK(!file(s)->hunks.empty());
-    GG_CHECK(!file(s)->oldText || file(s)->oldText->empty());
+    GG_CHECK(!file(s)->oldText);
+    GG_CHECK(!file(s)->newText);
     ctx->ItemClick("//History/**/###row_wt");
     const std::string unstaged = s.child("//Changes", "##files") + "/Unstaged/huge.txt/###file_huge.txt";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(unstaged.c_str()); }));

@@ -2217,6 +2217,24 @@ void Actions::commitWithConflicts()
         }
         std::vector<std::pair<std::string, std::string>> contents;
         for (const auto& p : paths) {
+            // A file with no conflict marker line was resolved by hand: keep it, only stage it.
+            std::string current;
+            if (!gg::readFile(ctx.cwd() / p, current))
+                throw MutationError{Outcome::Failed, "cannot read " + p, {}};
+            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
+            bool marked = false; // a line of markerSize or more "<", then a space or the line end
+            for (size_t at = 0; at < current.size() && !marked;) {
+                size_t run = 0;
+                while (at + run < current.size() && current[at + run] == '<')
+                    ++run;
+                const size_t after = at + run;
+                marked = run >= static_cast<size_t>(options.markerSize)
+                    && (after == current.size() || current[after] == ' ' || current[after] == '\r' || current[after] == '\n');
+                const size_t eol = current.find('\n', at);
+                at = eol == std::string::npos ? current.size() : eol + 1;
+            }
+            if (!marked)
+                continue;
             auto stage = [&](int n) {
                 const auto r = ctx.gitMayFail({"show", ":" + std::to_string(n) + ":" + p});
                 return r.ok() ? std::optional<std::string>(r.out) : std::nullopt;
@@ -2229,7 +2247,6 @@ void Actions::commitWithConflicts()
             if (gg::markers::looksBinary(*ours) || gg::markers::looksBinary(*theirs)
                 || (base && gg::markers::looksBinary(*base)))
                 throw MutationError{Outcome::Refused, p + " is binary: resolve binary conflicts first", {}};
-            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
             options.sideLabels = {oursLabel, theirsLabel};
             options.baseLabels = {"base"};
             contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs, options));
