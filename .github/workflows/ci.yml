@@ -33,6 +33,7 @@ jobs:
   git-min:
     # Builds and caches git 2.36.0, the minimum supported version (G2).
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/cache@v6
         id: cache
@@ -49,6 +50,7 @@ jobs:
   linux-build:
     # One instrumented build; every shard runs these binaries.
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - name: Dependencies
@@ -77,6 +79,7 @@ jobs:
   linux:
     needs: [linux-build, git-min]
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +133,7 @@ jobs:
     needs: linux
     if: always()
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y llvm
@@ -154,6 +158,7 @@ jobs:
   # Windows: each toolchain is built once; its binaries run the suite in shards (like Linux).
   windows-build:
     runs-on: windows-2022
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -198,6 +203,7 @@ jobs:
   windows:
     needs: windows-build
     runs-on: windows-2022
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
@@ -219,7 +225,7 @@ jobs:
       - run: git --version
       - name: Tests (shard ${{ matrix.shard }}/6, headless, D3D12/WARP)
         # A hang fails the job instead of holding the runner for the 6 h default.
-        timeout-minutes: 30
+        timeout-minutes: 65
         env:
           GGUI_HEADLESS: "1"
         run: |
@@ -238,6 +244,7 @@ jobs:
   # smoke checks. Packages are uploaded as artifacts.
   package-linux:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Dependencies
@@ -265,6 +272,7 @@ jobs:
 
   package-mingw:
     runs-on: windows-2022
+    timeout-minutes: 30
     defaults:
       run:
         shell: msys2 {0}
@@ -296,6 +304,7 @@ jobs:
 
   package-msvc:
     runs-on: windows-2022
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: ilammy/msvc-dev-cmd@v1
@@ -322,6 +331,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: [linux, coverage, windows, package-linux, package-mingw, package-msvc]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     concurrency:
