@@ -1326,7 +1326,7 @@ static void tagDeleteItems(Session& session, const core::Snapshot& snap, const s
     ImGui::Separator();
     for (size_t i = 0; i < remotes.size(); ++i)
         if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
-            actions.deleteRemoteTag(names[i], name);
+            session.showDeleteTagsDialog({name}, names[i]);
     ImGui::EndMenu();
 }
 
