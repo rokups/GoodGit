@@ -4,6 +4,7 @@
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
 
+#include <libgg/Files.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 #include <libgg/Keep.hpp>
@@ -1211,8 +1212,9 @@ void Actions::revertOrPick(const std::vector<core::Oid>& commits, bool revert, b
             }
             // The pending message (git commit and --continue take it from MERGE_MSG).
             if (!commitIt) {
-                std::ofstream out(std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG", std::ios::binary | std::ios::trunc);
-                out << pending << "\n";
+                const auto file = std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG";
+                if (const auto ec = gg::writeFileAtomic(file, pending + "\n"))
+                    throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
             }
             // Also when a pick stopped: the earlier commits changed the files (git skips unmerged paths).
             ctx.submodules = SubmoduleSync::Update;
@@ -1296,8 +1298,9 @@ void Actions::revertChanges(const core::Oid& commit, const std::vector<std::stri
                 }
                 // The pending message (git commit and --continue take it from MERGE_MSG).
                 {
-                    std::ofstream out(std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG", std::ios::binary | std::ios::trunc);
-                    out << revertPartMessage(messageOf(repo, id), id, revertWhat(paths, patch)) << "\n";
+                    const auto file = std::filesystem::path(git_repository_path(repo)) / "MERGE_MSG";
+                    if (const auto ec = gg::writeFileAtomic(file, revertPartMessage(messageOf(repo, id), id, revertWhat(paths, patch)) + "\n"))
+                        throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
                 }
                 if (!conflicts)
                     return;

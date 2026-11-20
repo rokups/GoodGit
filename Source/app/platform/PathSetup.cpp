@@ -370,27 +370,12 @@ std::string writePathSetup(
     fs::create_directories(file.parent_path(), ec);
     if (ec)
         return "Cannot create " + file.parent_path().string() + ": " + ec.message();
-    const fs::path tmp = file.string() + ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out)
-            return "Cannot write " + tmp.string() + ": " + std::strerror(errno);
-        out << "# Managed by GoodGit (ggui): Settings > General > Add GoodGit to PATH.\n"
-               "# Puts the directory holding git-gg on the login PATH. Delete this file to undo.\n"
-            << "PATH=" << dir << kTail << "\n";
-        out.flush();
-        if (!out) {
-            out.close();
-            fs::remove(tmp, ec);
-            return "Cannot write " + tmp.string() + ".";
-        }
-    }
-    ec = gg::replaceFile(tmp, file);
-    if (ec) {
-        std::error_code ignore;
-        fs::remove(tmp, ignore);
+    const std::string text = std::string("# Managed by GoodGit (ggui): Settings > General > Add GoodGit to PATH.\n"
+                                         "# Puts the directory holding git-gg on the login PATH. Delete this file to undo.\n")
+        + "PATH=" + dir + kTail + "\n";
+    ec = gg::writeFileAtomic(file, text);
+    if (ec)
         return "Cannot write " + file.string() + ": " + ec.message();
-    }
     return {};
 }
 
