@@ -273,6 +273,9 @@ GG_TEST("cli", "git gg hooks install and status only print that the managed hook
     GG_CHECK(r.out.find("nothing to do") != std::string::npos);
 }
 
+// These tests need POSIX sh, trap, sleep and signals, so Windows CI skips them.
+#ifndef _WIN32
+
 GG_TEST("cli", "gg::run kills a cancelled child group that ignores SIGTERM after a deadline")
 {
     const fs::path dir = s.path("stubborn-bin");
@@ -338,5 +341,7 @@ GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all i
     GG_CHECK_EQ(result.exitCode, 0); // no 128 + SIGPIPE
     GG_CHECK(secs > 0.5 && secs < 5.0);
 }
+
+#endif // _WIN32
 
 } // namespace ggtest
