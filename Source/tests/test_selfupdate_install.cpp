@@ -326,7 +326,7 @@ GG_TEST("selfupdate", "spawnScriptDetached rejects an unsafe argument")
 {
     gg::DetachedProcess child;
     std::string error;
-    for (const char* bad : {"", "a b", "a\"b", "a&b", "a%b", "\xc3\xa4"}) {
+    for (const char* bad : {"", "a b", "a\"b", "a&b", "a%b", "a=b", "a,b", "a;b", "\xc3\xa4"}) {
         error.clear();
         GG_CHECK(!gg::spawnScriptDetached("unused", {bad}, child, error));
         GG_CHECK(!error.empty());

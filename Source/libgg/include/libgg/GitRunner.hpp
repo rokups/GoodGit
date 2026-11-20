@@ -101,7 +101,15 @@ std::vector<std::string> splitNul(const std::string& text);
 std::vector<std::string> splitLines(const std::string& text);
 std::string trim(std::string text);
 
-// Full path of `program` found through PATH, or empty.
+// Quotes one argument by the CommandLineToArgvW rules (UTF-8 in, UTF-8 out).
+std::string quoteWindowsArg(const std::string& arg);
+// CreateProcess takes at most 32767 characters with the end NUL.
+constexpr size_t kMaxWindowsCommandLine = 32766;
+bool windowsCommandLineFits(size_t length);
+// Whether the name ends in .cmd or .bat (any case).
+bool isBatchFileName(const std::string& name);
+
+// Full path of `program` found through PATH, or empty. Never a .cmd or .bat file.
 std::filesystem::path findInPath(const std::string& program);
 
 } // namespace gg
