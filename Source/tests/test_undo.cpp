@@ -392,6 +392,12 @@ GG_TEST("undo", "journal variants: foreign, torn and future records are skipped;
     ctx->KeyPress(ImGuiKey_F5);
     GG_CHECK(s.dismissError());
     GG_CHECK(s.app.errorMessage().find("journal written by a newer ggui (format 99)") != std::string::npos);
+    // Start a fresh journal with one operation, so the empty list below is a real change.
+    fs::remove(repo / ".git" / "gg" / "journal");
+    ctx->KeyPress(ImGuiKey_F5);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty(); }));
+    s.settle();
     // A header whose version is not a number counts as the oldest format.
     s.write(repo, ".git/gg/journal", "{\"gg-journal\":\"one\"}\n");
     ctx->KeyPress(ImGuiKey_F5);
