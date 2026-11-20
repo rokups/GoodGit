@@ -1919,10 +1919,24 @@ void Actions::stashPush(const std::string& message, bool keepIndex, bool untrack
         std::move(done));
 }
 
-void Actions::stashApply(int index, bool pop, bool restoreIndex)
+namespace {
+
+// Refuses when stash@{index} is not the commit `id` (the list changed since the caller looked).
+void requireStashAt(MutationContext& ctx, int index, const std::string& id)
+{
+    const auto r = ctx.gitMayFail({"rev-parse", "--verify", "-q", "stash@{" + std::to_string(index) + "}"});
+    if (!r.ok() || gg::trim(r.out) != id)
+        throw MutationError{Outcome::Refused, "The stash list changed; select the stash again", {}};
+}
+
+} // namespace
+
+void Actions::stashApply(int index, const core::Oid& commit, bool pop, bool restoreIndex)
 {
     const std::string ref = "stash@{" + std::to_string(index) + "}";
-    run(std::string(pop ? "stash pop " : "stash apply ") + ref, [ref, pop, restoreIndex](MutationContext& ctx) {
+    const std::string id = commit.hex();
+    run(std::string(pop ? "stash pop " : "stash apply ") + ref, [ref, id, index, pop, restoreIndex](MutationContext& ctx) {
+        requireStashAt(ctx, index, id);
         std::vector<std::string> args{"stash", pop ? "pop" : "apply", "-q"};
         if (restoreIndex)
             args.emplace_back("--index");
@@ -1933,10 +1947,14 @@ void Actions::stashApply(int index, bool pop, bool restoreIndex)
     });
 }
 
-void Actions::stashDrop(int index)
+void Actions::stashDrop(int index, const core::Oid& commit)
 {
     const std::string ref = "stash@{" + std::to_string(index) + "}";
-    run("stash drop " + ref, [ref](MutationContext& ctx) { ctx.git({"stash", "drop", "-q", ref}); });
+    const std::string id = commit.hex();
+    run("stash drop " + ref, [ref, id, index](MutationContext& ctx) {
+        requireStashAt(ctx, index, id);
+        ctx.git({"stash", "drop", "-q", ref});
+    });
 }
 
 namespace {
@@ -2050,21 +2068,26 @@ void Actions::stashClear()
     run("stash clear", [](MutationContext& ctx) { ctx.git({"stash", "clear"}); });
 }
 
-void Actions::stashBranch(int index, const std::string& branch)
+void Actions::stashBranch(int index, const core::Oid& commit, const std::string& branch)
 {
     const std::string ref = "stash@{" + std::to_string(index) + "}";
-    run("branch " + branch + " from " + ref, [ref, branch](MutationContext& ctx) {
+    const std::string id = commit.hex();
+    run("branch " + branch + " from " + ref, [ref, id, index, branch](MutationContext& ctx) {
+        requireStashAt(ctx, index, id);
         ctx.git({"stash", "branch", "--", branch, ref});
         ctx.worktreeFollowsIndex = true;
         ctx.submodules = SubmoduleSync::Update;
     });
 }
 
-void Actions::stashApplyFile(int index, const std::string& path)
+void Actions::stashApplyFile(int index, const core::Oid& commit, const std::string& path)
 {
     const std::string ref = "stash@{" + std::to_string(index) + "}";
-    run("apply " + path + " from " + ref,
-        [ref, path](MutationContext& ctx) { ctx.git(withPaths({"restore", "--source=" + ref, "--worktree"}, {path})); });
+    const std::string id = commit.hex();
+    run("apply " + path + " from " + ref, [ref, id, index, path](MutationContext& ctx) {
+        requireStashAt(ctx, index, id);
+        ctx.git(withPaths({"restore", "--source=" + ref, "--worktree"}, {path}));
+    });
 }
 
 // ---- in-progress operations --------------------------------------------------------------------------

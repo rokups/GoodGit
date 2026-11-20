@@ -863,7 +863,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     }
     if (m_selection.kind == SelKind::Stash && row.group != FileGroup::StashIndex) {
         if (menuItem(ICON_MS_CONTENT_PASTE, "Apply this file", nullptr, false, free))
-            actions.stashApplyFile(m_selection.stashIndex, row.path);
+            actions.stashApplyFile(m_selection.stashIndex, m_selection.id, row.path);
     }
     if ((m_selection.kind == SelKind::Commit && !m_pair) || m_selection.kind == SelKind::WorkingTree
         || m_selection.kind == SelKind::Index) {

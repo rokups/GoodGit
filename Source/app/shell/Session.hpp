@@ -245,9 +245,9 @@ public:
     void showDeleteTagsDialog(std::vector<std::string> tags, const std::string& remote); // remote empty: local tags
     void showMoveBranchDialog(const std::string& branch, const std::string& to);
     void showSetUpstreamDialog(const std::string& branch);
-    void showBranchFromStashDialog(int index);
+    void showBranchFromStashDialog(int index, const core::Oid& commit);
     void showRenameStashDialog(int index);
-    void showDropStashDialog(int index);
+    void showDropStashDialog(int index, const core::Oid& commit);
     void showClearStashesDialog();
     void showDeleteFilesDialog(std::vector<std::string> paths);
     void showBranchFromCommitDialog(const std::string& commit);

@@ -1045,12 +1045,12 @@ void Session::showSetUpstreamDialog(const std::string& branch)
     m_app.dialogs().open(std::move(f));
 }
 
-void Session::showBranchFromStashDialog(int index)
+void Session::showBranchFromStashDialog(int index, const core::Oid& commit)
 {
     Form f;
     f.title = "Branch from stash";
     f.add(Field{Field::Text, "name", "New branch for stash@{" + std::to_string(index) + "}"});
-    f.buttons.push_back({"Create", [this, index](Form& form) { m_actions->stashBranch(index, gg::trim(form.text("name"))); },
+    f.buttons.push_back({"Create", [this, index, commit](Form& form) { m_actions->stashBranch(index, commit, gg::trim(form.text("name"))); },
         [](const Form& form) { return refText(form, "name"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
@@ -1077,12 +1077,12 @@ void Session::showRenameStashDialog(int index)
     }
 }
 
-void Session::showDropStashDialog(int index)
+void Session::showDropStashDialog(int index, const core::Oid& commit)
 {
     Form f;
     f.title = "Drop stash";
     f.message = "Drop stash@{" + std::to_string(index) + "}? (Undo can bring it back.)";
-    f.buttons.push_back({"Drop", [this, index](Form&) { m_actions->stashDrop(index); }});
+    f.buttons.push_back({"Drop", [this, index, commit](Form&) { m_actions->stashDrop(index, commit); }});
     f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
@@ -1138,7 +1138,7 @@ void Session::pushCurrent()
 void Session::popStash()
 {
     if (!m_snapshot->stashes.empty())
-        m_actions->stashApply(0, true, false);
+        m_actions->stashApply(0, m_snapshot->stashes.front().commit, true, false);
 }
 
 } // namespace ggui
