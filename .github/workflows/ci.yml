@@ -64,6 +64,10 @@ jobs:
         with:
           path: .cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - uses: actions/cache@v6 # fonts downloaded by cmake/Dependencies.cmake
+        with:
+          path: build/*/fonts
+          key: fonts-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build (clang, coverage)
         run: |
           cmake --preset coverage
@@ -182,6 +186,10 @@ jobs:
         with:
           path: .cache/CPM
           key: cpm-${{ matrix.toolchain }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - uses: actions/cache@v6 # fonts downloaded by cmake/Dependencies.cmake
+        with:
+          path: build/*/fonts
+          key: fonts-${{ matrix.toolchain }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build (mingw-x64-static)
         if: matrix.toolchain == 'mingw'
         shell: msys2 {0}
@@ -264,6 +272,10 @@ jobs:
         with:
           path: .cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - uses: actions/cache@v6 # fonts downloaded by cmake/Dependencies.cmake
+        with:
+          path: build/*/fonts
+          key: fonts-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build, package and check (tar.gz, zip, deb; deb installed with apt in a clean container)
         run: scripts/package_smoke.sh --container ubuntu:24.04
       - uses: actions/upload-artifact@v7
@@ -292,6 +304,10 @@ jobs:
         with:
           path: .cache/CPM
           key: cpm-mingw-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - uses: actions/cache@v6 # fonts downloaded by cmake/Dependencies.cmake
+        with:
+          path: build/*/fonts
+          key: fonts-mingw-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build and package (mingw-x64-static-release)
         env:
           CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
@@ -316,6 +332,10 @@ jobs:
         with:
           path: .cache/CPM
           key: cpm-msvc-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - uses: actions/cache@v6 # fonts downloaded by cmake/Dependencies.cmake
+        with:
+          path: build/*/fonts
+          key: fonts-msvc-${{ hashFiles('cmake/Dependencies.cmake') }}
       - name: Build and package (msvc-x64-release)
         run: |
           cmake --preset msvc-x64-release -DCPM_SOURCE_CACHE="${{ github.workspace }}/.cache/CPM"
