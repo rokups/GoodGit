@@ -7,6 +7,7 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include <algorithm>
 #include <libgg/Worktrees.hpp>
 
 #include <nlohmann/json.hpp>
@@ -328,6 +329,39 @@ GG_TEST("worktrees", "remove: with changes (asks, force), locked, missing; the m
     GG_CHECK(s.waitUntil([&] { return !registered(s, repo, wt3) && !fs::exists(repo / ".git" / "worktrees" / n3); }));
     s.settle();
     GG_CHECK(s.waitUntil([&] { return shown(s, n3) == nullptr; }));
+}
+
+GG_TEST("worktrees", "a linked worktree in a folder named like the main worktree has its own row and menu (GG-125)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path linked = s.root() / "other" / "main";
+    fs::create_directories(linked.parent_path());
+    s.git(repo, {"worktree", "add", "-q", "-b", "twin", linked.string()});
+    s.track(linked);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Worktrees");
+    const ggui::core::WorktreeInfo* mainWt = nullptr;
+    const ggui::core::WorktreeInfo* twin = nullptr;
+    GG_REQUIRE(s.waitUntil([&] {
+        mainWt = twin = nullptr;
+        for (const auto& w : s.session()->snapshot()->worktrees)
+            (w.isMain ? mainWt : twin) = &w;
+        return mainWt && twin;
+    }));
+    GG_CHECK_STR_EQ(mainWt->name, twin->name);
+    // The ID of a shared name has the path in it: "/" in the path is ":" there.
+    auto rowOf = [](const ggui::core::WorktreeInfo& w) {
+        std::string p = w.path.string();
+        std::replace(p.begin(), p.end(), '/', ':');
+        return "//Worktrees/worktree_" + w.name + "@" + p + "/###row";
+    };
+    GG_CHECK(s.itemExists(rowOf(*mainWt).c_str()));
+    GG_CHECK(s.itemExists(rowOf(*twin).c_str()));
+    // The menu of the second row locks the linked worktree.
+    s.contextMenu(rowOf(*twin).c_str(), "Lock...");
+    GG_REQUIRE(s.dialogOpen("Lock worktree"));
+    s.dialogButton("Lock worktree", "Lock");
+    GG_CHECK(s.waitUntil([&] { return registered(s, repo, linked)->locked; }));
 }
 
 GG_TEST("worktrees", "lock with a reason and unlock, both undone; prune shows what it removes first and keeps locked ones; repair a moved worktree")
