@@ -13,6 +13,9 @@
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
 
+#include "core/Readers.hpp"
+
+#include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 #include <libgg/Todo.hpp>
 
@@ -1047,6 +1050,51 @@ GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, p
     GG_CHECK(s.waitUntil([&] { return s.refs(path) == refsBefore; }));
     s.settle();
     GG_CHECK(s.statusPorcelain(path).empty());
+}
+
+GG_TEST("rebase-merges", "preview: an empty fixup after a reset drops its row and later rows keep the right commit and decision")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.write(path, "bin.dat", std::string("A\0", 2));
+    s.commitFile(path, "h.txt", "1\n", "base");
+    s.git(path, {"add", "bin.dat"});
+    s.git(path, {"commit", "-q", "--amend", "--no-edit"});
+    const std::string base = s.head(path);
+    s.write(path, "bin.dat", std::string("B\0", 2));
+    s.git(path, {"commit", "-q", "-am", "q binary B"});
+    s.commitFile(path, "a.txt", "a\n", "a add a");
+    const std::string a = s.head(path);
+    s.write(path, "bin.dat", std::string("C\0", 2));
+    s.git(path, {"commit", "-q", "-am", "b binary C"});
+    const std::string b = s.head(path);
+    s.git(path, {"rm", "-q", "a.txt"});
+    s.git(path, {"commit", "-q", "-m", "x remove a"});
+    const std::string x = s.head(path);
+    s.commitFile(path, "a.txt", "a\n", "c add a again");
+    const std::string c = s.head(path);
+    s.commitFile(path, "d.txt", "d\n", "d add d");
+    const std::string d = s.head(path);
+
+    // B goes on A without Q: a binary conflict that needs a decision. After "reset l" C is empty
+    // (A has a.txt already) and is left out, so the fixup row after the exec row amends nothing
+    // of its own: the row of A (not the last row) is the one that goes.
+    const std::string text = "label onto\nreset onto\npick " + a + "\nlabel l\npick " + b + "\nreset l\npick " + c
+        + "\nexec true\nfixup " + x + "\npick " + d + "\n";
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    todo::Context context = todo::read(repo.get(), {base, "HEAD", ""});
+    todo::Todo list = todo::parse(text);
+    GG_REQUIRE(todo::expand(repo.get(), list, context).empty());
+    todo::Options options;
+    options.rebaseMerges = true;
+    options.emptied = gg::rewrite::Emptied::Drop;
+    const auto p = ggui::core::readRebasePreview(path, list, context, options, gg::CancelToken());
+    GG_REQUIRE(p != nullptr);
+    GG_REQUIRE(p->ok);
+    GG_REQUIRE(p->rows.size() == 2);
+    GG_CHECK_STR_EQ(p->rows[0].sources.front(), b);
+    GG_CHECK_STR_EQ(p->rows[1].sources.front(), d);
+    GG_CHECK_EQ(p->rows[0].decisions.size(), 1u);
+    GG_CHECK(p->rows[1].decisions.empty());
 }
 
 } // namespace ggtest
