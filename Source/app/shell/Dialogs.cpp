@@ -374,7 +374,7 @@ void Dialogs::pushRefused(Session& session, const std::string& message, const st
 {
     Form f;
     f.title = "Push refused";
-    f.message = message + ". Resolve them first.";
+    f.message = detail.empty() ? message + "." : message + ". Resolve them first."; // a refusal with a list is a conflict one
     for (const auto& line : gg::splitLines(detail)) {
         if (line.empty())
             continue;
