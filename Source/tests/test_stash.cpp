@@ -340,4 +340,22 @@ GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflic
         s.dismissError();
 }
 
+GG_TEST("stash", "an action with a stale stash index is refused and drops nothing")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    const ggui::core::Oid shown = ggui::core::Oid::fromHex(s.gitOut(repo, {"rev-parse", "stash@{1}"}));
+    // A stash pushed outside the app moves every index by one.
+    s.write(repo, "outside.txt", "outside\n");
+    s.git(repo, {"add", "outside.txt"});
+    s.git(repo, {"stash", "push", "-q", "-m", "outside"});
+    const std::string after = s.gitOut(repo, {"stash", "list", "--format=%H"});
+    s.session()->actions().stashDrop(1, shown);
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "list", "--format=%H"}), after);
+    GG_CHECK_EQ(stashCount(s, repo), static_cast<size_t>(4));
+    if (s.app.dialogs().current())
+        s.dismissError();
+}
+
 } // namespace ggtest
