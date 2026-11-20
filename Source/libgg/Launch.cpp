@@ -55,27 +55,15 @@ fs::path gguiProgram()
 bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child, std::string& error)
 {
 #ifdef _WIN32
-    std::wstring cmd;
-    for (const auto& a : args) {
-        const int n = MultiByteToWideChar(CP_UTF8, 0, a.data(), static_cast<int>(a.size()), nullptr, 0);
-        std::wstring w(static_cast<size_t>(n), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, a.data(), static_cast<int>(a.size()), w.data(), n);
-        if (!cmd.empty())
-            cmd += L' ';
-        cmd += L'"';
-        size_t slashes = 0;
-        for (wchar_t c : w) {
-            if (c == L'\\') {
-                ++slashes;
-            } else {
-                if (c == L'"')
-                    cmd.append(slashes + 1, L'\\');
-                slashes = 0;
-            }
-            cmd += c;
-        }
-        cmd.append(slashes, L'\\');
-        cmd += L'"';
+    std::string line;
+    for (const auto& a : args)
+        line += (line.empty() ? "" : " ") + quoteWindowsArg(a);
+    const int n = MultiByteToWideChar(CP_UTF8, 0, line.data(), static_cast<int>(line.size()), nullptr, 0);
+    std::wstring cmd(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, line.data(), static_cast<int>(line.size()), cmd.data(), n);
+    if (!windowsCommandLineFits(cmd.size())) {
+        error = "command line too long";
+        return false;
     }
     STARTUPINFOW si{};
     si.cb = sizeof(si);
@@ -128,14 +116,28 @@ bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child,
 #endif
 }
 
+bool isSafeScriptPath(const std::string& path)
+{
+    return path.find_first_of("%\"") == std::string::npos;
+}
+
+bool isSafeScriptArg(const std::string& arg)
+{
+    bool ok = !arg.empty();
+    for (const unsigned char c : arg)
+        ok = ok && c > 0x20 && c < 0x7f && std::strchr("\"%^&|<>()!=,;", c) == nullptr;
+    return ok;
+}
+
 bool spawnScriptDetached(const fs::path& script, const std::vector<std::string>& args, DetachedProcess& child,
     std::string& error)
 {
+    if (!isSafeScriptPath(script.string())) {
+        error = "bad script path";
+        return false;
+    }
     for (const auto& a : args) {
-        bool ok = !a.empty();
-        for (const unsigned char c : a)
-            ok = ok && c > 0x20 && c < 0x7f && std::strchr("\"%^&|<>()!", c) == nullptr;
-        if (!ok) {
+        if (!isSafeScriptArg(a)) {
             error = "bad script argument";
             return false;
         }
@@ -156,7 +158,7 @@ bool spawnScriptDetached(const fs::path& script, const std::vector<std::string>&
         error = "cannot find cmd.exe";
         return false;
     }
-    std::wstring cmd = L"\"" + comspec + L"\" /d /s /c \"\"" + script.native() + L"\"";
+    std::wstring cmd = L"\"" + comspec + L"\" /d /v:off /s /c \"\"" + script.native() + L"\"";
     for (const auto& a : args) {
         cmd += L' ';
         cmd.append(a.begin(), a.end()); // ASCII only

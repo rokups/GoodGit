@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -135,6 +136,46 @@ void logCommand(const RunRequest& request, const RunResult& result)
     g_log.push_back(CommandLogEntry{request.args, request.cwd, result.exitCode, result.duration, result.err});
 }
 
+} // namespace
+
+std::string quoteWindowsArg(const std::string& arg)
+{
+    if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos)
+        return arg;
+    std::string out = "\"";
+    size_t backslashes = 0;
+    for (const char c : arg) {
+        if (c == '\\') {
+            ++backslashes;
+            continue;
+        }
+        // Backslashes before a quote are doubled and the quote is escaped. Others stay as they are.
+        out.append(c == '"' ? backslashes * 2 + 1 : backslashes, '\\');
+        out.push_back(c);
+        backslashes = 0;
+    }
+    out.append(backslashes * 2, '\\'); // before the closing quote
+    out.push_back('"');
+    return out;
+}
+
+bool windowsCommandLineFits(size_t length)
+{
+    return length <= kMaxWindowsCommandLine;
+}
+
+bool isBatchFileName(const std::string& name)
+{
+    if (name.size() < 4)
+        return false;
+    std::string ext = name.substr(name.size() - 4);
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == ".cmd" || ext == ".bat";
+}
+
+namespace {
+
 #ifdef _WIN32
 
 std::wstring widen(const std::string& s)
@@ -145,35 +186,6 @@ std::wstring widen(const std::string& s)
     std::wstring w(static_cast<size_t>(n), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), w.data(), n);
     return w;
-}
-
-// Quotes one argument following the MSVCRT CommandLineToArgvW rules.
-void appendQuoted(std::wstring& cmd, const std::wstring& arg)
-{
-    if (!arg.empty() && arg.find_first_of(L" \t\n\v\"") == std::wstring::npos) {
-        cmd += arg;
-        return;
-    }
-    cmd.push_back(L'"');
-    for (auto it = arg.begin();; ++it) {
-        size_t backslashes = 0;
-        while (it != arg.end() && *it == L'\\') {
-            ++it;
-            ++backslashes;
-        }
-        if (it == arg.end()) {
-            cmd.append(backslashes * 2, L'\\');
-            break;
-        }
-        if (*it == L'"') {
-            cmd.append(backslashes * 2 + 1, L'\\');
-            cmd.push_back(*it);
-        } else {
-            cmd.append(backslashes, L'\\');
-            cmd.push_back(*it);
-        }
-    }
-    cmd.push_back(L'"');
 }
 
 RunResult runProcess(const RunRequest& request)
@@ -197,7 +209,12 @@ RunResult runProcess(const RunRequest& request)
     for (size_t i = 0; i < request.args.size(); ++i) {
         if (i)
             cmd.push_back(L' ');
-        appendQuoted(cmd, i == 0 ? program.wstring() : widen(request.args[i]));
+        cmd += widen(quoteWindowsArg(i == 0 ? program.string() : request.args[i]));
+    }
+    if (!windowsCommandLineFits(cmd.size())) {
+        result.startFailed = true;
+        result.err = request.args.at(0) + ": command line too long";
+        return result;
     }
 
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
@@ -225,6 +242,7 @@ RunResult runProcess(const RunRequest& request)
     const BOOL created = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
         CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, envBlock.data(),
         cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
+    const DWORD createError = GetLastError();
     CloseHandle(inR);
     CloseHandle(outW);
     CloseHandle(errW);
@@ -234,7 +252,7 @@ RunResult runProcess(const RunRequest& request)
         CloseHandle(errR);
         CloseHandle(job);
         result.startFailed = true;
-        result.err = request.args.at(0) + ": cannot start process";
+        result.err = request.args.at(0) + ": cannot start process (error " + std::to_string(createError) + ")";
         return result;
     }
     AssignProcessToJobObject(job, pi.hProcess);
@@ -691,6 +709,9 @@ std::filesystem::path findInPath(const std::string& program)
 {
     namespace fs = std::filesystem;
     std::error_code ec;
+    // A .cmd or .bat file runs through cmd.exe, which parses `&` and `%` in the arguments again.
+    if (isBatchFileName(program))
+        return {};
     if (program.find('/') != std::string::npos || program.find('\\') != std::string::npos)
         return fs::exists(program, ec) ? fs::path(program) : fs::path();
     const char* pathEnv = std::getenv("PATH");
@@ -698,7 +719,7 @@ std::filesystem::path findInPath(const std::string& program)
         return {};
 #ifdef _WIN32
     const char sep = ';';
-    const std::vector<std::string> exts{".exe", ".cmd", ".bat", ""};
+    const std::vector<std::string> exts{".exe", ""};
 #else
     const char sep = ':';
     const std::vector<std::string> exts{""};

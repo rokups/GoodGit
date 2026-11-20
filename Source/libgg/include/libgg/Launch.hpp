@@ -26,9 +26,14 @@ struct DetachedProcess {
 // stdin/stdout/stderr on the null device, without the GIT_DIR-style variables git sets for its
 // hooks and editors. It keeps running after this process ends.
 bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child, std::string& error);
+// Whether a script path is safe in the cmd.exe line: no '%' (cmd expands it) and no '"'.
+bool isSafeScriptPath(const std::string& path);
+// Whether one script argument is safe: printable ASCII without space, '"' or a cmd metacharacter
+// (%^&|<>()!=,;).
+bool isSafeScriptArg(const std::string& arg);
 // Starts the script `script` with `args` detached: a .cmd file through %ComSpec% on Windows
 // (no console window), /bin/sh <script> on POSIX. Each arg must be a printable ASCII token without
-// space, '"' or a cmd metacharacter (%^&|<>()!), else it gives false with `error`.
+// space, '"' or a cmd metacharacter (%^&|<>()!=,;), else it gives false with `error`.
 bool spawnScriptDetached(const std::filesystem::path& script, const std::vector<std::string>& args,
     DetachedProcess& child, std::string& error);
 // Whether the child is still running (reaps it when it has exited).
