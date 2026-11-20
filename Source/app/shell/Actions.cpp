@@ -2200,7 +2200,16 @@ void Actions::commitWithConflicts()
             std::string current;
             if (!gg::readFile(ctx.cwd() / p, current))
                 throw MutationError{Outcome::Failed, "cannot read " + p, {}};
-            if (current.rfind("<<<<<<< ", 0) != 0 && current.find("\n<<<<<<< ") == std::string::npos)
+            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
+            bool marked = false; // a line that starts with markerSize or more of "<", "=" or ">"
+            for (size_t at = 0; at < current.size() && !marked; at = current.find('\n', at) == std::string::npos ? current.size() : current.find('\n', at) + 1) {
+                const char c = current[at];
+                size_t run = 0;
+                while (at + run < current.size() && current[at + run] == c)
+                    ++run;
+                marked = (c == '<' || c == '=' || c == '>') && run >= static_cast<size_t>(options.markerSize);
+            }
+            if (!marked)
                 continue;
             auto stage = [&](int n) {
                 const auto r = ctx.gitMayFail({"show", ":" + std::to_string(n) + ":" + p});
@@ -2214,7 +2223,6 @@ void Actions::commitWithConflicts()
             if (gg::markers::looksBinary(*ours) || gg::markers::looksBinary(*theirs)
                 || (base && gg::markers::looksBinary(*base)))
                 throw MutationError{Outcome::Refused, p + " is binary: resolve binary conflicts first", {}};
-            auto options = gg::conflicts::writeOptions(ctx.repo(), p);
             options.sideLabels = {oursLabel, theirsLabel};
             options.baseLabels = {"base"};
             contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs, options));

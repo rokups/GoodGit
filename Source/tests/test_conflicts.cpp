@@ -1641,4 +1641,19 @@ GG_TEST("conflicts", "commit with conflicts keeps a file the user resolved by ha
     GG_CHECK_STR_EQ(s.read(repo, "f.txt"), "hand edited\n");
 }
 
+GG_TEST("conflicts", "commit with conflicts rebuilds a file whose markers have the conflict-marker-size (GG-88)")
+{
+    const fs::path repo = s.fixture(Recipe::MidMerge);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Commit with conflicts##tb_commit_conflicts"); }));
+    s.write(repo, ".gitattributes", "f.txt conflict-marker-size=9\n");
+    s.write(repo, "f.txt", "<<<<<<<<< ours\nx\n=========\ny\n>>>>>>>>> theirs\n");
+    ctx->ItemClick("//###Toolbar/Commit with conflicts##tb_commit_conflicts");
+    GG_CHECK(s.waitUntil([&] { return !inProgress(s, repo); }));
+    s.settle();
+    const std::string committed = s.gitOut(repo, {"show", "HEAD:f.txt"});
+    GG_CHECK(committed.find("|||||||||") != std::string::npos);
+    GG_CHECK(committed.find("<<<<<<<<< ") != std::string::npos);
+}
+
 } // namespace ggtest
