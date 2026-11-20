@@ -1137,12 +1137,23 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
     for (const auto& kept : keep::read(repo)) // kept commits are rewritten along with the rest
         if (const auto id = fromHex(kept))
             git_revwalk_push(walk.get(), &*id);
+    std::vector<git_oid> ids;
     for (const auto& c : changed) {
         Commit commit = lookupCommit(repo, fromHexOrThrow(c));
-        for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)
-            if (!affected.count(toHex(*git_commit_parent_id(commit.get(), i)))) // (a changed parent stays in)
-                git_revwalk_hide(walk.get(), git_commit_parent_id(commit.get(), i));
-        git_revwalk_push(walk.get(), git_commit_id(commit.get())); // included even when unreachable
+        ids.push_back(*git_commit_id(commit.get()));
+        git_revwalk_push(walk.get(), &ids.back()); // included even when unreachable
+    }
+    // Hide only below the common base: a parent between two changed commits must stay in the walk.
+    git_oid base{};
+    bool hasBase = ids.size() == 1;
+    if (hasBase)
+        base = ids[0];
+    else if (ids.size() > 1)
+        hasBase = git_merge_base_octopus(&base, repo, ids.size(), ids.data()) == 0;
+    if (hasBase) {
+        Commit b = lookupCommit(repo, base);
+        for (unsigned i = 0; i < git_commit_parentcount(b.get()); ++i)
+            git_revwalk_hide(walk.get(), git_commit_parent_id(b.get(), i));
     }
     git_error_clear();
     std::vector<std::string> out;
@@ -1373,25 +1384,63 @@ std::string applyPatchToTree(git_repository* repo, const std::string& tree, cons
     return toHex(out);
 }
 
+namespace {
+// The path of a "--- "/"+++ " line value, as written (C-quoted or plain), without the "a/" or "b/" prefix.
+std::string pathOfHeader(std::string token)
+{
+    if (!token.empty() && token.back() == '\t')
+        token.pop_back(); // git ends a name with a space by a tab
+    if (token.size() > 1 && token[0] == '"')
+        return token.substr(3, token.size() - 4);
+    return token.substr(2);
+}
+// The same token with the side prefix "a" or "b" and the quoting of the path.
+std::string withSide(const std::string& body, bool quoted, const char* side)
+{
+    return quoted ? "\"" + std::string(side) + "/" + body + "\"" : std::string(side) + "/" + body;
+}
+} // namespace
+
 std::string contentPatch(const std::string& patch, bool atOld)
 {
-    // "diff --git a/<old> b/<new>"
-    const size_t firstEnd = patch.find('\n');
-    const std::string names = patch.substr(11, firstEnd - 11);
-    const size_t sep = names.find(" b/");
-    const std::string path = atOld ? names.substr(2, sep - 2) : names.substr(sep + 3);
-    std::string out = "diff --git a/" + path + " b/" + path + "\n";
-    size_t pos = firstEnd + 1;
-    while (patch.compare(pos, 3, "@@ ") != 0) {
-        const size_t end = patch.find('\n', pos);
-        const std::string line = patch.substr(pos, end - pos);
+    // The header lines run to the first hunk. A patch without a hunk has no lines to select.
+    std::vector<std::string> head;
+    size_t pos = 0;
+    for (;;) {
+        if (pos >= patch.size())
+            throw std::runtime_error("the patch has no text hunk (mode change, binary file or empty file)");
+        if (patch.compare(pos, 3, "@@ ") == 0)
+            break;
+        size_t end = patch.find('\n', pos);
+        if (end == std::string::npos)
+            end = patch.size();
+        head.push_back(patch.substr(pos, end - pos));
         pos = end + 1;
-        if (line.rfind("new file mode ", 0) == 0 || line.rfind("deleted file mode ", 0) == 0 || line.find("/dev/null") != std::string::npos)
+    }
+    // The path comes from the "---"/"+++" lines: "diff --git a/x b/y" cannot be split safely.
+    std::string minus, plus;
+    for (const auto& line : head) {
+        if (line.rfind("--- ", 0) == 0)
+            minus = line.substr(4);
+        else if (line.rfind("+++ ", 0) == 0)
+            plus = line.substr(4);
+    }
+    const std::string& first = atOld ? minus : plus;
+    const std::string& token = (first.empty() || first == "/dev/null") ? (atOld ? plus : minus) : first;
+    if (token.empty() || token == "/dev/null")
+        throw std::runtime_error("the patch names no file");
+    const std::string path = pathOfHeader(token);
+    const bool quoted = token[0] == '"';
+    const std::string a = withSide(path, quoted, "a"), b = withSide(path, quoted, "b");
+    std::string out = "diff --git " + a + " " + b + "\n";
+    for (size_t i = 1; i < head.size(); ++i) {
+        const std::string& line = head[i];
+        if (line.rfind("new file mode ", 0) == 0 || line.rfind("deleted file mode ", 0) == 0)
             out += line + "\n";
         else if (line.rfind("--- ", 0) == 0)
-            out += "--- a/" + path + "\n";
+            out += "--- " + (line == "--- /dev/null" ? std::string("/dev/null") : a) + "\n";
         else if (line.rfind("+++ ", 0) == 0)
-            out += "+++ b/" + path + "\n";
+            out += "+++ " + (line == "+++ /dev/null" ? std::string("/dev/null") : b) + "\n";
         // "old mode"/"new mode", "rename from"/"rename to": not part of the lines
     }
     return out + patch.substr(pos);
@@ -1404,7 +1453,7 @@ std::string reversePatch(const std::string& patch)
     std::string minus;    // the "--- " line until its "+++ " partner
     bool inHunks = false; // after the first "@@": body lines only (a removed "-- x" line is not a header)
     while (std::getline(in, line)) {
-        const bool cr = line.back() == '\r'; // (no line of a patch is empty)
+        const bool cr = !line.empty() && line.back() == '\r'; // an empty hunk line is a context line
         if (cr)
             line.pop_back();
         auto emit = [&](const std::string& text) { out += text + (cr ? "\r\n" : "\n"); };
@@ -1425,8 +1474,11 @@ std::string reversePatch(const std::string& patch)
         } else if (line.rfind("+++ ", 0) == 0) {
             // Both name the same path (contentPatch); "/dev/null" changes sides.
             const std::string plus = line.substr(4);
-            emit("--- " + (plus == "/dev/null" ? plus : "a/" + plus.substr(2)));
-            emit("+++ " + (minus == "/dev/null" ? minus : "b/" + minus.substr(2)));
+            auto side = [](const std::string& t, const char* s) {
+                return t == "/dev/null" ? t : withSide(pathOfHeader(t), t[0] == '"', s);
+            };
+            emit("--- " + side(plus, "a"));
+            emit("+++ " + side(minus, "b"));
         } else if (line.rfind("new file mode ", 0) == 0) {
             emit("deleted file mode " + line.substr(14));
         } else if (line.rfind("deleted file mode ", 0) == 0) {

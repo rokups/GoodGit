@@ -139,6 +139,29 @@ std::string randomWord(std::mt19937_64& rng)
 
 } // namespace
 
+GG_TEST("linestaging", "discard hunk needs a confirm")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "discardconfirm");
+    std::string text;
+    for (int i = 1; i <= 30; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    s.commitFile(repo, "f.txt", text, "Base");
+    std::string changed = text;
+    changed.replace(changed.find("line 3\n"), 7, "LINE 3\n");
+    s.write(repo, "f.txt", changed);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    GG_REQUIRE(s.waitUntil([&] { const ggui::Form* f = s.app.dialogs().current(); return f && f->title == "Discard changes"; }));
+    GG_CHECK_STR_EQ(s.read(repo, "f.txt"), changed);
+    s.dialogButton("Discard changes", "Cancel");
+    GG_CHECK_STR_EQ(s.read(repo, "f.txt"), changed);
+    ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    s.dialogButton("Discard changes", "Discard");
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == text; }));
+}
+
 GG_TEST("linestaging", "stage, discard and unstage hunks")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "hunks");
@@ -168,6 +191,7 @@ GG_TEST("linestaging", "stage, discard and unstage hunks")
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
     GG_REQUIRE(diffFile(s)->hunks.size() == 1);
     ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    s.dialogButton("Discard changes", "Discard");
     // Wait for git before reading the file: on Windows an open handle makes git's rewrite fail (also below).
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt").find("LINE 3") == std::string::npos; }));
@@ -207,6 +231,7 @@ GG_TEST("linestaging", "hunks from the context menu in the side-by-side view")
     s.settle();
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
     s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_3").c_str(), "Discard hunk(s)");
+    s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt").find("LINE 3") == std::string::npos; }));
     s.settle();
@@ -233,6 +258,7 @@ GG_TEST("linestaging", "CRLF lines, missing final newline, new files")
     GG_REQUIRE(showFile(s, "Untracked", "new.txt"));
     ctx->ItemClick((body(s) + "/###line_2").c_str());
     s.contextMenu((body(s) + "/###line_2").c_str(), "Discard line(s)");
+    s.dialogButton("Discard changes", "Discard");
     // Read the file once git is done with it: on Windows an open handle makes git's rewrite fail.
     GG_REQUIRE(s.waitIdle());
     GG_CHECK_STR_EQ(s.read(repo, "new.txt"), "keep one\nkeep two\n");
@@ -379,6 +405,7 @@ GG_TEST("linestaging", "eol: discarding a line of a CRLF working file (core.auto
     // Rows: 0 hunk, 1 "one", 2 "two", 3 "+NEW", 4 "three".
     ctx->ItemClick((body(s) + "/###line_3").c_str());
     s.contextMenu((body(s) + "/###line_3").c_str(), "Discard line(s)");
+    s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == "one\r\ntwo\r\nthree\r\n"; }));
     s.settle();

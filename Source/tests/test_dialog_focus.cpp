@@ -64,4 +64,23 @@ GG_TEST("dialog_focus", "the confirm button has the first focus, or Cancel has i
     s.dialogButton("Focus late", "Cancel");
 }
 
+GG_TEST("dialog_focus", "an open dialog is closed when the repository changes (GG-78)")
+{
+    const fs::path a = s.fixture(Recipe::Linear, "r/a");
+    const fs::path b = s.fixture(Recipe::Linear, "r/b");
+    GG_REQUIRE(s.openRepository(a));
+    bool confirmed = false;
+    s.app.dialogs().open(confirmForm("Old session", false, &confirmed));
+    GG_CHECK(s.app.dialogs().anyOpen());
+    s.app.closeRepository();
+    ctx->Yield(2);
+    GG_CHECK(!s.app.dialogs().anyOpen());
+    GG_REQUIRE(s.openRepository(b));
+    s.app.dialogs().open(confirmForm("Old session 2", false, &confirmed));
+    GG_REQUIRE(s.openRepository(a));
+    ctx->Yield(2);
+    GG_CHECK(!s.app.dialogs().anyOpen());
+    GG_CHECK(!confirmed);
+}
+
 } // namespace ggtest

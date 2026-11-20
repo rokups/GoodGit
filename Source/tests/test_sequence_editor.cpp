@@ -21,6 +21,7 @@
 #include <chrono>
 #include <future>
 #include <sstream>
+#include <thread>
 
 namespace ggtest {
 
@@ -702,5 +703,86 @@ GG_TEST("sequence-editor", "opening a repository that another ggui has open rais
     GG_CHECK(s.waitUntil([&] { return s.app.session() && s.app.session()->opened(); }, 30.0f));
     GG_CHECK(!server.takeRaise());
 }
+
+GG_TEST("sequence-editor", "recvLine refuses a line over the length cap and gives up at a total deadline, not at a gap between bytes")
+{
+    int port = 0;
+    const auto listener = gg::net::listenLoopback(port);
+    GG_REQUIRE(listener != gg::net::kInvalid);
+    {
+        const auto client = gg::net::connectLoopback(port);
+        const auto server = gg::net::acceptWithTimeout(listener, 2000);
+        GG_REQUIRE(client != gg::net::kInvalid && server != gg::net::kInvalid);
+        GG_CHECK(gg::net::sendAll(client, std::string(gg::net::kMaxLine + 1, 'a') + "\n"));
+        std::string line;
+        GG_CHECK(!gg::net::recvLine(server, line, 2000));
+        GG_CHECK(line.size() <= gg::net::kMaxLine);
+        gg::net::closeSocket(client);
+        gg::net::closeSocket(server);
+    }
+    {
+        const auto client = gg::net::connectLoopback(port);
+        const auto server = gg::net::acceptWithTimeout(listener, 2000);
+        GG_REQUIRE(client != gg::net::kInvalid && server != gg::net::kInvalid);
+        std::thread slow([client] { // one byte each 100 ms: every gap is shorter than the timeout
+            for (int i = 0; i < 30; ++i) {
+                if (!gg::net::sendAll(client, "a"))
+                    break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        });
+        const auto start = std::chrono::steady_clock::now();
+        std::string line;
+        GG_CHECK(!gg::net::recvLine(server, line, 600));
+        GG_CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500));
+        gg::net::closeSocket(server);
+        slow.join();
+        gg::net::closeSocket(client);
+    }
+    gg::net::closeSocket(listener);
+}
+
+#ifndef _WIN32
+GG_TEST("sequence-editor", "the registry directory is private: a wrong mode is fixed, a link is refused; instance files are 0600; dead registrations are removed")
+{
+    const OwnRegistry registry(s.root() / "run3");
+    const fs::path dir = s.root() / "run3" / "ggui";
+    fs::create_directories(dir);
+    fs::permissions(dir, fs::perms::all);
+    GG_CHECK(gg::seqlink::registryDir() == dir);
+    GG_CHECK(fs::status(dir).permissions() == fs::perms::owner_all);
+
+    const long long dead = 2147483000; // above any pid limit
+    const long long alive = ggui::processId();
+    GG_REQUIRE(gg::seqlink::writeInstance({dead, 1, "token", "key"}));
+    GG_REQUIRE(gg::seqlink::writeInstance({alive, 1, "token", "key"}));
+    GG_CHECK(!fs::exists(dir / (std::to_string(dead) + ".instance")));
+    const auto file = dir / (std::to_string(alive) + ".instance");
+    GG_CHECK(fs::status(file).permissions() == (fs::perms::owner_read | fs::perms::owner_write));
+    // An entry that is not a regular file (here a link to a valid file) is not read.
+    const long long linked = alive + 1;
+    fs::create_symlink(file, dir / (std::to_string(linked) + ".instance"));
+    bool sawOwn = false, sawLink = false;
+    for (const auto& i : gg::seqlink::instances()) {
+        sawOwn = sawOwn || i.pid == alive;
+        sawLink = sawLink || i.pid == linked;
+    }
+    GG_CHECK(sawOwn);
+    GG_CHECK(!sawLink);
+    fs::remove(dir / (std::to_string(linked) + ".instance"));
+    gg::seqlink::removeInstance(alive);
+
+    // A link in place of the directory is not followed: a fresh private directory is used.
+    fs::remove_all(dir);
+    fs::create_directories(s.root() / "other");
+    fs::create_directory_symlink(s.root() / "other", dir);
+    const fs::path used = gg::seqlink::registryDir();
+    GG_CHECK(used != dir);
+    GG_CHECK(!fs::is_symlink(used) && fs::is_directory(used));
+    GG_CHECK(fs::status(used).permissions() == fs::perms::owner_all);
+    std::error_code ec;
+    fs::remove_all(used, ec);
+}
+#endif
 
 } // namespace ggtest

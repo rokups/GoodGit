@@ -2179,20 +2179,20 @@ void stashMenuItems(Session& session, const core::StashInfo& s, const IdSlot& ba
     auto& actions = session.actions();
     const bool free = actions.busy().empty();
     if (menuItem(ICON_MS_UNARCHIVE, "Apply", nullptr, false, free))
-        actions.stashApply(s.index, false, false);
+        actions.stashApply(s.index, s.commit, false, false);
     if (menuItem(ICON_MS_UNARCHIVE, "Apply (restore index)", nullptr, false, free))
-        actions.stashApply(s.index, false, true);
+        actions.stashApply(s.index, s.commit, false, true);
     if (menuItem(ICON_MS_ARROW_CIRCLE_UP, "Pop", nullptr, false, free))
-        actions.stashApply(s.index, true, false);
+        actions.stashApply(s.index, s.commit, true, false);
     if (menuItem(ICON_MS_ARROW_CIRCLE_UP, "Pop (restore index)", nullptr, false, free))
-        actions.stashApply(s.index, true, true);
+        actions.stashApply(s.index, s.commit, true, true);
     ImGui::Separator();
     if (menuItem(ICON_MS_FORK_RIGHT, "Branch from stash...", nullptr, false, free))
-        session.showBranchFromStashDialog(s.index);
+        session.showBranchFromStashDialog(s.index, s.commit);
     if (menuItem(ICON_MS_DRIVE_FILE_RENAME_OUTLINE, "Rename...", "F2", false, free))
         session.showRenameStashDialog(s.index);
     if (menuItem(ICON_MS_DELETE, "Drop...", nullptr, false, free))
-        session.showDropStashDialog(s.index);
+        session.showDropStashDialog(s.index, s.commit);
     ImGui::Separator();
     // One item for the ID the right click was on; off the base ID (and from the keyboard) the stash's
     // commit, and the base's after it.
@@ -2211,10 +2211,14 @@ void StashesPanel::draw(bool* open)
     // Pop takes the selected stash, else the newest.
     const Selection& sel = m_session.selection();
     int popIndex = 0;
+    core::Oid popCommit = m_snapshot->stashes.empty() ? core::Oid() : m_snapshot->stashes.front().commit;
     if (sel.kind == SelKind::Stash)
         for (const auto& s : m_snapshot->stashes)
             if (s.commit == sel.id)
+            {
                 popIndex = s.index;
+                popCommit = s.commit;
+            }
     const bool hasStashes = !m_snapshot->stashes.empty();
     ImGui::BeginDisabled(!free || !status || status->empty());
     if (button(ICON_MS_ARROW_CIRCLE_DOWN, "Push##stash_push"))
@@ -2225,7 +2229,7 @@ void StashesPanel::draw(bool* open)
     sameLineIfFits(buttonWidth(ICON_MS_ARROW_CIRCLE_UP, "Pop"));
     ImGui::BeginDisabled(!free || !hasStashes);
     if (button(ICON_MS_ARROW_CIRCLE_UP, "Pop##stash_pop"))
-        actions.stashApply(popIndex, true, false);
+        actions.stashApply(popIndex, popCommit, true, false);
     ImGui::EndDisabled();
     if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Apply stash@{%d} and drop it", popIndex);
@@ -2279,9 +2283,9 @@ void StashesPanel::draw(bool* open)
         ImGui::GetCurrentContext()->LastItemData = rowItem;
         const int action = rowActions(acts, selected);
         if (action == 0)
-            actions.stashApply(s.index, false, false);
+            actions.stashApply(s.index, s.commit, false, false);
         else if (action == 1)
-            actions.stashApply(s.index, true, false);
+            actions.stashApply(s.index, s.commit, true, false);
         ImGui::PopID();
     }
     if (m_snapshot->stashes.empty())

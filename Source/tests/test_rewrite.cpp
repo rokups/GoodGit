@@ -413,6 +413,24 @@ GG_TEST("rewrite", "rangeToMove: dest..tip oldest first on a line, a fork, a mer
     GG_CHECK(range(h, c) == (Ids{g, h}));
 }
 
+GG_TEST("rewrite", "descendants: a commit between two non-adjacent changed commits is included")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string base = s.revParse(repo, "main");
+    s.git(repo, {"checkout", "-q", "-b", "x", base});
+    s.commitFile(repo, "x.txt", "x\n", "X");
+    s.git(repo, {"checkout", "-q", "-b", "line", base});
+    s.commitFile(repo, "c2.txt", "c2\n", "C2");
+    const std::string c2 = s.head(repo);
+    s.commitFile(repo, "p.txt", "p\n", "P");
+    const std::string p = s.head(repo);
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "C1", "x"});
+    const std::string c1 = s.head(repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    using Ids = std::vector<std::string>;
+    GG_CHECK(gg::rewrite::descendants(r.get(), {c2, c1}) == (Ids{c2, p, c1}));
+}
+
 GG_TEST("rewrite", "rebase tip onto: the commits from the divergence point move, other branches on them restack")
 {
     const ForkRepo r = makeFork(s);
@@ -1176,6 +1194,8 @@ GG_TEST("rewrite", "a short commit id throws an error instead of reading an empt
 
 } // namespace ggtest
 
+namespace ggtest {
+
 GG_TEST("rewrite", "rewrite: a merge where both sides bump the same gitlink and edit other files is clean")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -1207,6 +1227,121 @@ GG_TEST("rewrite", "rewrite: a merge where both sides bump the same gitlink and 
     gg::rewrite::Rewriter rewriter(repo);
     gg::rewrite::Result result = rewriter.compute(plan);
     GG_REQUIRE(result.ok && result.unresolved.empty());
+}
+
+} // namespace ggtest
+
+namespace ggtest {
+
+namespace {
+
+bool throwsOnPatch(const std::string& patch)
+{
+    try {
+        gg::rewrite::contentPatch(patch, true);
+    } catch (const std::runtime_error&) {
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+GG_TEST("rewrite", "contentPatch throws when the patch has no hunk")
+{
+    const std::vector<std::pair<const char*, std::string>> cases = {
+        {"mode only", "diff --git a/f b/f\nold mode 100644\nnew mode 100755\n"},
+        {"binary", "diff --git a/f b/f\nindex 1..2 100644\nBinary files a/f and b/f differ\n"},
+        {"empty file", "diff --git a/f b/f\nnew file mode 100644\nindex 0000000..e69de29\n"},
+        {"nothing", ""},
+    };
+    for (const auto& c : cases)
+        GG_CHECK_STR_EQ(std::string(c.first) + (throwsOnPatch(c.second) ? " throws" : " returns"), std::string(c.first) + " throws");
+}
+
+GG_TEST("rewrite", "contentPatch and reversePatch take the path from the --- and +++ lines")
+{
+    struct Case {
+        const char* name;
+        std::string patch;
+        bool atOld;
+        std::string header;  // contentPatch: the lines before the hunk
+        std::string reverse; // reversePatch of that: the lines before the hunk
+    };
+    const std::string hunk = "@@ -1 +1 @@\n-a\n+b\n";
+    const std::string rhunk = "@@ -1 +1 @@\n+a\n-b\n";
+    const std::string spaceB = "diff --git a/x b/y.txt b/x b/y.txt\n--- a/x b/y.txt\n+++ b/x b/y.txt\n";
+    const std::string oldName = "diff --git a/o.txt b/o.txt\n--- a/o.txt\n+++ b/o.txt\n";
+    const std::string newName = "diff --git a/n.txt b/n.txt\n--- a/n.txt\n+++ b/n.txt\n";
+    const std::string tab = "diff --git \"a/x\\ty\" \"b/x\\ty\"\n--- \"a/x\\ty\"\n+++ \"b/x\\ty\"\n";
+    const std::string accent = "diff --git \"a/\\303\\251\" \"b/\\303\\251\"\n--- \"a/\\303\\251\"\n+++ \"b/\\303\\251\"\n";
+    const std::string rename = "rename from o.txt\nrename to n.txt\n--- a/o.txt\n+++ b/n.txt\n";
+    const std::vector<Case> cases = {
+        {"space b", spaceB + hunk, true, spaceB, spaceB},
+        {"rename, old path", "diff --git a/o.txt b/n.txt\n" + rename + hunk, true, oldName, oldName},
+        {"rename, new path", "diff --git a/o.txt b/n.txt\n" + rename + hunk, false, newName, newName},
+        {"quoted tab", tab + hunk, true, tab, tab},
+        {"quoted non-ASCII", accent + hunk, false, accent, accent},
+        {"add", "diff --git a/f b/f\nnew file mode 100644\nindex 0..1\n--- /dev/null\n+++ b/f\n" + hunk, false,
+            "diff --git a/f b/f\nnew file mode 100644\n--- /dev/null\n+++ b/f\n",
+            "diff --git a/f b/f\ndeleted file mode 100644\n--- a/f\n+++ /dev/null\n"},
+        {"delete", "diff --git a/f b/f\ndeleted file mode 100644\nindex 1..0\n--- a/f\n+++ /dev/null\n" + hunk, true,
+            "diff --git a/f b/f\ndeleted file mode 100644\n--- a/f\n+++ /dev/null\n",
+            "diff --git a/f b/f\nnew file mode 100644\n--- /dev/null\n+++ b/f\n"},
+    };
+    for (const auto& c : cases) {
+        const std::string name = std::string(c.name) + "\n";
+        const std::string got = gg::rewrite::contentPatch(c.patch, c.atOld);
+        GG_CHECK_STR_EQ(name + got, name + c.header + hunk);
+        GG_CHECK_STR_EQ(name + gg::rewrite::reversePatch(got), name + c.reverse + rhunk);
+    }
+}
+
+GG_TEST("rewrite", "reversePatch keeps an empty hunk line and a CRLF line")
+{
+    const std::string patch = "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n a\n\n-b\r\n+c\r\n";
+    const std::string want = "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n a\n\n+b\r\n-c\r\n";
+    GG_CHECK_STR_EQ(gg::rewrite::reversePatch(patch), want);
+}
+
+GG_TEST("rewrite", "applyPatchToTree applies patches of odd paths and empty context lines")
+{
+    const fs::path path = s.fixture(Recipe::Linear);
+    s.commitFile(path, "x b/y.txt", "a\n", "space");
+    s.commitFile(path, "\t.txt", "a\n", "tab");
+    s.commitFile(path, "\xc3\xa9.txt", "a\n", "accent");
+    s.commitFile(path, "g.txt", "a\n\nb\n", "gap");
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    const std::string tree = gg::trim(s.gitOut(path, {"rev-parse", "HEAD^{tree}"}));
+    const std::string hunk = "@@ -1 +1 @@\n-a\n+z\n";
+    struct Case {
+        const char* name;
+        std::string body; // lines after "diff --git"
+        std::string file;
+    };
+    const std::vector<Case> cases = {
+        {"space b", "--- a/x b/y.txt\n+++ b/x b/y.txt\n" + hunk, "x b/y.txt"},
+        {"quoted tab", "--- \"a/\\t.txt\"\n+++ \"b/\\t.txt\"\n" + hunk, "\t.txt"},
+        {"quoted non-ASCII", "--- \"a/\\303\\251.txt\"\n+++ \"b/\\303\\251.txt\"\n" + hunk, "\xc3\xa9.txt"},
+        {"empty context line", "--- a/g.txt\n+++ b/g.txt\n@@ -1,3 +1,3 @@\n-a\n+z\n\n b\n", "g.txt"},
+    };
+    for (const auto& c : cases) {
+        const std::string name = std::string(c.name) + "\n";
+        const std::string raw = "diff --git a/" + c.file + " b/" + c.file + "\n" + c.body;
+        const std::string out = gg::rewrite::applyPatchToTree(repo.get(), tree, gg::rewrite::contentPatch(raw, true));
+        GG_CHECK_STR_EQ(name + s.gitOut(path, {"show", out + ":" + c.file}).substr(0, 1), name + "z");
+        // The reverse patch takes the change out again.
+        const std::string back = gg::rewrite::applyPatchToTree(
+            repo.get(), out, gg::rewrite::reversePatch(gg::rewrite::contentPatch(raw, true)));
+        GG_CHECK_STR_EQ(name + back, name + tree);
+    }
+    // Add and delete with /dev/null.
+    const std::string add = "diff --git a/n b/n\nnew file mode 100644\nindex 0..1\n--- /dev/null\n+++ b/n\n@@ -0,0 +1 @@\n+q\n";
+    const std::string added = gg::rewrite::applyPatchToTree(repo.get(), tree, gg::rewrite::contentPatch(add, false));
+    GG_CHECK_STR_EQ(s.gitOut(path, {"show", added + ":n"}), "q");
+    const std::string removed = gg::rewrite::applyPatchToTree(
+        repo.get(), added, gg::rewrite::reversePatch(gg::rewrite::contentPatch(add, false)));
+    GG_CHECK_STR_EQ(removed, tree);
 }
 
 } // namespace ggtest

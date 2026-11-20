@@ -369,6 +369,9 @@ RunResult runProcess(const RunRequest& request)
         return result;
     }
 
+    // A child that closes stdin early must give EPIPE, not kill this process.
+    static const bool sigpipeIgnored = (std::signal(SIGPIPE, SIG_IGN), true);
+    (void)sigpipeIgnored;
     setNonBlocking(inPipe[1]);
     setNonBlocking(outPipe[0]);
     setNonBlocking(errPipe[0]);
@@ -381,7 +384,9 @@ RunResult runProcess(const RunRequest& request)
     int outFd = outPipe[0];
     int errFd = errPipe[0];
     ProgressSplitter splitter(request.onProgress);
-    bool killed = false;
+    bool killed = false, sentKill = false;
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point killAt, drainEnd;
     char buf[65536];
     while (outFd >= 0 || errFd >= 0) {
         pollfd fds[3];
@@ -404,6 +409,21 @@ RunResult runProcess(const RunRequest& request)
             kill(-pid, SIGTERM);
             killed = true;
             result.cancelled = true;
+            killAt = Clock::now() + std::chrono::seconds(2);
+        }
+        if (killed && !sentKill && Clock::now() >= killAt) {
+            kill(-pid, SIGKILL);
+            sentKill = true;
+            drainEnd = Clock::now() + std::chrono::milliseconds(500);
+        }
+        if (sentKill && Clock::now() >= drainEnd) {
+            // A grandchild that left the group can still hold a pipe open.
+            if (outFd >= 0)
+                close(outFd);
+            if (errFd >= 0)
+                close(errFd);
+            outFd = errFd = -1;
+            break;
         }
         if (pr <= 0)
             continue;
@@ -427,14 +447,15 @@ RunResult runProcess(const RunRequest& request)
             }
         }
         if (iIn >= 0 && fds[iIn].revents) {
-            const ssize_t w = (fds[iIn].revents & POLLOUT)
-                ? write(inFd, request.input.data() + inOff, request.input.size() - inOff)
-                : -1;
-            if (w > 0)
-                inOff += static_cast<size_t>(w);
-            if (w < 0 && errno == EAGAIN)
-                continue;
-            if (w < 0 || inOff >= request.input.size()) {
+            // Write only on POLLOUT; errno is stale otherwise. Any other event means the reader is gone.
+            bool done = !(fds[iIn].revents & POLLOUT);
+            if (!done) {
+                const ssize_t w = write(inFd, request.input.data() + inOff, request.input.size() - inOff);
+                if (w > 0)
+                    inOff += static_cast<size_t>(w);
+                done = (w < 0 && errno != EAGAIN && errno != EINTR) || inOff >= request.input.size();
+            }
+            if (done) {
                 close(inFd);
                 inFd = -1;
             }
@@ -443,17 +464,17 @@ RunResult runProcess(const RunRequest& request)
     if (inFd >= 0)
         close(inFd);
     int status = 0;
-    for (int waited = 0;; ++waited) {
-        const pid_t w = waitpid(pid, &status, killed ? WNOHANG : 0);
-        if (w == pid)
-            break;
-        if (w < 0 && errno != EINTR)
-            break;
-        if (killed && w == 0) {
-            if (waited == 50)
-                kill(-pid, SIGKILL);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    for (;;) {
+        if (killed && !sentKill && Clock::now() >= killAt) {
+            kill(-pid, SIGKILL);
+            sentKill = true;
         }
+        // Until the deadline, poll so a child that ignores SIGTERM cannot block the wait.
+        const pid_t w = waitpid(pid, &status, killed && !sentKill ? WNOHANG : 0);
+        if (w == pid || (w < 0 && errno != EINTR))
+            break;
+        if (w == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     if (killed)
         kill(-pid, SIGKILL); // leftover grandchildren

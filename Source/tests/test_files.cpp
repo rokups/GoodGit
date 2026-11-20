@@ -7,6 +7,18 @@
 
 namespace ggtest {
 
+GG_TEST("files", "readFile fails for a directory, which opens but cannot be read")
+{
+    const fs::path dir = s.root() / "readdir";
+    fs::create_directories(dir);
+    std::string out = "kept";
+    GG_CHECK(!gg::readFile(dir, out));
+    GG_CHECK_STR_EQ(out, "kept");
+    s.write(dir, "f.txt", "text\n");
+    GG_CHECK(gg::readFile(dir / "f.txt", out));
+    GG_CHECK_STR_EQ(out, "text\n");
+}
+
 GG_TEST("files", "replaceFile replaces an existing file and consumes the temp file")
 {
     const fs::path dir = s.root() / "replace";

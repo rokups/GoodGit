@@ -701,7 +701,7 @@ GG_TEST("submodule", "Stash pop that moves the gitlink moves the submodule")
     s.git(repo, {"reset", "-q", "--hard"});
     s.git(repo / "sub", {"checkout", "-q", recorded});
     GG_REQUIRE(s.openRepository(repo));
-    s.session()->actions().stashApply(0, true, true);
+    s.session()->actions().stashApply(0, ggui::core::Oid::fromHex(s.gitOut(repo, {"rev-parse", "stash@{0}"})), true, true);
     GG_REQUIRE(s.settle());
     GG_CHECK_STR_EQ(s.head(repo / "sub"), moved);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "M  sub");

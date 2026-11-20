@@ -456,11 +456,18 @@ void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
     });
 }
 
+// Dialog buttons capture the Session or its Actions, so no dialog may outlive the Session (GG-78).
+void App::retireSession()
+{
+    m_dialogs.closeAll();
+    m_closing.push_back(std::move(m_session));
+}
+
 void App::openNow(const fs::path& path)
 {
     if (m_session) {
         m_session->cancelAll();
-        m_closing.push_back(std::move(m_session));
+        retireSession();
         // Refuse git-gg hand-overs for the old repository now, not on the next frame.
         m_sequenceEditor.setRepository({});
         // The stored summary of the old repository is read anew: a push or a commit changed it while it was open.
@@ -522,7 +529,7 @@ void App::closeRepository()
     if (!m_session)
         return;
     m_session->cancelAll();
-    m_closing.push_back(std::move(m_session));
+    retireSession();
     // Refuse git-gg hand-overs for this repository now, not on the next frame.
     m_sequenceEditor.setRepository({});
     requestSummaries();
@@ -710,6 +717,7 @@ void App::frame()
                                                                     : core::WindowState::Unfocused);
         m_session->pump();
         if (m_session->failed()) {
+            // No closeAll here: the failure dialog is open already, and a failed session never opened.
             m_closing.push_back(std::move(m_session));
         } else if (m_session->opened()) {
             if (m_recordedRecent != m_session->path().string()) {
