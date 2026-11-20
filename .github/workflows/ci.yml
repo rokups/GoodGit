@@ -15,10 +15,10 @@ on:
     branches: ["**"] # not tags: the release job moves the "latest" tag
   pull_request:
 
-# A newer push to the same ref cancels the older run.
+# A newer push cancels the older run, except on master: a cancel in the release job can leave no "latest" release.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/CPM
