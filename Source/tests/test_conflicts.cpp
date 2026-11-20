@@ -1590,6 +1590,7 @@ std::optional<ggui::core::MutationFinishedEvent> absorbHead(Scenario& s, const f
 
 } // namespace
 
+#ifndef _WIN32 // mode 000 and symlinks are POSIX-only here
 GG_TEST("conflicts", "absorb refuses an unreadable file and a symbolic link (GG-88)")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -1612,6 +1613,7 @@ GG_TEST("conflicts", "absorb refuses an unreadable file and a symbolic link (GG-
     GG_CHECK(e->outcome != ggui::core::Outcome::Ok);
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD"), head);
 }
+#endif
 
 GG_TEST("conflicts", "absorb stores the clean content of a file with an eol attribute (GG-88)")
 {
