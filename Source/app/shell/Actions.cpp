@@ -1794,21 +1794,33 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
 {
     run(tags ? "push tags to " + remote : "push " + localBranch + " to " + remote,
         [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags](MutationContext& ctx) {
+            // Never push first-class conflicts (§4.10 Safety, P1): refuse before git runs.
+            const auto refuseConflicted = [&ctx, &remote](const std::string& local, const std::string& remoteOid) {
+                const auto conflicted = gg::outgoing::conflictedOutgoing(ctx.cwd(), local, remote, remoteOid);
+                if (conflicted.empty())
+                    return;
+                std::string list;
+                for (const auto& c : conflicted) {
+                    list += c.id + " " + c.subject + "\n";
+                    for (const auto& f : c.files)
+                        list += "    " + f + "\n";
+                }
+                throw MutationError{Outcome::Refused, "The pushed commits contain first-class conflicts", list};
+            };
+            if (tags) {
+                // The walk hides the remote tracking refs, so only commits not yet on the remote count.
+                const auto names = ctx.git({"for-each-ref", "--format=%(refname)", "refs/tags"}).out;
+                std::istringstream in(names);
+                for (std::string name; std::getline(in, name);) {
+                    const auto oid = ctx.gitMayFail({"rev-parse", "--verify", "-q", name + "^{commit}"});
+                    if (oid.ok())
+                        refuseConflicted(gg::trim(oid.out), {});
+                }
+            }
             if (!tags) {
-                // Never push first-class conflicts (§4.10 Safety, P1): refuse before git runs.
                 const std::string local = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
                 const auto remoteOid = ctx.gitMayFail({"rev-parse", "--verify", "-q", "refs/remotes/" + remote + "/" + remoteBranch});
-                const auto conflicted = gg::outgoing::conflictedOutgoing(ctx.cwd(), local, remote,
-                    remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
-                if (!conflicted.empty()) {
-                    std::string list;
-                    for (const auto& c : conflicted) {
-                        list += c.id + " " + c.subject + "\n";
-                        for (const auto& f : c.files)
-                            list += "    " + f + "\n";
-                    }
-                    throw MutationError{Outcome::Refused, "The pushed commits contain first-class conflicts", list};
-                }
+                refuseConflicted(local, remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
                 const auto broken = gg::outgoing::brokenOutgoing(ctx.cwd(), local, remote,
                     remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
                 if (!broken.empty()) {

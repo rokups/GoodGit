@@ -716,6 +716,23 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
     GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main~2"));
 }
 
+GG_TEST("network", "push tags is refused when a new tag points at a conflicted commit")
+{
+    const fs::path repo = s.fixture(Recipe::Conflicted2);
+    const fs::path bare = s.path("tags-origin.git");
+    s.git(s.root(), {"init", "-q", "--bare", "-b", "main", bare.string()});
+    s.track(bare);
+    s.git(repo, {"remote", "add", "origin", fileUrl(bare)});
+    s.git(repo, {"push", "-q", "origin", "main~2:refs/heads/main"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.git(repo, {"tag", "v1", "main~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().push("origin", "main", "main", false, false, true);
+    GG_REQUIRE(s.dialogOpen("Push refused"));
+    GG_CHECK(s.app.dialogs().current()->message.find("first-class conflicts") != std::string::npos);
+    GG_CHECK(!originHas(s, repo, "refs/tags/v1", s.revParse(repo, "main~1")));
+}
+
 GG_TEST("network", "push is refused when outgoing commits left broken conflict markers")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);
