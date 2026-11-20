@@ -914,21 +914,33 @@ GG_TEST("submodule", "Remove is refused for the path .")
     GG_CHECK_STR_EQ(porcelain(s, repo), before);
 }
 
-GG_TEST("submodule", "Remove is refused when the submodule has a modified or untracked file")
+namespace {
+
+// Removing a submodule with `file` written inside it is refused and the file stays.
+void checkDirtyRemoveRefused(Scenario& s, const char* file)
 {
-    for (const bool untracked : {false, true}) {
-        const fs::path repo = s.fixture(Recipe::Submodules);
-        const char* file = untracked ? "new.txt" : "s3.txt";
-        s.write(repo / "sub", file, "dirty\n");
-        const std::string before = porcelain(s, repo);
-        GG_REQUIRE(s.openRepository(repo));
-        s.session()->actions().submoduleRemove("sub", false);
-        GG_REQUIRE(s.dialogOpen("remove submodule sub"));
-        s.dialogButton("remove submodule sub", "OK");
-        GG_REQUIRE(s.settle());
-        GG_CHECK_STR_EQ(s.read(repo / "sub", file), "dirty\n");
-        GG_CHECK_STR_EQ(porcelain(s, repo), before);
-    }
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", file, "dirty\n");
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", false);
+    GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+    s.dialogButton("remove submodule sub", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.read(repo / "sub", file), "dirty\n");
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+} // namespace
+
+GG_TEST("submodule", "Remove is refused when the submodule has a modified file")
+{
+    checkDirtyRemoveRefused(s, "s3.txt");
+}
+
+GG_TEST("submodule", "Remove is refused when the submodule has an untracked file")
+{
+    checkDirtyRemoveRefused(s, "new.txt");
 }
 
 GG_TEST("submodule", "Update to remote branch is refused when a detached HEAD has a local commit")
