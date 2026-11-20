@@ -18,7 +18,10 @@ Socket listenLoopback(int& port);
 Socket acceptWithTimeout(Socket listener, int timeoutMs);
 Socket connectLoopback(int port);
 bool sendAll(Socket s, const std::string& data);
-// Reads until '\n' (not included) or EOF.
+// The longest line recvLine accepts: a path is up to 4096 bytes on Linux.
+constexpr size_t kMaxLine = 8192;
+// Reads until '\n' (not included) or EOF. `timeoutMs` is the total time (-1: none). A line longer
+// than kMaxLine fails.
 bool recvLine(Socket s, std::string& line, int timeoutMs = -1);
 // Reads exactly `size` bytes (false on EOF or error first).
 bool recvExact(Socket s, std::string& data, size_t size);

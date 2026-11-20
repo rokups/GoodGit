@@ -1036,6 +1036,33 @@ GG_TEST("history", "cancel a long history load and a reveal")
     GG_CHECK(history.rows().size() < 100000);
 }
 
+GG_TEST("history", "Show more after a cancelled reveal leaves no gap in the rows")
+{
+    const fs::path repo = s.largeFixture();
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+    s.showPanel("Tags");
+    ctx->ItemInputValue("//Tags/##tag_filter", "t/0");
+    ctx->Yield(2);
+    s.contextMenu("//Tags/tag_t:0/###tag_t:0", "Reveal");
+    // Let the walk emit a few batches, then cancel it in the middle of a batch.
+    GG_CHECK(s.waitUntil([&] { return history.rows().size() > static_cast<size_t>(ggui::HistoryPanel::kPageSize) + 100; }, 60.0f));
+    s.session()->cancelAll();
+    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
+    history.showMore();
+    GG_CHECK(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+    // Every loaded commit has a loaded child or a ref: a row lost in a gap leaves its parent without both.
+    std::set<Oid> parents;
+    for (const auto& r : history.rows())
+        parents.insert(r.parents.begin(), r.parents.end());
+    int orphans = 0;
+    for (const auto& r : history.rows())
+        if (r.refs.empty() && parents.count(r.id) == 0)
+            ++orphans;
+    GG_CHECK_EQ(orphans, 0);
+}
+
 GG_TEST("history", "elideMiddle cuts on codepoint boundaries and leaves short names alone")
 {
     using ggui::elideMiddle;
@@ -1814,6 +1841,57 @@ RevealRun revealCore(Scenario& s, const fs::path& repo, const std::string& targe
 }
 
 } // namespace
+
+GG_TEST("history", "a cancelled reveal sends the pending rows: Show more leaves no gap")
+{
+    const fs::path repo = s.largeFixture();
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->history().loading() && s.session()->snapshot(); }, 60.0f));
+    const auto handle = gg::git2::openRepository(repo);
+    ggui::core::HistoryState state;
+    std::vector<std::shared_ptr<ggui::core::HistoryBatch>> batches;
+    const auto emit = [&](std::shared_ptr<ggui::core::HistoryBatch> b) { batches.push_back(std::move(b)); };
+    const auto seen = [&] {
+        size_t n = 0;
+        for (const auto& b : batches)
+            n += b->rows.size();
+        return n;
+    };
+    // The first page ends inside a batch, so the reveal starts with an empty pending batch.
+    ggui::core::historyStart(handle.get(), state, 1, ggui::core::HistoryScope{}, s.session()->snapshot(), 250,
+        gg::CancelToken::none(), emit);
+    GG_CHECK_EQ(seen(), static_cast<size_t>(state.emitted));
+
+    // The reveal never finds its target. The first full batch (2000 rows) cancels the token. The walk
+    // throws at its next check of the work counter, so rows stay in the pending batch at the throw.
+    const gg::CancelToken token;
+    size_t sentAfterCancel = 0;
+    bool cancelled = false;
+    try {
+        ggui::core::historyReveal(handle.get(), state, Oid::fromHex(std::string(40, 'f')), token,
+            [&](std::shared_ptr<ggui::core::HistoryBatch> b) {
+                if (token.cancelled())
+                    sentAfterCancel += b->rows.size();
+                batches.push_back(b);
+                token.cancel();
+            });
+    } catch (const gg::Cancelled&) {
+        cancelled = true;
+    }
+    GG_CHECK(cancelled);
+    GG_CHECK(sentAfterCancel > 0); // the flush at the throw sent the pending rows
+
+    ggui::core::historyContinue(handle.get(), state, state.emitted + 500, gg::CancelToken::none(), emit);
+    GG_CHECK_EQ(seen(), static_cast<size_t>(state.emitted));
+    std::set<std::string> ids;
+    size_t i = 0;
+    for (const auto& b : batches)
+        for (const auto& row : b->rows) {
+            GG_CHECK(ids.insert(row.id.hex()).second);
+            GG_CHECK(i < state.order.size() && row.id == state.order[i]);
+            ++i;
+        }
+}
 
 GG_TEST("history", "Reveal reports the collapsed merge that hides a commit")
 {
