@@ -169,6 +169,7 @@ void App::resetForTest()
     m_askpass.cancelAll();
     m_sequenceEditor.cancelAll();
     m_sequenceOpen = m_sequenceNoticed = 0;
+    m_heldPick = nullptr; // a held test pick must not reach the next test
     m_clone.cancel();
     if (m_session) {
         m_session->cancelAll();
