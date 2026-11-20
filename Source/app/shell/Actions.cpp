@@ -1711,12 +1711,34 @@ std::string Actions::submodulePathProblem(const std::string& path)
     return {};
 }
 
+std::string Actions::submoduleUrlProblem(const std::string& url)
+{
+    const size_t scheme = url.find("://");
+    if (scheme == std::string::npos)
+        return {};
+    const size_t end = url.find_first_of("/?#", scheme + 3);
+    const std::string authority = url.substr(scheme + 3, end == std::string::npos ? end : end - scheme - 3);
+    const size_t at = authority.rfind('@');
+    if (at == std::string::npos)
+        return {};
+    std::string user = authority.substr(0, at);
+    // A percent-encoded colon is a colon for git.
+    for (size_t i; (i = std::min(user.find("%3A"), user.find("%3a"))) != std::string::npos;)
+        user.replace(i, 3, ":");
+    const size_t colon = user.find(':');
+    if (colon == std::string::npos || colon + 1 == user.size())
+        return {};
+    return "The URL contains a password. Remove it and use a credential helper.";
+}
+
 void Actions::submoduleAdd(const std::string& url, const std::string& path, const std::string& branch)
 {
     run("add submodule " + path,
         [url = gg::trim(url), path = gg::trim(path), branch](MutationContext& ctx) {
             if (url.empty())
                 throw MutationError{Outcome::Refused, "The URL is empty", {}};
+            if (const std::string problem = submoduleUrlProblem(url); !problem.empty())
+                throw MutationError{Outcome::Refused, problem, {}};
             if (const std::string problem = submodulePathProblem(path); !problem.empty())
                 throw MutationError{Outcome::Refused, problem, {}};
             std::vector<std::string> args{"submodule", "add", "--progress"};
