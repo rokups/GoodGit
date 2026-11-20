@@ -317,7 +317,7 @@ void Session::showAddRemoteDialog()
     f.add(Field{Field::Text, "name", "Name", remoteNames(m_snapshot).empty() ? "origin" : ""});
     f.add(Field{Field::Text, "url", "URL"});
     f.buttons.push_back({"Add", [this](Form& form) { m_actions->addRemote(gg::trim(form.text("name")), gg::trim(form.text("url"))); },
-        [](const Form& form) { return nonEmpty(form, "name") && nonEmpty(form, "url"); }});
+        [](const Form& form) { return nonEmpty(form, "name") && refText(form, "url"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -525,7 +525,7 @@ void Session::showEditRemoteDialog(const std::string& remote)
     f.title = "Edit remote URL";
     f.add(Field{Field::Text, "url", "URL of " + remote, url});
     f.buttons.push_back({"Save", [this, remote](Form& form) { m_actions->setRemoteUrl(remote, gg::trim(form.text("url"))); },
-        [](const Form& form) { return nonEmpty(form, "url"); }});
+        [](const Form& form) { return refText(form, "url"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -1016,7 +1016,7 @@ void Session::showMoveBranchDialog(const std::string& branch, const std::string&
     f.add(commitInfo(*this, "Branch", branch));
     f.add(commitField(*this, "to", "Move to (branch, tag or commit)", to));
     f.buttons.push_back({"Move", [this, branch](Form& form) { m_actions->moveBranch(branch, gg::trim(form.text("to"))); },
-        [](const Form& form) { return nonEmpty(form, "to"); }});
+        [](const Form& form) { return refText(form, "to"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -1051,7 +1051,7 @@ void Session::showBranchFromStashDialog(int index)
     f.title = "Branch from stash";
     f.add(Field{Field::Text, "name", "New branch for stash@{" + std::to_string(index) + "}"});
     f.buttons.push_back({"Create", [this, index](Form& form) { m_actions->stashBranch(index, gg::trim(form.text("name"))); },
-        [](const Form& form) { return nonEmpty(form, "name"); }});
+        [](const Form& form) { return refText(form, "name"); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }

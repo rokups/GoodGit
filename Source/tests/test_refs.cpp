@@ -2018,4 +2018,42 @@ GG_TEST("refs", "a branch or tag name that starts with a dash is refused by the 
     GG_CHECK(s.gitOut(repo, {"tag", "--list"}).empty());
 }
 
+GG_TEST("refs", "rename, move, switch and worktree names that start with a dash do not run as options")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"branch", "keep", "HEAD~1"});
+    s.settle();
+    auto& act = s.session()->actions();
+    // Rename and switch -c: git refuses the dash name.
+    act.renameBranch("keep", "-D");
+    act.createBranch("-D", "HEAD", true);
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/keep"));
+    GG_CHECK(!refExists(s, repo, "refs/heads/-D"));
+    s.app.dialogs().closeAll(); // the refused mutations show error dialogs
+    // Move: the dialog refuses --hard; the action keeps local changes.
+    const std::string head = s.gitOut(repo, {"rev-parse", "HEAD"});
+    const std::string cur = s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"});
+    s.write(repo, "f1.txt", "local edit\n");
+    s.session()->showMoveBranchDialog(cur, "--hard");
+    GG_REQUIRE(s.dialogOpen("Move branch"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    GG_CHECK(!form->buttons[0].enabled(*form));
+    s.dialogButton("Move branch", "Cancel");
+    act.moveBranch(cur, "--hard");
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "f1.txt"), "local edit\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "HEAD"}), head);
+    // Worktree add: the branch --force is a revision for git, not an option.
+    ggui::Actions::AddWorktree req;
+    req.path = (s.root() / "wt-dash").string();
+    req.mode = ggui::Actions::AddWorktree::Mode::ExistingBranch;
+    req.branch = "--force";
+    act.addWorktree(req);
+    s.settle();
+    GG_CHECK(!fs::exists(req.path));
+}
+
 } // namespace ggtest

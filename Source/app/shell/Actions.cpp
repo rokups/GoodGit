@@ -1109,11 +1109,12 @@ void Actions::moveBranch(const std::string& name, const std::string& to)
     run("move branch " + name, [name, to, current](MutationContext& ctx) {
         if (current) {
             // The checked-out branch: keep local changes, refuse when they conflict.
-            ctx.git({"reset", "-q", "--keep", to});
+            const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", "--end-of-options", to + "^{commit}"}).out);
+            ctx.git({"reset", "-q", "--keep", id});
             ctx.worktreeFollowsIndex = true;
             ctx.submodules = SubmoduleSync::Update;
         } else {
-            const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", to + "^{commit}"}).out);
+            const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", "--end-of-options", to + "^{commit}"}).out);
             ctx.git({"update-ref", "-m", "ggui: move branch", "refs/heads/" + name, id});
         }
     });
@@ -1324,7 +1325,7 @@ void Actions::removeRemote(const std::string& name)
 
 void Actions::setRemoteUrl(const std::string& name, const std::string& url)
 {
-    run("set URL of " + name, [name, url](MutationContext& ctx) { ctx.git({"remote", "set-url", name, url}); }, {}, false,
+    run("set URL of " + name, [name, url](MutationContext& ctx) { ctx.git({"remote", "set-url", "--", name, url}); }, {}, false,
         false);
 }
 
@@ -2062,7 +2063,7 @@ void Actions::stashBranch(int index, const std::string& branch)
 {
     const std::string ref = "stash@{" + std::to_string(index) + "}";
     run("branch " + branch + " from " + ref, [ref, branch](MutationContext& ctx) {
-        ctx.git({"stash", "branch", branch, ref});
+        ctx.git({"stash", "branch", "--", branch, ref});
         ctx.worktreeFollowsIndex = true;
         ctx.submodules = SubmoduleSync::Update;
     });

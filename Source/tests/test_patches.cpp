@@ -101,4 +101,14 @@ GG_TEST("patches", "eol: a patch applies to a CRLF working file (core.autocrlf) 
     s.settle();
 }
 
+GG_TEST("patches", "a patch file named like an option is read as a file")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string patch = makePatch(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.write(repo, "--reject", patch);
+    applyPatch(s, "File", "Working tree", "--reject");
+    GG_CHECK(s.waitUntil([&] { return s.read(repo, "f1.txt") == "patched 1\n"; }));
+}
+
 } // namespace ggtest
