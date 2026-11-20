@@ -7,6 +7,7 @@
 #include <libgg/Conflicts.hpp>
 #include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
+#include <libgg/Files.hpp>
 #include <libgg/Ignore.hpp>
 #include <libgg/Keep.hpp>
 #include <libgg/Outgoing.hpp>
@@ -586,13 +587,12 @@ void Actions::takeConflictSide(const std::vector<std::string>& paths, int side, 
     run("take side " + std::to_string(side + 1), [paths, side, region](MutationContext& ctx) {
         for (const auto& p : paths) {
             const fs::path file = ctx.cwd() / p;
-            std::ifstream in(file, std::ios::binary);
-            std::ostringstream ss;
-            ss << in.rdbuf();
-            in.close();
-            const std::string text = gg::markers::takeSide(ss.str(), side, region);
-            std::ofstream out(file, std::ios::binary | std::ios::trunc);
-            out << text;
+            std::string content;
+            if (!gg::readFile(file, content))
+                throw MutationError{Outcome::Failed, "cannot read " + p, {}};
+            const std::string text = gg::markers::takeSide(content, side, region);
+            if (const auto ec = gg::writeFileAtomic(file, text))
+                throw MutationError{Outcome::Failed, "cannot write " + p + ": " + ec.message(), {}};
         }
     }, {}, false, true);
 }
@@ -605,11 +605,9 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
             // (which stages the result). If the tool gives up, the index goes back to HEAD for
             // the path. On an N-sided file (N >= 3) success folds the resolved pair into one
             // term and leaves the file a first-class conflict with one side fewer.
-            std::ifstream in(ctx.cwd() / path, std::ios::binary);
-            std::ostringstream ss;
-            ss << in.rdbuf();
-            in.close();
-            const std::string text = ss.str();
+            std::string text;
+            if (!gg::readFile(ctx.cwd() / path, text))
+                throw MutationError{Outcome::Failed, "cannot read " + path, {}};
             gg::markers::Merge m = gg::markers::toMerge(text);
             const int n = static_cast<int>(m.adds.size());
             if (n < 2)
@@ -636,24 +634,18 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
                 ctx.gitMayFail({"reset", "-q", "--", path});
                 if (n > 2) {
                     // The tool may have written into the working tree file before giving up.
-                    std::ifstream check(ctx.cwd() / path, std::ios::binary);
-                    std::ostringstream cs;
-                    cs << check.rdbuf();
-                    check.close();
-                    if (cs.str() != text) {
-                        std::ofstream restore(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
-                        restore << text;
-                    }
+                    std::string now;
+                    if (!gg::readFile(ctx.cwd() / path, now) || now != text)
+                        (void)gg::writeFileAtomic(ctx.cwd() / path, text); // best effort: the merge tool error is reported
                 }
                 throw MutationError{Outcome::Failed, r.message(), r.message()};
             }
             if (n > 2) {
-                std::ifstream res(ctx.cwd() / path, std::ios::binary);
-                std::ostringstream rs;
-                rs << res.rdbuf();
-                res.close();
+                std::string result;
+                if (!gg::readFile(ctx.cwd() / path, result))
+                    throw MutationError{Outcome::Failed, "cannot read " + path, {}};
                 gg::markers::Merge folded = m;
-                folded.adds[static_cast<size_t>(pair)] = rs.str();
+                folded.adds[static_cast<size_t>(pair)] = std::move(result);
                 folded.adds.erase(folded.adds.begin() + pair + 1);
                 folded.removes.erase(folded.removes.begin() + pair);
                 // Surviving sides keep their old labels (the pair just resolved has no single
@@ -661,9 +653,8 @@ void Actions::mergeToolFirstClass(const std::string& path, int pair)
                 auto options = gg::conflicts::writeOptions(ctx.repo(), path);
                 options.termLabels = gg::markers::termLabels(text);
                 const std::string materialized = gg::markers::materialize(std::move(folded), options);
-                std::ofstream out(ctx.cwd() / path, std::ios::binary | std::ios::trunc);
-                out << materialized;
-                out.close();
+                if (const auto ec = gg::writeFileAtomic(ctx.cwd() / path, materialized))
+                    throw MutationError{Outcome::Failed, "cannot write " + path + ": " + ec.message(), {}};
                 ctx.gitMayFail({"reset", "-q", "--", path});
             }
         },
@@ -2200,8 +2191,8 @@ void Actions::commitWithConflicts()
             contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs, options));
         }
         for (const auto& [p, text] : contents) {
-            std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
-            out << text;
+            if (const auto ec = gg::writeFileAtomic(ctx.cwd() / p, text))
+                throw MutationError{Outcome::Failed, "cannot write " + p + ": " + ec.message(), {}};
         }
         if (!paths.empty()) {
             ctx.git(withPaths({"add"}, paths));
@@ -2209,8 +2200,8 @@ void Actions::commitWithConflicts()
             // `checkout-index -f` skips a file whose stat data matches the new index entry.
             for (const auto& p : paths) {
                 const std::string worktree = ctx.git({"cat-file", "--filters", ":0:" + p}).out;
-                std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
-                out << worktree;
+                if (const auto ec = gg::writeFileAtomic(ctx.cwd() / p, worktree))
+                    throw MutationError{Outcome::Failed, "cannot write " + p + ": " + ec.message(), {}};
             }
             // The size of each file changed: add again (same blob) to refresh the stat data in the index.
             ctx.git(withPaths({"add"}, paths));
@@ -2232,10 +2223,8 @@ void Actions::saveMergeMessage(const std::string& message)
     const auto snap = m_session.snapshot();
     const fs::path file = snap->gitDir / "MERGE_MSG";
     run("edit merge message", [file, message](MutationContext&) {
-        std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << message;
-        if (!out)
-            throw MutationError{Outcome::Failed, "cannot write " + file.string(), {}};
+        if (const auto ec = gg::writeFileAtomic(file, message))
+            throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
     }, {}, false, false);
 }
 
