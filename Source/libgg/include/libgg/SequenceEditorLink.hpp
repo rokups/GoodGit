@@ -45,6 +45,8 @@ std::string gitDirKey(const std::filesystem::path& gitDir);
 // Registers (or updates) this process; returns false when the file cannot be written.
 bool writeInstance(const Instance& instance);
 void removeInstance(long long pid);
+// Removes the registrations of processes that are gone (not `exceptPid`); writeInstance calls it.
+void removeDeadInstances(long long exceptPid);
 // Every registered instance (unreadable files are skipped).
 std::vector<Instance> instances();
 
