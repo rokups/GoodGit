@@ -387,7 +387,9 @@ struct Rewriter::Impl {
             std::set<std::string> out;
             for (size_t i = 0; i < git_diff_num_deltas(d.get()); ++i) {
                 const git_diff_delta* delta = git_diff_get_delta(d.get(), i);
-                if (delta->status == GIT_DELTA_MODIFIED)
+                // Like the conflict path: a gitlink has no blob here, and a symlink is no text.
+                const auto isSpecial = [](unsigned m) { return m == GIT_FILEMODE_COMMIT || m == GIT_FILEMODE_LINK; };
+                if (delta->status == GIT_DELTA_MODIFIED && !isSpecial(delta->old_file.mode) && !isSpecial(delta->new_file.mode))
                     out.insert(delta->new_file.path);
             }
             return out;
