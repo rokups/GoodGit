@@ -337,6 +337,18 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     ggui::unsetEnv("GG_SEQUENCE_DIR");
     GG_CHECK_EQ(cli.exitCode, 1);
     GG_CHECK(cli.err.find("cannot write") != std::string::npos);
+
+    // /dev/full opens but every write fails at flush: only a check after close sees it.
+    if (std::error_code ec; fs::exists("/dev/full", ec)) {
+        const fs::path fullTodo = s.root() / "full" / "rebase-merge" / "git-rebase-todo";
+        fs::create_directories(fullTodo.parent_path());
+        fs::create_symlink("/dev/full", fullTodo);
+        ggui::setEnv("GG_SEQUENCE_DIR", prep.string());
+        cli = s.gitgg(r.path, {"sequence-editor", fullTodo.string()});
+        ggui::unsetEnv("GG_SEQUENCE_DIR");
+        GG_CHECK_EQ(cli.exitCode, 1);
+        GG_CHECK(cli.err.find("cannot write") != std::string::npos);
+    }
 }
 
 GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase")
