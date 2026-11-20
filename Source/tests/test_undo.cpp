@@ -42,6 +42,18 @@ bool undone(Scenario& s, const fs::path& repo, const std::string& expected)
     return ok;
 }
 
+#ifndef _WIN32
+// Waits until the newest journal operation is `id` (after a refresh that runs the reconciler).
+bool journalHas(Scenario& s, ImGuiTestContext* ctx, const std::string& id)
+{
+    ctx->KeyPress(ImGuiKey_F5);
+    return s.waitUntil([&] {
+        const auto& ops = s.session()->operations();
+        return !ops.empty() && ops.back().id == id;
+    });
+}
+#endif
+
 } // namespace
 
 namespace {
@@ -594,16 +606,6 @@ GG_TEST("undo", "failed operations are passed over by Undo and Redo")
 }
 
 #ifndef _WIN32
-// Waits until the newest journal operation is `id` (after a refresh that runs the reconciler).
-bool journalHas(Scenario& s, ImGuiTestContext* ctx, const std::string& id)
-{
-    ctx->KeyPress(ImGuiKey_F5);
-    return s.waitUntil([&] {
-        const auto& ops = s.session()->operations();
-        return !ops.empty() && ops.back().id == id;
-    });
-}
-
 GG_TEST("undo", "a worktree step that fails part-way puts the refs, the index and the working tree back (GG-65)")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -635,6 +637,45 @@ GG_TEST("undo", "a worktree step that fails part-way puts the refs, the index an
     GG_CHECK(s.statusPorcelain(repo).empty());
     GG_CHECK_STR_EQ(s.revParse(repo, "side"), tip);
     GG_CHECK(fs::exists(repo / "f5.txt"));
+}
+
+GG_TEST("undo", "a failed worktree step puts a re-attached HEAD and its branch back (GG-65)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side"});
+    const std::string tip = s.revParse(repo, "HEAD");
+    const std::string parent = s.revParse(repo, "HEAD~1");
+    const std::string tipTree = s.gitOut(repo, {"rev-parse", "HEAD^{tree}"});
+    const std::string parentTree = s.gitOut(repo, {"rev-parse", "HEAD~1^{tree}"});
+    // HEAD is detached at the parent and the branch is there too: the state an operation left.
+    s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
+    s.git(repo, {"branch", "-f", "main", parent});
+    GG_REQUIRE(s.openRepository(repo));
+    const fs::path added = s.root() / (repo.filename().string() + "-gg65b");
+    s.track(added);
+    std::ofstream(repo / ".git" / "gg" / "journal", std::ios::app | std::ios::binary)
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"g65-2\",\"src\":\"ggui\",\"label\":\"detach\",\"wt\":\"main\"}\n"
+        << "{\"v\":1,\"t\":\"refs\",\"op\":\"g65-2\",\"u\":[[\"HEAD\",\"ref:refs/heads/main\",\"" << parent
+        << "\"],[\"refs/heads/main\",\"" << tip << "\",\"" << parent << "\"]]}\n"
+        << "{\"v\":1,\"t\":\"index\",\"op\":\"g65-2\",\"wt\":\"main\",\"before\":\"" << tipTree << "\",\"after\":\"" << parentTree
+        << "\",\"worktree\":true}\n"
+        << "{\"v\":1,\"t\":\"worktree\",\"op\":\"g65-2\",\"do\":\"remove\",\"path\":" << nlohmann::json(added.string()).dump()
+        << ",\"head\":\"" << parent << "\",\"branch\":\"refs/heads/side\"}\n"
+        << "{\"v\":1,\"t\":\"end\",\"op\":\"g65-2\"}\n";
+    GG_REQUIRE(journalHas(s, ctx, "g65-2"));
+    s.settle();
+    s.write(repo / ".git" / "hooks", "post-checkout", "#!/bin/sh\nexit 1\n");
+    fs::permissions(repo / ".git" / "hooks" / "post-checkout", fs::perms::owner_all);
+    const std::string state = repoState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("worktrees not restored") == std::string::npos); // (the add itself failed: none was done)
+    GG_CHECK_STR_EQ(repoState(s, repo), state);
+    GG_CHECK(s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out.empty()); // still detached
+    GG_CHECK_STR_EQ(s.head(repo), parent);
+    GG_CHECK_STR_EQ(s.revParse(repo, "main"), parent);
+    GG_CHECK(s.statusPorcelain(repo).empty());
+    GG_CHECK(!fs::exists(repo / "f5.txt"));
 }
 #endif
 
