@@ -1902,6 +1902,7 @@ GG_TEST("keep", "Branches: a Detached row's menu hides its commit in History; th
     ctx->ItemClick("//Branches/###hide_all_branches");
     GG_CHECK(!history.refVisible(kx) && !history.refVisible(ky));
     GG_CHECK(history.refVisible("refs/heads/main")); // the checked-out branch stays visible
+    GG_CHECK(!history.refStoredVisible("refs/heads/main")); // but Hide all stored it as hidden
 }
 
 GG_TEST("keep", "Branches: the filter lists the kept commits whose ID or summary matches, and the node's menu acts on the listed ones")
