@@ -226,6 +226,14 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     OperationRecorder recorder(repo, src, result.label, !bare);
     recorder.setUndoes(plan.target->id, redo);
     recorder.begin();
+    // Worktree steps are not rolled back: the ones already done stay, and the error names them.
+    std::vector<std::string> appliedPaths;
+    auto keptWorktrees = [&] {
+        std::string list;
+        for (const auto& p : appliedPaths)
+            list += (list.empty() ? "" : ", ") + p;
+        return list.empty() ? std::string() : "; worktrees not restored: " + list;
+    };
     auto applyWorktrees = [&](bool removals) {
         for (const auto& c : plan.worktrees) {
             if (removesFirst(c) != removals)
@@ -236,17 +244,25 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
                 return false;
             }
             recorder.addWorktree(a.done);
+            appliedPaths.push_back(a.done.path);
         }
         return true;
     };
     // 0. Worktrees removed or unlocked first (a branch it had checked out may then be deleted).
     if (!applyWorktrees(true)) {
+        result.error += keptWorktrees();
         recorder.finish(false);
         return result;
     }
 
-    // 1. Index / working tree first: nothing is changed when the working tree would lose data.
+    // The index (and the working tree) back to what it was before step 1.
     bool followWorktree = false;
+    auto restoreIndex = [&] {
+        if (followWorktree)
+            return git(cwd, {"read-tree", "-m", "-u", plan.index->after, plan.index->before});
+        return git(cwd, {"read-tree", plan.index->before});
+    };
+    // 1. Index / working tree first: nothing is changed when the working tree would lose data.
     if (plan.index && !bare) {
         RunResult r;
         if (plan.index->worktree) {
@@ -257,7 +273,7 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
         }
         if (!r.ok()) {
             result.wouldLoseData = plan.index->worktree;
-            result.error = r.message();
+            result.error = r.message() + keptWorktrees();
             recorder.finish(false);
             return result;
         }
@@ -266,13 +282,36 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     // A HEAD whose earlier value is unknown (recorded as the null id) cannot be restored.
     for (const auto& c : plan.restore)
         if (c.ref == journal::headKey(wt) && isZero(c.newValue)) {
-            result.error = "the previous value of HEAD was not recorded; use the Reflog to go back";
+            result.error = "the previous value of HEAD was not recorded; use the Reflog to go back"
+                + keptWorktrees();
             recorder.finish(false);
             if (plan.index && !bare) // nothing else changed yet except the index
-                git(cwd, followWorktree ? std::vector<std::string>{"read-tree", "-m", "-u", plan.index->after, plan.index->before}
-                                        : std::vector<std::string>{"read-tree", plan.index->before});
+                restoreIndex();
             return result;
         }
+
+    // The ref transaction does not verify a symbolic ref, and the steps above take time: read it
+    // again now and refuse when it moved after the plan was made (planUndo covers the earlier window).
+    for (const auto& c : plan.restore) {
+        if (!isSymbolic(c.oldValue) && !isSymbolic(c.newValue))
+            continue;
+        const std::string ref = c.ref == journal::headKey(wt) ? std::string("HEAD") : c.ref;
+        std::string now;
+        if (const RunResult sym = git(cwd, {"symbolic-ref", "-q", ref}); sym.ok())
+            now = "ref:" + trim(sym.out);
+        else if (const RunResult id = git(cwd, {"rev-parse", "--verify", "-q", ref}); id.ok())
+            now = trim(id.out);
+        else
+            now = zero;
+        if (now != c.oldValue) {
+            if (plan.index && !bare)
+                restoreIndex();
+            recorder.finish(false);
+            result.error = "Cannot " + verb + " \"" + what + "\": " + ref + " has moved on (it is now "
+                + (isZero(now) ? std::string("deleted") : now) + ")" + keptWorktrees();
+            return result;
+        }
+    }
 
     // 2. Refs, verified against their current values, in one transaction.
     std::string input = "option no-deref\n";
@@ -317,33 +356,45 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
     }
     if (!r.ok()) {
         // Put the index back the way it was.
-        if (plan.index && !bare) {
-            if (followWorktree)
-                git(cwd, {"read-tree", "-m", "-u", plan.index->after, plan.index->before});
-            else
-                git(cwd, {"read-tree", plan.index->before});
-        }
-        result.error = r.message();
+        if (plan.index && !bare)
+            restoreIndex();
+        result.error = r.message() + keptWorktrees();
         recorder.finish(false);
         return result;
     }
     // 3. Worktrees added or locked last (a branch they check out exists again by now). When that
-    //    fails, the refs go back to where they were, so the operation changed nothing it cannot show.
+    //    fails, the refs, the index and the working tree go back to where they were, so the
+    //    operation changed nothing it cannot show. A step that cannot go back is named in the error.
     if (!applyWorktrees(false)) {
         std::string back = "option no-deref\n";
+        std::vector<std::pair<std::string, std::string>> symbolicBack;
+        std::string headBack; // HEAD back on a commit: git refuses it in one transaction with its branch
         for (const auto& c : plan.restore) {
-            if (c.ref == journal::headKey(wt) || isSymbolic(c.newValue) || isSymbolic(c.oldValue))
-                continue;
-            if (isZero(c.oldValue))
-                back += "delete " + c.ref + " " + c.newValue + "\n";
-            else if (isZero(c.newValue))
-                back += "create " + c.ref + " " + c.oldValue + "\n";
+            const std::string ref = c.ref == journal::headKey(wt) ? std::string("HEAD") : c.ref;
+            if (ref == "HEAD" && !isSymbolic(c.oldValue) && !isZero(c.oldValue))
+                headBack = c.oldValue;
+            else if (isSymbolic(c.oldValue))
+                symbolicBack.emplace_back(ref, c.oldValue.substr(4));
+            else if (isZero(c.oldValue))
+                back += "delete " + ref + "\n";
             else
-                back += "update " + c.ref + " " + c.oldValue + " " + c.newValue + "\n";
+                back += "update " + ref + " " + c.oldValue + "\n";
         }
-        git(cwd, {"update-ref", "-m", result.label + " (failed)", "--stdin"}, back);
-        if (!detachTo.empty())
-            git(cwd, {"symbolic-ref", "HEAD", reattach}); // HEAD was detached first: back on its branch
+        std::string failed;
+        RunResult undoRefs;
+        if (!headBack.empty())
+            undoRefs = git(cwd, {"update-ref", "--no-deref", "-m", result.label + " (failed)", "HEAD", headBack});
+        if (headBack.empty() || undoRefs.ok())
+            undoRefs = git(cwd, {"update-ref", "-m", result.label + " (failed)", "--stdin"}, back);
+        for (const auto& [ref, target] : symbolicBack)
+            if (undoRefs.ok())
+                undoRefs = git(cwd, {"symbolic-ref", "-m", result.label + " (failed)", ref, target});
+        if (!undoRefs.ok())
+            failed += "; refs not restored: " + undoRefs.message();
+        if (plan.index && !bare)
+            if (const RunResult ix = restoreIndex(); !ix.ok())
+                failed += "; index and working tree not restored: " + ix.message();
+        result.error += failed + keptWorktrees();
         recorder.finish(false);
         return result;
     }
