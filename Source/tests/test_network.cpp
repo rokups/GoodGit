@@ -383,11 +383,11 @@ GG_TEST("network", "a remote name that starts with a dash is not read as a git o
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
     const std::string marker = s.path("upload-pack-ran").string();
-    // The remote name has no space: git rejects a space in a remote name.
-    const fs::path script = s.path("upload-pack.sh");
-    s.write(s.root(), "upload-pack.sh", "#!/bin/sh\ntouch '" + marker + "'\n");
+    // The name is relative to the repository and has no ':', '\\' or space: git rejects them in a remote name.
+    const fs::path script = repo / "upload-pack.sh";
+    s.write(repo, "upload-pack.sh", "#!/bin/sh\ntouch '" + marker + "'\n");
     fs::permissions(script, fs::perms::owner_all);
-    const std::string name = "--upload-pack=" + script.string();
+    const std::string name = "--upload-pack=./upload-pack.sh";
     s.git(repo, {"remote", "add", "--", name, "https://invalid.invalid/r.git"});
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Tags");

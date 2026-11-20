@@ -30,14 +30,14 @@ std::string shortRef(const std::string& ref) { return ref.rfind("refs/heads/", 0
 
 std::string summaryOf(git_repository* repo, const std::string& id)
 {
-    Commit c = lookupCommit(repo, *fromHex(id));
+    Commit c = lookupCommit(repo, fromHexOrThrow(id));
     const char* s = git_commit_summary(c.get());
     return s ? s : "";
 }
 
 std::string treeOf(git_repository* repo, const std::string& id)
 {
-    Commit c = lookupCommit(repo, *fromHex(id));
+    Commit c = lookupCommit(repo, fromHexOrThrow(id));
     return toHex(*git_commit_tree_id(c.get()));
 }
 
@@ -142,7 +142,7 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                 const std::string& id = result.steps.at(key);
                 // Nothing to merge (every head already merged): no commit, HEAD stays.
                 const bool skipped = current ? out->rows[*current].id == id
-                                             : id == context.onto || git_commit_parentcount(lookupCommit(repo, *fromHex(id)).get()) < 2;
+                                             : id == context.onto || git_commit_parentcount(lookupCommit(repo, fromHexOrThrow(id)).get()) < 2;
                 if (skipped)
                     break;
                 RebasePreview::Row row;
@@ -172,12 +172,12 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
             const std::string tree = treeOf(repo, row.id);
             row.tree = tree;
             {
-                Commit c = lookupCommit(repo, *fromHex(row.id));
+                Commit c = lookupCommit(repo, fromHexOrThrow(row.id));
                 for (unsigned p = 0; p < git_commit_parentcount(c.get()); ++p)
                     row.parents.push_back(toHex(*git_commit_parent_id(c.get(), p)));
             }
             if (row.parents.empty()) {
-                Tree t = lookupTree(repo, *fromHex(tree));
+                Tree t = lookupTree(repo, fromHexOrThrow(tree));
                 row.empty = git_tree_entrycount(t.get()) == 0;
             } else {
                 row.empty = row.parents.size() == 1 && tree == treeOf(repo, row.parents.front());
@@ -186,13 +186,13 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                 const auto it = context.commits.find(id);
                 return it != context.commits.end() && it->second.empty;
             });
-            for (const auto& f : gg::conflicts::commitConflicts(repo, *fromHex(row.id), cache, cancel))
+            for (const auto& f : gg::conflicts::commitConflicts(repo, fromHexOrThrow(row.id), cache, cancel))
                 row.conflicts.emplace_back(f.path, f.sides);
             row.newConflicts = conflicted.count(row.id) > 0;
             if (!row.unchanged) {
                 std::set<std::string> before;
                 for (const auto& src : row.sources)
-                    for (const auto& f : gg::conflicts::commitConflicts(repo, *fromHex(src), cache, cancel))
+                    for (const auto& f : gg::conflicts::commitConflicts(repo, fromHexOrThrow(src), cache, cancel))
                         before.insert(f.path);
                 for (const auto& [path, sides] : row.conflicts)
                     before.erase(path);

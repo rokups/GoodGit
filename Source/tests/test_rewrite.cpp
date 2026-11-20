@@ -1161,3 +1161,19 @@ GG_TEST("rewrite", "head path plan guard: a kept squash after a removed step giv
 }
 
 } // namespace ggtest
+
+namespace ggtest {
+
+GG_TEST("rewrite", "a short commit id throws an error instead of reading an empty optional")
+{
+    GG_CHECK(!gg::git2::fromHex("abc1234").has_value());
+    bool threw = false;
+    try {
+        gg::git2::fromHexOrThrow("abc1234");
+    } catch (const gg::git2::Error&) {
+        threw = true;
+    }
+    GG_CHECK(threw);
+}
+
+} // namespace ggtest

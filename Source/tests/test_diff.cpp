@@ -722,6 +722,7 @@ GG_TEST("diff", "more edges: a copied file (and blame before it), files over the
     s.git(repo, {"commit", "-q", "-m", "many lines"});
     const std::string manyCommit = s.head(repo);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + manyCommit).c_str()); }));
+    s.settle(); // the history reload ends before the click, so the click selects this commit
     ctx->ItemClick(("//History/**/###row_" + manyCommit).c_str());
     const std::string manyRow = s.child("//Changes", "##files") + "/many.txt/###file_many.txt";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(manyRow.c_str()); }));

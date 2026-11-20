@@ -132,7 +132,7 @@ GG_TEST("keyboard", "branches: tree rows, Alt+Space menus, groups open and close
     const std::string remote = "//Branches/remote_group_origin/origin";
     GG_REQUIRE(s.openRemote());
     GG_REQUIRE(navTo(ctx, remote));
-    altSpaceMenu(s, "Show all branches in History");
+    altSpaceMenu(s, "Fetch");
     press(ctx, ImGuiKey_LeftArrow);
     GG_CHECK(!s.itemExists("//Branches/**/###rbranch_origin:alpha"));
     press(ctx, ImGuiKey_RightArrow);

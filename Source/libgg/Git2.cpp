@@ -93,6 +93,13 @@ std::optional<git_oid> fromHex(std::string_view hex)
     return oid;
 }
 
+git_oid fromHexOrThrow(std::string_view hex)
+{
+    if (const auto oid = fromHex(hex))
+        return *oid;
+    throw Error(GIT_EINVALIDSPEC, GIT_ERROR_INVALID, "invalid object id: " + std::string(hex));
+}
+
 git_oid_t oidType(git_repository* repo) { return git_repository_oid_type(repo); }
 
 size_t hexSize(git_oid_t type) { return type == GIT_OID_SHA256 ? GIT_OID_SHA256_HEXSIZE : GIT_OID_SHA1_HEXSIZE; }

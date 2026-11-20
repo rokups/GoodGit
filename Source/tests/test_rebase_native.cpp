@@ -325,6 +325,30 @@ GG_TEST("rebase-native", "edit, break and a failing exec stop git rebase -i; Ame
     GG_CHECK_EQ(cli.exitCode, 1);
     GG_CHECK(cli.err.find("cannot read the prepared todo") != std::string::npos);
     GG_CHECK(s.gitgg(r.path, {"help", "sequence-editor"}).out.find("GIT_SEQUENCE_EDITOR") != std::string::npos);
+
+    // A todo that cannot be written fails the helper, so git aborts the rebase and drops nothing.
+    const fs::path prep = s.root() / "prepared";
+    fs::create_directories(prep);
+    s.write(prep, "prepared.json", "{\"todo\":\"pick abc c1\\n\"}");
+    const fs::path badTodo = s.root() / "bad" / "rebase-merge" / "git-rebase-todo";
+    fs::create_directories(badTodo); // a directory: opening it for writing fails
+    ggui::setEnv("GG_SEQUENCE_DIR", prep.string());
+    cli = s.gitgg(r.path, {"sequence-editor", badTodo.string()});
+    ggui::unsetEnv("GG_SEQUENCE_DIR");
+    GG_CHECK_EQ(cli.exitCode, 1);
+    GG_CHECK(cli.err.find("cannot write") != std::string::npos);
+
+    // /dev/full opens but every write fails at flush: only a check after close sees it.
+    if (std::error_code ec; fs::exists("/dev/full", ec)) {
+        const fs::path fullTodo = s.root() / "full" / "rebase-merge" / "git-rebase-todo";
+        fs::create_directories(fullTodo.parent_path());
+        fs::create_symlink("/dev/full", fullTodo);
+        ggui::setEnv("GG_SEQUENCE_DIR", prep.string());
+        cli = s.gitgg(r.path, {"sequence-editor", fullTodo.string()});
+        ggui::unsetEnv("GG_SEQUENCE_DIR");
+        GG_CHECK_EQ(cli.exitCode, 1);
+        GG_CHECK(cli.err.find("cannot write") != std::string::npos);
+    }
 }
 
 GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --edit-todo, exec after every commit, Run as git rebase")
