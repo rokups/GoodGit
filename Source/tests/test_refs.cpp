@@ -1462,6 +1462,11 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote")
     // On origin now (read again after the push): Delete is a submenu, Local first.
     GG_REQUIRE(s.waitUntil([&] { return remoteHas("v10"); }));
     s.contextMenu(tagRow("v10").c_str(), "Delete/Local");
+    // The item only opens the dialog: the tag stays until the confirm.
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/tags/v10"));
+    s.dialogButton("Delete tags", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/v10"); }));
     s.settle();
     GG_CHECK(refExists(s, origin(s, repo), "refs/tags/v10"));
@@ -1470,11 +1475,15 @@ GG_TEST("refs", "tags: lightweight, annotated, delete, push, delete on remote")
     s.git(repo, {"fetch", "-q", "origin", "refs/tags/v10:refs/tags/v10"});
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("v10").c_str()); }));
     s.contextMenu(tagRow("v10").c_str(), "Delete/origin");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    s.dialogButton("Delete tags", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, origin(s, repo), "refs/tags/v10"); }));
     s.settle();
     GG_REQUIRE(s.waitUntil([&] { return !remoteHas("v10"); }));
     // Only here: a single Delete item.
     s.contextMenu(tagRow("v9").c_str(), "Delete");
+    GG_REQUIRE(s.dialogOpen("Delete tags"));
+    s.dialogButton("Delete tags", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/v9"); }));
     s.settle();
 }
