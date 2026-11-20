@@ -1,5 +1,8 @@
 // Conflicts: native in-progress operations and first-class conflicts (§4.10).
 #include <thread>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include "core/Readers.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
@@ -711,6 +714,25 @@ GG_TEST("conflicts", "first-class: term view, take a side, Mark resolved, Amend 
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "main:conflict.txt"}), "top\nx=2\nbottom");
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "main:other.txt"}), "descendant");
 }
+
+#ifndef _WIN32
+GG_TEST("conflicts", "first-class: a failed read keeps the file when a side is taken")
+{
+    if (geteuid() == 0)
+        return; // root reads a file with mode 000
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string text = "a\n<<<<<<< side 1\nA1\n||||||| base\nA0\n=======\nA2\n>>>>>>> side 2\nz\n";
+    s.commitFile(repo, "keep.txt", text, "Keep");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtFile(s, "keep.txt").c_str()); }));
+    fs::permissions(repo / "keep.txt", fs::perms::none);
+    s.session()->actions().takeConflictSide({"keep.txt"}, 1); // the menu is gone once the scan fails
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("cannot read") != std::string::npos);
+    fs::permissions(repo / "keep.txt", fs::perms::owner_read | fs::perms::owner_write);
+    GG_CHECK_STR_EQ(s.read(repo, "keep.txt"), text);
+}
+#endif
 
 GG_TEST("conflicts", "first-class: take a side in one region; resolve in the editor and commit on top")
 {

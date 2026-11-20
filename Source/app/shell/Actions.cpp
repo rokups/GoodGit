@@ -7,6 +7,7 @@
 #include <libgg/Conflicts.hpp>
 #include <libgg/EditSession.hpp>
 #include <libgg/Git2.hpp>
+#include <libgg/Files.hpp>
 #include <libgg/Ignore.hpp>
 #include <libgg/Keep.hpp>
 #include <libgg/Outgoing.hpp>
@@ -586,13 +587,12 @@ void Actions::takeConflictSide(const std::vector<std::string>& paths, int side, 
     run("take side " + std::to_string(side + 1), [paths, side, region](MutationContext& ctx) {
         for (const auto& p : paths) {
             const fs::path file = ctx.cwd() / p;
-            std::ifstream in(file, std::ios::binary);
-            std::ostringstream ss;
-            ss << in.rdbuf();
-            in.close();
-            const std::string text = gg::markers::takeSide(ss.str(), side, region);
-            std::ofstream out(file, std::ios::binary | std::ios::trunc);
-            out << text;
+            std::string content;
+            if (!gg::readFile(file, content))
+                throw MutationError{Outcome::Failed, "cannot read " + p, {}};
+            const std::string text = gg::markers::takeSide(content, side, region);
+            if (const auto ec = gg::writeFileAtomic(file, text))
+                throw MutationError{Outcome::Failed, "cannot write " + p + ": " + ec.message(), {}};
         }
     }, {}, false, true);
 }
@@ -2200,8 +2200,8 @@ void Actions::commitWithConflicts()
             contents.emplace_back(p, gg::markers::mergeFiles(base.value_or(""), *ours, *theirs, options));
         }
         for (const auto& [p, text] : contents) {
-            std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
-            out << text;
+            if (const auto ec = gg::writeFileAtomic(ctx.cwd() / p, text))
+                throw MutationError{Outcome::Failed, "cannot write " + p + ": " + ec.message(), {}};
         }
         if (!paths.empty()) {
             ctx.git(withPaths({"add"}, paths));
@@ -2209,8 +2209,8 @@ void Actions::commitWithConflicts()
             // `checkout-index -f` skips a file whose stat data matches the new index entry.
             for (const auto& p : paths) {
                 const std::string worktree = ctx.git({"cat-file", "--filters", ":0:" + p}).out;
-                std::ofstream out(ctx.cwd() / p, std::ios::binary | std::ios::trunc);
-                out << worktree;
+                if (const auto ec = gg::writeFileAtomic(ctx.cwd() / p, worktree))
+                    throw MutationError{Outcome::Failed, "cannot write " + p + ": " + ec.message(), {}};
             }
             // The size of each file changed: add again (same blob) to refresh the stat data in the index.
             ctx.git(withPaths({"add"}, paths));
