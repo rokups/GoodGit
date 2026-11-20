@@ -1833,14 +1833,23 @@ void Actions::pull(PullMode mode, bool autostash)
         true);
 }
 
+std::string Actions::trackingOid(const std::string& remote, const std::string& branch) const
+{
+    for (const auto& r : m_session.snapshot()->remoteBranches)
+        if (r.name == remote + "/" + branch)
+            return r.target.hex();
+    return {};
+}
+
 void Actions::push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
-    bool setUpstream, bool forceWithLease, bool tags)
+    bool setUpstream, bool forceWithLease, bool tags, std::string checkedOid, std::optional<std::string> leaseOid)
 {
     run(tags ? "push tags to " + remote : "push " + localBranch + " to " + remote,
-        [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags](MutationContext& ctx) {
+        [remote, localBranch, remoteBranch, setUpstream, forceWithLease, tags, checkedOid, leaseOid](MutationContext& ctx) {
             // Never push first-class conflicts (§4.10 Safety, P1): refuse before git runs.
-            const auto refuseConflicted = [&ctx, &remote](const std::string& local, const std::string& remoteOid) {
-                const auto conflicted = gg::outgoing::conflictedOutgoing(ctx.cwd(), local, remote, remoteOid);
+            const auto refuseConflicted = [&ctx, &remote](const std::string& local, const std::string& remoteOid,
+                                              const std::string& hideRemote) {
+                const auto conflicted = gg::outgoing::conflictedOutgoing(ctx.cwd(), local, hideRemote, remoteOid);
                 if (conflicted.empty())
                     return;
                 std::string list;
@@ -1858,15 +1867,21 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 for (std::string name; std::getline(in, name);) {
                     const auto oid = ctx.gitMayFail({"rev-parse", "--verify", "-q", name + "^{commit}"});
                     if (oid.ok())
-                        refuseConflicted(gg::trim(oid.out), {});
+                        refuseConflicted(gg::trim(oid.out), {}, remote);
                 }
             }
+            std::string local = checkedOid; // the guard checks this oid and the push sends this oid
+            std::string lease; // "" = the remote ref must not exist
             if (!tags) {
-                const std::string local = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
+                if (local.empty())
+                    local = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
                 const auto remoteOid = ctx.gitMayFail({"rev-parse", "--verify", "-q", "refs/remotes/" + remote + "/" + remoteBranch});
-                refuseConflicted(local, remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
-                const auto broken = gg::outgoing::brokenOutgoing(ctx.cwd(), local, remote,
-                    remoteOid.ok() ? gg::trim(remoteOid.out) : std::string());
+                const std::string tracking = remoteOid.ok() ? gg::trim(remoteOid.out) : std::string();
+                lease = leaseOid ? *leaseOid : tracking;
+                // No tracking ref: hide the commits that any remote ref holds, not the whole history.
+                const std::string hideRemote = tracking.empty() ? "*" : remote;
+                refuseConflicted(local, tracking, hideRemote);
+                const auto broken = gg::outgoing::brokenOutgoing(ctx.cwd(), local, hideRemote, tracking);
                 if (!broken.empty()) {
                     std::string list;
                     for (const auto& c : broken) {
@@ -1882,19 +1897,31 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 }
             }
             std::vector<std::string> args{"push", "--progress"};
-            if (setUpstream)
-                args.emplace_back("--set-upstream");
+            // The source is an oid, so git cannot set the upstream: do it after the push.
             if (forceWithLease)
-                args.emplace_back("--force-with-lease");
+                args.emplace_back("--force-with-lease=refs/heads/" + remoteBranch + ":" + lease);
             const std::string recurse = pushRecurseOption(ctx);
             if (!recurse.empty())
                 args.push_back(recurse);
             args.push_back(remote);
             if (tags)
                 args.emplace_back("--tags");
-            else
+            else if (recurse.empty())
+                args.push_back(local + ":refs/heads/" + remoteBranch);
+            else {
+                // shortcut: git passes the refspec to the submodule pushes and an oid is no ref there, so
+                // a branch name goes out and only a recheck guards the move. Upgrade when git accepts oids.
+                if (gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out) != local)
+                    throw MutationError{Outcome::Refused, "The branch moved after the check. Push again.", {}};
                 args.push_back("refs/heads/" + localBranch + ":refs/heads/" + remoteBranch);
+            }
             ctx.git(args, {}, true);
+            if (setUpstream && !tags) {
+                const bool ok = ctx.gitMayFail({"config", "branch." + localBranch + ".remote", remote}).ok()
+                    && ctx.gitMayFail({"config", "branch." + localBranch + ".merge", "refs/heads/" + remoteBranch}).ok();
+                if (!ok)
+                    throw MutationError{Outcome::Refused, "The push worked but the upstream was not set. Set it in the branch menu", {}};
+            }
         },
         [this, remote, localBranch, remoteBranch](const core::MutationFinishedEvent& e) {
             if (e.outcome == Outcome::Refused) {
@@ -1915,7 +1942,9 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                                  if (!recurse.empty())
                                                      pushArgs.push_back(recurse);
                                                  pushArgs.push_back(remote);
-                                                 pushArgs.push_back("refs/heads/" + localBranch + ":refs/heads/" + remoteBranch);
+                                                 const std::string pulled = gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out);
+                                                 // Submodule pushes need a ref name as the source; the oid is for a repo without them.
+                                                 pushArgs.push_back((recurse.empty() ? pulled : "refs/heads/" + localBranch) + ":refs/heads/" + remoteBranch);
                                                  ctx.git(pushArgs, {}, true);
                                                  ctx.worktreeFollowsIndex = true;
                                                  ctx.submodules = SubmoduleSync::Update;
@@ -1924,13 +1953,14 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                                              true, true, true, true); // the pull can merge on a detached HEAD
                                      }});
                 f.buttons.push_back({"Force with lease...", [this, remote, localBranch, remoteBranch](Form&) {
+                                         const std::string lease = trackingOid(remote, remoteBranch);
                                          Form confirm;
                                          confirm.title = "Force push";
                                          confirm.message = "Overwrite " + remote + "/" + remoteBranch
                                              + " with your branch? Commits only on the remote will be lost there "
                                                "(--force-with-lease refuses if the remote moved again).";
-                                         confirm.buttons.push_back({"Force push", [this, remote, localBranch, remoteBranch](Form&) {
-                                                                        push(remote, localBranch, remoteBranch, false, true);
+                                         confirm.buttons.push_back({"Force push", [this, remote, localBranch, remoteBranch, lease](Form&) {
+                                                                        push(remote, localBranch, remoteBranch, false, true, false, {}, lease);
                                                                     }});
                                          confirm.buttons.back().danger = true;
                                          confirm.buttons.push_back({"Cancel", {}});

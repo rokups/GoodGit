@@ -271,6 +271,26 @@ GG_TEST("linestaging", "CRLF lines, missing final newline, new files")
     s.settle();
 }
 
+GG_TEST("linestaging", "a truncated diff offers no staging until it is loaded in full")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "truncated");
+    std::string big;
+    for (int i = 0; i < 25000; ++i)
+        big += "big " + std::to_string(i) + "\n";
+    s.write(repo, "big.txt", big);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Untracked", "big.txt"));
+    GG_REQUIRE(diffFile(s) != nullptr);
+    GG_CHECK(diffFile(s)->truncated);
+    GG_CHECK(s.itemExists((body(s) + "/###hunk_0").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###stage_hunk_0").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###discard_hunk_0").c_str()));
+    ctx->ItemClick("//Diff/Load full diff##load_full");
+    GG_REQUIRE(s.waitUntil([&] { return diffFile(s) && !diffFile(s)->truncated; }, 60.0f));
+    GG_CHECK(s.waitUntil([&] { return s.itemExists((body(s) + "/###stage_hunk_0").c_str()); }));
+    GG_CHECK(s.itemExists((body(s) + "/###discard_hunk_0").c_str()));
+}
+
 GG_TEST("linestaging", "randomized line staging matches the content model")
 {
     auto& rng = s.rng();

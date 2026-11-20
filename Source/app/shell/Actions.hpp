@@ -273,7 +273,9 @@ public:
     // "" when `url` holds no password; else the reason (scheme://user:password@host). GG-103: .gitmodules is committed.
     static std::string submoduleUrlProblem(const std::string& url);
     void push(const std::string& remote, const std::string& localBranch, const std::string& remoteBranch,
-        bool setUpstream, bool forceWithLease, bool tags = false);
+        bool setUpstream, bool forceWithLease, bool tags = false, std::string checkedOid = {}, std::optional<std::string> leaseOid = std::nullopt);
+    // The oid of refs/remotes/<remote>/<branch> in the snapshot ("" = none). A force push dialog captures it when it opens.
+    std::string trackingOid(const std::string& remote, const std::string& branch) const;
     // GG-22: a push with a .gitmodules file uses --recurse-submodules=on-demand: git pushes the submodules first.
 
     // ---- stash (§4.9) ---------------------------------------------------------------------

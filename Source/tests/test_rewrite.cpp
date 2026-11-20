@@ -1310,7 +1310,9 @@ GG_TEST("rewrite", "applyPatchToTree applies patches of odd paths and empty cont
 {
     const fs::path path = s.fixture(Recipe::Linear);
     s.commitFile(path, "x b/y.txt", "a\n", "space");
+#ifndef _WIN32 // Windows file names cannot hold a tab
     s.commitFile(path, "\t.txt", "a\n", "tab");
+#endif
     s.commitFile(path, "\xc3\xa9.txt", "a\n", "accent");
     s.commitFile(path, "g.txt", "a\n\nb\n", "gap");
     gg::git2::Repository repo = gg::git2::openRepository(path);
@@ -1323,7 +1325,9 @@ GG_TEST("rewrite", "applyPatchToTree applies patches of odd paths and empty cont
     };
     const std::vector<Case> cases = {
         {"space b", "--- a/x b/y.txt\n+++ b/x b/y.txt\n" + hunk, "x b/y.txt"},
+#ifndef _WIN32
         {"quoted tab", "--- \"a/\\t.txt\"\n+++ \"b/\\t.txt\"\n" + hunk, "\t.txt"},
+#endif
         {"quoted non-ASCII", "--- \"a/\\303\\251.txt\"\n+++ \"b/\\303\\251.txt\"\n" + hunk, "\xc3\xa9.txt"},
         {"empty context line", "--- a/g.txt\n+++ b/g.txt\n@@ -1,3 +1,3 @@\n-a\n+z\n\n b\n", "g.txt"},
     };
