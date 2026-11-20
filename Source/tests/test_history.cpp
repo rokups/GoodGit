@@ -1036,6 +1036,33 @@ GG_TEST("history", "cancel a long history load and a reveal")
     GG_CHECK(history.rows().size() < 100000);
 }
 
+GG_TEST("history", "Show more after a cancelled reveal leaves no gap in the rows")
+{
+    const fs::path repo = s.largeFixture();
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+    s.showPanel("Tags");
+    ctx->ItemInputValue("//Tags/##tag_filter", "t/0");
+    ctx->Yield(2);
+    s.contextMenu("//Tags/tag_t:0/###tag_t:0", "Reveal");
+    // Let the walk emit a few batches, then cancel it in the middle of a batch.
+    GG_CHECK(s.waitUntil([&] { return history.rows().size() > static_cast<size_t>(ggui::HistoryPanel::kPageSize) + 100; }, 60.0f));
+    s.session()->cancelAll();
+    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
+    history.showMore();
+    GG_CHECK(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+    // Every loaded commit has a loaded child or a ref: a row lost in a gap leaves its parent without both.
+    std::set<Oid> parents;
+    for (const auto& r : history.rows())
+        parents.insert(r.parents.begin(), r.parents.end());
+    int orphans = 0;
+    for (const auto& r : history.rows())
+        if (r.refs.empty() && parents.count(r.id) == 0)
+            ++orphans;
+    GG_CHECK_EQ(orphans, 0);
+}
+
 GG_TEST("history", "elideMiddle cuts on codepoint boundaries and leaves short names alone")
 {
     using ggui::elideMiddle;
