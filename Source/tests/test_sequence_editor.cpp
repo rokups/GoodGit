@@ -759,6 +759,17 @@ GG_TEST("sequence-editor", "the registry directory is private: a wrong mode is f
     GG_CHECK(!fs::exists(dir / (std::to_string(dead) + ".instance")));
     const auto file = dir / (std::to_string(alive) + ".instance");
     GG_CHECK(fs::status(file).permissions() == (fs::perms::owner_read | fs::perms::owner_write));
+    // An entry that is not a regular file (here a link to a valid file) is not read.
+    const long long linked = alive + 1;
+    fs::create_symlink(file, dir / (std::to_string(linked) + ".instance"));
+    bool sawOwn = false, sawLink = false;
+    for (const auto& i : gg::seqlink::instances()) {
+        sawOwn = sawOwn || i.pid == alive;
+        sawLink = sawLink || i.pid == linked;
+    }
+    GG_CHECK(sawOwn);
+    GG_CHECK(!sawLink);
+    fs::remove(dir / (std::to_string(linked) + ".instance"));
     gg::seqlink::removeInstance(alive);
 
     // A link in place of the directory is not followed: a fresh private directory is used.

@@ -41,13 +41,21 @@ fs::path registryDir()
 #ifndef _WIN32
     // The directory must be ours and private. Another owner or a symlink: use a fresh private
     // directory (other processes cannot find it, so they fall back to git's own editor).
-    fs::create_directories(dir, ec);
+    // mkdir with 0700: no window where another user can plant a file (the parent exists).
+    ::mkdir(dir.c_str(), 0700);
     struct stat st{};
     if (::lstat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != getuid()) {
         static const fs::path fresh = [] {
             std::error_code e;
-            std::string tmpl = (fs::temp_directory_path(e) / "ggui-XXXXXX").string();
-            return mkdtemp(tmpl.data()) ? fs::path(tmpl) : fs::path();
+            static std::string tmpl; // static: the exit handler below reads it
+            tmpl = (fs::temp_directory_path(e) / "ggui-XXXXXX").string();
+            if (!mkdtemp(tmpl.data()))
+                return fs::path(); // empty: the registry is off
+            std::atexit([] {
+                std::error_code rm;
+                fs::remove_all(tmpl, rm);
+            });
+            return fs::path(tmpl);
         }();
         return fresh;
     }
@@ -99,7 +107,10 @@ bool processAlive(long long pid)
 void removeDeadInstances(long long exceptPid)
 {
     std::error_code ec;
-    for (fs::directory_iterator it(registryDir(), ec), end; !ec && it != end; it.increment(ec)) {
+    const fs::path dir = registryDir();
+    if (dir.empty())
+        return;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         const fs::path& p = it->path();
         const long long pid = std::atoll(p.stem().string().c_str());
         if (p.extension() == ".instance" && pid > 0 && pid != exceptPid && !processAlive(pid)) {
@@ -111,6 +122,8 @@ void removeDeadInstances(long long exceptPid)
 
 bool writeInstance(const Instance& instance)
 {
+    if (registryDir().empty())
+        return false;
     const fs::path file = instanceFile(instance.pid);
     const fs::path tmp = file.string() + ".tmp";
     std::error_code ec;
@@ -143,6 +156,8 @@ bool writeInstance(const Instance& instance)
 
 void removeInstance(long long pid)
 {
+    if (registryDir().empty())
+        return;
     std::error_code ec;
     fs::remove(instanceFile(pid), ec);
 }
@@ -151,10 +166,19 @@ std::vector<Instance> instances()
 {
     std::vector<Instance> out;
     std::error_code ec;
-    for (fs::directory_iterator it(registryDir(), ec), end; !ec && it != end; it.increment(ec)) {
+    const fs::path dir = registryDir();
+    if (dir.empty())
+        return out;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         const fs::path& p = it->path();
         if (p.extension() != ".instance")
             continue;
+#ifndef _WIN32
+        // Only a regular file of ours: not a link and not a file another user planted.
+        struct stat st{};
+        if (::lstat(p.c_str(), &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != getuid())
+            continue;
+#endif
         std::ifstream in(p, std::ios::binary);
         Instance i;
         std::string port;

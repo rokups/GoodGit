@@ -38,14 +38,24 @@ bool waitReadable(Socket s, int timeoutMs)
 #endif
 }
 
-// A child process (git) must not keep the socket open.
+#ifdef _WIN32
+// A child process (git) must not keep an accepted socket open.
 Socket noInherit(Socket s)
 {
-#ifdef _WIN32
     if (s != kInvalid)
         SetHandleInformation(reinterpret_cast<HANDLE>(s), HANDLE_FLAG_INHERIT, 0);
-#endif
     return s;
+}
+#endif
+
+// Created not inheritable from the start: no window for a child process started at the same time.
+Socket newSocket()
+{
+#ifdef _WIN32
+    return static_cast<Socket>(::WSASocketW(AF_INET, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT));
+#else
+    return static_cast<Socket>(::socket(AF_INET, SOCK_STREAM | kCloexec, 0));
+#endif
 }
 
 } // namespace
@@ -66,7 +76,7 @@ bool startup()
 Socket listenLoopback(int& port)
 {
     startup();
-    const auto s = noInherit(static_cast<Socket>(::socket(AF_INET, SOCK_STREAM | kCloexec, 0)));
+    const auto s = newSocket();
     if (s == kInvalid)
         return kInvalid;
     sockaddr_in addr{};
@@ -98,7 +108,7 @@ Socket acceptWithTimeout(Socket listener, int timeoutMs)
 Socket connectLoopback(int port)
 {
     startup();
-    const auto s = noInherit(static_cast<Socket>(::socket(AF_INET, SOCK_STREAM | kCloexec, 0)));
+    const auto s = newSocket();
     if (s == kInvalid)
         return kInvalid;
     sockaddr_in addr{};
