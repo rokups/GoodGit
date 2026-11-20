@@ -942,13 +942,27 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 remoteTips.push_back(*git_reference_target(ref));
             return true;
         });
-        if (!remoteTips.empty())
+        if (!remoteTips.empty()) {
+            // One walk: the commits no remote tip reaches are local. All others are published.
+            git_revwalk* raw = nullptr;
+            check(git_revwalk_new(&raw, m->repo.get()), "git_revwalk_new");
+            Revwalk walk(raw);
             for (const auto& [orig, now] : result.mapping) {
                 const git_oid o = fromHexOrThrow(orig);
-                if (git_graph_reachable_from_any(m->repo.get(), &o, remoteTips.data(), remoteTips.size()) == 1)
-                    result.published.push_back(orig);
-                git_error_clear();
+                check(git_revwalk_push(walk.get(), &o), "git_revwalk_push");
             }
+            for (const auto& tip : remoteTips)
+                git_revwalk_hide(walk.get(), &tip);
+            git_error_clear();
+            std::set<std::string> local;
+            git_oid id;
+            while (git_revwalk_next(&id, walk.get()) == 0)
+                local.insert(toHex(id));
+            git_error_clear();
+            for (const auto& [orig, now] : result.mapping)
+                if (!local.count(orig))
+                    result.published.push_back(orig);
+        }
         result.ok = result.unresolved.empty();
         if (!result.ok)
             result.error = std::to_string(result.unresolved.size()) + " conflict(s) need a decision";

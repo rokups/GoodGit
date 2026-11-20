@@ -452,7 +452,7 @@ RequestId Engine::commitMessages(const std::vector<Oid>& ids)
     return submit(Queue::Content, "Reading commits", kSlotMessages, true, [this, ids](Job& job) {
         CommitMessagesEvent e{job.id, {}};
         for (const auto& id : ids)
-            e.messages.push_back(readCommitDetails(job.repo(), id)->message);
+            e.messages.push_back(gg::git2::commitMessage(gg::git2::lookupCommit(job.repo(), toGit(id)).get()));
         emit(std::move(e));
     });
 }

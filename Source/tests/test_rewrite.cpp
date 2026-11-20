@@ -219,6 +219,29 @@ GG_TEST("rewrite", "published history asks first; a locked ref leaves everything
     GG_CHECK_STR_EQ(s.revParse(repo, "origin/main"), remote);
 }
 
+GG_TEST("rewrite", "the published flags of a mixed range: pushed commits are flagged, a local one is not")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const std::string o2 = s.revParse(repo, "HEAD~2");
+    const std::string o3 = s.revParse(repo, "HEAD~1");
+    const std::string local = s.revParse(repo, "HEAD");
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {o2});
+    for (auto& step : plan.steps)
+        if (step.source == o2)
+            step.message = "Reworded\n";
+    gg::rewrite::Rewriter rewriter(repo);
+    const gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok);
+    GG_CHECK_EQ(result.published.size(), static_cast<size_t>(2));
+    const auto flagged = [&](const std::string& id) {
+        return std::find(result.published.begin(), result.published.end(), id) != result.published.end();
+    };
+    GG_CHECK(flagged(o2));
+    GG_CHECK(flagged(o3));
+    GG_CHECK(!flagged(local));
+}
+
 GG_TEST("rewrite", "a confirmed rewrite uses the computed preview when nothing changed: one compute")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
