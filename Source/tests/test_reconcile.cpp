@@ -463,9 +463,12 @@ GG_TEST("reconcile", "one operation per plain git command, labelled")
         GG_REQUIRE(ops.size() == before + 1);
         GG_CHECK_STR_EQ(ops.back().label, label);
         GG_CHECK(!ops.back().cmd.empty());
-        for (const auto& ref : refs)
-            if (!refChange(ops.back(), ref))
+        for (const auto& ref : refs) {
+            const bool changedRef = refChange(ops.back(), ref);
+            if (!changedRef)
                 ctx->LogError("'%s': no change of %s", label.c_str(), ref.c_str());
+            GG_CHECK(changedRef);
+        }
         size_t changed = 0;
         for (const auto& r : ops.back().refs)
             changed += r.oldValue != r.newValue ? 1 : 0;

@@ -183,10 +183,10 @@ GG_MANUAL_TEST("gallery", "dialogs")
     s.settle();
     auto dialog = [&](const char* title, const char* name, const std::function<void()>& open) {
         open();
-        if (!s.dialogOpen(title)) {
-            ctx->LogError("gallery: dialog %s did not open", title);
+        const bool opened = s.dialogOpen(title);
+        GG_CHECK(opened);
+        if (!opened)
             return;
-        }
         shot(s, name);
         ctx->KeyPress(ImGuiKey_Escape);
         ctx->Yield(3);

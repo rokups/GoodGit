@@ -416,6 +416,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     const auto violations = gg::uiThreadViolations();
     for (const auto& v : violations)
         ctx->LogError("UI-thread violation: %s", v.c_str());
+    IM_CHECK_NO_RET(violations.empty());
 
     if (ctx->IsError())
         writeFailureOutput(ctx, info, scenario, g_artifacts / testDirName(info));
