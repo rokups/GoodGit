@@ -264,13 +264,13 @@ void Session::showPushToDialog(const std::string& branch)
     f.add(Field{Field::Check, "force", "Force with lease"});
     f.buttons.push_back({"Push",
         [this, local, remotes, snap = m_snapshot](Form& form) {
-            const std::string& remote = remotes[static_cast<size_t>(form.choice("remote"))];
-            const std::string branch = gg::trim(form.text("branch"));
+            const std::string& pushRemote = remotes[static_cast<size_t>(form.choice("remote"))];
+            const std::string pushBranch = gg::trim(form.text("branch"));
             std::string lease; // the tracking oid of the dialog opening, not of the push
             for (const auto& r : snap->remoteBranches)
-                if (r.name == remote + "/" + branch)
+                if (r.name == pushRemote + "/" + pushBranch)
                     lease = r.target.hex();
-            m_actions->push(remote, local, branch, form.checked("set_upstream"), form.checked("force"), false, {}, lease);
+            m_actions->push(pushRemote, local, pushBranch, form.checked("set_upstream"), form.checked("force"), false, {}, lease);
         },
         [](const Form& form) { return nonEmpty(form, "branch"); }});
     f.buttons.push_back({"Cancel", {}});

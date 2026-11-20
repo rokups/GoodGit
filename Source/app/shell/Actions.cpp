@@ -1855,8 +1855,15 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
             args.push_back(remote);
             if (tags)
                 args.emplace_back("--tags");
-            else
+            else if (recurse.empty())
                 args.push_back(local + ":refs/heads/" + remoteBranch);
+            else {
+                // shortcut: git passes the refspec to the submodule pushes and an oid is no ref there, so
+                // a branch name goes out and only a recheck guards the move. Upgrade when git accepts oids.
+                if (gg::trim(ctx.git({"rev-parse", "--verify", "refs/heads/" + localBranch}).out) != local)
+                    throw MutationError{Outcome::Refused, "The branch moved after the check", "Push again."};
+                args.push_back("refs/heads/" + localBranch + ":refs/heads/" + remoteBranch);
+            }
             ctx.git(args, {}, true);
             if (setUpstream && !tags) {
                 ctx.git({"config", "branch." + localBranch + ".remote", remote});

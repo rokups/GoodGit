@@ -664,15 +664,16 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
 GG_TEST("network", "push sends the checked oid when the branch moves after the guard")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"checkout", "-q", "-b", "topic"}); // origin has no topic: the push cannot be rejected
     GG_REQUIRE(s.openRepository(repo));
     s.commitFile(repo, "checked.txt", "c\n", "Checked");
     const std::string checked = s.head(repo);
     s.commitFile(repo, "moved.txt", "m\n", "Moved after the check");
     GG_REQUIRE(s.head(repo) != checked);
-    s.session()->actions().push("origin", "main", "main", false, false, false, checked);
-    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "main", checked); }));
+    s.session()->actions().push("origin", "topic", "topic", false, false, false, checked);
+    GG_CHECK(s.waitUntil([&] { return originHas(s, repo, "topic", checked); }));
     s.settle();
-    GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
+    GG_CHECK(!originHas(s, repo, "topic", s.head(repo)));
 }
 
 GG_TEST("network", "push --set-upstream still sets the upstream with an oid source")
