@@ -80,6 +80,8 @@ float labelledWidth(float fieldWidth, const char* label)
 
 std::string trackedName(const std::string& branch, const std::string& upstream, const std::string& remote)
 {
+    if (upstream.rfind("refs/heads/", 0) == 0)
+        return upstream.substr(11);
     if (remote.empty() || upstream.compare(0, remote.size(), remote) != 0 || upstream.size() == remote.size())
         return upstream;
     if (upstream.compare(remote.size() + 1, std::string::npos, branch) == 0)

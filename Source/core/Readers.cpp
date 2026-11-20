@@ -456,6 +456,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         if (git_branch_upstream_name(&up.buf, repo, full.c_str()) == 0) {
             const std::string upRef = up.str();
             b.upstream = stripPrefix(upRef, "refs/remotes/");
+            b.upstreamLocal = upRef.rfind("refs/heads/", 0) == 0;
             git_oid upOid;
             if (git_reference_name_to_id(&upOid, repo, upRef.c_str()) == 0) {
                 size_t ahead = 0, behind = 0;
@@ -501,7 +502,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
                     && b.upstream[r.name.size()] == '/' && r.name.size() > b.upstreamRemote.size())
                     b.upstreamRemote = r.name;
             }
-            if (b.upstreamRemote.empty() && !b.upstream.empty())
+            if (b.upstreamRemote.empty() && !b.upstream.empty() && !b.upstreamLocal)
                 b.upstreamRemote = b.upstream.substr(0, b.upstream.find('/'));
         }
         // A remote name may contain '/': the longest configured remote that prefixes the ref wins.
