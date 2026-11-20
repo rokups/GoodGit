@@ -1,4 +1,5 @@
 // The git-gg executable (§6): each command runs as a test step, results checked in the UI.
+#include <cstdlib>
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
 #include "shell/Session.hpp"
@@ -272,6 +273,24 @@ GG_TEST("cli", "git gg hooks install and status only print that the managed hook
     GG_CHECK(r.out.find("nothing to do") != std::string::npos);
 }
 
+GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all input")
+{
+    gg::RunRequest r;
+    r.args = {"sh", "-c", "exec 0<&-; sleep 1"};
+    r.input.assign(1 << 20, 'x');
+    gg::RunResult result;
+    const auto start = std::chrono::steady_clock::now();
+    std::thread worker([&] { result = gg::run(r); });
+    worker.join();
+    const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(!result.startFailed);
+    GG_CHECK_EQ(result.exitCode, 0); // no 128 + SIGPIPE
+    GG_CHECK(secs > 0.5 && secs < 5.0);
+}
+
+// These tests need POSIX sh, trap, sleep and signals, so Windows CI skips them.
+#ifndef _WIN32
+
 GG_TEST("cli", "gg::run kills a cancelled child group that ignores SIGTERM after a deadline")
 {
     const fs::path dir = s.path("stubborn-bin");
@@ -292,19 +311,36 @@ GG_TEST("cli", "gg::run kills a cancelled child group that ignores SIGTERM after
     GG_CHECK(secs < 5.0);
 }
 
-GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all input")
+GG_TEST("cli", "gg::run returns when the direct child exits and a grandchild holds the pipes")
 {
     gg::RunRequest r;
-    r.args = {"sh", "-c", "exec 0<&-; sleep 1"};
-    r.input.assign(1 << 20, 'x');
+    r.args = {"sh", "-c", "sleep 31.4151 & echo hi"};
+    const auto start = std::chrono::steady_clock::now();
+    const gg::RunResult result = gg::run(r);
+    const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::system("pkill -f 'sleep 31.4151'"); // the grandchild is not cancelled, so remove it here
+    GG_CHECK_EQ(result.exitCode, 0);
+    GG_CHECK(result.out.find("hi") != std::string::npos);
+    GG_CHECK(secs < 3.0);
+}
+
+GG_TEST("cli", "gg::run cancels a child that closed both pipes and ignores SIGTERM")
+{
+    gg::RunRequest r;
+    r.args = {"sh", "-c", "exec >/dev/null 2>&1; trap '' TERM; sleep 32.7182"};
+    gg::CancelToken token;
+    r.cancel = token;
     gg::RunResult result;
     const auto start = std::chrono::steady_clock::now();
     std::thread worker([&] { result = gg::run(r); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    token.cancel();
     worker.join();
     const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    GG_CHECK(!result.startFailed);
-    GG_CHECK_EQ(result.exitCode, 0); // no 128 + SIGPIPE
-    GG_CHECK(secs > 0.5 && secs < 5.0);
+    GG_CHECK(result.cancelled);
+    GG_CHECK(secs < 5.0);
 }
+
+#endif // _WIN32
 
 } // namespace ggtest
