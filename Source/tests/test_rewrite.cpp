@@ -415,6 +415,24 @@ GG_TEST("rewrite", "rangeToMove: dest..tip oldest first on a line, a fork, a mer
     GG_CHECK(range(h, c) == (Ids{g, h}));
 }
 
+GG_TEST("rewrite", "descendants: a commit between two non-adjacent changed commits is included")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string base = s.revParse(repo, "main");
+    s.git(repo, {"checkout", "-q", "-b", "x", base});
+    s.commitFile(repo, "x.txt", "x\n", "X");
+    s.git(repo, {"checkout", "-q", "-b", "line", base});
+    s.commitFile(repo, "c2.txt", "c2\n", "C2");
+    const std::string c2 = s.head(repo);
+    s.commitFile(repo, "p.txt", "p\n", "P");
+    const std::string p = s.head(repo);
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "C1", "x"});
+    const std::string c1 = s.head(repo);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    using Ids = std::vector<std::string>;
+    GG_CHECK(gg::rewrite::descendants(r.get(), {c2, c1}) == (Ids{c2, p, c1}));
+}
+
 GG_TEST("rewrite", "rebase tip onto: the commits from the divergence point move, other branches on them restack")
 {
     const ForkRepo r = makeFork(s);

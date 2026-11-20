@@ -1135,12 +1135,23 @@ std::vector<std::string> descendants(git_repository* repo, const std::vector<std
     for (const auto& kept : keep::read(repo)) // kept commits are rewritten along with the rest
         if (const auto id = fromHex(kept))
             git_revwalk_push(walk.get(), &*id);
+    std::vector<git_oid> ids;
     for (const auto& c : changed) {
         Commit commit = lookupCommit(repo, fromHexOrThrow(c));
-        for (unsigned i = 0; i < git_commit_parentcount(commit.get()); ++i)
-            if (!affected.count(toHex(*git_commit_parent_id(commit.get(), i)))) // (a changed parent stays in)
-                git_revwalk_hide(walk.get(), git_commit_parent_id(commit.get(), i));
-        git_revwalk_push(walk.get(), git_commit_id(commit.get())); // included even when unreachable
+        ids.push_back(*git_commit_id(commit.get()));
+        git_revwalk_push(walk.get(), &ids.back()); // included even when unreachable
+    }
+    // Hide only below the common base: a parent between two changed commits must stay in the walk.
+    git_oid base{};
+    bool hasBase = ids.size() == 1;
+    if (hasBase)
+        base = ids[0];
+    else if (ids.size() > 1)
+        hasBase = git_merge_base_octopus(&base, repo, ids.size(), ids.data()) == 0;
+    if (hasBase) {
+        Commit b = lookupCommit(repo, base);
+        for (unsigned i = 0; i < git_commit_parentcount(b.get()); ++i)
+            git_revwalk_hide(walk.get(), git_commit_parent_id(b.get(), i));
     }
     git_error_clear();
     std::vector<std::string> out;
