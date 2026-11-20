@@ -61,6 +61,7 @@ public:
 
 private:
     void load();
+    bool read();
     std::filesystem::path m_file;
 };
 

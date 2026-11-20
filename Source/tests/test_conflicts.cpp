@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
 
 namespace ggtest {
 
@@ -1482,6 +1483,49 @@ GG_TEST("conflicts", "eol: commit with conflicts writes the regions in the worki
     GG_CHECK_EQ(lf, crlf);
     // The index stat data matches the rewritten file: nothing shows as modified.
     GG_CHECK(s.gitOut(repo, {"status", "--porcelain"}).empty());
+}
+
+GG_TEST("conflicts", "cache: damaged or truncated file is ignored, a missing blob is not cached as clean")
+{
+    const fs::path repo = s.fixture(Recipe::ConflictedN);
+    const fs::path common = repo / ".git";
+    const fs::path file = common / "gg" / "cache" / "conflicts-v1";
+    {
+        gg::conflicts::Cache cache(common);
+        cache.trees["key1"] = {gg::conflicts::ConflictedFile{"a.txt", 2}};
+        cache.trees["key2"] = {gg::conflicts::ConflictedFile{"b.txt", 3}};
+        cache.save();
+    }
+    GG_CHECK_EQ(static_cast<int>(gg::conflicts::Cache(common).trees.size()), 2);
+    // Truncated: a partial tree record must not load as a clean tree.
+    std::error_code ec;
+    fs::resize_file(file, fs::file_size(file) - 12, ec);
+    GG_CHECK(gg::conflicts::Cache(common).trees.empty());
+    // Damaged: a key that is not hex must not throw.
+    {
+        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+        out << "gg-conflict-cache 1\nT zz\n2\tx\n";
+    }
+    GG_CHECK(gg::conflicts::Cache(common).trees.empty());
+
+    // A tree that names a blob the repository does not have (partial clone).
+    gg::git2::Repository handle = gg::git2::openRepository(repo);
+    GG_REQUIRE(handle);
+    git_libgit2_opts(GIT_OPT_ENABLE_STRICT_OBJECT_CREATION, 0);
+    git_oid missing;
+    git_oid_fromstr(&missing, "0123456789abcdef0123456789abcdef01234567", GIT_OID_SHA1);
+    git_treebuilder* builder = nullptr;
+    GG_REQUIRE(git_treebuilder_new(&builder, handle.get(), nullptr) == 0);
+    GG_REQUIRE(git_treebuilder_insert(nullptr, builder, "gone.txt", &missing, GIT_FILEMODE_BLOB) == 0);
+    git_oid tree;
+    GG_REQUIRE(git_treebuilder_write(&tree, builder) == 0);
+    git_treebuilder_free(builder);
+    git_libgit2_opts(GIT_OPT_ENABLE_STRICT_OBJECT_CREATION, 1);
+    gg::conflicts::Cache cache;
+    gg::CancelToken cancel;
+    GG_CHECK(gg::conflicts::scanTree(handle.get(), tree, cache, cancel).empty());
+    GG_CHECK(cache.trees.empty());
+    GG_CHECK(cache.blobs.empty());
 }
 
 } // namespace ggtest

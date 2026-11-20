@@ -18,6 +18,7 @@ using namespace gg::git2;
 namespace {
 
 constexpr const char* kHeader = "gg-conflict-cache 1";
+constexpr const char* kTrailer = "gg-conflict-cache end";
 
 std::string key(const git_oid& oid)
 {
@@ -44,7 +45,9 @@ std::string unhexKey(const std::string& h)
     return out;
 }
 
-int blobSides(git_repository* repo, const git_oid& id, Cache& cache)
+// A failed lookup (for example a missing blob in a partial clone) is unknown: clear `complete`
+// and do not cache it.
+int blobSides(git_repository* repo, const git_oid& id, Cache& cache, bool& complete)
 {
     const std::string k = key(id);
     if (auto it = cache.blobs.find(k); it != cache.blobs.end())
@@ -57,17 +60,22 @@ int blobSides(git_repository* repo, const git_oid& id, Cache& cache)
         sides = contentSides(std::string_view(data, static_cast<size_t>(git_blob_rawsize(blob.get()))));
     } else {
         git_error_clear();
+        complete = false;
+        return 0;
     }
     cache.blobs[k] = sides;
     return sides;
 }
 
-const std::vector<ConflictedFile>& scan(git_repository* repo, const git_oid& treeId, Cache& cache, const CancelToken& cancel)
+// `complete` becomes false when a blob in the tree is unknown. Such a result is not cached.
+std::vector<ConflictedFile> scan(git_repository* repo, const git_oid& treeId, Cache& cache, const CancelToken& cancel,
+    bool& complete)
 {
     const std::string k = key(treeId);
     if (auto it = cache.trees.find(k); it != cache.trees.end())
         return it->second;
     throwIfCancelled(cancel);
+    bool treeComplete = true;
     std::vector<ConflictedFile> result;
     git_tree* raw = nullptr;
     check(git_tree_lookup(&raw, repo, &treeId), "git_tree_lookup");
@@ -78,13 +86,17 @@ const std::vector<ConflictedFile>& scan(git_repository* repo, const git_oid& tre
         const git_filemode_t mode = git_tree_entry_filemode(e);
         const std::string name = git_tree_entry_name(e);
         if (mode == GIT_FILEMODE_TREE) {
-            for (const auto& f : scan(repo, *git_tree_entry_id(e), cache, cancel))
+            for (const auto& f : scan(repo, *git_tree_entry_id(e), cache, cancel, treeComplete))
                 result.push_back(ConflictedFile{name + "/" + f.path, f.sides});
         } else if (mode == GIT_FILEMODE_BLOB || mode == GIT_FILEMODE_BLOB_EXECUTABLE) {
-            if (const int sides = blobSides(repo, *git_tree_entry_id(e), cache))
+            if (const int sides = blobSides(repo, *git_tree_entry_id(e), cache, treeComplete))
                 result.push_back(ConflictedFile{name, sides});
         }
         // Symlinks and submodules never hold first-class conflicts.
+    }
+    if (!treeComplete) {
+        complete = false;
+        return result;
     }
     cache.dirty = true;
     return cache.trees[k] = std::move(result);
@@ -128,14 +140,26 @@ Cache::~Cache()
 
 void Cache::load()
 {
+    try {
+        if (!read())
+            trees.clear(); // damaged or truncated: ignore, it is rebuilt
+    } catch (const std::exception&) {
+        trees.clear();
+    }
+}
+
+bool Cache::read()
+{
     std::ifstream in(m_file, std::ios::binary);
     if (!in)
-        return;
+        return true;
     std::string line;
     if (!std::getline(in, line) || line != kHeader)
-        return; // unknown or corrupt cache: ignore, it is rebuilt
+        return false;
     std::vector<ConflictedFile>* current = nullptr;
     while (std::getline(in, line)) {
+        if (line == kTrailer)
+            return true;
         if (line.rfind("T ", 0) == 0) {
             current = &trees[unhexKey(line.substr(2))];
         } else if (current && !line.empty()) {
@@ -145,6 +169,7 @@ void Cache::load()
             current->push_back(ConflictedFile{line.substr(tab + 1), std::atoi(line.substr(0, tab).c_str())});
         }
     }
+    return false; // no trailer: the file is truncated
 }
 
 void Cache::save()
@@ -162,6 +187,13 @@ void Cache::save()
             for (const auto& f : files)
                 out << f.sides << '\t' << f.path << '\n';
         }
+        out << kTrailer << '\n';
+        out.flush();
+        if (!out.good()) { // for example a full disk: keep the old file
+            out.close();
+            fs::remove(tmp, ec);
+            return;
+        }
     }
     replaceFile(tmp, m_file);
     dirty = false;
@@ -170,7 +202,8 @@ void Cache::save()
 std::vector<ConflictedFile> scanTree(git_repository* repo, const git_oid& tree, Cache& cache, const CancelToken& cancel)
 {
     assertNotUiThread("conflicts::scanTree");
-    return scan(repo, tree, cache, cancel);
+    bool complete = true;
+    return scan(repo, tree, cache, cancel, complete);
 }
 
 bool eligible(git_repository* repo, const git_oid* commit, const std::string& path)
@@ -238,7 +271,8 @@ std::vector<ConflictedFile> commitConflicts(git_repository* repo, const git_oid&
 {
     assertNotUiThread("conflicts::commitConflicts");
     Commit c = lookupCommit(repo, commit);
-    std::vector<ConflictedFile> files = scan(repo, *git_commit_tree_id(c.get()), cache, cancel);
+    bool complete = true;
+    std::vector<ConflictedFile> files = scan(repo, *git_commit_tree_id(c.get()), cache, cancel, complete);
     std::erase_if(files, [&](const ConflictedFile& f) { return !eligible(repo, &commit, f.path); });
     return files;
 }
