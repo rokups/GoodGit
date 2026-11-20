@@ -386,7 +386,9 @@ RunResult runProcess(const RunRequest& request)
     ProgressSplitter splitter(request.onProgress);
     bool killed = false, sentKill = false;
     using Clock = std::chrono::steady_clock;
-    Clock::time_point killAt, drainEnd;
+    Clock::time_point killAt, drainEnd, exitDrainEnd;
+    int status = 0;
+    bool reaped = false;
     char buf[65536];
     while (outFd >= 0 || errFd >= 0) {
         pollfd fds[3];
@@ -418,6 +420,19 @@ RunResult runProcess(const RunRequest& request)
         }
         if (sentKill && Clock::now() >= drainEnd) {
             // A grandchild that left the group can still hold a pipe open.
+            if (outFd >= 0)
+                close(outFd);
+            if (errFd >= 0)
+                close(errFd);
+            outFd = errFd = -1;
+            break;
+        }
+        if (!reaped && waitpid(pid, &status, WNOHANG) == pid) {
+            // The direct child is gone. A grandchild can keep the pipes open, so wait only a short time.
+            reaped = true;
+            exitDrainEnd = Clock::now() + std::chrono::milliseconds(500);
+        }
+        if (reaped && Clock::now() >= exitDrainEnd) {
             if (outFd >= 0)
                 close(outFd);
             if (errFd >= 0)
@@ -463,14 +478,19 @@ RunResult runProcess(const RunRequest& request)
     }
     if (inFd >= 0)
         close(inFd);
-    int status = 0;
-    for (;;) {
+    while (!reaped) {
+        // Poll, so a child that closed its pipes still sees cancel and a child that ignores SIGTERM cannot block.
+        if (request.cancel.cancelled() && !killed) {
+            kill(-pid, SIGTERM);
+            killed = true;
+            result.cancelled = true;
+            killAt = Clock::now() + std::chrono::seconds(2);
+        }
         if (killed && !sentKill && Clock::now() >= killAt) {
             kill(-pid, SIGKILL);
             sentKill = true;
         }
-        // Until the deadline, poll so a child that ignores SIGTERM cannot block the wait.
-        const pid_t w = waitpid(pid, &status, killed && !sentKill ? WNOHANG : 0);
+        const pid_t w = waitpid(pid, &status, WNOHANG);
         if (w == pid || (w < 0 && errno != EINTR))
             break;
         if (w == 0)
