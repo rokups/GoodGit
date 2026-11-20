@@ -1198,6 +1198,43 @@ GG_TEST("rewrite", "a short commit id throws an error instead of reading an empt
 
 namespace ggtest {
 
+GG_TEST("rewrite", "rewrite: a merge where both sides bump the same gitlink and edit other files is clean")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string id1 = "1111111111111111111111111111111111111111";
+    const std::string id2 = "2222222222222222222222222222222222222222";
+    s.commitFile(repo, "a.txt", "1\n2\n3\n4\n5\n6\n7\n", "A");
+    s.git(repo, {"update-index", "--add", "--cacheinfo", "160000," + id1 + ",sub"});
+    s.git(repo, {"commit", "-q", "-m", "Add sub"});
+    s.git(repo, {"checkout", "-q", "-b", "x", "main"});
+    s.git(repo, {"update-index", "--cacheinfo", "160000," + id2 + ",sub"});
+    s.git(repo, {"commit", "-q", "-m", "Bump sub in x"});
+    s.commitFile(repo, "x.txt", "x\n", "X");
+    s.commitFile(repo, "a.txt", "1\n2\n3\n4\n5\n6\nseven\n", "Edit a in x");
+    const std::string x = s.head(repo);
+    s.git(repo, {"checkout", "-q", "-b", "n", "main"});
+    s.git(repo, {"update-index", "--cacheinfo", "160000," + id2 + ",sub"});
+    s.git(repo, {"commit", "-q", "-m", "Bump sub in n"});
+    s.commitFile(repo, "a.txt", "one\n2\n3\n4\n5\n6\n7\n", "Edit a in n");
+    const std::string n = s.head(repo);
+    s.git(repo, {"checkout", "-q", "main"});
+    gg::rewrite::Plan plan;
+    gg::rewrite::Step step;
+    step.kind = gg::rewrite::Step::Kind::Merge;
+    step.gitMerge = true;
+    step.source = x;
+    step.sourceParents = false;
+    step.parents = {"=" + n, "=" + x};
+    plan.steps.push_back(step);
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.unresolved.empty());
+}
+
+} // namespace ggtest
+
+namespace ggtest {
+
 namespace {
 
 bool throwsOnPatch(const std::string& patch)
