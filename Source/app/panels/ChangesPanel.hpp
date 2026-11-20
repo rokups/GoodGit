@@ -6,6 +6,7 @@
 #include "shell/Session.hpp"
 #include "util/FilterExpr.hpp"
 
+#include <memory>
 #include <core/Engine.hpp>
 
 #include <optional>
@@ -148,6 +149,7 @@ private:
     bool m_everScanned = false; // a partial ("scanning…") status was shown
     std::vector<FileRow> m_stashParts[3];
     std::string m_savePatchPath;
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true); // expires with the panel
 };
 
 } // namespace ggui

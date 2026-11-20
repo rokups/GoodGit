@@ -19,6 +19,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <utility>
 #include <optional>
 #include <set>
 #include <string>
@@ -162,6 +163,13 @@ public:
         requestAnimation(); // the next frame comes soon, also when the loop sleeps
     }
 
+    // Test hook (GGUI_TEST_PICK_HOLD): runs the held save-picker result on the next frame.
+    void deliverHeldPick()
+    {
+        if (m_heldPick)
+            post(std::exchange(m_heldPick, nullptr));
+    }
+
     // Last error or warning reported (also logged), until clearError().
     const std::string& errorTitle() const { return m_errorTitle; }
     const std::string& errorMessage() const { return m_errorMessage; }
@@ -282,6 +290,7 @@ private:
     std::uint64_t m_nextToast = 1;
     std::string m_title;
     int m_pickersRunning = 0;
+    std::function<void()> m_heldPick;
     std::shared_ptr<PickerGate> m_pickerGate = std::make_shared<PickerGate>();
     int m_recentFocus = -1;
     int m_quitRequests = 0;

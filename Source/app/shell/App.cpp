@@ -575,6 +575,11 @@ void App::pickFolder(const std::string& title, std::function<void(std::string)> 
 void App::pickSaveFile(const std::string& title, const std::string& defaultName, std::function<void(std::string)> done)
 {
     const std::string testPick = getEnv("GGUI_TEST_PICK_PATH");
+    // Test hook: keep the result until deliverHeldPick(), as a slow native dialog does.
+    if (!testPick.empty() && getEnv("GGUI_TEST_PICK_HOLD") == "1") {
+        m_heldPick = [done, testPick] { done(testPick); };
+        return;
+    }
     if (!testPick.empty() || getEnv("GGUI_TEST_PICK_CANCEL") == "1") {
         post([done, testPick] { done(testPick); });
         return;

@@ -802,6 +802,31 @@ GG_TEST("changes", "file context menu: copy, patch, save patch, blame")
     GG_CHECK(s.waitUntil([&] { return s.session()->blame().blame() && s.session()->blame().blame()->query.path == "dir/file.txt"; }));
 }
 
+GG_TEST("changes", "save patch: a result after the Session closed is dropped")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "dir/file.txt", "one\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Two"});
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, s.head(repo));
+    const std::string ref = fileRef(s, nullptr, "dir/file.txt");
+    const fs::path out = s.path("late.patch");
+    ggui::setEnv("GGUI_TEST_PICK_PATH", out.string());
+    ggui::setEnv("GGUI_TEST_PICK_HOLD", "1");
+    s.contextMenu(ref.c_str(), "Patch/Save...");
+    // The dialog is open: close the repository and let the Session go away.
+    s.app.closeRepository();
+    ctx->Yield(10);
+    // The path arrives late. The panel is gone, so nothing is written.
+    s.app.deliverHeldPick();
+    ctx->Yield(10);
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK(!fs::exists(out));
+    ggui::unsetEnv("GGUI_TEST_PICK_PATH");
+    ggui::unsetEnv("GGUI_TEST_PICK_HOLD");
+}
+
 GG_TEST("changes", "stash contents: working tree, index and untracked parts")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);

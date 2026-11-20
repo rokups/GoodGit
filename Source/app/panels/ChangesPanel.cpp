@@ -755,8 +755,9 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             m_session.engine().diff(q, kSlotCopyPatch);
         if (menuItem(ICON_MS_SAVE, "Save...")) {
             const std::string name = fs::path(row.path).filename().string() + ".patch";
-            m_session.app().pickSaveFile("Save patch", name, [this, q](const std::string& path) {
-                if (path.empty())
+            m_session.app().pickSaveFile("Save patch", name, [this, q, alive = std::weak_ptr<bool>(m_alive)](const std::string& path) {
+                // The Session can close while the dialog is open; then this panel is gone.
+                if (path.empty() || alive.expired())
                     return;
                 m_savePatchPath = path;
                 m_session.engine().diff(q, kSlotSavePatch);

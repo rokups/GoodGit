@@ -253,6 +253,7 @@ void isolateEnvironment(const fs::path& dir)
     if (!g_basePath.empty())
         ggui::setEnv("PATH", g_basePath);
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
+    ggui::unsetEnv("GGUI_TEST_PICK_HOLD");
     ggui::unsetEnv("GGUI_TEST_PICK_CANCEL");
     ggui::unsetEnv("GIT_SSH_COMMAND");
     ggui::unsetEnv("GG_GGUI");
