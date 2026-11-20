@@ -40,7 +40,7 @@ std::string rowId(std::string id)
 std::string worktreeRowId(const std::vector<core::WorktreeInfo>& list, const core::WorktreeInfo& w)
 {
     const auto sameName = std::count_if(list.begin(), list.end(), [&](const auto& o) { return o.name == w.name; });
-    return "worktree_" + (sameName > 1 ? w.name + "@" + rowId(w.path.string()) : w.name);
+    return "worktree_" + (sameName > 1 ? w.name + "@" + rowId(w.path.generic_string()) : w.name);
 }
 
 // The refs-panel selection of the rows drawn in one frame. `drawn` collects the rows of this frame; the panel
