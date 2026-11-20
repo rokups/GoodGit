@@ -595,7 +595,8 @@ void Session::showAddSubmoduleDialog()
                              m_actions->submoduleAdd(
                                  gg::trim(form.text("url")), gg::trim(form.text("path")), gg::trim(form.text("branch")));
                          },
-        [](const Form& form) { return nonEmpty(form, "url") && Actions::submodulePathProblem(form.text("path")).empty(); }});
+        [](const Form& form) { return nonEmpty(form, "url") && Actions::submoduleUrlProblem(gg::trim(form.text("url"))).empty()
+            && Actions::submodulePathProblem(form.text("path")).empty(); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
