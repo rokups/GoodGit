@@ -580,7 +580,7 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
                              for (const auto& b : s->snapshot()->branches) {
                                  if (b.target == commit || s->history().descendsFrom(b.target, commit)) {
                                      std::vector<std::string> remotes;
-                                     if (deleteRemote && !b.upstream.empty())
+                                     if (deleteRemote && !b.upstreamRemote.empty())
                                          remotes.push_back(b.upstreamRemote);
                                      doomed.emplace_back(b.name, remotes);
                                  }

@@ -621,8 +621,8 @@ void remoteMenuItems(Session& session, const core::RemoteInfo& r)
 // Push on a local branch's row or menu: to its upstream, or the Push to... dialog without one.
 void pushBranch(Session& session, const core::BranchInfo& b)
 {
-    if (!b.upstream.empty()) {
-        session.actions().push(b.upstreamRemote, b.name, b.upstream.substr(b.upstreamRemote.size() + 1), false, false);
+    if (!b.remoteBranchPart().empty()) {
+        session.actions().push(b.upstreamRemote, b.name, b.remoteBranchPart(), false, false);
     } else {
         session.showPushToDialog(b.name);
     }
@@ -820,7 +820,9 @@ void branchMenuItems(Session& session, const core::Snapshot& snap, const core::B
         disabledMenuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", ("Checked out in " + b.worktree).c_str());
     else if (menuItem(ICON_MS_OPEN_IN_NEW, "Check out in new worktree...", nullptr, false, free))
         session.showAddWorktreeDialog(1, b.name);
-    if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && hasRemotes))
+    if (b.upstreamLocal)
+        disabledMenuItem(ICON_MS_UPLOAD, "Push", "The upstream is a local branch");
+    else if (menuItem(ICON_MS_UPLOAD, "Push", nullptr, false, free && hasRemotes))
         pushBranch(session, b);
     if (menuItem(ICON_MS_UPLOAD, "Push to...", nullptr, false, free && hasRemotes))
         session.showPushToDialog(b.name);
@@ -1324,17 +1326,17 @@ static void tagDeleteItems(Session& session, const core::Snapshot& snap, const s
     }
     if (remotes.empty()) {
         if (menuItem(ICON_MS_DELETE, "Delete", nullptr, false, free))
-            actions.deleteTag(name);
+            session.showDeleteTagsDialog({name}, "");
         return;
     }
     if (!beginMenu(ICON_MS_DELETE, "Delete", free))
         return;
     if (menuItem(ICON_MS_DELETE, "Local"))
-        actions.deleteTag(name);
+        session.showDeleteTagsDialog({name}, "");
     ImGui::Separator();
     for (size_t i = 0; i < remotes.size(); ++i)
         if (menuItem(ICON_MS_DELETE, remotes[i].c_str()))
-            actions.deleteRemoteTag(names[i], name);
+            session.showDeleteTagsDialog({name}, names[i]);
     ImGui::EndMenu();
 }
 

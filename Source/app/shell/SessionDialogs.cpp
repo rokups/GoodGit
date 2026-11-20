@@ -248,12 +248,11 @@ void Session::showPushToDialog(const std::string& branch)
     remote.options = remotes;
     const auto* b = m_snapshot->findBranch(local);
     std::string target = local;
-    if (b && !b->upstream.empty()) {
-        const size_t slash = b->upstreamRemote.size();
+    if (b && !b->remoteBranchPart().empty()) {
         for (size_t i = 0; i < remotes.size(); ++i)
             if (remotes[i] == b->upstreamRemote)
                 remote.choice = static_cast<int>(i);
-        target = b->upstream.substr(slash + 1);
+        target = b->remoteBranchPart();
     }
     f.add(remote);
     f.add(Field{Field::Info, "local", "", "Local branch: " + local});
@@ -590,7 +589,8 @@ void Session::showAddSubmoduleDialog()
                              m_actions->submoduleAdd(
                                  gg::trim(form.text("url")), gg::trim(form.text("path")), gg::trim(form.text("branch")));
                          },
-        [](const Form& form) { return nonEmpty(form, "url") && Actions::submodulePathProblem(form.text("path")).empty(); }});
+        [](const Form& form) { return nonEmpty(form, "url") && Actions::submoduleUrlProblem(gg::trim(form.text("url"))).empty()
+            && Actions::submodulePathProblem(form.text("path")).empty(); }});
     f.buttons.push_back({"Cancel", {}});
     m_app.dialogs().open(std::move(f));
 }
@@ -1127,12 +1127,11 @@ void Session::pushCurrent()
     if (m_snapshot->headDetached)
         return;
     const auto* b = m_snapshot->currentBranch();
-    if (!b || b->upstream.empty()) {
+    if (!b || b->remoteBranchPart().empty()) {
         showPushToDialog(m_snapshot->headBranch);
         return;
     }
-    const size_t slash = b->upstreamRemote.size();
-    m_actions->push(b->upstreamRemote, b->name, b->upstream.substr(slash + 1), false, false);
+    m_actions->push(b->upstreamRemote, b->name, b->remoteBranchPart(), false, false);
 }
 
 void Session::popStash()

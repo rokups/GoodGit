@@ -613,6 +613,18 @@ GG_TEST("submodule", "Reset hard before the submodule existed and back brings th
     checkSubmoduleAt(s, repo, recorded);
 }
 
+GG_TEST("submodule", "Reset hard asks to discard a submodule change that the ignore setting hides")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.git(repo, {"config", "submodule.sub.ignore", "dirty"});
+    s.write(repo / "sub", "s3.txt", "dirty\n");
+    GG_REQUIRE(s.gitOut(repo, {"status", "--porcelain"}).empty());
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().resetBranch("main", Oid::fromHex(s.revParse(repo, "HEAD")), ggui::Actions::ResetMode::Hard, false);
+    GG_CHECK(s.dialogOpen("Discard changes"));
+    GG_CHECK_STR_EQ(s.read(repo / "sub", "s3.txt"), "dirty\n");
+}
+
 GG_TEST("submodule", "Reset hard to a commit with another gitlink moves the submodule")
 {
     const fs::path repo = s.fixture(Recipe::Submodules);
@@ -912,6 +924,69 @@ GG_TEST("submodule", "Remove is refused for the path .")
     GG_CHECK(fs::exists(repo / "sub" / ".git"));
     GG_CHECK(fs::exists(repo / "readme.txt"));
     GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+namespace {
+
+// Removing a submodule with `file` written inside it is refused and the file stays.
+void checkDirtyRemoveRefused(Scenario& s, const char* file)
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", file, "dirty\n");
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", false);
+    GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+    s.dialogButton("remove submodule sub", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.read(repo / "sub", file), "dirty\n");
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+} // namespace
+
+GG_TEST("submodule", "Remove is refused when the submodule has a modified file")
+{
+    checkDirtyRemoveRefused(s, "s3.txt");
+}
+
+GG_TEST("submodule", "Remove is refused when the submodule has an untracked file")
+{
+    checkDirtyRemoveRefused(s, "new.txt");
+}
+
+GG_TEST("submodule", "Remove is refused when the submodule has a stash")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    s.write(repo / "sub", "s3.txt", "stashed\n");
+    s.git(repo / "sub", {"stash", "push", "-q"});
+    GG_REQUIRE(!s.gitOut(repo / "sub", {"stash", "list"}).empty());
+    const std::string before = porcelain(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleRemove("sub", false);
+    GG_REQUIRE(s.dialogOpen("remove submodule sub"));
+    s.dialogButton("remove submodule sub", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK(fs::exists(repo / "sub" / ".git"));
+    GG_CHECK(!s.gitOut(repo / "sub", {"stash", "list"}).empty());
+    GG_CHECK_STR_EQ(porcelain(s, repo), before);
+}
+
+GG_TEST("submodule", "Update to remote branch is refused when a detached HEAD has a local commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path subOrigin = repo.parent_path() / (repo.filename().string() + "-sub");
+    s.commitFile(subOrigin, "s4.txt", "s4\n", "Sub s4");
+    s.git(repo / "sub", {"checkout", "-q", "--detach"});
+    s.commitFile(repo / "sub", "detached.txt", "detached\n", "Detached only");
+    const std::string local = s.head(repo / "sub");
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->actions().submoduleUpdateRemote("sub");
+    GG_REQUIRE(s.dialogOpen("update submodule sub to remote branch"));
+    s.dialogButton("update submodule sub to remote branch", "OK");
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.head(repo / "sub"), local);
+    GG_CHECK(fs::exists(repo / "sub" / "detached.txt"));
 }
 
 GG_TEST("submodule", "Add stages .gitmodules and the gitlink and populates the submodule")

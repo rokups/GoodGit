@@ -1657,7 +1657,7 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
 
 namespace ggui {
 
-void Actions::absorb(const core::Oid& commit, const std::vector<std::string>& paths)
+void Actions::absorb(const core::Oid& commit, const std::vector<std::string>& paths, Callback done)
 {
     const std::string id = commit.hex();
     rewriteOlder("fold " + std::to_string(paths.size()) + " file(s) into " + id.substr(0, 10), [id, paths](git_repository* repo) {
@@ -1686,17 +1686,26 @@ void Actions::absorb(const core::Oid& commit, const std::vector<std::string>& pa
                         if (!ok)
                             refuse(p + " is a folder with no commit checked out");
                         st.setGitlinks.emplace_back(p, toHex(sub));
+                    } else if (std::filesystem::symlink_status(file).type() == std::filesystem::file_type::symlink) {
+                        refuse(p + " is a symbolic link; commit it with the staging area");
                     } else if (std::filesystem::exists(file)) {
-                        std::ifstream in(file, std::ios::binary);
-                        std::ostringstream ss;
-                        ss << in.rdbuf();
-                        st.setFiles.emplace_back(p, ss.str());
+                        // Clean filters and autocrlf apply; libgit2 cannot run external filter commands.
+                        const auto hashed = gg::git(wd, {"hash-object", "-w", "--path=" + p, "--", p});
+                        if (!hashed.ok())
+                            refuse("cannot read " + p + ": " + hashed.message());
+                        const git_oid blobId = fromHexOrThrow(hashed.out.substr(0, hashed.out.find('\n')));
+                        git_blob* blob = nullptr;
+                        if (git_blob_lookup(&blob, repo, &blobId) != 0)
+                            refuse("cannot read " + p);
+                        st.setFiles.emplace_back(p, std::string(static_cast<const char*>(git_blob_rawcontent(blob)),
+                                                        static_cast<size_t>(git_blob_rawsize(blob))));
+                        git_blob_free(blob);
                     } else {
                         st.setFiles.emplace_back(p, std::nullopt);
                     }
                 }
         return plan;
-    });
+    }, std::move(done));
 }
 
 } // namespace ggui

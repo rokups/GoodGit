@@ -21,6 +21,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -455,6 +456,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         if (git_branch_upstream_name(&up.buf, repo, full.c_str()) == 0) {
             const std::string upRef = up.str();
             b.upstream = stripPrefix(upRef, "refs/remotes/");
+            b.upstreamLocal = upRef.rfind("refs/heads/", 0) == 0;
             git_oid upOid;
             if (git_reference_name_to_id(&upOid, repo, upRef.c_str()) == 0) {
                 size_t ahead = 0, behind = 0;
@@ -500,7 +502,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
                     && b.upstream[r.name.size()] == '/' && r.name.size() > b.upstreamRemote.size())
                     b.upstreamRemote = r.name;
             }
-            if (b.upstreamRemote.empty() && !b.upstream.empty())
+            if (b.upstreamRemote.empty() && !b.upstream.empty() && !b.upstreamLocal)
                 b.upstreamRemote = b.upstream.substr(0, b.upstream.find('/'));
         }
         // A remote name may contain '/': the longest configured remote that prefixes the ref wins.
@@ -1128,17 +1130,17 @@ Tree parentTree(git_repository* repo, const Oid& commitId, unsigned n)
     return commitTree(p.get());
 }
 
-std::string blobText(git_repository* repo, const git_oid& id, std::uint64_t* size)
+// The text of a blob; nullopt when it is over the size limit, binary or unreadable. A zero id is an empty text.
+std::optional<std::string> blobText(git_repository* repo, const git_oid& id)
 {
     if (git_oid_is_zero(&id))
-        return {};
+        return std::string();
     git_blob* raw = nullptr;
     if (git_blob_lookup(&raw, repo, &id) != 0)
-        return {};
+        return std::nullopt;
     Blob b(raw);
-    *size = static_cast<std::uint64_t>(git_blob_rawsize(b.get()));
-    if (*size > kMaxTextBytes || git_blob_is_binary(b.get()))
-        return {};
+    if (static_cast<std::uint64_t>(git_blob_rawsize(b.get())) > kMaxTextBytes || git_blob_is_binary(b.get()))
+        return std::nullopt;
     return blobContent(b.get());
 }
 
@@ -1352,7 +1354,7 @@ void readConflictedWorktree(git_repository* repo, const std::string& path, const
     f.additions = static_cast<int>(adds);
     f.deletions = static_cast<int>(dels);
     readHunks(patch.get(), f, full);
-    if (!f.binary && !f.truncated) {
+    if (!f.binary && !f.truncated && f.oldSize <= kMaxTextBytes) {
         f.oldText = splitText(blobContent(blob.get()));
         f.newText = splitText(text);
     }
@@ -1611,16 +1613,20 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
             }
             // Full texts for context expansion.
             if (!f.binary && !f.truncated && !q.path.empty()) {
-                std::uint64_t size = 0;
-                const std::string oldText = blobText(repo, d->old_file.id, &size);
-                f.oldText = splitText(oldText);
+                const auto oldText = blobText(repo, d->old_file.id);
+                std::optional<std::string> newText;
                 if (worktree) { // (a bare repository has no working tree to diff)
                     const fs::path p = fs::path(git_repository_workdir(repo)) / newPath;
                     std::error_code ec;
                     if (fs::is_regular_file(p, ec) && fs::file_size(p, ec) <= kMaxTextBytes)
-                        f.newText = splitText(readFileText(p));
+                        newText = readFileText(p);
                 } else {
-                    f.newText = splitText(blobText(repo, d->new_file.id, &size));
+                    newText = blobText(repo, d->new_file.id);
+                }
+                // Both texts or none: a missing side leaves no base for the context lines.
+                if (oldText && newText) {
+                    f.oldText = splitText(*oldText);
+                    f.newText = splitText(*newText);
                 }
             }
         }
