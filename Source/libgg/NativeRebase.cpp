@@ -34,7 +34,8 @@ bool writeFile(const fs::path& path, const std::string& text)
 {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << text;
-    return static_cast<bool>(out);
+    out.close(); // flush first: a full disk shows only here
+    return !out.fail();
 }
 
 struct Group {
