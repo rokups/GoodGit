@@ -1127,7 +1127,7 @@ void Actions::resetBranch(const std::string& branch, const core::Oid& commit, Re
                 // out: git treats them as expendable (as `checkout` does).
                 std::vector<std::string> tracked, clash;
                 std::vector<std::string> untracked;
-                const auto st = ctx.git({"--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"});
+                const auto st = ctx.git({"--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignore-submodules=none", "--untracked-files=all"});
                 size_t pos = 0;
                 while (pos < st.out.size()) {
                     size_t end = st.out.find('\0', pos);
@@ -1552,7 +1552,7 @@ static void refuseOrphanedCommits(MutationContext& ctx, const std::string& path)
         return;
     const auto r = ctx.gitMayFail({"-C", path, "rev-list", "HEAD", "--not", "--branches", "--remotes", "-1"});
     if (!r.ok())
-        throw MutationError{Outcome::Refused, "The commits of the submodule cannot be checked: " + firstLineOf(r.message()), {}};
+        throw MutationError{Outcome::Refused, "The commits of the submodule " + path + " cannot be checked: " + firstLineOf(r.message()), {}};
     if (!gg::trim(r.out).empty())
         throw MutationError{Outcome::Refused,
             "The submodule " + path + " has commits on a detached HEAD that no branch has. An update would orphan them: create a branch for them first.",
@@ -1677,10 +1677,10 @@ void Actions::submoduleRemove(const std::string& path, bool deleteData)
                 throw MutationError{Outcome::Refused, "The repository data of the submodule is not below .git/modules: " + data.string(), {}};
             // deinit -f discards the working tree: refuse when it has changes, untracked files or a stash.
             if (fs::exists(ctx.cwd() / path / ".git")) {
-                const auto st = ctx.gitMayFail({"-C", path, "status", "--porcelain"});
+                const auto st = ctx.gitMayFail({"-C", path, "status", "--porcelain", "--untracked-files=all"});
                 const auto sl = ctx.gitMayFail({"-C", path, "stash", "list"});
                 if (!st.ok() || !sl.ok())
-                    throw MutationError{Outcome::Refused, "The submodule cannot be checked: " + firstLineOf((st.ok() ? sl : st).message()), {}};
+                    throw MutationError{Outcome::Refused, "The submodule " + path + " cannot be checked: " + firstLineOf((st.ok() ? sl : st).message()), {}};
                 if (!gg::trim(st.out).empty() || !gg::trim(sl.out).empty())
                     throw MutationError{Outcome::Refused,
                         "The submodule " + path + " has changes, untracked files or a stash. Commit, discard or stash them in the submodule first.",
