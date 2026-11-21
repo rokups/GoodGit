@@ -2966,10 +2966,16 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one), 
     ctx->MouseMove(row(wt3).c_str());
     ctx->Yield(3);
     GG_REQUIRE(s.itemExists(button(wt3, "act_open_here").c_str()));
-    GG_CHECK(disabled(button(wt3, "act_open_here")));
     GG_CHECK(disabled(button(wt3, "act_open_dir")));
     GG_REQUIRE(s.itemExists(button(wt3, "act_open_window").c_str()));
     GG_CHECK(disabled(button(wt3, "act_open_window")));
+    // A click on a disabled button does nothing: this window stays on its worktree.
+    for (const char* act : {"act_open_here", "act_open_dir", "act_open_window"}) {
+        ctx->MouseMove(row(wt3).c_str());
+        ctx->Yield(3);
+        GG_CHECK(s.clickDisabled(button(wt3, act).c_str()));
+        GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
+    }
     // Another worktree: both, enabled; Open here switches this window to it.
     ctx->MouseMove(row(wt1).c_str());
     ctx->Yield(3);
