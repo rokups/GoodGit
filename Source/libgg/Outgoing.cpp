@@ -147,10 +147,13 @@ std::vector<StagedWarning> stagedConflictWarnings(git_repository* repo)
         headTree = commitTree(headCommit.get());
     }
 
-    // New/modified staged files that are themselves first-class conflicts.
+    // New/modified staged files that are themselves first-class conflicts. eligible() is false for
+    // every path when the feature is off: read the config once, not once per staged file.
     git_diff* rawDiff = nullptr;
     git_diff_options diffOpts = GIT_DIFF_OPTIONS_INIT;
-    if (git_diff_tree_to_index(&rawDiff, repo, headTree.get(), index.get(), &diffOpts) == 0) {
+    if (!conflicts::enabled(repo)) {
+        // nothing: no staged file can be a first-class conflict
+    } else if (git_diff_tree_to_index(&rawDiff, repo, headTree.get(), index.get(), &diffOpts) == 0) {
         Diff diff(rawDiff);
         const size_t n = git_diff_num_deltas(diff.get());
         for (size_t i = 0; i < n; ++i) {
