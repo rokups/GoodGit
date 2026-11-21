@@ -365,6 +365,7 @@ GG_TEST("edit-in-place", "the session is cleared when HEAD is no longer detached
     GG_CHECK(noSessionFile(p));
     // Stop editing drops a live session and keeps HEAD where it is.
     GG_REQUIRE(editCommit(s, p, r.d, "feat"));
+    s.settle(); // the edit action ends and the toolbar banner gets its final layout before the click
     ctx->ItemClick("//###Toolbar/Stop editing##tb_edit_stop");
     GG_CHECK(s.waitUntil([&] { return !s.session()->editSession(); }));
     GG_CHECK(noSessionFile(p));
