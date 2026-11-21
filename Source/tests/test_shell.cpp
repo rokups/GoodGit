@@ -1584,7 +1584,10 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     s.showPanel("Reflog");
     menu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...", true);
     s.showPanel("Operations");
-    const std::string opRow = s.child("//Operations", "##ops_table") + "/**/op_" + s.session()->operations().back().id + "/###row";
+    s.settle(); // the reconcile reload replaces the operations list
+    // Copy the id first: s.child runs frames, and a reload frees the string a reference would hold.
+    const std::string opRowId = s.session()->operations().back().id;
+    const std::string opRow = s.child("//Operations", "##ops_table") + "/**/op_" + opRowId + "/###row";
     menu(opRow, "Restore (undo this operation)", true);
 
     // Let the hook go: the commit lands; nothing else happened meanwhile.

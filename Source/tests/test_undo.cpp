@@ -184,7 +184,10 @@ GG_TEST("undo", "Restore asks first and lists the refs; Cancel moves nothing; Re
         return !ops.empty() && std::any_of(ops.back().refs.begin(), ops.back().refs.end(),
                                    [](const auto& r) { return r.ref == "refs/heads/topic"; });
     }));
-    const std::string row2 = s.child("//Operations", "##ops_table") + "/**/op_" + s.session()->operations().back().id + "/###row";
+    s.settle(); // the reconcile reload replaces the operations list
+    // Copy the id first: s.child runs frames, and a reload frees the string a reference would hold.
+    const std::string row2Id = s.session()->operations().back().id;
+    const std::string row2 = s.child("//Operations", "##ops_table") + "/**/op_" + row2Id + "/###row";
     s.contextMenu(row2.c_str(), "Restore (undo this operation)");
     GG_REQUIRE(s.dialogOpen("Restore operation"));
     GG_CHECK(s.app.dialogs().current()->message.find("refs/heads/topic: ") != std::string::npos);
