@@ -24,6 +24,7 @@
 #include <fstream>
 #include <optional>
 #include <string_view>
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -1393,7 +1394,8 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
         remotes = allRemotes;
     run(label,
         [remotes, allRemotes, prune, tags](MutationContext& ctx) {
-            for (const auto& r : remotes) {
+            // One remote after the other: a failure is collected and the next remote still runs.
+            auto fetchOne = [&](const std::string& r) {
                 // Prune: the parameter, else remote.<r>.prune, else fetch.prune (git config, may be unset).
                 bool pruneNow = prune;
                 if (!pruneNow) {
@@ -1437,12 +1439,16 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                 // The remote-tracking branches that exist here. Fetch updates only these.
                 const std::string trackedPrefix = "refs/remotes/" + r + "/";
                 std::vector<std::string> tracked;
-                for (const auto& line : gg::splitLines(ctx.git({"for-each-ref", "--format=%(refname)", trackedPrefix}).out)) {
-                    if (line.compare(0, trackedPrefix.size(), trackedPrefix) != 0)
+                std::map<std::string, std::string> oldOid; // the oid of each tracked branch before the fetch
+                for (const auto& line : gg::splitLines(ctx.git({"for-each-ref", "--format=%(refname) %(objectname)", trackedPrefix}).out)) {
+                    const auto sp = line.rfind(' ');
+                    if (sp == std::string::npos || line.compare(0, trackedPrefix.size(), trackedPrefix) != 0)
                         continue;
-                    const std::string name = line.substr(trackedPrefix.size());
-                    if (!name.empty() && name != "HEAD" && isBranch(name))
+                    const std::string name = line.substr(trackedPrefix.size(), sp - trackedPrefix.size());
+                    if (!name.empty() && name != "HEAD" && isBranch(name)) {
                         tracked.push_back(name);
+                        oldOid[name] = line.substr(sp + 1);
+                    }
                 }
                 const std::string notracked = "No tracked branches on " + r + ". Use Fetch more.";
                 bool warned = false;
@@ -1454,7 +1460,7 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                 };
                 if (tracked.empty() && !tags) {
                     warn();
-                    continue;
+                    return;
                 }
                 // The branches on the remote. A failure here fails the mutation, as a failed fetch does.
                 std::set<std::string> heads;
@@ -1464,6 +1470,10 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                     if (tab != std::string::npos && line.compare(tab + 1, headsPrefix.size(), headsPrefix) == 0)
                         heads.insert(line.substr(tab + 1 + headsPrefix.size()));
                 }
+                // An empty list while branches are tracked is a hidden or broken answer: do not prune on it.
+                if (heads.empty() && !tracked.empty())
+                    throw MutationError{Outcome::Failed,
+                        r + ": the remote lists no branches, so nothing is fetched or pruned", {}};
                 std::vector<std::string> live;
                 std::vector<std::string> stale;
                 for (const auto& b : tracked)
@@ -1494,10 +1504,24 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                 }
                 if (pruneNow)
                     for (const auto& b : stale)
-                        ctx.git({"update-ref", "-d", trackedPrefix + b});
+                        ctx.git({"update-ref", "-d", trackedPrefix + b, oldOid[b]}); // a moved ref is kept
                 if (live.empty() && !tracked.empty() && !tags)
                     warn();
+            };
+            std::string message;
+            std::string detail;
+            for (const auto& r : remotes) {
+                try {
+                    fetchOne(r);
+                } catch (const MutationError& e) {
+                    if (e.outcome == core::Outcome::Cancelled)
+                        throw;
+                    message += (message.empty() ? "" : "\n") + e.message;
+                    detail += (detail.empty() ? "" : "\n") + (e.detail.empty() ? e.message : e.detail);
+                }
             }
+            if (!message.empty())
+                throw MutationError{Outcome::Failed, message, detail};
         },
         {}, true);
 }

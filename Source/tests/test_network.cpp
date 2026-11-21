@@ -489,6 +489,43 @@ GG_TEST("network", "fetch from an unreachable remote reports the failure")
     GG_CHECK(s.session()->actions().busy().empty());
 }
 
+GG_TEST("network", "fetch all remotes goes on after an unreachable remote and then fails")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    // The dead remote comes first in the list by name and by config order.
+    s.git(repo, {"remote", "remove", "origin"});
+    s.git(repo, {"remote", "add", "dead", "git://127.0.0.1:1/nothing.git"});
+    s.git(repo, {"remote", "add", "zgood", fileUrl(origin(s, repo))});
+    s.git(repo, {"fetch", "-q", "zgood"});
+    s.git(repo, {"update-ref", "refs/remotes/dead/main", "HEAD"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(other(s, repo), {"pull", "-q", "--no-rebase", "origin", "main"});
+    s.commitFile(other(s, repo), "late.txt", "late\n", "Late change");
+    s.git(other(s, repo), {"push", "-q", "origin", "main"});
+    const std::string tip = rev(s, other(s, repo), "HEAD");
+    ctx->ItemClick("//###Toolbar/###tb_fetch");
+    GG_CHECK(s.waitUntil([&] { return rev(s, repo, "zgood/main") == tip; }));
+    GG_CHECK(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
+    GG_CHECK(s.dismissError());
+    s.settle();
+    GG_CHECK(s.session()->actions().busy().empty());
+}
+
+GG_TEST("network", "prune keeps the tracking refs when the remote lists no branches")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(origin(s, repo), {"config", "uploadpack.hideRefs", "refs/heads"});
+    s.git(repo, {"config", "fetch.prune", "true"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string before = rev(s, repo, "refs/remotes/origin/main");
+    GG_REQUIRE(!before.empty());
+    ctx->ItemClick("//###Toolbar/###tb_fetch");
+    GG_CHECK(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
+    GG_CHECK(s.dismissError());
+    s.settle();
+    GG_CHECK_STR_EQ(rev(s, repo, "refs/remotes/origin/main"), before);
+}
+
 GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panels")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
