@@ -962,6 +962,9 @@ GG_TEST("network", "askpass: every prompt is secret except a known non-secret on
     GG_CHECK(AskpassServer::isSecretPrompt("user@host's password: "));
     GG_CHECK(AskpassServer::isSecretPrompt("Enter passphrase for key '/home/u/.ssh/id_ed25519': "));
     GG_CHECK(AskpassServer::isSecretPrompt("Enter PIN for 'PIV_II': "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://username@example.com':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://fingerprint.example.com':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Enter passphrase for key '/home/u/.ssh/fingerprint_key':"));
     GG_CHECK(AskpassServer::isSecretPrompt("Passcode:"));
     GG_CHECK(AskpassServer::isSecretPrompt("Verification code:"));
     GG_CHECK(AskpassServer::isSecretPrompt("PASSWORD:"));

@@ -69,10 +69,11 @@ bool AskpassServer::isSecretPrompt(const std::string& prompt)
     std::string lower = prompt;
     for (auto& c : lower)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (const char* word : {"username", "(yes/no", "fingerprint", "are you sure you want to continue connecting"})
+    for (const char* word : {"assword", "assphrase", "pin"}) // a URL, user name or key path must not unmask
         if (lower.find(word) != std::string::npos)
-            return false;
-    return true;
+            return true;
+    return lower.rfind("username for", 0) != 0 && lower.find("(yes/no") == std::string::npos
+        && lower.find("are you sure you want to continue connecting") == std::string::npos;
 }
 
 void AskpassServer::loop()
