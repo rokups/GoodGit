@@ -340,6 +340,23 @@ GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflic
     GG_CHECK_EQ(stashCount(s, repo), static_cast<size_t>(3));
 }
 
+GG_TEST("stash", "pop of a -u stash refuses when the untracked file exists: no data loss, the stash stays")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "u.txt", "stashed untracked\n");
+    s.git(repo, {"stash", "push", "-u", "-m", "with untracked"});
+    s.write(repo, "u.txt", "worktree own content\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+    ctx->ItemClick("//###Toolbar/###tb_pop");
+    GG_CHECK(s.waitUntil([&] { return s.app.errorMessage().find("u.txt already exists, no checkout") != std::string::npos; }));
+    GG_REQUIRE(s.dismissError());
+    s.settle();
+    GG_CHECK_STR_EQ(s.read(repo, "u.txt"), "worktree own content\n");
+    GG_CHECK_EQ(stashCount(s, repo), static_cast<size_t>(1));
+    GG_CHECK(s.gitOut(repo, {"stash", "list"}).find("with untracked") != std::string::npos);
+}
+
 #ifndef _WIN32
 GG_TEST("stash", "a rename that is cancelled after the drops puts every dropped stash back")
 {

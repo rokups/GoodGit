@@ -1266,4 +1266,121 @@ GG_TEST("dnd", "a move under a merge shows no hint; a detached HEAD below the me
     GG_CHECK(!dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Middle, ImGuiMod_Shift).empty());
 }
 
+namespace {
+
+// Every ref, HEAD and the working tree state: a refused drop leaves all of them as they are.
+std::string repoState(Scenario& s, const fs::path& repo)
+{
+    return s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"}) + "\nHEAD " + s.revParse(repo, "HEAD") + "\n"
+        + s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out + "\n" + s.statusPorcelain(repo);
+}
+
+bool chooserOpen(Scenario& s)
+{
+    return s.itemExists("//$FOCUSED/Move before") || s.itemExists("//$FOCUSED/Rebase onto") || s.itemExists("//$FOCUSED/Copy after");
+}
+
+} // namespace
+
+GG_TEST("dnd", "a commit dragged onto itself with Alt, Ctrl or Shift offers no drop and changes nothing")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    s.settle();
+    const std::string before = repoState(s, r.path);
+    auto& history = s.session()->history();
+    // A middle commit, so that every modifier has a target on both sides.
+    const ImGuiKeyChord mods[] = {ImGuiMod_Alt, ImGuiMod_Ctrl, ImGuiMod_Shift};
+    for (const ImGuiKeyChord m : mods) {
+        // Alt asks the engine for descendants: wait for the answer.
+        s.session()->requestDescendants(ggui::core::Oid::fromHex(r.c[1]));
+        GG_REQUIRE(s.waitUntil([&] { return s.session()->descendants(ggui::core::Oid::fromHex(r.c[1])).has_value(); }));
+        // Mid-drag, over its own row: no hint.
+        const ImRect row = ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull;
+        ctx->MouseMoveToPos(row.GetCenter());
+        ctx->MouseDown(ImGuiMouseButton_Left);
+        ctx->Yield(2);
+        ctx->KeyDown(m);
+        ctx->MouseMoveToPos(ImVec2(row.GetCenter().x + 40, row.GetCenter().y));
+        ctx->Yield(3);
+        ctx->MouseMoveToPos(row.GetCenter());
+        ctx->Yield(3);
+        GG_CHECK(ImGui::GetDragDropPayload() != nullptr); // the drag runs
+        GG_CHECK_STR_EQ(history.dropHint(), "");
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+        ctx->KeyUp(m);
+        ctx->MouseUp(ImGuiMouseButton_Left);
+        ctx->Yield(3);
+        // The drop itself.
+        drag(s, rowRef(r.c[1]), rowRef(r.c[1]), m);
+        ctx->Yield(3);
+        GG_CHECK(!chooserOpen(s));
+        GG_CHECK(!menuOpen(s));
+        s.settle();
+        GG_CHECK_STR_EQ(repoState(s, r.path), before);
+    }
+}
+
+GG_TEST("dnd", "a commit dragged onto one of its own descendants with Ctrl or Alt offers no drop and changes nothing")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    s.settle();
+    const std::string before = repoState(s, r.path);
+    // A squash goes into an ancestor: the panel shows no hint over a descendant.
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(r.c[1]).c_str()) && s.itemExists(rowRef(r.c[3]).c_str()); }));
+    ctx->MouseMoveToPos(ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull.GetCenter());
+    ctx->MouseDown(ImGuiMouseButton_Left);
+    ctx->Yield(2);
+    ctx->MouseMoveToPos(ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
+    ctx->Yield(3);
+    GG_CHECK(s.session()->history().dropHint().rfind("Choose an action", 0) == 0);
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->history().dropHint(), "");
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    ctx->MouseUp(ImGuiMouseButton_Left);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, r.path), before);
+    // c1 cannot squash into c4, and c2 cannot squash into c3.
+    drag(s, rowRef(r.c[0]), rowRef(r.c[3]), ImGuiMod_Ctrl);
+    ctx->Yield(3);
+    GG_CHECK(!chooserOpen(s));
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, r.path), before);
+    drag(s, rowRef(r.c[1]), rowRef(r.c[2]), ImGuiMod_Ctrl);
+    ctx->Yield(3);
+    GG_CHECK(!chooserOpen(s));
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, r.path), before);
+    // Alt: c1 has descendants, so it is no tip to rebase. Wait for the engine: no rebase may start.
+    s.session()->requestDescendants(ggui::core::Oid::fromHex(r.c[0]));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->descendants(ggui::core::Oid::fromHex(r.c[0])).has_value(); }));
+    drag(s, rowRef(r.c[0]), rowRef(r.c[3]), ImGuiMod_Alt);
+    ctx->Yield(3);
+    s.settle();
+    GG_CHECK(!chooserOpen(s));
+    GG_CHECK_STR_EQ(repoState(s, r.path), before);
+}
+
+GG_TEST("dnd", "a branch dragged onto a branch that contains it: the merge adds nothing and no ref changes")
+{
+    const Chain r = makeChain(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    s.settle();
+    const std::string before = repoState(s, r.path);
+    // side (c2) onto main (c4, checked out): main already holds side.
+    drag(s, badgeRef(r.c[1], "side"), badgeRef(r.c[3], "main"));
+    GG_REQUIRE(s.waitUntil([&] { return menuOpen(s); }));
+    ctx->ItemClick("//$FOCUSED/###merge");
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Merge into HEAD"); }));
+    s.dialogButton("Merge into HEAD", "Merge");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, r.path), before);
+}
+
 } // namespace ggtest
