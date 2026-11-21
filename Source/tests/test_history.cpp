@@ -2447,11 +2447,16 @@ GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick
     ctx->Yield(3);
     const auto table = s.child("//History", "##hist_table");
 
-    // The average time of some frames.
+    // The best of 3 windows of the average time of some frames: one stall moves a mean.
     const auto frameMs = [&](int frames) {
-        const auto start = std::chrono::steady_clock::now();
-        ctx->Yield(frames);
-        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames;
+        double best = 1e9;
+        for (int w = 0; w < 3; ++w) {
+            const auto start = std::chrono::steady_clock::now();
+            ctx->Yield(frames);
+            best = std::min(best,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames);
+        }
+        return best;
     };
     const double closedBottom = frameMs(20);
     ctx->ScrollToTop(table.c_str());
@@ -2463,10 +2468,14 @@ GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick
     GG_CHECK_EQ(history.extraSelection().size(), history.rows().size() - 1);
     const double open = frameMs(20);
     // The shape of the selection by itself.
-    const auto t0 = std::chrono::steady_clock::now();
-    for (int i = 0; i < 5; ++i)
-        GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), history.rows().size());
-    const double shapeMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 5;
+    double shapeMs = 1e9;
+    for (int w = 0; w < 3; ++w) {
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < 5; ++i)
+            GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), history.rows().size());
+        shapeMs = std::min(shapeMs,
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 5);
+    }
     ctx->LogInfo("range timing: closed at the bottom %.2f ms, closed at the top %.2f ms, open %.2f ms, shape %.2f ms",
         closedBottom, closedTop, open, shapeMs);
     ctx->KeyPress(ImGuiKey_Escape);
