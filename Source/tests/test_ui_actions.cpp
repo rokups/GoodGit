@@ -78,6 +78,47 @@ GG_TEST("ui", "History: Ctrl-click drops a commit from the selection")
     GG_CHECK(history.extraSelection().empty());
 }
 
+GG_TEST("ui", "History: a reload drops selected commits that are gone")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string head = s.head(repo);
+    const std::string below = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowShown(s, head) && rowShown(s, below));
+    auto& history = s.session()->history();
+    ctx->ItemClick(rowRef(below).c_str());
+    ctx->KeyDown(ImGuiMod_Ctrl);
+    ctx->ItemClick(rowRef(head).c_str());
+    ctx->KeyUp(ImGuiMod_Ctrl);
+    GG_REQUIRE(history.extraSelection().size() == 1);
+    // The amend gives HEAD a new id; the old id leaves the history.
+    s.git(repo, {"commit", "-q", "--amend", "-m", "Reworded"});
+    GG_REQUIRE(rowShown(s, s.head(repo)));
+    GG_REQUIRE(s.waitUntil([&] { return !s.itemExists(rowRef(head).c_str()); }));
+    GG_CHECK(history.extraSelection().empty());
+}
+
+GG_TEST("ui", "History: Shift+N and Shift+E do not run the commit keys; Down at the last row is not claimed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string before = s.head(repo);
+    const std::string old = s.revParse(repo, "HEAD~2");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowShown(s, old));
+    ctx->ItemClick(rowRef(old).c_str());
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_N);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_E);
+    s.settle();
+    GG_CHECK(s.head(repo) == before);
+    GG_CHECK(s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).ok());
+    GG_CHECK(!s.dialogOpen("New commit", 0.5f));
+    // The oldest commit has no row below it: Down changes nothing.
+    const std::string root = s.revParse(repo, "HEAD~4");
+    ctx->ItemClick(rowRef(root).c_str());
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    GG_CHECK(s.session()->selection().id.hex() == root);
+}
+
 GG_TEST("ui", "Push without an upstream opens Push to (Branches); remote, upstream and force with lease")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);

@@ -224,6 +224,7 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         m_stagedRows.clear();
         m_stagedIndex.clear();
         m_staging = !m_rows.empty();
+        // shortcut: two full row sets live during a reload (about 2x memory); swap in pages only with a selection that survives a partial list.
         m_stageTarget = m_rows.size();
         if (!m_staging) {
             m_rows.clear();
@@ -252,6 +253,8 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         m_stagedIndex.clear();
         m_staging = false;
     }
+    if (batch.complete) // a partial list can still lack a selected commit
+        std::erase_if(m_extra, [&](const core::Oid& id) { return !m_index.count(id); }); // ids gone after a rewrite
     m_complete = batch.complete;
     m_truncated = batch.truncated;
     m_maxLanes = std::max(1, batch.maxLanes);
@@ -1921,7 +1924,8 @@ void HistoryPanel::draw(bool* open)
                 selectStep(+1, true);
             else if (stepTarget(-1, true, pos) >= 0 && hotkey(ImGuiMod_Alt | ImGuiKey_UpArrow, keyFlags))
                 selectStep(-1, true);
-            else if (hotkey(ImGuiKey_DownArrow, keyFlags))
+            else if ((stepTarget(+1, false, pos) >= 0 || (pos >= 0 && pos + 1 < static_cast<int>(m_visible.size())))
+                     && hotkey(ImGuiKey_DownArrow, keyFlags))
                 selectStep(+1, false);
             else if ((stepTarget(-1, false, pos) >= 0 || pos > 0) && hotkey(ImGuiKey_UpArrow, keyFlags))
                 selectStep(-1, false);
@@ -1935,9 +1939,9 @@ void HistoryPanel::draw(bool* open)
         // The commit keys act on a single selected commit: the selection, not the nav cursor (after Ctrl+arrow
         // the cursor may be elsewhere).
         if (sel.kind == SelKind::Commit && free && !io.KeyCtrl && m_extra.empty()) {
-            if (ImGui::IsKeyPressed(ImGuiKey_N, false) && !io.KeyAlt)
+            if (ImGui::IsKeyPressed(ImGuiKey_N, false) && !io.KeyAlt && !io.KeyShift)
                 m_session.newCommitOn(sel.id);
-            else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyAlt)
+            else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && !io.KeyAlt && !io.KeyShift)
                 m_session.actions().editCommit(sel.id);
             else if (const auto* r = row(sel.id))
                 handleCommitEditKeys(m_session, *r);
