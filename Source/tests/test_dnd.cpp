@@ -60,7 +60,11 @@ bool changedFrom(Scenario& s, const fs::path& repo, const std::string& before)
 
 void drag(Scenario& s, const std::string& from, const std::string& to, ImGuiKeyChord mods = 0)
 {
-    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    if (!s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); })) {
+        s.ctx->LogError("drag: missing source row %s (%d) or target row %s (%d)", from.c_str(), s.itemExists(from.c_str()),
+                        to.c_str(), s.itemExists(to.c_str()));
+        GG_REQUIRE(false);
+    }
     if (mods)
         s.ctx->KeyDown(mods);
     s.ctx->ItemDragAndDrop(from.c_str(), to.c_str());
@@ -746,6 +750,7 @@ GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens 
     s.git(r.path, {"switch", "-q", "main"});
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tagged).c_str()); }));
+    s.settle(); // a late graph reload would move the rows under the drag
     const std::string before = s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"});
     drag(s, rowRef(tagged), rowRef(dest), ImGuiMod_Alt);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
