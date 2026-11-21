@@ -8,9 +8,12 @@
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #ifdef _WIN32
@@ -403,6 +406,53 @@ struct WinHttpHandle {
     explicit operator bool() const { return handle != nullptr; }
 };
 
+// WinHttpSendRequest and WinHttpReceiveResponse cannot be cancelled. On cancel this watcher closes
+// the request handle, so the blocking call returns. The handle closes exactly once: the watcher
+// closes it and `request` forgets it, or the watcher stops first and `request` closes it.
+// Declare it after `request`: it stops (and joins) before `request` is destroyed.
+class WinHttpCancelWatcher {
+public:
+    WinHttpCancelWatcher(WinHttpHandle& request, const gg::CancelToken& cancel)
+        : m_request(request)
+        , m_thread([this, &cancel] {
+            std::unique_lock lock(m_mutex);
+            while (!m_stop) {
+                if (cancel.cancelled()) {
+                    if (m_request.handle != nullptr) {
+                        WinHttpCloseHandle(m_request.handle);
+                        m_closed = true;
+                    }
+                    return;
+                }
+                m_wake.wait_for(lock, std::chrono::milliseconds(50));
+            }
+        })
+    {
+    }
+    WinHttpCancelWatcher(const WinHttpCancelWatcher&) = delete;
+    WinHttpCancelWatcher& operator=(const WinHttpCancelWatcher&) = delete;
+    ~WinHttpCancelWatcher()
+    {
+        {
+            std::lock_guard lock(m_mutex);
+            m_stop = true;
+        }
+        m_wake.notify_all();
+        m_thread.join();
+        if (m_closed) {
+            m_request.handle = nullptr; // already closed: `request` must not close it again
+        }
+    }
+
+private:
+    WinHttpHandle& m_request;
+    std::mutex m_mutex;
+    std::condition_variable m_wake;
+    bool m_stop = false;
+    bool m_closed = false; // written under m_mutex by the thread, read after join
+    std::thread m_thread; // last: it starts after the other members exist
+};
+
 std::string winHttpFetch(const std::string& url, const fs::path& out, std::uint64_t maxBytes, const gg::CancelToken& cancel)
 {
     std::wstring wideUrl;
@@ -453,7 +503,7 @@ std::string winHttpFetch(const std::string& url, const fs::path& out, std::uint6
     if (!connection) {
         return "Cannot connect to the server.";
     }
-    const WinHttpHandle request(WinHttpOpenRequest(connection.handle, L"GET", target.c_str(), nullptr, WINHTTP_NO_REFERER,
+    WinHttpHandle request(WinHttpOpenRequest(connection.handle, L"GET", target.c_str(), nullptr, WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
     if (!request) {
         return "Cannot open the request.";
@@ -470,6 +520,7 @@ std::string winHttpFetch(const std::string& url, const fs::path& out, std::uint6
     if (cancel.cancelled()) {
         return "Download cancelled.";
     }
+    WinHttpCancelWatcher watcher(request, cancel);
     if (!WinHttpSendRequest(request.handle, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
         !WinHttpReceiveResponse(request.handle, nullptr)) {
         return cancel.cancelled() ? "Download cancelled." : "Download failed: no answer from the server.";
