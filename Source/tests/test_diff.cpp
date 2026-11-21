@@ -1056,4 +1056,23 @@ GG_TEST("diff", "eol: a CRLF working file with an LF blob (core.autocrlf) shows 
     GG_CHECK_STR_EQ((*d->files[0].newText)[1], "TWO");
 }
 
+GG_TEST("diff", "many files share one line budget: the later files are truncated, the earlier ones are whole")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "budget-diff");
+    s.commitFile(repo, "base.txt", "base\n", "Add base");
+    // Each file is under the per-file cap; together they are over the total budget.
+    constexpr int kFiles = 12;
+    std::string text;
+    for (int i = 0; i < 19000; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    for (int i = 0; i < kFiles; ++i)
+        s.write(repo, "f" + std::string(i < 10 ? "0" : "") + std::to_string(i) + ".txt", text);
+    const auto d = readOne(repo, ggui::core::DiffKind::Unstaged);
+    GG_REQUIRE(d && d->files.size() == static_cast<size_t>(kFiles));
+    GG_CHECK(!d->files[0].truncated);
+    GG_CHECK_EQ(d->files[0].additions, 19000);
+    GG_CHECK(!d->files[9].truncated);
+    GG_CHECK(d->files[kFiles - 1].truncated);
+}
+
 } // namespace ggtest

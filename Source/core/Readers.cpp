@@ -1019,6 +1019,8 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
 namespace {
 
 constexpr size_t kMaxDiffLines = 20000;
+// The lines of all files of one diff: 10 files at the per-file cap. Later files are `truncated`.
+constexpr size_t kMaxDiffTotalLines = 10 * kMaxDiffLines;
 
 bool isImagePath(const std::string& p)
 {
@@ -1149,10 +1151,12 @@ std::optional<std::string> blobText(git_repository* repo, const git_oid& id)
 namespace {
 
 // The hunks of `patch` into `f`: at most kMaxDiffLines lines (then `truncated`) unless `full`.
+// `budget` (if set) is the shared line count left for the diff: it also limits the lines, and it shrinks.
 // (Binary patches have no hunks.)
-void readHunks(git_patch* patch, DiffFile& f, bool full)
+void readHunks(git_patch* patch, DiffFile& f, bool full, size_t* budget = nullptr)
 {
     size_t total = 0;
+    const size_t limit = budget ? std::min(kMaxDiffLines, *budget) : kMaxDiffLines;
     const size_t hunks = git_patch_num_hunks(patch);
     for (size_t h = 0; h < hunks && !f.truncated; ++h) {
         const git_diff_hunk* gh = nullptr;
@@ -1174,7 +1178,7 @@ void readHunks(git_patch* patch, DiffFile& f, bool full)
                 hunk.lines.back().noNewline = true; // always after the line it is about
                 continue;
             }
-            if (!full && total >= kMaxDiffLines) {
+            if (!full && total >= limit) {
                 f.truncated = true;
                 break;
             }
@@ -1195,6 +1199,8 @@ void readHunks(git_patch* patch, DiffFile& f, bool full)
         }
         f.hunks.push_back(std::move(hunk));
     }
+    if (budget && !full)
+        *budget -= total;
 }
 
 // The most commits listed on each side of a submodule diff.
@@ -1557,6 +1563,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
     git_diff_find_similar(diff.get(), &fo);
 
     const size_t count = git_diff_num_deltas(diff.get());
+    size_t lineBudget = kMaxDiffTotalLines;
     for (size_t i = 0; i < count; ++i) {
         gg::throwIfCancelled(cancel);
         const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
@@ -1606,7 +1613,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
                 git_patch_line_stats(&ctxLines, &adds, &dels, patch.get());
                 f.additions = static_cast<int>(adds);
                 f.deletions = static_cast<int>(dels);
-                readHunks(patch.get(), f, q.full);
+                readHunks(patch.get(), f, q.full, &lineBudget);
                 Buf buf;
                 if (!f.truncated && git_patch_to_buf(&buf.buf, patch.get()) == 0)
                     result->patch += buf.str();
