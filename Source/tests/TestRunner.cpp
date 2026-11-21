@@ -70,6 +70,7 @@ std::string sanitize(const std::string& s)
 std::mutex g_watchMutex;
 std::string g_watchTest;
 std::chrono::steady_clock::time_point g_watchStart;
+std::atomic<const char*> g_testStep{"idle"}; // the runner step, so a timeout names it
 
 void watchTest(const std::string& name)
 {
@@ -177,6 +178,7 @@ void startWatchdog()
                 test = g_watchTest;
             }
             std::fprintf(stderr, "ggui: TIMEOUT: %s ran longer than %d s\n", test.c_str(), limit);
+            std::fprintf(stderr, "ggui:   runner step: %s\n", g_testStep.load());
             std::fprintf(stderr, "ggui:   last platform stage: %s\n", ggui::g_platformStage.load());
             for (const auto& c : gg::runningCommands()) {
                 std::string line;
@@ -320,6 +322,7 @@ bool setAppWindowSize(ImGuiTestContext* ctx, SDL_Window* window, int w, int h)
             SDL_SetWindowSize(window, w, h);
             ggui::g_platformStage = "SDL_SyncWindow";
             SDL_SyncWindow(window);
+            ggui::g_platformStage = "idle";
         }
         ctx->Yield(1);
     }
@@ -344,6 +347,7 @@ void restoreWindowSize(ImGuiTestContext* ctx)
         return;
     ggui::g_platformStage = "SDL_SyncWindow";
     SDL_SyncWindow(window); // a size request of the app that is still pending is applied first
+    ggui::g_platformStage = "idle";
     int cw = 0, ch = 0;
     SDL_GetWindowSize(window, &cw, &ch);
     if (!recorded) {
@@ -383,14 +387,18 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     std::fflush(stderr);
     watchTest(info.category + "/" + info.name);
 
+    g_testStep = "reset before";
     g_app->resetForTest();
+    g_testStep = "yield before";
     ctx->Yield(2);
+    g_testStep = "restoreWindowSize before";
     restoreWindowSize(ctx);
 
     Scenario scenario(ctx, *g_app, dir, seed);
     g_skipped.erase(&info);
     g_current = &info;
     // An exception fails this test (the rest of the run goes on) instead of ending the process.
+    g_testStep = "body";
     try {
         info.body(ctx, scenario);
     } catch (const std::exception& e) {
@@ -399,6 +407,7 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     }
     g_current = nullptr;
 
+    g_testStep = "fsck";
     // Post-test hook: every repository the test touched must pass git fsck, be in a state
     // plain git understands (§8.3) and hold no private gg metadata (rule 2, §9).
     for (const auto& repo : scenario.tracked()) {
@@ -425,11 +434,16 @@ void runTest(ImGuiTestContext* ctx, const TestInfo& info)
     if (ctx->IsError())
         writeFailureOutput(ctx, info, scenario, g_artifacts / testDirName(info));
 
+    g_testStep = "reset after";
     g_app->resetForTest();
+    g_testStep = "yield after";
     ctx->Yield(2);
+    g_testStep = "restoreWindowSize after";
     restoreWindowSize(ctx);
+    g_testStep = "removeAll";
     if (!ctx->IsError() && !std::getenv("GGUI_KEEP_TEST_DIRS"))
         removeAll(dir);
+    g_testStep = "idle";
 }
 
 bool screenCapture(ImGuiID, int x, int y, int w, int h, unsigned int* pixels, void* user)

@@ -191,6 +191,7 @@ void Platform::handleEvent(const SDL_Event& event)
 
 bool Platform::pollEvents(int waitMs)
 {
+    g_platformStage = "pollEvents";
     m_eventsSeen = false;
     m_woken = false;
     SDL_Event event;
@@ -206,9 +207,11 @@ bool Platform::pollEvents(int waitMs)
 
 void Platform::beginFrame()
 {
+    g_platformStage = "beginFrame";
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+    g_platformStage = "frame"; // app frame code, up to endFrame
 }
 
 void Platform::framebufferSize(int& w, int& h) const { SDL_GetWindowSizeInPixels(m_window, &w, &h); }
