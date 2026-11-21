@@ -647,7 +647,9 @@ void spinner(const char* id, float radius)
 
 void openInFileManager(const std::filesystem::path& path)
 {
-    const std::string p = path.string();
+    // Explorer opens Documents for a path with '/': it needs backslashes.
+    std::filesystem::path preferred = path;
+    const std::string p = preferred.make_preferred().string();
     std::thread([p] {
 #ifdef _WIN32
         gg::RunRequest r;
