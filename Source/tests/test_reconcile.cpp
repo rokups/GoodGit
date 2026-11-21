@@ -8,16 +8,24 @@
 
 #include <libgg/Git2.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/NativeRebase.hpp>
+#include <libgg/Operation.hpp>
 #include <libgg/Process.hpp>
 #include <libgg/Reconcile.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <fstream>
+
 #include <map>
 #include <sstream>
+#include <thread>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace ggtest {
 
@@ -2050,6 +2058,157 @@ GG_TEST("reconcile", "a rotation does not count housekeeping operations: the use
     GG_CHECK_STR_EQ(ops.front().label, "git branch user");
     const auto plan = planFor(s, repo, ops, false);
     GG_CHECK(plan.ok && plan.target && plan.target->label == "git branch user");
+}
+
+#ifndef _WIN32
+GG_TEST("reconcile", "a rebase group whose end record fails keeps its state, and the retry keeps ok=false")
+{
+    if (geteuid() == 0)
+        return; // root appends to a read-only file
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::journal::Journal journal{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = "op-end-fails";
+    op.src = "ggui";
+    op.label = "rebase";
+    GG_REQUIRE(journal.begin(op));
+    gg::native::rememberGroup(r.get(), journal, op.id);
+    const fs::path dir = gg::native::stateDir(r.get());
+    GG_REQUIRE(fs::exists(dir / "operation"));
+    // A read-only journal file: the end record cannot be appended.
+    fs::permissions(journal.path(), fs::perms::owner_read, fs::perm_options::replace);
+    std::string error;
+    gg::native::finishGroup(r.get(), journal, false, &error);
+    GG_CHECK(!error.empty());
+    GG_CHECK(fs::exists(dir / "operation")); // the state is kept
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(fs::exists(dir / "operation"));
+    // A writable journal: the retry ends the group as failed, as it finished.
+    fs::permissions(journal.path(), fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(!fs::exists(dir / "operation"));
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ended);
+    GG_CHECK(!ops.front().ok);
+}
+#endif
+
+GG_TEST("reconcile", "closeFinishedGroup ends a remembered group whose rebase is gone, and removes its state")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::journal::Journal journal{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = "op-close";
+    op.src = "ggui";
+    op.label = "rebase";
+    GG_REQUIRE(journal.begin(op));
+    gg::native::rememberGroup(r.get(), journal, op.id);
+    const fs::path dir = gg::native::stateDir(r.get());
+    GG_REQUIRE(fs::exists(dir / "operation"));
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(!fs::exists(dir / "operation"));
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ended);
+    GG_CHECK(ops.front().ok);
+}
+
+namespace {
+
+// Makes the "refs" records of every Writer fail while it lives.
+struct FailRefRecords {
+    FailRefRecords() { gg::journal::failRefRecords = true; }
+    ~FailRefRecords() { gg::journal::failRefRecords = false; }
+    FailRefRecords(const FailRefRecords&) = delete;
+    FailRefRecords& operator=(const FailRefRecords&) = delete;
+};
+
+} // namespace
+
+GG_TEST("reconcile", "an operation whose ref records fail ends as failed, and the next pass journals the ref change")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = s.head(repo);
+    {
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        gg::OperationRecorder rec(r.get(), "test", "plain commit", false);
+        rec.begin();
+        s.commitFile(repo, "late.txt", "late\n", "Late");
+        FailRefRecords fail;
+        rec.finish(true, false);
+        GG_CHECK(!rec.journalError().empty());
+    }
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 2; }));
+    s.settle();
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 2);
+    GG_CHECK(ops[0].ended);
+    GG_CHECK(!ops[0].ok);
+    GG_CHECK(!ops[0].restorable());
+    GG_CHECK(ops[1].src == "git");
+    GG_CHECK(ops[1].restorable());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == start; }));
+}
+
+GG_TEST("reconcile", "a rebase group whose final ref records fail stays open, and the next pass ends it as ok")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 1 && !journalOps(repo).front().ended; }));
+    {
+        // The step that continues joins the group; its final ref records fail.
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        gg::OperationRecorder rec(r.get(), "test", "continue", false);
+        rec.begin();
+        s.commitFile(repo, "amend.txt", "amend\n", "Amend");
+        s.git(repo, {"rebase", "--continue"});
+        while (fs::exists(repo / ".git" / "rebase-merge"))
+            s.git(repo, {"rebase", "--continue"});
+        FailRefRecords fail;
+        rec.finish(true, false);
+    }
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).front().ended; }));
+    s.settle();
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ok);
+    GG_CHECK(ops.front().restorable());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
+}
+
+GG_TEST("reconcile", "writePrepared leaves a complete prepared.json and no temp file")
+{
+    // Limit: a crash in the middle of the write cannot be simulated here; the test checks the
+    // content after a write, and that a rewrite replaces the old content whole.
+    const fs::path dir = s.fixture(Recipe::Linear) / ".git" / "gg" / "rebase" / "t";
+    gg::native::Prepared p;
+    p.todo = std::string(100000, 'x');
+    p.identity = "id";
+    std::string error;
+    GG_REQUIRE(gg::native::writePrepared(dir, p, error));
+    p.todo = "short";
+    GG_REQUIRE(gg::native::writePrepared(dir, p, error));
+    const auto back = gg::native::readPrepared(dir);
+    GG_REQUIRE(back.has_value());
+    GG_CHECK_STR_EQ(back->todo, "short");
+    GG_CHECK_STR_EQ(back->identity, "id");
+    size_t files = 0;
+    for (const auto& e : fs::directory_iterator(dir))
+        files += e.is_regular_file() ? 1 : 0;
+    GG_CHECK_EQ(files, 1u);
 }
 
 } // namespace ggtest

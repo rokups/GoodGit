@@ -219,7 +219,8 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 // Stopped: the messages stay for the Continue steps of this rebase.
                 gg::native::Prepared prepared = request.prepared;
                 prepared.identity = identity;
-                gg::native::writePrepared(dir, prepared, error);
+                if (!gg::native::writePrepared(dir, prepared, error))
+                    ctx.warning = "Typed messages are not saved for Continue: " + error;
                 ctx.result = "stopped";
                 ctx.info = gitMessage(res);
                 ctx.submodules = SubmoduleSync::Update;
@@ -276,7 +277,8 @@ void Actions::editRemainingTodo(std::string expected, std::string todo, std::map
             ctx.git({"rebase", "--edit-todo"});
             // Only git-rebase-todo is ggui's to hand over once.
             prepared.todo.clear();
-            gg::native::writePrepared(dir, prepared, error);
+            if (!gg::native::writePrepared(dir, prepared, error))
+                ctx.warning = "Typed messages are not saved for Continue: " + error;
         },
         std::move(done));
 }

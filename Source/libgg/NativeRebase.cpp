@@ -1,5 +1,6 @@
 #include "libgg/NativeRebase.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
@@ -30,6 +31,7 @@ std::optional<std::string> readFile(const fs::path& path)
     return out.str();
 }
 
+// For git's own files (todo, message): in place, as git and the sequence editor expect.
 bool writeFile(const fs::path& path, const std::string& text)
 {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -38,10 +40,17 @@ bool writeFile(const fs::path& path, const std::string& text)
     return !out.fail();
 }
 
+// For ggui's state files: a crash leaves the old file or the new one, never an empty one.
+bool writeState(const fs::path& path, const std::string& text)
+{
+    return !writeFileAtomic(path, text);
+}
+
 struct Group {
     std::string op;
     std::string identity;
     std::string src;
+    bool ok = true; // false: the group finished as failed (4th line "failed"); no such line: true
 };
 
 std::optional<Group> readGroup(const fs::path& dir)
@@ -56,7 +65,7 @@ std::optional<Group> readGroup(const fs::path& dir)
     std::string src = lines.size() > 2 ? lines[2] : std::string();
     if (src.empty())
         src = lines[0].rfind("git-", 0) == 0 ? "git" : "ggui";
-    return Group{lines[0], lines.size() > 1 ? lines[1] : std::string(), src};
+    return Group{lines[0], lines.size() > 1 ? lines[1] : std::string(), src, !(lines.size() > 3 && lines[3] == "failed")};
 }
 
 // Removes the state directory, and gg/rebase when no other worktree has one.
@@ -72,13 +81,13 @@ void removeState(const fs::path& dir)
 // not where the journal last saw it, the move is recorded before the operation ends. Only when the
 // finish was seen (post-rewrite, or ggui's own step): a rebase found finished later may have moved
 // refs outside the journal, and Undo must refuse it.
-void recordHeadNow(git_repository* repo, journal::Writer& journal, const std::string& op)
+bool recordHeadNow(git_repository* repo, journal::Writer& journal, const std::string& op, std::string* error)
 {
     std::string now;
     git_reference* head = nullptr;
     if (git_reference_lookup(&head, repo, "HEAD") != 0) {
         git_error_clear();
-        return;
+        return true;
     }
     if (git_reference_type(head) == GIT_REFERENCE_SYMBOLIC)
         now = std::string("ref:") + git_reference_symbolic_target(head);
@@ -90,7 +99,8 @@ void recordHeadNow(git_repository* repo, journal::Writer& journal, const std::st
         if (o.id == op)
             for (const auto& r : o.refs)
                 if (r.ref == key && !now.empty() && r.newValue != now)
-                    journal.appendRefs(op, {journal::RefChange{key, r.newValue, now}});
+                    return journal.appendRefs(op, {journal::RefChange{key, r.newValue, now}}, error);
+    return true;
 }
 
 } // namespace
@@ -159,11 +169,11 @@ void rememberGroup(git_repository* repo, journal::Writer& journal, const std::st
     const fs::path dir = stateDir(repo);
     std::error_code ec;
     fs::create_directories(dir, ec);
-    if (writeFile(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
+    if (writeState(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
         journal.markRebase(op);
 }
 
-void closeFinishedGroup(git_repository* repo, journal::Writer& journal)
+void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::string* error)
 {
     const fs::path dir = stateDir(repo);
     const auto group = readGroup(dir);
@@ -176,16 +186,26 @@ void closeFinishedGroup(git_repository* repo, journal::Writer& journal)
     }
     if (!identity.empty() && identity == group->identity)
         return; // still in progress
-    journal.end(group->op, true);
-    removeState(dir);
+    if (journal.end(group->op, group->ok, error)) // on failure the state stays: the next pass retries
+        removeState(dir);
 }
 
-void finishGroup(git_repository* repo, journal::Writer& journal, bool ok)
+void markGroupFailed(git_repository* repo)
+{
+    const fs::path dir = stateDir(repo);
+    if (const auto group = readGroup(dir); group && group->ok)
+        writeState(dir / "operation", group->op + "\n" + group->identity + "\n" + group->src + "\nfailed\n");
+}
+
+void finishGroup(git_repository* repo, journal::Writer& journal, bool ok, std::string* error)
 {
     const fs::path dir = stateDir(repo);
     if (const auto group = readGroup(dir)) {
-        recordHeadNow(repo, journal, group->op);
-        journal.end(group->op, ok);
+        // A failed end is retried by closeFinishedGroup: it must know the group did not succeed.
+        if (!ok)
+            markGroupFailed(repo);
+        if (!recordHeadNow(repo, journal, group->op, error) || !journal.end(group->op, ok && group->ok, error))
+            return; // the state stays: the next pass retries
     }
     removeState(dir);
 }
@@ -195,7 +215,7 @@ bool writePrepared(const fs::path& dir, const Prepared& prepared, std::string& e
     std::error_code ec;
     fs::create_directories(dir, ec);
     json j{{"todo", prepared.todo}, {"messages", prepared.messages}, {"identity", prepared.identity}};
-    if (!writeFile(dir / "prepared.json", j.dump())) {
+    if (!writeState(dir / "prepared.json", j.dump())) {
         error = "cannot write " + (dir / "prepared.json").string();
         return false;
     }

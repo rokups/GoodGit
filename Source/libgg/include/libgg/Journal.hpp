@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -24,6 +25,8 @@ constexpr int kFormatVersion = 1;
 
 // Test hook: runs after a lock is found stale and before it is removed.
 inline std::function<void(const std::filesystem::path&)> beforeStaleLockRemoveHook;
+// Test hook: true makes every Writer::appendRefs fail. Atomic: reconcile runs on a worker thread.
+inline std::atomic<bool> failRefRecords{false};
 
 // Rotation knobs (tests lower them). See Transaction::retain.
 inline size_t rotateBytes = 1024 * 1024;                          // rotate above this journal size

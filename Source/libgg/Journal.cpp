@@ -232,6 +232,11 @@ bool Writer::appendRefs(const std::string& id, const std::vector<RefChange>& cha
 {
     if (changes.empty())
         return true;
+    if (failRefRecords.load()) {
+        if (error)
+            *error = "append refused by the test hook";
+        return false;
+    }
     json u = json::array();
     for (const auto& c : changes)
         u.push_back(json::array({c.ref, c.oldValue, c.newValue}));

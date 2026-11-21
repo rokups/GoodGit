@@ -204,7 +204,12 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     std::string error;
     for (const auto& w : m_worktrees)
         m_journal.appendWorktree(m_op.id, w, &error);
-    m_journal.appendRefs(m_op.id, changes, &error);
+    // Without the ref records the operation cannot be undone, and the reflog entries stay for the
+    // next reconcile pass: it ends as failed, and the cursor does not move.
+    const bool stepOk = ok; // the caller's verdict, before a ref record failure changes it
+    const bool refsRecorded = m_journal.appendRefs(m_op.id, changes, &error);
+    if (!refsRecorded)
+        ok = false;
     if (!housekeeping.empty()) {
         // While this operation is still open, so no reconcile pass can see these keep refs
         // unjournaled in between.
@@ -213,7 +218,8 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     }
     // The git commands this operation ran left reflog entries: they are accounted for now (the
     // op is still open, so no reconcile pass can journal them meanwhile).
-    reconcile::advanceCursor(m_repo, &error);
+    if (refsRecorded)
+        reconcile::advanceCursor(m_repo, &error);
     // The rebase this operation started or joined: open while it is stopped, ended with it.
     const bool rebasing = !native::rebaseIdentity(m_repo).empty();
     const bool startsGroup = !m_resumed && rebasing && !m_rebaseAtBegin && m_op.undoes.empty();
@@ -231,8 +237,12 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
                 &error);
     }
     if (m_resumed) {
-        if (!rebasing)
-            native::finishGroup(m_repo, m_journal, ok);
+        // Without its ref records the group stays open: the next pass finds the finish in the reflog,
+        // appends the refs and ends the group.
+        if (!rebasing && refsRecorded)
+            native::finishGroup(m_repo, m_journal, ok, &error);
+        else if (!rebasing && !stepOk)
+            native::markGroupFailed(m_repo); // the group stays open, and its end must not be ok
     } else if (startsGroup) {
         native::rememberGroup(m_repo, m_journal, m_op.id, m_op.src);
     } else {
