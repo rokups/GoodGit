@@ -678,6 +678,7 @@ GG_TEST("rebase-merges", "Rebase merges gives git's --rebase-merges list; label,
         retell.generic_string());
     GG_CHECK(copyRun.ok());
     GG_CHECK_STR_EQ(branches(s, r.path), branches(s, copy));
+    GG_CHECK(!s.read(r.path, ".git/post-rewrite.log").empty());
     GG_CHECK_STR_EQ(s.read(r.path, ".git/post-rewrite.log"), s.read(copy, ".git/post-rewrite.log"));
     // M1 again (Mona's, retold), M2 a new merge by the current user with Git's message.
     if (!old) // (the update-ref row moved "stack" to the new M1)
@@ -952,6 +953,7 @@ GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git 
         GG_CHECK_STR_EQ(s.gitOut(r.path, {"symbolic-ref", "HEAD"}), "refs/heads/main");
         const std::string ours = fs::exists(r.path / ".git" / "post-rewrite.log") ? s.read(r.path, ".git/post-rewrite.log") : "";
         const std::string theirs = fs::exists(copy / ".git" / "post-rewrite.log") ? s.read(copy, ".git/post-rewrite.log") : "";
+        GG_CHECK(!ours.empty());
         GG_CHECK_STR_EQ(ours, theirs);
         checkGraph(s, r.path, "main", expected);
         if (ctx->IsError()) {
@@ -1090,6 +1092,7 @@ GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, p
         "true");
     GG_CHECK(copyRun.ok());
     GG_CHECK_STR_EQ(branches(s, path), branches(s, copy));
+    GG_CHECK(!s.read(path, ".git/post-rewrite.log").empty());
     GG_CHECK_STR_EQ(s.read(path, ".git/post-rewrite.log"), s.read(copy, ".git/post-rewrite.log"));
     ctx->ItemClick("//History/**/###row_wt");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
