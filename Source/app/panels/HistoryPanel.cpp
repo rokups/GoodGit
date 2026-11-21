@@ -68,6 +68,7 @@ void HistoryPanel::reload()
     m_limit = std::max(m_limit, kPageSize);
     m_query = m_session.engine().loadHistory(buildScope(), m_limit, m_snapshot);
     m_loading = true;
+    m_badgeRects.clear(); // rows of an older snapshot never draw again; the shown rows refill it next frame
     // The load cancels a reveal in flight: ask again, behind the load.
     if (m_revealRequest && m_pendingReveal)
         m_revealRequest = m_session.engine().revealCommit(*m_pendingReveal);
