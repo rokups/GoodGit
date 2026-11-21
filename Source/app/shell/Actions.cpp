@@ -1506,24 +1506,30 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                 }
                 if (pruneNow)
                     for (const auto& b : stale)
-                        ctx.git({"update-ref", "-d", trackedPrefix + b, oldOid[b]}); // a moved ref is kept
+                        ctx.gitMayFail({"update-ref", "-d", trackedPrefix + b, oldOid[b]}); // a moved ref fails here: keep it
                 if (live.empty() && !tracked.empty() && !tags)
                     warn();
             };
-            std::string message;
-            std::string detail;
+            std::vector<std::pair<std::string, MutationError>> failures;
             for (const auto& r : remotes) {
                 try {
                     fetchOne(r);
                 } catch (const MutationError& e) {
                     if (e.outcome == core::Outcome::Cancelled)
                         throw;
-                    message += (message.empty() ? "" : "\n") + e.message;
-                    detail += (detail.empty() ? "" : "\n") + (e.detail.empty() ? e.message : e.detail);
+                    failures.emplace_back(r, e);
                 }
             }
-            if (!message.empty())
-                throw MutationError{Outcome::Failed, message, detail};
+            if (failures.size() == 1)
+                throw failures.front().second; // keeps the failure class and the original text
+            if (failures.empty())
+                return;
+            MutationError all{Outcome::Failed, {}, {}};
+            for (const auto& [r, e] : failures) {
+                all.message += (all.message.empty() ? "" : "\n") + r + ": " + e.message;
+                all.detail += (all.detail.empty() ? "" : "\n") + r + ": " + (e.detail.empty() ? e.message : e.detail);
+            }
+            throw all;
         },
         {}, true);
 }
