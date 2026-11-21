@@ -8,10 +8,12 @@
 
 #include <libgg/Git2.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/Process.hpp>
 #include <libgg/Reconcile.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <map>
@@ -1636,6 +1638,392 @@ GG_TEST("reconcile", "a stale ref lock left by a crashed git does not stall the 
     GG_CHECK(!pass.deferred);
     GG_CHECK_EQ(countOps(repo, "git"), gitBefore + 1);
     GG_CHECK_EQ(countOps(repo, "git", "external changes"), 0u);
+}
+
+namespace {
+
+// The rotation knobs, lowered with low(): the journal is above rotateBytes at once, and a rotation keeps
+// the newest two Undo targets (rotateKeepOps / 10). The knobs go back when the test ends.
+struct RotationKnobs {
+    size_t bytes = gg::journal::rotateBytes;
+    size_t keep = gg::journal::rotateKeepOps;
+    std::int64_t pin = gg::journal::rotatePinMs;
+    std::int64_t backoff = gg::journal::rotateBackoffMs;
+    RotationKnobs() { gg::journal::rotateBackoffMs = 0; }
+    ~RotationKnobs()
+    {
+        gg::journal::rotateBytes = bytes;
+        gg::journal::rotateKeepOps = keep;
+        gg::journal::rotatePinMs = pin;
+        gg::journal::rotateBackoffMs = backoff;
+    }
+    void low()
+    {
+        gg::journal::rotateBytes = 1;
+        gg::journal::rotateKeepOps = 20;
+    }
+};
+
+std::string pass(git_repository* r)
+{
+    std::string error;
+    gg::reconcile::run(r, &error);
+    return error;
+}
+
+// One plain git branch command and one pass: one new journal operation.
+void branchOp(Scenario& s, const fs::path& repo, git_repository* r, const std::string& name)
+{
+    s.git(repo, {"branch", name});
+    pass(r);
+}
+
+nlohmann::json readState(Scenario& s, const fs::path& repo)
+{
+    return nlohmann::json::parse(s.read(repo, ".git/gg/reconcile.json"), nullptr, false);
+}
+
+std::string refNow(Scenario& s, const fs::path& repo, const std::string& ref)
+{
+    const auto r = s.gitMayFail(repo, {"rev-parse", "--verify", "-q", ref});
+    return r.ok() ? gg::trim(r.out) : std::string(40, '0');
+}
+
+// The plan points into `ops`: keep the vector alive while the plan is used.
+gg::journal::UndoPlan planFor(Scenario& s, const fs::path& repo, const std::vector<gg::journal::Operation>& ops, bool redo)
+{
+    return gg::journal::planUndo(ops, "main", redo,
+        [&](const std::string& ref) { return refNow(s, repo, ref); });
+}
+
+bool hasTempFile(const fs::path& repo)
+{
+    for (const auto& e : fs::directory_iterator(repo / ".git" / "gg"))
+        if (e.path().filename().string().find(".tmp") != std::string::npos)
+            return true;
+    return false;
+}
+
+bool hasOp(const std::vector<gg::journal::Operation>& ops, const std::string& id)
+{
+    return std::any_of(ops.begin(), ops.end(), [&](const gg::journal::Operation& o) { return o.id == id; });
+}
+
+// An operation written by hand: begun, and ended when `end`; open ones are native rebases.
+std::string handOp(const fs::path& repo, const std::string& label, bool rebase, bool end, std::int64_t time = 0,
+    std::int64_t pid = 0)
+{
+    gg::journal::Journal j{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = gg::journal::Journal::newOperationId();
+    op.src = "ggui";
+    op.label = label;
+    op.wt = "main";
+    op.time = time;
+    op.pid = pid;
+    j.begin(op);
+    if (rebase)
+        j.markRebase(op.id);
+    if (end)
+        j.end(op.id, true);
+    return op.id;
+}
+
+} // namespace
+
+GG_TEST("reconcile", "a rotation folds the refs of the dropped operations into the baseline: no false operation, Undo works")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    s.git(repo, {"branch", "old"});
+    GG_CHECK(pass(r.get()).empty()); // the baseline holds "old"
+    branchOp(s, repo, r.get(), "made");
+    s.git(repo, {"branch", "-q", "-D", "old"});
+    pass(r.get());
+    const std::string dangling = gg::trim(s.gitOut(repo, {"commit-tree", "HEAD^{tree}", "-m", "dangling"}));
+    s.git(repo, {"update-ref", "refs/gg/keep/" + dangling, dangling});
+    pass(r.get());
+    for (const char* msg : {"e1", "e2"}) {
+        s.git(repo, {"commit", "-q", "--allow-empty", "-m", msg});
+        pass(r.get());
+    }
+    const size_t before = journalOps(repo).size();
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    const auto rotated = journalOps(repo);
+    GG_REQUIRE(!rotated.empty());
+    GG_CHECK(rotated.size() < before);
+    GG_CHECK_STR_EQ(readState(s, repo).value("journal", ""), rotated.front().id);
+    // One plain change after the rotation: one operation with that change only, and Undo restores it.
+    s.git(repo, {"branch", "after"});
+    GG_CHECK(pass(r.get()).empty());
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == rotated.size() + 1);
+    size_t changed = 0;
+    for (const auto& c : ops.back().refs)
+        if (c.oldValue != c.newValue) {
+            ++changed;
+            GG_CHECK_STR_EQ(c.ref, "refs/heads/after");
+        }
+    GG_CHECK_EQ(changed, 1u);
+    const auto plan = planFor(s, repo, ops, false);
+    GG_CHECK(plan.ok && plan.target && plan.target->id == ops.back().id);
+}
+
+GG_TEST("reconcile", "the journal identity is the id of any operation: a state that names a later one is kept")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    pass(r.get());
+    for (const char* name : {"a", "b", "c"})
+        branchOp(s, repo, r.get(), name);
+    const auto before = journalOps(repo);
+    GG_REQUIRE(before.size() >= 3u);
+    nlohmann::json doc = readState(s, repo);
+    doc["journal"] = before[1].id;
+    s.write(repo, ".git/gg/reconcile.json", doc.dump() + "\n");
+    s.git(repo, {"branch", "d"});
+    GG_CHECK(pass(r.get()).empty());
+    GG_CHECK_STR_EQ(readState(s, repo).value("journal", ""), before[1].id);
+    GG_CHECK_EQ(journalOps(repo).size(), before.size() + 1);
+    // A name that no operation has is a replaced journal: the baseline starts over.
+    doc["journal"] = "no-such-operation";
+    s.write(repo, ".git/gg/reconcile.json", doc.dump() + "\n");
+    pass(r.get());
+    GG_CHECK_STR_EQ(readState(s, repo).value("journal", ""), journalOps(repo).front().id);
+}
+
+GG_TEST("reconcile", "a rotation drops bad records without a throw and keeps the rest")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    for (const char* name : {"a", "b", "c"})
+        branchOp(s, repo, r.get(), name);
+    std::ofstream(repo / ".git" / "gg" / "journal", std::ios::app | std::ios::binary)
+        << "{\"op\":5}\n{\"t\":1}\n[1]\n{\"v\":1,\"t\":\"begin\",\"op\":\"bad\",\"src\":5}\n";
+    branchOp(s, repo, r.get(), "d");
+    branchOp(s, repo, r.get(), "e");
+    const auto before = journalOps(repo);
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    const auto after = journalOps(repo);
+    GG_CHECK(after.size() < before.size());
+    GG_CHECK(after.back().id == before.back().id);
+    const std::string text = s.read(repo, ".git/gg/journal");
+    GG_CHECK(text.find("\"op\":5") == std::string::npos && text.find("[1]") == std::string::npos);
+}
+
+GG_TEST("reconcile", "a late record keeps an early operation; a pinned rebase and a dead operation follow the pin rule")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    const std::int64_t old = 1; // far beyond rotatePinMs
+    const std::string dead = handOp(repo, "crashed", false, false, 0, 2147483647) /* no such process */;
+    const std::string stale = handOp(repo, "old rebase", true, false, old);
+    const std::string pinned = handOp(repo, "open rebase", true, false);
+    for (const char* name : {"a", "b", "c"})
+        branchOp(s, repo, r.get(), name);
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    auto ops = journalOps(repo);
+    GG_CHECK(!hasOp(ops, dead) && !hasOp(ops, stale)); // not open any more: dropped
+    GG_REQUIRE(!ops.empty());
+    GG_CHECK(ops.front().id == pinned);                // open for less than rotatePinMs: kept, and all after it
+    // The end record is the newest record of the file: the operation stays whatever follows.
+    GG_CHECK(gg::journal::Journal{repo / ".git"}.end(pinned, true));
+    const size_t kept = journalOps(repo).size();
+    GG_CHECK(pass(r.get()).empty());
+    GG_CHECK_EQ(journalOps(repo).size(), kept);
+    GG_CHECK(hasOp(journalOps(repo), pinned));
+    // Later operations: it is an ordinary old operation now.
+    for (const char* name : {"d", "e", "f", "g", "h", "i", "j", "k"})
+        branchOp(s, repo, r.get(), name);
+    GG_CHECK(!hasOp(journalOps(repo), pinned));
+}
+
+GG_TEST("reconcile", "a rotation leaves about half of the journal and the next one waits for the size to double")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    for (const char* name : {"a", "b", "c", "d", "e", "f"})
+        branchOp(s, repo, r.get(), name);
+    const size_t before = journalOps(repo).size();
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    const size_t rotated = journalOps(repo).size();
+    GG_CHECK(rotated < before);
+    GG_CHECK_EQ(readState(s, repo).value("journalKept", std::uintmax_t(0)),
+        static_cast<std::uintmax_t>(fs::file_size(repo / ".git" / "gg" / "journal")));
+    branchOp(s, repo, r.get(), "g");
+    GG_CHECK_EQ(journalOps(repo).size(), rotated + 1); // no second rotation yet
+}
+
+GG_TEST("reconcile", "Undo and Redo still work across a rotation")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    for (const char* name : {"a", "b", "c", "d"})
+        branchOp(s, repo, r.get(), name);
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 4u);
+    // An undo of "d", as ggui writes it: the branch goes, the operation names its target.
+    const std::string c = refNow(s, repo, "refs/heads/d");
+    s.git(repo, {"branch", "-q", "-D", "d"});
+    gg::journal::Journal j{repo / ".git"};
+    gg::journal::Operation undo;
+    undo.id = gg::journal::Journal::newOperationId();
+    undo.src = "ggui";
+    undo.label = "undo";
+    undo.wt = "main";
+    undo.undoes = ops[3].id;
+    GG_CHECK(j.begin(undo));
+    GG_CHECK(j.appendRefs(undo.id, {{"refs/heads/d", c, std::string(40, '0')}}));
+    GG_CHECK(j.end(undo.id, true));
+    GG_CHECK(pass(r.get()).empty());
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    const auto after = journalOps(repo);
+    GG_CHECK(after.size() < 5u);
+    GG_CHECK(after.back().id == undo.id);
+    const auto redo = planFor(s, repo, after, true);
+    GG_CHECK(redo.ok && redo.target && redo.target->id == undo.id);
+    const auto again = planFor(s, repo, after, false);
+    GG_CHECK(again.ok && again.target && again.target->id == ops[2].id);
+}
+
+GG_TEST("reconcile", "a reader that has the journal open: POSIX rotates, Windows leaves the journal and no temp file")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    for (const char* name : {"a", "b", "c", "d"})
+        branchOp(s, repo, r.get(), name);
+    const std::string before = s.read(repo, ".git/gg/journal");
+    knobs.low();
+    {
+        std::ifstream reader(repo / ".git" / "gg" / "journal", std::ios::binary);
+        GG_REQUIRE(reader.good());
+        GG_CHECK(pass(r.get()).empty());
+#ifdef _WIN32
+        GG_CHECK_STR_EQ(s.read(repo, ".git/gg/journal"), before);
+#else
+        GG_CHECK(s.read(repo, ".git/gg/journal") != before);
+#endif
+    }
+    GG_CHECK(!hasTempFile(repo));
+    GG_CHECK(journalOps(repo).size() >= 2u);
+}
+
+namespace {
+
+// A checkout in one worktree, a rotation caused by the other one, then a pass in the first: it appends
+// nothing. The rotation folds the HEAD of every worktree into the baseline.
+void rotationAcrossWorktrees(Scenario& s, bool rotateInMain)
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    gg::git2::Repository rm = gg::git2::openRepository(repo);
+    gg::git2::Repository rb = gg::git2::openRepository(wt1);
+    RotationKnobs knobs;
+    pass(rm.get());
+    pass(rb.get());
+    const fs::path ownerDir = rotateInMain ? wt1 : repo;
+    const fs::path rotatorDir = rotateInMain ? repo : wt1;
+    git_repository* owner = rotateInMain ? rb.get() : rm.get();
+    git_repository* rotator = rotateInMain ? rm.get() : rb.get();
+    s.git(ownerDir, {"checkout", "-q", "-b", "elsewhere"});
+    GG_CHECK(pass(owner).empty());
+    for (const char* name : {"a", "b", "c", "d"})
+        branchOp(s, rotatorDir, rotator, name);
+    const size_t before = journalOps(repo).size();
+    knobs.low();
+    GG_CHECK(pass(rotator).empty());
+    GG_CHECK(journalOps(repo).size() < before);
+    std::string error;
+    GG_CHECK_EQ(gg::reconcile::run(owner, &error).appended, 0u);
+}
+
+} // namespace
+
+GG_TEST("reconcile", "a rotation in the main worktree keeps a linked worktree's HEAD: no false operation there")
+{
+    rotationAcrossWorktrees(s, true);
+}
+
+GG_TEST("reconcile", "a rotation in a linked worktree keeps the main worktree's HEAD: no false operation there")
+{
+    rotationAcrossWorktrees(s, false);
+}
+
+GG_TEST("reconcile", "an open plain git operation does not pin the rotation")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    const gg::ProcessInfo self = gg::selfProcess();
+    gg::journal::Journal j{repo / ".git"};
+    gg::journal::Operation op; // a git command whose process is alive and that never ended
+    op.id = "git-" + std::to_string(self.pid) + "-" + std::to_string(self.start);
+    op.src = "git";
+    op.wt = "main";
+    op.time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - 60 * 1000;
+    GG_CHECK(j.begin(op));
+    for (const char* name : {"a", "b", "c", "d"})
+        branchOp(s, repo, r.get(), name);
+    GG_REQUIRE(journalOps(repo).front().id == op.id);
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    GG_CHECK(!hasOp(journalOps(repo), op.id));
+}
+
+GG_TEST("reconcile", "a rotation counts only the Undo targets that are not undone: Undo still has a target")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    std::vector<std::string> names;
+    for (int i = 0; i < 30; ++i) {
+        names.push_back("n" + std::to_string(i));
+        branchOp(s, repo, r.get(), names.back());
+    }
+    const auto branchOps = journalOps(repo);
+    GG_REQUIRE(branchOps.size() == 30u);
+    gg::journal::Journal j{repo / ".git"};
+    for (size_t i = 5; i < 30; ++i) { // an undo of each of the last 25 branches
+        const std::string ref = "refs/heads/" + names[i];
+        const std::string value = refNow(s, repo, ref);
+        s.git(repo, {"branch", "-q", "-D", names[i]});
+        gg::journal::Operation undo;
+        undo.id = gg::journal::Journal::newOperationId();
+        undo.src = "ggui";
+        undo.label = "undo";
+        undo.wt = "main";
+        undo.undoes = branchOps[i].id;
+        GG_CHECK(j.begin(undo));
+        GG_CHECK(j.appendRefs(undo.id, {{ref, value, std::string(40, '0')}}));
+        GG_CHECK(j.end(undo.id, true));
+    }
+    GG_CHECK(pass(r.get()).empty());
+    const size_t before = journalOps(repo).size();
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    const auto ops = journalOps(repo);
+    GG_CHECK(ops.size() < before);
+    const auto plan = planFor(s, repo, ops, false);
+    GG_CHECK(plan.ok && plan.target && plan.target->label == "git branch n4");
 }
 
 } // namespace ggtest

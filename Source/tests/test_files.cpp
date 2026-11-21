@@ -82,6 +82,17 @@ GG_TEST("files", "a failed writeFileAtomic keeps the old file and leaves no temp
     GG_CHECK(countFiles(dir) == 1);
 }
 
+GG_TEST("files", "writeFileAtomic with one attempt fails at once and leaves no temp file")
+{
+    const fs::path dir = s.root() / "atomic-once";
+    s.write(dir, "keep.txt", "old\n");
+    fs::create_directories(dir / "target-dir");
+    const auto start = std::chrono::steady_clock::now();
+    GG_CHECK(static_cast<bool>(gg::writeFileAtomic(dir / "target-dir", "new\n", std::nullopt, 1)));
+    GG_CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(static_cast<long long>(timeBudgetMs(150))));
+    GG_CHECK(countFiles(dir) == 1);
+}
+
 GG_TEST("files", "two threads writing one target with writeFileAtomic never mix the content")
 {
     const fs::path dir = s.root() / "atomic-race";

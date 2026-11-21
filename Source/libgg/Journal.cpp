@@ -1,5 +1,6 @@
 #include "libgg/Journal.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Keep.hpp"
 #include "libgg/Process.hpp"
 
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <random>
 #include <set>
 #include <sstream>
@@ -33,11 +35,6 @@ std::int64_t nowMs()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
-}
-
-bool isHeadKey(const std::string& ref)
-{
-    return ref == "HEAD" || (ref.rfind("worktrees/", 0) == 0 && ref.size() > 5 && ref.compare(ref.size() - 5, 5, "/HEAD") == 0);
 }
 
 // Removes the lock when it is older than 10 minutes and its mtime did not change since the check
@@ -297,25 +294,36 @@ bool Writer::end(const std::string& id, bool ok, std::string* error)
     return appendLine(j.dump(), error);
 }
 
-std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
-{
+namespace {
+
+// The result of parsing journal text.
+struct Parsed {
     std::vector<Operation> ops;
-    std::map<std::string, size_t> byId;
+    std::vector<std::optional<size_t>> lineOp; // per physical line: operation index, none for other lines
+    std::vector<bool> header;                  // per physical line: it is the header line
     size_t bad = 0;
-    std::ifstream in(m_path, std::ios::binary);
-    if (!in) {
-        if (skipped)
-            *skipped = 0;
-        return ops;
-    }
+    bool future = false;                       // a newer header or a record with "v" above 1 was seen
+    std::string error;                         // set for a newer header; ops is empty then
+};
+
+// Parses all physical lines (split at '\n', empty ones count). A record belongs to an operation when
+// its begin record exists; `last` and `bytes` of the operation follow from its lines.
+Parsed parseJournal(const std::string& text)
+{
+    Parsed r;
+    auto& ops = r.ops;
+    std::map<std::string, size_t> byId;
+    std::istringstream in(text);
     std::string line;
     bool first = true;
-    while (std::getline(in, line)) {
+    for (size_t index = 0; std::getline(in, line); ++index) {
+        r.lineOp.emplace_back();
+        r.header.push_back(false);
         if (line.empty())
             continue;
         json j = json::parse(line, nullptr, false);
         if (j.is_discarded() || !j.is_object()) {
-            ++bad;
+            ++r.bad;
             first = false;
             continue;
         }
@@ -323,81 +331,118 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
             first = false;
             const int version = j["gg-journal"].is_number_integer() ? j["gg-journal"].get<int>() : 0;
             if (version > kFormatVersion) {
-                if (error)
-                    *error = "journal written by a newer ggui (format " + std::to_string(version) + ")";
-                return {};
+                r.error = "journal written by a newer ggui (format " + std::to_string(version) + ")";
+                r.future = true;
+                r.ops.clear();
+                return r;
             }
+            r.header.back() = true;
             continue;
         }
         first = false;
+        if (j.contains("v") && j["v"].is_number_integer() && j["v"].get<int>() > 1)
+            r.future = true;
         if (!j.contains("t") || !j["t"].is_string() || !j.contains("op") || !j["op"].is_string()
             || (j.contains("v") && j["v"].is_number_integer() && j["v"].get<int>() > 1)) {
-            ++bad;
+            ++r.bad;
             continue;
         }
-        const std::string type = j["t"].get<std::string>();
-        const std::string id = j["op"].get<std::string>();
-        auto it = byId.find(id);
-        if (type == "begin") {
-            Operation op;
-            op.id = id;
-            op.src = j.value("src", std::string());
-            op.label = j.value("label", std::string());
-            op.wt = j.value("wt", std::string("main"));
-            op.cmd = j.value("cmd", std::string());
-            op.undoes = j.value("undoes", std::string());
-            op.redo = j.value("redo", false);
-            op.time = j.value("time", static_cast<std::int64_t>(0));
-            op.pid = j.value("pid", static_cast<std::int64_t>(0));
-            op.pstart = j.value("pstart", static_cast<std::uint64_t>(0));
-            op.order = ops.size();
-            byId[id] = ops.size();
-            ops.push_back(std::move(op));
-            continue;
-        }
-        if (it == byId.end()) {
-            ++bad; // record for an operation whose begin was lost
-            continue;
-        }
-        Operation& op = ops[it->second];
-        if (type == "refs") {
-            mergeRefs(op, j["u"]);
-        } else if (type == "index") {
-            IndexChange c;
-            c.wt = j.value("wt", std::string("main"));
-            c.before = j.value("before", std::string());
-            c.after = j.value("after", std::string());
-            c.worktree = j.value("worktree", false);
-            auto ix = std::find_if(op.index.begin(), op.index.end(), [&](const IndexChange& x) { return x.wt == c.wt; });
-            if (ix == op.index.end()) {
-                op.index.push_back(c);
-            } else {
-                ix->after = c.after;
-                ix->worktree = ix->worktree || c.worktree;
+        const auto own = [&](size_t opIndex) {
+            r.lineOp.back() = opIndex;
+            ops[opIndex].last = index;
+            ops[opIndex].bytes += line.size() + 1;
+        };
+        try {
+            const std::string type = j["t"].get<std::string>();
+            const std::string id = j["op"].get<std::string>();
+            auto it = byId.find(id);
+            if (type == "begin") {
+                Operation op;
+                op.id = id;
+                op.src = j.value("src", std::string());
+                op.label = j.value("label", std::string());
+                op.wt = j.value("wt", std::string("main"));
+                op.cmd = j.value("cmd", std::string());
+                op.undoes = j.value("undoes", std::string());
+                op.redo = j.value("redo", false);
+                op.time = j.value("time", static_cast<std::int64_t>(0));
+                op.pid = j.value("pid", static_cast<std::int64_t>(0));
+                op.pstart = j.value("pstart", static_cast<std::uint64_t>(0));
+                op.order = ops.size();
+                byId[id] = ops.size();
+                ops.push_back(std::move(op));
+                own(ops.size() - 1);
+                continue;
             }
-        } else if (type == "map") {
-            if (j["m"].is_array())
-                for (const auto& p : j["m"])
-                    if (p.is_array() && p.size() == 2 && p[0].is_string() && p[1].is_string())
-                        op.rewrites.emplace_back(p[0].get<std::string>(), p[1].get<std::string>());
-        } else if (type == "worktree") {
-            WorktreeChange c;
-            c.action = j.value("do", std::string());
-            c.path = j.value("path", std::string());
-            c.head = j.value("head", std::string());
-            c.branch = j.value("branch", std::string());
-            c.locked = j.value("locked", false);
-            c.reason = j.value("reason", std::string());
-            if (!inverse(c).action.empty() && !c.path.empty())
-                op.worktrees.push_back(std::move(c));
-        } else if (type == "rebase") {
-            op.spansRebase = true;
-        } else if (type == "end") {
-            op.ended = true;
-            op.ok = j.value("ok", true);
+            if (it == byId.end()) {
+                ++r.bad; // record for an operation whose begin was lost
+                continue;
+            }
+            Operation& op = ops[it->second];
+            if (type == "refs") {
+                mergeRefs(op, j["u"]);
+            } else if (type == "index") {
+                IndexChange c;
+                c.wt = j.value("wt", std::string("main"));
+                c.before = j.value("before", std::string());
+                c.after = j.value("after", std::string());
+                c.worktree = j.value("worktree", false);
+                auto ix = std::find_if(op.index.begin(), op.index.end(), [&](const IndexChange& x) { return x.wt == c.wt; });
+                if (ix == op.index.end()) {
+                    op.index.push_back(c);
+                } else {
+                    ix->after = c.after;
+                    ix->worktree = ix->worktree || c.worktree;
+                }
+            } else if (type == "map") {
+                if (j["m"].is_array())
+                    for (const auto& p : j["m"])
+                        if (p.is_array() && p.size() == 2 && p[0].is_string() && p[1].is_string())
+                            op.rewrites.emplace_back(p[0].get<std::string>(), p[1].get<std::string>());
+            } else if (type == "worktree") {
+                WorktreeChange c;
+                c.action = j.value("do", std::string());
+                c.path = j.value("path", std::string());
+                c.head = j.value("head", std::string());
+                c.branch = j.value("branch", std::string());
+                c.locked = j.value("locked", false);
+                c.reason = j.value("reason", std::string());
+                if (!inverse(c).action.empty() && !c.path.empty())
+                    op.worktrees.push_back(std::move(c));
+            } else if (type == "rebase") {
+                op.spansRebase = true;
+            } else if (type == "end") {
+                const bool ok = j.value("ok", true); // may throw: change nothing before it
+                op.ended = true;
+                op.ok = ok;
+            }
+            // Unknown record types are ignored (minor additions stay compatible).
+            own(it->second);
+        } catch (const json::exception&) { // a field of the wrong type: a bad line
+            ++r.bad;
         }
-        // Unknown record types are ignored (minor additions stay compatible).
     }
+    return r;
+}
+
+} // namespace
+
+std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
+{
+    std::string text;
+    if (!gg::readFile(m_path, text)) {
+        if (skipped)
+            *skipped = 0;
+        return {};
+    }
+    Parsed result = parseJournal(text);
+    if (!result.error.empty()) {
+        if (error)
+            *error = result.error;
+        return {};
+    }
+    std::vector<Operation> ops = std::move(result.ops);
+    const size_t bad = result.bad;
     // Operations opened for plain git commands (by the managed hooks of older versions) close when that git process is gone
     // (or after 10 minutes). One that spans a native rebase stays open until its end record.
     const std::int64_t now = nowMs();
@@ -413,6 +458,41 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
     if (skipped)
         *skipped = bad;
     return ops;
+}
+
+bool Journal::Transaction::retain(size_t first, std::string* error)
+{
+    if (first == 0)
+        return true;
+    if (!locked()) {
+        if (error)
+            *error = "journal busy";
+        return false;
+    }
+    std::string out;
+    {
+        std::string text;
+        if (!gg::readFile(m_journal.path(), text)) {
+            if (error)
+                *error = "cannot read " + m_journal.path().string();
+            return false;
+        }
+        const Parsed parsed = parseJournal(text);
+        if (parsed.future)
+            return true; // a newer writer's records stay as they are
+        std::istringstream in(text);
+        std::string line;
+        for (size_t i = 0; std::getline(in, line) && i < parsed.lineOp.size(); ++i)
+            if (parsed.header[i] || (parsed.lineOp[i] && *parsed.lineOp[i] >= first))
+                out += line + "\n";
+    }
+    const std::error_code ec = gg::writeFileAtomic(m_journal.path(), out, std::nullopt, 1);
+    if (ec) {
+        if (error)
+            *error = ec.message();
+        return false;
+    }
+    return true;
 }
 
 bool Journal::hasOpenOperation(const std::string& id, size_t bytes) const
@@ -498,6 +578,18 @@ static bool noRef(const std::string& v)
     return v.find_first_not_of('0') == std::string::npos;
 }
 
+std::set<std::string> undoneIds(const std::vector<Operation>& ops)
+{
+    // Walk from the end: an operation's "undone" state depends on later operations only.
+    std::set<std::string> undone;
+    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+        if (it->undoes.empty() || !it->ended || !it->ok || undone.count(it->id))
+            continue;
+        undone.insert(it->undoes);
+    }
+    return undone;
+}
+
 UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool redo,
     const std::function<std::string(const std::string& ref)>& current)
 {
@@ -505,22 +597,11 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
     plan.redo = redo;
     // Which operations are currently undone: X is undone when an undo op targets it and that
     // undo op is not itself undone (by a redo).
-    std::map<std::string, const Operation*> byId;
-    for (const auto& op : ops)
-        byId[op.id] = &op;
-    std::map<std::string, bool> undone;
-    // Walk from the end: an operation's "undone" state depends on later operations only.
-    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-        if (it->undoes.empty() || !it->ended || !it->ok)
-            continue;
-        if (undone[it->id])
-            continue;
-        undone[it->undoes] = true;
-    }
+    const std::set<std::string> undone = undoneIds(ops);
     const Operation* target = nullptr;
     if (!redo) {
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-            if (!it->ended || !it->ok || it->isUndo() || undone[it->id] || !visibleFrom(*it, wt) || it->keepOnly())
+            if (!it->ended || !it->ok || it->isUndo() || undone.count(it->id) || !visibleFrom(*it, wt) || it->keepOnly())
                 continue;
             if (!it->restorable())
                 continue; // nothing to undo (e.g. a failed or no-op command)
@@ -537,7 +618,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
                 continue;
             if (it->undoes.empty() && it->restorable())
                 break; // a newer normal operation: nothing to redo
-            if (it->isUndo() && !undone[it->id]) {
+            if (it->isUndo() && !undone.count(it->id)) {
                 target = &*it;
                 break;
             }

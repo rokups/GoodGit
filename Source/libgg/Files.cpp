@@ -21,11 +21,10 @@ namespace gg {
 
 namespace fs = std::filesystem;
 
-std::error_code replaceFile(const fs::path& tmp, const fs::path& target)
+std::error_code replaceFile(const fs::path& tmp, const fs::path& target, int attempts)
 {
-    constexpr int kAttempts = 20;
     std::error_code ec;
-    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    for (int attempt = 0; attempt < attempts; ++attempt) {
         if (attempt > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         ec.clear();
@@ -102,7 +101,7 @@ std::error_code writeTempFile(const fs::path& tmp, std::string_view text, [[mayb
 
 } // namespace
 
-std::error_code writeFileAtomic(const fs::path& path, std::string_view text, std::optional<fs::perms> mode)
+std::error_code writeFileAtomic(const fs::path& path, std::string_view text, std::optional<fs::perms> mode, int attempts)
 {
     // A unique name: the pid tells two processes apart, the counter two writes of one process.
     static std::atomic<unsigned> counter{0};
@@ -120,7 +119,7 @@ std::error_code writeFileAtomic(const fs::path& path, std::string_view text, std
     if (!ec && setMode)
         fs::permissions(tmp, perms, ec);
     if (!ec)
-        ec = replaceFile(tmp, path);
+        ec = replaceFile(tmp, path, attempts);
     if (ec) {
         std::error_code ignore;
         fs::remove(tmp, ignore);
