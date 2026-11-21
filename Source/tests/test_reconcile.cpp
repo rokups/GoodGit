@@ -620,7 +620,7 @@ GG_TEST("reconcile", "a plain commit in a linked worktree is journaled from that
     const auto ops = gitOps(repo);
     GG_REQUIRE(ops.size() == 1);
     GG_CHECK_STR_EQ(ops.front().label, "git commit");
-    GG_CHECK(!ops.front().wt.empty() && ops.front().wt != "main");
+    GG_CHECK_STR_EQ(ops.front().wt, wt1.filename().string()); // git names the admin dir after the worktree
 }
 
 GG_TEST("reconcile", "a finished plain rebase is one operation and Undo restores the branch")
