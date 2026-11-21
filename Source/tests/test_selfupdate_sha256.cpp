@@ -1,5 +1,6 @@
 // Self-update: SHA-256 (util/Sha256.hpp).
 #include "tests/Harness.hpp"
+#include "tests/SelfUpdateHelpers.hpp"
 #include "util/Sha256.hpp"
 
 #include <filesystem>
@@ -20,8 +21,8 @@ GG_TEST("selfupdate", "sha256Hex matches the standard test vectors")
 
 GG_TEST("selfupdate", "sha256File matches sha256Hex and reports a missing file")
 {
-    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ggui-sha256-test";
-    std::filesystem::create_directories(dir);
+    const suhelp::TempRoot root;
+    const std::filesystem::path dir = root.path;
     const std::filesystem::path file = dir / "data.bin";
     // Larger than one 64 KiB read block, so the streaming path runs more than once.
     const std::string content(200000, 'q');
@@ -37,9 +38,6 @@ GG_TEST("selfupdate", "sha256File matches sha256Hex and reports a missing file")
     const std::string missing = ggui::sha256File(dir / "missing.bin", error);
     GG_CHECK(missing.empty());
     GG_CHECK(!error.empty());
-
-    std::error_code ec;
-    std::filesystem::remove_all(dir, ec);
 }
 
 } // namespace ggtest
