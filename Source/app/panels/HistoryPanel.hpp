@@ -161,10 +161,11 @@ private:
     core::SnapshotPtr m_snapshot;
     std::vector<core::HistoryRow> m_rows;
     std::unordered_map<core::Oid, int, core::OidHash> m_index;
-    // childrenOf cache; the key is the commit, the row count and the row buffer (rows only append or swap).
+    // childrenOf cache; the key is the commit, the row count (appends) and m_rowsGen (resets and swaps).
     core::Oid m_childrenOf;
     size_t m_childrenRows = 0;
-    const core::HistoryRow* m_childrenData = nullptr;
+    size_t m_rowsGen = 1; // bumped when m_rows is cleared or replaced: a freed buffer address can come back
+    size_t m_childrenGen = 0;
     std::vector<core::Oid> m_children;
     // A reload's rows gather here while the previous rows stay on screen, until there are as
     // many or the walk ends (no short list and scrollbar jump in between).

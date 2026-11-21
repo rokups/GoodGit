@@ -222,6 +222,7 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         m_stageTarget = m_rows.size();
         if (!m_staging) {
             m_rows.clear();
+            ++m_rowsGen;
             m_index.clear();
             m_visibleDirty = true;
         }
@@ -240,6 +241,7 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         if (m_stagedRows.size() < m_stageTarget && !batch.complete && !batch.truncated)
             return; // the previous rows stay until the new ones fill their place
         m_rows = std::move(m_stagedRows);
+        ++m_rowsGen;
         m_index = std::move(m_stagedIndex);
         m_stagedRows.clear();
         m_stagedIndex.clear();
@@ -1246,14 +1248,14 @@ void HistoryPanel::goToParent(core::Oid id)
 
 const std::vector<core::Oid>& HistoryPanel::childrenOf(const core::Oid& id)
 {
-    if (m_childrenData != m_rows.data() || m_childrenRows != m_rows.size() || m_childrenOf != id) {
+    if (m_childrenGen != m_rowsGen || m_childrenRows != m_rows.size() || m_childrenOf != id) {
         m_children.clear();
         for (const auto& r : m_rows)
             if (std::find(r.parents.begin(), r.parents.end(), id) != r.parents.end())
                 m_children.push_back(r.id);
         m_childrenOf = id;
         m_childrenRows = m_rows.size();
-        m_childrenData = m_rows.data();
+        m_childrenGen = m_rowsGen;
     }
     return m_children;
 }
