@@ -5,7 +5,7 @@
 #   scripts/package_smoke_windows.sh ZIP
 #
 # Extracts ZIP into a temporary directory and checks
-#   - the files: ggui.exe, git-gg.exe, LICENSE.txt (and the MSVC runtime DLLs only if the build
+#   - the files: ggui.exe, git-gg.exe, LICENSE.txt, THIRD_PARTY_LICENSES.txt (and the MSVC runtime DLLs only if the build
 #     used the DLL CRT);
 #   - imports (objdump -p or dumpbin /dependents): no MinGW runtime DLLs (libstdc++, libgcc_s,
 #     libwinpthread) and no DLL that is not shipped or part of Windows;
@@ -28,11 +28,11 @@ if command -v unzip >/dev/null; then unzip -q "$zip" -d "$tmp"; else tar -xf "$z
 dir=$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)
 echo "== $(basename "$zip") ($(du -h "$zip" | cut -f1))"
 
-for f in ggui.exe git-gg.exe LICENSE.txt; do
+for f in ggui.exe git-gg.exe LICENSE.txt THIRD_PARTY_LICENSES.txt; do
     [[ -f $dir/$f ]] && ok "$f ($(du -h "$dir/$f" | cut -f1))" || bad "missing $f"
 done
 shipped=$(cd "$dir" && ls | tr 'A-Z' 'a-z')
-other=$(cd "$dir" && ls | grep -viE '^(ggui\.exe|git-gg\.exe|LICENSE\.txt|(msvcp|vcruntime|concrt|vccorlib)[0-9_a-z]*\.dll|api-ms-win-.*\.dll|ucrtbase\.dll)$' || true)
+other=$(cd "$dir" && ls | grep -viE '^(ggui\.exe|git-gg\.exe|LICENSE\.txt|THIRD_PARTY_LICENSES\.txt|(msvcp|vcruntime|concrt|vccorlib)[0-9_a-z]*\.dll|api-ms-win-.*\.dll|ucrtbase\.dll)$' || true)
 [[ -z $other ]] && ok "no other files" || bad "unexpected files: $other"
 
 imports() {

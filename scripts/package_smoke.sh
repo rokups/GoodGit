@@ -170,7 +170,7 @@ check_tree() { # PREFIX (contains bin/ and share/)
     for f in bin/ggui bin/git-gg; do
         [[ -x $prefix/$f ]] && ok "$f ($(du -h "$prefix/$f" | cut -f1))" || bad "missing $f"
     done
-    for f in share/applications/ggui.desktop share/icons/hicolor/256x256/apps/ggui.png share/doc/ggui/LICENSE; do
+    for f in share/applications/ggui.desktop share/icons/hicolor/256x256/apps/ggui.png share/doc/ggui/LICENSE share/doc/ggui/THIRD_PARTY_LICENSES.txt; do
         [[ -f $prefix/$f ]] && ok "$f" || bad "missing $f"
     done
     if command -v desktop-file-validate >/dev/null && [[ -f $prefix/share/applications/ggui.desktop ]]; then
@@ -179,7 +179,7 @@ check_tree() { # PREFIX (contains bin/ and share/)
     fi
     local other
     other=$(cd "$prefix" && find . -type f ! -path ./bin/ggui ! -path ./bin/git-gg ! -path ./share/applications/ggui.desktop \
-        ! -path ./share/icons/hicolor/256x256/apps/ggui.png ! -path ./share/doc/ggui/LICENSE | sed 's|^\./||')
+        ! -path ./share/icons/hicolor/256x256/apps/ggui.png ! -path ./share/doc/ggui/LICENSE ! -path ./share/doc/ggui/THIRD_PARTY_LICENSES.txt | sed 's|^\./||')
     [[ -z $other ]] && ok "no other files" || bad "unexpected files: $other"
     for exe in ggui git-gg; do
         local bin=$prefix/bin/$exe
