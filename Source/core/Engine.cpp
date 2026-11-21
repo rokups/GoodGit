@@ -45,8 +45,7 @@ constexpr int kSlotRemoteTags = 1;
 constexpr int kSlotRemoteBranches = 2;
 
 // An index write of our own mutation is seen by the watcher up to its debounce (150 ms) later.
-// The window after the mutation is longer than that.
-constexpr auto kSelfWriteWindow = std::chrono::milliseconds(400);
+// The window after the mutation (Options::selfWriteWindow) is longer than that.
 
 std::string firstLines(const std::string& text, int n = 6)
 {
@@ -259,7 +258,7 @@ bool Engine::ownIndexWrite() const
 {
     std::lock_guard lock(m_selfMutex);
     return m_selfRunning > 0 || (m_selfEnded != std::chrono::steady_clock::time_point{}
-                                    && std::chrono::steady_clock::now() - m_selfEnded < kSelfWriteWindow);
+                                    && std::chrono::steady_clock::now() - m_selfEnded < m_options.selfWriteWindow);
 }
 
 std::chrono::milliseconds Engine::watcherStatusInterval() const

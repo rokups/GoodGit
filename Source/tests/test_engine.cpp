@@ -503,34 +503,49 @@ GG_TEST("engine", "self write: a stage scans once, an external index change scan
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     s.write(repo, "staged-by-us.txt", "new\n");
-    ggui::core::Engine::Options options{repo, false};
-    ggui::core::Engine engine(options);
-    ScanCounter scans{engine};
-    ggui::core::MutationSpec spec;
-    spec.label = "stage test";
-    spec.journal = false;
-    spec.captureIndex = false;
     ggui::core::WatchEvent index;
     index.index = true;
-    spec.run = [&engine, index](ggui::core::MutationContext& mc) {
-        mc.git({"add", "-A", "--", "staged-by-us.txt"});
-        // The watcher notice of this write, while the mutation runs: no scan of its own.
-        engine.onWatchEvent(index);
+    // Stage the file inside a mutation. The window decides if the later notice scans.
+    auto stage = [&](ggui::core::Engine& engine, ScanCounter& scans) {
+        ggui::core::MutationSpec spec;
+        spec.label = "stage test";
+        spec.journal = false;
+        spec.captureIndex = false;
+        spec.run = [&engine, index](ggui::core::MutationContext& mc) {
+            mc.git({"add", "-A", "--", "staged-by-us.txt"});
+            // The watcher notice of this write, while the mutation runs: no scan of its own.
+            engine.onWatchEvent(index);
+        };
+        engine.mutate(std::move(spec));
+        GG_CHECK(s.waitUntil([&] { scans.count(); return scans.mutationFinished; }, 10.0f));
     };
-    engine.mutate(std::move(spec));
-    GG_CHECK(s.waitUntil([&] { scans.count(); return scans.mutationFinished; }, 10.0f));
-    // This check depends on the window of 400 ms after the mutation: the notice comes at once
-    // after the finish event, with no wait before it.
-    engine.onWatchEvent(index);
-    GG_CHECK(s.waitUntil([&] { return scans.count() == 1; }, 10.0f));
-    s.waitUntil([] { return false; }, 1.0f);
-    GG_CHECK_EQ(scans.count(), 1);
-    // The window is closed: an index change now comes from outside and scans.
-    s.write(repo, "external.txt", "new\n");
-    s.git(repo, {"add", "external.txt"});
-    engine.onWatchEvent(index);
-    GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
-    engine.cancelAll();
+    {
+        // The window is so long that the notice after the finish always falls inside it.
+        ggui::core::Engine::Options options{repo, false};
+        options.selfWriteWindow = std::chrono::hours(1);
+        ggui::core::Engine engine(options);
+        ScanCounter scans{engine};
+        stage(engine, scans);
+        engine.onWatchEvent(index);
+        GG_CHECK(s.waitUntil([&] { return scans.count() == 1; }, 10.0f));
+        s.waitUntil([] { return false; }, 1.0f);
+        GG_CHECK_EQ(scans.count(), 1);
+        engine.cancelAll();
+    }
+    {
+        // The window is zero: the same notice after the finish comes from outside and scans.
+        ggui::core::Engine::Options options{repo, false};
+        options.selfWriteWindow = std::chrono::milliseconds(0);
+        ggui::core::Engine engine(options);
+        ScanCounter scans{engine};
+        stage(engine, scans);
+        GG_CHECK(s.waitUntil([&] { return scans.count() == 1; }, 10.0f));
+        s.write(repo, "external.txt", "new\n");
+        s.git(repo, {"add", "external.txt"});
+        engine.onWatchEvent(index);
+        GG_CHECK(s.waitUntil([&] { return scans.count() == 2; }, 10.0f));
+        engine.cancelAll();
+    }
 }
 
 GG_TEST("engine", "status scan takes no index.lock and does not change the index")
