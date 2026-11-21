@@ -500,23 +500,32 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         std::map<std::string, std::string> newOf(plan.replaced.begin(), plan.replaced.end()); // original → new
         std::set<std::string> droppedSet(plan.dropped.begin(), plan.dropped.end());
         std::string currentKey; // the step being built (a redirect never points a step at itself)
-        std::function<std::string(const std::string&)> resolve = [&](const std::string& ref) -> std::string {
-            if (ref.rfind("=", 0) == 0)
-                return ref.substr(1);
-            if (auto r = plan.parentRedirect.find(ref); r != plan.parentRedirect.end() && r->second != currentKey)
-                if (auto it = byKey.find(r->second); it != byKey.end())
+        std::map<std::string, std::string> droppedParent; // memo: dropped commit → first parent ("" for a root)
+        // Iterative: a long run of dropped commits must not recurse once per commit.
+        auto resolve = [&](std::string ref, std::vector<std::string>* chain = nullptr) -> std::string {
+            for (;;) {
+                if (ref.rfind("=", 0) == 0)
+                    return ref.substr(1);
+                if (auto r = plan.parentRedirect.find(ref); r != plan.parentRedirect.end() && r->second != currentKey)
+                    if (auto it = byKey.find(r->second); it != byKey.end())
+                        return it->second;
+                if (auto it = byKey.find(ref); it != byKey.end())
                     return it->second;
-            if (auto it = byKey.find(ref); it != byKey.end())
-                return it->second;
-            if (auto it = newOf.find(ref); it != newOf.end())
-                return it->second;
-            if (droppedSet.count(ref)) {
-                Commit c = m->commit(ref);
-                if (git_commit_parentcount(c.get()) == 0)
+                if (auto it = newOf.find(ref); it != newOf.end())
+                    return it->second;
+                if (!droppedSet.count(ref))
+                    return ref;
+                auto memo = droppedParent.find(ref);
+                if (memo == droppedParent.end()) {
+                    Commit c = m->commit(ref);
+                    memo = droppedParent.emplace(ref, git_commit_parentcount(c.get()) == 0 ? std::string() : toHex(*git_commit_parent_id(c.get(), 0))).first;
+                }
+                if (memo->second.empty())
                     return std::string();
-                return resolve(toHex(*git_commit_parent_id(c.get(), 0)));
+                if (chain)
+                    chain->push_back(ref);
+                ref = memo->second;
             }
-            return ref;
         };
 
         struct Pending {
@@ -827,7 +836,15 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         flush();
         for (const auto& d : droppedSet)
             if (!newOf.count(d))
-                newOf[d] = resolve(d); // children and branches go to the replacement parent
+            {
+                // Children and branches go to the replacement parent. Every commit on the walked
+                // run has the same answer: store it, so a long run costs one walk.
+                std::vector<std::string> chain;
+                const std::string to = resolve(d, &chain);
+                newOf[d] = to;
+                for (const auto& c : chain)
+                    newOf.emplace(c, to);
+            }
         for (const auto& [orig, now] : newOf)
             if (orig != now)
                 result.mapping[orig] = now;
