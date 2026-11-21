@@ -100,6 +100,8 @@ public:
     };
     std::optional<CommitPair> selectedPair() const;
     const std::vector<core::HistoryRow>& rows() const { return m_rows; }
+    // The loaded commits whose parent is `id`. Scans the rows once for each commit and row set.
+    const std::vector<core::Oid>& childrenOf(const core::Oid& id);
     // The action line of the drag tooltip (empty with no drag or no action).
     const std::string& dropHint() const { return m_dropHint; }
     // Ids of the rows currently shown (after the filter), in order.
@@ -159,6 +161,11 @@ private:
     core::SnapshotPtr m_snapshot;
     std::vector<core::HistoryRow> m_rows;
     std::unordered_map<core::Oid, int, core::OidHash> m_index;
+    // childrenOf cache; the key is the commit, the row count and the row buffer (rows only append or swap).
+    core::Oid m_childrenOf;
+    size_t m_childrenRows = 0;
+    const core::HistoryRow* m_childrenData = nullptr;
+    std::vector<core::Oid> m_children;
     // A reload's rows gather here while the previous rows stay on screen, until there are as
     // many or the walk ends (no short list and scrollbar jump in between).
     bool m_staging = false;

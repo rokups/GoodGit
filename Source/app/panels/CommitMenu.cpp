@@ -312,9 +312,8 @@ RebaseSource rebaseSource(Session& session, const core::HistoryRow& row)
     // The loaded rows answer "yes" at once. Otherwise the engine's answer counts (the caller asked for it
     // with Session::requestDescendants): only "None" says there is no descendant.
     auto hasChild = [&] {
-        for (const auto& r : session.history().rows())
-            if (std::find(r.parents.begin(), r.parents.end(), row.id) != r.parents.end())
-                return true;
+        if (!session.history().childrenOf(row.id).empty())
+            return true;
         return session.descendants(row.id) != core::DescendantsResult::None;
     };
     const bool onHead = !snap->headUnborn && snap->head == row.id;
