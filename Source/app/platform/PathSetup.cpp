@@ -66,12 +66,17 @@ std::vector<std::string> splitList(const std::string& list)
     }
 }
 
+// Expands %VAR% in a stored entry (Windows only; elsewhere it returns the entry as is).
+std::string expandEntry(const std::string& entry);
+
 // The form entries are compared in: trimmed, unquoted, '\\' for '/', no trailing separator, ASCII lower case.
 std::string normalizeEntry(const std::string& entry)
 {
     std::string s = trim(entry);
     if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
         s = trim(s.substr(1, s.size() - 2));
+    if (s.find('%') != std::string::npos)
+        s = expandEntry(s);
     for (char& c : s)
         c = c == '/' ? '\\' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     while (s.size() > 1 && s.back() == '\\')
@@ -109,6 +114,23 @@ bool narrow(const std::wstring& w, std::string& out)
     return WideCharToMultiByte(
                CP_UTF8, WC_ERR_INVALID_CHARS, w.c_str(), static_cast<int>(w.size()), out.data(), n, nullptr, nullptr)
         == n;
+}
+
+std::string expandEntry(const std::string& entry)
+{
+    std::wstring wide;
+    if (!widen(entry, wide))
+        return entry;
+    const DWORD n = ExpandEnvironmentStringsW(wide.c_str(), nullptr, 0);
+    if (n == 0)
+        return entry;
+    std::wstring out(n, L'\0');
+    const DWORD got = ExpandEnvironmentStringsW(wide.c_str(), out.data(), n);
+    if (got == 0 || got > n)
+        return entry;
+    out.resize(got - 1); // drop the terminator
+    std::string result;
+    return narrow(out, result) ? result : entry;
 }
 
 // Reads the user PATH value and its registry type. A missing key or value reads as "" with type
@@ -189,10 +211,9 @@ std::string writeUserPathEntry(const std::string& dir, bool enable)
     if (enable) {
         if (dir.empty())
             return "Cannot tell where the GoodGit executable is.";
-        if (dir.find_first_of(";\"\r\n") != std::string::npos)
-            return "The GoodGit directory (" + dir
-                + ") contains a ; or a quote or a line break, so it was not added to PATH. "
-                  "Move GoodGit to a plainer path.";
+        const std::string bad = windowsPathDirError(dir);
+        if (!bad.empty())
+            return bad;
     }
     std::string before;
     DWORD type = REG_EXPAND_SZ;
@@ -223,7 +244,24 @@ PathSetupState readUserPathState(const std::string& dir)
 
 #endif // _WIN32
 
+#ifndef _WIN32
+std::string expandEntry(const std::string& entry)
+{
+    return entry;
+}
+#endif
+
 } // namespace
+
+std::string windowsPathDirError(const std::string& dir)
+{
+    // '%' would be expanded when the value is written as REG_EXPAND_SZ.
+    if (dir.find_first_of(";\"\r\n%") == std::string::npos)
+        return {};
+    return "The GoodGit directory (" + dir
+        + ") contains a ; or a % or a quote or a line break, so it was not added to PATH. "
+          "Move GoodGit to a plainer path.";
+}
 
 bool pathListContains(const std::string& list, const std::string& dir)
 {

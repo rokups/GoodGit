@@ -39,6 +39,9 @@ std::string pathSetupConfigHome();
 // <configHome>/environment.d/60-goodgit.conf
 std::string pathSetupFile(const std::string& configHome);
 
+// "" when `dir` may go in the Windows user PATH, else why not (it has ';', '%', '"' or a line break).
+std::string windowsPathDirError(const std::string& dir);
+
 // Reads the managed file and compares its PATH entry with `dir`.
 PathSetupState readPathSetup(const std::string& configHome, const std::string& dir);
 // Same for `support`: Registry reads the Windows user PATH (configHome is not used), anything else

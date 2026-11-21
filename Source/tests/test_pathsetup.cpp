@@ -238,4 +238,11 @@ GG_TEST("pathsetup", "Settings toggles the file (needs systemd, else the control
         ggui::setEnv("XDG_CONFIG_HOME", savedXdg);
 }
 
+GG_TEST("pathsetup", "Windows PATH directory with a percent sign is refused")
+{
+    GG_CHECK(ggui::windowsPathDirError("C:\\Tools\\GoodGit").empty());
+    for (const char* bad : {"C:\\50%off", "%LOCALAPPDATA%\\GoodGit", "C:\\a;b", "C:\\a\"b", "C:\\a\nb"})
+        GG_CHECK(!ggui::windowsPathDirError(bad).empty());
+}
+
 } // namespace ggtest
