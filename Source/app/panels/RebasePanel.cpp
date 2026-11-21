@@ -176,6 +176,7 @@ void RebasePanel::open(Request request)
     m_open = true;
     m_focus = true;
     m_state = State{};
+    ++m_todoVersion;
     m_undo.clear();
     m_redo.clear();
     m_selection.clear();
@@ -207,6 +208,7 @@ void RebasePanel::close()
     m_open = false;
     ++m_generation;
     m_state = State{};
+    ++m_todoVersion;
     m_undo.clear();
     m_redo.clear();
     m_selection.clear();
@@ -377,6 +379,7 @@ void RebasePanel::onTodoChanged()
     m_options.autosquash = m_state.autosquash;
     m_options.rebaseMerges = m_state.rebaseMerges;
     m_options.firstClassConflicts = m_session.firstClassConflicts();
+    ++m_todoVersion;
     m_issues = todo::validate(m_state.todo, *m_state.context);
     if (m_sequence)
         m_engine = {todo::Engine::Native,
@@ -716,10 +719,32 @@ std::string RebasePanel::messageText(size_t row) const
         const auto info = m_state.context->commits.find(item.commit);
         return item.message ? *item.message : info != m_state.context->commits.end() ? info->second.message : std::string();
     }
-    const auto group = todo::groupAt(m_state.todo, row);
-    if (!group)
-        return {};
-    return todo::editorText(m_state.todo, *group, *m_state.context);
+    return groupOf(row) ? editorTextOf(row) : std::string();
+}
+
+const todo::Group* RebasePanel::groupOf(size_t row) const
+{
+    if (m_cacheVersion != m_todoVersion) {
+        m_cacheVersion = m_todoVersion;
+        m_groups = todo::groups(m_state.todo);
+        m_rowGroup.assign(m_state.todo.items.size(), -1);
+        m_editorTexts.clear();
+        for (size_t g = 0; g < m_groups.size(); ++g) {
+            m_rowGroup[m_groups[g].first] = static_cast<int>(g);
+            for (const size_t f : m_groups[g].followers)
+                m_rowGroup[f] = static_cast<int>(g);
+        }
+    }
+    return row < m_rowGroup.size() && m_rowGroup[row] >= 0 ? &m_groups[static_cast<size_t>(m_rowGroup[row])] : nullptr;
+}
+
+const std::string& RebasePanel::editorTextOf(size_t row) const
+{
+    const auto* group = groupOf(row);
+    auto it = m_editorTexts.find(row);
+    if (it == m_editorTexts.end())
+        it = m_editorTexts.emplace(row, todo::editorText(m_state.todo, *group, *m_state.context)).first;
+    return it->second;
 }
 
 bool RebasePanel::canStart(std::string* reason) const
@@ -1642,11 +1667,11 @@ void RebasePanel::drawRow(size_t row, float messageHeight)
         }
     }
     if (item.isCommit() && item.action != Action::Drop && !m_sequence) {
-        const auto group = todo::groupAt(m_state.todo, row);
+        const auto* group = groupOf(row);
         if (group && group->first == row && (item.action == Action::Reword || group->needsEditor)) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(2);
-            std::string text = todo::editorText(m_state.todo, *group, c);
+            std::string text = editorTextOf(row);
             const bool changed = ImGui::InputTextMultiline(("###ir_msg_" + item.commit).c_str(), &text, ImVec2(-1, messageHeight));
             textEdited(changed);
             if (changed) {

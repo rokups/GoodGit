@@ -27,7 +27,9 @@
 #include <core/Engine.hpp>
 #include <libgg/Todo.hpp>
 
+#include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -181,6 +183,15 @@ private:
     std::uint64_t m_generation = 0;   // results of older reads are ignored
     gg::todo::ReadOptions m_read;     // what the current context was read with (revisions resolved)
     State m_state;
+    // Per-frame caches of the groups and the editor texts, rebuilt when m_todoVersion changes.
+    // Every change of m_state goes through onTodoChanged() or a reset, and both bump the version.
+    std::uint64_t m_todoVersion = 1;
+    mutable std::uint64_t m_cacheVersion = 0;
+    mutable std::vector<gg::todo::Group> m_groups;
+    mutable std::vector<int> m_rowGroup; // row -> index in m_groups, or -1
+    mutable std::map<size_t, std::string> m_editorTexts;
+    const gg::todo::Group* groupOf(size_t row) const;
+    const std::string& editorTextOf(size_t row) const;
     std::vector<State> m_undo;
     std::vector<State> m_redo;
     std::optional<State> m_textEditBefore; // state when a message or command field became active
