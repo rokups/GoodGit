@@ -879,9 +879,11 @@ GG_TEST("shell", "repository state badge")
     GG_REQUIRE(s.openRepository(rebase));
     GG_CHECK(s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive);
     GG_CHECK_STR_EQ(s.session()->snapshot()->stateDetail, "1/1");
+    GG_CHECK_STR_EQ(s.itemText("//###Toolbar/###tb_state"), "REBASING 1/1");
     const fs::path apply = s.fixture(Recipe::MidRebaseApply, "apply-detail");
     GG_REQUIRE(s.openRepository(apply));
     GG_CHECK(s.session()->snapshot()->state == ggui::core::RepoState::Rebasing);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_state").rfind("REBASING", 0) == 0);
     const fs::path clean = s.fixture(Recipe::Linear);
     GG_REQUIRE(s.openRepository(clean));
     GG_CHECK(!s.itemExists("//###Toolbar/###tb_state"));
@@ -1609,15 +1611,30 @@ GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not
     };
     GG_CHECK(start("array", "[1, 2]").find("scale=1.00 theme=dark recent=0") != std::string::npos);
     GG_CHECK(start("broken", "{\"uiScale\": ").find("ignoring unreadable settings.json") != std::string::npos);
-    const std::string mixed = start("mixed",
+    const std::string mixedJson =
         R"({"uiScale": 9, "theme": "light", "recent": [1, "/nowhere", null], "repos": {"/r": {"hooks": "not-now"},
             "/s": {"hooks": "never"}, "/t": {"hooks": "installed", "ignoreOldGgRefs": true}},
             "panels": {"History": true, "Diff": "yes"}, "diff": {"sideBySide": true, "context": 500, "whitespace": 9},
-            "nothingStaged": "stage-selected", "askHooksOnOpen": true, "window": {"x": 10, "y": 20, "w": 800, "h": 600, "maximized": true}})");
-    GG_CHECK(mixed.find("scale=3.00 theme=light recent=1") != std::string::npos);
-    const std::string types = start("types", R"({"recent": 5, "repos": [], "panels": 1, "diff": "x", "window": 2,
-        "nothingStaged": "stage-all"})");
-    GG_CHECK(types.find("scale=1.00 theme=dark recent=0") != std::string::npos);
+            "nothingStaged": "stage-selected", "askHooksOnOpen": true, "window": {"x": 10, "y": 20, "w": 800, "h": 600, "maximized": true}})";
+    const std::string typesJson = R"({"recent": 5, "repos": [], "panels": 1, "diff": "x", "window": 2,
+        "nothingStaged": "stage-all"})";
+    GG_CHECK(start("mixed", mixedJson).find("scale=3.00 theme=light recent=1") != std::string::npos);
+    GG_CHECK(start("types", typesJson).find("scale=1.00 theme=dark recent=0") != std::string::npos);
+    // The other settings, read by the same parser: a wrong type is dropped, a number is clamped.
+    using namespace ggui;
+    const SettingsData m = fromJson(nlohmann::json::parse(mixedJson));
+    GG_CHECK_EQ(m.uiScale, 3.0f);
+    GG_CHECK(m.panels.size() == 1 && m.panels.at("History"));
+    GG_CHECK(m.diffSideBySide);
+    GG_CHECK_EQ(m.diffContext, 100);
+    GG_CHECK_EQ(m.diffWhitespace, 2);
+    GG_CHECK(m.nothingStaged == NothingStaged::StageSelected);
+    GG_CHECK(m.windowX == 10 && m.windowY == 20 && m.windowW == 800 && m.windowH == 600 && m.windowMaximized);
+    const SettingsData ty = fromJson(nlohmann::json::parse(typesJson));
+    GG_CHECK(ty.recent.empty() && ty.panels.empty());
+    GG_CHECK(!ty.diffSideBySide && ty.diffContext == 3 && ty.diffWhitespace == 0);
+    GG_CHECK(ty.nothingStaged == NothingStaged::StageAll);
+    GG_CHECK(ty.windowX == -1 && ty.windowW == 0 && !ty.windowMaximized);
 }
 
 GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a second path are reported")
@@ -1646,13 +1663,20 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, a detached rebas
     // Force with lease against the upstream asks first; Push tags goes to the upstream's remote.
     ctx->ItemClick("//###Toolbar/###tb_push_menu");
     ctx->ItemClick("//$FOCUSED/Force with lease...");
+    const std::string refsBefore = s.gitOut(repo, {"for-each-ref"}), headBefore = s.head(repo);
+    const fs::path remote = fs::path(s.gitOut(repo, {"remote", "get-url", "origin"}).substr(7));
+    const std::string remoteRefsBefore = s.gitOut(remote, {"for-each-ref"});
     GG_REQUIRE(s.dialogOpen("Force push"));
     GG_CHECK(s.app.dialogs().current()->message.find("(--force-with-lease)") != std::string::npos);
     s.dialogButton("Force push", "Cancel");
+    s.settle();
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"for-each-ref"}), refsBefore);
+    GG_CHECK_STR_EQ(s.head(repo), headBefore);
+    GG_CHECK_STR_EQ(s.gitOut(remote, {"for-each-ref"}), remoteRefsBefore);
     s.git(repo, {"tag", "pushed-tag"});
     ctx->ItemClick("//###Toolbar/###tb_push_menu");
     ctx->ItemClick("//$FOCUSED/Push tags");
-    const fs::path remote = fs::path(s.gitOut(repo, {"remote", "get-url", "origin"}).substr(7));
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(remote, {"rev-parse", "-q", "--verify", "refs/tags/pushed-tag"}).ok(); }));
     s.settle();
     // Without an upstream, Force with lease is a Push to.
@@ -1662,6 +1686,9 @@ GG_TEST("shell", "toolbar details: force with lease, push tags, a detached rebas
     ctx->ItemClick("//$FOCUSED/Force with lease...");
     GG_REQUIRE(s.dialogOpen("Push to"));
     s.dialogButton("Push to", "Cancel");
+    s.settle();
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    GG_CHECK(!s.gitMayFail(remote, {"rev-parse", "-q", "--verify", "refs/heads/local-only"}).ok());
     // A rebase of a detached HEAD, stopped: the progress view names it.
     s.git(repo, {"switch", "-q", "--detach", "HEAD~1"});
     const fs::path list = s.root() / "todo.txt";
