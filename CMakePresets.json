@@ -75,6 +75,14 @@
       }
     },
     {
+      "name": "release-tests",
+      "displayName": "Release flags with the test engine (Linux, CI test runs)",
+      "inherits": "release",
+      "cacheVariables": {
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "ON"
+      }
+    },
+    {
       "name": "mingw-x64-static",
       "displayName": "MinGW x64, fully static (Schannel)",
       "inherits": "base",
@@ -183,6 +191,10 @@
     {
       "name": "asan",
       "configurePreset": "asan"
+    },
+    {
+      "name": "release-tests",
+      "configurePreset": "release-tests"
     },
     {
       "name": "coverage",

@@ -6,6 +6,7 @@ Binaries land in `build/<preset>/bin/` (`ggui`, `git-gg`). Presets in `CMakePres
 
 - `ninja` — the everyday Linux build, test engine included;
 - `release` — no test engine, for packaging;
+- `release-tests` — the `release` flags with the test engine, for the CI test job;
 - `asan` — Debug build with AddressSanitizer and UBSan, test engine included (see below);
 - `coverage` / `coverage-gcov` — instrumented builds for the coverage gate;
 - Windows: `mingw-x64-static` (fully static, Schannel) and `msvc-x64` with the test engine, and
