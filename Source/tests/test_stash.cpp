@@ -389,6 +389,7 @@ GG_TEST("stash", "Pop does nothing when the selected stash is gone")
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Stashes");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRow(2).c_str()); }));
+    s.settle(); // a late refresh of the open would drop the selection below
     // The session drops a missing stash from the selection only on a refresh: select one that does not exist.
     const ggui::core::Oid gone = ggui::core::Oid::fromHex(s.gitOut(repo, {"rev-parse", "HEAD"}));
     s.session()->select(ggui::Selection{ggui::SelKind::Stash, gone, 1});
