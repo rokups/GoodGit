@@ -160,9 +160,7 @@ std::vector<StagedWarning> stagedConflictWarnings(git_repository* repo)
             const git_diff_delta* d = git_diff_get_delta(diff.get(), i);
             if (d->status == GIT_DELTA_DELETED || d->status == GIT_DELTA_TYPECHANGE)
                 continue;
-            const std::string path = d->new_file.path;
-            if (!conflicts::eligible(repo, nullptr, path))
-                continue;
+            // The content test first: the attribute checks of eligible() cost file reads, and most files have no markers.
             git_blob* rawBlob = nullptr;
             if (git_blob_lookup(&rawBlob, repo, &d->new_file.id) != 0) {
                 git_error_clear();
@@ -173,6 +171,9 @@ std::vector<StagedWarning> stagedConflictWarnings(git_repository* repo)
                 static_cast<size_t>(git_blob_rawsize(blob.get())));
             const int sides = conflicts::contentSides(text);
             if (!sides)
+                continue;
+            const std::string path = d->new_file.path;
+            if (!conflicts::eligible(repo, nullptr, path))
                 continue;
             StagedWarning w;
             w.path = path;
