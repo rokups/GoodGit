@@ -170,7 +170,9 @@ bool finished(Scenario& s, const fs::path& repo)
 {
     const bool ok = s.waitUntil([&] {
         const auto snap = s.session()->snapshot();
-        return !fs::exists(repo / ".git" / "rebase-merge") && snap && !snap->rebase
+        // The non-throwing form: on Windows, exists() fails with "Access is denied" while git removes the folder.
+        std::error_code ec;
+        return !fs::exists(repo / ".git" / "rebase-merge", ec) && !ec && snap && !snap->rebase
             && snap->state == ggui::core::RepoState::None;
     });
     s.settle();
@@ -441,7 +443,8 @@ GG_TEST("rebase-native", "conflict stop, Edit remaining todo like git rebase --e
         return !snap->rebase || snap->rebase->done.back().action != "pick" || snap->rebase->done.back().commit != c3;
     }));
     s.settle();
-    for (int guard = 0; guard < 3 && fs::exists(repo / ".git" / "rebase-merge"); ++guard) {
+    int guard = 0;
+    for (std::error_code ec; guard < 3 && (fs::exists(repo / ".git" / "rebase-merge", ec) || ec); ++guard) {
         const bool conflicted = !s.gitOut(repo, {"diff", "--name-only", "--diff-filter=U"}).empty();
         const char* button = conflicted ? kCommitConflicts : kContinue;
         GG_REQUIRE(s.waitUntil([&] { return s.itemExists(button); }));

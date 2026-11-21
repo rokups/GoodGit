@@ -394,8 +394,12 @@ GG_TEST("blame", "line menu: before, originating source, reveal, copy, blocks")
     s.commitFile(r.path, "fresh.txt", "new\n", "Add a fresh file");
     const std::string c4 = s.head(r.path);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(("//History/**/###row_" + c4).c_str()); }));
+    s.settle(); // the new row shifts the list; a click before the layout settles misses the row
     ctx->ItemClick(("//History/**/###row_" + c4).c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& rows = s.session()->changes().rows();
+        return rows.size() == 1 && rows[0].path == "fresh.txt";
+    }));
     blameFromChanges(s, nullptr, "fresh.txt");
     GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "fresh.txt", c4); }));
     s.contextMenu(lineRef(s, 1).c_str(), "Blame before this change");
