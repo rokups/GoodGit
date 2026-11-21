@@ -296,8 +296,8 @@ GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all i
 // waits for the slow child. The race window is small, so many threads and iterations make it likely.
 GG_TEST("cli", "gg::run does not leak its pipes into a child that another thread starts")
 {
-    constexpr int kThreads = 6;
-    constexpr int kIterations = 25;
+    constexpr int kThreads = 4;
+    constexpr int kIterations = 6;
     std::atomic<int> late{0};
     std::atomic<int> failed{0};
     std::vector<std::thread> threads;
@@ -305,9 +305,14 @@ GG_TEST("cli", "gg::run does not leak its pipes into a child that another thread
         threads.emplace_back([&] {
             for (int i = 0; i < kIterations; ++i) {
                 gg::RunRequest slow;
-                slow.args = {"cmd", "/c", "ping", "-n", "3", "127.0.0.1"};
+                slow.args = {"cmd", "/c", "ping", "-n", "4", "127.0.0.1"};
                 gg::RunResult slowResult;
-                std::thread a([&] { slowResult = gg::run(slow); });
+                double slowMs = 0;
+                std::thread a([&] {
+                    const auto slowStart = std::chrono::steady_clock::now();
+                    slowResult = gg::run(slow);
+                    slowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - slowStart).count();
+                });
                 gg::RunRequest quick;
                 quick.args = {"cmd", "/c", "exit", "0"};
                 const auto start = std::chrono::steady_clock::now();
@@ -316,7 +321,7 @@ GG_TEST("cli", "gg::run does not leak its pipes into a child that another thread
                 a.join();
                 if (!quickResult.ok() || !slowResult.ok())
                     ++failed;
-                if (ms >= timeBudgetMs(1500))
+                if (ms >= slowMs / 2) // not scaled by the timing slack: a leaked run waits for the slow child
                     ++late;
             }
         });

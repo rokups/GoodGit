@@ -457,7 +457,7 @@ RunResult runProcess(const RunRequest& request)
         }
     }
     // A grandchild can hold the pipes after the child exits. Like POSIX, wait 500 ms, then end the job.
-    // This also unblocks a writer that waits on a grandchild which holds stdin.
+    // This also unblocks a writer that waits on a grandchild which holds stdin. Without a job, killTree ends only the child, so the deadline does not unblock the pumps.
     const auto exitDrainEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
     bool drainKilled = false;
     while (pumpsDone.load() < 3) {
