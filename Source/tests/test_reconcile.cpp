@@ -515,6 +515,8 @@ GG_TEST("reconcile", "switch -c records HEAD's branch change")
     GG_REQUIRE(head != nullptr);
     GG_CHECK_STR_EQ(head->oldValue, "ref:refs/heads/main");
     GG_CHECK_STR_EQ(head->newValue, "ref:refs/heads/feat");
+    // The row must exist first, or the check that it is gone proves nothing.
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_feat/###branch_feat"); }));
     // Undo puts HEAD back on main (and removes the branch).
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "main"; }));

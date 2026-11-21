@@ -1622,6 +1622,7 @@ GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not
     GG_CHECK(start("types", typesJson).find("scale=1.00 theme=dark recent=0") != std::string::npos);
     // The other settings, read by the same parser: a wrong type is dropped, a number is clamped.
     using namespace ggui;
+    // The startup read (--smoke above) shows scale, theme and recent; the rest is checked on the same fromJson.
     const SettingsData m = fromJson(nlohmann::json::parse(mixedJson));
     GG_CHECK_EQ(m.uiScale, 3.0f);
     GG_CHECK(m.panels.size() == 1 && m.panels.at("History"));
@@ -1659,6 +1660,7 @@ GG_TEST("shell", "command line: --list-tests, --headless, unknown options and a 
 GG_TEST("shell", "toolbar details: force with lease, push tags, a detached rebase's progress")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.commitFile(repo, "lease.txt", "ahead\n", "Ahead of the remote"); // a Cancel that pushed would move the remote
     GG_REQUIRE(s.openRepository(repo));
     // Force with lease against the upstream asks first; Push tags goes to the upstream's remote.
     ctx->ItemClick("//###Toolbar/###tb_push_menu");
