@@ -1204,7 +1204,7 @@ GG_TEST("history", "first rows of a large history appear quickly")
     // Load slows the tools too. A reference command on the same repo, timed just before each
     // open, shows the machine speed. The limit grows with the best reference. A regression of
     // the open does not slow the reference, so it still fails.
-    constexpr double refFactor = 20.0; // Idle ratio open/reference is 7.8 to 9.2.
+    constexpr double refFactor = 13.0; // idle ratio open/reference is 7.8 to 9.2: idle keeps the 700 ms floor
     for (const fs::path& repo : repos) {
         long long best = std::numeric_limits<long long>::max();
         double bestRefMs = 1e9;
