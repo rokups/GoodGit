@@ -2061,26 +2061,28 @@ void restoreStashAt(MutationContext& ctx, int index, const std::string& oldId, c
         throw MutationError{Outcome::Refused, "The stash list changed; select the stash again", {}};
     std::vector<Entry> removed(entries.begin(), entries.begin() + index + 1);
     removed[index] = {newSha, subject};
-    size_t stored = 0;
-    auto restore = [&](const std::vector<Entry>& list) {
-        stored = 0;
-        for (size_t i = list.size(); i-- > 0;) {
-            const auto r = ctx.gitMayFail({"stash", "store", "-m", list[i].subject, list[i].sha});
+    // Any failure or cancel puts the original entries back, also when a drop fails half way.
+    ctx.rollback.push_back([entries, index](MutationContext& c) {
+        const size_t tail = entries.size() - static_cast<size_t>(index) - 1;
+        const size_t now = gg::splitLines(c.gitMayFail({"stash", "list", "--format=%H"}).out).size();
+        for (size_t i = tail; i < now; ++i)
+            c.gitMayFail({"stash", "drop", "-q"});
+        // A stopped last drop can leave the ref without its reflog; a store of the same commit would then log nothing.
+        if (tail == 0)
+            c.gitMayFail({"update-ref", "-d", "refs/stash"});
+        for (int i = index; i >= 0; --i) {
+            const auto r = c.gitMayFail({"stash", "store", "-m", entries[i].subject, entries[i].sha});
             if (!r.ok())
                 return r.message();
-            ++stored;
         }
         return std::string();
-    };
+    });
     for (int i = 0; i <= index; ++i)
         ctx.git({"stash", "drop", "-q"});
-    const std::string failure = restore(removed);
-    if (!failure.empty()) {
-        // Undo the partial rewrite: drop what was stored, then store the originals back.
-        for (size_t i = 0; i < stored; ++i)
-            ctx.gitMayFail({"stash", "drop", "-q"});
-        restore(std::vector<Entry>(entries.begin(), entries.begin() + index + 1));
-        throw MutationError{Outcome::Failed, "Could not rewrite the stash list", failure};
+    for (size_t i = removed.size(); i-- > 0;) {
+        const auto r = ctx.gitMayFail({"stash", "store", "-m", removed[i].subject, removed[i].sha});
+        if (!r.ok())
+            throw MutationError{Outcome::Failed, "Could not rewrite the stash list", r.message()};
     }
 }
 

@@ -340,6 +340,31 @@ GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflic
         s.dismissError();
 }
 
+#ifndef _WIN32
+GG_TEST("stash", "a rename that is cancelled after the drops puts every dropped stash back")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRow(2).c_str()); }));
+    const std::string before = s.gitOut(repo, {"stash", "list", "--format=%H %gs"});
+    // The hook stalls the first store, which comes after the drops (git runs no hook for a drop). The cancel hits there.
+    const fs::path hook = repo / ".git" / "hooks" / "reference-transaction";
+    s.write(repo, ".git/hooks/reference-transaction",
+        "#!/bin/sh\n[ \"$1\" = prepared ] || exit 0\ngrep -q refs/stash || exit 0\n"
+        "n=$(cat \"$0.count\" 2>/dev/null || echo 0)\nn=$((n+1))\necho $n > \"$0.count\"\n[ $n -eq 1 ] && sleep 20\nexit 0\n");
+    fs::permissions(hook, fs::perms::owner_all);
+    s.contextMenu(stashRow(2).c_str(), "Rename...");
+    GG_REQUIRE(s.dialogOpen("Rename stash"));
+    s.dialogText("Rename stash", "name", "Never stored");
+    s.dialogButton("Rename stash", "Rename");
+    GG_REQUIRE(s.waitUntil([&] { return fs::exists(hook.string() + ".count"); }));
+    s.session()->cancelAll();
+    GG_REQUIRE(s.settle());
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "list", "--format=%H %gs"}), before);
+}
+#endif
+
 GG_TEST("stash", "an action with a stale stash index is refused and drops nothing")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);
