@@ -357,70 +357,75 @@ Parsed parseJournal(const std::string& text)
             ops[opIndex].last = index;
             ops[opIndex].bytes += line.size() + 1;
         };
-        const std::string type = j["t"].get<std::string>();
-        const std::string id = j["op"].get<std::string>();
-        auto it = byId.find(id);
-        if (type == "begin") {
-            Operation op;
-            op.id = id;
-            op.src = j.value("src", std::string());
-            op.label = j.value("label", std::string());
-            op.wt = j.value("wt", std::string("main"));
-            op.cmd = j.value("cmd", std::string());
-            op.undoes = j.value("undoes", std::string());
-            op.redo = j.value("redo", false);
-            op.time = j.value("time", static_cast<std::int64_t>(0));
-            op.pid = j.value("pid", static_cast<std::int64_t>(0));
-            op.pstart = j.value("pstart", static_cast<std::uint64_t>(0));
-            op.order = ops.size();
-            byId[id] = ops.size();
-            ops.push_back(std::move(op));
-            own(ops.size() - 1);
-            continue;
-        }
-        if (it == byId.end()) {
-            ++r.bad; // record for an operation whose begin was lost
-            continue;
-        }
-        own(it->second);
-        Operation& op = ops[it->second];
-        if (type == "refs") {
-            mergeRefs(op, j["u"]);
-        } else if (type == "index") {
-            IndexChange c;
-            c.wt = j.value("wt", std::string("main"));
-            c.before = j.value("before", std::string());
-            c.after = j.value("after", std::string());
-            c.worktree = j.value("worktree", false);
-            auto ix = std::find_if(op.index.begin(), op.index.end(), [&](const IndexChange& x) { return x.wt == c.wt; });
-            if (ix == op.index.end()) {
-                op.index.push_back(c);
-            } else {
-                ix->after = c.after;
-                ix->worktree = ix->worktree || c.worktree;
+        try {
+            const std::string type = j["t"].get<std::string>();
+            const std::string id = j["op"].get<std::string>();
+            auto it = byId.find(id);
+            if (type == "begin") {
+                Operation op;
+                op.id = id;
+                op.src = j.value("src", std::string());
+                op.label = j.value("label", std::string());
+                op.wt = j.value("wt", std::string("main"));
+                op.cmd = j.value("cmd", std::string());
+                op.undoes = j.value("undoes", std::string());
+                op.redo = j.value("redo", false);
+                op.time = j.value("time", static_cast<std::int64_t>(0));
+                op.pid = j.value("pid", static_cast<std::int64_t>(0));
+                op.pstart = j.value("pstart", static_cast<std::uint64_t>(0));
+                op.order = ops.size();
+                byId[id] = ops.size();
+                ops.push_back(std::move(op));
+                own(ops.size() - 1);
+                continue;
             }
-        } else if (type == "map") {
-            if (j["m"].is_array())
-                for (const auto& p : j["m"])
-                    if (p.is_array() && p.size() == 2 && p[0].is_string() && p[1].is_string())
-                        op.rewrites.emplace_back(p[0].get<std::string>(), p[1].get<std::string>());
-        } else if (type == "worktree") {
-            WorktreeChange c;
-            c.action = j.value("do", std::string());
-            c.path = j.value("path", std::string());
-            c.head = j.value("head", std::string());
-            c.branch = j.value("branch", std::string());
-            c.locked = j.value("locked", false);
-            c.reason = j.value("reason", std::string());
-            if (!inverse(c).action.empty() && !c.path.empty())
-                op.worktrees.push_back(std::move(c));
-        } else if (type == "rebase") {
-            op.spansRebase = true;
-        } else if (type == "end") {
-            op.ended = true;
-            op.ok = j.value("ok", true);
+            if (it == byId.end()) {
+                ++r.bad; // record for an operation whose begin was lost
+                continue;
+            }
+            Operation& op = ops[it->second];
+            if (type == "refs") {
+                mergeRefs(op, j["u"]);
+            } else if (type == "index") {
+                IndexChange c;
+                c.wt = j.value("wt", std::string("main"));
+                c.before = j.value("before", std::string());
+                c.after = j.value("after", std::string());
+                c.worktree = j.value("worktree", false);
+                auto ix = std::find_if(op.index.begin(), op.index.end(), [&](const IndexChange& x) { return x.wt == c.wt; });
+                if (ix == op.index.end()) {
+                    op.index.push_back(c);
+                } else {
+                    ix->after = c.after;
+                    ix->worktree = ix->worktree || c.worktree;
+                }
+            } else if (type == "map") {
+                if (j["m"].is_array())
+                    for (const auto& p : j["m"])
+                        if (p.is_array() && p.size() == 2 && p[0].is_string() && p[1].is_string())
+                            op.rewrites.emplace_back(p[0].get<std::string>(), p[1].get<std::string>());
+            } else if (type == "worktree") {
+                WorktreeChange c;
+                c.action = j.value("do", std::string());
+                c.path = j.value("path", std::string());
+                c.head = j.value("head", std::string());
+                c.branch = j.value("branch", std::string());
+                c.locked = j.value("locked", false);
+                c.reason = j.value("reason", std::string());
+                if (!inverse(c).action.empty() && !c.path.empty())
+                    op.worktrees.push_back(std::move(c));
+            } else if (type == "rebase") {
+                op.spansRebase = true;
+            } else if (type == "end") {
+                const bool ok = j.value("ok", true); // may throw: change nothing before it
+                op.ended = true;
+                op.ok = ok;
+            }
+            // Unknown record types are ignored (minor additions stay compatible).
+            own(it->second);
+        } catch (const json::exception&) { // a field of the wrong type: a bad line
+            ++r.bad;
         }
-        // Unknown record types are ignored (minor additions stay compatible).
     }
     return r;
 }

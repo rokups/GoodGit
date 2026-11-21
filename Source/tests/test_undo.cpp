@@ -870,4 +870,19 @@ GG_TEST("undo", "journal: retain drops lines with fields of the wrong type and d
     GG_CHECK(journal.read(nullptr, &skipped).size() == 1u && skipped == 0u);
 }
 
+GG_TEST("undo", "journal: a record with a field of the wrong type is a bad line, not a throw")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    fs::create_directories(journal.dir());
+    std::ofstream(journal.path(), std::ios::binary) << "{\"gg-journal\":1}\n" << rawRecord("begin", "a") << "\n"
+        << "{\"v\":1,\"t\":\"begin\",\"op\":\"c\",\"src\":5}\n"
+        << "{\"v\":1,\"t\":\"end\",\"op\":\"a\",\"ok\":\"no\"}\n";
+    size_t skipped = 0;
+    std::vector<gg::journal::Operation> ops;
+    ops = journal.read(nullptr, &skipped); // a throw fails the test
+    GG_CHECK(ops.size() == 1u && skipped == 2u);
+    GG_CHECK(ops[0].id == "a" && !ops[0].ended && ops[0].last == 1u);
+}
+
 } // namespace ggtest
