@@ -336,8 +336,8 @@ GG_TEST("stash", "a conflicting pop keeps the stash and leaves plain git conflic
     GG_CHECK(s.read(repo, "a.txt").find("<<<<<<<") != std::string::npos);
     // The conflict shows in Changes like any native conflict.
     GG_CHECK(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "a.txt").c_str()); }));
-    if (s.app.dialogs().current() && s.app.dialogs().current()->icon)
-        s.dismissError();
+    GG_REQUIRE(s.dismissError());
+    GG_CHECK_EQ(stashCount(s, repo), static_cast<size_t>(3));
 }
 
 #ifndef _WIN32
