@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <fstream>
 #include <set>
@@ -806,15 +807,26 @@ void Actions::split(const core::Oid& commit, const std::vector<std::string>& pat
     });
 }
 
-void Actions::abandon(const core::Oid& commit, bool withDescendants, std::function<void()> then)
+void Actions::abandon(const core::Oid& commit, bool withDescendants, std::function<void(const std::vector<std::string>&)> then)
 {
     const std::string id = commit.hex();
     const std::string label = std::string(withDescendants ? "drop commit and descendants from " : "drop commit ") + id.substr(0, 10);
-    PlanBuilder build = [id, withDescendants](git_repository* repo) {
+    // The builder runs on the worker and fills this; `done` reads it after the rewrite.
+    auto doomed = std::make_shared<std::vector<std::string>>();
+    PlanBuilder build = [id, withDescendants, doomed](git_repository* repo) {
         rw::Plan plan;
         plan.reflogMessage = "ggui: drop";
         if (withDescendants) {
             plan.dropped = rw::descendants(repo, {id});
+            const std::set<std::string> dropped(plan.dropped.begin(), plan.dropped.end());
+            doomed->clear();
+            gg::git2::forEachReference(repo, [&](git_reference* ref) {
+                const std::string name = git_reference_name(ref);
+                if (name.rfind("refs/heads/", 0) == 0 && git_reference_type(ref) == GIT_REFERENCE_DIRECT
+                    && dropped.count(gg::git2::toHex(*git_reference_target(ref))))
+                    doomed->push_back(name.substr(11));
+                return true;
+            });
             return plan;
         }
         plan = replayWithout(repo, {id}, {id});
@@ -822,9 +834,9 @@ void Actions::abandon(const core::Oid& commit, bool withDescendants, std::functi
         plan.dropped = {id};
         return plan;
     };
-    Callback done = [this, then](const core::MutationFinishedEvent& e) {
+    Callback done = [this, then, doomed](const core::MutationFinishedEvent& e) {
         if (e.outcome == Outcome::Ok && then)
-            then();
+            then(*doomed);
         else
             handleDefault(e);
     };

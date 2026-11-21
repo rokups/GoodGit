@@ -202,7 +202,8 @@ public:
     void squashRange(const std::vector<core::Oid>& commits, const std::string& message);
     void squashDescendants(const core::Oid& commit);
     void split(const core::Oid& commit, const std::vector<std::string>& paths, const std::string& firstMessage);
-    void abandon(const core::Oid& commit, bool withDescendants, std::function<void()> then = {});
+    // With descendants, `then` gets the names of the local branches that the drop removes (read from git).
+    void abandon(const core::Oid& commit, bool withDescendants, std::function<void(const std::vector<std::string>&)> then = {});
     void restorePaths(const core::Oid& commit, const std::string& from, const std::vector<std::string>& paths);
     // `git restore --source=<from> --staged --worktree -- paths` (plain git).
     void restoreWorktree(const std::string& from, const std::vector<std::string>& paths);

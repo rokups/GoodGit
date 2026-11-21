@@ -726,6 +726,27 @@ GG_TEST("edit", "drop a commit (A) and a commit with its descendants (Shift+A)")
     GG_CHECK(hasOperation("drop commit and descendants from " + r.s1.substr(0, 10)));
 }
 
+GG_TEST("edit", "Drop commit and descendants deletes a branch whose tip is not in the loaded rows")
+{
+    const EditRepo r = makeRepo(s);
+    // side gets a second commit: its tip is a descendant of s1, not s1 itself.
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "s2.txt", "s2\n", "s2 add s2");
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c4));
+    GG_REQUIRE(rowReady(s, r.s1));
+    // Hiding side removes its tip from the loaded rows; git still knows the branch.
+    s.session()->history().setRefsVisible({"refs/heads/side"}, false);
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(r.s1)) == nullptr; }));
+    ggui::showAbandonBranchDialog(*s.session(), ggui::core::Oid::fromHex(r.s1));
+    GG_REQUIRE(s.dialogOpen("Drop commit and descendants"));
+    s.dialogButton("Drop commit and descendants", "Drop");
+    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(r.path, {"rev-parse", "--verify", "-q", "refs/heads/side"}).ok(); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
+}
+
 GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents")
 {
     const EditRepo r = makeRepo(s);

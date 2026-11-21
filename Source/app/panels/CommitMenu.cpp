@@ -574,21 +574,16 @@ void showAbandonBranchDialog(Session& session, const core::Oid& commit)
     f.buttons.push_back({"Drop", [s, commit](Form& form) {
                              const bool deleteBranches = form.checked("delete_branches");
                              const bool deleteRemote = form.checked("delete_remote");
-                             // Branches at or after the commit (read now, before the rewrite moves them).
-                             std::vector<std::pair<std::string, std::vector<std::string>>> doomed;
-                             for (const auto& b : s->snapshot()->branches) {
-                                 if (b.target == commit || s->history().descendsFrom(b.target, commit)) {
-                                     std::vector<std::string> remotes;
-                                     if (deleteRemote && !b.upstreamRemote.empty())
-                                         remotes.push_back(b.upstreamRemote);
-                                     doomed.emplace_back(b.name, remotes);
-                                 }
-                             }
-                             s->actions().abandon(commit, true, [s, doomed, deleteBranches]() {
+                             // The worker reads the doomed branches from git before the rewrite moves them.
+                             s->actions().abandon(commit, true, [s, deleteBranches, deleteRemote](const std::vector<std::string>& doomed) {
                                  if (!deleteBranches)
                                      return;
-                                 for (const auto& [name, remotes] : doomed)
+                                 for (const auto& name : doomed) {
+                                     std::vector<std::string> remotes;
+                                     if (const auto* b = s->snapshot()->findBranch(name); b && deleteRemote && !b->upstreamRemote.empty())
+                                         remotes.push_back(b->upstreamRemote);
                                      s->actions().deleteBranch(name, true, remotes, true);
+                                 }
                              });
                          }});
     f.buttons.back().danger = true;
