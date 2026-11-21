@@ -194,6 +194,7 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
             if (!keep::isKeepRef(c.ref))
                 preview->refs.push_back({c.ref, c.oldValue, c.newValue});
         preview->tree = plan.index.has_value();
+        preview->worktrees = plan.worktrees;
         result.ok = true;
         return result;
     }

@@ -2480,9 +2480,16 @@ void Actions::confirmRestore(const std::string& operationId)
             const auto r = gg::undo(ctx.repo(), false, "ggui", operationId, &p);
             if (!r.ok)
                 throw MutationError{Outcome::Refused, r.error, r.error};
+            if (p.refs.empty() && p.worktrees.empty() && !p.tree)
+                throw MutationError{Outcome::Refused, "Nothing to restore.", {}};
             ctx.info = "Restore " + r.label.substr(r.label.find(' ') + 1) + "? These refs move:\n";
             for (const auto& m : p.refs)
                 ctx.info += "\n" + m.ref + ": " + restoreValue(m.from) + " -> " + restoreValue(m.to);
+            for (const auto& w : p.worktrees) {
+                const bool removed = w.action == "remove";
+                if (removed || w.action == "add")
+                    ctx.info += "\nWorktree " + w.path + (removed ? " is removed" : " is added back");
+            }
             if (p.tree)
                 ctx.info += "\n\nThe working tree and the index change too.";
         },

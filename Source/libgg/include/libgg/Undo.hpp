@@ -2,6 +2,7 @@
 #pragma once
 
 #include "libgg/Git2.hpp"
+#include "libgg/Journal.hpp"
 
 #include <string>
 #include <vector>
@@ -22,11 +23,13 @@ struct UndoPreview {
     struct Move { std::string ref, from, to; }; // from = the value now, to = the value after (the null id: none)
     std::vector<Move> refs;                     // keep refs left out: they are derived state
     bool tree = false;                          // the index or the working tree changes too
+    std::vector<journal::WorktreeChange> worktrees; // linked worktrees the restore adds or removes
 };
 
 // Undoes (or redoes) the newest applicable operation for this worktree. `targetId` restores a
-// specific operation instead (Operations panel "Restore"). With `preview`, nothing changes: it
-// gets the refs and the tree change of the plan, or `error` says why the plan fails.
+// specific operation instead (Operations panel "Restore"). With `preview`, the restore does not
+// run, but the reconcile pass before the plan can still append journal records for plain git
+// commands, like a refresh. `preview` gets the refs and the tree change of the plan, or `error` says why the plan fails.
 UndoResult undo(git_repository* repo, bool redo, const std::string& src, const std::string& targetId = {},
     UndoPreview* preview = nullptr);
 
