@@ -77,6 +77,8 @@ public:
 
     // Reads m_hidden from the settings for the first snapshot; names of refs that no longer exist are dropped.
     void loadHidden();
+    // Drops names of refs that no longer exist from m_hidden. Returns true if it dropped any.
+    bool pruneHidden();
     // Writes m_hidden to the settings (after each change).
     void storeHidden();
 

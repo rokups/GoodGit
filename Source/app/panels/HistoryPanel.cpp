@@ -161,8 +161,12 @@ void HistoryPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChange
     m_snapshot = snapshot;
     if (!before)
         loadHidden();
-    if (before && refsChanged && hideNewRefs(*before, *snapshot))
-        storeHidden();
+    if (before && refsChanged) {
+        // Prune first: a new ref with the name of a deleted ref must not stay hidden.
+        const bool pruned = pruneHidden();
+        if (hideNewRefs(*before, *snapshot) || pruned)
+            storeHidden();
+    }
     // Hidden refs that no longer exist leave the scope (buildScope).
     if (refsChanged)
         reload();
@@ -173,7 +177,13 @@ void HistoryPanel::loadHidden()
     const std::string& key = m_session.repoStateKey();
     if (key.empty() || !m_snapshot)
         return;
-    const std::set<std::string> stored = m_session.app().settings().hiddenRefs(key, m_snapshot->worktreeId);
+    m_hidden = m_session.app().settings().hiddenRefs(key, m_snapshot->worktreeId);
+    if (pruneHidden())
+        storeHidden();
+}
+
+bool HistoryPanel::pruneHidden()
+{
     const auto& s = *m_snapshot;
     std::set<std::string> existing;
     for (const auto& b : s.branches)
@@ -184,12 +194,7 @@ void HistoryPanel::loadHidden()
         existing.insert("refs/tags/" + t.name);
     for (const auto& k : s.kept)
         existing.insert(gg::keep::refName(k.id.hex()));
-    m_hidden.clear();
-    for (const auto& name : stored)
-        if (existing.count(name))
-            m_hidden.insert(name);
-    if (m_hidden.size() != stored.size())
-        storeHidden();
+    return std::erase_if(m_hidden, [&](const std::string& n) { return !existing.count(n); }) > 0;
 }
 
 void HistoryPanel::storeHidden()
