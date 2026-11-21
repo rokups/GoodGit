@@ -55,21 +55,15 @@ fs::path gguiProgram()
 bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child, std::string& error)
 {
 #ifdef _WIN32
-    std::string line;
-    for (const auto& a : args)
-        line += (line.empty() ? "" : " ") + quoteWindowsArg(a);
-    const int n = MultiByteToWideChar(CP_UTF8, 0, line.data(), static_cast<int>(line.size()), nullptr, 0);
-    std::wstring cmd(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, line.data(), static_cast<int>(line.size()), cmd.data(), n);
-    if (!windowsCommandLineFits(cmd.size())) {
-        error = "command line too long";
+    std::wstring application, cmd;
+    if (!buildWindowsCommandLine(args, args.front(), application, cmd, error))
         return false;
-    }
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
-    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, nullptr,
-            nullptr, &si, &pi)) {
+    if (!CreateProcessW(application.empty() ? nullptr : application.c_str(), cmd.data(), nullptr, nullptr, FALSE,
+            (application.empty() ? DETACHED_PROCESS : CREATE_NO_WINDOW) | CREATE_NEW_PROCESS_GROUP, nullptr, nullptr, &si,
+            &pi)) {
         error = "cannot start " + args.front();
         return false;
     }
