@@ -870,7 +870,7 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
         std::optional<git_oid> oid;
         if (item.commit.size() == fullSize && isHex(item.commit)) {
             oid = fromHex(item.commit);
-        } else if (item.commit.size() >= 4 && isHex(item.commit)) {
+        } else if (item.commit.size() >= 4 && item.commit.size() < fullSize && isHex(item.commit)) {
             git_object* raw = nullptr;
             const git_oid padded = fromHexOrThrow(item.commit + std::string(fullSize - item.commit.size(), '0'));
             const int rc = git_object_lookup_prefix(&raw, repo, &padded, item.commit.size(), GIT_OBJECT_COMMIT);

@@ -20,6 +20,8 @@
 #include <libgg/Todo.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -1144,6 +1146,52 @@ GG_TEST("rebase-merges", "preview: an empty fixup after a reset drops its row an
     GG_CHECK_STR_EQ(p->rows[1].sources.front(), d);
     GG_CHECK_EQ(p->rows[0].decisions.size(), 1u);
     GG_CHECK(p->rows[1].decisions.empty());
+}
+
+GG_TEST("rebase-merges", "todo: a token longer than a full id is a problem, not an exception")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.commitFile(path, "a.txt", "a\n", "a");
+    const std::string head = s.head(path);
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    todo::Context context = todo::read(repo.get(), {"", "HEAD", ""});
+    todo::Todo list = todo::parse("pick " + head + "0\n");
+    const auto problems = todo::expand(repo.get(), list, context);
+    GG_REQUIRE(problems.size() == 1);
+}
+
+GG_TEST("rebase-merges", "todo: validate with a long list and many branches stays fast")
+{
+    // Synthetic chain of 20000 commits (no repository), 40 branches along it.
+    const auto id = [](int n) {
+        char buffer[41];
+        std::snprintf(buffer, sizeof buffer, "%040x", n + 1);
+        return std::string(buffer);
+    };
+    todo::Context context;
+    todo::Todo list;
+    constexpr int kCount = 20000;
+    for (int i = 0; i < kCount; ++i) {
+        todo::CommitInfo info;
+        info.id = id(i);
+        if (i > 0)
+            info.parents.push_back(id(i - 1));
+        context.commits[info.id] = info;
+        context.range.push_back(info.id);
+        todo::Item item;
+        item.action = todo::Action::Pick;
+        item.commit = info.id;
+        list.items.push_back(item);
+        if (i % (kCount / 40) == 0 && i > 0)
+            context.branchesAt[info.id].push_back("refs/heads/b" + std::to_string(i));
+    }
+    context.tip = id(kCount - 1);
+    context.tipRef = "refs/heads/tip";
+    context.branchesAt[context.tip].push_back(context.tipRef);
+    const auto start = std::chrono::steady_clock::now();
+    (void)todo::validate(list, context);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(ms < timeBudgetMs(1500));
 }
 
 } // namespace ggtest
