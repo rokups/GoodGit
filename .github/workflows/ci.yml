@@ -145,9 +145,8 @@ jobs:
           path: out/test-artifacts/
 
   release-tests:
-    # The release flags (Release, hardening, static libstdc++) with the test engine on: a
-    # subset of the shards, to catch faults that only the optimized build shows.
-    needs: git-min
+    # The release flags (Release, hardening, static libstdc++) with the test engine on: the
+    # full suite in 3 shards, to catch faults that only the optimized build shows.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
