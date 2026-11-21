@@ -489,6 +489,20 @@ void HistoryPanel::setRefsVisible(const std::vector<std::string>& fullNames, boo
 
 bool HistoryPanel::descendsFrom(const core::Oid& id, const core::Oid& ancestor) const
 {
+    // The walk is cached: planDrop asks each frame, and a false answer visits every ancestor.
+    if (m_descendsGen != m_rowsGen || m_descendsRows != m_rows.size()) {
+        m_descends.clear();
+        m_descendsGen = m_rowsGen;
+        m_descendsRows = m_rows.size();
+    }
+    const std::string key = id.hex() + ancestor.hex();
+    if (const auto it = m_descends.find(key); it != m_descends.end())
+        return it->second;
+    return m_descends[key] = walkDescendsFrom(id, ancestor);
+}
+
+bool HistoryPanel::walkDescendsFrom(const core::Oid& id, const core::Oid& ancestor) const
+{
     std::vector<core::Oid> todo{id};
     std::unordered_set<core::Oid, core::OidHash> seen;
     while (!todo.empty()) {
@@ -508,20 +522,46 @@ bool HistoryPanel::descendsFrom(const core::Oid& id, const core::Oid& ancestor) 
     return false;
 }
 
-// The worker's rule for a reorder: both commits lie on one first-parent line without a merge between them.
-bool HistoryPanel::onOneLine(const core::Oid& a, const core::Oid& b) const
+// The line from the tip that the worker picks (HEAD, else the first local branch that holds the commit) down
+// to `commit`: every row on it has one parent. `through` must be on it. The worker refuses when this fails.
+bool HistoryPanel::lineToTip(const core::Oid& commit, const core::Oid& through) const
 {
-    const bool aYounger = descendsFrom(a, b);
-    if (!aYounger && !descendsFrom(b, a))
+    if (!m_snapshot)
         return false;
-    const core::Oid older = aYounger ? b : a;
-    for (core::Oid c = aYounger ? a : b; c != older;) {
+    const auto holds = [&](const core::Oid& tip) { return tip == commit || descendsFrom(tip, commit); };
+    core::Oid tip;
+    if (!m_snapshot->headUnborn && holds(m_snapshot->head))
+        tip = m_snapshot->head;
+    else
+        for (const auto& b : m_snapshot->branches)
+            if (holds(b.target)) {
+                tip = b.target;
+                break;
+            }
+    if (tip.isNull())
+        return false; // no tip: the line is the commit alone
+    bool seen = false;
+    for (core::Oid c = tip;; ) {
+        seen = seen || c == through;
+        if (c == commit)
+            return seen;
         const auto* r = row(c);
         if (!r || r->parents.size() != 1)
             return false;
         c = r->parents.front();
     }
-    return true;
+}
+
+// The worker's rule for a reorder: both commits lie on one first-parent line, and the line from a tip to the
+// younger commit has no merge. The tip search takes the branches in snapshot order, as the worker takes the references.
+bool HistoryPanel::onOneLine(const core::Oid& a, const core::Oid& b) const
+{
+    const bool aYounger = descendsFrom(a, b);
+    if (!aYounger && !descendsFrom(b, a))
+        return false;
+    const core::Oid& older = aYounger ? b : a;
+    const core::Oid& younger = aYounger ? a : b;
+    return lineToTip(younger, younger) && lineToTip(older, younger);
 }
 
 void HistoryPanel::toggleMerge(const core::Oid& id)

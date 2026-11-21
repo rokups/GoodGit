@@ -1196,4 +1196,28 @@ GG_TEST("dnd", "the drop chooser disables its items while a task runs")
     s.settle();
 }
 
+GG_TEST("dnd", "a move under a merge shows no hint; a detached HEAD below the merge allows it")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "g.txt", "g\n", "on side");
+    const std::string g = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "merge side", "side"});
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(g).c_str()) && s.itemExists(rowRef(r.c[0]).c_str()); }));
+    // c1 and c3 lie on one line, but the merge above c3 stops the worker.
+    GG_CHECK(dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Top).empty());
+    GG_CHECK(dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Middle, ImGuiMod_Shift).empty());
+    // A commit on the side branch is under the merge too.
+    GG_CHECK(dropHintAt(s, rowRef(g), rowRef(r.c[1]), At::Middle, ImGuiMod_Shift).empty());
+    GG_CHECK_STR_EQ(s.head(r.path), tip);
+    // HEAD detached at c3: the line from HEAD to c3 has no merge.
+    s.git(r.path, {"switch", "-q", "--detach", r.c[2]});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
+    s.settle();
+    GG_CHECK(!dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Middle, ImGuiMod_Shift).empty());
+}
+
 } // namespace ggtest
