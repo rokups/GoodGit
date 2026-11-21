@@ -97,4 +97,26 @@ GG_TEST("ignore", "Ignore all by extension, folder and .git/info/exclude")
     GG_CHECK(s.read(repo, ".git/info/exclude").ends_with("/v.txt\n"));
 }
 
+GG_TEST("ignore", "a negated pattern keeps its file in Changes and stageable; the other matches stay hidden")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, ".gitignore", "*.log\n!keep.log\n");
+    s.git(repo, {"add", ".gitignore"});
+    s.git(repo, {"commit", "-q", "-m", "ignore"});
+    s.write(repo, "a.log", "a\n");
+    s.write(repo, "b.log", "b\n");
+    s.write(repo, "keep.log", "k\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return hasRow(s, "keep.log"); }));
+    GG_CHECK(!hasRow(s, "a.log"));
+    GG_CHECK(!hasRow(s, "b.log"));
+    GG_CHECK_EQ(s.session()->changes().rows().size(), static_cast<size_t>(1));
+    GG_CHECK(s.gitOut(repo, {"status", "--porcelain"}) == "?? keep.log");
+    s.contextMenu(fileRef(s, "Untracked", "keep.log").c_str(), "Stage");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}) == "keep.log"; }));
+    s.settle();
+    GG_CHECK(!hasRow(s, "a.log"));
+    GG_CHECK(!hasRow(s, "b.log"));
+}
+
 } // namespace ggtest
