@@ -61,6 +61,8 @@ void rememberGroup(git_repository* repo, journal::Writer& journal, const std::st
 // terminal) gets its end record; the state directory is removed.
 void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::string* error = nullptr);
 // Ends and forgets the remembered operation (the rebase just finished).
+// Marks the remembered group as failed (state file line 4): a later end, also a retry, is not ok.
+void markGroupFailed(git_repository* repo);
 void finishGroup(git_repository* repo, journal::Writer& journal, bool ok = true, std::string* error = nullptr);
 
 // ---- Prepared todo and messages ---------------------------------------------------------------

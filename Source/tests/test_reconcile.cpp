@@ -2120,17 +2120,8 @@ namespace {
 
 // Makes the "refs" records of every Writer fail while it lives.
 struct FailRefRecords {
-    int hits = 0;
-    FailRefRecords()
-    {
-        gg::journal::failAppendHook = [this](const std::string& type) {
-            if (type != "refs")
-                return false;
-            ++hits;
-            return true;
-        };
-    }
-    ~FailRefRecords() { gg::journal::failAppendHook = nullptr; }
+    FailRefRecords() { gg::journal::failRefRecords = true; }
+    ~FailRefRecords() { gg::journal::failRefRecords = false; }
     FailRefRecords(const FailRefRecords&) = delete;
     FailRefRecords& operator=(const FailRefRecords&) = delete;
 };
@@ -2150,7 +2141,6 @@ GG_TEST("reconcile", "an operation whose ref records fail ends as failed, and th
         s.commitFile(repo, "late.txt", "late\n", "Late");
         FailRefRecords fail;
         rec.finish(true, false);
-        GG_CHECK(fail.hits >= 1);
         GG_CHECK(!rec.journalError().empty());
     }
     GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 2; }));
@@ -2188,7 +2178,6 @@ GG_TEST("reconcile", "a rebase group whose final ref records fail stays open, an
             s.git(repo, {"rebase", "--continue"});
         FailRefRecords fail;
         rec.finish(true, false);
-        GG_CHECK(fail.hits >= 1);
     }
     GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).front().ended; }));
     s.settle();

@@ -206,6 +206,7 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
         m_journal.appendWorktree(m_op.id, w, &error);
     // Without the ref records the operation cannot be undone, and the reflog entries stay for the
     // next reconcile pass: it ends as failed, and the cursor does not move.
+    const bool stepOk = ok; // the caller's verdict, before a ref record failure changes it
     const bool refsRecorded = m_journal.appendRefs(m_op.id, changes, &error);
     if (!refsRecorded)
         ok = false;
@@ -240,6 +241,8 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
         // appends the refs and ends the group.
         if (!rebasing && refsRecorded)
             native::finishGroup(m_repo, m_journal, ok, &error);
+        else if (!rebasing && !stepOk)
+            native::markGroupFailed(m_repo); // the group stays open, and its end must not be ok
     } else if (startsGroup) {
         native::rememberGroup(m_repo, m_journal, m_op.id, m_op.src);
     } else {

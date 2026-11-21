@@ -190,14 +190,21 @@ void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::str
         removeState(dir);
 }
 
+void markGroupFailed(git_repository* repo)
+{
+    const fs::path dir = stateDir(repo);
+    if (const auto group = readGroup(dir); group && group->ok)
+        writeState(dir / "operation", group->op + "\n" + group->identity + "\n" + group->src + "\nfailed\n");
+}
+
 void finishGroup(git_repository* repo, journal::Writer& journal, bool ok, std::string* error)
 {
     const fs::path dir = stateDir(repo);
     if (const auto group = readGroup(dir)) {
         // A failed end is retried by closeFinishedGroup: it must know the group did not succeed.
-        if (!ok && group->ok)
-            writeState(dir / "operation", group->op + "\n" + group->identity + "\n" + group->src + "\nfailed\n");
-        if (!recordHeadNow(repo, journal, group->op, error) || !journal.end(group->op, ok, error))
+        if (!ok)
+            markGroupFailed(repo);
+        if (!recordHeadNow(repo, journal, group->op, error) || !journal.end(group->op, ok && group->ok, error))
             return; // the state stays: the next pass retries
     }
     removeState(dir);

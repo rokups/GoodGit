@@ -232,7 +232,7 @@ bool Writer::appendRefs(const std::string& id, const std::vector<RefChange>& cha
 {
     if (changes.empty())
         return true;
-    if (failAppendHook && failAppendHook("refs")) {
+    if (failRefRecords.load()) {
         if (error)
             *error = "append refused by the test hook";
         return false;
