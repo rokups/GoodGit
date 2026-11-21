@@ -481,8 +481,19 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         } else if (name.rfind("refs/tags/", 0) == 0) {
             TagInfo tag;
             tag.name = name.substr(10);
+            // A lightweight tag needs only its type: the odb header read skips the parse of the commit.
+            git_odb* odb = nullptr;
+            size_t headerSize = 0;
+            git_object_t type = GIT_OBJECT_INVALID;
+            const bool lightweight = git_repository_odb(&odb, repo) == 0 && git_odb_read_header(&headerSize, &type, odb, target) == 0
+                && type != GIT_OBJECT_TAG;
+            if (odb)
+                git_odb_free(odb);
+            git_error_clear();
             git_object* obj = nullptr;
-            if (git_object_lookup(&obj, repo, target, GIT_OBJECT_ANY) == 0) {
+            if (lightweight) {
+                tag.target = toOid(*target);
+            } else if (git_object_lookup(&obj, repo, target, GIT_OBJECT_ANY) == 0) {
                 Object o(obj);
                 if (git_object_type(o.get()) == GIT_OBJECT_TAG) {
                     tag.annotated = true;
