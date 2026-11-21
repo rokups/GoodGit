@@ -1251,6 +1251,8 @@ GG_TEST("rebase-merges", "dropping a whole merged chain leaves a straight main: 
     installRecordingHooks(s, r.path);
     const fs::path pristine = copyRepo(s, r.path, "pristine");
     GG_REQUIRE(openMerges(s, r));
+    const bool off = updateRefsOff(s);
+    const std::string topicBefore = s.revParse(r.path, "topic");
     for (const std::string& id : {r.t1, r.t2}) {
         ctx->ItemClick(irRow(id).c_str());
         ctx->KeyPress(ImGuiKey_D);
@@ -1268,9 +1270,14 @@ GG_TEST("rebase-merges", "dropping a whole merged chain leaves a straight main: 
     checkClean(s, r.path);
     checkStraightMain(s, r);
     GG_CHECK(!reachable(s, r, r.t1, "main") && !reachable(s, r, r.t2, "main"));
-    // The dropped commits are on no branch: topic went back with the chain dropped.
-    GG_CHECK(!reachable(s, r, r.t1, "topic") && !reachable(s, r, r.t2, "topic"));
-    GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), s.revParse(r.path, "main~2"));
+    if (off) {
+        // Without update-ref rows only main moves.
+        GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), topicBefore);
+    } else {
+        // The dropped commits are on no branch: topic went back with the chain dropped.
+        GG_CHECK(!reachable(s, r, r.t1, "topic") && !reachable(s, r, r.t2, "topic"));
+        GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), s.revParse(r.path, "main~2"));
+    }
     sameAsGitOnCopy(s, r, pristine, todoText);
 }
 
@@ -1280,6 +1287,8 @@ GG_TEST("rebase-merges", "dropping the merge row keeps the chain on its own bran
     installRecordingHooks(s, r.path);
     const fs::path pristine = copyRepo(s, r.path, "pristine");
     GG_REQUIRE(openMerges(s, r));
+    const bool off = updateRefsOff(s);
+    const std::string topicBefore = s.revParse(r.path, "topic");
     const auto merges = [&] {
         const auto& items = editor(s).todo().items;
         return std::count_if(items.begin(), items.end(), [](const auto& item) { return item.action == A::Merge; });
@@ -1300,15 +1309,19 @@ GG_TEST("rebase-merges", "dropping the merge row keeps the chain on its own bran
     checkClean(s, r.path);
     checkStraightMain(s, r);
     GG_CHECK(!reachable(s, r, r.t1, "main") && !reachable(s, r, r.t2, "main"));
-    // topic keeps its two commits on a1; the commits no longer reach main.
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "--format=%s", "topic"}), "t2 change t\nt1 add t\na1 add a\nc0 base");
-    GG_CHECK_STR_EQ(s.revParse(r.path, "topic~2"), s.revParse(r.path, "main~2"));
-    GG_CHECK_EQ(parentsOf(s, r.path, "topic").size(), 1u);
-    GG_CHECK_STR_EQ(parentsOf(s, r.path, "topic").at(0), s.revParse(r.path, "topic~1"));
-    GG_CHECK_EQ(parentsOf(s, r.path, "topic~1").size(), 1u);
-    GG_CHECK_STR_EQ(parentsOf(s, r.path, "topic~1").at(0), s.revParse(r.path, "topic~2"));
-    GG_CHECK_STR_EQ(s.gitOut(r.path, {"ls-tree", "-r", "--name-only", "topic"}), "a.txt\nbase.txt\nt.txt");
-    GG_CHECK(!reachable(s, r, r.m, "topic"));
+    if (off) {
+        GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), topicBefore);
+    } else {
+        // topic keeps its two commits on a1; the commits no longer reach main.
+        GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "--format=%s", "topic"}), "t2 change t\nt1 add t\na1 add a\nc0 base");
+        GG_CHECK_STR_EQ(s.revParse(r.path, "topic~2"), s.revParse(r.path, "main~2"));
+        GG_CHECK_EQ(parentsOf(s, r.path, "topic").size(), 1u);
+        GG_CHECK_STR_EQ(parentsOf(s, r.path, "topic").at(0), s.revParse(r.path, "topic~1"));
+        GG_CHECK_EQ(parentsOf(s, r.path, "topic~1").size(), 1u);
+        GG_CHECK_STR_EQ(parentsOf(s, r.path, "topic~1").at(0), s.revParse(r.path, "topic~2"));
+        GG_CHECK_STR_EQ(s.gitOut(r.path, {"ls-tree", "-r", "--name-only", "topic"}), "a.txt\nbase.txt\nt.txt");
+        GG_CHECK(!reachable(s, r, r.m, "topic"));
+    }
     sameAsGitOnCopy(s, r, pristine, todoText);
 }
 
