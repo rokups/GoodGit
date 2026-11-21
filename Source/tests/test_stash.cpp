@@ -249,7 +249,7 @@ GG_TEST("stash", "Change information edits a stash message in place: same index,
     GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled); // unchanged text
     s.setText("//Change information/##message", "Renamed middle stash");
     ctx->ItemClick("//Change information/###save_message");
-    GG_CHECK(s.waitUntil([&] { return lines().size() == 3 && lines()[1] == "Renamed middle stash"; }));
+    GG_CHECK(s.waitUntil([&] { const auto l = lines(); return l.size() == 3 && l[1] == "Renamed middle stash"; }));
     s.settle();
     const auto after = lines();
     GG_REQUIRE(after.size() == 3);
@@ -292,7 +292,7 @@ GG_TEST("stash", "Rename (menu and F2) stores the same commit again with a new m
     GG_REQUIRE(s.dialogOpen("Rename stash"));
     s.dialogText("Rename stash", "name", "Renamed by menu");
     s.dialogButton("Rename stash", "Rename");
-    GG_CHECK(s.waitUntil([&] { return lines().size() == 3 && lines()[1] == "Renamed by menu"; }));
+    GG_CHECK(s.waitUntil([&] { const auto l = lines(); return l.size() == 3 && l[1] == "Renamed by menu"; }));
     s.settle();
     auto after = lines();
     GG_REQUIRE(after.size() == 3);
@@ -309,7 +309,7 @@ GG_TEST("stash", "Rename (menu and F2) stores the same commit again with a new m
     GG_REQUIRE(s.dialogOpen("Rename stash"));
     s.dialogText("Rename stash", "name", "Renamed by F2");
     s.dialogButton("Rename stash", "Rename");
-    GG_CHECK(s.waitUntil([&] { return lines().size() == 3 && lines()[2] == "Renamed by F2"; }));
+    GG_CHECK(s.waitUntil([&] { const auto l = lines(); return l.size() == 3 && l[2] == "Renamed by F2"; }));
     s.settle();
     after = lines();
     GG_REQUIRE(after.size() == 3);
