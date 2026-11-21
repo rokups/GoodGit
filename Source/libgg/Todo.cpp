@@ -625,13 +625,14 @@ Todo mergesTodo(git_repository* repo, Context& context, const std::vector<std::s
         std::vector<std::string> list;
         std::optional<std::string> at = t;
         while (at && interesting.count(*at) && !shown.count(*at)) {
-            list.insert(list.begin(), *at);
+            list.push_back(*at); // reversed below: oldest first
             const auto& parents = parentsOf[*at];
             if (parents.empty())
                 at.reset();
             else
                 at = parents.front();
         }
+        std::reverse(list.begin(), list.end());
         Item reset;
         reset.action = Action::Reset;
         if (!at) {
@@ -910,11 +911,13 @@ void readGitList(git_repository* repo, std::string_view todoText, Context& conte
         problems.push_back(std::move(p));
     if (!problems.empty())
         throw std::runtime_error(std::string("cannot read ") + what + ": " + problems.front().message);
+    std::set<std::string> inRange(context.range.begin(), context.range.end());
+    std::set<std::string> inMerges(context.merges.begin(), context.merges.end());
     for (const Item& item : list.items) {
-        std::vector<std::string>& into = item.isCommit() ? context.range : context.merges;
-        if ((item.isCommit() || (item.action == Action::Merge && !item.commit.empty()))
-            && std::find(into.begin(), into.end(), item.commit) == into.end())
-            into.push_back(item.commit);
+        const bool commit = item.isCommit();
+        if ((commit || (item.action == Action::Merge && !item.commit.empty()))
+            && (commit ? inRange : inMerges).insert(item.commit).second)
+            (commit ? context.range : context.merges).push_back(item.commit);
     }
     forEachReference(repo, [&](git_reference* ref) {
         const std::string refName = git_reference_name(ref);
@@ -1492,7 +1495,11 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
         std::set<std::string> inRange(context.range.begin(), context.range.end());
         if (hasMergeRows(todo))
             inRange.insert(context.merges.begin(), context.merges.end());
-        auto reach = [&](const std::string& from) {
+        std::map<std::string, std::set<std::string>> reachCache; // per validate call, so no stale refs
+        auto reach = [&](const std::string& from) -> const std::set<std::string>& {
+            const auto hit = reachCache.find(from);
+            if (hit != reachCache.end())
+                return hit->second;
             std::set<std::string> seen;
             std::vector<std::string> stack{from};
             while (!stack.empty()) {
@@ -1503,7 +1510,7 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
                 for (const auto& p : context.commits.at(c).parents)
                     stack.push_back(p);
             }
-            return seen;
+            return reachCache.emplace(from, std::move(seen)).first->second;
         };
         auto check = [&](const std::string& ref, const std::string& tip, int row) {
             if (tip.empty() || !inRange.count(tip))
@@ -1512,7 +1519,7 @@ std::vector<Issue> validate(const Todo& todo, const Context& context)
             for (const auto& [other, commit] : tipOf) {
                 if (other == ref || commit == tip)
                     continue;
-                const std::set<std::string> below = reach(commit);
+                const std::set<std::string>& below = reach(commit);
                 if (below.count(tip))
                     continue; // a branch stacked on this one
                 for (const auto& c : below)
