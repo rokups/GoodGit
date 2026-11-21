@@ -718,6 +718,9 @@ GG_TEST("panels", "worktrees: main, locked, stale; copy, reveal, open")
     const std::string porcelain = s.gitOut(repo, {"worktree", "list", "--porcelain"});
     GG_CHECK(porcelain.find("locked test lock") != std::string::npos);
     GG_CHECK(porcelain.find("prunable") != std::string::npos);
+    // The panel lists the same worktrees.
+    for (const std::string& name : {wt1, wt2, wt3})
+        GG_CHECK(s.itemExists(("//Worktrees/worktree_" + name + "/###row").c_str()));
     const std::string row = "//Worktrees/worktree_" + wt1 + "/###row";
     GG_CHECK(s.itemExists(row.c_str()));
     s.contextMenu(row.c_str(), "Copy name");
@@ -2236,12 +2239,23 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     // Tooltips: an annotated tag's message, a remote's URLs, a locked worktree's reason.
     s.showPanel("Tags");
     hover("//Tags/tag_ann/###tag_ann");
+    GG_CHECK(s.textShown("//##Tooltip_00", "An annotated tag"));
     s.showPanel("Remotes");
     hover("//Remotes/remote_origin/###row");
+    // A long URL wraps over lines: the lines together are the URL.
+    std::string tipText;
+    for (const std::string& line : s.drawnText("//##Tooltip_00"))
+        tipText += line;
+    GG_CHECK_STR_EQ(tipText, gg::trim(s.gitOut(repo, {"remote", "get-url", "origin"})));
     s.showPanel("Worktrees");
     const std::string wtRow = "//Worktrees/worktree_" + locked.filename().string() + "/###row";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(wtRow.c_str()); }));
     hover(wtRow);
+    std::string wtTip; // the path wraps over lines
+    for (const std::string& line : s.drawnText("//##Tooltip_00"))
+        wtTip += line;
+    GG_CHECK(wtTip.find(locked.string()) == 0);
+    GG_CHECK(s.textShown("//##Tooltip_00", "Locked: on a USB stick (git does not prune, move or remove it)"));
     ctx->ItemClick(wtRow.c_str(), ImGuiMouseButton_Right);
     GG_CHECK(s.itemExists("//$FOCUSED/Unlock"));
     ctx->KeyPress(ImGuiKey_Escape);
@@ -2250,7 +2264,20 @@ GG_TEST("panels", "details: remote-tracking rows, tooltips, a locked worktree, r
     const std::string head = s.head(repo);
     ctx->ItemInputValue("//Reflog/##reflog_filter", head.substr(0, 12).c_str());
     ctx->Yield(2);
-    GG_CHECK(s.itemExists("//Reflog/##reflog_table/r0/###reflog_0"));
+    // Rows are named by the entry index: the entries that name the commit show, the others are gone.
+    auto& reflogData = s.session()->reflog();
+    GG_REQUIRE(s.waitUntil([&] { return reflogData.reflog() && !reflogData.reflog()->entries.empty(); }));
+    const auto& entries = reflogData.reflog()->entries;
+    const std::string idPrefix = head.substr(0, 12);
+    size_t matching = 0;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const bool named = entries[i].newId.hex().find(idPrefix) != std::string::npos
+            || entries[i].oldId.hex().find(idPrefix) != std::string::npos
+            || entries[i].message.find(idPrefix) != std::string::npos;
+        matching += named ? 1 : 0;
+        GG_CHECK_EQ(s.itemExists(("//Reflog/##reflog_table/r" + std::to_string(i) + "/###reflog_" + std::to_string(i)).c_str()), named);
+    }
+    GG_CHECK(matching >= 1 && matching < entries.size()); // the filter hides at least one row
     ctx->ItemInputValue("//Reflog/##reflog_filter", "");
     // Stash changes from the Stashes panel.
     s.write(repo, "dirty.txt", "dirty\n");
