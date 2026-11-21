@@ -56,6 +56,9 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
 // The history colour, the details panel and the rewrite warning use this rule.
 bool isPublished(git_repository* repo, const git_oid& id);
 
+// The most commits the ahead/behind walk visits. A test lowers it.
+extern int gAheadBehindMaxVisits;
+
 // Whether `commit` has a child among the commits of all branches, remote branches, tags and HEAD.
 // The walk goes from the tips, newest first, and visits at most `maxVisits` commits. It checks `cancel`
 // before each commit. Found: a visited commit has `commit` as a parent. None: the walk ended, or it

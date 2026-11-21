@@ -534,7 +534,7 @@ void App::drawRepositoryButtons()
     std::string pullReason;
     const bool canPull = s && s->pullAvailable(&pullReason);
     const int incoming = s ? s->incoming() : 0;
-    const std::string pullLabel = std::string(ICON_MS_ARROW_DOWNWARD) + " Pull" + (incoming ? " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(incoming) : "");
+    const std::string pullLabel = std::string(ICON_MS_ARROW_DOWNWARD) + " Pull" + (incoming ? " " ICON_MS_ARROW_DOWNWARD_ALT + core::countText(incoming) : "");
     if (iconButton(pullLabel.c_str(), "##tb_pull", !busy.empty() ? busy.c_str() : canPull ? "Pull from the upstream" : pullReason.c_str(),
             free && canPull, ImDrawFlags_RoundCornersLeft))
         s->actions().pull(PullMode::Config);
@@ -553,7 +553,7 @@ void App::drawRepositoryButtons()
     ImGui::SameLine();
     const bool canPush = s && !s->snapshot()->headDetached && !s->snapshot()->headUnborn && hasRemotes;
     const int outgoing = s ? s->outgoing() : 0;
-    const std::string pushLabel = std::string(ICON_MS_UPLOAD) + " Push" + (outgoing ? " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(outgoing) : "");
+    const std::string pushLabel = std::string(ICON_MS_UPLOAD) + " Push" + (outgoing ? " " ICON_MS_ARROW_UPWARD_ALT + core::countText(outgoing) : "");
     const auto* curBranch = s ? s->snapshot()->currentBranch() : nullptr;
     const bool localUp = curBranch && curBranch->upstreamLocal;
     if (iconButton(pushLabel.c_str(), "##tb_push", localUp ? "The upstream is a local branch" : tip("Push the current branch"),

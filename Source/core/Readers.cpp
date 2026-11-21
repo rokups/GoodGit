@@ -19,9 +19,11 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -182,6 +184,103 @@ bool reachableFromAnyTip(git_repository* repo, const git_oid& id, const std::vec
     const bool r = git_graph_reachable_from_any(repo, &id, tips.data(), tips.size()) == 1;
     git_error_clear();
     return r;
+}
+} // namespace
+
+int gAheadBehindMaxVisits = 20000;
+
+namespace {
+// Ahead/behind counts of `local` against `upstream`, capped at kCountCap + 1 (which means "more than kCountCap").
+// A walk in time order from both tips, flags 1 = reached from local, 2 = from upstream. It ends when no queued
+// commit is reached from one tip only and the rest of the queue is older than every counted commit, when both
+// counts are over the cap, or after gAheadBehindMaxVisits commits. After the visit limit a side that may still
+// grow shows as more than the cap: a partial count never shows as an exact number.
+// shortcut: very skewed clocks (a parent newer than its child) can give a wrong count, upgrade if that matters.
+void cappedAheadBehind(git_repository* repo, const git_oid& local, const git_oid& upstream, int& ahead, int& behind)
+{
+    struct State {
+        unsigned flags = 0;
+        bool queued = false;
+        git_time_t time = 0;
+    };
+    struct Item {
+        git_time_t time;
+        git_oid id;
+        bool operator<(const Item& o) const { return time < o.time; }
+    };
+    std::map<std::string, State> states;
+    std::priority_queue<Item> queue;
+    int a = 0, b = 0;
+    int queuedWith[4] = {0, 0, 0, 0}; // queued commits by flags
+    git_time_t oldestCounted = std::numeric_limits<git_time_t>::max(); // oldest commit reached from one tip only
+    // The hex form: the bytes after the hash length are not always zero.
+    auto key = [](const git_oid& id) { return toHex(id); };
+    auto count = [&](unsigned flags, int d) {
+        if (flags == 1)
+            a += d;
+        else if (flags == 2)
+            b += d;
+    };
+    auto timeOf = [&](const git_oid& id, git_time_t& t) {
+        git_commit* c = nullptr;
+        if (git_commit_lookup(&c, repo, &id) != 0)
+            return false;
+        t = git_commit_time(c);
+        git_commit_free(c);
+        return true;
+    };
+    auto paint = [&](const git_oid& id, unsigned bits) {
+        const std::string k = key(id);
+        State& st = states[k];
+        if ((st.flags | bits) == st.flags)
+            return;
+        // A commit that cannot be read is not counted.
+        if (!st.queued && !timeOf(id, st.time)) {
+            if (st.flags == 0)
+                states.erase(k);
+            return;
+        }
+        count(st.flags, -1);
+        if (st.queued)
+            --queuedWith[st.flags];
+        st.flags |= bits;
+        count(st.flags, 1);
+        ++queuedWith[st.flags];
+        if (!st.queued) {
+            st.queued = true;
+            queue.push({st.time, id});
+        }
+        if (st.flags != 3)
+            oldestCounted = std::min(oldestCounted, st.time);
+    };
+    paint(local, 1);
+    paint(upstream, 2);
+    int visits = 0;
+    bool cut = false;
+    while (!queue.empty() && (a <= kCountCap || b <= kCountCap)) {
+        // Equal times: a stale entry may still sit before a commit that is counted, so it is popped too.
+        if (queuedWith[1] + queuedWith[2] == 0 && queue.top().time < oldestCounted)
+            break;
+        if (visits++ >= gAheadBehindMaxVisits) {
+            cut = true;
+            break;
+        }
+        const Item item = queue.top();
+        queue.pop();
+        State& st = states[key(item.id)];
+        st.queued = false;
+        --queuedWith[st.flags];
+        const unsigned flags = st.flags;
+        git_commit* c = nullptr;
+        if (git_commit_lookup(&c, repo, &item.id) != 0)
+            continue;
+        for (unsigned i = 0, n = git_commit_parentcount(c); i < n; ++i)
+            paint(*git_commit_parent_id(c, i), flags);
+        git_commit_free(c);
+    }
+    git_error_clear();
+    ahead = a > kCountCap || (cut && queuedWith[1] > 0) ? kCountCap + 1 : a;
+    behind = b > kCountCap || (cut && queuedWith[2] > 0) ? kCountCap + 1 : b;
 }
 } // namespace
 
@@ -401,8 +500,19 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         } else if (name.rfind("refs/tags/", 0) == 0) {
             TagInfo tag;
             tag.name = name.substr(10);
+            // A lightweight tag needs only its type: the odb header read skips the parse of the commit.
+            git_odb* odb = nullptr;
+            size_t headerSize = 0;
+            git_object_t type = GIT_OBJECT_INVALID;
+            const bool lightweight = git_repository_odb(&odb, repo) == 0 && git_odb_read_header(&headerSize, &type, odb, target) == 0
+                && type != GIT_OBJECT_TAG;
+            if (odb)
+                git_odb_free(odb);
+            git_error_clear();
             git_object* obj = nullptr;
-            if (git_object_lookup(&obj, repo, target, GIT_OBJECT_ANY) == 0) {
+            if (lightweight) {
+                tag.target = toOid(*target);
+            } else if (git_object_lookup(&obj, repo, target, GIT_OBJECT_ANY) == 0) {
                 Object o(obj);
                 if (git_object_type(o.get()) == GIT_OBJECT_TAG) {
                     tag.annotated = true;
@@ -459,11 +569,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
             b.upstreamLocal = upRef.rfind("refs/heads/", 0) == 0;
             git_oid upOid;
             if (git_reference_name_to_id(&upOid, repo, upRef.c_str()) == 0) {
-                size_t ahead = 0, behind = 0;
-                if (git_graph_ahead_behind(&ahead, &behind, repo, &oid, &upOid) == 0) {
-                    b.ahead = static_cast<int>(ahead);
-                    b.behind = static_cast<int>(behind);
-                }
+                cappedAheadBehind(repo, oid, upOid, b.ahead, b.behind);
             } else {
                 b.upstreamGone = true;
             }
@@ -1871,11 +1977,7 @@ RepoSummary readSummary(const fs::path& path)
             git_oid local, remote;
             if (git_reference_name_to_id(&local, repo.get(), target.c_str()) == 0
                 && git_reference_name_to_id(&remote, repo.get(), up.str().c_str()) == 0) {
-                size_t ahead = 0, behind = 0;
-                if (git_graph_ahead_behind(&ahead, &behind, repo.get(), &local, &remote) == 0) {
-                    s.ahead = static_cast<int>(ahead);
-                    s.behind = static_cast<int>(behind);
-                }
+                cappedAheadBehind(repo.get(), local, remote, s.ahead, s.behind);
             }
         }
     }

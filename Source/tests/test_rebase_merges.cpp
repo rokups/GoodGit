@@ -971,6 +971,52 @@ GG_TEST("rebase-merges", "randomized differential: --rebase-merges lists vs git 
     }
 }
 
+GG_TEST("rebase-merges", "todo read: an upstream commit much older than the range is not compared with the listed commits")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    auto commit = [](const std::string& ref, int mark, int from, long time, const std::string& file) {
+        const std::string when = std::to_string(time) + " +0000\n";
+        std::string out = "commit " + ref + "\nmark :" + std::to_string(mark) + "\n";
+        out += "author T <t@example.com> " + when + "committer T <t@example.com> " + when;
+        out += "data 2\nc\n";
+        if (from)
+            out += "from :" + std::to_string(from) + "\n";
+        return out + "M 100644 inline " + file + "\ndata 2\nx\n\n";
+    };
+    // The same change is upstream in 2001 and local in 2023. The 2001 commit is older than the range by far.
+    std::string stream = commit("refs/heads/up", 1, 0, 1000000000, "base");
+    stream += commit("refs/heads/up", 2, 1, 1000000100, "f");
+    stream += commit("refs/heads/loc", 3, 1, 1700000000, "f");
+    s.git(path, {"fast-import", "--quiet"}, stream);
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    // Git drops the local copy as a duplicate. The time bound skips the old upstream commit, so the copy stays.
+    const todo::Context context = todo::read(repo.get(), {"up", "loc", ""});
+    GG_CHECK_EQ(context.range.size(), 1u);
+}
+
+GG_TEST("rebase-merges", "todo read: a listed commit with a new committer time and an old author time still finds its upstream copy")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    auto commit = [](const std::string& ref, int mark, int from, long author, long committer, const std::string& file) {
+        std::string out = "commit " + ref + "\nmark :" + std::to_string(mark) + "\n";
+        out += "author T <t@example.com> " + std::to_string(author) + " +0000\n";
+        out += "committer T <t@example.com> " + std::to_string(committer) + " +0000\n";
+        out += "data 2\nc\n";
+        if (from)
+            out += "from :" + std::to_string(from) + "\n";
+        return out + "M 100644 inline " + file + "\ndata 2\nx\n\n";
+    };
+    // The upstream copy is 3 weeks older than the rebased commit. The rebase kept the author time.
+    constexpr long kNow = 1700000000, kOld = kNow - 21 * 24 * 3600;
+    std::string stream = commit("refs/heads/up", 1, 0, kOld - 1000, kOld - 1000, "base");
+    stream += commit("refs/heads/up", 2, 1, kOld + 100, kOld + 100, "f");
+    stream += commit("refs/heads/loc", 3, 1, kOld, kNow, "f");
+    s.git(path, {"fast-import", "--quiet"}, stream);
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    const todo::Context context = todo::read(repo.get(), {"up", "loc", ""});
+    GG_CHECK_EQ(context.range.size(), 0u);
+}
+
 } // namespace ggtest
 
 namespace ggtest {

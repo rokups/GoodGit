@@ -102,9 +102,9 @@ std::string summaryText(const core::RepoSummary& s, int elidePrefix, int elideSu
     if (!s.upstream.empty()) {
         text += "@" + shorten(trackedName(s.branch, s.upstream, s.upstreamRemote));
         if (s.ahead)
-            text += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(s.ahead);
+            text += " " ICON_MS_ARROW_UPWARD_ALT + core::countText(s.ahead);
         if (s.behind)
-            text += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(s.behind);
+            text += " " ICON_MS_ARROW_DOWNWARD_ALT + core::countText(s.behind);
     }
     return text;
 }
