@@ -250,6 +250,9 @@ private:
     bool m_quit = false;
     bool m_showSettings = false;
     bool m_settingsFreshOpen = false;
+    // The PATH row's inputs: the same until the Settings window opens again (set with m_pathSetup).
+    PathSetupSupport m_pathSupport = PathSetupSupport::Unsupported;
+    std::string m_pathHome, m_pathDir;
     PathSetupState m_pathSetup; // "Add GoodGit to PATH", read from disk when Settings opens
     ContextMenuState m_contextMenu; // "Add "Open in GoodGit" to file manager menus", read from disk when Settings opens
     std::optional<update::SelfUpdater::Config> m_updaterConfig; // set by tests; else the real config

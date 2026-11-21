@@ -222,6 +222,7 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         m_stageTarget = m_rows.size();
         if (!m_staging) {
             m_rows.clear();
+            ++m_rowsGen;
             m_index.clear();
             m_visibleDirty = true;
         }
@@ -240,6 +241,7 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         if (m_stagedRows.size() < m_stageTarget && !batch.complete && !batch.truncated)
             return; // the previous rows stay until the new ones fill their place
         m_rows = std::move(m_stagedRows);
+        ++m_rowsGen;
         m_index = std::move(m_stagedIndex);
         m_stagedRows.clear();
         m_stagedIndex.clear();
@@ -1244,6 +1246,20 @@ void HistoryPanel::goToParent(core::Oid id)
     m_session.revealCommit(id);
 }
 
+const std::vector<core::Oid>& HistoryPanel::childrenOf(const core::Oid& id)
+{
+    if (m_childrenGen != m_rowsGen || m_childrenRows != m_rows.size() || m_childrenOf != id) {
+        m_children.clear();
+        for (const auto& r : m_rows)
+            if (std::find(r.parents.begin(), r.parents.end(), id) != r.parents.end())
+                m_children.push_back(r.id);
+        m_childrenOf = id;
+        m_childrenRows = m_rows.size();
+        m_childrenGen = m_rowsGen;
+    }
+    return m_children;
+}
+
 void HistoryPanel::drawGoToItems(const core::HistoryRow& from, bool single)
 {
     // One commit is an item, more are a submenu with one item each (the drag tooltip's text).
@@ -1274,11 +1290,8 @@ void HistoryPanel::drawGoToItems(const core::HistoryRow& from, bool single)
         else
             disabledHint(ids.empty(), none);
     };
-    std::vector<core::Oid> children;
-    if (single)
-        for (const auto& r : m_rows)
-            if (std::find(r.parents.begin(), r.parents.end(), from.id) != r.parents.end())
-                children.push_back(r.id);
+    static const std::vector<core::Oid> none;
+    const std::vector<core::Oid>& children = single ? childrenOf(from.id) : none;
     // The newest commit is on top: the child item with the up arrow is above the parent item with the down arrow.
     goTo(ICON_MS_ARROW_UPWARD, "Go to child", children, "No child in the loaded history.", false);
     goTo(ICON_MS_ARROW_DOWNWARD, "Go to parent", from.parents, "The commit has no parent.", true);
