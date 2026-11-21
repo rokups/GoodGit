@@ -528,6 +528,33 @@ GG_TEST("network", "prune keeps the tracking refs when the remote lists no branc
     GG_CHECK_STR_EQ(rev(s, repo, "refs/remotes/origin/main"), before);
 }
 
+GG_TEST("network", "prune with a hidden remote branch deletes what plain git deletes")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const fs::path o = origin(s, repo);
+    s.git(o, {"branch", "secret", "main"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.git(repo, {"config", "fetch.prune", "true"});
+    s.git(o, {"config", "uploadpack.hideRefs", "refs/heads/secret"});
+    const auto refs = [&](const fs::path& r) {
+        return s.gitOut(r, {"for-each-ref", "--format=%(refname)", "refs/remotes/origin/"});
+    };
+    GG_REQUIRE(!rev(s, repo, "refs/remotes/origin/secret").empty());
+    // Plain git on a copy: the hidden branch looks deleted, so git prunes it and keeps main.
+    const fs::path copy = s.path("plain-copy");
+    fs::copy(repo, copy, fs::copy_options::recursive);
+    s.git(copy, {"fetch", "-q", "--prune", "origin"});
+    const std::string plain = refs(copy);
+    GG_CHECK(plain.find("refs/remotes/origin/main") != std::string::npos);
+    GG_CHECK(plain.find("origin/secret") == std::string::npos);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick("//###Toolbar/###tb_fetch");
+    GG_CHECK(s.waitUntil([&] { return rev(s, repo, "refs/remotes/origin/secret").empty(); }));
+    s.settle();
+    GG_CHECK(s.session()->actions().busy().empty());
+    GG_CHECK_STR_EQ(refs(repo), plain);
+}
+
 GG_TEST("network", "pull follows pull.rebase; dropdown overrides; menu and panels")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
