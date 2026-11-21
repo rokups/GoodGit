@@ -35,6 +35,56 @@ set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ggui)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include(cmake/EmbedFont.cmake)
 
+# Release hardening. An unsupported flag is skipped, not an error. Compile flags go to the first-party
+# targets (ggui_first_party), link flags to the two executables (ggui_executable). PIE comes from
+# CMAKE_POSITION_INDEPENDENT_CODE with policy CMP0083.
+include(CheckCXXCompilerFlag)
+include(CheckLinkerFlag)
+set(GGUI_HARDEN_COMPILE "")
+set(GGUI_HARDEN_LINK "")
+function(ggui_try_flag kind flag)
+    string(MAKE_C_IDENTIFIER "GGUI_HAVE_${kind}_${flag}" var)
+    if(kind STREQUAL "COMPILE")
+        check_cxx_compiler_flag("${flag}" ${var})
+    else()
+        check_linker_flag(CXX "${flag}" ${var})
+    endif()
+    if(${var})
+        list(APPEND GGUI_HARDEN_${kind} "${flag}")
+        set(GGUI_HARDEN_${kind} "${GGUI_HARDEN_${kind}}" PARENT_SCOPE)
+    endif()
+endfunction()
+if(MSVC)
+    ggui_try_flag(COMPILE /guard:cf)
+    ggui_try_flag(LINK /GUARD:CF)
+    ggui_try_flag(LINK /DYNAMICBASE)
+    ggui_try_flag(LINK /NXCOMPAT)
+else()
+    if(UNIX AND NOT APPLE)
+        ggui_try_flag(COMPILE -fstack-protector-strong)
+        ggui_try_flag(COMPILE -fstack-clash-protection)
+        ggui_try_flag(LINK -Wl,-z,relro,-z,now)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$")
+            ggui_try_flag(COMPILE -fcf-protection)
+        endif()
+    elseif(MINGW)
+        ggui_try_flag(LINK -Wl,--dynamicbase,--nxcompat)
+    endif()
+endif()
+# Paths of this machine stay out of the binary (also for the fetched sources).
+set(GGUI_PATH_MAP "")
+if(MSVC)
+    check_cxx_compiler_flag("/pathmap:${CMAKE_SOURCE_DIR}=." GGUI_HAVE_PATHMAP)
+    if(GGUI_HAVE_PATHMAP)
+        set(GGUI_PATH_MAP "/pathmap:${CMAKE_SOURCE_DIR}=.")
+    endif()
+else()
+    check_cxx_compiler_flag("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." GGUI_HAVE_PREFIX_MAP)
+    if(GGUI_HAVE_PREFIX_MAP)
+        set(GGUI_PATH_MAP "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    endif()
+endif()
+
 # Warning, sanitizer-free coverage and UI-thread-check settings shared by first-party targets.
 function(ggui_first_party target)
     if(MSVC)
@@ -49,6 +99,14 @@ function(ggui_first_party target)
         if(GGUI_WERROR)
             target_compile_options(${target} PRIVATE -Werror)
         endif()
+    endif()
+    # Release only. _FORTIFY_SOURCE needs optimization, so it is not set for the other configs.
+    target_compile_options(${target} PRIVATE
+        "$<$<CONFIG:Release>:${GGUI_HARDEN_COMPILE};${GGUI_PATH_MAP}>")
+    if(UNIX AND NOT APPLE)
+        # One -Wp option keeps the order: CMake puts definitions before options, so a separate -U
+        # would undo the -D. The -U stops a "redefined" warning where gcc sets a default level.
+        target_compile_options(${target} PRIVATE "$<$<CONFIG:Release>:-Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3>")
     endif()
     if(GGUI_COVERAGE STREQUAL "CLANG")
         target_compile_options(${target} PRIVATE -fprofile-instr-generate -fcoverage-mapping)
@@ -72,6 +130,7 @@ endfunction()
 # Settings for the two shipped executables: static runtime and the Windows version resource.
 #   ggui_executable(<target> <description>)
 function(ggui_executable target description)
+    target_link_options(${target} PRIVATE "$<$<CONFIG:Release>:${GGUI_HARDEN_LINK}>")
     if(MINGW)
         # Fully static: no libstdc++-6.dll, libgcc_s_seh-1.dll or libwinpthread-1.dll to ship.
         target_link_options(${target} PRIVATE -static)
@@ -107,9 +166,13 @@ if(WIN32)
 else()
     set(GGUI_PACKAGE_SYSTEM linux-${CMAKE_SYSTEM_PROCESSOR})
 endif()
-set(GGUI_BUILD_COMMIT "$ENV{GITHUB_SHA}" CACHE STRING "Commit of a CI build; empty for local builds")
-# Configure time (Unix seconds, UTC). The updater offers only a release published after it.
-string(TIMESTAMP GGUI_BUILD_TIME "%s" UTC)
+set(GGUI_BUILD_COMMIT "" CACHE STRING "Commit of the build; empty: GITHUB_SHA at build time, else none")
+set(GGUI_BUILD_IDENTITY_CPP ${CMAKE_BINARY_DIR}/generated/BuildIdentity.cpp)
+# Each build runs the script: the commit and its time (GGUI_BUILD_TIME) match the sources.
+add_custom_target(ggui_build_identity BYPRODUCTS ${GGUI_BUILD_IDENTITY_CPP}
+    COMMAND ${CMAKE_COMMAND} -DSRC=${PROJECT_SOURCE_DIR} -DOUT=${GGUI_BUILD_IDENTITY_CPP}
+        -DCOMMIT=${GGUI_BUILD_COMMIT} -P ${PROJECT_SOURCE_DIR}/cmake/BuildIdentity.cmake
+    COMMENT "Build identity")
 
 add_subdirectory(Source/libgg)
 add_subdirectory(Source/gitgg)

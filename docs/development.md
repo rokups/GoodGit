@@ -54,12 +54,18 @@ This command uses the untracked cache and the fsmonitor setting of the user.
 
 ## Build identity and self-update
 
-Three settings control self-update (see `docs/spec/product.md` §4.14):
+Four settings control self-update (see `docs/spec/product.md` §4.14):
 
-- `GGUI_BUILD_COMMIT` — a CMake cache variable, the commit of the build. It defaults to the
-  environment variable `GITHUB_SHA`, so CI sets it. A local build has an empty value, and
-  self-update is then off ("This build does not come from a release package."). Pass
-  `-DGGUI_BUILD_COMMIT=<40 hex characters>` to test the update path in a local build.
+- `GGUI_BUILD_COMMIT` — the commit of the build. The script `cmake/BuildIdentity.cmake` runs on
+  each build and writes `generated/BuildIdentity.cpp` only when the content changes. The commit
+  is the cache value `-DGGUI_BUILD_COMMIT=<40 hex characters>` if set, else the environment
+  variable `GITHUB_SHA` (CI), else empty. A reused build dir follows the new value with no
+  reconfigure. A local build has an empty commit, and self-update is then off ("This build does
+  not come from a release package."). Pass `-DGGUI_BUILD_COMMIT=<40 hex characters>` to test the
+  update path in a local build.
+- `GGUI_BUILD_TIME` — the commit time (`git log -1 --format=%ct <commit>`), set by the same
+  script. It is 0 when the commit is empty or git cannot find it, and the updater then reports
+  "Unknown". The updater offers only a release published after this time.
 - `GGUI_PACKAGE_SYSTEM` — set in the top-level `CMakeLists.txt`, not by the user:
   `windows-x64-msvc`, `windows-x64-mingw` or `linux-<CMAKE_SYSTEM_PROCESSOR>`. It names the
   release asset that matches the build, and it is part of the package file name.
