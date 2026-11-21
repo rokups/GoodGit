@@ -1021,19 +1021,26 @@ GG_TEST("history", "cancel a long history load and a reveal")
     GG_REQUIRE(s.openRepository(repo));
     auto& history = s.session()->history();
     GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 60.0f));
-    // Reveal a deep commit and cancel from the toolbar right away.
+    // Reveal a deep commit: the walk loads more than a page. Cancel it from the toolbar mid-walk.
     const std::string root = s.revParse(repo, "t/0^{commit}");
     s.showPanel("Tags");
     ctx->ItemInputValue("//Tags/##tag_filter", "t/0");
     ctx->Yield(2);
     s.contextMenu("//Tags/tag_t:0/###tag_t:0", "Reveal");
-    GG_CHECK(s.waitUntil([&] { return s.itemExists("//###Toolbar/Cancel##tb_cancel"); }, 10.0f));
+    GG_CHECK(s.waitUntil([&] { return history.rows().size() > static_cast<size_t>(ggui::HistoryPanel::kPageSize) + 100; }, static_cast<float>(timeBudgetMs(60000) / 1000)));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Cancel##tb_cancel"); }, 10.0f));
     ctx->ItemClick("//###Toolbar/Cancel##tb_cancel");
     // Other reads (the working tree status of the large fixture) finish on their own; on a slow
     // runner that alone can take 30 s.
-    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
+    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty() && !history.loading(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
+    // The walk stopped: part of the history is loaded, the target is not, and nothing is selected.
+    const size_t loaded = history.rows().size();
+    GG_CHECK(loaded > static_cast<size_t>(ggui::HistoryPanel::kPageSize));
+    GG_CHECK(history.row(Oid::fromHex(root)) == nullptr);
     GG_CHECK(s.session()->selection().id.hex() != root);
-    GG_CHECK(history.rows().size() < 100000);
+    // No walk runs on after the cancel.
+    ctx->SleepNoSkip(1.0f, 0.1f);
+    GG_CHECK_EQ(history.rows().size(), loaded);
 }
 
 GG_TEST("history", "Show more after a cancelled reveal leaves no gap in the rows")

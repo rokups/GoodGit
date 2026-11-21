@@ -630,7 +630,7 @@ GG_TEST("refs", "delete branches dialog: an unmerged branch shows the warning an
     GG_CHECK(s.waitUntil([&] { return deleteWarning(s).find("unmerged-b") != std::string::npos; }, 5.0f));
     const std::string warning = deleteWarning(s);
     GG_CHECK(warning.find("Not merged into HEAD") != std::string::npos);
-    GG_CHECK(warning.find("merged-b,") == std::string::npos);
+    GG_CHECK_STR_EQ(warning, "Not merged into HEAD: unmerged-b. The delete operation can lose their commits.");
     // A branch that is not checked leaves the warning.
     ctx->ItemUncheck("//Delete branches/**/unmerged-b##branches_unmerged-b");
     GG_CHECK(s.waitUntil([&] { return deleteWarning(s).empty(); }, 5.0f));
@@ -908,9 +908,17 @@ GG_TEST("refs", "deleting the same tag twice in one request deletes it once")
     for (const char* name : {"t1", "t2"})
         s.git(repo, {"tag", name});
     GG_REQUIRE(s.openRepository(repo));
+    gg::clearCommandLog();
     s.session()->actions().deleteTags({"t1", "t2", "t1"});
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/tags/t1") && !refExists(s, repo, "refs/tags/t2"); }));
     s.settle();
+    int deleteCalls = 0;
+    for (const auto& e : gg::commandLog())
+        if (std::find(e.args.begin(), e.args.end(), "update-ref") != e.args.end()) {
+            ++deleteCalls;
+            GG_CHECK(e.exitCode == 0); // a doubled delete line would make git refuse the batch
+        }
+    GG_CHECK_EQ(deleteCalls, 1);
     s.session()->actions().undo(false);
     GG_CHECK(s.waitUntil([&] { return refExists(s, repo, "refs/tags/t1") && refExists(s, repo, "refs/tags/t2"); }));
 }
@@ -972,7 +980,12 @@ GG_TEST("refs", "delete tags dialog with a remote deletes the checked tags on th
 GG_TEST("refs", "Delete branch: a branch merged into its local upstream has no warning and is deleted")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
-    s.git(repo, {"branch", "--track", "tracked", "main"});
+    // "tracked" is merged into its upstream "up", but not into HEAD (main): the two cannot be confused.
+    s.git(repo, {"switch", "-q", "-c", "up"});
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "only on up"});
+    s.git(repo, {"branch", "--track", "tracked", "up"});
+    s.git(repo, {"switch", "-q", "main"});
+    GG_REQUIRE(s.revParse(repo, "tracked") != s.head(repo));
     GG_REQUIRE(s.openRepository(repo));
     s.showPanel("Branches");
     s.contextMenu(branchRow("tracked").c_str(), "Delete/Local");
@@ -1018,11 +1031,14 @@ GG_TEST("refs", "delete a branch on its remote, and everywhere")
     GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"branch", "--list", "remote-only"}).empty(); }));
     s.settle();
     GG_CHECK(refExists(s, repo, "refs/heads/remote-only")); // local stays
+    GG_CHECK(s.itemExists(branchRow("remote-only").c_str()));
     s.contextMenu(branchRow("both").c_str(), "Delete/Local and all remotes");
     GG_REQUIRE(s.dialogOpen("Delete branch"));
     s.dialogButton("Delete branch", "Delete");
     GG_CHECK(s.waitUntil([&] { return !refExists(s, repo, "refs/heads/both"); }));
     s.settle();
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "--verify", "-q", "refs/heads/both"}).ok());
+    GG_CHECK(!s.itemExists(branchRow("both").c_str()));
     GG_CHECK(s.gitOut(origin(s, repo), {"branch", "--list", "both"}).empty());
 }
 
@@ -1075,6 +1091,12 @@ GG_TEST("refs", "a failed delete of a remote branch keeps the upstream of the lo
     GG_REQUIRE(s.dialogOpen("Delete branch"));
     s.dialogButton("Delete branch", "Delete");
     s.settle();
+    // The delete ran and the remote refused it.
+    bool refused = false;
+    for (const auto& e : gg::commandLog())
+        if (std::find(e.args.begin(), e.args.end(), "--delete") != e.args.end() && e.exitCode != 0)
+            refused = true;
+    GG_CHECK(refused);
     GG_CHECK(!s.gitOut(origin(s, repo), {"branch", "--list", "topic"}).empty());
     GG_CHECK_STR_EQ(gg::trim(s.gitMayFail(repo, {"config", "--get", "branch.topic.merge"}).out), "refs/heads/topic");
 }
