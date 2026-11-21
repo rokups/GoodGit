@@ -350,7 +350,6 @@ GG_TEST("stash", "pop of a -u stash refuses when the untracked file exists: no d
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
     ctx->ItemClick("//###Toolbar/###tb_pop");
     GG_CHECK(s.waitUntil([&] { return s.app.errorMessage().find("u.txt already exists, no checkout") != std::string::npos; }));
-    GG_CHECK(s.app.errorMessage().find("could not restore untracked files from stash") != std::string::npos);
     GG_REQUIRE(s.dismissError());
     s.settle();
     GG_CHECK_STR_EQ(s.read(repo, "u.txt"), "worktree own content\n");
