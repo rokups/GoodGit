@@ -215,7 +215,8 @@ struct Rewriter::Impl {
             git_index_conflict_iterator* rawIt = nullptr;
             check(git_index_conflict_iterator_new(&rawIt, index.get()), "git_index_conflict_iterator_new");
             const git_index_entry *a = nullptr, *o = nullptr, *t = nullptr;
-            while (git_index_conflict_next(&a, &o, &t, rawIt) == 0) {
+            int nextRc;
+            while ((nextRc = git_index_conflict_next(&a, &o, &t, rawIt)) == 0) {
                 Conflict c;
                 if (a) {
                     c.anc = *a;
@@ -232,6 +233,8 @@ struct Rewriter::Impl {
                 conflicts.push_back(std::move(c));
             }
             git_index_conflict_iterator_free(rawIt);
+            if (nextRc != GIT_ITEROVER)
+                check(nextRc, "git_index_conflict_next");
         }
         // Paths involved in rename conflicts (libgit2 records them as NAME entries).
         std::set<std::string> renamePaths;
@@ -359,8 +362,9 @@ struct Rewriter::Impl {
             const Resolution r = decided != plan.resolutions.end() ? decided->second : Resolution{Choice::Theirs, {}, {}};
             for (const char* p : {n->ancestor, n->ours, n->theirs})
                 if (p) {
-                    git_index_remove_bypath(index.get(), p);
-                    git_index_conflict_remove(index.get(), p);
+                    for (const int rc : {git_index_remove_bypath(index.get(), p), git_index_conflict_remove(index.get(), p)})
+                        if (rc != GIT_ENOTFOUND)
+                            check(rc, "remove conflicted path");
                 }
             git_error_clear();
             std::optional<std::pair<git_oid, std::uint32_t>> keep;
@@ -743,9 +747,12 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     git_oid a = fromHexOrThrow(p.parents.front()), b = fromHexOrThrow(p.parents[k]), mb;
                     std::string baseTree = m->emptyTree();
                     std::string baseCommit;
-                    if (git_merge_base(&mb, m->repo.get(), &a, &b) == 0) {
+                    const int baseRc = git_merge_base(&mb, m->repo.get(), &a, &b);
+                    if (baseRc == 0) {
                         baseCommit = toHex(mb);
                         baseTree = m->treeOf(baseCommit);
+                    } else if (baseRc != GIT_ENOTFOUND) {
+                        check(baseRc, "git_merge_base"); // no common ancestor is normal; other errors are not
                     }
                     git_error_clear();
                     // `p.tree` is the pairwise merge accumulator, not one commit's tree: no ours label.
