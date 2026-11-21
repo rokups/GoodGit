@@ -21,11 +21,6 @@ inline const std::string keepHousekeepingSrc = "gg";
 
 constexpr int kFormatVersion = 1;
 
-// Rotation: when an append leaves the file over rotateBytes, only the records of the last
-// rotateKeepOps operations stay. The app offers no fixed undo depth (Undo walks back one operation at
-// a time), so 200 operations is a generous depth; they are far below 1 MiB. Variables so tests can lower them.
-inline std::uint64_t rotateBytes = 1024 * 1024;
-inline size_t rotateKeepOps = 200;
 // Test hook: runs after a lock is found stale and before it is removed.
 inline std::function<void(const std::filesystem::path&)> beforeStaleLockRemoveHook;
 

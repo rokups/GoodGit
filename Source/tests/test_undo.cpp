@@ -480,47 +480,6 @@ GG_TEST("undo", "journal: a stale lock whose mtime changes before the removal is
     GG_CHECK(fs::exists(lock));
 }
 
-GG_TEST("undo", "journal: rotation keeps the file under the limit and the last operation undoable")
-{
-    const fs::path repo = s.fixture(Recipe::Linear);
-    gg::journal::Journal journal(repo / ".git");
-    const auto oldBytes = gg::journal::rotateBytes;
-    const auto oldKeep = gg::journal::rotateKeepOps;
-    gg::journal::rotateBytes = 8 * 1024;
-    gg::journal::rotateKeepOps = 10;
-    std::string last;
-    // An open operation (no end record) survives the rotations, whatever its age.
-    gg::journal::Operation open;
-    open.id = gg::journal::Journal::newOperationId();
-    open.src = "ggui";
-    open.label = "open";
-    open.wt = "main";
-    GG_REQUIRE(journal.begin(open));
-    for (int i = 0; i < 200; ++i) {
-        gg::journal::Operation op;
-        op.id = gg::journal::Journal::newOperationId();
-        op.src = "ggui";
-        op.label = "op " + std::to_string(i);
-        op.wt = "main";
-        GG_REQUIRE(journal.begin(op));
-        GG_REQUIRE(journal.appendRefs(op.id, {{"refs/heads/rot", std::to_string(i), std::to_string(i + 1)}}));
-        GG_REQUIRE(journal.end(op.id, true));
-        last = op.id;
-    }
-    gg::journal::rotateBytes = oldBytes;
-    gg::journal::rotateKeepOps = oldKeep;
-    GG_CHECK(fs::file_size(journal.path()) < 16 * 1024);
-    const auto ops = journal.read();
-    GG_CHECK(ops.size() <= 21u);
-    GG_REQUIRE(!ops.empty());
-    GG_CHECK(ops.front().id == open.id && !ops.front().ended);
-    GG_CHECK(ops.back().id == last);
-    const auto plan = gg::journal::planUndo(ops, "main", false, [](const std::string&) { return std::string("200"); });
-    GG_CHECK(plan.ok);
-    GG_REQUIRE(plan.target != nullptr);
-    GG_CHECK(plan.target->id == last);
-}
-
 GG_TEST("undo", "journal: a transaction appends several records under one lock")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
