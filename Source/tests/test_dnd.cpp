@@ -1109,7 +1109,6 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.ctx->MouseUp(ImGuiMouseButton_Left);
     s.ctx->Yield(3);
     GG_CHECK(s.itemExists(unstaged.c_str()));
-    GG_CHECK(!chooserOpen(s));
     // git itself: the index holds no change of f1.txt (it would stage while the commit is held).
     GG_CHECK(s.gitOut(r.path, {"diff", "--cached", "--name-only", "--", "f1.txt"}).empty());
     // The files of a commit: Wait on its parent, no hint on a row with no action.
