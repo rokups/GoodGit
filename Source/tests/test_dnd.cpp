@@ -6,6 +6,8 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
+#include <libgg/GitRunner.hpp>
+
 #include <fstream>
 
 namespace ggtest {
@@ -761,6 +763,32 @@ GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens 
     GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty() && !itemDisabled(s, "Copy after"); }));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"}), before);
+}
+
+GG_TEST("dnd", "Alt on a tag-only tip before the engine answers opens the chooser and rebases nothing")
+{
+    const Chain r = makeChain(s);
+    const std::string dest = addDest(s, r);
+    s.git(r.path, {"switch", "-q", "--detach", r.c[3]});
+    s.commitFile(r.path, "t.txt", "t\n", "tagged");
+    const std::string tagged = s.head(r.path);
+    s.git(r.path, {"tag", "t1"});
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tagged).c_str()); }));
+    s.settle();
+    const std::string before = s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"});
+    // The tip check answers late: the drop arrives first.
+    gg::setSlowGitLatency(std::chrono::milliseconds(3000));
+    drag(s, rowRef(tagged), rowRef(dest), ImGuiMod_Alt);
+    const bool opened = s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); });
+    GG_CHECK(opened);
+    GG_CHECK(!itemDisabled(s, "Rebase onto")); // the answer is not known yet
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(3);
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
     s.settle();
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"}), before);
 }

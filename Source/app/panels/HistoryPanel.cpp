@@ -717,7 +717,11 @@ HistoryPanel::DropPlan HistoryPanel::planDrop(bool free, const core::Oid& source
     } else {
         if (io.KeyAlt) {
             plan.rebase = sourceRebase(source);
-            if (plan.rebase.why.empty() && plan.rebase.choices.empty()) {
+            // A commit without a branch is a tip only when it has a descendant. While the engine has not answered,
+            // the chooser opens: the worker refuses a rebase of a commit that no branch holds.
+            const bool unknown = plan.rebase.branch.empty() && m_session.history().childrenOf(source).empty()
+                && !m_session.descendants(source);
+            if (plan.rebase.why.empty() && plan.rebase.choices.empty() && !unknown) {
                 plan.act = DropAct::Rebase;
                 plan.hint = "Rebase onto " + row.shortId;
                 return plan;
