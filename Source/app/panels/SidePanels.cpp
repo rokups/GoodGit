@@ -1101,9 +1101,9 @@ void BranchesPanel::draw(bool* open)
             if (b.upstreamGone)
                 tail += " (gone)";
             if (b.ahead)
-                tail += " " ICON_MS_ARROW_UPWARD_ALT + std::to_string(b.ahead);
+                tail += " " ICON_MS_ARROW_UPWARD_ALT + core::countText(b.ahead);
             if (b.behind)
-                tail += " " ICON_MS_ARROW_DOWNWARD_ALT + std::to_string(b.behind);
+                tail += " " ICON_MS_ARROW_DOWNWARD_ALT + core::countText(b.behind);
         }
         if (!b.worktree.empty())
             tail += "  [" + b.worktree + "]";

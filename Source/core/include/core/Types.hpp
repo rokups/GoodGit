@@ -97,6 +97,14 @@ struct RemoteHeadInfo {
     bool dangling = false;       // the target ref does not exist
 };
 
+// Ahead/behind counts stop at 999: the readers store at most kCountCap + 1, shown as "999+". 999 keeps the badge
+// short, and nobody reads an exact count above it.
+constexpr int kCountCap = 999;
+inline std::string countText(int n)
+{
+    return n > kCountCap ? std::to_string(kCountCap) + "+" : std::to_string(n);
+}
+
 struct TagInfo {
     std::string name;
     Oid target;                  // peeled (usually a commit)

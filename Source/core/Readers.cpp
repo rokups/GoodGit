@@ -22,6 +22,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -182,6 +183,85 @@ bool reachableFromAnyTip(git_repository* repo, const git_oid& id, const std::vec
     const bool r = git_graph_reachable_from_any(repo, &id, tips.data(), tips.size()) == 1;
     git_error_clear();
     return r;
+}
+} // namespace
+
+namespace {
+// Ahead/behind counts of `local` against `upstream`, capped at kCountCap + 1 (which means "more than kCountCap").
+// A walk in time order from both tips, flags 1 = reached from local, 2 = from upstream. It ends when every queued
+// commit is reached from both, when both counts are over the cap, or after kMaxVisits commits.
+// shortcut: with unrelated or very skewed histories the counts are lower bounds, upgrade if a badge needs more.
+void cappedAheadBehind(git_repository* repo, const git_oid& local, const git_oid& upstream, int& ahead, int& behind)
+{
+    constexpr int kMaxVisits = 20000;
+    struct State {
+        unsigned flags = 0;
+        bool queued = false;
+    };
+    struct Item {
+        git_time_t time;
+        git_oid id;
+        bool operator<(const Item& o) const { return time < o.time; }
+    };
+    std::map<std::string, State> states;
+    std::priority_queue<Item> queue;
+    int a = 0, b = 0, nonStale = 0;
+    auto key = [](const git_oid& id) { return std::string(reinterpret_cast<const char*>(id.id), GIT_OID_MAX_SIZE); };
+    auto count = [&](unsigned flags, int d) {
+        if (flags == 1)
+            a += d;
+        else if (flags == 2)
+            b += d;
+    };
+    auto timeOf = [&](const git_oid& id, git_time_t& t) {
+        git_commit* c = nullptr;
+        if (git_commit_lookup(&c, repo, &id) != 0)
+            return false;
+        t = git_commit_time(c);
+        git_commit_free(c);
+        return true;
+    };
+    auto paint = [&](const git_oid& id, unsigned bits) {
+        State& st = states[key(id)];
+        if ((st.flags | bits) == st.flags)
+            return;
+        count(st.flags, -1);
+        const bool wasOpen = st.queued && st.flags != 3;
+        st.flags |= bits;
+        count(st.flags, 1);
+        if (st.queued) {
+            if (wasOpen && st.flags == 3)
+                --nonStale;
+            return;
+        }
+        git_time_t t = 0;
+        if (!timeOf(id, t))
+            return;
+        st.queued = true;
+        if (st.flags != 3)
+            ++nonStale;
+        queue.push({t, id});
+    };
+    paint(local, 1);
+    paint(upstream, 2);
+    for (int visits = 0; !queue.empty() && nonStale > 0 && visits < kMaxVisits && (a <= kCountCap || b <= kCountCap); ++visits) {
+        const Item item = queue.top();
+        queue.pop();
+        State& st = states[key(item.id)];
+        st.queued = false;
+        if (st.flags != 3)
+            --nonStale;
+        const unsigned flags = st.flags;
+        git_commit* c = nullptr;
+        if (git_commit_lookup(&c, repo, &item.id) != 0)
+            continue;
+        for (unsigned i = 0, n = git_commit_parentcount(c); i < n; ++i)
+            paint(*git_commit_parent_id(c, i), flags);
+        git_commit_free(c);
+    }
+    git_error_clear();
+    ahead = std::min(a, kCountCap + 1);
+    behind = std::min(b, kCountCap + 1);
 }
 } // namespace
 
@@ -459,11 +539,7 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
             b.upstreamLocal = upRef.rfind("refs/heads/", 0) == 0;
             git_oid upOid;
             if (git_reference_name_to_id(&upOid, repo, upRef.c_str()) == 0) {
-                size_t ahead = 0, behind = 0;
-                if (git_graph_ahead_behind(&ahead, &behind, repo, &oid, &upOid) == 0) {
-                    b.ahead = static_cast<int>(ahead);
-                    b.behind = static_cast<int>(behind);
-                }
+                cappedAheadBehind(repo, oid, upOid, b.ahead, b.behind);
             } else {
                 b.upstreamGone = true;
             }
@@ -1871,11 +1947,7 @@ RepoSummary readSummary(const fs::path& path)
             git_oid local, remote;
             if (git_reference_name_to_id(&local, repo.get(), target.c_str()) == 0
                 && git_reference_name_to_id(&remote, repo.get(), up.str().c_str()) == 0) {
-                size_t ahead = 0, behind = 0;
-                if (git_graph_ahead_behind(&ahead, &behind, repo.get(), &local, &remote) == 0) {
-                    s.ahead = static_cast<int>(ahead);
-                    s.behind = static_cast<int>(behind);
-                }
+                cappedAheadBehind(repo.get(), local, remote, s.ahead, s.behind);
             }
         }
     }
