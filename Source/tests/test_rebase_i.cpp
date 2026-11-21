@@ -2310,6 +2310,13 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
     // git rebase -i cannot do this one: it replays the regions as text and stops with a conflict.
     const auto git = s.gitMayFail(copy2, {"-c", "sequence.editor=true", "rebase", "-q", "-i", "--onto", "x", c1});
     GG_CHECK(!git.ok() && fs::exists(copy2 / ".git" / "rebase-merge"));
+    // It stopped on r1 (the carried conflict does not apply onto x = c2); HEAD is still c2; the tip is to do.
+    const std::string tip = s.revParse(copy2, "main");
+    GG_CHECK_STR_EQ(s.revParse(copy2, "REBASE_HEAD"), r1);
+    GG_CHECK_STR_EQ(s.revParse(copy2, "HEAD"), c2);
+    const std::string todoLeft = s.read(copy2, ".git/rebase-merge/git-rebase-todo");
+    GG_CHECK(todoLeft.find("pick " + tip.substr(0, 7)) != std::string::npos);
+    GG_CHECK(todoLeft.find(r1.substr(0, 7)) == std::string::npos);
     s.git(copy2, {"rebase", "--abort"});
 
     // One Undo brings the conflicted history back.
