@@ -1050,6 +1050,7 @@ GG_TEST("keep", "the Operations panel lists a keep-only operation with its Resto
     s.showPanel("Operations");
     const std::string table = s.child("//Operations", "##ops_table");
     // Opens the row's menu, checks whether the Restore item is disabled, closes the menu.
+    bool changed = false; // a click on a disabled item changed the refs or the journal
     auto restoreDisabled = [&](const std::string& id) {
         const std::string row = table + "/**/op_" + id + "/###row";
         if (!s.itemExists(row.c_str()))
@@ -1058,8 +1059,16 @@ GG_TEST("keep", "the Operations panel lists a keep-only operation with its Resto
         ctx->Yield(2);
         const bool disabled =
             (ctx->ItemInfo("//$FOCUSED/Restore (undo this operation)").ItemFlags & ImGuiItemFlags_Disabled) != 0;
-        ctx->KeyPress(ImGuiKey_Escape);
-        ctx->Yield(2);
+        if (disabled) {
+            // A click on the disabled item changes neither the refs nor the journal.
+            const std::string refsBefore = refState(s, repo);
+            const size_t opsBefore = journalOps(repo).size();
+            s.clickDisabled("//$FOCUSED/Restore (undo this operation)");
+            changed = refState(s, repo) != refsBefore || journalOps(repo).size() != opsBefore;
+        } else {
+            ctx->KeyPress(ImGuiKey_Escape);
+            ctx->Yield(2);
+        }
         return std::optional<bool>(disabled);
     };
     const std::optional<bool> keepRow = restoreDisabled(kept[0].id);
@@ -1067,6 +1076,7 @@ GG_TEST("keep", "the Operations panel lists a keep-only operation with its Resto
     GG_REQUIRE(keepRow.has_value() && plainRow.has_value());
     GG_CHECK(*keepRow);
     GG_CHECK(!*plainRow);
+    GG_CHECK(!changed);
 }
 
 GG_TEST("keep", "Undo of a branch created at a kept tip with HEAD elsewhere brings the keep ref back; Redo deletes it again")
