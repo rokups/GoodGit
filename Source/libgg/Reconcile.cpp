@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -17,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <thread>
 
 namespace gg::reconcile {
@@ -108,20 +110,7 @@ bool writeState(const fs::path& dir, const fs::path& path, const State& st)
     doc["journal"] = st.journal;
     std::error_code ec;
     fs::create_directories(dir, ec);
-    const fs::path tmp = dir / ("reconcile.json.tmp" + std::to_string(selfProcess().pid));
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << doc.dump() << "\n";
-        out.flush();
-        if (!out)
-            return false;
-    }
-    ec = replaceFile(tmp, path);
-    if (ec) {
-        fs::remove(tmp, ec);
-        return false;
-    }
-    return true;
+    return !writeFileAtomic(path, doc.dump() + "\n");
 }
 
 // The journal operation of someone else that is still being written: its refs are not recorded
@@ -137,6 +126,52 @@ bool blocksReconcile(const journal::Operation& op, std::int64_t now)
     return now - op.time < kNoPidGraceMs;
 }
 
+
+// ---- Journal rotation ---------------------------------------------------------------------------
+
+// Process-wide: no rotation before this time (ms) after a failed one.
+std::atomic<std::int64_t> g_rotateRetryAfter{0};
+
+// A native rebase that is open, or an operation of ggui or git-gg whose writer is alive. Not a plain git
+// command (it ends, or the next pass ends it), and not an operation whose writer is gone (pid 0 too).
+bool pinsRotation(const journal::Operation& op, std::int64_t now)
+{
+    if (op.ended || now - op.time >= journal::rotatePinMs)
+        return false;
+    if (op.spansRebase)
+        return true;
+    return op.src != "git" && op.pid != 0 && processAlive(op.pid, op.pstart); // else the writer is dead
+}
+
+// The index of the first operation to keep (0: nothing to drop). The kept suffix has at least
+// rotateKeepOps/10 Undo targets, at most rotateKeepOps, and stops at rotateBytes/2 bytes. It
+// always holds the operation with the newest record and every pinned operation.
+size_t retainFrom(const std::vector<journal::Operation>& ops, std::int64_t now)
+{
+    if (ops.empty())
+        return 0;
+    const size_t floor = journal::rotateKeepOps / 10;
+    const std::set<std::string> undone = journal::undoneIds(ops);
+    size_t first = 0, targets = 0, bytes = 0;
+    for (size_t i = ops.size(); i-- > 0;) {
+        const auto& op = ops[i];
+        bytes += op.bytes;
+        if (op.ended && op.ok && !op.isUndo() && !undone.count(op.id) && !op.keepOnly() && op.restorable())
+            ++targets;
+        if (targets >= journal::rotateKeepOps || (bytes >= journal::rotateBytes / 2 && targets >= floor)) {
+            first = i;
+            break;
+        }
+    }
+    size_t newest = 0;
+    for (size_t i = 0; i < ops.size(); ++i) {
+        if (ops[i].last >= ops[newest].last)
+            newest = i;
+        if (pinsRotation(ops[i], now))
+            first = std::min(first, i);
+    }
+    return std::min(first, newest);
+}
 
 // ---- HEAD reflog ------------------------------------------------------------------------------
 
@@ -714,6 +749,16 @@ bool advanceCursor(git_repository* repo, std::string* error)
     const HeadLog log(repo);
     if (!setCursor(state, journal::headKey(worktreeKey(repo)), log))
         return true;
+    const std::string key = journal::headKey(worktreeKey(repo));
+    if (!t.locked()) {
+        // Without the lock a rotation may have rewritten the file since it was read: only the cursor
+        // is taken over; the journal id and the baseline are those on disk now.
+        State fresh = readState(statePath);
+        if (fresh.existed) {
+            fresh.doc["cursors"][key] = state.doc["cursors"][key];
+            state = std::move(fresh);
+        }
+    }
     if (!writeState(j.dir(), statePath, state)) {
         if (error)
             *error = "cannot write " + statePath.string();
@@ -758,7 +803,11 @@ Result run(git_repository* repo, std::string* error)
     // a reset (a repository that ggui never journaled in has none and must still see changes).
     bool identityChanged = false;
     const std::string front = ops.empty() ? std::string() : ops.front().id;
-    if (state.existed && !state.journal.empty() && state.journal != front) {
+    // The id is any operation's, not only the first: a rotation drops the oldest operations.
+    const bool journalKnown = std::any_of(ops.begin(), ops.end(), [&](const journal::Operation& o) {
+        return o.id == state.journal;
+    });
+    if (state.existed && !state.journal.empty() && !journalKnown) {
         state.baseline.clear();
         state.doc["cursors"] = json::object(); // no cursor: HEAD's reflog is not replayed either
         firstRun = true;
@@ -847,6 +896,7 @@ Result run(git_repository* repo, std::string* error)
         }
     };
     const char* workdir = git_repository_workdir(repo);
+    bool appendFailed = false; // a record of this pass could not be written: no rotation
     // The last operation this pass wrote or appended to, and the operations it began (with the
     // detached commit the HEAD of this worktree is left at, "" when none): who owns which keep ref
     // change is decided from them, below.
@@ -1065,13 +1115,54 @@ Result run(git_repository* repo, std::string* error)
         }
         if (!ok && error)
             *error = err;
+        appendFailed = !ok;
     }
+    // Rotation (docs/spec/undo-journal.md): a journal above rotateBytes, and above twice what the last
+    // rotation left, loses its oldest operations. The state goes first: the refs that the dropped
+    // operations left fold into the baseline, and state.journal names the new front. A crash between
+    // the two writes leaves a state that the old journal still agrees with.
+    size_t cut = 0;
+    if (!appendFailed) {
+        std::error_code sizeError;
+        const std::uintmax_t size = fs::file_size(j.path(), sizeError);
+        const auto keptIt = state.doc.find("journalKept");
+        const std::uintmax_t keptBytes
+            = keptIt != state.doc.end() && keptIt->is_number_unsigned() ? keptIt->get<std::uintmax_t>() : 0;
+        if (!sizeError && size > journal::rotateBytes && size > 2 * keptBytes && nowMs() >= g_rotateRetryAfter) {
+            const auto all = t.read();
+            cut = retainFrom(all, nowMs());
+            if (cut > 0) {
+                std::uintmax_t left = 17; // the header line
+                for (size_t i = 0; i < all.size(); ++i) {
+                    if (i >= cut) {
+                        left += all[i].bytes;
+                        continue;
+                    }
+                    for (const auto& r : all[i].refs) {
+                        if (!relevant(r.ref) && !journal::isHeadKey(r.ref)) // every worktree's HEAD, not only ours
+                            continue;
+                        if (r.newValue == zero || r.newValue.empty())
+                            state.baseline.erase(r.ref);
+                        else
+                            state.baseline[r.ref] = r.newValue;
+                    }
+                }
+                state.journal = all[cut].id;
+                state.doc["journalKept"] = left;
+                identityChanged = true;
+            }
+        }
+    }
+    bool stateOk = true;
     if (firstRun || baselineGrew || identityChanged || cursorChanged) {
         // A state that cannot be written makes every later pass a first run (refs created since are
         // then not seen as created): reported, never silent.
-        if (!writeState(j.dir(), statePath, state) && error)
+        stateOk = writeState(j.dir(), statePath, state);
+        if (!stateOk && error)
             *error = "cannot write " + statePath.string();
     }
+    if (cut > 0 && (!stateOk || !t.retain(cut)))
+        g_rotateRetryAfter = nowMs() + journal::rotateBackoffMs;
     return result;
 }
 

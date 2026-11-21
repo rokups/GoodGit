@@ -131,13 +131,14 @@ it to the journal as operations with `src:"git"`. No hooks are involved.
   operation or worktree created them) and this worktree's `HEAD`. Other worktrees' `HEAD` keys are
   not judged by a pass of this one.
 - **State file** `$GIT_COMMON_DIR/gg/reconcile.json`:
-  `{"v":1,"baseline":{"<ref>":"<value>"},"journal":"<first op id>","cursors":{"<HEAD key>":{"n","old","new","time","msg"}}}`.
+  `{"v":1,"baseline":{"<ref>":"<value>"},"journal":"<op id>","journalKept":<bytes>,"cursors":{"<HEAD key>":{"n","old","new","time","msg"}}}`.
   Written to a temp file and renamed, only when it changed. A rename that fails is retried for a
   short time: on Windows it fails while a reader has the file open. Disposable, like the journal.
   - The **first run** (no file) writes the baseline (every ref's current value) and the cursors
     (reflog tips). Nothing is replayed: what happened before ggui first looked is not history.
-  - `journal` is the ID of the journal's first operation. When it no longer matches (the journal
-    was deleted or replaced) the baseline and cursors are made again from the current refs: no
+  - `journal` is the ID of one operation of the journal: the first one when the state was
+    written. A rotation (§5.6) drops the oldest operations, so any operation of the journal
+    matches. When no operation matches (the journal was deleted or replaced) the baseline and cursors are made again from the current refs: no
     operations, no replay. A ref the reconciler sees for the first time after the first run counts
     as created (Known = null ID); the baseline gets the value of a worktree's `HEAD` the first
     time that worktree is seen.
@@ -386,6 +387,26 @@ through the reflogs that `git update-ref` writes (Git keeps unreachable reflog e
 `gc.reflogExpireUnreachable`, 30 days by default). ggui passes `--create-reflog` so bare
 repositories keep them too. After reflog expiry, Undo of an old operation fails with "commit no
 longer exists" and changes nothing.
+
+### 5.6 Rotation
+The reconciler shortens the journal at the end of a normal pass (not after a failed append). It
+does so when the file is larger than `rotateBytes` (1 MiB), larger than twice `journalKept` in
+`reconcile.json` (the size that the last rotation left; absent = 0, read only when it is an
+unsigned number), and no failed rotation is less than `rotateBackoffMs` (60 s) old in this process.
+- The journal keeps a suffix of operations in begin order. The suffix holds at most `rotateKeepOps`
+  (200) Undo targets (ended, ok, not an undo, not keep-only, with a change to restore), at least
+  `rotateKeepOps / 10` of them, and it stops when it has `rotateBytes / 2` bytes. It always holds
+  the operation with the newest record, and every operation that is open and younger than
+  `rotatePinMs` (30 days): an open native rebase, or an operation of ggui or git-gg whose
+  writer is alive. A plain `git` operation that is not a rebase never pins, and neither does an
+  operation whose writer is gone or not recorded (`pid` 0). Undo targets that are undone do not count.
+- Before the rewrite, the last value of each tracked ref (also `HEAD` keys and `refs/gg/keep/`) of
+  the dropped operations goes into the `baseline` (a ref that they deleted leaves it), so the next
+  pass does not report them as external changes. `journal` becomes the id of the new first operation.
+  `reconcile.json` is written first, then `Journal::Transaction::retain` rewrites the journal (header
+  and kept records, in order) with one rename attempt. If that fails, the journal stays as it was,
+  and the next try needs the back-off to pass and the size to be above twice `journalKept` (which
+  the failed rotation already set). A journal with a record of a newer version is not rotated.
 
 ## 6. Versioning
 - Header `{"gg-journal":1}` = major version 1. A new major version is only for incompatible
