@@ -5,6 +5,7 @@
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
+#include <chrono>
 #include <libgg/GitRunner.hpp>
 
 namespace ggtest {
@@ -1598,6 +1599,32 @@ GG_TEST("refs", "the multi menu of tags shows or hides all selected tags in Hist
     GG_CHECK(visible("t3"));
     s.contextMenu(tagRow("t2").c_str(), "###history_visibility");
     GG_CHECK(s.waitUntil([&] { return visible("t1") && visible("t2"); }));
+}
+
+GG_TEST("refs", "the multi menu of 3000 selected tags keeps the frames fast")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string head = s.head(repo);
+    std::string create;
+    for (int i = 0; i < 3000; ++i)
+        create += "create refs/tags/scale-" + std::to_string(i) + " " + head + "\n";
+    s.git(repo, {"update-ref", "--stdin"}, create);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(tagRow("scale-0").c_str()); }));
+    // The test selects the rows directly: a click selects only the rows that the panel draws.
+    auto& sel = const_cast<ggui::RefSelection&>(s.session()->tags().selection());
+    sel.kind = ggui::RefKind::Tag;
+    for (int i = 0; i < 3000; ++i)
+        sel.names.insert("scale-" + std::to_string(i));
+    s.ctx->ItemClick(tagRow("scale-0").c_str(), ImGuiMouseButton_Right);
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 10; ++i)
+        s.ctx->Yield();
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(s.session()->tags().selection().names.size() == 3000); // prune keeps the drawn rows
+    GG_CHECK(ms < timeBudgetMs(10 * 20.0));
+    s.ctx->KeyPress(ImGuiKey_Escape);
 }
 
 GG_TEST("refs", "the menu of a tag outside the selection, or of one selected tag, is the single menu")

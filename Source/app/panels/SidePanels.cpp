@@ -23,6 +23,7 @@
 #include <map>
 #include <span>
 #include <string_view>
+#include <unordered_set>
 
 namespace ggui {
 
@@ -387,8 +388,11 @@ void groupVisibilityButton(HistoryPanel& history, const std::vector<std::string>
 void tagsDeleteMenu(Session& session, const core::Snapshot& snap, const std::vector<std::string>& names)
 {
     std::vector<std::string> localNames;
+    std::unordered_set<std::string_view> snapTags;
+    for (const auto& t : snap.tags)
+        snapTags.insert(t.name);
     for (const auto& n : names)
-        if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == n; }))
+        if (snapTags.count(n))
             localNames.push_back(n);
     const bool free = session.actions().busy().empty();
     if (!beginMenu(ICON_MS_DELETE, "Delete", free))
@@ -480,17 +484,24 @@ void collectRefs(const std::vector<NameTree::Entry>& entries, const GroupRefs& g
 }
 
 // The branch names of the leaves under `entries`, once each, in the order they are drawn.
-void collectNames(const std::vector<NameTree::Entry>& entries, const GroupRefs& groupRefs, std::vector<std::string>& out)
+static void collectNamesSeen(const std::vector<NameTree::Entry>& entries, const GroupRefs& groupRefs,
+                             std::vector<std::string>& out, std::unordered_set<std::string>& seen)
 {
     for (const auto& e : entries) {
         if (e.group) {
-            collectNames(e.children, groupRefs, out);
+            collectNamesSeen(e.children, groupRefs, out, seen);
             continue;
         }
         std::string name = groupRefs.nameOf(e.item);
-        if (std::find(out.begin(), out.end(), name) == out.end())
+        if (seen.insert(name).second)
             out.push_back(std::move(name));
     }
+}
+
+void collectNames(const std::vector<NameTree::Entry>& entries, const GroupRefs& groupRefs, std::vector<std::string>& out)
+{
+    std::unordered_set<std::string> seen(out.begin(), out.end());
+    collectNamesSeen(entries, groupRefs, out, seen);
 }
 
 // Draws `entries`; `leaf(index, label)` draws one ref. Groups open by default and while filtering. With `groupRefs`,
@@ -777,9 +788,11 @@ void RefSelection::click(RefKind rowKind, const std::string& name, bool ctrl, bo
 
 void RefSelection::prune()
 {
-    const auto has = [&](const std::string& name) {
-        return std::find(drawn.begin(), drawn.end(), std::pair<RefKind, std::string>(kind, name)) != drawn.end();
-    };
+    std::unordered_set<std::string_view> drawnNames;  // views into `drawn`, which stays unchanged here
+    for (const auto& row : drawn)
+        if (row.first == kind)
+            drawnNames.insert(row.second);
+    const auto has = [&](const std::string& name) { return drawnNames.count(name) != 0; };
     std::erase_if(names, [&](const std::string& name) { return !has(name); });
     // The anchor stays while its row is drawn, also when the row is not selected.
     if (!anchor.empty() && !has(anchor))
@@ -945,9 +958,9 @@ void BranchesPanel::remoteBranchMenu(const core::RemoteBranchInfo& r)
         // The selected branches in the order of the rows: "origin/x" and the full refs, once each.
         std::vector<std::string> names;
         std::vector<std::string> selectedRefs;
+        std::unordered_set<std::string_view> seen;
         for (const auto& row : sel.drawn)
-            if (row.first == RefKind::RemoteBranch && sel.names.count(row.second)
-                && std::find(names.begin(), names.end(), row.second) == names.end()) {
+            if (row.first == RefKind::RemoteBranch && sel.names.count(row.second) && seen.insert(row.second).second) {
                 names.push_back(row.second);
                 selectedRefs.push_back("refs/remotes/" + row.second);
             }
@@ -1349,13 +1362,16 @@ static bool tagMultiMenu(Session& session, const core::Snapshot& snap, const Ref
     // The selected tags in the order of the rows, once each.
     std::vector<std::string> names;
     std::vector<std::string> selectedRefs;
+    std::unordered_set<std::string_view> seen;
+    std::unordered_set<std::string_view> snapTags;
+    for (const auto& t : snap.tags)
+        snapTags.insert(t.name);
     for (const auto& row : sel.drawn) {
-        if (row.first != RefKind::Tag || !sel.names.count(row.second)
-            || std::find(names.begin(), names.end(), row.second) != names.end())
+        if (row.first != RefKind::Tag || !sel.names.count(row.second) || !seen.insert(row.second).second)
             continue;
         names.push_back(row.second);
         // A tag that is not in the snapshot has no ref that History shows.
-        if (std::any_of(snap.tags.begin(), snap.tags.end(), [&](const auto& t) { return t.name == row.second; }))
+        if (snapTags.count(row.second))
             selectedRefs.push_back("refs/tags/" + row.second);
     }
     auto& history = session.history();
