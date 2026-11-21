@@ -65,6 +65,24 @@
       }
     },
     {
+      "name": "asan",
+      "displayName": "AddressSanitizer + UBSan (Linux, tests on)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "GGUI_SANITIZE": "ON"
+      }
+    },
+    {
+      "name": "release-tests",
+      "displayName": "Release flags with the test engine (Linux, CI test runs)",
+      "inherits": "release",
+      "cacheVariables": {
+        "GGUI_ENABLE_IMGUI_TEST_ENGINE": "ON"
+      }
+    },
+    {
       "name": "mingw-x64-static",
       "displayName": "MinGW x64, fully static (Schannel)",
       "inherits": "base",
@@ -169,6 +187,14 @@
     {
       "name": "ninja-debug",
       "configurePreset": "ninja-debug"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "release-tests",
+      "configurePreset": "release-tests"
     },
     {
       "name": "coverage",

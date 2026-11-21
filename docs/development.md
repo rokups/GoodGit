@@ -6,6 +6,8 @@ Binaries land in `build/<preset>/bin/` (`ggui`, `git-gg`). Presets in `CMakePres
 
 - `ninja` — the everyday Linux build, test engine included;
 - `release` — no test engine, for packaging;
+- `release-tests` — the `release` flags with the test engine, for the CI test job;
+- `asan` — Debug build with AddressSanitizer and UBSan, test engine included (see below);
 - `coverage` / `coverage-gcov` — instrumented builds for the coverage gate;
 - Windows: `mingw-x64-static` (fully static, Schannel) and `msvc-x64` with the test engine, and
   their `-release` variants for packaging;
@@ -27,6 +29,17 @@ for i in 0 1 2 3; do
   GGUI_HEADLESS=1 build/ninja/bin/ggui --headless --test --shard=$i/4 &
 done; wait
 ```
+
+Sanitizer run (`asan` preset, Linux, gcc or clang). The first report stops the process:
+
+```sh
+cmake --preset asan && cmake --build --preset asan
+ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1:suppressions=$PWD/cmake/ubsan.supp \
+  build/asan/bin/ggui --headless --test=undo
+```
+
+`detect_leaks=0` hides leaks that the Vulkan driver (Mesa) makes at exit. `cmake/ubsan.supp` hides
+a harmless misaligned read in the libgit2 SHA-1 code.
 
 `GGUI_HEADLESS=1`/`--headless` runs without a visible window; `--shard=I/N` runs shard `I` of `N`;
 `--trace=FILE` writes a JSON summary of the results. A failing test leaves a

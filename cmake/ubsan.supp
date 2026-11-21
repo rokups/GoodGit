@@ -1,0 +1,2 @@
+# libgit2 sha1dc reads 32-bit words from unaligned buffers. This is harmless on x86-64 and in third-party code.
+alignment:sha1dc/sha1.c
