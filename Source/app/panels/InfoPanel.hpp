@@ -42,6 +42,8 @@ private:
     std::string m_message; // editor buffer
     core::Oid m_draftId; // the commit that m_draft belongs to
     std::string m_draft; // an unsaved edit of another commit, kept over a selection change
+    // shortcut: one draft slot, a second edited commit replaces it; keep a map per id if users lose drafts.
+    bool m_saved = false; // the field text went to Save: it is not a draft
     std::string m_commitMessage; // Working tree / Index commit field
     std::string m_mergeMessage;
     std::string m_mergeMessageSource;
