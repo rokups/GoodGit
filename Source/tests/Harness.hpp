@@ -42,6 +42,15 @@ namespace ggtest {
 
 namespace fs = std::filesystem;
 
+// Runs a function when the scope ends, also on a GG_REQUIRE return.
+template <class F>
+struct ScopeExit {
+    F fn;
+    ~ScopeExit() { fn(); }
+};
+template <class F>
+ScopeExit(F) -> ScopeExit<F>;
+
 // Seconds a test waits over an item for its tooltip: the tooltip delay and a margin.
 constexpr float kTooltipWait = ggui::kTooltipDelay + 0.5f;
 

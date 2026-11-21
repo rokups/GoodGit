@@ -915,7 +915,9 @@ GG_TEST("dnd", "hint: a running task shows Wait")
     s.git(r.path, {"add", "staged.txt"});
     // The commit waits in pre-commit until the test lets it go.
     const fs::path go = s.root() / "go";
-    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 200 ]; do i=$((i+1)); sleep 0.05; done\n");
+    // A GG_REQUIRE return must not leave the hook running.
+    ScopeExit letGo{[&] { s.write(s.root(), "go", ""); }};
     fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
     GG_REQUIRE(s.openRepository(r.path));
     auto& history = s.session()->history();
@@ -1078,7 +1080,9 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.git(r.path, {"add", "staged.txt"});
     s.write(r.path, "f1.txt", "1 changed\n");
     const fs::path go = s.root() / "go";
-    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 200 ]; do i=$((i+1)); sleep 0.05; done\n");
+    // A GG_REQUIRE return must not leave the hook running.
+    ScopeExit letGo{[&] { s.write(s.root(), "go", ""); }};
     fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
     GG_REQUIRE(s.openRepository(r.path));
     auto& history = s.session()->history();
@@ -1207,7 +1211,9 @@ GG_TEST("dnd", "the drop chooser disables its items while a task runs")
     s.write(r.path, "staged.txt", "staged\n");
     s.git(r.path, {"add", "staged.txt"});
     const fs::path go = s.root() / "go";
-    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 200 ]; do i=$((i+1)); sleep 0.05; done\n");
+    // A GG_REQUIRE return must not leave the hook running.
+    ScopeExit letGo{[&] { s.write(s.root(), "go", ""); }};
     fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
     GG_REQUIRE(s.openRepository(r.path));
     drag(s, rowRef(r.c[3]), rowRef(r.c[0]));
