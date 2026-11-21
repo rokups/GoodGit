@@ -746,6 +746,7 @@ GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens 
     s.git(r.path, {"switch", "-q", "main"});
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tagged).c_str()); }));
+    s.settle(); // a late graph reload would move the rows under the drag
     const std::string before = s.gitOut(r.path, {"for-each-ref", "--format=%(refname) %(objectname)"});
     drag(s, rowRef(tagged), rowRef(dest), ImGuiMod_Alt);
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
