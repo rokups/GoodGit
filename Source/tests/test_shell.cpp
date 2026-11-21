@@ -197,6 +197,7 @@ GG_TEST("shell", "open with the picker: Welcome, menu, Ctrl+O, toolbar")
     // A cancelled picker opens nothing.
     ggui::unsetEnv("GGUI_TEST_PICK_PATH");
     ggui::setEnv("GGUI_TEST_PICK_CANCEL", "1");
+    ScopeExit unsetCancel{[] { ggui::unsetEnv("GGUI_TEST_PICK_CANCEL"); }};
     ctx->ItemClick("//Welcome/###welcome_open");
     ctx->Yield(3);
     GG_CHECK(closed(s));
