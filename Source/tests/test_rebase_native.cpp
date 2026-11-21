@@ -964,6 +964,9 @@ GG_TEST("rebase-native", "todo::parse reads fixup -Cid and merge -Cid like git, 
     const todo::Todo bad = todo::parse("fixup -C\nmerge -C\nmerge -c # s\n", &errors);
     GG_CHECK(errors.size() == 3);
     GG_CHECK(bad.items.empty());
+    errors.clear();
+    GG_CHECK(todo::parse("fixup -C # x\nfixup -c ; x\n", &errors).items.size() == 1); // "; x" is no comment here
+    GG_CHECK(errors.size() == 1);
 }
 
 GG_TEST("rebase-native", "todo::parse refuses text after [new root] on a reset row but keeps a subject")
@@ -1003,6 +1006,14 @@ GG_TEST("rebase-native", "a native rebase with core.commentChar=; stops at edit,
     s.setText("//Interactive rebase/**/###ir_msg_" + r.c[3], "c3 reworded with semicolon\n");
     GG_REQUIRE(start(s));
     GG_REQUIRE(stoppedAt(s, "edit"));
+    {
+        // The progress view shows the subject, not "; c2 add b".
+        const auto snap = s.session()->snapshot();
+        GG_CHECK_STR_EQ(snap->rebase->done.back().text, "c2 add b");
+        GG_REQUIRE(!snap->rebase->remaining.empty());
+        for (const auto& step : snap->rebase->remaining)
+            GG_CHECK(step.text.rfind(";", 0) != 0);
+    }
     {
         // done holds "edit <id> ; c2 add b", the todo holds the rest: both name their commits.
         const auto handle = gg::git2::openRepository(r.path);

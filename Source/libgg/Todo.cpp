@@ -156,6 +156,8 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_v
 {
     Todo todo;
     int number = 0;
+    // Git writes the subject after "#" even when core.commentChar differs, so a row accepts both.
+    const auto trailing = [&](std::string_view s) { return startsWith(s, comment) || startsWith(s, "#"); };
     for (std::string_view raw : lines(text)) {
         ++number;
         std::string_view line = trimRight(trimLeft(raw));
@@ -182,13 +184,13 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_v
                 rest = trimLeft(rest.substr(2)); // Git needs no space before the id
             }
             item.commit = std::string(nextWord(rest));
-            if (item.commit.empty()) {
+            if (item.commit.empty() || (item.fixup != FixupMessage::None && trailing(item.commit))) {
                 fail(std::string("missing arguments for ") + actionName(item.action));
                 continue;
             }
             // Git ≥ 2.44 writes "# subject", older versions the bare subject.
-            if (startsWith(rest, comment))
-                rest = trimLeft(rest.substr(comment.size()));
+            if (trailing(rest))
+                rest = trimLeft(rest.substr(startsWith(rest, comment) ? comment.size() : 1));
             item.subject = std::string(rest);
         } else if (item.action == Action::Break) {
             // Takes no argument.
@@ -198,7 +200,7 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_v
                 item.fixup = rest[1] == 'C' ? FixupMessage::Use : FixupMessage::Edit;
                 rest = trimLeft(rest.substr(2));
                 item.commit = std::string(nextWord(rest));
-                if (item.commit.empty() || startsWith(item.commit, comment)) {
+                if (item.commit.empty() || trailing(item.commit)) {
                     fail("missing arguments for merge");
                     continue;
                 }
@@ -207,18 +209,18 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_v
             if (item.action == Action::Reset && startsWith(rest, kNewRoot)) {
                 names.emplace_back(kNewRoot);
                 rest = trimLeft(rest.substr(std::string_view(kNewRoot).size()));
-                if (!rest.empty() && !startsWith(rest, comment)) {
+                if (!rest.empty() && !trailing(rest)) {
                     fail("invalid line " + std::to_string(number) + ": " + std::string(line));
                     continue;
                 }
             }
-            while (!rest.empty() && !startsWith(rest, comment) && (item.action == Action::Merge || names.empty()))
+            while (!rest.empty() && !trailing(rest) && (item.action == Action::Merge || names.empty()))
                 names.emplace_back(nextWord(rest));
             if (item.action == Action::Reset)
-                while (!rest.empty() && !startsWith(rest, comment))
+                while (!rest.empty() && !trailing(rest))
                     nextWord(rest); // Git reads the first word only
-            if (startsWith(rest, comment))
-                item.subject = std::string(trimLeft(rest.substr(comment.size())));
+            if (trailing(rest))
+                item.subject = std::string(trimLeft(rest.substr(startsWith(rest, comment) ? comment.size() : 1)));
             if (names.empty()) {
                 fail(std::string("missing arguments for ") + actionName(item.action));
                 continue;

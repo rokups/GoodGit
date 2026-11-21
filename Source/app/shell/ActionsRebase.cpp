@@ -232,7 +232,7 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 throw MutationError{core::classifyFailure(all), gitMessage(res), all};
             }
             // Finished in one step: there is no rebase-merge/ to read, the rows are the list written.
-            dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo)), origHead);
+            dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo, nullptr, gg::todo::commentChar(repo))), origHead);
             ctx.submodules = SubmoduleSync::Update;
         },
         std::move(done), false, true, true, true);
