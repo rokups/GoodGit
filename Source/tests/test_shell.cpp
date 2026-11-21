@@ -1264,6 +1264,17 @@ GG_TEST("shell", "auto-open argv[1], else the most recent existing repository")
     GG_CHECK(text.find("opening " + (s.root() / "gone").string()) == std::string::npos);
 }
 
+GG_TEST("shell", "auto-open argv[1] keeps a non-ASCII folder name with a space (GG-115)")
+{
+    // A lossy ANSI argv on Windows would change the name; the child logs the path it opens.
+    const std::string name = "\xC5\xBE-\xE6\x97\xA5\xE6\x9C\xAC x";
+    const fs::path repo = s.fixture(Recipe::Linear, name);
+    const fs::path log = s.path("utf8.log");
+    auto r = s.runGgui({"--smoke", repo.string()}, {{"GGUI_LOG_FILE", log.string()}});
+    GG_CHECK(r.ok());
+    GG_CHECK(s.read(s.root(), "utf8.log").find("opening " + repo.string()) != std::string::npos);
+}
+
 GG_TEST("shell", "toolbar HEAD: short ID text, click to copy; copy items")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
