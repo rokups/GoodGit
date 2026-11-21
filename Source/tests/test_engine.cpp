@@ -80,7 +80,7 @@ GG_TEST("engine", "status on a huge worktree lists all changes")
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
     GG_REQUIRE(s.openRepository(repo));
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && !s.session()->status()->partial
-                                    && s.session()->status()->unstaged.size() >= 1900; }, 120.0f));
+                                    && s.session()->status()->unstaged.size() == 2000; }, 120.0f));
 }
 
 GG_TEST("engine", "responsiveness on the large repository")

@@ -59,15 +59,23 @@ GG_TEST("selfupdate", "parseRelease reports malformed JSON without throwing")
     ggui::update::Release release;
     std::string error;
     GG_CHECK(!ggui::update::parseRelease("{not json", release, error));
-    GG_CHECK(!error.empty());
+    GG_CHECK_STR_EQ(error, "The release data is not valid JSON");
     error.clear();
     GG_CHECK(!ggui::update::parseRelease("", release, error));
-    GG_CHECK(!error.empty());
+    GG_CHECK_STR_EQ(error, "The release data is not valid JSON");
     error.clear();
     GG_CHECK(!ggui::update::parseRelease("[1,2]", release, error));
-    GG_CHECK(!error.empty());
-    // Wrong field types are tolerated.
-    GG_CHECK(parse(R"({"target_commitish":5,"assets":[{"name":3,"size":"x","state":"uploaded"},7]})", release));
+    GG_CHECK_STR_EQ(error, "The release data is not a JSON object");
+    // Wrong field types are tolerated: no error, empty values, the non-object asset is skipped.
+    GG_CHECK(ggui::update::parseRelease(
+        R"({"target_commitish":5,"assets":[{"name":3,"size":"x","state":"uploaded"},7]})", release, error));
+    GG_CHECK(error.empty());
+    GG_CHECK(release.commit.empty());
+    GG_CHECK_EQ(release.assets.size(), static_cast<size_t>(1));
+    GG_CHECK(release.assets[0].name.empty());
+    GG_CHECK_EQ(release.assets[0].size, static_cast<std::uint64_t>(0));
+    // Such an asset is never chosen: selectAsset needs the ggui- name, the URL, a digest and a size.
+    GG_CHECK(ggui::update::selectAsset(release, "linux-x86_64") == nullptr);
 }
 
 GG_TEST("selfupdate", "selectAsset picks the asset for each package system")

@@ -42,7 +42,6 @@ GG_TEST("commit", "commit the index from the toolbar; hooks run natively")
     GG_CHECK(headMessage(s, repo).find("Hook-Trailer: yes") != std::string::npos);
     // Only the index was committed: b.txt is still unstaged, e.txt (rename) is committed.
     GG_CHECK(s.gitOut(repo, {"diff", "--name-only"}).find("b.txt") != std::string::npos);
-    GG_CHECK(s.gitOut(repo, {"ls-tree", "--name-only", "HEAD"}).find("e.txt") != std::string::npos);
     // With HEAD selected the button stays Commit, and the Commit menu has no Amend item.
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     ctx->Yield(2);
@@ -54,6 +53,10 @@ GG_TEST("commit", "commit the index from the toolbar; hooks run natively")
     GG_CHECK(s.itemExists("//$FOCUSED/Commit..."));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);
+    // The rename is committed whole: the exact tree change, and d.txt is gone.
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"diff-tree", "-r", "-M", "--name-status", "--no-commit-id", "HEAD"}),
+        "M\ta.txt\nM\tc.txt\nR100\td.txt\te.txt");
+    GG_CHECK(s.gitOut(repo, {"ls-tree", "-r", "--name-only", "HEAD"}).find("d.txt") == std::string::npos);
 }
 
 GG_TEST("commit", "nothing staged: stage all tracked or the selected files")

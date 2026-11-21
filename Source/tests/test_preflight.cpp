@@ -104,7 +104,12 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
             [](Scenario& sc, const fs::path& p) { cacheInfo(sc, p, "160000", sc.revParse(p, "HEAD"), "sub"); },
             [](Scenario& sc, const fs::path& p) { cacheInfo(sc, p, "160000", std::string(40, '1'), "sub"); },
             "Take side A (the new base)",
-            [](Scenario& sc, const TwoSides& t) { GG_CHECK(sc.gitOut(t.path, {"ls-tree", "HEAD", "sub"}).rfind("160000 commit", 0) == 0); }},
+            [](Scenario& sc, const TwoSides& t) { 
+                const std::string head = sc.gitOut(t.path, {"ls-tree", "HEAD", "sub"});
+                GG_CHECK(head.rfind("160000 commit ", 0) == 0);
+                GG_CHECK_STR_EQ(head, sc.gitOut(t.path, {"ls-tree", t.ours, "sub"}));
+                GG_CHECK(head.find(std::string(40, '1')) == std::string::npos);
+            }},
         {"mode", "mode",
             [](Scenario&, const fs::path&) {},
             [](Scenario& sc, const fs::path& p) { sc.write(p, "m.sh", "ours\n"); sc.git(p, {"add", "m.sh"}); },
@@ -125,7 +130,7 @@ GG_TEST("preflight", "every non-text conflict kind asks for a decision, then the
             [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "g.txt"}); },
             [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "h.txt"}); },
             "Take side B (",
-            [](Scenario&, const TwoSides& t) { GG_CHECK(fs::exists(t.path / "h.txt")); }},
+            [](Scenario&, const TwoSides& t) { GG_CHECK(fs::exists(t.path / "h.txt") && !fs::exists(t.path / "g.txt")); }},
         {"rename-a", "rename",
             [rename](Scenario& sc, const fs::path& p) { sc.write(p, "f.txt", rename); sc.git(p, {"add", "f.txt"}); },
             [](Scenario& sc, const fs::path& p) { sc.git(p, {"mv", "f.txt", "g.txt"}); },
