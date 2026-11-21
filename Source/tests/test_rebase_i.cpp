@@ -309,8 +309,9 @@ GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (
     ctx->KeyUp(ImGuiMod_Ctrl);
     ctx->ItemClick(historyRow(r.c[2]).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Interactive rebase selection...").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->KeyPress(ImGuiKey_Escape);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Interactive rebase selection..."));
+    GG_CHECK(!editor(s).isOpen());
+    GG_CHECK(!s.dialogOpen("Interactive rebase onto", 0.5f));
     // Adjacent commits (c2 and c3): from the oldest, both rows selected.
     ctx->ItemClick(historyRow(r.c[2]).c_str());
     ctx->KeyDown(ImGuiMod_Ctrl);
