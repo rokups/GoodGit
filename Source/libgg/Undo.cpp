@@ -64,7 +64,7 @@ bool updatesWorktree(const journal::Operation& op)
 
 } // namespace
 
-UndoResult undo(git_repository* repo, bool redo, const std::string& src, const std::string& targetId)
+UndoResult undo(git_repository* repo, bool redo, const std::string& src, const std::string& targetId, UndoPreview* preview)
 {
     assertNotUiThread("gg::undo");
     UndoResult result;
@@ -187,6 +187,16 @@ UndoResult undo(git_repository* repo, bool redo, const std::string& src, const s
                 plan.index = carry; // (both are commits: their trees exist)
             }
         }
+    }
+
+    if (preview) {
+        for (const auto& c : plan.restore)
+            if (!keep::isKeepRef(c.ref))
+                preview->refs.push_back({c.ref, c.oldValue, c.newValue});
+        preview->tree = plan.index.has_value();
+        preview->worktrees = plan.worktrees;
+        result.ok = true;
+        return result;
     }
 
     // Worktrees the operation added, removed, locked or unlocked: every opposite change must be

@@ -2458,6 +2458,60 @@ void Actions::restore(const std::string& operationId)
         {}, false, false);
 }
 
+namespace {
+
+// A ref value for the restore dialog: the short ID, "none" for the null id, the branch for "ref:...".
+std::string restoreValue(const std::string& v)
+{
+    if (v.rfind("ref:", 0) == 0) {
+        const std::string name = gg::trim(v.substr(4));
+        return name.rfind("refs/heads/", 0) == 0 ? name.substr(11) : name;
+    }
+    return v.find_first_not_of('0') == std::string::npos ? std::string("none") : v.substr(0, 10);
+}
+
+} // namespace
+
+void Actions::confirmRestore(const std::string& operationId)
+{
+    run("restore preview",
+        [operationId](MutationContext& ctx) {
+            gg::UndoPreview p;
+            const auto r = gg::undo(ctx.repo(), false, "ggui", operationId, &p);
+            if (!r.ok)
+                throw MutationError{Outcome::Refused, r.error, r.error};
+            if (p.refs.empty() && p.worktrees.empty() && !p.tree)
+                throw MutationError{Outcome::Refused, "Nothing to restore.", {}};
+            ctx.info = "Restore " + r.label.substr(r.label.find(' ') + 1) + "? These refs move:\n";
+            for (const auto& m : p.refs)
+                ctx.info += "\n" + m.ref + ": " + restoreValue(m.from) + " -> " + restoreValue(m.to);
+            for (const auto& w : p.worktrees) {
+                const bool removed = w.action == "remove";
+                if (removed || w.action == "add")
+                    ctx.info += "\nWorktree " + w.path + (removed ? " is removed" : " is added back");
+            }
+            if (p.tree)
+                ctx.info += "\n\nThe working tree and the index change too.";
+        },
+        [this, operationId](const core::MutationFinishedEvent& e) {
+            Form f;
+            f.title = "Restore operation";
+            f.message = e.message;
+            if (e.outcome == Outcome::Ok) {
+                f.buttons.push_back({"Restore", [this, operationId](Form&) { restore(operationId); }});
+                f.buttons.back().danger = true;
+                f.buttons.push_back({"Cancel", {}});
+            } else if (e.outcome == Outcome::Refused) {
+                f.buttons.push_back({"Close", {}});
+            } else {
+                handleDefault(e);
+                return;
+            }
+            m_session.app().dialogs().open(std::move(f));
+        },
+        false, false, false);
+}
+
 // ---- external tools -----------------------------------------------------------------------------------
 
 void Actions::openInEditor(const std::string& path)

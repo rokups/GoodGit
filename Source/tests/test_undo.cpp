@@ -127,7 +127,69 @@ GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists
     const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + cliOp + "/###row";
     GG_REQUIRE(s.itemExists(row.c_str()));
     s.contextMenu(row.c_str(), "Restore (undo this operation)");
+    GG_REQUIRE(s.dialogOpen("Restore operation"));
+    s.dialogButton("Restore operation", "Restore");
     GG_CHECK(undone(s, repo, after));
+}
+
+GG_TEST("undo", "Restore asks first and lists the refs; Cancel moves nothing; Redo reverses a Restore")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Operations");
+    const std::string start = repoState(s, repo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_N);
+    GG_REQUIRE(s.waitUntil([&] { return repoState(s, repo) != start; }));
+    s.settle();
+    const std::string after = repoState(s, repo);
+    const auto op = s.session()->operations().back();
+    const std::string row = s.child("//Operations", "##ops_table") + "/**/op_" + op.id + "/###row";
+    GG_REQUIRE(s.itemExists(row.c_str()));
+
+    // The dialog names each ref with the old and the new short ID, and the working tree.
+    s.contextMenu(row.c_str(), "Restore (undo this operation)");
+    GG_REQUIRE(s.dialogOpen("Restore operation"));
+    const std::string message = s.app.dialogs().current()->message;
+    auto shortOf = [](const std::string& v) {
+        if (v.rfind("ref:refs/heads/", 0) == 0)
+            return v.substr(15);
+        return v.find_first_not_of('0') == std::string::npos ? std::string("none") : v.substr(0, 10);
+    };
+    size_t listed = 0;
+    for (const auto& r : op.refs)
+        if (r.oldValue != r.newValue && r.ref.rfind("refs/gg/keep/", 0) != 0) {
+            GG_CHECK(message.find(r.ref + ": " + shortOf(r.newValue) + " -> " + shortOf(r.oldValue)) != std::string::npos);
+            ++listed;
+        }
+    GG_CHECK(listed > 0);
+    GG_CHECK(message.find("ref:refs") == std::string::npos);
+    // Cancel changes nothing.
+    s.dialogButton("Restore operation", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(repoState(s, repo), after);
+
+    // Confirm moves the refs; Redo gives them back (the libgg journal records the Restore).
+    s.contextMenu(row.c_str(), "Restore (undo this operation)");
+    GG_REQUIRE(s.dialogOpen("Restore operation"));
+    s.dialogButton("Restore operation", "Restore");
+    GG_CHECK(undone(s, repo, start));
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
+    GG_CHECK(undone(s, repo, after));
+
+    // A branch the operation created is listed as going to "none".
+    s.git(repo, {"branch", "topic"});
+    ctx->KeyPress(ImGuiKey_F5);
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& ops = s.session()->operations();
+        return !ops.empty() && std::any_of(ops.back().refs.begin(), ops.back().refs.end(),
+                                   [](const auto& r) { return r.ref == "refs/heads/topic"; });
+    }));
+    const std::string row2 = s.child("//Operations", "##ops_table") + "/**/op_" + s.session()->operations().back().id + "/###row";
+    s.contextMenu(row2.c_str(), "Restore (undo this operation)");
+    GG_REQUIRE(s.dialogOpen("Restore operation"));
+    GG_CHECK(s.app.dialogs().current()->message.find("refs/heads/topic: ") != std::string::npos);
+    GG_CHECK(s.app.dialogs().current()->message.find(" -> none") != std::string::npos);
+    s.dialogButton("Restore operation", "Cancel");
 }
 
 GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local changes in the way")

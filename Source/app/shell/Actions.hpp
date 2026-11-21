@@ -327,6 +327,10 @@ public:
     // ---- undo (§5 U1) ---------------------------------------------------------------------
     void undo(bool redo);
     void restore(const std::string& operationId);
+    // Plans the restore of one operation and does not run it, then opens a dialog that lists each
+    // ref that moves (or the reason the plan fails). The plan first runs the reconcile pass, which
+    // can append journal records for plain git commands, like a refresh. Its Restore button calls restore().
+    void confirmRestore(const std::string& operationId);
 
     // External tools (not journaled).
     void openInEditor(const std::string& path);
