@@ -1003,6 +1003,7 @@ GG_TEST("rebase-native", "a native rebase with core.commentChar=; stops at edit,
     GG_REQUIRE(openFrom(s, r.c[2]));
     key(s, r.c[2], ImGuiKey_E);
     key(s, r.c[3], ImGuiKey_R);
+    withoutUpdateRefsOnOldGit(s);
     s.setText("//Interactive rebase/**/###ir_msg_" + r.c[3], "c3 reworded with semicolon\n");
     GG_REQUIRE(start(s));
     GG_REQUIRE(stoppedAt(s, "edit"));
