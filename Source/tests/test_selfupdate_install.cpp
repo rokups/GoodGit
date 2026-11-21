@@ -91,9 +91,10 @@ bool pathExists(const fs::path& path)
 }
 
 // An install folder whose name has a space and non-ASCII characters, with an old and a new set.
-fs::path makeInstall(const fs::path& root, bool withNewGitGg, bool withNewGgui = true)
+fs::path makeInstall(const fs::path& root, bool withNewGitGg, bool withNewGgui = true,
+    const fs::path& name = fs::path(u8"inst dir äö ü"))
 {
-    const fs::path dir = root / fs::path(u8"inst dir äö ü");
+    const fs::path dir = root / name;
     writeFile(dir / kGgui, "old");
     writeFile(dir / kGitGg, "old");
     if (withNewGgui) {
@@ -374,6 +375,83 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
     GG_CHECK_STR_EQ(readFile(dir / kGitGg), "new");
     GG_CHECK(startsWith(readFile(stage / "result.txt"), "ok"));
     gg::release(ggui);
+}
+
+GG_TEST("selfupdate", "the update script keeps the old files when the first rename fails")
+{
+    TempRoot root;
+    const fs::path dir = makeInstall(root.path, true);
+#ifdef _WIN32
+    // An open file cannot be renamed: the first step, the backup of ggui, fails.
+    std::ifstream lock(dir / kGgui, std::ios::binary);
+    GG_REQUIRE(lock.is_open());
+#else
+    if (geteuid() == 0) {
+        markCurrentTestSkipped("root can rename in any folder");
+        return;
+    }
+    // The stage inside stays writable for the result: only the install folder itself is locked.
+    std::error_code ec;
+    fs::permissions(dir, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace, ec);
+#endif
+    const bool ended = runUpdateScript(dir);
+#ifdef _WIN32
+    lock.close();
+#else
+    fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
+#endif
+    GG_REQUIRE(ended);
+    const fs::path stage = up::stageDir(dir);
+    GG_CHECK(startsWith(readFile(stage / "result.txt"), "failed: backup ggui"));
+    GG_CHECK_STR_EQ(readFile(dir / kGgui), "old");
+    GG_CHECK_STR_EQ(readFile(dir / kGitGg), "old");
+    GG_CHECK(!pathExists(dir / (std::string(kGgui) + ".old")));
+    GG_CHECK(!pathExists(dir / (std::string(kGitGg) + ".old")));
+    GG_CHECK_STR_EQ(readFile(stage / "new" / kGgui), "new");
+    GG_CHECK_STR_EQ(readFile(stage / "new" / kGitGg), "new");
+}
+
+// The product refuses '%' and '"' in the script path; it accepts space, & ^ ! ' , ; = and non-ASCII.
+GG_TEST("selfupdate", "the update script runs in an install folder with a space and cmd metacharacters")
+{
+    for (const char* name : {"a b", "a&b", "a^b", "a!b", "a'b,c;d=e", "a&b^c!d e"}) {
+        TempRoot root;
+        const fs::path dir = makeInstall(root.path, true, true, fs::path(name));
+        GG_REQUIRE(runUpdateScript(dir));
+        GG_CHECK_STR_EQ(readFile(up::stageDir(dir) / "result.txt").substr(0, 2), "ok");
+        GG_CHECK_STR_EQ(readFile(dir / kGgui), "new");
+        GG_CHECK_STR_EQ(readFile(dir / kGitGg), "new");
+        GG_CHECK(!pathExists(dir / (std::string(kGgui) + ".old")));
+    }
+}
+
+GG_TEST("selfupdate", "the update script restores the old files in an install folder with metacharacters")
+{
+    TempRoot root;
+    const fs::path dir = makeInstall(root.path, false, true, fs::path("a&b^c!d e"));
+    GG_REQUIRE(runUpdateScript(dir));
+    GG_CHECK(startsWith(readFile(up::stageDir(dir) / "result.txt"), "failed: install git-gg"));
+    GG_CHECK_STR_EQ(readFile(dir / kGgui), "old");
+    GG_CHECK_STR_EQ(readFile(dir / kGitGg), "old");
+    GG_CHECK(!pathExists(dir / (std::string(kGgui) + ".old")));
+}
+
+GG_TEST("selfupdate", "the update script is refused before any file changes in a folder with a percent sign")
+{
+    TempRoot root;
+    const fs::path dir = makeInstall(root.path, true, true, fs::path("a%b"));
+    const fs::path stage = up::stageDir(dir);
+    GG_REQUIRE(up::writeScript(stage).empty());
+    gg::DetachedProcess child;
+    std::string error;
+    GG_CHECK(!gg::spawnScriptDetached(up::scriptPath(stage), {"2147483647", "nostart"}, child, error));
+    GG_CHECK(!error.empty());
+    GG_CHECK(!pathExists(stage / "result.txt"));
+    GG_CHECK_STR_EQ(readFile(dir / kGgui), "old");
+    GG_CHECK_STR_EQ(readFile(dir / kGitGg), "old");
+    GG_CHECK_STR_EQ(readFile(stage / "new" / kGgui), "new");
+    GG_CHECK(!gg::isSafeScriptPath("a\"b"));
+    GG_CHECK(gg::isSafeScriptPath("a b&c^d!e"));
 }
 
 GG_TEST("selfupdate", "spawnScriptDetached rejects an unsafe argument")
