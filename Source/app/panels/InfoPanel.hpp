@@ -40,6 +40,8 @@ private:
     core::RequestId m_request = 0;
     core::CommitDetailsPtr m_details;
     std::string m_message; // editor buffer
+    core::Oid m_draftId; // the commit that m_draft belongs to
+    std::string m_draft; // an unsaved edit of another commit, kept over a selection change
     std::string m_commitMessage; // Working tree / Index commit field
     std::string m_mergeMessage;
     std::string m_mergeMessageSource;
