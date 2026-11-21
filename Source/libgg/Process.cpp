@@ -57,9 +57,12 @@ bool processAlive(long long pid, std::uint64_t start)
     if (!h)
         return false;
     DWORD code = 0;
-    const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+    bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+    FILETIME created, exited, kernel, user;
+    // A reused pid has another creation time. An unreadable time or start 0 means: no check.
+    if (alive && start != 0 && GetProcessTimes(h, &created, &exited, &kernel, &user))
+        alive = ((static_cast<std::uint64_t>(created.dwHighDateTime) << 32) | created.dwLowDateTime) == start;
     CloseHandle(h);
-    (void)start;
     return alive;
 #else
     const std::uint64_t now = startTime(pid);
