@@ -110,20 +110,7 @@ bool writeState(const fs::path& dir, const fs::path& path, const State& st)
     doc["journal"] = st.journal;
     std::error_code ec;
     fs::create_directories(dir, ec);
-    const fs::path tmp = dir / ("reconcile.json.tmp" + std::to_string(selfProcess().pid));
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << doc.dump() << "\n";
-        out.flush();
-        if (!out)
-            return false;
-    }
-    ec = replaceFile(tmp, path);
-    if (ec) {
-        fs::remove(tmp, ec);
-        return false;
-    }
-    return true;
+    return !writeFileAtomic(path, doc.dump() + "\n");
 }
 
 // The journal operation of someone else that is still being written: its refs are not recorded
