@@ -166,18 +166,23 @@ private:
 class ReflogPanel {
 public:
     explicit ReflogPanel(Session& session) : m_session(session) { }
-    void onSnapshot(const core::SnapshotPtr& snapshot);
+    void onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged);
     void onReflog(const core::ReflogEvent& event);
+    // Marks the list as old. The next draw reloads it, so a hidden panel does no work.
+    void invalidate() { m_dirty = true; }
     void reload();
     void draw(bool* open);
     void choose(const std::string& ref);
     const core::ReflogPtr& reflog() const { return m_reflog; }
     const std::string& ref() const { return m_ref; }
+    core::RequestId request() const { return m_request; }
 
 private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     std::string m_ref = "HEAD";
+    bool m_dirty = true;
+    int m_lastDrawFrame = -10;
     FilterInput m_filter;
     core::RequestId m_request = 0;
     core::ReflogPtr m_reflog;

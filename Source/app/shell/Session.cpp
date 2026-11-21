@@ -224,7 +224,7 @@ void Session::handle(core::Event& event)
                 m_rebase->onTaskFinished(e);
             } else if constexpr (std::is_same_v<T, core::WatchEvent>) {
                 if (e.refs)
-                    m_reflog->reload();
+                    m_reflog->invalidate();
                 if (e.journal)
                     m_engine->readOperations();
             } else if constexpr (std::is_same_v<T, core::MutationFinishedEvent>) {
@@ -290,7 +290,7 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
     m_history->onSnapshot(m_snapshot, refsChanged || first);
     m_branches->onSnapshot(m_snapshot);
     m_tags->onSnapshot(m_snapshot);
-    m_reflog->onSnapshot(m_snapshot);
+    m_reflog->onSnapshot(m_snapshot, refsChanged);
     m_stashes->onSnapshot(m_snapshot);
     if (refsChanged && !first)
         m_info->onRefsChanged();

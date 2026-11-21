@@ -2336,14 +2336,16 @@ void StashesPanel::draw(bool* open)
 
 // ---- Reflog -------------------------------------------------------------------------------------
 
-void ReflogPanel::onSnapshot(const core::SnapshotPtr& snapshot)
+void ReflogPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged)
 {
     m_snapshot = snapshot;
-    reload();
+    if (refsChanged)
+        invalidate();
 }
 
 void ReflogPanel::reload()
 {
+    m_dirty = false;
     m_request = m_session.engine().reflog(m_ref);
     m_requested = true;
 }
@@ -2364,6 +2366,15 @@ void ReflogPanel::onReflog(const core::ReflogEvent& event)
 
 void ReflogPanel::draw(bool* open)
 {
+    // A panel that was hidden shows no old list while the new one loads.
+    const int frame = ImGui::GetFrameCount();
+    if (m_dirty) {
+        if (frame - m_lastDrawFrame > 1)
+            m_reflog.reset();
+        m_dirty = false;
+        reload();
+    }
+    m_lastDrawFrame = frame;
     if (!ImGui::Begin(panel::Reflog, open)) {
         ImGui::End();
         return;
