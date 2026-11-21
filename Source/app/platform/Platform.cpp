@@ -19,12 +19,15 @@ std::atomic<const char*> g_platformStage{"idle"};
 namespace {
 constexpr Uint64 kFenceTimeoutMs = 10000;
 
-// Polls the fence until it signals or the deadline passes. Returns false on a timeout.
-bool waitFenceBounded(SDL_GPUDevice* device, SDL_GPUFence* fence, const char* stage)
+// Waits for the fence with a deadline and releases it. Returns false if the wait fails.
+// SDL_QueryGPUFence does not clean finished command buffers. A fence released before that
+// cleanup goes back to the pool while its command buffer still points at it, and the
+// D3D12 backend then frees a command buffer that is in use. So the poll only bounds the
+// wait: SDL_WaitForGPUFences then returns at once and does the cleanup.
+// On a timeout or a failed wait the fence stays unreleased: a reused fence is worse than a leak.
+bool waitAndReleaseFence(SDL_GPUDevice* device, SDL_GPUFence* fence, const char* stage)
 {
     g_platformStage = stage;
-    if (SDL_QueryGPUFence(device, fence))
-        return true;
     const Uint64 deadline = SDL_GetTicks() + kFenceTimeoutMs;
     while (!SDL_QueryGPUFence(device, fence)) {
         if (SDL_GetTicks() >= deadline) {
@@ -33,6 +36,11 @@ bool waitFenceBounded(SDL_GPUDevice* device, SDL_GPUFence* fence, const char* st
         }
         SDL_Delay(1);
     }
+    if (!SDL_WaitForGPUFences(device, true, &fence, 1)) {
+        spdlog::error("{} wait failed: {}", stage, SDL_GetError());
+        return false;
+    }
+    SDL_ReleaseGPUFence(device, fence);
     return true;
 }
 } // namespace
@@ -271,8 +279,7 @@ void Platform::endFrame()
     if (m_headless) {
         // One frame in flight at most: wait for the previous one before queuing this one.
         if (m_frameFence) {
-            const bool done = waitFenceBounded(m_device, m_frameFence, "endFrame fence");
-            SDL_ReleaseGPUFence(m_device, m_frameFence);
+            const bool done = waitAndReleaseFence(m_device, m_frameFence, "endFrame fence");
             m_frameFence = nullptr;
             if (!done) {
                 SDL_CancelGPUCommandBuffer(cmd); // the frame is dropped
@@ -320,9 +327,7 @@ bool Platform::readPixels(int x, int y, int w, int h, std::uint32_t* out)
     SDL_DownloadFromGPUTexture(copy, &region, &dst);
     SDL_EndGPUCopyPass(copy);
     SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-    const bool done = fence && waitFenceBounded(m_device, fence, "readPixels fence");
-    if (fence)
-        SDL_ReleaseGPUFence(m_device, fence);
+    const bool done = fence && waitAndReleaseFence(m_device, fence, "readPixels fence");
     if (!done) {
         SDL_ReleaseGPUTransferBuffer(m_device, buffer);
         return false;
