@@ -1948,6 +1948,61 @@ GG_TEST("panels", "reflog: a new entry shows in the next frames (the row cache i
     GG_CHECK(s.textShown("//Reflog", "reflog cache entry"));
 }
 
+GG_TEST("panels", "reflog: a hidden panel does not reload; it shows the new entry when shown again")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && !reflog.reflog()->entries.empty(); }));
+    // A status-only change does not reload a visible panel.
+    const auto shown = reflog.request();
+    s.write(repo, "status_only.txt", "x");
+    s.settle();
+    GG_CHECK(reflog.request() == shown);
+    // Hide the panel. A ref change does not reload it.
+    ctx->MenuClick("//##MainMenuBar/View/Reflog");
+    ctx->Yield(3);
+    const auto hidden = reflog.request();
+    s.git(repo, {"commit", "--allow-empty", "-q", "-m", "reflog hidden entry"});
+    s.settle();
+    ctx->Yield(3);
+    GG_CHECK(reflog.request() == hidden);
+    // Showing the panel reloads once, with no old list.
+    s.showPanel("Reflog");
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries[0].message.find("reflog hidden entry") != std::string::npos; }));
+    GG_CHECK(reflog.request() != hidden);
+    s.settle();
+    const auto reloaded = reflog.request();
+    ctx->Yield(3);
+    GG_CHECK(reflog.request() == reloaded);
+    GG_CHECK(s.textShown("//Reflog", "reflog hidden entry"));
+}
+
+GG_TEST("panels", "reflog: a reflog-only write (reset --hard HEAD) shows in a visible panel")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && !reflog.reflog()->entries.empty(); }));
+    s.git(repo, {"reset", "-q", "--hard", "HEAD"});
+    GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries[0].message.find("reset: moving to HEAD") != std::string::npos; }));
+}
+
+GG_TEST("panels", "reflog: the chosen ref falls back to HEAD when the branch is deleted")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "x"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    reflog.choose("refs/heads/x");
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/heads/x" && !reflog.reflog()->entries.empty(); }));
+    s.git(repo, {"branch", "-D", "x"});
+    GG_CHECK(s.waitUntil([&] { return reflog.ref() == "HEAD" && reflog.reflog() && reflog.reflog()->ref == "HEAD" && !reflog.reflog()->entries.empty(); }));
+}
+
 GG_TEST("panels", "operations: a new operation shows in the next frames")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
