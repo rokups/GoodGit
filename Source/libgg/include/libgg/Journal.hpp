@@ -21,6 +21,9 @@ inline const std::string keepHousekeepingSrc = "gg";
 
 constexpr int kFormatVersion = 1;
 
+// Test hook: runs after a lock is found stale and before it is removed.
+inline std::function<void(const std::filesystem::path&)> beforeStaleLockRemoveHook;
+
 struct RefChange {
     std::string ref;       // "refs/heads/x", "HEAD", "worktrees/<id>/HEAD"
     std::string oldValue;  // hex id, all-zero id (absent) or "ref:<target>"

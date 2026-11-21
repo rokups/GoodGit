@@ -458,6 +458,28 @@ GG_TEST("undo", "journal: begin records carry the writer's pid and start time")
     GG_CHECK(ops[0].pstart == self.start);
 }
 
+GG_TEST("undo", "journal: a stale lock whose mtime changes before the removal is kept")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    const fs::path lock = repo / ".git" / "gg" / "journal.lock";
+    fs::create_directories(lock.parent_path());
+    std::ofstream(lock) << "";
+    fs::last_write_time(lock, fs::file_time_type::clock::now() - std::chrono::hours(1));
+    // Another process takes the lock between the stale check and the removal.
+    gg::journal::beforeStaleLockRemoveHook = [](const fs::path& p) {
+        fs::last_write_time(p, fs::file_time_type::clock::now());
+    };
+    gg::journal::Operation op;
+    op.id = gg::journal::Journal::newOperationId();
+    op.src = "ggui";
+    op.wt = "main";
+    const bool wrote = journal.begin(op);
+    gg::journal::beforeStaleLockRemoveHook = nullptr;
+    GG_CHECK(!wrote);
+    GG_CHECK(fs::exists(lock));
+}
+
 GG_TEST("undo", "journal: a transaction appends several records under one lock")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

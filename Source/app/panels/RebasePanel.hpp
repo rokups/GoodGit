@@ -101,6 +101,9 @@ public:
     bool editingRemaining() const { return m_remaining; }
     // Showing a list for a waiting `git rebase -i` / `git rebase --edit-todo` (sequence.editor).
     bool editingForGit() const { return m_open && m_sequence.has_value(); }
+    // Undo steps kept (the oldest is dropped past kMaxUndo).
+    static constexpr size_t kMaxUndo = 100;
+    size_t undoDepth() const { return m_undo.size(); }
     // The text of a group's inline message editor (the group whose first row is `row`).
     std::string messageText(size_t row) const;
 

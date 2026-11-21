@@ -341,6 +341,8 @@ void RebasePanel::onRead(std::shared_ptr<const todo::Context> context, todo::Rea
 void RebasePanel::pushUndo(State before)
 {
     m_undo.push_back(std::move(before));
+    if (m_undo.size() > kMaxUndo)
+        m_undo.erase(m_undo.begin()); // each step is a full copy of the state: drop the oldest
     m_redo.clear();
 }
 

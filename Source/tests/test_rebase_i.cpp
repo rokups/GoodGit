@@ -239,6 +239,29 @@ LineRepo makeLineRepo(Scenario& s)
 
 } // namespace
 
+GG_TEST("rebase-i", "the undo stack keeps the newest 100 steps")
+{
+    const Repo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    const Rows start = rows(s);
+    for (int i = 0; i < 60; ++i) {
+        ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_DownArrow);
+        ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_UpArrow);
+    }
+    GG_CHECK_EQ(editor(s).undoDepth(), ggui::RebasePanel::kMaxUndo);
+    GG_CHECK(rows(s) == start);
+    ctx->KeyPress(ImGuiMod_Alt | ImGuiKey_DownArrow);
+    const Rows moved = rows(s);
+    GG_CHECK(moved != start);
+    GG_CHECK_EQ(editor(s).undoDepth(), ggui::RebasePanel::kMaxUndo);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(rows(s) == start);
+}
+
 GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (asks for a base), Branches")
 {
     const Repo r = makeRepo(s);

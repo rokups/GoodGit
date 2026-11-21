@@ -40,6 +40,24 @@ bool isHeadKey(const std::string& ref)
     return ref == "HEAD" || (ref.rfind("worktrees/", 0) == 0 && ref.size() > 5 && ref.compare(ref.size() - 5, 5, "/HEAD") == 0);
 }
 
+// Removes the lock when it is older than 10 minutes and its mtime did not change since the check
+// (another process may have replaced it). Returns true when it removed the lock.
+bool removeStale(const fs::path& path)
+{
+    std::error_code ec;
+    const auto mtime = fs::last_write_time(path, ec);
+    if (ec || fs::file_time_type::clock::now() - mtime <= std::chrono::minutes(10))
+        return false;
+    if (beforeStaleLockRemoveHook)
+        beforeStaleLockRemoveHook(path);
+    // A small race remains between this second read and the remove: another process can take a fresh
+    // lock in that window. The check makes the window smaller, but it does not close it.
+    const auto again = fs::last_write_time(path, ec);
+    if (ec || again != mtime)
+        return false;
+    return fs::remove(path, ec);
+}
+
 // Git-style lock: create the lock file exclusively; retry for up to 1 s; remove stale locks.
 class Lock {
 public:
@@ -64,12 +82,8 @@ public:
                 return;
             }
 #endif
-            std::error_code ec;
-            const auto age = fs::file_time_type::clock::now() - fs::last_write_time(m_path, ec);
-            if (!ec && age > minutes(10)) {
-                fs::remove(m_path, ec); // stale
+            if (removeStale(m_path))
                 continue;
-            }
             if (steady_clock::now() > deadline)
                 return;
             std::this_thread::sleep_for(milliseconds(10));
