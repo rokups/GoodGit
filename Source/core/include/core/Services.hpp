@@ -42,9 +42,14 @@ public:
     // Refuses every pending prompt (closing: nobody is left to answer them).
     void cancelAll();
     int port() const { return m_port; }
+    // Every prompt is masked, except a known non-secret one (user name, ssh host key question).
+    static bool isSecretPrompt(const std::string& prompt);
+    // The git process of request `id` went away before an answer came.
+    bool abandoned(std::uint64_t id) const { return id != 0 && m_abandoned >= id; }
 
 private:
     void loop();
+    std::atomic<std::uint64_t> m_abandoned{0};
     struct Slot {
         Request request;
         bool done = false;

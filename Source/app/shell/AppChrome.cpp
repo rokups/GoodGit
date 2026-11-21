@@ -895,6 +895,8 @@ void App::pumpSequenceEditor()
 
 void App::pumpAskpass()
 {
+    if (m_askpass.abandoned(m_askpassShown) && m_dialogs.current() && m_dialogs.current()->title == "Credentials")
+        m_dialogs.closeCurrent(); // shortcut: a stale Credentials dialog behind another dialog stays until it shows
     const auto request = m_askpass.pending();
     if (!request || request->id == m_askpassShown)
         return;

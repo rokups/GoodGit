@@ -12,6 +12,8 @@
 
 #include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
+#include <libgg/LocalSocket.hpp>
+#include "core/Services.hpp"
 #include <libgg/Worktrees.hpp>
 
 namespace ggtest {
@@ -900,6 +902,74 @@ GG_TEST("network", "askpass: answer and cancel a credentials prompt")
     s.settle();
     s.track(dest);
     GG_CHECK_STR_EQ(s.head(dest), s.revParse(repo, "origin/main"));
+}
+
+// Sends one askpass request to ggui's server the way git-gg does. Empty `token`: the right one.
+static gg::net::Socket askpassClient(const std::string& token, const std::string& prompt, bool closeNow)
+{
+    const std::string endpoint = gg::askpassEndpoint();
+    const auto s = gg::net::connectLoopback(std::stoi(endpoint.substr(0, endpoint.find(':'))));
+    if (s == gg::net::kInvalid)
+        return s;
+    gg::net::sendAll(s, (token.empty() ? endpoint.substr(endpoint.find(':') + 1) : token) + "\n" + prompt + "\n");
+    if (closeNow) {
+        gg::net::closeSocket(s);
+        return gg::net::kInvalid;
+    }
+    return s;
+}
+
+GG_TEST("network", "askpass: a client with a wrong token gets no prompt and the server keeps serving")
+{
+    askpassClient("wrong-token", "Password for 'https://x':", true);
+    ctx->Yield(10);
+    GG_CHECK(!s.dialogOpen("Credentials"));
+    askpassClient("", "Password for 'https://x':", true);
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+}
+
+GG_TEST("network", "askpass: the dialog closes when git goes away, then the next prompt shows")
+{
+    askpassClient("", "Password for 'https://x':", true);
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+    GG_CHECK(s.waitUntil([&] { return !s.dialogOpen("Credentials"); }, static_cast<float>(timeBudgetMs(1000) / 1000.0)));
+    const auto second = askpassClient("", "Are you sure you want to continue connecting (yes/no/[fingerprint])?", false);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_REQUIRE(f != nullptr && f->field("answer") != nullptr);
+    GG_CHECK(f->field("answer")->kind == ggui::Field::Text);
+    s.dialogButton("Credentials", "Cancel");
+    gg::net::closeSocket(second);
+}
+
+GG_TEST("network", "askpass: a closed peer closes only its own dialog, not the queued ones")
+{
+    askpassClient("", "Password for 'https://x':", true);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+    ggui::Form other;
+    other.title = "Other dialog";
+    other.buttons.push_back({"Cancel", {}});
+    s.app.dialogs().open(std::move(other));
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Other dialog"); }, static_cast<float>(timeBudgetMs(1000) / 1000.0)));
+    GG_CHECK(!s.dialogOpen("Credentials"));
+    s.dialogButton("Other dialog", "Cancel");
+}
+
+GG_TEST("network", "askpass: every prompt is secret except a known non-secret one")
+{
+    using ggui::core::AskpassServer;
+    GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://x':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("user@host's password: "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Enter passphrase for key '/home/u/.ssh/id_ed25519': "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Enter PIN for 'PIV_II': "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://username@example.com':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://fingerprint.example.com':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Enter passphrase for key '/home/u/.ssh/fingerprint_key':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Passcode:"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Verification code:"));
+    GG_CHECK(AskpassServer::isSecretPrompt("PASSWORD:"));
+    GG_CHECK(!AskpassServer::isSecretPrompt("Are you sure you want to continue connecting (yes/no/[fingerprint])?"));
+    GG_CHECK(!AskpassServer::isSecretPrompt("Username for 'https://x':"));
 }
 
 GG_TEST("network", "remote actions are disabled while a mutation runs; browsing still works")
