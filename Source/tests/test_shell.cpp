@@ -1504,30 +1504,42 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
 
     // Opens the context menu of `ref`, checks that `item` is disabled, closes it.
-    auto menu = [&](const std::string& ref, const char* item) {
+    // With `click` it also clicks the disabled item: no second job starts and no dialog opens.
+    // (No settle: the commit job runs until the test lets the hook go.)
+    auto menu = [&](const std::string& ref, const char* item, bool click = false) {
         ctx->ItemClick(ref.c_str(), ImGuiMouseButton_Right);
         ctx->Yield(2);
         if (item) {
-            const ImGuiTestItemInfo info = ctx->ItemInfo((std::string("//$FOCUSED/") + item).c_str());
+            const std::string itemRef = std::string("//$FOCUSED/") + item;
+            const ImGuiTestItemInfo info = ctx->ItemInfo(itemRef.c_str());
             if (!(info.ItemFlags & ImGuiItemFlags_Disabled))
                 ctx->LogError("'%s' in the menu of %s is enabled while busy", item, ref.c_str());
             GG_CHECK((info.ItemFlags & ImGuiItemFlags_Disabled) != 0);
+            if (click && (info.ItemFlags & ImGuiItemFlags_Disabled)) {
+                const std::string busyBefore = s.session()->actions().busy();
+                const size_t opsBefore = s.session()->operations().size();
+                ctx->ItemClick(itemRef.c_str());
+                ctx->Yield(5);
+                GG_CHECK_STR_EQ(s.session()->actions().busy(), busyBefore);
+                GG_CHECK_EQ(s.session()->operations().size(), opsBefore);
+                GG_CHECK(s.app.dialogs().current() == nullptr);
+            }
         }
         ctx->KeyPress(ImGuiKey_Escape);
         ctx->Yield(2);
     };
     const std::string files = s.child("//Changes", "##files");
     auto fileRef = [&](const char* group, const std::string& path) { return files + "/" + group + "/" + path + "/###file_" + path; };
-    menu("//History/**/###row_wt", "Stage all");
+    menu("//History/**/###row_wt", "Stage all", true);
     menu(fileRef("Staged", "staged.txt"), "Unstage");
-    menu(fileRef("Unstaged", tracked), "Stage");
+    menu(fileRef("Unstaged", tracked), "Stage", true);
     menu(fileRef("Untracked", "untracked.txt"), "Intent to add");
     // Space (stage/unstage) waits too.
     ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
     ctx->KeyPress(ImGuiKey_Space);
     ctx->ItemClick(fileRef("Unstaged", tracked).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_0").c_str()); }));
-    menu(s.child("//Diff", "##diff_body") + "/###line_0", "Stage line(s)");
+    menu(s.child("//Diff", "##diff_body") + "/###line_0", "Stage line(s)", true);
     ctx->ItemClick(fileRef("Staged", "staged.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
@@ -1545,7 +1557,7 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     ctx->ItemClick((files + "/" + first + "/###file_" + first).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
     menu(s.child("//Diff", "##diff_body") + "/###line_1", "Discard line(s)");
-    menu("//Change information/**/###author", "Edit author...");
+    menu("//Change information/**/###author", "Edit author...", true);
     ctx->MenuAction(ImGuiTestAction_Hover, "//##MainMenuBar/Commit/Commit...");
     GG_CHECK((ctx->ItemInfo("//$FOCUSED/Commit...").ItemFlags & ImGuiItemFlags_Disabled) != 0);
     ctx->KeyPress(ImGuiKey_Escape);
@@ -1558,19 +1570,19 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Y);
     // The side panels.
     s.showPanel("Branches");
-    menu("//Branches/branch_main/###branch_main", "Push");
+    menu("//Branches/branch_main/###branch_main", "Push", true);
     menu("//Branches/branch_other/###branch_other", "Check out");
     s.showPanel("Tags");
     menu("//Tags/tag_v1/###tag_v1", nullptr);
     s.showPanel("Stashes");
-    menu("//Stashes/stash_0/###row", "Apply (restore index)");
+    menu("//Stashes/stash_0/###row", "Apply (restore index)", true);
     s.showPanel("Remotes");
     menu("//Remotes/remote_origin/###row", nullptr);
     s.showPanel("Reflog");
-    menu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...");
+    menu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...", true);
     s.showPanel("Operations");
     const std::string opRow = s.child("//Operations", "##ops_table") + "/**/op_" + s.session()->operations().back().id + "/###row";
-    menu(opRow, "Restore (undo this operation)");
+    menu(opRow, "Restore (undo this operation)", true);
 
     // Let the hook go: the commit lands; nothing else happened meanwhile.
     s.write(s.root(), "go", "");
