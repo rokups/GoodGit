@@ -219,6 +219,34 @@ GG_TEST("rewrite", "published history asks first; a locked ref leaves everything
     GG_CHECK_STR_EQ(s.revParse(repo, "origin/main"), remote);
 }
 
+GG_TEST("rewrite", "Ctrl+Z after a failed rewrite changes no ref, no index entry and no file")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string published = s.revParse(repo, "origin/main~1");
+    s.write(repo, "dirty-untracked.txt", "untracked\n");
+    const std::string before = everything(s, repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.expandMerge(s.head(repo));
+    const fs::path lock = repo / ".git" / "refs" / "heads" / "main.lock";
+    std::ofstream(lock) << "";
+    selectCommit(s, published);
+    s.setText("//Change information/##message", "Rewrite what is on the remote");
+    ctx->ItemClick("//Change information/###save_message");
+    GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
+    s.dialogButton("Rewrite published history?", "Rewrite");
+    GG_CHECK(s.dismissError());
+    fs::remove(lock);
+    GG_REQUIRE(s.waitIdle());
+    GG_CHECK_STR_EQ(everything(s, repo), before);
+    // The History click takes the keyboard focus off the message field, so Ctrl+Z reaches the app Undo.
+    ctx->ItemClick(("//History/**/###row_" + published).c_str());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    s.settle();
+    GG_CHECK_STR_EQ(everything(s, repo), before);
+    GG_CHECK_STR_EQ(s.read(repo, "dirty-untracked.txt"), "untracked\n");
+    GG_CHECK(s.fsck(repo));
+}
+
 GG_TEST("rewrite", "the published flags of a mixed range: pushed commits are flagged, a local one is not")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
