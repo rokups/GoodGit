@@ -26,6 +26,9 @@ struct DetachedProcess {
 // stdin/stdout/stderr on the null device, without the GIT_DIR-style variables git sets for its
 // hooks and editors. It keeps running after this process ends.
 bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child, std::string& error);
+// Whether an environment entry ("NAME=value") is a variable that git sets for hooks and editors
+// (GIT_DIR and similar). spawnDetached drops these from the child environment.
+bool isGitContextVariable(const std::string& entry);
 // Whether a script path is safe in the cmd.exe line: no '%' (cmd expands it) and no '"'.
 bool isSafeScriptPath(const std::string& path);
 // Whether one script argument is safe: printable ASCII without space, '"' or a cmd metacharacter

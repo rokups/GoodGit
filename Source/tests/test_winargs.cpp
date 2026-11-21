@@ -90,6 +90,14 @@ GG_TEST("winargs", "script path and arguments are checked")
         GG_CHECK(!gg::isSafeScriptArg(bad));
 }
 
+GG_TEST("winargs", "git context variables are recognized")
+{
+    for (const char* v : {"GIT_DIR=/x", "GIT_WORK_TREE=", "GIT_INDEX_FILE=i", "GIT_PREFIX=p", "GIT_OBJECT_DIRECTORY=o"})
+        GG_CHECK(gg::isGitContextVariable(v));
+    for (const char* v : {"GIT_DIRX=1", "PATH=GIT_DIR=", "GIT_DIR", "", "HOME=/h"})
+        GG_CHECK(!gg::isGitContextVariable(v));
+}
+
 GG_TEST("winargs", "batch file names are detected in any case")
 {
     for (const char* name : {"a.cmd", "a.BAT", "x.Cmd", ".bat"})

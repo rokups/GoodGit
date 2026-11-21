@@ -2,6 +2,7 @@
 
 #include "libgg/GitRunner.hpp"
 
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -52,6 +53,15 @@ fs::path gguiProgram()
     return findInPath("ggui");
 }
 
+bool isGitContextVariable(const std::string& entry)
+{
+    for (const char* name : {"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_PREFIX=", "GIT_OBJECT_DIRECTORY="}) {
+        if (entry.compare(0, std::strlen(name), name) == 0)
+            return true;
+    }
+    return false;
+}
+
 bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child, std::string& error)
 {
 #ifdef _WIN32
@@ -61,9 +71,25 @@ bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child,
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
+    // Same filter as on POSIX: GIT_DIR and the like must not reach the new session.
+    std::wstring block;
+    if (wchar_t* env = GetEnvironmentStringsW()) {
+        for (const wchar_t* p = env; *p; p += wcslen(p) + 1) {
+            const std::wstring entry(p);
+            const auto eq = entry.find(L'=');
+            std::string name; // names are ASCII for git variables; others become '?' and never match
+            for (std::size_t i = 0; eq != std::wstring::npos && i <= eq; ++i)
+                name += entry[i] < 0x80 ? static_cast<char>(std::toupper(static_cast<unsigned char>(entry[i]))) : '?';
+            if (!isGitContextVariable(name))
+                block += entry + L'\0';
+        }
+        FreeEnvironmentStringsW(env);
+    }
+    block += L'\0';
     if (!CreateProcessW(application.empty() ? nullptr : application.c_str(), cmd.data(), nullptr, nullptr, FALSE,
-            (application.empty() ? DETACHED_PROCESS : CREATE_NO_WINDOW) | CREATE_NEW_PROCESS_GROUP, nullptr, nullptr, &si,
-            &pi)) {
+            (application.empty() ? DETACHED_PROCESS : CREATE_NO_WINDOW) | CREATE_NEW_PROCESS_GROUP
+                | CREATE_UNICODE_ENVIRONMENT,
+            block.data(), nullptr, &si, &pi)) {
         error = "cannot start " + args.front();
         return false;
     }
@@ -78,10 +104,7 @@ bool spawnDetached(const std::vector<std::string>& args, DetachedProcess& child,
     // What git set up for a hook or an editor is not for a whole ggui session.
     std::vector<char*> envp;
     for (char** e = environ; e && *e; ++e) {
-        bool skip = false;
-        for (const char* name : {"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_PREFIX=", "GIT_OBJECT_DIRECTORY="})
-            skip = skip || std::strncmp(*e, name, std::strlen(name)) == 0;
-        if (!skip)
+        if (!isGitContextVariable(*e))
             envp.push_back(*e);
     }
     envp.push_back(nullptr);
