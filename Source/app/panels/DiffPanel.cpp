@@ -48,15 +48,29 @@ public:
 
     // Sets the text with syntax colors, the given lines drawn dimmed instead. The colors are
     // computed here (not on the next render, which would overwrite the dimming).
-    void setContent(const std::string& text, const Language* lang, const std::vector<int>& dimmed)
+    // `keep`: the same file reloads. Equal text changes nothing; new text keeps the scroll line and the
+    // cursor line (cut to the new line count).
+    void setContent(const std::string& text, const Language* lang, const std::vector<int>& dimmed, bool keep)
     {
         SetLanguage(lang);
+        int line = 0, column = 0, first = 0;
+        if (keep) {
+            if (GetText() == text)
+                return;
+            GetMainCursor(line, column);
+            first = GetFirstVisibleLine();
+        }
         SetText(text);
         for (int l : dimmed)
             if (l >= 0 && l < static_cast<int>(document.size()))
                 for (auto& glyph : document[static_cast<size_t>(l)])
                     glyph.color = Color::whitespace; // recolored to the theme's dim color (whitespace is not drawn)
         languageChanged = false; // already colorized by SetText
+        if (keep) {
+            const int last = std::max(0, GetLineCount() - 1);
+            SetCursor(std::min(line, last), column);
+            ScrollToLine(std::min(first, last), Scroll::alignTop);
+        }
     }
 };
 
@@ -304,6 +318,8 @@ void DiffPanel::onDiff(const core::DiffEvent& event)
     m_diff = event.diff;
     m_anchorRow = -1; // the rows change: an old anchor can lie past the new end
     m_resetScroll = m_resetScroll || newFile;
+    if (newFile)
+        m_unified.reset = m_left.reset = m_right.reset = true;
     buildRows();
     m_viewsDirty = true;
 }
@@ -421,7 +437,7 @@ const std::vector<int>& DiffPanel::hunkStarts() const
 
 int DiffPanel::hunkTarget(bool next) const
 {
-    if (m_viewsDirty || !m_unified.editor || !m_left.editor)
+    if (m_viewsDirty || !shownBuilt())
         return -1;
     const View& v = primaryView();
     const int first = v.editor->GetFirstVisibleLine();
@@ -457,7 +473,7 @@ void DiffPanel::goToHunk(bool next)
 
 int DiffPanel::topLine() const
 {
-    return m_viewsDirty || !m_left.editor ? -1 : (sideBySideShown() ? m_left : m_unified).editor->GetFirstVisibleLine();
+    return m_viewsDirty || !shownBuilt() ? -1 : (sideBySideShown() ? m_left : m_unified).editor->GetFirstVisibleLine();
 }
 
 int DiffPanel::hunkLine(int h) const
@@ -549,13 +565,15 @@ void DiffPanel::setupView(View& v, Side side)
 
 void DiffPanel::finishView(View& v, const std::string& text)
 {
+    const bool keep = !v.reset; // the same file reloads: keep the editor state
+    v.reset = false;
     // A final newline keeps whole-line selections (and copies) of the last line complete.
     // Hunk rows (function context) are drawn dimmed.
     std::vector<int> hunkRows;
     for (size_t i = 0; i < v.lines.size(); ++i)
         if (v.lines[i].kind == EditorLine::Hunk)
             hunkRows.push_back(static_cast<int>(i));
-    static_cast<DiffEditor&>(*v.editor).setContent(text + "\n", languageFor(m_file->path), hunkRows);
+    static_cast<DiffEditor&>(*v.editor).setContent(text + "\n", languageFor(m_file->path), hunkRows, keep);
     v.editor->ClearMarkers();
     const Palette& p = theme().palette();
     for (size_t i = 0; i < v.lines.size(); ++i) {
@@ -587,6 +605,16 @@ void DiffPanel::buildViews()
 {
     m_viewsDirty = false;
     ++m_buildCount;
+    m_unifiedBuilt = m_splitBuilt = false;
+    buildShown();
+}
+
+// Builds the text of the shown view only, when it is not built yet (the other view waits for a switch).
+void DiffPanel::buildShown()
+{
+    const bool split = sideBySideShown();
+    if (split ? m_splitBuilt : m_unifiedBuilt)
+        return;
     m_navLine = -1;
     const core::DiffFile& f = m_diff->files.front();
     const auto palette = editorPalette();
@@ -618,109 +646,114 @@ void DiffPanel::buildViews()
             line(k);
     };
 
-    // Unified: one line per row (gaps: revealed lines + a placeholder).
-    setupView(m_unified, Side::Unified);
-    std::string text;
-    auto emitU = [&](EditorLine l, const std::string& t) {
-        m_unified.lines.push_back(l);
-        text += t;
-        text.push_back('\n');
-    };
-    for (size_t i = 0; i < m_rows.size(); ++i) {
-        const Row& r = m_rows[i];
-        if (r.kind == Row::Gap) {
-            gapLines(r, [&](EditorLine l, const std::string& t) { l.row = static_cast<int>(i); emitU(l, t); });
-        } else if (r.kind == Row::Hunk) {
-            // Only the function context (after the closing "@@"): no range text anywhere in the
-            // editor, so it can never be selected or copied. The gutter hosts the hunk's buttons.
-            EditorLine l{EditorLine::Hunk, static_cast<int>(i), r.hunk};
-            const std::string& header = f.hunks[static_cast<size_t>(r.hunk)].header;
-            const size_t close = header.find("@@", 2);
-            std::string context = close == std::string::npos ? std::string() : header.substr(close + 2);
-            const size_t b = context.find_first_not_of(" \t");
-            context = b == std::string::npos ? std::string() : context.substr(b);
-            emitU(l, stripCr(context));
-        } else {
-            const auto& hl = f.hunks[static_cast<size_t>(r.hunk)].lines[static_cast<size_t>(r.line)];
-            EditorLine l{EditorLine::Line, static_cast<int>(i), r.hunk, r.line};
-            l.origin = hl.origin;
-            l.oldNo = hl.oldNo;
-            l.newNo = hl.newNo;
-            emitU(l, stripCr(hl.text));
-        }
-    }
-    if (!text.empty())
-        text.pop_back();
-    m_unified.editor->SetPalette(palette);
-    finishView(m_unified, text);
-
-    // Side by side: removed lines left, added lines right, aligned with filler lines.
-    setupView(m_left, Side::Left);
-    setupView(m_right, Side::Right);
-    std::string left, right;
-    auto emitBoth = [&](const EditorLine& l, const EditorLine& r, const std::string& lt, const std::string& rt) {
-        m_left.lines.push_back(l);
-        m_right.lines.push_back(r);
-        left += lt;
-        left.push_back('\n');
-        right += rt;
-        right.push_back('\n');
-    };
-    for (size_t i = 0; i < m_rows.size();) {
-        const Row& r = m_rows[i];
-        if (r.kind == Row::Gap) {
-            gapLines(r, [&](EditorLine l, const std::string& t) { l.row = static_cast<int>(i); emitBoth(l, l, t, t); });
-            ++i;
-            continue;
-        }
-        if (r.kind == Row::Hunk) {
-            // Only code: the gap placeholders already mark what lies between hunks.
-            ++i;
-            continue;
-        }
-        const auto& lines = f.hunks[static_cast<size_t>(r.hunk)].lines;
-        auto lineOf = [&](size_t row) {
-            const Row& x = m_rows[row];
-            const auto& hl = lines[static_cast<size_t>(x.line)];
-            EditorLine l{EditorLine::Line, static_cast<int>(row), x.hunk, x.line};
-            l.origin = hl.origin;
-            l.oldNo = hl.oldNo;
-            l.newNo = hl.newNo;
-            return std::make_pair(l, stripCr(hl.text));
+    if (!split) {
+        // Unified: one line per row (gaps: revealed lines + a placeholder).
+        setupView(m_unified, Side::Unified);
+        std::string text;
+        auto emitU = [&](EditorLine l, const std::string& t) {
+            m_unified.lines.push_back(l);
+            text += t;
+            text.push_back('\n');
         };
-        if (lines[static_cast<size_t>(r.line)].origin == ' ') {
-            const auto [l, t] = lineOf(i);
-            emitBoth(l, l, t, t);
-            ++i;
-            continue;
+        for (size_t i = 0; i < m_rows.size(); ++i) {
+            const Row& r = m_rows[i];
+            if (r.kind == Row::Gap) {
+                gapLines(r, [&](EditorLine l, const std::string& t) { l.row = static_cast<int>(i); emitU(l, t); });
+            } else if (r.kind == Row::Hunk) {
+                // Only the function context (after the closing "@@"): no range text anywhere in the
+                // editor, so it can never be selected or copied. The gutter hosts the hunk's buttons.
+                EditorLine l{EditorLine::Hunk, static_cast<int>(i), r.hunk};
+                const std::string& header = f.hunks[static_cast<size_t>(r.hunk)].header;
+                const size_t close = header.find("@@", 2);
+                std::string context = close == std::string::npos ? std::string() : header.substr(close + 2);
+                const size_t b = context.find_first_not_of(" \t");
+                context = b == std::string::npos ? std::string() : context.substr(b);
+                emitU(l, stripCr(context));
+            } else {
+                const auto& hl = f.hunks[static_cast<size_t>(r.hunk)].lines[static_cast<size_t>(r.line)];
+                EditorLine l{EditorLine::Line, static_cast<int>(i), r.hunk, r.line};
+                l.origin = hl.origin;
+                l.oldNo = hl.oldNo;
+                l.newNo = hl.newNo;
+                emitU(l, stripCr(hl.text));
+            }
         }
-        // A block of changes: '-' rows then '+' rows (in any order), paired line by line.
-        std::vector<size_t> removed, added;
-        size_t j = i;
-        while (j < m_rows.size() && m_rows[j].kind == Row::Line && m_rows[j].hunk == r.hunk
-            && lines[static_cast<size_t>(m_rows[j].line)].origin != ' ') {
-            (lines[static_cast<size_t>(m_rows[j].line)].origin == '-' ? removed : added).push_back(j);
-            ++j;
+        if (!text.empty())
+            text.pop_back();
+        m_unified.editor->SetPalette(palette);
+        finishView(m_unified, text);
+        m_unifiedBuilt = true;
+    } else {
+        // Side by side: removed lines left, added lines right, aligned with filler lines.
+        setupView(m_left, Side::Left);
+        setupView(m_right, Side::Right);
+        std::string left, right;
+        auto emitBoth = [&](const EditorLine& l, const EditorLine& r, const std::string& lt, const std::string& rt) {
+            m_left.lines.push_back(l);
+            m_right.lines.push_back(r);
+            left += lt;
+            left.push_back('\n');
+            right += rt;
+            right.push_back('\n');
+        };
+        for (size_t i = 0; i < m_rows.size();) {
+            const Row& r = m_rows[i];
+            if (r.kind == Row::Gap) {
+                gapLines(r, [&](EditorLine l, const std::string& t) { l.row = static_cast<int>(i); emitBoth(l, l, t, t); });
+                ++i;
+                continue;
+            }
+            if (r.kind == Row::Hunk) {
+                // Only code: the gap placeholders already mark what lies between hunks.
+                ++i;
+                continue;
+            }
+            const auto& lines = f.hunks[static_cast<size_t>(r.hunk)].lines;
+            auto lineOf = [&](size_t row) {
+                const Row& x = m_rows[row];
+                const auto& hl = lines[static_cast<size_t>(x.line)];
+                EditorLine l{EditorLine::Line, static_cast<int>(row), x.hunk, x.line};
+                l.origin = hl.origin;
+                l.oldNo = hl.oldNo;
+                l.newNo = hl.newNo;
+                return std::make_pair(l, stripCr(hl.text));
+            };
+            if (lines[static_cast<size_t>(r.line)].origin == ' ') {
+                const auto [l, t] = lineOf(i);
+                emitBoth(l, l, t, t);
+                ++i;
+                continue;
+            }
+            // A block of changes: '-' rows then '+' rows (in any order), paired line by line.
+            std::vector<size_t> removed, added;
+            size_t j = i;
+            while (j < m_rows.size() && m_rows[j].kind == Row::Line && m_rows[j].hunk == r.hunk
+                && lines[static_cast<size_t>(m_rows[j].line)].origin != ' ') {
+                (lines[static_cast<size_t>(m_rows[j].line)].origin == '-' ? removed : added).push_back(j);
+                ++j;
+            }
+            for (size_t k = 0; k < std::max(removed.size(), added.size()); ++k) {
+                std::pair<EditorLine, std::string> a{EditorLine{EditorLine::Filler}, ""}, b{EditorLine{EditorLine::Filler}, ""};
+                if (k < removed.size())
+                    a = lineOf(removed[k]);
+                if (k < added.size())
+                    b = lineOf(added[k]);
+                emitBoth(a.first, b.first, a.second, b.second);
+            }
+            i = j;
         }
-        for (size_t k = 0; k < std::max(removed.size(), added.size()); ++k) {
-            std::pair<EditorLine, std::string> a{EditorLine{EditorLine::Filler}, ""}, b{EditorLine{EditorLine::Filler}, ""};
-            if (k < removed.size())
-                a = lineOf(removed[k]);
-            if (k < added.size())
-                b = lineOf(added[k]);
-            emitBoth(a.first, b.first, a.second, b.second);
+        if (!left.empty()) {
+            left.pop_back();
+            right.pop_back();
         }
-        i = j;
+        m_left.editor->SetPalette(palette);
+        m_right.editor->SetPalette(palette);
+        finishView(m_left, left);
+        finishView(m_right, right);
+        m_splitBuilt = true;
     }
-    if (!left.empty()) {
-        left.pop_back();
-        right.pop_back();
-    }
-    m_left.editor->SetPalette(palette);
-    m_right.editor->SetPalette(palette);
-    finishView(m_left, left);
-    finishView(m_right, right);
-    if (!m_active)
+    // The selection must not belong to a view that is not built (its text is old).
+    if (!m_active || (m_active == &m_unified ? !m_unifiedBuilt : !m_splitBuilt))
         m_active = &primaryView();
 }
 
@@ -1239,6 +1272,8 @@ void DiffPanel::draw(bool* open)
     }
     if (m_viewsDirty)
         buildViews();
+    else
+        buildShown();
     const bool canSideBySide = !f.binary && !f.submodule && f.oldText && f.newText;
     // The editors cut on Ctrl+X and Shift+Delete even though they are read-only (text would vanish): here a
     // cut is a copy. Taken before they render, so they no longer see the keys. Repeat keeps a held key

@@ -1093,4 +1093,97 @@ GG_TEST("diff", "many files share one line budget: the later files are truncated
     GG_CHECK(d->files[kFiles - 1].truncated);
 }
 
+namespace {
+
+// A long file with five hunks and a short second file, both changed in the last commit.
+fs::path makeKeepRepo(Scenario& s)
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "keepstate");
+    s.write(repo, "nav.cpp", numbered(400));
+    s.write(repo, "small.txt", "one\ntwo\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Base"});
+    std::string changed;
+    for (int i = 1; i <= 400; ++i)
+        changed += (i % 80 == 40) ? "int line" + std::to_string(i) + " = 1; // changed\n" : "int line" + std::to_string(i) + " = 0;\n";
+    s.write(repo, "nav.cpp", changed);
+    s.write(repo, "small.txt", "one\nTWO\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Change"});
+    return repo;
+}
+
+} // namespace
+
+GG_TEST("diff", "a refresh with the same content keeps the scroll and the selection")
+{
+    const fs::path repo = makeKeepRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    showFile(s, s.head(repo), "nav.cpp");
+    auto& diff = s.session()->diff();
+    ctx->WindowFocus("//Diff");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->Yield(3);
+    const int top = diff.topLine();
+    GG_REQUIRE(top > 0);
+    ImGuiWindow* w = ctx->GetWindowByRef(body(s).c_str());
+    GG_REQUIRE(w != nullptr);
+    const float line = ImGui::GetFontSize() + ImGui::GetStyle().ItemSpacing.y;
+    ctx->MouseMoveToPos(ImVec2(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.45f, w->InnerRect.Min.y + line * 2.5f));
+    ctx->MouseDown(ImGuiMouseButton_Left);
+    ctx->MouseMoveToPos(ImVec2(w->InnerRect.Min.x + w->InnerRect.GetWidth() * 0.35f, w->InnerRect.Min.y + line * 3.5f));
+    ctx->MouseUp(ImGuiMouseButton_Left);
+    ctx->Yield(2);
+    const std::string selected = diff.selectedText();
+    GG_REQUIRE(!selected.empty());
+    const auto before = diff.diff();
+    diff.refreshIfShowing();
+    GG_REQUIRE(s.waitUntil([&] { return diff.diff() && diff.diff() != before; }));
+    ctx->Yield(3);
+    GG_CHECK_EQ(diff.topLine(), top);
+    GG_CHECK_STR_EQ(diff.selectedText(), selected);
+}
+
+GG_TEST("diff", "a switch from unified to side by side shows the split text of a diff loaded in unified")
+{
+    const fs::path repo = makeKeepRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    showFile(s, s.head(repo), "small.txt");
+    GG_CHECK(!s.app.settings().data().diffSideBySide);
+    s.comboSelect("//Diff/##diff_view", "Side by side");
+    ctx->Yield(3);
+    const auto left = s.drawnText(s.child(body(s).c_str(), "##sbs_left").c_str());
+    const auto right = s.drawnText(s.child(body(s).c_str(), "##sbs_right").c_str());
+    auto has = [](const std::vector<std::string>& v, const char* text) {
+        return std::any_of(v.begin(), v.end(), [&](const std::string& l) { return l.find(text) != std::string::npos; });
+    };
+    GG_CHECK(has(left, "two") && !has(left, "TWO"));
+    GG_CHECK(has(right, "TWO") && !has(right, "two"));
+    s.comboSelect("//Diff/##diff_view", "Unified");
+    ctx->Yield(2);
+}
+
+GG_TEST("diff", "a different file still resets the scroll")
+{
+    const fs::path repo = makeKeepRepo(s);
+    GG_REQUIRE(s.openRepository(repo));
+    showFile(s, s.head(repo), "nav.cpp");
+    auto& diff = s.session()->diff();
+    ctx->WindowFocus("//Diff");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->Yield(3);
+    GG_REQUIRE(diff.topLine() > 0);
+    const std::string ref = s.child("//Changes", "##files") + "/" + Scenario::escapeRef("small.txt") + "/###file_"
+        + Scenario::escapeRef("small.txt");
+    ctx->ItemClick(ref.c_str());
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->path() == "small.txt"; }));
+    ctx->Yield(3);
+    GG_CHECK_EQ(diff.topLine(), 0);
+    showFile(s, s.head(repo), "nav.cpp");
+    ctx->Yield(3);
+    GG_CHECK_EQ(diff.topLine(), 0);
+}
+
 } // namespace ggtest
