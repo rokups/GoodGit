@@ -1470,10 +1470,12 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                     if (tab != std::string::npos && line.compare(tab + 1, headsPrefix.size(), headsPrefix) == 0)
                         heads.insert(line.substr(tab + 1 + headsPrefix.size()));
                 }
-                // An empty list while branches are tracked is a hidden or broken answer: do not prune on it.
-                if (heads.empty() && !tracked.empty())
-                    throw MutationError{Outcome::Failed,
-                        r + ": the remote lists no branches, so nothing is fetched or pruned", {}};
+                // An empty list while branches are tracked may be a hidden or broken answer: do not prune on it.
+                if (heads.empty() && !tracked.empty()) {
+                    pruneNow = false;
+                    const std::string msg = r + ": the remote lists no branches, so nothing is pruned";
+                    ctx.warning = ctx.warning.empty() ? msg : ctx.warning + "\n" + msg;
+                }
                 std::vector<std::string> live;
                 std::vector<std::string> stale;
                 for (const auto& b : tracked)

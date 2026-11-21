@@ -520,9 +520,10 @@ GG_TEST("network", "prune keeps the tracking refs when the remote lists no branc
     const std::string before = rev(s, repo, "refs/remotes/origin/main");
     GG_REQUIRE(!before.empty());
     ctx->ItemClick("//###Toolbar/###tb_fetch");
-    GG_CHECK(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
-    GG_CHECK(s.dismissError());
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }));
     s.settle();
+    // The fetch itself succeeds: the only notice is the prune warning.
+    GG_CHECK(s.app.errorMessage().find("lists no branches") != std::string::npos);
     GG_CHECK_STR_EQ(rev(s, repo, "refs/remotes/origin/main"), before);
 }
 
