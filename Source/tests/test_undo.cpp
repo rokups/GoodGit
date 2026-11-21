@@ -18,13 +18,21 @@ namespace ggtest {
 
 namespace {
 
-// Everything Undo restores: refs (with symbolic HEAD) and the index.
+// Everything Undo restores: refs (with symbolic HEAD), the index and the working tree.
 std::string repoState(Scenario& s, const fs::path& repo)
 {
     std::string state = s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"});
     auto head = s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"});
     state += "\nHEAD " + (head.ok() ? gg::trim(head.out) : s.head(repo));
     state += "\n" + s.gitOut(repo, {"ls-files", "-s"});
+    state += "\n" + s.gitOut(repo, {"status", "--porcelain=v2", "-uall", "--ignored=no"});
+    // Content hash of each modified and untracked file (deleted files show in the status).
+    std::string paths;
+    std::istringstream list(s.gitOut(repo, {"ls-files", "-m", "-o", "--exclude-standard"}));
+    for (std::string line; std::getline(list, line);)
+        if (!line.empty() && fs::is_regular_file(repo / line))
+            paths += line + "\n";
+    state += "\n" + paths + s.git(repo, {"hash-object", "--stdin-paths"}, paths).out;
     return state;
 }
 
@@ -72,6 +80,19 @@ void commitOnBranch(ImGuiTestContext* ctx, Scenario& s, const fs::path& repo, co
 }
 
 } // namespace
+
+GG_TEST("undo", "the repository state compare sees a lost untracked file and changed content")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string clean = repoState(s, repo);
+    { std::ofstream(repo / "lost.txt") << "data\n"; }
+    const std::string withFile = repoState(s, repo);
+    GG_CHECK(withFile != clean);
+    { std::ofstream(repo / "lost.txt") << "other\n"; }
+    GG_CHECK(repoState(s, repo) != withFile);
+    fs::remove(repo / "lost.txt");
+    GG_CHECK_STR_EQ(repoState(s, repo), clean);
+}
 
 GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists sources and restores")
 {
