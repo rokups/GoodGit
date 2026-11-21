@@ -323,6 +323,10 @@ GG_TEST("keyboard", "change information: the conflict list is reachable, Enter o
     GG_REQUIRE(navThrough(s, "//Change information", {ref}));
     press(ctx, ImGuiKey_Enter);
     GG_CHECK(s.waitUntil([&] { return s.session()->blame().blame() != nullptr; }, 30.0f));
+    const ggui::core::BlameQuery* query = s.session()->blame().query();
+    GG_REQUIRE(query != nullptr);
+    GG_CHECK_STR_EQ(query->path, "conflict.txt");
+    GG_CHECK_STR_EQ(query->commit.hex(), conflicted);
 }
 
 GG_TEST("keyboard", "welcome: recent repositories by arrows, Alt+Space menu, Delete forgets, Enter opens")
@@ -460,6 +464,8 @@ GG_TEST("keyboard", "toolbar: the repository switcher opens by Enter, Down walks
     GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_0"));
     press(ctx, ImGuiKey_Delete);
     GG_CHECK_EQ(st.data().recent.size(), size_t(3));
+    GG_CHECK(fs::equivalent(s.session()->path(), c));
+    GG_CHECK(g.OpenPopupStack.Size == 1);
     GG_REQUIRE(navTo(ctx, "//##Combo_00/###switch_2"));
     press(ctx, ImGuiKey_Enter);
     GG_CHECK(g.OpenPopupStack.Size == 0);
@@ -518,6 +524,7 @@ GG_TEST("keyboard", "dialogs: combos open by Enter, rows by Down, the filter pic
     press(ctx, ImGuiKey_Enter);
     GG_CHECK(g.OpenPopupStack.Size == 1);
     GG_CHECK(form()->fields[0].choice != before);
+    GG_CHECK_STR_EQ(form()->fields[0].options[static_cast<size_t>(form()->fields[0].choice)], "origin/gamma"); // three Downs: the third row
     // The filter: type, Enter picks the first match.
     GG_REQUIRE(navTo(ctx, "//Set upstream/Upstream of main##upstream"));
     press(ctx, ImGuiKey_Enter);
