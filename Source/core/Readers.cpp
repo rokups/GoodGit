@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -186,17 +187,21 @@ bool reachableFromAnyTip(git_repository* repo, const git_oid& id, const std::vec
 }
 } // namespace
 
+int gAheadBehindMaxVisits = 20000;
+
 namespace {
 // Ahead/behind counts of `local` against `upstream`, capped at kCountCap + 1 (which means "more than kCountCap").
-// A walk in time order from both tips, flags 1 = reached from local, 2 = from upstream. It ends when every queued
-// commit is reached from both, when both counts are over the cap, or after kMaxVisits commits.
-// shortcut: with unrelated or very skewed histories the counts are lower bounds, upgrade if a badge needs more.
+// A walk in time order from both tips, flags 1 = reached from local, 2 = from upstream. It ends when no queued
+// commit is reached from one tip only and the rest of the queue is older than every counted commit, when both
+// counts are over the cap, or after gAheadBehindMaxVisits commits. After the visit limit a side that may still
+// grow shows as more than the cap: a partial count never shows as an exact number.
+// shortcut: very skewed clocks (a parent newer than its child) can give a wrong count, upgrade if that matters.
 void cappedAheadBehind(git_repository* repo, const git_oid& local, const git_oid& upstream, int& ahead, int& behind)
 {
-    constexpr int kMaxVisits = 20000;
     struct State {
         unsigned flags = 0;
         bool queued = false;
+        git_time_t time = 0;
     };
     struct Item {
         git_time_t time;
@@ -205,8 +210,11 @@ void cappedAheadBehind(git_repository* repo, const git_oid& local, const git_oid
     };
     std::map<std::string, State> states;
     std::priority_queue<Item> queue;
-    int a = 0, b = 0, nonStale = 0;
-    auto key = [](const git_oid& id) { return std::string(reinterpret_cast<const char*>(id.id), GIT_OID_MAX_SIZE); };
+    int a = 0, b = 0;
+    int queuedWith[4] = {0, 0, 0, 0}; // queued commits by flags
+    git_time_t oldestCounted = std::numeric_limits<git_time_t>::max(); // oldest commit reached from one tip only
+    // The hex form: the bytes after the hash length are not always zero.
+    auto key = [](const git_oid& id) { return toHex(id); };
     auto count = [&](unsigned flags, int d) {
         if (flags == 1)
             a += d;
@@ -222,35 +230,46 @@ void cappedAheadBehind(git_repository* repo, const git_oid& local, const git_oid
         return true;
     };
     auto paint = [&](const git_oid& id, unsigned bits) {
-        State& st = states[key(id)];
+        const std::string k = key(id);
+        State& st = states[k];
         if ((st.flags | bits) == st.flags)
             return;
-        count(st.flags, -1);
-        const bool wasOpen = st.queued && st.flags != 3;
-        st.flags |= bits;
-        count(st.flags, 1);
-        if (st.queued) {
-            if (wasOpen && st.flags == 3)
-                --nonStale;
+        // A commit that cannot be read is not counted.
+        if (!st.queued && !timeOf(id, st.time)) {
+            if (st.flags == 0)
+                states.erase(k);
             return;
         }
-        git_time_t t = 0;
-        if (!timeOf(id, t))
-            return;
-        st.queued = true;
+        count(st.flags, -1);
+        if (st.queued)
+            --queuedWith[st.flags];
+        st.flags |= bits;
+        count(st.flags, 1);
+        ++queuedWith[st.flags];
+        if (!st.queued) {
+            st.queued = true;
+            queue.push({st.time, id});
+        }
         if (st.flags != 3)
-            ++nonStale;
-        queue.push({t, id});
+            oldestCounted = std::min(oldestCounted, st.time);
     };
     paint(local, 1);
     paint(upstream, 2);
-    for (int visits = 0; !queue.empty() && nonStale > 0 && visits < kMaxVisits && (a <= kCountCap || b <= kCountCap); ++visits) {
+    int visits = 0;
+    bool cut = false;
+    while (!queue.empty() && (a <= kCountCap || b <= kCountCap)) {
+        // Equal times: a stale entry may still sit before a commit that is counted, so it is popped too.
+        if (queuedWith[1] + queuedWith[2] == 0 && queue.top().time < oldestCounted)
+            break;
+        if (visits++ >= gAheadBehindMaxVisits) {
+            cut = true;
+            break;
+        }
         const Item item = queue.top();
         queue.pop();
         State& st = states[key(item.id)];
         st.queued = false;
-        if (st.flags != 3)
-            --nonStale;
+        --queuedWith[st.flags];
         const unsigned flags = st.flags;
         git_commit* c = nullptr;
         if (git_commit_lookup(&c, repo, &item.id) != 0)
@@ -260,8 +279,8 @@ void cappedAheadBehind(git_repository* repo, const git_oid& local, const git_oid
         git_commit_free(c);
     }
     git_error_clear();
-    ahead = std::min(a, kCountCap + 1);
-    behind = std::min(b, kCountCap + 1);
+    ahead = a > kCountCap || (cut && queuedWith[1] > 0) ? kCountCap + 1 : a;
+    behind = b > kCountCap || (cut && queuedWith[2] > 0) ? kCountCap + 1 : b;
 }
 } // namespace
 

@@ -1,4 +1,5 @@
 // Side panels: Branches, Tags, Worktrees, Remotes, Reflog (§4.7).
+#include "core/Readers.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "panels/SidePanels.hpp"
 #include "shell/App.hpp"
@@ -108,6 +109,73 @@ GG_TEST("panels", "branches: ahead and behind are exact below the cap with the m
     GG_REQUIRE(main != nullptr);
     GG_CHECK_EQ(main->ahead, 5);
     GG_CHECK_EQ(main->behind, 7);
+}
+
+GG_TEST("panels", "branches: a partial count after the visit limit is never shown as an exact number")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // main is 5 commits above the base; origin/main is 300 commits above the base and newer.
+    std::string stream;
+    auto commit = [&](const std::string& ref, int mark, int from, int time) {
+        const std::string when = std::to_string(time) + " +0000\n";
+        stream += "commit " + ref + "\nmark :" + std::to_string(mark) + "\n";
+        stream += "author T <t@example.com> " + when + "committer T <t@example.com> " + when + "data 2\nc\n";
+        if (from)
+            stream += "from :" + std::to_string(from) + "\n";
+        stream += "\n";
+    };
+    commit("refs/heads/main", 1, 0, 1700000000);
+    for (int i = 2; i <= 6; ++i)
+        commit("refs/heads/main", i, i - 1, 1700000000 + i);
+    commit("refs/remotes/origin/main", 7, 1, 1700001000);
+    for (int i = 8; i <= 306; ++i)
+        commit("refs/remotes/origin/main", i, i - 1, 1700001000 + i);
+    s.git(repo, {"fast-import", "--quiet"}, stream);
+    s.git(repo, {"symbolic-ref", "HEAD", "refs/heads/main"});
+    s.git(repo, {"config", "remote.origin.url", "."});
+    s.git(repo, {"config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"});
+    s.git(repo, {"config", "branch.main.remote", "origin"});
+    s.git(repo, {"config", "branch.main.merge", "refs/heads/main"});
+    const int savedLimit = ggui::core::gAheadBehindMaxVisits;
+    ggui::core::gAheadBehindMaxVisits = 50;
+    GG_REQUIRE(s.openRepository(repo));
+    ggui::core::gAheadBehindMaxVisits = savedLimit;
+    const auto* main = s.session()->snapshot()->findBranch("main");
+    GG_REQUIRE(main != nullptr);
+    GG_CHECK(main->ahead == 5 || main->ahead == 1000);
+    GG_CHECK_EQ(main->behind, 1000);
+}
+
+GG_TEST("panels", "branches: ahead and behind are exact when all commits have the same time")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    // X <- P, X <- Y, main = merge(P, Y), origin/main = Y. All times are equal.
+    std::string stream;
+    auto commit = [&](const std::string& ref, int mark, const std::string& name, int from, int merge) {
+        const std::string when = "1700000000 +0000\n";
+        stream += "commit " + ref + "\nmark :" + std::to_string(mark) + "\n";
+        stream += "author T <t@example.com> " + when + "committer T <t@example.com> " + when + "data 1\n" + name + "\n";
+        if (from)
+            stream += "from :" + std::to_string(from) + "\n";
+        if (merge)
+            stream += "merge :" + std::to_string(merge) + "\n";
+        stream += "\n";
+    };
+    commit("refs/heads/main", 1, "X", 0, 0);
+    commit("refs/heads/main", 2, "P", 1, 0);
+    commit("refs/remotes/origin/main", 3, "Y", 1, 0);
+    commit("refs/heads/main", 4, "M", 2, 3);
+    s.git(repo, {"fast-import", "--quiet"}, stream);
+    s.git(repo, {"symbolic-ref", "HEAD", "refs/heads/main"});
+    s.git(repo, {"config", "remote.origin.url", "."});
+    s.git(repo, {"config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"});
+    s.git(repo, {"config", "branch.main.remote", "origin"});
+    s.git(repo, {"config", "branch.main.merge", "refs/heads/main"});
+    GG_REQUIRE(s.openRepository(repo));
+    const auto* main = s.session()->snapshot()->findBranch("main");
+    GG_REQUIRE(main != nullptr);
+    GG_CHECK_EQ(main->ahead, 2);
+    GG_CHECK_EQ(main->behind, 0);
 }
 
 GG_TEST("panels", "branches: a branch with two remote refs is a closed node with a child row for each ref")
