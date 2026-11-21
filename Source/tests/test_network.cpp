@@ -630,6 +630,20 @@ GG_TEST("network", "pull on a branch without upstream is refused and creates no 
     GG_CHECK(rev(s, repo, "origin/extra").empty());
 }
 
+GG_TEST("network", "pull blocked by an untracked file does not offer Stash and pull")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    remoteCommit(s, repo, "clash.txt", "remote\n");
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.write(repo, "clash.txt", "local untracked\n");
+    s.git(repo, {"config", "pull.rebase", "false"});
+    s.session()->actions().pull(ggui::PullMode::Merge);
+    GG_CHECK(s.waitUntil([&] { return !s.app.errorMessage().empty(); }));
+    GG_CHECK(!s.dialogOpen("Stash and pull", 1.0f));
+    GG_CHECK(s.read(repo, "clash.txt") == "local untracked\n");
+}
+
 GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefills Push to")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
