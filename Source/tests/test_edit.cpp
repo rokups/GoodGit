@@ -1135,11 +1135,11 @@ GG_TEST("edit", "more refusals and edges: reorder across branches, reorder on a 
         ctx->KeyUp(mods);
         ctx->Yield(2);
     };
-    // s1 (on side) cannot move next to c4 (on main): different lines of history.
+    // s1 (on side) cannot move next to c4 (on main): different lines of history. The panel offers no drop.
     const std::string refs = s.gitOut(r.path, {"for-each-ref"});
     drag(rowRef(r.s1), rowRef(r.c4), ImGuiMod_Shift);
-    GG_CHECK(s.dismissError());
-    GG_CHECK(s.app.errorMessage().find("same line of history") != std::string::npos);
+    s.settle();
+    GG_CHECK(!s.dismissError(1.0f));
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"for-each-ref"}), refs);
     // A working tree file cannot be folded into a commit that is not HEAD or before it.
     s.write(r.path, "b.txt", "b changed\n");
