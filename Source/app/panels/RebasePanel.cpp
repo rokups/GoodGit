@@ -812,7 +812,7 @@ void RebasePanel::startNative()
     if (const std::string each = gg::trim(m_options.execEach); !each.empty())
         todo::addExecEach(list, each);
     Actions::NativeRebase r;
-    r.prepared.todo = todo::format(list);
+    r.prepared.todo = todo::format(list, c.commentChar);
     r.prepared.messages = todo::editorMessages(list);
     r.empty = m_options.emptied == gg::rewrite::Emptied::Keep ? "keep"
         : m_options.emptied == gg::rewrite::Emptied::Drop     ? "drop"
@@ -858,7 +858,7 @@ void RebasePanel::startNative()
 void RebasePanel::saveRemaining()
 {
     const std::uint64_t generation = m_generation;
-    m_session.actions().editRemainingTodo(m_remainingText, todo::format(m_state.todo), todo::editorMessages(m_state.todo),
+    m_session.actions().editRemainingTodo(m_remainingText, todo::format(m_state.todo, m_state.context->commentChar), todo::editorMessages(m_state.todo),
         [this, generation](const core::MutationFinishedEvent& e) {
             if (generation != m_generation)
                 return;
@@ -871,7 +871,7 @@ void RebasePanel::saveRemaining()
 
 void RebasePanel::saveForGit()
 {
-    const std::string text = todo::format(m_state.todo);
+    const std::string text = todo::format(m_state.todo, m_state.context->commentChar);
     auto done = std::move(m_sequence->done);
     m_sequence.reset();
     close();

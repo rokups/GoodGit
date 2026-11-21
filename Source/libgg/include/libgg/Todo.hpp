@@ -89,9 +89,9 @@ struct ParseError {
     std::string message;      // Git wording where Git has one
 };
 
-// Parses a todo file. Blank lines, comment lines ("#") and `noop` are skipped. Unknown commands and
+// Parses a todo file. Blank lines, comment lines (`comment`, "#" by default) and `noop` are skipped. Unknown commands and
 // malformed lines are reported and left out.
-Todo parse(std::string_view text, std::vector<ParseError>* errors = nullptr);
+Todo parse(std::string_view text, std::vector<ParseError>* errors = nullptr, std::string_view comment = "#");
 
 // The commits the rows name: the commit rows (pick … drop) and the `merge -C/-c` rows, in order
 // (ids as written: may be abbreviated after parse()).
@@ -100,7 +100,7 @@ std::vector<std::string> replayedCommits(const Todo& list);
 // Writes the todo as Git does: "pick <full id> # <subject>", "fixup -C <id> # …", "exec <cmd>", a
 // blank line after each update-ref, "label <name>", "reset <name> # <subject>", "merge -C <id>
 // <labels> # <subject>", "noop" when empty.
-std::string format(const Todo& todo);
+std::string format(const Todo& todo, std::string_view comment = "#");
 
 // ---- The range and what the todo refers to --------------------------------------------------
 
@@ -124,6 +124,7 @@ struct ReadOptions {
 };
 
 struct Context {
+    std::string commentChar = "#"; // core.commentChar, set by readStarting() and readRemaining()
     std::string upstream;      // full ids ("" = root)
     std::string onto;
     std::string tip;
@@ -154,6 +155,9 @@ struct Context {
     // and squash/fixup rows before any commit row fold into it.
     bool continuesHead = false;
 };
+
+// The comment string of the todo: core.commentChar, "#" when unset or "auto".
+std::string commentChar(git_repository* repo);
 
 // Reads the range and builds the starting todo (see the file comment). Throws on unknown
 // revisions or when `upstream` is not an ancestor of the tip's history.

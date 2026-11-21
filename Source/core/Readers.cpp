@@ -84,10 +84,10 @@ std::string headFileBranch(const fs::path& headFile, Oid& oid)
     return {};
 }
 
-std::vector<RebaseStep> rebaseSteps(const std::string& text)
+std::vector<RebaseStep> rebaseSteps(const std::string& text, const std::string& comment)
 {
     std::vector<RebaseStep> out;
-    for (const auto& item : gg::todo::parse(text).items) {
+    for (const auto& item : gg::todo::parse(text, nullptr, comment).items) {
         RebaseStep step;
         step.action = gg::todo::actionName(item.action);
         if (item.isCommit()) {
@@ -112,9 +112,10 @@ std::vector<RebaseStep> rebaseSteps(const std::string& text)
 RebaseProgress readRebaseProgress(git_repository* repo, const fs::path& dir)
 {
     RebaseProgress p;
-    p.done = rebaseSteps(readFileText(dir / "done"));
+    const std::string comment = gg::todo::commentChar(repo);
+    p.done = rebaseSteps(readFileText(dir / "done"), comment);
     p.todoText = readFileText(dir / "git-rebase-todo");
-    p.remaining = rebaseSteps(p.todoText);
+    p.remaining = rebaseSteps(p.todoText, comment);
     p.headName = gg::trim(readFileText(dir / "head-name"));
     // Lines written without the subject (older git, or a todo typed that way): the commit's.
     for (auto* steps : {&p.done, &p.remaining})

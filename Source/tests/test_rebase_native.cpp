@@ -10,6 +10,7 @@
 #include "tests/Harness.hpp"
 
 #include <libgg/Journal.hpp>
+#include <libgg/NativeRebase.hpp>
 #include "util/Env.hpp"
 
 #include <libgg/Git2.hpp>
@@ -947,6 +948,95 @@ GG_TEST("rebase-native", "todo::read fails on a missing commit object, and toPla
     }
     fs::rename(moved, object);
     GG_CHECK(failed);
+}
+
+GG_TEST("rebase-native", "todo::parse reads fixup -Cid and merge -Cid like git, and refuses -C with no id")
+{
+    std::vector<todo::ParseError> errors;
+    const todo::Todo list = todo::parse("fixup -Cabc123 # x\nmerge -cdef456 side\n", &errors);
+    GG_REQUIRE(errors.empty());
+    GG_REQUIRE(list.items.size() == 2);
+    GG_CHECK_STR_EQ(list.items[0].commit, "abc123");
+    GG_CHECK(list.items[0].fixup == todo::FixupMessage::Use);
+    GG_CHECK_STR_EQ(list.items[1].commit, "def456");
+    GG_CHECK_STR_EQ(list.items[1].arg, "side");
+    errors.clear();
+    const todo::Todo bad = todo::parse("fixup -C\nmerge -C\nmerge -c # s\n", &errors);
+    GG_CHECK(errors.size() == 3);
+    GG_CHECK(bad.items.empty());
+    errors.clear();
+    GG_CHECK(todo::parse("fixup -C # x\nfixup -c ; x\n", &errors).items.size() == 1); // "; x" is no comment here
+    GG_CHECK(errors.size() == 1);
+}
+
+GG_TEST("rebase-native", "todo::parse refuses text after [new root] on a reset row but keeps a subject")
+{
+    std::vector<todo::ParseError> errors;
+    const todo::Todo bad = todo::parse("reset [new root]x\n", &errors);
+    GG_CHECK(errors.size() == 1);
+    GG_CHECK(bad.items.empty());
+    errors.clear();
+    const todo::Todo ok = todo::parse("reset [new root] # s\nreset [new root]\n", &errors);
+    GG_CHECK(errors.empty());
+    GG_CHECK(ok.items.size() == 2);
+}
+
+GG_TEST("rebase-native", "todo reads core.commentChar: ; rows are comments and the todo is written with ;")
+{
+    const Repo r = makeRepo(s);
+    s.git(r.path, {"config", "core.commentChar", ";"});
+    const auto handle = gg::git2::openRepository(r.path);
+    const todo::Context c = todo::readRemaining(handle.get(), "; a comment\npick " + r.c[1] + " ; c1 subject\n", "");
+    GG_CHECK_STR_EQ(c.commentChar, ";");
+    GG_REQUIRE(c.initial.items.size() == 1);
+    GG_CHECK_STR_EQ(c.initial.items[0].subject, "c1 subject");
+    const std::string text = todo::format(c.initial, c.commentChar);
+    GG_CHECK(text.find(" ; c1 subject") != std::string::npos);
+    GG_CHECK(todo::parse(text, nullptr, ";").items.size() == 1);
+}
+
+GG_TEST("rebase-native", "a native rebase with core.commentChar=; stops at edit, the done and todo files read right, and a typed reword reaches git")
+{
+    const Repo r = makeRepo(s);
+    s.git(r.path, {"config", "core.commentChar", ";"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(openFrom(s, r.c[2]));
+    key(s, r.c[2], ImGuiKey_E);
+    key(s, r.c[3], ImGuiKey_R);
+    s.setText("//Interactive rebase/**/###ir_msg_" + r.c[3], "c3 reworded with semicolon\n");
+    GG_REQUIRE(start(s));
+    GG_REQUIRE(stoppedAt(s, "edit"));
+    {
+        // The progress view shows the subject, not "; c2 add b".
+        const auto snap = s.session()->snapshot();
+        GG_CHECK_STR_EQ(snap->rebase->done.back().text, "c2 add b");
+        GG_REQUIRE(!snap->rebase->remaining.empty());
+        for (const auto& step : snap->rebase->remaining)
+            GG_CHECK(step.text.rfind(";", 0) != 0);
+    }
+    {
+        // done holds "edit <id> ; c2 add b", the todo holds the rest: both name their commits.
+        const auto handle = gg::git2::openRepository(r.path);
+        const auto ids = gg::native::replayedCommits(handle.get());
+        GG_REQUIRE(ids.has_value());
+        GG_CHECK(std::find(ids->begin(), ids->end(), r.c[2]) != ids->end());
+        GG_CHECK(std::find(ids->begin(), ids->end(), r.c[3]) != ids->end());
+        GG_CHECK(std::find(ids->begin(), ids->end(), r.c[5]) != ids->end());
+        // A "; ..." row is a comment: reading the todo as "#" would see an unknown command.
+        std::ofstream(r.path / ".git" / "rebase-merge" / "git-rebase-todo", std::ios::app | std::ios::binary)
+            << "; a comment that is not a command\n";
+        const std::string text = s.read(r.path, ".git/rebase-merge/git-rebase-todo");
+        bool read = true;
+        try {
+            (void)todo::readRemaining(handle.get(), text, "refs/heads/main");
+        } catch (const std::exception&) {
+            read = false;
+        }
+        GG_CHECK(read);
+    }
+    ctx->ItemClick(kContinue);
+    GG_REQUIRE(finished(s, r.path));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s", "HEAD~2"}), "c3 reworded with semicolon");
 }
 
 } // namespace ggtest

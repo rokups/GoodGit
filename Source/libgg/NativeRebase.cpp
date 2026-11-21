@@ -134,8 +134,9 @@ std::optional<std::vector<std::string>> replayedCommits(git_repository* repo)
     if (!fs::is_directory(dir, ec))
         return std::nullopt;
     std::vector<std::string> out;
+    const std::string comment = todo::commentChar(repo);
     for (const char* name : {"done", "git-rebase-todo"}) {
-        const auto rows = todo::replayedCommits(todo::parse(readFile(dir / name).value_or("")));
+        const auto rows = todo::replayedCommits(todo::parse(readFile(dir / name).value_or(""), nullptr, comment));
         out.insert(out.end(), rows.begin(), rows.end());
     }
     return out;
@@ -284,7 +285,13 @@ int sequenceEditor(const fs::path& file, std::string& error)
     const auto done = readFile(file.parent_path() / "rebase-merge" / "done");
     if (!done)
         return 0;
-    const todo::Todo list = todo::parse(*done);
+    // The editor file sits in the git dir, which opens as a repository.
+    std::string comment = "#";
+    try {
+        comment = todo::commentChar(git2::openRepository(file.parent_path()).get());
+    } catch (const std::exception&) {
+    }
+    const todo::Todo list = todo::parse(*done, nullptr, comment);
     // (A merge row's commit: its message for `merge -c`.)
     if (list.items.empty() || list.items.back().commit.empty()
         || !(list.items.back().isCommit() || list.items.back().action == todo::Action::Merge))
