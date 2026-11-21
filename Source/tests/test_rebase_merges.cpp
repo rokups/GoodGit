@@ -1280,13 +1280,17 @@ GG_TEST("rebase-merges", "dropping the merge row keeps the chain on its own bran
     installRecordingHooks(s, r.path);
     const fs::path pristine = copyRepo(s, r.path, "pristine");
     GG_REQUIRE(openMerges(s, r));
+    const auto merges = [&] {
+        const auto& items = editor(s).todo().items;
+        return std::count_if(items.begin(), items.end(), [](const auto& item) { return item.action == A::Merge; });
+    };
+    GG_REQUIRE(merges() == 1); // else the no-merge check below passes for a todo that never had one
     // The merge row is under b1; the arrow selects it (its middle holds the action combo) and Delete removes it.
     ctx->ItemClick(irRow(r.b1).c_str());
     ctx->KeyPress(ImGuiKey_DownArrow);
     ctx->KeyPress(ImGuiKey_Delete);
     ctx->Yield(2);
-    for (const auto& item : editor(s).todo().items)
-        GG_CHECK(item.action != A::Merge);
+    GG_REQUIRE(merges() == 0);
     GG_CHECK(!todo::hasErrors(editor(s).issues()));
     const std::string todoText = todo::format(editor(s).todo());
     datesForGgui(true);
@@ -1296,7 +1300,7 @@ GG_TEST("rebase-merges", "dropping the merge row keeps the chain on its own bran
     checkClean(s, r.path);
     checkStraightMain(s, r);
     GG_CHECK(!reachable(s, r, r.t1, "main") && !reachable(s, r, r.t2, "main"));
-    // topic keeps its two commits (new ids) on a1; the commits no longer reach main.
+    // topic keeps its two commits on a1; the commits no longer reach main.
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "--format=%s", "topic"}), "t2 change t\nt1 add t\na1 add a\nc0 base");
     GG_CHECK_STR_EQ(s.revParse(r.path, "topic~2"), s.revParse(r.path, "main~2"));
     GG_CHECK_EQ(parentsOf(s, r.path, "topic").size(), 1u);
