@@ -7,6 +7,7 @@
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 #include "util/Env.hpp"
+#include <libgg/GitRunner.hpp>
 #include <cmath>
 
 namespace ggtest {
@@ -354,10 +355,13 @@ GG_TEST("ui", "Interactive rebase: Cancel while the commits are being read")
     ctx->MenuClick("//##MainMenuBar/Commit/Interactive rebase...");
     GG_REQUIRE(s.dialogOpen("Interactive rebase onto"));
     s.dialogText("Interactive rebase onto", "base", root);
+    // A slow git keeps the read in flight, so the Cancel does not depend on one poll.
+    gg::setSlowGitLatency(std::chrono::milliseconds(1500));
     s.dialogButton("Interactive rebase onto", "Open");
     auto& editor = s.session()->rebase();
     GG_REQUIRE(s.waitUntil([&] { return editor.loading() && s.itemExists("//Interactive rebase/Cancel###ir_cancel"); }));
     ctx->ItemClick("//Interactive rebase/Cancel###ir_cancel");
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
     GG_CHECK(!editor.isOpen());
     // The read finishes later and is dropped: the panel stays closed, nothing was written.
     GG_CHECK(s.settle());
