@@ -944,6 +944,7 @@ GG_TEST("panels", "repositories: the open repository expands to its worktrees")
     // A repository with worktrees has a marker, and its node is closed by default. A plain one has no marker.
     GG_CHECK(ctx->ItemInfo(row.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable);
     GG_CHECK(!(ctx->ItemInfo(plainRow.c_str()).StatusFlags & ImGuiItemStatusFlags_Openable));
+    GG_REQUIRE(!snapshot->worktrees.empty());
     for (const auto& w : snapshot->worktrees)
         GG_CHECK(!s.itemExists(worktreeRow(row, w.name).c_str()));
     // A click on the label selects the row and does not open the node; so does a double-click.
@@ -962,6 +963,7 @@ GG_TEST("panels", "repositories: the open repository expands to its worktrees")
     GG_CHECK_STR_EQ(s.clipboard(), ggui::normalizeRepoPath(repo.string()));
     // The arrow opens it: a row for each worktree.
     openRepoNode(ctx, row);
+    GG_REQUIRE(!snapshot->worktrees.empty());
     for (const auto& w : snapshot->worktrees)
         GG_CHECK(s.itemExists(worktreeRow(row, w.name).c_str()));
     ImGui::SetClipboardText("");
@@ -1198,6 +1200,7 @@ GG_TEST("panels", "repositories: a repository without worktrees expands to nothi
     const auto* info = s.app.repoSummary(fs::path(ggui::normalizeRepoPath(plain.string())));
     GG_REQUIRE(info);
     GG_CHECK(info->submodules.empty());
+    GG_REQUIRE(!info->worktrees.empty());
     for (const auto& w : info->worktrees)
         GG_CHECK(!s.itemExists(worktreeRow(row, w.name).c_str()));
     GG_CHECK(s.session()->snapshot() != nullptr);
@@ -1411,6 +1414,7 @@ GG_TEST("panels", "repositories: a linked worktree that is opened stays under it
     GG_REQUIRE(s.itemExists(row.c_str()));
     GG_CHECK_STR_EQ(s.session()->repositories().openPath(), mainPath);
     openRepoNode(ctx, row);
+    GG_REQUIRE(!s.session()->snapshot()->worktrees.empty());
     for (const auto& w : s.session()->snapshot()->worktrees)
         GG_CHECK(s.itemExists(worktreeRow(row, w.name).c_str()));
     // A double-click on the row of the main repository opens nothing.
