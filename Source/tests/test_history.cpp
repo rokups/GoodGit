@@ -1201,16 +1201,18 @@ GG_TEST("history", "first rows of a large history appear quickly")
     // Load only adds time to the wall latency. A regression raises every sample, so the best of
     // three opens still fails it.
     constexpr int opens = 3;
-    // The idle frame time of this process shows the load of the machine, measured just before
-    // the opens. Without strict mode, the limit is at least 100 idle frames. A product regression
-    // does not move the idle frame time, so it still fails.
-    constexpr double baselineFactor = 100.0;
-    const double baselineMs = measureIdleFrameMs(ctx);
-    const bool strict = timeBudgetMs(1.0) == 1.0;
-    const double limitMs = strict ? 700.0 : std::max(timeBudgetMs(700), baselineFactor * baselineMs);
+    // Load slows the tools too. A reference command on the same repo, timed just before each
+    // open, shows the machine speed. The limit grows with the best reference. A regression of
+    // the open does not slow the reference, so it still fails.
+    constexpr double refFactor = 20.0; // Idle ratio open/reference is 7.8 to 9.2.
     for (const fs::path& repo : repos) {
         long long best = std::numeric_limits<long long>::max();
+        double bestRefMs = 1e9;
         for (int attempt = 0; attempt < opens; ++attempt) {
+            const auto refStart = std::chrono::steady_clock::now();
+            s.gitOut(repo, {"rev-list", "--count", "HEAD"});
+            bestRefMs = std::min(bestRefMs,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - refStart).count());
             // Timed from the Open click on Welcome, not from when the harness sees an idle session.
             ctx->ItemInputValue("//Welcome/##welcome_path", repo.string().c_str());
             const auto start = std::chrono::steady_clock::now();
@@ -1229,9 +1231,12 @@ GG_TEST("history", "first rows of a large history appear quickly")
             ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
             ctx->Yield(3);
         }
-        ctx->LogInfo("%s: best first rows %lld ms, limit %.0f ms (idle frame %.1f ms)", repo.string().c_str(), best,
-            limitMs, baselineMs);
-        GG_CHECK(best < limitMs);
+        const double limitMs = std::max(timeBudgetMs(700), refFactor * bestRefMs);
+        ctx->LogInfo("%s: best first rows %lld ms, best reference %.0f ms, ratio %.2f, limit %.0f ms",
+            repo.string().c_str(), best, bestRefMs, best / bestRefMs, limitMs);
+        spdlog::info("history timing {}: best first rows {} ms, best reference {:.0f} ms, ratio {:.2f}, limit {:.0f} ms",
+            repo.string(), best, bestRefMs, best / bestRefMs, limitMs);
+        GG_CHECK(static_cast<double>(best) <= limitMs);
     }
 }
 

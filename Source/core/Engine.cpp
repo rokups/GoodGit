@@ -44,9 +44,6 @@ constexpr int kSlotRebasePreview = 1;
 constexpr int kSlotRemoteTags = 1;
 constexpr int kSlotRemoteBranches = 2;
 
-// An index write of our own mutation is seen by the watcher up to its debounce (150 ms) later.
-// The window after the mutation (Options::selfWriteWindow) is longer than that.
-
 std::string firstLines(const std::string& text, int n = 6)
 {
     std::string out;
