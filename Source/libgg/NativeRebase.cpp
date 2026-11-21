@@ -50,6 +50,7 @@ struct Group {
     std::string op;
     std::string identity;
     std::string src;
+    bool ok = true; // false: the group finished as failed (4th line "failed"); no such line: true
 };
 
 std::optional<Group> readGroup(const fs::path& dir)
@@ -64,7 +65,7 @@ std::optional<Group> readGroup(const fs::path& dir)
     std::string src = lines.size() > 2 ? lines[2] : std::string();
     if (src.empty())
         src = lines[0].rfind("git-", 0) == 0 ? "git" : "ggui";
-    return Group{lines[0], lines.size() > 1 ? lines[1] : std::string(), src};
+    return Group{lines[0], lines.size() > 1 ? lines[1] : std::string(), src, !(lines.size() > 3 && lines[3] == "failed")};
 }
 
 // Removes the state directory, and gg/rebase when no other worktree has one.
@@ -185,7 +186,7 @@ void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::str
     }
     if (!identity.empty() && identity == group->identity)
         return; // still in progress
-    if (journal.end(group->op, true, error)) // on failure the state stays: the next pass retries
+    if (journal.end(group->op, group->ok, error)) // on failure the state stays: the next pass retries
         removeState(dir);
 }
 
@@ -193,6 +194,9 @@ void finishGroup(git_repository* repo, journal::Writer& journal, bool ok, std::s
 {
     const fs::path dir = stateDir(repo);
     if (const auto group = readGroup(dir)) {
+        // A failed end is retried by closeFinishedGroup: it must know the group did not succeed.
+        if (!ok && group->ok)
+            writeState(dir / "operation", group->op + "\n" + group->identity + "\n" + group->src + "\nfailed\n");
         if (!recordHeadNow(repo, journal, group->op, error) || !journal.end(group->op, ok, error))
             return; // the state stays: the next pass retries
     }

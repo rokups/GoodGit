@@ -204,7 +204,11 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     std::string error;
     for (const auto& w : m_worktrees)
         m_journal.appendWorktree(m_op.id, w, &error);
-    m_journal.appendRefs(m_op.id, changes, &error);
+    // Without the ref records the operation cannot be undone, and the reflog entries stay for the
+    // next reconcile pass: it ends as failed, and the cursor does not move.
+    const bool refsRecorded = m_journal.appendRefs(m_op.id, changes, &error);
+    if (!refsRecorded)
+        ok = false;
     if (!housekeeping.empty()) {
         // While this operation is still open, so no reconcile pass can see these keep refs
         // unjournaled in between.
@@ -213,7 +217,8 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     }
     // The git commands this operation ran left reflog entries: they are accounted for now (the
     // op is still open, so no reconcile pass can journal them meanwhile).
-    reconcile::advanceCursor(m_repo, &error);
+    if (refsRecorded)
+        reconcile::advanceCursor(m_repo, &error);
     // The rebase this operation started or joined: open while it is stopped, ended with it.
     const bool rebasing = !native::rebaseIdentity(m_repo).empty();
     const bool startsGroup = !m_resumed && rebasing && !m_rebaseAtBegin && m_op.undoes.empty();

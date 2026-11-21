@@ -9,16 +9,23 @@
 #include <libgg/Git2.hpp>
 #include <libgg/Journal.hpp>
 #include <libgg/NativeRebase.hpp>
+#include <libgg/Operation.hpp>
 #include <libgg/Process.hpp>
 #include <libgg/Reconcile.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <fstream>
+
 #include <map>
 #include <sstream>
+#include <thread>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace ggtest {
 
@@ -2053,8 +2060,11 @@ GG_TEST("reconcile", "a rotation does not count housekeeping operations: the use
     GG_CHECK(plan.ok && plan.target && plan.target->label == "git branch user");
 }
 
-GG_TEST("reconcile", "a rebase group whose end record fails keeps its state, and a later pass ends it")
+#ifndef _WIN32
+GG_TEST("reconcile", "a rebase group whose end record fails keeps its state, and the retry keeps ok=false")
 {
+    if (geteuid() == 0)
+        return; // root appends to a read-only file
     const fs::path repo = s.fixture(Recipe::Linear);
     gg::git2::Repository r = gg::git2::openRepository(repo);
     gg::journal::Journal journal{repo / ".git"};
@@ -2069,18 +2079,79 @@ GG_TEST("reconcile", "a rebase group whose end record fails keeps its state, and
     // A read-only journal file: the end record cannot be appended.
     fs::permissions(journal.path(), fs::perms::owner_read, fs::perm_options::replace);
     std::string error;
-    gg::native::finishGroup(r.get(), journal, true, &error);
+    gg::native::finishGroup(r.get(), journal, false, &error);
     GG_CHECK(!error.empty());
     GG_CHECK(fs::exists(dir / "operation")); // the state is kept
     gg::native::closeFinishedGroup(r.get(), journal);
     GG_CHECK(fs::exists(dir / "operation"));
-    // A writable journal ends the group and removes the state.
+    // A writable journal: the retry ends the group as failed, as it finished.
     fs::permissions(journal.path(), fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
-    gg::native::finishGroup(r.get(), journal, true);
+    gg::native::closeFinishedGroup(r.get(), journal);
     GG_CHECK(!fs::exists(dir / "operation"));
     const auto ops = journalOps(repo);
     GG_REQUIRE(ops.size() == 1);
     GG_CHECK(ops.front().ended);
+    GG_CHECK(!ops.front().ok);
+}
+#endif
+
+GG_TEST("reconcile", "closeFinishedGroup ends a remembered group whose rebase is gone, and removes its state")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::journal::Journal journal{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = "op-close";
+    op.src = "ggui";
+    op.label = "rebase";
+    GG_REQUIRE(journal.begin(op));
+    gg::native::rememberGroup(r.get(), journal, op.id);
+    const fs::path dir = gg::native::stateDir(r.get());
+    GG_REQUIRE(fs::exists(dir / "operation"));
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(!fs::exists(dir / "operation"));
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ended);
+    GG_CHECK(ops.front().ok);
+}
+
+GG_TEST("reconcile", "an operation whose ref records fail ends as failed, and the next pass journals the ref change")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = s.head(repo);
+    {
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        gg::OperationRecorder rec(r.get(), "test", "plain commit", false);
+        rec.begin();
+        s.commitFile(repo, "late.txt", "late\n", "Late");
+        // Another process holds journal.lock: the ref records time out, then the lock is free for the end record.
+        gg::journal::Journal other{repo / ".git"};
+        std::atomic<bool> held{false};
+        std::thread holder([&] {
+            gg::journal::Journal::Transaction tx(other);
+            held = true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1400));
+        });
+        while (!held)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        rec.finish(true, false);
+        holder.join();
+        GG_CHECK(!rec.journalError().empty());
+    }
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 2; }));
+    s.settle();
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 2);
+    GG_CHECK(ops[0].ended);
+    GG_CHECK(!ops[0].ok);
+    GG_CHECK(!ops[0].restorable());
+    GG_CHECK(ops[1].src == "git");
+    GG_CHECK(ops[1].restorable());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) == start; }));
 }
 
 GG_TEST("reconcile", "writePrepared leaves a complete prepared.json and no temp file")
