@@ -1050,6 +1050,20 @@ GG_TEST("conflicts", "materialize labels sides/base from termLabels; labels roun
     GG_CHECK(parsedNoeol.regions.front().sides[1].value() == "B2");
 }
 
+GG_TEST("conflicts", "mergeFiles keeps the markers small for large files with far apart changes (GG-94)")
+{
+    // The middle part between common prefix and suffix is above the 4M-cell limit of the LCS table.
+    std::string base, ours, theirs, expected;
+    for (int i = 0; i < 3000; ++i) {
+        const std::string line = "line " + std::to_string(i) + "\n";
+        base += line;
+        ours += (i == 100 || i == 2900) ? "ours " + std::to_string(i) + "\n" : line;
+        theirs += i == 1500 ? "theirs\n" : line;
+        expected += (i == 100 || i == 2900) ? "ours " + std::to_string(i) + "\n" : i == 1500 ? "theirs\n" : line;
+    }
+    GG_CHECK(gg::markers::mergeFiles(base, ours, theirs) == expected);
+}
+
 GG_TEST("conflicts", "engine: a rewrite that creates a conflict labels ours/theirs/base with the right commits")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "side-labels");

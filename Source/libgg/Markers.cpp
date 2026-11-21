@@ -5,6 +5,9 @@
 #include <cstring>
 #include <unordered_map>
 
+#include <git2/diff.h>
+#include <git2/global.h>
+
 namespace gg::markers {
 
 namespace {
@@ -250,6 +253,47 @@ std::vector<std::string_view> viewLines(std::string_view text)
     return out;
 }
 
+// Huge middle parts: libgit2 patience diff (linear space) instead of the LCS table. Both line
+// vectors are views of one buffer each, so the middle part is one contiguous range.
+void diffMatch(const std::vector<std::string_view>& ref, const std::vector<std::string_view>& other, size_t pre,
+    size_t n, size_t m, std::vector<int>& map)
+{
+    auto range = [&](const std::vector<std::string_view>& v, size_t count) {
+        return std::string_view(v[pre].data(), static_cast<size_t>(v[pre + count - 1].data() + v[pre + count - 1].size() - v[pre].data()));
+    };
+    const std::string_view a = range(ref, n), b = range(other, m);
+    struct Marks {
+        std::vector<char> removed, added;
+    } marks{std::vector<char>(n, 0), std::vector<char>(m, 0)};
+    git_libgit2_init();
+    git_diff_options opts = GIT_DIFF_OPTIONS_INIT;
+    opts.flags = GIT_DIFF_FORCE_TEXT | GIT_DIFF_PATIENCE;
+    opts.context_lines = 0;
+    git_diff_line_cb lineCb = [](const git_diff_delta*, const git_diff_hunk*, const git_diff_line* line, void* payload) {
+        auto& mk = *static_cast<Marks*>(payload);
+        if (line->origin == GIT_DIFF_LINE_DELETION && line->old_lineno >= 1 && static_cast<size_t>(line->old_lineno) <= mk.removed.size())
+            mk.removed[static_cast<size_t>(line->old_lineno) - 1] = 1;
+        else if (line->origin == GIT_DIFF_LINE_ADDITION && line->new_lineno >= 1 && static_cast<size_t>(line->new_lineno) <= mk.added.size())
+            mk.added[static_cast<size_t>(line->new_lineno) - 1] = 1;
+        return 0;
+    };
+    const int rc = git_diff_buffers(a.data(), a.size(), nullptr, b.data(), b.size(), nullptr, &opts, nullptr, nullptr, nullptr, lineCb, &marks);
+    git_libgit2_shutdown();
+    if (rc != 0)
+        return; // coarse result; terms still cancel correctly
+    // Lines neither removed nor added pair up in order.
+    size_t x = 0, y = 0;
+    for (;;) {
+        while (x < n && marks.removed[x])
+            ++x;
+        while (y < m && marks.added[y])
+            ++y;
+        if (x >= n || y >= m)
+            break;
+        map[pre + x++] = static_cast<int>(pre + y++);
+    }
+}
+
 // For each line of `ref`, the index of the matching line in `other` (LCS), or -1.
 std::vector<int> matchLines(const std::vector<std::string_view>& ref, const std::vector<std::string_view>& other)
 {
@@ -267,8 +311,12 @@ std::vector<int> matchLines(const std::vector<std::string_view>& ref, const std:
     }
     const size_t n = ref.size() - pre - suf;
     const size_t m = other.size() - pre - suf;
-    if (n == 0 || m == 0 || n * m > 4'000'000)
-        return map; // coarser hunks for huge differences; terms still cancel correctly
+    if (n == 0 || m == 0)
+        return map;
+    if (n * m > 4'000'000) {
+        diffMatch(ref, other, pre, n, m, map);
+        return map;
+    }
     std::vector<std::uint32_t> dp((n + 1) * (m + 1), 0);
     auto at = [&](size_t a, size_t b) -> std::uint32_t& { return dp[a * (m + 1) + b]; };
     for (size_t a = n; a-- > 0;)
