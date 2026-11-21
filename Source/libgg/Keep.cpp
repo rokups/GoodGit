@@ -103,38 +103,54 @@ std::vector<git_oid> anchors(git_repository* repo)
     return out;
 }
 
-bool reachableFrom(git_repository* repo, const git_oid& id, const std::vector<git_oid>& tips)
-{
-    if (tips.empty())
-        return false;
-    for (const auto& t : tips)
-        if (git_oid_equal(&t, &id))
-            return true;
-    return git_graph_reachable_from_any(repo, &id, tips.data(), tips.size()) == 1;
-}
-
 // The ids invariant K keeps, given the candidates.
 std::vector<git_oid> wanted(git_repository* repo, const std::vector<git_oid>& candidates)
 {
     if (candidates.empty())
         return {};
     const std::vector<git_oid> a = anchors(repo);
+    // Pushes the ids that are commits to a walk that hides every anchor. A failed push (not a
+    // commit) counts as "not reachable", as the graph calls did.
+    const auto walk = [&](const std::vector<git_oid>& ids, std::set<std::string>& out, std::set<std::string>& bad) {
+        git_revwalk* raw = nullptr;
+        if (git_revwalk_new(&raw, repo) != 0)
+            return;
+        Revwalk w(raw);
+        git_revwalk_sorting(raw, GIT_SORT_NONE);
+        for (const auto& id : ids)
+            if (!isCommit(repo, id) || git_revwalk_push(raw, &id) != 0)
+                bad.insert(toHex(id));
+        for (const auto& id : a)
+            git_revwalk_hide(raw, &id);
+        git_oid oid;
+        while (git_revwalk_next(&oid, raw) == 0)
+            out.insert(toHex(oid));
+    };
+    std::set<std::string> reached, bad;
+    walk(candidates, reached, bad);
     std::vector<git_oid> survivors;
     std::set<std::string> seen;
-    for (const auto& c : candidates)
-        if (seen.insert(toHex(c)).second && !reachableFrom(repo, c, a))
+    for (const auto& c : candidates) {
+        const std::string hex = toHex(c);
+        if (seen.insert(hex).second && (reached.count(hex) || bad.count(hex)))
             survivors.push_back(c);
-    std::vector<git_oid> tips;
-    for (const auto& c : survivors) {
-        bool ancestor = false;
-        for (const auto& d : survivors)
-            if (!git_oid_equal(&c, &d) && git_graph_descendant_of(repo, &d, &c) == 1) {
-                ancestor = true;
-                break;
-            }
-        if (!ancestor)
-            tips.push_back(c);
     }
+    // A survivor with another survivor above it is no tip: it is a proper ancestor of one.
+    std::vector<git_oid> parents;
+    for (const auto& s : survivors) {
+        git_commit* raw = nullptr;
+        if (git_commit_lookup(&raw, repo, &s) != 0)
+            continue;
+        for (unsigned i = 0, n = git_commit_parentcount(raw); i < n; ++i)
+            parents.push_back(*git_commit_parent_id(raw, i));
+        git_commit_free(raw);
+    }
+    std::set<std::string> ancestors, ignored;
+    walk(parents, ancestors, ignored);
+    std::vector<git_oid> tips;
+    for (const auto& s : survivors)
+        if (!ancestors.count(toHex(s)))
+            tips.push_back(s);
     git_error_clear(); // a graph call that failed was read as "not reachable"
     return tips;
 }
