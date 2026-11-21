@@ -9,9 +9,33 @@
 #include <libgg/Thread.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 
 namespace ggui {
+
+std::atomic<const char*> g_platformStage{"idle"};
+
+namespace {
+constexpr Uint64 kFenceTimeoutMs = 10000;
+
+// Polls the fence until it signals or the deadline passes. Returns false on a timeout.
+bool waitFenceBounded(SDL_GPUDevice* device, SDL_GPUFence* fence, const char* stage)
+{
+    g_platformStage = stage;
+    if (SDL_QueryGPUFence(device, fence))
+        return true;
+    const Uint64 deadline = SDL_GetTicks() + kFenceTimeoutMs;
+    while (!SDL_QueryGPUFence(device, fence)) {
+        if (SDL_GetTicks() >= deadline) {
+            spdlog::error("{} did not signal within {} ms", stage, kFenceTimeoutMs);
+            return false;
+        }
+        SDL_Delay(1);
+    }
+    return true;
+}
+} // namespace
 
 Platform::~Platform() { shutdown(); }
 
@@ -210,8 +234,10 @@ void Platform::endFrame()
     SDL_GPUTexture* swapchain = nullptr;
     std::uint32_t swW = 0;
     std::uint32_t swH = 0;
-    if (!m_headless)
+    if (!m_headless) {
+        g_platformStage = "swapchain acquire";
         SDL_WaitAndAcquireGPUSwapchainTexture(cmd, m_window, &swapchain, &swW, &swH);
+    }
 
     int fbW = 0;
     int fbH = 0;
@@ -245,11 +271,18 @@ void Platform::endFrame()
     if (m_headless) {
         // One frame in flight at most: wait for the previous one before queuing this one.
         if (m_frameFence) {
-            SDL_WaitForGPUFences(m_device, true, &m_frameFence, 1);
+            const bool done = waitFenceBounded(m_device, m_frameFence, "endFrame fence");
             SDL_ReleaseGPUFence(m_device, m_frameFence);
+            m_frameFence = nullptr;
+            if (!done) {
+                SDL_CancelGPUCommandBuffer(cmd); // the frame is dropped
+                return;
+            }
         }
+        g_platformStage = "endFrame submit";
         m_frameFence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     } else {
+        g_platformStage = "endFrame submit";
         SDL_SubmitGPUCommandBuffer(cmd);
     }
 }
@@ -287,8 +320,13 @@ bool Platform::readPixels(int x, int y, int w, int h, std::uint32_t* out)
     SDL_DownloadFromGPUTexture(copy, &region, &dst);
     SDL_EndGPUCopyPass(copy);
     SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-    SDL_WaitForGPUFences(m_device, true, &fence, 1);
-    SDL_ReleaseGPUFence(m_device, fence);
+    const bool done = fence && waitFenceBounded(m_device, fence, "readPixels fence");
+    if (fence)
+        SDL_ReleaseGPUFence(m_device, fence);
+    if (!done) {
+        SDL_ReleaseGPUTransferBuffer(m_device, buffer);
+        return false;
+    }
 
     const auto* src = static_cast<const std::uint8_t*>(SDL_MapGPUTransferBuffer(m_device, buffer, false));
     const bool bgra = m_format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM

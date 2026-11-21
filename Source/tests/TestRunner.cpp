@@ -177,6 +177,7 @@ void startWatchdog()
                 test = g_watchTest;
             }
             std::fprintf(stderr, "ggui: TIMEOUT: %s ran longer than %d s\n", test.c_str(), limit);
+            std::fprintf(stderr, "ggui:   last platform stage: %s\n", ggui::g_platformStage.load());
             for (const auto& c : gg::runningCommands()) {
                 std::string line;
                 for (const auto& a : c.args)
@@ -317,6 +318,7 @@ bool setAppWindowSize(ImGuiTestContext* ctx, SDL_Window* window, int w, int h)
             // The size can change again (a pending request of the app): ask again.
             stable = 0;
             SDL_SetWindowSize(window, w, h);
+            ggui::g_platformStage = "SDL_SyncWindow";
             SDL_SyncWindow(window);
         }
         ctx->Yield(1);
@@ -340,6 +342,7 @@ void restoreWindowSize(ImGuiTestContext* ctx)
     SDL_Window* window = g_app->platform().window();
     if (!window)
         return;
+    ggui::g_platformStage = "SDL_SyncWindow";
     SDL_SyncWindow(window); // a size request of the app that is still pending is applied first
     int cw = 0, ch = 0;
     SDL_GetWindowSize(window, &cw, &ch);
