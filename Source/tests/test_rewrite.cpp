@@ -242,6 +242,9 @@ GG_TEST("rewrite", "Ctrl+Z after a failed rewrite changes no ref, no index entry
     ctx->ItemClick(("//History/**/###row_" + published).c_str());
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     s.settle();
+    // The failed rewrite left no restorable operation: Undo refuses, so a lost key press cannot pass.
+    GG_CHECK(s.dismissError());
+    GG_CHECK(s.app.errorMessage().find("Nothing to undo") != std::string::npos);
     GG_CHECK_STR_EQ(everything(s, repo), before);
     GG_CHECK_STR_EQ(s.read(repo, "dirty-untracked.txt"), "untracked\n");
     GG_CHECK(s.fsck(repo));
