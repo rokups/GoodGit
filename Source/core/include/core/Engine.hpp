@@ -312,6 +312,9 @@ public:
         std::chrono::milliseconds focusedStatusInterval{500};
         // Unfocused window: at most one status refresh from the watcher in this time.
         std::chrono::milliseconds unfocusedStatusInterval{2000};
+        // After an own mutation ends, an index notice in this time is its own write: no scan.
+        // A watcher debounce (150 ms) is the lower bound. A test sets it to make this exact.
+        std::chrono::milliseconds selfWriteWindow{400};
         // How the working tree status is read.
         StatusBackend statusBackend = StatusBackend::Git;
     };

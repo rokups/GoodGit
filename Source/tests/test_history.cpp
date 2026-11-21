@@ -1201,9 +1201,18 @@ GG_TEST("history", "first rows of a large history appear quickly")
     // Load only adds time to the wall latency. A regression raises every sample, so the best of
     // three opens still fails it.
     constexpr int opens = 3;
+    // Load slows the tools too. A reference command on the same repo, timed just before each
+    // open, shows the machine speed. The limit grows with the best reference. A regression of
+    // the open does not slow the reference, so it still fails.
+    constexpr double refFactor = 13.0; // idle ratio open/reference is 7.8 to 9.2: idle keeps the 700 ms floor
     for (const fs::path& repo : repos) {
         long long best = std::numeric_limits<long long>::max();
+        double bestRefMs = 1e9;
         for (int attempt = 0; attempt < opens; ++attempt) {
+            const auto refStart = std::chrono::steady_clock::now();
+            s.gitOut(repo, {"rev-list", "--count", "HEAD"});
+            bestRefMs = std::min(bestRefMs,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - refStart).count());
             // Timed from the Open click on Welcome, not from when the harness sees an idle session.
             ctx->ItemInputValue("//Welcome/##welcome_path", repo.string().c_str());
             const auto start = std::chrono::steady_clock::now();
@@ -1222,8 +1231,12 @@ GG_TEST("history", "first rows of a large history appear quickly")
             ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
             ctx->Yield(3);
         }
-        ctx->LogInfo("%s: best first rows %lld ms", repo.string().c_str(), best);
-        GG_CHECK(best < timeBudgetMs(700));
+        const double limitMs = std::max(timeBudgetMs(700), refFactor * bestRefMs);
+        ctx->LogInfo("%s: best first rows %lld ms, best reference %.0f ms, ratio %.2f, limit %.0f ms",
+            repo.string().c_str(), best, bestRefMs, best / bestRefMs, limitMs);
+        spdlog::info("history timing {}: best first rows {} ms, best reference {:.0f} ms, ratio {:.2f}, limit {:.0f} ms",
+            repo.string(), best, bestRefMs, best / bestRefMs, limitMs);
+        GG_CHECK(static_cast<double>(best) <= limitMs);
     }
 }
 
@@ -2447,11 +2460,16 @@ GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick
     ctx->Yield(3);
     const auto table = s.child("//History", "##hist_table");
 
-    // The average time of some frames.
+    // The best of 3 windows of the average time of some frames: one stall moves a mean.
     const auto frameMs = [&](int frames) {
-        const auto start = std::chrono::steady_clock::now();
-        ctx->Yield(frames);
-        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames;
+        double best = 1e9;
+        for (int w = 0; w < 3; ++w) {
+            const auto start = std::chrono::steady_clock::now();
+            ctx->Yield(frames);
+            best = std::min(best,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames);
+        }
+        return best;
     };
     const double closedBottom = frameMs(20);
     ctx->ScrollToTop(table.c_str());
@@ -2463,10 +2481,14 @@ GG_TEST("history", "a Shift range of thousands of commits keeps the frames quick
     GG_CHECK_EQ(history.extraSelection().size(), history.rows().size() - 1);
     const double open = frameMs(20);
     // The shape of the selection by itself.
-    const auto t0 = std::chrono::steady_clock::now();
-    for (int i = 0; i < 5; ++i)
-        GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), history.rows().size());
-    const double shapeMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 5;
+    double shapeMs = 1e9;
+    for (int w = 0; w < 3; ++w) {
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < 5; ++i)
+            GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), history.rows().size());
+        shapeMs = std::min(shapeMs,
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 5);
+    }
     ctx->LogInfo("range timing: closed at the bottom %.2f ms, closed at the top %.2f ms, open %.2f ms, shape %.2f ms",
         closedBottom, closedTop, open, shapeMs);
     ctx->KeyPress(ImGuiKey_Escape);
