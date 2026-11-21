@@ -109,7 +109,21 @@ bool windowsCommandLineFits(size_t length);
 // Whether the name ends in .cmd or .bat (any case).
 bool isBatchFileName(const std::string& name);
 
-// Full path of `program` found through PATH, or empty. Never a .cmd or .bat file.
+// The command-line tail that runs a batch file through `cmd.exe`: `/d /v:off /s /c ""script" "arg""`.
+// Every argument is quoted. It gives "" with `error` for a `%`, `"`, `^`, `&`, `|`, `<`, `>` or a
+// control character (line break too) in an argument, or `%`, `"` or a line break in the script path.
+std::string batchShellArgs(const std::string& script, const std::vector<std::string>& args, std::string& error);
+// File names to try for `program`. On Windows: .exe, .cmd, .bat, then the name itself when it already
+// ends in .exe, .com, .cmd or .bat (CreateProcess cannot run a file with another extension).
+std::vector<std::string> programCandidates(const std::string& program, bool windows);
+#ifdef _WIN32
+// Builds the CreateProcess command line for `args` with `program` as the program path. A batch file
+// runs through cmd.exe: `application` is then cmd.exe, else it is empty.
+bool buildWindowsCommandLine(const std::vector<std::string>& args, const std::string& program,
+    std::wstring& application, std::wstring& cmd, std::string& error);
+#endif
+
+// Full path of `program` found through PATH, or empty. Tries .exe, .cmd and .bat on Windows.
 std::filesystem::path findInPath(const std::string& program);
 
 } // namespace gg

@@ -96,7 +96,38 @@ GG_TEST("winargs", "batch file names are detected in any case")
         GG_CHECK(gg::isBatchFileName(name));
     for (const char* name : {"git", "git.exe", "cmd", "a.batx", "bat"})
         GG_CHECK(!gg::isBatchFileName(name));
-    GG_CHECK(gg::findInPath("tool.cmd").empty());
+}
+
+GG_TEST("winargs", "batch command line quotes every argument")
+{
+    std::string error;
+    const std::string line = gg::batchShellArgs("C:\\My Tools\\code.cmd", {"--diff", "C:\\a b\\x.txt", "y"}, error);
+    GG_CHECK_STR_EQ(line, "/d /v:off /s /c \"\"C:\\My Tools\\code.cmd\" \"--diff\" \"C:\\a b\\x.txt\" \"y\"\"");
+    GG_CHECK(error.empty());
+    GG_CHECK_STR_EQ(gg::batchShellArgs("a.bat", {}, error), "/d /v:off /s /c \"\"a.bat\"\"");
+}
+
+GG_TEST("winargs", "batch command line refuses unsafe arguments")
+{
+    for (const char* bad : {"a%b", "a&b", "a\"b", "a\nb", "a\rb", "a^b", "a|b", "a<b", "a>b"}) {
+        std::string error;
+        GG_CHECK(gg::batchShellArgs("a.cmd", {"ok", bad}, error).empty());
+        GG_CHECK(error.find("cannot pass an argument with") == 0);
+    }
+    std::string error;
+    GG_CHECK(gg::batchShellArgs("C:\\50%\\a.cmd", {}, error).empty());
+    GG_CHECK(!error.empty());
+}
+
+GG_TEST("winargs", "program candidates follow the extension order")
+{
+    const std::vector<std::string> bare{"code.exe", "code.cmd", "code.bat"};
+    GG_CHECK(gg::programCandidates("code", true) == bare);
+    const auto named = gg::programCandidates("code.CMD", true);
+    GG_CHECK_EQ(named.size(), size_t(4));
+    GG_CHECK_STR_EQ(named.back(), "code.CMD");
+    GG_CHECK_STR_EQ(gg::programCandidates("tool.exe", true).back(), "tool.exe");
+    GG_CHECK_EQ(gg::programCandidates("ggui", false).size(), size_t(1));
 }
 
 } // namespace ggtest

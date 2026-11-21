@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -174,6 +175,47 @@ bool isBatchFileName(const std::string& name)
     return ext == ".cmd" || ext == ".bat";
 }
 
+std::string batchShellArgs(const std::string& script, const std::vector<std::string>& args, std::string& error)
+{
+    if (script.find_first_of("%\"\r\n") != std::string::npos) {
+        error = "cannot run a batch file with '%' or '\"' or a line break in its path";
+        return {};
+    }
+    // `%` expands in cmd.exe, `"` ends the quoting, `^&|<>` and line breaks start a new command.
+    for (const auto& a : args) {
+        for (const char c : a) {
+            if (c == '\0' || std::strchr("%\"^&|<>", c) != nullptr || static_cast<unsigned char>(c) < 0x20) {
+                const std::string what = c == '\n' ? "a line break"
+                    : c == '\r'                    ? "a carriage return"
+                    : static_cast<unsigned char>(c) < 0x20 ? "a control character"
+                                                           : std::string("'") + c + "'";
+                error = "cannot pass an argument with " + what + " to a batch file";
+                return {};
+            }
+        }
+    }
+    // The outer quotes around the whole command are removed by `/s`.
+    std::string line = "/d /v:off /s /c \"\"" + script + "\"";
+    for (const auto& a : args)
+        line += " \"" + a + "\"";
+    line += "\"";
+    return line;
+}
+
+std::vector<std::string> programCandidates(const std::string& program, bool windows)
+{
+    if (!windows)
+        return {program};
+    // CreateProcess cannot run a file without a known extension, so the bare name is not a candidate.
+    std::vector<std::string> out{program + ".exe", program + ".cmd", program + ".bat"};
+    std::string ext = program.size() >= 4 ? program.substr(program.size() - 4) : std::string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".exe" || ext == ".com" || isBatchFileName(program))
+        out.push_back(program);
+    return out;
+}
+
 namespace {
 
 #ifdef _WIN32
@@ -187,6 +229,48 @@ std::wstring widen(const std::string& s)
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), w.data(), n);
     return w;
 }
+
+} // namespace
+
+bool buildWindowsCommandLine(const std::vector<std::string>& args, const std::string& program,
+    std::wstring& application, std::wstring& cmd, std::string& error)
+{
+    application.clear();
+    cmd.clear();
+    if (isBatchFileName(program)) {
+        // A batch file never goes to CreateProcess as the program: cmd.exe runs it.
+        wchar_t buf[MAX_PATH * 4];
+        DWORD n = GetEnvironmentVariableW(L"ComSpec", buf, static_cast<DWORD>(std::size(buf)));
+        if (n > 0 && n < std::size(buf)) {
+            application.assign(buf, n);
+        } else {
+            n = GetEnvironmentVariableW(L"SystemRoot", buf, static_cast<DWORD>(std::size(buf)));
+            if (n > 0 && n < std::size(buf))
+                application = std::wstring(buf, n) + L"\\System32\\cmd.exe";
+        }
+        if (application.empty()) {
+            error = "cannot find cmd.exe";
+            return false;
+        }
+        const std::string tail = batchShellArgs(program, std::vector<std::string>(args.begin() + 1, args.end()), error);
+        if (tail.empty())
+            return false;
+        cmd = L"\"" + application + L"\" " + widen(tail);
+    } else {
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (i)
+                cmd.push_back(L' ');
+            cmd += widen(quoteWindowsArg(i == 0 ? program : args[i]));
+        }
+    }
+    if (!windowsCommandLineFits(cmd.size())) {
+        error = "command line too long";
+        return false;
+    }
+    return true;
+}
+
+namespace {
 
 RunResult runProcess(const RunRequest& request)
 {
@@ -206,14 +290,11 @@ RunResult runProcess(const RunRequest& request)
         result.err = request.args.at(0) + ": command not found";
         return result;
     }
-    for (size_t i = 0; i < request.args.size(); ++i) {
-        if (i)
-            cmd.push_back(L' ');
-        cmd += widen(quoteWindowsArg(i == 0 ? program.string() : request.args[i]));
-    }
-    if (!windowsCommandLineFits(cmd.size())) {
+    std::wstring application;
+    std::string buildError;
+    if (!buildWindowsCommandLine(request.args, program.string(), application, cmd, buildError)) {
         result.startFailed = true;
-        result.err = request.args.at(0) + ": command line too long";
+        result.err = request.args.at(0) + ": " + buildError;
         return result;
     }
 
@@ -239,7 +320,7 @@ RunResult runProcess(const RunRequest& request)
     SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
 
     const std::wstring cwd = request.cwd.empty() ? std::wstring() : request.cwd.wstring();
-    const BOOL created = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
+    const BOOL created = CreateProcessW(application.empty() ? nullptr : application.c_str(), cmd.data(), nullptr, nullptr, TRUE,
         CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, envBlock.data(),
         cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
     const DWORD createError = GetLastError();
@@ -709,21 +790,34 @@ std::filesystem::path findInPath(const std::string& program)
 {
     namespace fs = std::filesystem;
     std::error_code ec;
-    // A .cmd or .bat file runs through cmd.exe, which parses `&` and `%` in the arguments again.
-    if (isBatchFileName(program))
+#ifdef _WIN32
+    constexpr bool windows = true;
+    const char sep = ';';
+#else
+    constexpr bool windows = false;
+    const char sep = ':';
+#endif
+    // A batch file found here still goes through cmd.exe with checked arguments at the start.
+    const std::vector<std::string> names = programCandidates(program, windows);
+    const auto usable = [&](const fs::path& candidate) {
+#ifdef _WIN32
+        return fs::is_regular_file(candidate, ec);
+#else
+        return fs::is_regular_file(candidate, ec) && access(candidate.c_str(), X_OK) == 0;
+#endif
+    };
+    if (program.find('/') != std::string::npos || program.find('\\') != std::string::npos) {
+        if (!windows)
+            return fs::exists(program, ec) ? fs::path(program) : fs::path();
+        for (const auto& name : names) {
+            if (fs::is_regular_file(name, ec))
+                return fs::path(name);
+        }
         return {};
-    if (program.find('/') != std::string::npos || program.find('\\') != std::string::npos)
-        return fs::exists(program, ec) ? fs::path(program) : fs::path();
+    }
     const char* pathEnv = std::getenv("PATH");
     if (!pathEnv)
         return {};
-#ifdef _WIN32
-    const char sep = ';';
-    const std::vector<std::string> exts{".exe", ""};
-#else
-    const char sep = ':';
-    const std::vector<std::string> exts{""};
-#endif
     const std::string path(pathEnv);
     size_t start = 0;
     while (start <= path.size()) {
@@ -732,15 +826,10 @@ std::filesystem::path findInPath(const std::string& program)
             end = path.size();
         const std::string dir = path.substr(start, end - start);
         if (!dir.empty()) {
-            for (const auto& ext : exts) {
-                const fs::path candidate = fs::path(dir) / (program + ext);
-#ifdef _WIN32
-                if (fs::is_regular_file(candidate, ec))
+            for (const auto& name : names) {
+                const fs::path candidate = fs::path(dir) / name;
+                if (usable(candidate))
                     return candidate;
-#else
-                if (fs::is_regular_file(candidate, ec) && access(candidate.c_str(), X_OK) == 0)
-                    return candidate;
-#endif
             }
         }
         start = end + 1;
