@@ -178,7 +178,7 @@ DiffPanel::StagingMode DiffPanel::stagingMode() const
     if (m_fileCompare.kind != CompareTarget::None)
         return StagingMode::None;
     // A patch of a cut-off diff would stage only the loaded lines.
-    if (m_diff->files.empty() || m_diff->files.front().truncated)
+    if (m_diff->files.empty() || m_diff->files.front().truncated || m_diff->files.front().linesCut)
         return StagingMode::None;
     if (m_diff->query.kind == core::DiffKind::Unstaged
         && (m_file->group == FileGroup::Unstaged || m_file->group == FileGroup::Untracked))
@@ -349,7 +349,7 @@ void DiffPanel::buildRows()
         prevNewEnd = hunk.newStart + hunk.newLines - (hunk.newLines == 0 ? 0 : 1);
         prevOldEnd = hunk.oldStart + hunk.oldLines - (hunk.oldLines == 0 ? 0 : 1);
     }
-    if (!f.hunks.empty() && total >= 0 && !f.truncated) // else the dropped lines are changes
+    if (!f.hunks.empty() && total >= 0 && !f.truncated && !f.linesCut) // else the dropped lines are changes
         addGap(prevNewEnd + 1, total, prevOldEnd - prevNewEnd);
 }
 
@@ -801,7 +801,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged || commitMode ? 1 : 0;
         handle("###hunk_" + std::to_string(l.hunk), width - button * static_cast<float>(count));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
-        ImGui::BeginDisabled(!free);
+        ImGui::BeginDisabled(!free || f.linesCut);
         auto iconButton = [&](const char* icon, const std::string& id, const char* tip) {
             ImGui::SameLine(0, 0);
             // One text line tall, so the glyph keeps the editor line's baseline.
@@ -1038,6 +1038,8 @@ void DiffPanel::drawPlaceholder(const core::DiffFile& f)
             request();
         }
     }
+    if (f.linesCut)
+        ImGui::TextDisabled("Long lines are shortened; stage the whole file from the file list.");
 }
 
 void DiffPanel::drawMenuItems()
@@ -1084,6 +1086,8 @@ void DiffPanel::drawMenuItems()
     // History editing on the selected lines of a commit's change.
     if (m_selection.kind == SelKind::Commit && m_diff->query.kind == core::DiffKind::Commit) {
         ImGui::Separator();
+        if (m_diff->files.front().linesCut)
+            ImGui::TextDisabled("Long lines are shortened: no line or hunk change is possible.");
         const std::string patch = changes ? buildPatch(m_diff->files.front(), lines, false) : std::string();
         const bool can = free && !patch.empty();
         const core::Oid id = m_selection.id;

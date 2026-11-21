@@ -406,6 +406,7 @@ struct DiffFile {
     bool submodule = false;
     SubmoduleDiff submoduleDiff;     // set when `submodule` is true
     bool truncated = false;          // capped: "Load full diff"
+    bool linesCut = false;           // a line over the byte limit is shortened: no "Load full diff" helps
     int additions = 0;
     int deletions = 0;
     std::vector<DiffHunk> hunks;

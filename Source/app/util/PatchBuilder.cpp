@@ -49,6 +49,8 @@ LineSet hunkLines(const core::DiffFile& file, int h)
 
 std::string buildPatch(const core::DiffFile& file, LineSet selected, bool reverse)
 {
+    if (file.linesCut)
+        return {}; // a cut line is not the real text: a patch with it would corrupt a file
     // A changed last line without newline moves together with its counterpart.
     for (size_t h = 0; h < file.hunks.size(); ++h) {
         const auto& lines = file.hunks[h].lines;
