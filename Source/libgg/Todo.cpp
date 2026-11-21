@@ -709,8 +709,11 @@ Context read(git_repository* repo, const ReadOptions& options)
         // A cherry-pick is not older than its source: skip upstream commits older than the oldest listed one, minus a margin.
         // shortcut: a commit with a skewed clock (more than the margin) is missed, then its copy stays in the list.
         git_time_t oldest = std::numeric_limits<git_time_t>::max();
-        for (const auto& oid : listed)
-            oldest = std::min(oldest, git_commit_time(lookupCommit(repo, oid).get()));
+        // A rebase renews the committer time and keeps the author time, so both count.
+        for (const auto& oid : listed) {
+            Commit c = lookupCommit(repo, oid);
+            oldest = std::min({oldest, git_commit_time(c.get()), git_commit_author(c.get())->when.time});
+        }
         for (const auto& oid : walk(repo, *upstream, tip, oldest - kUpstreamTimeMargin))
             if (auto id = patchId(repo, oid))
                 upstreamIds.insert(*id);
