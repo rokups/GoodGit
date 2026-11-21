@@ -520,7 +520,7 @@ GG_TEST("reconcile", "switch -c records HEAD's branch change")
     // Undo puts HEAD back on main (and removes the branch).
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "main"; }));
-    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/feat"}).ok());
+    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "refs/heads/feat"}).ok(); }));
     GG_CHECK(s.waitUntil([&] { return !s.itemExists("//Branches/branch_feat/###branch_feat"); }));
 }
 
