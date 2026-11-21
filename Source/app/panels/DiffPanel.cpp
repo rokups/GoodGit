@@ -290,11 +290,6 @@ void DiffPanel::request()
             q.against = m_fileCompare.rev;
         }
     }
-    // The target is the query without the view options: a same-file reload keeps the editor state.
-    m_requestTarget = q;
-    m_requestTarget.context = 3;
-    m_requestTarget.whitespace = core::Whitespace::Normal;
-    m_requestTarget.full = false;
     q.context = settings.diffContext;
     q.whitespace = static_cast<core::Whitespace>(settings.diffWhitespace);
     q.full = m_full;
@@ -309,6 +304,11 @@ void DiffPanel::request()
         q.stageA = stages[m_conflictView][0];
         q.stageB = stages[m_conflictView][1];
     }
+    // The target is the query without the view options: a same-file reload keeps the editor state.
+    m_requestTarget = q;
+    m_requestTarget.context = 3;
+    m_requestTarget.whitespace = core::Whitespace::Normal;
+    m_requestTarget.full = false;
     m_loading = true;
     m_request = m_session.engine().diff(q, kSlot);
 }

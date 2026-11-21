@@ -1753,4 +1753,30 @@ GG_TEST("conflicts", "commit with conflicts keeps a hand-resolved file with a li
     GG_CHECK_STR_EQ(s.read(repo, "f.txt"), text);
 }
 
+GG_TEST("conflicts", "diff: switching the conflict view resets the scroll")
+{
+    std::string ours, theirs;
+    for (int i = 1; i <= 300; ++i) {
+        ours += "ours " + std::to_string(i) + "\n";
+        theirs += "theirs " + std::to_string(i) + "\n";
+    }
+    const fs::path repo = mergeStopped(s, "view-scroll", "", ours, theirs);
+    showConflicted(s, repo);
+    auto& diff = s.session()->diff();
+    ctx->WindowFocus("//Diff");
+    const ImGuiWindow* w = ctx->GetWindowByRef(s.child("//Diff", "##diff_body").c_str());
+    GG_REQUIRE(w != nullptr);
+    ctx->MouseMoveToPos(w->InnerRect.GetCenter());
+    ctx->MouseWheelY(-10.0f);
+    ctx->Yield(3);
+    GG_REQUIRE(diff.topLine() > 0);
+    s.comboSelect("//Diff/##conflict_view", "Base " ICON_MS_ARROW_RIGHT_ALT " ours");
+    GG_REQUIRE(s.waitUntil([&] {
+        const auto& d = diff.diff();
+        return d && d->query.kind == ggui::core::DiffKind::Stages;
+    }));
+    ctx->Yield(3);
+    GG_CHECK_EQ(diff.topLine(), 0);
+}
+
 } // namespace ggtest
