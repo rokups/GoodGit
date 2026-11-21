@@ -1913,7 +1913,14 @@ void RepositoriesPanel::draw(bool* open)
     m_openableSubmodules.clear();
     m_openableWorktrees.clear();
     m_sessionPath = sessionPath;
-    const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
+    const auto& entries = m_session.app().settings().data().repositories;
+    if (!m_treeValid || !std::equal(entries.begin(), entries.end(), m_treeEntries.begin(), m_treeEntries.end(),
+            [](const RepoEntry& a, const RepoEntry& b) { return a.path == b.path && a.alias == b.alias; })) {
+        m_treeEntries = entries;
+        m_tree = buildRepoTree(entries);
+        m_treeValid = true;
+    }
+    const auto& tree = m_tree;
     std::string toOpen;
     beginList();
     drawNodes(tree, toOpen);
@@ -2369,29 +2376,45 @@ void ReflogPanel::draw(bool* open)
             ImGui::TableSetupColumn("Message", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Date");
             ImGui::TableHeadersRow();
-            for (size_t i = 0; i < m_reflog->entries.size(); ++i) {
+            if (!m_rowsValid || m_rowsReflog != m_reflog || m_rowsFilter != m_filter.text) {
+                m_rows.clear();
+                for (size_t i = 0; i < m_reflog->entries.size(); ++i) {
+                    const auto& e = m_reflog->entries[i];
+                    Row row{i, e.newId.hex(), e.oldId.hex(), e.newId.shortHex(kShortIdLength),
+                        e.oldId.isNull() ? std::string(kShortIdLength, '0') : e.oldId.shortHex(kShortIdLength)};
+                    if (filter.matches({e.message, row.newHex, row.oldHex}))
+                        m_rows.push_back(std::move(row));
+                }
+                m_rowsReflog = m_reflog;
+                m_rowsFilter = m_filter.text;
+                m_rowsValid = true;
+            }
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(m_rows.size()));
+            while (clipper.Step()) {
+            for (int n = clipper.DisplayStart; n < clipper.DisplayEnd; ++n) {
+                const Row& row = m_rows[static_cast<size_t>(n)];
+                const size_t i = row.index;
                 const auto& e = m_reflog->entries[i];
-                if (!filter.matches({e.message, e.newId.hex(), e.oldId.hex()}))
-                    continue;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(("r" + std::to_string(i)).c_str());
-                const std::string oldText = e.oldId.isNull() ? std::string(kShortIdLength, '0') : e.oldId.shortHex(kShortIdLength);
+                const std::string& oldText = row.oldShort;
                 const std::string arrow = " " ICON_MS_ARROW_RIGHT_ALT " ";
-                const std::string label = oldText + arrow + e.newId.shortHex(kShortIdLength) + "###reflog_" + std::to_string(i);
+                const std::string label = oldText + arrow + row.newShort + "###reflog_" + std::to_string(i);
                 const size_t newAt = oldText.size() + arrow.size();
                 // Where the two IDs are drawn (the selectable's text starts at the cursor), for the menu's copy item.
                 const float oldLeft = ImGui::GetCursorScreenPos().x;
                 const float newLeft = oldLeft + ImGui::CalcTextSize(label.c_str(), label.c_str() + newAt).x;
                 const IdSlot oldSlot = idSlotAt(oldLeft, oldText, kIdPrefixLength);
-                const IdSlot newSlot = idSlotAt(newLeft, e.newId.shortHex(kShortIdLength), kIdPrefixLength);
+                const IdSlot newSlot = idSlotAt(newLeft, row.newShort, kIdPrefixLength);
                 selectableDimRanges(label.c_str(),
                     {{kIdPrefixLength, kShortIdLength}, {newAt + kIdPrefixLength, newAt + kShortIdLength}}, false,
                     ImGuiSelectableFlags_SpanAllColumns);
                 if (beginContextMenu("##reflog_menu")) {
                     // One item for the ID the right click was on. Off the IDs (and from the keyboard) the new ID's,
                     // and the old ID's after it so that it stays reachable.
-                    idCopyMenuItems({{e.newId.hex(), newSlot}, {e.oldId.hex(), oldSlot, "old", !e.oldId.isNull()}});
+                    idCopyMenuItems({{row.newHex, newSlot}, {row.oldHex, oldSlot, "old", !e.oldId.isNull()}});
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal new commit"))
                         m_session.revealCommit(e.newId);
                     if (menuItem(ICON_MS_MY_LOCATION, "Reveal old commit", nullptr, false, !e.oldId.isNull()))
@@ -2399,9 +2422,9 @@ void ReflogPanel::draw(bool* open)
                     ImGui::Separator();
                     const bool free = m_session.actions().busy().empty();
                     if (menuItem(ICON_MS_ADD, "Create branch from new...", nullptr, false, free))
-                        m_session.showCreateBranchDialog(e.newId.hex());
+                        m_session.showCreateBranchDialog(row.newHex);
                     if (menuItem(ICON_MS_ADD, "Create branch from old...", nullptr, false, free && !e.oldId.isNull()))
-                        m_session.showCreateBranchDialog(e.oldId.hex());
+                        m_session.showCreateBranchDialog(row.oldHex);
                     ImGui::EndPopup();
                 }
                 ImGui::TableSetColumnIndex(1);
@@ -2409,6 +2432,7 @@ void ReflogPanel::draw(bool* open)
                 ImGui::TableSetColumnIndex(2);
                 ImGui::TextUnformatted(core::formatTime(e.time).c_str());
                 ImGui::PopID();
+            }
             }
             ImGui::EndTable();
         }
@@ -2453,8 +2477,11 @@ void OperationsPanel::draw(bool* open)
         ImGui::TableSetupColumn("Source");
         ImGui::TableSetupColumn("Operation", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
-        for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-            const auto& op = *it;
+        ImGuiListClipper clipper; // newest first; no filter, so the row index maps to the list directly
+        clipper.Begin(static_cast<int>(ops.size()));
+        while (clipper.Step()) {
+        for (int n = clipper.DisplayStart; n < clipper.DisplayEnd; ++n) {
+            const auto& op = ops[ops.size() - 1 - static_cast<size_t>(n)];
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(("op_" + op.id).c_str());
@@ -2492,6 +2519,7 @@ void OperationsPanel::draw(bool* open)
             ImGui::TableSetColumnIndex(2);
             ImGui::Text("%s%s", op.label.c_str(), op.ok ? "" : " (failed)");
             ImGui::PopID();
+        }
         }
         ImGui::EndTable();
     }

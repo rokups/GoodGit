@@ -125,6 +125,10 @@ private:
     std::set<std::string> m_openableSubmodules; // the paths of the submodule rows that open, as of the last frame drawn
     std::set<std::string> m_openableWorktrees;  // the paths of the worktree rows that open, as of the last frame drawn
     std::map<std::string, std::string> m_rowTexts;
+    // The tree is built again only when the repository list differs from the one it was built from.
+    std::vector<RepoEntry> m_treeEntries;
+    std::vector<RepoNode> m_tree;
+    bool m_treeValid = false;
 };
 
 class WorktreesPanel {
@@ -178,6 +182,15 @@ private:
     core::RequestId m_request = 0;
     core::ReflogPtr m_reflog;
     bool m_requested = false;
+    // The entries that match the filter, with their ID texts. Built again when the reflog or the filter text changes.
+    struct Row {
+        size_t index; // in m_reflog->entries
+        std::string newHex, oldHex, newShort, oldShort;
+    };
+    std::vector<Row> m_rows;
+    core::ReflogPtr m_rowsReflog; // the reflog m_rows was built from (kept, so that its address is not reused)
+    std::string m_rowsFilter;
+    bool m_rowsValid = false;
 };
 
 class OperationsPanel {

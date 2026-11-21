@@ -787,6 +787,22 @@ GG_TEST("panels", "repositories: the open repository has the mark, an alias make
     GG_CHECK(s.itemExists("//Repositories/###group_grp/###group_grp:sub/repo_name/###row"));
 }
 
+GG_TEST("panels", "repositories: a repository added to the list shows in the tree")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Linear, "second");
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(repoRow(s, first).c_str()));
+    // The tree is cached: a change of the list builds it again.
+    s.app.settings().addRepository(ggui::normalizeRepoPath(second.string()));
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(repoRow(s, second).c_str()));
+    GG_CHECK(s.itemExists(repoRow(s, first).c_str()));
+}
+
 GG_TEST("panels", "repositories: a row shows the detail of the recent menu, also for a repository that is not recent")
 {
     s.app.settings().data().repositories.clear();
@@ -1896,6 +1912,34 @@ GG_TEST("panels", "remotes: name@host label with the host dimmed, tooltip shows 
     ctx->SleepNoSkip(kTooltipWait, 0.1f);
     GG_CHECK(s.textShown("//##Tooltip_00", "Fetch: https://example.invalid/fetch.git"));
     GG_CHECK(s.textShown("//##Tooltip_00", "Push: ssh://git@example.invalid/push.git"));
+}
+
+GG_TEST("panels", "reflog: a new entry shows in the next frames (the row cache is rebuilt)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && !reflog.reflog()->entries.empty(); }));
+    const size_t before = reflog.reflog()->entries.size();
+    GG_CHECK(!s.textShown("//Reflog", "reflog cache entry"));
+    s.git(repo, {"commit", "--allow-empty", "-q", "-m", "reflog cache entry"});
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries.size() > before; }));
+    ctx->Yield(3);
+    GG_CHECK(s.textShown("//Reflog", "reflog cache entry"));
+}
+
+GG_TEST("panels", "operations: a new operation shows in the next frames")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Operations");
+    s.session()->actions().createBranch("opcache", "HEAD", false);
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty(); }));
+    const std::string id = s.session()->operations().back().id;
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists((s.child("//Operations", "##ops_table") + "/**/op_" + id + "/###row").c_str()));
 }
 
 GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
