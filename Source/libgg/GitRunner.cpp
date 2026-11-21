@@ -181,23 +181,38 @@ std::string batchShellArgs(const std::string& script, const std::vector<std::str
         error = "cannot run a batch file with '%' or '\"' or a line break in its path";
         return {};
     }
-    // `%` expands in cmd.exe, `"` ends the quoting, `^&|<>` and line breaks start a new command.
+    // The outer quotes around the whole command are removed by `/s`.
+    std::string line = "/d /v:off /s /c \"\"" + script + "\"";
     for (const auto& a : args) {
+        // Inside quotes `^&|<>` are plain text. A line break or another control character cannot be encoded.
         for (const char c : a) {
-            if (c == '\0' || std::strchr("%\"^&|<>", c) != nullptr || static_cast<unsigned char>(c) < 0x20) {
-                const std::string what = c == '\n' ? "a line break"
-                    : c == '\r'                    ? "a carriage return"
-                    : static_cast<unsigned char>(c) < 0x20 ? "a control character"
-                                                           : std::string("'") + c + "'";
-                error = "cannot pass an argument with " + what + " to a batch file";
+            if (static_cast<unsigned char>(c) < 0x20) {
+                error = std::string("cannot pass an argument with ") +
+                    (c == '\n' ? "a line break" : c == '\r' ? "a carriage return" : "a control character") +
+                    " to a batch file";
                 return {};
             }
         }
+        // Like Rust std: `"` becomes `""` (backslashes before it are doubled), and `%` becomes `%%cd:~,%`
+        // so cmd.exe cannot expand %VAR% inside the quotes. Trailing backslashes are doubled before the
+        // closing quote, so the program that the batch file starts does not read them as an escape.
+        line += " \"";
+        size_t backslashes = 0;
+        for (const char c : a) {
+            if (c == '\\') {
+                ++backslashes;
+                continue;
+            }
+            if (c == '"')
+                line.append(backslashes * 2, '\\');
+            else
+                line.append(backslashes, '\\');
+            backslashes = 0;
+            line += c == '"' ? "\"\"" : c == '%' ? "%%cd:~,%" : std::string(1, c);
+        }
+        line.append(backslashes * 2, '\\');
+        line += '"';
     }
-    // The outer quotes around the whole command are removed by `/s`.
-    std::string line = "/d /v:off /s /c \"\"" + script + "\"";
-    for (const auto& a : args)
-        line += " \"" + a + "\"";
     line += "\"";
     return line;
 }

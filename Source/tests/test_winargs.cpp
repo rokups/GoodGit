@@ -107,16 +107,50 @@ GG_TEST("winargs", "batch command line quotes every argument")
     GG_CHECK_STR_EQ(gg::batchShellArgs("a.bat", {}, error), "/d /v:off /s /c \"\"a.bat\"\"");
 }
 
-GG_TEST("winargs", "batch command line refuses unsafe arguments")
+namespace {
+
+// The encoded form of one argument inside the batch command line.
+std::string encodeBatchArg(const std::string& arg, std::string& error)
 {
-    for (const char* bad : {"a%b", "a&b", "a\"b", "a\nb", "a\rb", "a^b", "a|b", "a<b", "a>b"}) {
+    const std::string line = gg::batchShellArgs("a.cmd", {arg}, error);
+    const std::string head = "/d /v:off /s /c \"\"a.cmd\" ";
+    if (line.size() < head.size() + 1)
+        return {};
+    return line.substr(head.size(), line.size() - head.size() - 1);
+}
+
+} // namespace
+
+GG_TEST("winargs", "batch command line encodes percent signs and quotes")
+{
+    std::string error;
+    GG_CHECK_STR_EQ(encodeBatchArg("--format=%H", error), "\"--format=%%cd:~,%H\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("%(refname)", error), "\"%%cd:~,%(refname)\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("a\"b", error), "\"a\"\"b\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("a\\\"b", error), "\"a\\\\\"\"b\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("C:\\a\\", error), "\"C:\\a\\\\\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("C:\\a\\b", error), "\"C:\\a\\b\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("& | < > ^ !", error), "\"& | < > ^ !\"");
+    GG_CHECK_STR_EQ(encodeBatchArg("", error), "\"\"");
+    GG_CHECK(error.empty());
+}
+
+GG_TEST("winargs", "batch command line refuses control characters and bad script paths")
+{
+    for (const char* bad : {"a\nb", "a\rb", "a\tb", "a\x01"
+                                                    "b"}) {
         std::string error;
         GG_CHECK(gg::batchShellArgs("a.cmd", {"ok", bad}, error).empty());
         GG_CHECK(error.find("cannot pass an argument with") == 0);
     }
     std::string error;
-    GG_CHECK(gg::batchShellArgs("C:\\50%\\a.cmd", {}, error).empty());
+    GG_CHECK(gg::batchShellArgs("a.cmd", {std::string("a\0b", 3)}, error).empty());
     GG_CHECK(!error.empty());
+    for (const char* path : {"C:\\50%\\a.cmd", "C:\\a\"b\\a.cmd", "a\n.cmd"}) {
+        error.clear();
+        GG_CHECK(gg::batchShellArgs(path, {}, error).empty());
+        GG_CHECK(!error.empty());
+    }
 }
 
 GG_TEST("winargs", "program candidates follow the extension order")
