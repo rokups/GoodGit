@@ -4,6 +4,9 @@
 #ifndef GGUI_BUILD_COMMIT
 #define GGUI_BUILD_COMMIT ""
 #endif
+#ifndef GGUI_BUILD_TIME
+#define GGUI_BUILD_TIME 0LL
+#endif
 #ifndef GGUI_PACKAGE_SYSTEM
 #define GGUI_PACKAGE_SYSTEM ""
 #endif
@@ -12,7 +15,7 @@ namespace ggui {
 
 BuildInfo buildInfo()
 {
-    return BuildInfo{GGUI_VERSION, GGUI_BUILD_COMMIT, GGUI_PACKAGE_SYSTEM};
+    return BuildInfo{GGUI_VERSION, GGUI_BUILD_COMMIT, GGUI_PACKAGE_SYSTEM, GGUI_BUILD_TIME};
 }
 
 std::string shortCommit(const std::string& commit)

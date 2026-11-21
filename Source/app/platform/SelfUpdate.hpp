@@ -20,6 +20,7 @@ struct Asset {
 
 struct Release {
     std::string commit; // target_commitish
+    std::int64_t publishedAt = 0; // published_at as Unix seconds (UTC); 0 when missing or invalid
     std::vector<Asset> assets;
 };
 
@@ -31,10 +32,16 @@ bool parseRelease(std::string_view json, Release& out, std::string& error);
 // is none or the asset is not trustworthy (foreign URL, bad digest, zero size).
 const Asset* selectAsset(const Release& release, std::string_view packageSystem);
 
-enum class Freshness { UpToDate, Newer, Unknown };
+enum class Freshness { UpToDate, Newer, Older, Unknown };
 
-// Compares two 40-hex commit ids (case-insensitive). Anything else gives Unknown.
-Freshness compare(std::string_view local, std::string_view release);
+// Compares two 40-hex commit ids (case-insensitive). Anything else gives Unknown. The same commit
+// is UpToDate. For different commits the release is Newer only when it was published after the
+// build time (Unix seconds); else it is Older. A time of 0 on one side gives Unknown.
+Freshness compare(std::string_view local, std::string_view release, std::int64_t buildTime,
+                  std::int64_t publishedAt);
+
+// Parses "YYYY-MM-DDTHH:MM:SSZ" to Unix seconds (UTC). Returns 0 for any other text.
+std::int64_t parseTimestamp(std::string_view text);
 
 // Empty when ggui can update the install of `exe`, else a message for the user. The checks run in
 // this order: file name (ggui or ggui.exe), installed by the package manager (Linux, /usr but not

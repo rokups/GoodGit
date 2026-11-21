@@ -356,12 +356,13 @@ void SelfUpdater::runCheck(gg::CancelToken cancel)
             fail("The release information is not valid: " + error);
             return;
         }
-        switch (compare(m_config.buildInfo.commit, release.commit)) {
+        switch (compare(m_config.buildInfo.commit, release.commit, m_config.buildInfo.buildTime, release.publishedAt)) {
         case Freshness::UpToDate:
+        case Freshness::Older:
             setState(State::UpToDate);
             return;
         case Freshness::Unknown:
-            fail("The release has no valid commit id.");
+            fail("Cannot tell whether the release is newer: a commit id or a time is missing.");
             return;
         case Freshness::Newer:
             break;

@@ -7,7 +7,7 @@ endif()
 add_executable(ggui ${APP_SOURCES})
 # Only BuildInfo.cpp sees the build identity, so a new commit id does not rebuild all of ggui.
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/util/BuildInfo.cpp PROPERTIES
-    COMPILE_DEFINITIONS "GGUI_BUILD_COMMIT=\"${GGUI_BUILD_COMMIT}\";GGUI_PACKAGE_SYSTEM=\"${GGUI_PACKAGE_SYSTEM}\"")
+    COMPILE_DEFINITIONS "GGUI_BUILD_COMMIT=\"${GGUI_BUILD_COMMIT}\";GGUI_BUILD_TIME=${GGUI_BUILD_TIME}LL;GGUI_PACKAGE_SYSTEM=\"${GGUI_PACKAGE_SYSTEM}\"")
 target_include_directories(ggui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/Source)
 target_link_libraries(ggui PRIVATE ggui_core imgui imgui_color_text_edit icon_font_headers
     nfd nlohmann_json::nlohmann_json spdlog::spdlog ggui_miniz)

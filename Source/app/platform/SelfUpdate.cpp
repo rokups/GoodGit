@@ -82,6 +82,7 @@ bool parseRelease(std::string_view json, Release& out, std::string& error)
         return false;
     }
     out.commit = stringField(root, "target_commitish");
+    out.publishedAt = parseTimestamp(stringField(root, "published_at"));
     const auto assets = root.find("assets");
     if (assets == root.end() || !assets->is_array()) {
         return true;
@@ -124,14 +125,51 @@ const Asset* selectAsset(const Release& release, std::string_view packageSystem)
     return nullptr;
 }
 
-Freshness compare(std::string_view local, std::string_view release)
+std::int64_t parseTimestamp(std::string_view text)
+{
+    if (text.size() != 20 || text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' ||
+        text[16] != ':' || text[19] != 'Z') {
+        return 0;
+    }
+    int v[6] = {};
+    constexpr int pos[6] = {0, 5, 8, 11, 14, 17};
+    for (int i = 0; i < 6; ++i) {
+        for (int k = 0; k < 2 + (i == 0 ? 2 : 0); ++k) {
+            const char ch = text[static_cast<std::size_t>(pos[i] + k)];
+            if (ch < '0' || ch > '9') {
+                return 0;
+            }
+            v[i] = v[i] * 10 + (ch - '0');
+        }
+    }
+    if (v[1] < 1 || v[1] > 12 || v[2] < 1 || v[2] > 31 || v[3] > 23 || v[4] > 59 || v[5] > 60) {
+        return 0;
+    }
+    // Days since 1970-01-01 (civil-from-days algorithm by H. Hinnant).
+    const std::int64_t y = v[1] <= 2 ? v[0] - 1 : v[0];
+    const std::int64_t era = y / 400;
+    const std::int64_t yoe = y - era * 400;
+    const std::int64_t doy = (153 * (v[1] + (v[1] > 2 ? -3 : 9)) + 2) / 5 + v[2] - 1;
+    const std::int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const std::int64_t days = era * 146097 + doe - 719468;
+    return days * 86400 + v[3] * 3600 + v[4] * 60 + v[5];
+}
+
+Freshness compare(std::string_view local, std::string_view release, std::int64_t buildTime,
+                  std::int64_t publishedAt)
 {
     if (!isCommitId(local) || !isCommitId(release)) {
         return Freshness::Unknown;
     }
     const bool same = std::equal(local.begin(), local.end(), release.begin(),
                                  [](char a, char b) { return lower(a) == lower(b); });
-    return same ? Freshness::UpToDate : Freshness::Newer;
+    if (same) {
+        return Freshness::UpToDate;
+    }
+    if (buildTime <= 0 || publishedAt <= 0) {
+        return Freshness::Unknown;
+    }
+    return publishedAt > buildTime ? Freshness::Newer : Freshness::Older;
 }
 
 namespace {
