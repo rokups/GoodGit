@@ -167,8 +167,12 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     // operation that touched the same keep ref (it takes the ref's value from the last one in begin
     // order), and the pass would journal it again. A deletion is hidden the same way. So a creation or
     // a deletion is the group's own only when no later operation records that keep ref.
+    std::optional<std::vector<journal::Operation>> journalOps;
     const auto laterOperationTouches = [&](const std::string& ref) {
-        const auto ops = m_journal.read();
+        // Read once: nothing writes the journal between the calls (the appends come after them).
+        if (!journalOps)
+            journalOps = m_journal.read();
+        const auto& ops = *journalOps;
         const auto group = std::find_if(ops.begin(), ops.end(), [&](const journal::Operation& o) { return o.id == m_op.id; });
         if (group == ops.end())
             return false;
