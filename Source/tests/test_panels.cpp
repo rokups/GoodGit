@@ -1976,6 +1976,19 @@ GG_TEST("panels", "reflog: a hidden panel does not reload; it shows the new entr
     GG_CHECK(s.textShown("//Reflog", "reflog hidden entry"));
 }
 
+GG_TEST("panels", "reflog: the chosen ref falls back to HEAD when the branch is deleted")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "x"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    reflog.choose("refs/heads/x");
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->ref == "refs/heads/x" && !reflog.reflog()->entries.empty(); }));
+    s.git(repo, {"branch", "-D", "x"});
+    GG_CHECK(s.waitUntil([&] { return reflog.ref() == "HEAD" && reflog.reflog() && reflog.reflog()->ref == "HEAD" && !reflog.reflog()->entries.empty(); }));
+}
+
 GG_TEST("panels", "operations: a new operation shows in the next frames")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

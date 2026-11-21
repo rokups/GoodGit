@@ -2341,6 +2341,14 @@ void ReflogPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged
     m_snapshot = snapshot;
     if (refsChanged)
         invalidate();
+    // The chosen ref is gone: go back to HEAD. The stash ref stays while a stash exists.
+    const bool gone = m_ref == "refs/stash" ? m_snapshot->stashes.empty()
+        : m_ref.starts_with("refs/heads/") && !m_snapshot->findBranch(m_ref.substr(11));
+    if (gone) {
+        m_ref = "HEAD";
+        m_reflog.reset();
+        invalidate();
+    }
 }
 
 void ReflogPanel::reload()
