@@ -381,6 +381,10 @@ jobs:
         run: |
           set -euo pipefail
           ls -l dist
+          # An older run that ends last, or a rerun, would publish an older commit with a later
+          # published_at, and the updater would offer a downgrade. Publish only the master tip.
+          git fetch origin master
+          [ "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" ] || { echo "not the master tip, skip"; exit 0; }
           git tag -f latest "$GITHUB_SHA"
           git push -f origin refs/tags/latest
           notes="Built by CI from master at ${GITHUB_SHA::7} (all tests passed). Replaced on every successful master build."

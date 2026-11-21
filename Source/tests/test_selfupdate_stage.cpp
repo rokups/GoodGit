@@ -416,4 +416,29 @@ GG_TEST("selfupdate", "stage refuses a file and a folder with the same name")
     }
 }
 
+GG_TEST("selfupdate", "stage keeps every file of the program folder")
+{
+    const std::string gitGg = realGitGg();
+    GG_NEED_GITGG(gitGg);
+    TempRoot root;
+    std::vector<Entry> entries = packageEntries("ggui-1-test", gitGg);
+    entries.push_back({"ggui-1-test/" + kBinDir + "extra.dat", "extra"});
+    entries.push_back({"ggui-1-test/" + kBinDir + "data/", ""});
+    entries.push_back({"ggui-1-test/" + kBinDir + "data/theme.txt", "theme"});
+    std::string error = "unset";
+    GG_REQUIRE(stage(root, entries, error));
+    GG_CHECK_STR_EQ(error, "");
+    const fs::path newDir = up::stageDir(root.installDir()) / "new";
+    GG_CHECK_STR_EQ(readFile(newDir / "extra.dat"), "extra");
+    GG_CHECK_STR_EQ(readFile(newDir / "data" / "theme.txt"), "theme");
+
+    // A name that cmd.exe could read as a command is refused on every platform.
+    TempRoot other;
+    std::vector<Entry> bad = packageEntries("ggui-1-test", gitGg);
+    bad.push_back({"ggui-1-test/" + kBinDir + "a&b.dat", "x"});
+    GG_REQUIRE(stage(other, bad, error));
+    GG_CHECK(error.find("unsafe name") != std::string::npos);
+    GG_CHECK(!pathExists(up::stageDir(other.installDir())));
+}
+
 } // namespace ggtest

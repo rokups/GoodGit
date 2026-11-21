@@ -2,6 +2,7 @@
 // (for example "linux-x86_64"), which names the matching release asset.
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace ggui {
@@ -10,6 +11,7 @@ struct BuildInfo {
     std::string version;
     std::string commit;
     std::string packageSystem;
+    std::int64_t buildTime = 0; // Unix seconds (UTC) of the configure step; 0 when unknown
 };
 
 BuildInfo buildInfo();

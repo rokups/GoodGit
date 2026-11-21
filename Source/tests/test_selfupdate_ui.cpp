@@ -47,7 +47,7 @@ struct UpdateFixture {
         writeZip(zip, packageEntries("ggui-1-test", realGitGg()));
         up::Asset asset = assetFor(zip);
         const std::string name = "ggui-1-" + ggui::buildInfo().packageSystem + ".zip";
-        releaseJson = R"({"target_commitish":")" + releaseCommit + R"(","assets":[{"name":")" + name +
+        releaseJson = R"({"published_at":"2026-01-02T00:00:00Z","target_commitish":")" + releaseCommit + R"(","assets":[{"name":")" + name +
                       R"(","browser_download_url":")" + kAssetBase + name + R"(","size":)" + std::to_string(asset.size) +
                       R"(,"digest":"sha256:)" + asset.sha256 + R"(","state":"uploaded"}]})";
     }
@@ -70,6 +70,7 @@ struct UpdateFixture {
         };
         config.buildInfo.version = "1";
         config.buildInfo.commit = buildCommit;
+        config.buildInfo.buildTime = 1767225600; // 2026-01-01
         config.buildInfo.packageSystem = ggui::buildInfo().packageSystem;
         config.releaseUrl = kReleaseUrl;
         return config;
