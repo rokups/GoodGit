@@ -1493,4 +1493,36 @@ GG_TEST("blame", "eol: a CRLF working file (core.autocrlf) blames the unchanged 
     GG_CHECK_STR_EQ(b->lines[2].commit.hex(), c1);
 }
 
+GG_TEST("blame", "a bare repository has no working tree: an error, not a crash")
+{
+    const fs::path bare = s.fixture(Recipe::Bare);
+    const auto handle = gg::git2::openRepository(bare);
+    ggui::core::BlameQuery q;
+    q.path = "f.txt";
+    bool threw = false;
+    try {
+        ggui::core::readBlame(handle.get(), q, gg::CancelToken::none());
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    GG_CHECK(threw);
+}
+
+GG_TEST("blame", "a working file over the size cap is refused before it is read")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "big-blame");
+    s.commitFile(repo, "f.txt", "one\n", "Add f");
+    s.write(repo, "f.txt", std::string(2 * 1024 * 1024 + 1, 'x'));
+    const auto handle = gg::git2::openRepository(repo);
+    ggui::core::BlameQuery q;
+    q.path = "f.txt";
+    std::string what;
+    try {
+        ggui::core::readBlame(handle.get(), q, gg::CancelToken::none());
+    } catch (const std::exception& e) {
+        what = e.what();
+    }
+    GG_CHECK(what.find("too large") != std::string::npos);
+}
+
 } // namespace ggtest

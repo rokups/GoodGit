@@ -1692,9 +1692,18 @@ BlamePtr readBlame(git_repository* repo, const BlameQuery& q, const gg::CancelTo
         check(git_tree_entry_bypath(&rawEntry, t.get(), result->query.path.c_str()), "git_tree_entry_bypath");
         TreeEntry entry(rawEntry);
         Blob blob = lookupBlob(repo, *git_tree_entry_id(entry.get()));
+        if (static_cast<std::uint64_t>(git_blob_rawsize(blob.get())) > kMaxTextBytes)
+            throw std::runtime_error("The file is too large to blame");
         content = blobContent(blob.get());
     } else {
-        content = readFileText(fs::path(git_repository_workdir(repo)) / q.path);
+        const char* wd = git_repository_workdir(repo);
+        if (!wd)
+            throw std::runtime_error("A bare repository has no working tree to blame");
+        const fs::path file = fs::path(wd) / q.path;
+        std::error_code ec;
+        if (fs::file_size(file, ec) > kMaxTextBytes && !ec) // (a missing file reads as empty)
+            throw std::runtime_error("The file is too large to blame");
+        content = readFileText(file);
     }
     gg::throwIfCancelled(cancel);
 
