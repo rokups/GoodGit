@@ -1011,6 +1011,17 @@ GG_TEST("rebase-native", "a native rebase with core.commentChar=; stops at edit,
         GG_CHECK(std::find(ids->begin(), ids->end(), r.c[2]) != ids->end());
         GG_CHECK(std::find(ids->begin(), ids->end(), r.c[3]) != ids->end());
         GG_CHECK(std::find(ids->begin(), ids->end(), r.c[5]) != ids->end());
+        // A "; ..." row is a comment: reading the todo as "#" would see an unknown command.
+        std::ofstream(r.path / ".git" / "rebase-merge" / "git-rebase-todo", std::ios::app | std::ios::binary)
+            << "; a comment that is not a command\n";
+        const std::string text = s.read(r.path, ".git/rebase-merge/git-rebase-todo");
+        bool read = true;
+        try {
+            (void)todo::readRemaining(handle.get(), text, "refs/heads/main");
+        } catch (const std::exception&) {
+            read = false;
+        }
+        GG_CHECK(read);
     }
     ctx->ItemClick(kContinue);
     GG_REQUIRE(finished(s, r.path));
