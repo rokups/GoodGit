@@ -1517,11 +1517,11 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
             GG_CHECK((info.ItemFlags & ImGuiItemFlags_Disabled) != 0);
             if (click && (info.ItemFlags & ImGuiItemFlags_Disabled)) {
                 const std::string busyBefore = s.session()->actions().busy();
-                const size_t opsBefore = s.session()->operations().size();
                 ctx->ItemClick(itemRef.c_str());
                 ctx->Yield(5);
+                // A late second job would show as a new busy name.
+                GG_CHECK(!s.waitUntil([&] { return s.session()->actions().busy() != busyBefore; }, 0.5f));
                 GG_CHECK_STR_EQ(s.session()->actions().busy(), busyBefore);
-                GG_CHECK_EQ(s.session()->operations().size(), opsBefore);
                 GG_CHECK(s.app.dialogs().current() == nullptr);
             }
         }

@@ -1063,8 +1063,7 @@ GG_TEST("keep", "the Operations panel lists a keep-only operation with its Resto
             // A click on the disabled item changes neither the refs nor the journal.
             const std::string refsBefore = refState(s, repo);
             const size_t opsBefore = journalOps(repo).size();
-            s.clickDisabled("//$FOCUSED/Restore (undo this operation)");
-            changed = refState(s, repo) != refsBefore || journalOps(repo).size() != opsBefore;
+            changed = !s.clickDisabled("//$FOCUSED/Restore (undo this operation)") ||refState(s, repo) != refsBefore || journalOps(repo).size() != opsBefore;
         } else {
             ctx->KeyPress(ImGuiKey_Escape);
             ctx->Yield(2);
