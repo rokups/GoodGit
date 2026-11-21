@@ -389,8 +389,10 @@ bool DiffPanel::sideBySideShown() const
     return !f.binary && !f.submodule && f.oldText && f.newText;
 }
 
-std::vector<int> DiffPanel::hunkStarts() const
+const std::vector<int>& DiffPanel::hunkStarts() const
 {
+    if (m_hunkStartsBuild == m_buildCount && m_hunkStartsSideBySide == sideBySideShown())
+        return m_hunkStarts;
     // Per hunk: its first editor line (its first context or changed line; in side by side the
     // first code line on either side).
     std::vector<int> starts(m_diff && !m_diff->files.empty() ? m_diff->files.front().hunks.size() : 0, -1);
@@ -410,7 +412,10 @@ std::vector<int> DiffPanel::hunkStarts() const
     } else {
         scan(m_unified);
     }
-    return starts;
+    m_hunkStartsBuild = m_buildCount;
+    m_hunkStartsSideBySide = sideBySideShown();
+    m_hunkStarts = std::move(starts);
+    return m_hunkStarts;
 }
 
 int DiffPanel::hunkTarget(bool next) const
@@ -456,7 +461,7 @@ int DiffPanel::topLine() const
 
 int DiffPanel::hunkLine(int h) const
 {
-    const auto starts = hunkStarts();
+    const auto& starts = hunkStarts();
     return h >= 0 && h < static_cast<int>(starts.size()) ? starts[static_cast<size_t>(h)] : -1;
 }
 
@@ -580,6 +585,7 @@ void DiffPanel::finishView(View& v, const std::string& text)
 void DiffPanel::buildViews()
 {
     m_viewsDirty = false;
+    ++m_buildCount;
     m_navLine = -1;
     const core::DiffFile& f = m_diff->files.front();
     const auto palette = editorPalette();
@@ -1049,10 +1055,13 @@ void DiffPanel::drawMenuItems()
     const LineSet lines = selectedLines();
     bool changes = false;
     LineSet hunks; // every line of the hunks the selection touches
+    int lastHunk = -1; // `lines` is ordered by hunk: add each hunk once
     for (const auto& [h, l] : lines) {
         changes = changes || m_diff->files.front().hunks[static_cast<size_t>(h)].lines[static_cast<size_t>(l)].origin != ' ';
-        for (const auto& hl : hunkLines(m_diff->files.front(), h))
-            hunks.insert(hl);
+        if (h != lastHunk)
+            for (const auto& hl : hunkLines(m_diff->files.front(), h))
+                hunks.insert(hl);
+        lastHunk = h;
     }
     if (mode == StagingMode::Unstaged) {
         ImGui::Separator();

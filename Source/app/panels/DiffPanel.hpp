@@ -127,7 +127,11 @@ private:
     View& primaryView();
     const View& primaryView() const;
     bool sideBySideShown() const;
-    std::vector<int> hunkStarts() const;
+    const std::vector<int>& hunkStarts() const; // cached until the views are rebuilt
+    mutable std::vector<int> m_hunkStarts;
+    mutable int m_hunkStartsBuild = -1; // m_buildCount the cache was made at
+    mutable bool m_hunkStartsSideBySide = false;
+    int m_buildCount = 0;               // bumped by every buildViews()
 
     Session& m_session;
     Selection m_selection;
