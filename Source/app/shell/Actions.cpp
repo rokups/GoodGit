@@ -1933,7 +1933,7 @@ void Actions::push(const std::string& remote, const std::string& localBranch, co
                 f.title = "Push rejected";
                 f.message = "The remote has commits you do not have (non-fast-forward).\n\n" + e.message;
                 // The pull merges into the checked-out branch: for any other branch it would merge the wrong one.
-                if (m_session.snapshot()->headBranch == localBranch)
+                if (!localBranch.empty() && m_session.snapshot()->headBranch == localBranch)
                 f.buttons.push_back({"Pull then push", [this, remote, localBranch, remoteBranch](Form&) {
                                          run("pull then push",
                                              [remote, localBranch, remoteBranch](MutationContext& ctx) {
