@@ -92,6 +92,10 @@ public:
     const core::HistoryRow* row(const core::Oid& id) const;
     // Whether `id` has `ancestor` among its ancestors in the loaded history (UI thread).
     bool descendsFrom(const core::Oid& id, const core::Oid& ancestor) const;
+    bool onOneLine(const core::Oid& a, const core::Oid& b) const;
+    bool lineToTip(const core::Oid& commit, const core::Oid& through) const;
+    bool walkLineToTip(const core::Oid& commit, const core::Oid& through) const;
+    bool walkDescendsFrom(const core::Oid& id, const core::Oid& ancestor) const;
     // Commits Ctrl-clicked in addition to the selection (New with several parents = merge).
     const std::vector<core::Oid>& extraSelection() const { return m_extra; }
     // The two selected commits (the primary one and one extra) as the lower row (older in list order) and
@@ -166,6 +170,11 @@ private:
     // childrenOf cache; the key is the commit, the row count (appends) and m_rowsGen (resets and swaps).
     core::Oid m_childrenOf;
     size_t m_childrenRows = 0;
+    mutable std::unordered_map<std::string, bool> m_descends; // descendsFrom answers; see m_descendsGen
+    mutable size_t m_descendsGen = 0, m_descendsRows = 0;
+    mutable std::unordered_map<std::string, bool> m_lines; // lineToTip answers, reset like m_descends
+    mutable size_t m_lineGen = 0, m_lineRows = 0;
+    mutable const void* m_lineSnap = nullptr; // the tip depends on the snapshot
     size_t m_rowsGen = 1; // bumped when m_rows is cleared or replaced: a freed buffer address can come back
     size_t m_childrenGen = 0;
     std::vector<core::Oid> m_children;

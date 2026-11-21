@@ -489,6 +489,20 @@ void HistoryPanel::setRefsVisible(const std::vector<std::string>& fullNames, boo
 
 bool HistoryPanel::descendsFrom(const core::Oid& id, const core::Oid& ancestor) const
 {
+    // The walk is cached: planDrop asks each frame, and a false answer visits every ancestor.
+    if (m_descendsGen != m_rowsGen || m_descendsRows != m_rows.size()) {
+        m_descends.clear();
+        m_descendsGen = m_rowsGen;
+        m_descendsRows = m_rows.size();
+    }
+    const std::string key = id.hex() + ancestor.hex();
+    if (const auto it = m_descends.find(key); it != m_descends.end())
+        return it->second;
+    return m_descends[key] = walkDescendsFrom(id, ancestor);
+}
+
+bool HistoryPanel::walkDescendsFrom(const core::Oid& id, const core::Oid& ancestor) const
+{
     std::vector<core::Oid> todo{id};
     std::unordered_set<core::Oid, core::OidHash> seen;
     while (!todo.empty()) {
@@ -506,6 +520,63 @@ bool HistoryPanel::descendsFrom(const core::Oid& id, const core::Oid& ancestor) 
         }
     }
     return false;
+}
+
+// The line from the tip that the worker picks (HEAD, else the first local branch that holds the commit) down
+// to `commit`: every row on it has one parent. `through` must be on it. The worker refuses when this fails.
+bool HistoryPanel::lineToTip(const core::Oid& commit, const core::Oid& through) const
+{
+    if (!m_snapshot)
+        return false;
+    // Cached like descendsFrom: planDrop asks each frame.
+    if (m_lineGen != m_rowsGen || m_lineRows != m_rows.size() || m_lineSnap != m_snapshot.get()) {
+        m_lineSnap = m_snapshot.get();
+        m_lines.clear();
+        m_lineGen = m_rowsGen;
+        m_lineRows = m_rows.size();
+    }
+    const std::string key = commit.hex() + through.hex();
+    if (const auto it = m_lines.find(key); it != m_lines.end())
+        return it->second;
+    return m_lines[key] = walkLineToTip(commit, through);
+}
+
+bool HistoryPanel::walkLineToTip(const core::Oid& commit, const core::Oid& through) const
+{
+    const auto holds = [&](const core::Oid& tip) { return tip == commit || descendsFrom(tip, commit); };
+    core::Oid tip;
+    if (!m_snapshot->headUnborn && holds(m_snapshot->head))
+        tip = m_snapshot->head;
+    else
+        for (const auto& b : m_snapshot->branches)
+            if (holds(b.target)) {
+                tip = b.target;
+                break;
+            }
+    if (tip.isNull())
+        return false; // no tip: the line is the commit alone
+    bool seen = false;
+    for (core::Oid c = tip;; ) {
+        seen = seen || c == through;
+        if (c == commit)
+            return seen;
+        const auto* r = row(c);
+        if (!r || r->parents.size() != 1)
+            return false;
+        c = r->parents.front();
+    }
+}
+
+// The worker's rule for a reorder: both commits lie on one first-parent line, and the line from a tip to the
+// younger commit has no merge. The tip search takes the branches in snapshot order, as the worker takes the references.
+bool HistoryPanel::onOneLine(const core::Oid& a, const core::Oid& b) const
+{
+    const bool aYounger = descendsFrom(a, b);
+    if (!aYounger && !descendsFrom(b, a))
+        return false;
+    const core::Oid& older = aYounger ? b : a;
+    const core::Oid& younger = aYounger ? a : b;
+    return lineToTip(younger, younger) && lineToTip(older, younger);
 }
 
 void HistoryPanel::toggleMerge(const core::Oid& id)
@@ -601,18 +672,39 @@ HistoryPanel::DropPlan HistoryPanel::planDrop(bool free, const core::Oid& source
     const auto at = [&](int i) -> const core::HistoryRow* {
         return i >= 0 && i < static_cast<int>(m_visible.size()) ? &m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(i)])] : nullptr;
     };
-    const core::HistoryRow* above = at(index - 1);
-    const core::HistoryRow* below = at(index + 1);
+    // With a filter the display neighbours skip rows: the full history order gives the true neighbours.
+    const int full = index >= 0 && index < static_cast<int>(m_visible.size()) ? m_visible[static_cast<size_t>(index)] : -1;
+    const auto near = [&](int d) -> const core::HistoryRow* {
+        if (m_appliedFilter.empty() || full < 0)
+            return at(index + d);
+        const int i = full + d;
+        return i >= 0 && i < static_cast<int>(m_rows.size()) ? &m_rows[static_cast<size_t>(i)] : nullptr;
+    };
+    const core::HistoryRow* above = near(-1);
+    const core::HistoryRow* below = near(1);
     if (source == row.id || (zone == DropZone::Top && above && above->id == source)
         || (zone == DropZone::Bottom && below && below->id == source))
         return plan; // act None, no hint
     const ImGuiIO& io = ImGui::GetIO();
+    const core::HistoryRow* from = this->row(source);
+    if (!from)
+        return plan;
+    // The worker refuses these drops: a squash needs one parent and an ancestor target, a move needs one line.
+    const bool squash = io.KeyCtrl && !io.KeyShift && zone == DropZone::Middle;
+    const bool reorder = zone != DropZone::Middle || io.KeyShift;
+    if (squash ? from->parents.size() != 1 || !descendsFrom(source, row.id) : reorder && !onOneLine(source, row.id))
+        return plan;
+    // "Between" is true only when the neighbour is the direct child (above) or parent (below) of the row.
+    const auto has = [](const core::HistoryRow& c, const core::Oid& p) {
+        return std::find(c.parents.begin(), c.parents.end(), p) != c.parents.end();
+    };
     if (zone == DropZone::Top) {
         plan.act = DropAct::ReorderAbove;
-        plan.hint = above ? "Move between " + above->shortId + " and " + row.shortId : "Move above " + row.shortId + " (new tip)";
+        plan.hint = !above ? "Move above " + row.shortId + " (new tip)"
+            : has(*above, row.id) ? "Move between " + above->shortId + " and " + row.shortId : "Move after " + row.shortId;
     } else if (zone == DropZone::Bottom) {
         plan.act = DropAct::ReorderBelow;
-        plan.hint = below ? "Move between " + row.shortId + " and " + below->shortId : "Move below " + row.shortId;
+        plan.hint = below && has(row, below->id) ? "Move between " + row.shortId + " and " + below->shortId : "Move below " + row.shortId;
     } else if (io.KeyCtrl && io.KeyShift) {
         plan.act = DropAct::MoveBefore;
         plan.hint = "Move before " + row.shortId;
@@ -1035,6 +1127,7 @@ void HistoryPanel::drawDropChooser()
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_menuItemSpacing);
     const auto [source, target] = *m_pendingDrop;
     auto& actions = m_session.actions();
+    const bool free = actions.busy().empty();
     // The tip that "Rebase onto" moves (the same rule as the commit menu); a commit that a reload removed has none.
     const RebaseSource rs = sourceRebase(source);
     // The tip to rebase: empty until the user picks (a detached HEAD that has branches on its commit offers each one).
@@ -1046,23 +1139,23 @@ void HistoryPanel::drawDropChooser()
         }
         if (rs.choices.empty()) {
             tip = rs.rev;
-            return menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt");
+            return menuItem(ICON_MS_LOW_PRIORITY, "Rebase onto", "Alt", false, free);
         }
         for (const auto& choice : rs.choices)
-            if (menuItem(ICON_MS_LOW_PRIORITY, ("Rebase onto: " + choice.label).c_str(), "Alt")) {
+            if (menuItem(ICON_MS_LOW_PRIORITY, ("Rebase onto: " + choice.label).c_str(), "Alt", false, free)) {
                 tip = choice.rev;
                 return true;
             }
         return false;
     };
     bool chosen = true;
-    if (menuItem(ICON_MS_MOVE_UP, "Move before", "Ctrl+Shift"))
+    if (menuItem(ICON_MS_MOVE_UP, "Move before", "Ctrl+Shift", false, free))
         actions.reorder(source, target, false, false);
-    else if (menuItem(ICON_MS_MOVE_DOWN, "Move after", "Shift"))
+    else if (menuItem(ICON_MS_MOVE_DOWN, "Move after", "Shift", false, free))
         actions.reorder(source, target, true, false);
-    else if (menuItem(ICON_MS_CONTENT_COPY, "Copy after"))
+    else if (menuItem(ICON_MS_CONTENT_COPY, "Copy after", nullptr, false, free))
         actions.reorder(source, target, true, true);
-    else if (menuItem(ICON_MS_JOIN_INNER, "Squash into", "Ctrl"))
+    else if (menuItem(ICON_MS_JOIN_INNER, "Squash into", "Ctrl", false, free))
         actions.squash(source, target.hex(), true);
     else if (rebaseOnto())
         actions.rebaseTipOnto(tip, target.hex());

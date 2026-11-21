@@ -2,6 +2,7 @@
 #include "panels/ChangesPanel.hpp"
 #include "panels/HistoryPanel.hpp"
 #include "shell/App.hpp"
+#include "shell/Actions.hpp"
 #include "shell/Session.hpp"
 #include "tests/Harness.hpp"
 
@@ -756,7 +757,8 @@ GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens 
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
     // The item is enabled until the engine answers that the tip has no descendant.
     GG_CHECK(s.waitUntil([&] { return itemDisabled(s, "Rebase onto"); }));
-    GG_CHECK(!itemDisabled(s, "Copy after"));
+    // "Copy after" follows the busy gate: it is enabled once no job runs.
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty() && !itemDisabled(s, "Copy after"); }));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
     s.settle();
@@ -1084,6 +1086,139 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.settle();
     GG_CHECK(history.dropHint().empty());
     GG_CHECK(changes.dropHint().empty());
+}
+
+namespace {
+
+enum class At { Top, Middle, Bottom };
+
+// Drags a commit over a part of a row, releases it there, and returns the hint that showed before the drop.
+std::string dropHintAt(Scenario& s, const std::string& from, const std::string& to, At at, ImGuiKeyChord mods = 0)
+{
+    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    const ImRect t = s.ctx->ItemInfo(to.c_str()).RectFull;
+    const float y = at == At::Top ? t.Min.y + 2 : at == At::Bottom ? t.Max.y - 2 : t.GetCenter().y;
+    s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());
+    s.ctx->MouseDown(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    s.ctx->MouseMoveToPos(ImVec2(t.GetCenter().x, y));
+    if (mods)
+        s.ctx->KeyDown(mods);
+    s.ctx->Yield(3);
+    const std::string hint = s.session()->history().dropHint();
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(2);
+    if (mods)
+        s.ctx->KeyUp(mods);
+    s.ctx->Yield(2);
+    s.settle();
+    return hint;
+}
+
+} // namespace
+
+GG_TEST("dnd", "a Ctrl drop the worker refuses shows no hint and does nothing: descendant, merge, root")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "g.txt", "g\n", "on side");
+    s.git(r.path, {"switch", "-q", "main"});
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "merge side", "side"});
+    const std::string merge = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(merge).c_str()) && s.itemExists(rowRef(r.c[0]).c_str()); }));
+    // The target is a descendant of the dragged commit: c1 onto c4.
+    GG_CHECK(dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[3]), At::Middle, ImGuiMod_Ctrl).empty());
+    // The dragged commit is a merge.
+    GG_CHECK(dropHintAt(s, rowRef(merge), rowRef(r.c[0]), At::Middle, ImGuiMod_Ctrl).empty());
+    // The dragged commit is the root: it has no parent.
+    GG_CHECK(dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Middle, ImGuiMod_Ctrl).empty());
+    GG_CHECK_STR_EQ(s.head(r.path), merge);
+    // An ancestor target still squashes.
+    GG_CHECK(!dropHintAt(s, rowRef(r.c[3]), rowRef(r.c[2]), At::Middle, ImGuiMod_Ctrl).empty());
+}
+
+GG_TEST("dnd", "a drop between rows on another line shows no hint and does nothing")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "g.txt", "g\n", "on side");
+    const std::string g = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "merge side", "side"});
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(g).c_str()) && s.itemExists(rowRef(r.c[2]).c_str()); }));
+    GG_CHECK(dropHintAt(s, rowRef(g), rowRef(r.c[2]), At::Top).empty());
+    GG_CHECK(dropHintAt(s, rowRef(g), rowRef(r.c[2]), At::Bottom).empty());
+    GG_CHECK(dropHintAt(s, rowRef(g), rowRef(r.c[2]), At::Middle, ImGuiMod_Shift).empty());
+    GG_CHECK_STR_EQ(s.head(r.path), tip);
+}
+
+GG_TEST("dnd", "with a filter the between hint names the neighbours of the full history")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    std::vector<std::string> id;
+    for (const char* m : {"keep a", "skip b", "keep c", "keep d"}) {
+        s.commitFile(path, std::string(m).substr(5) + ".txt", "x\n", m);
+        id.push_back(s.head(path));
+    }
+    GG_REQUIRE(s.openRepository(path));
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(id[0]).c_str()); }));
+    ctx->ItemInputValue("//History/##hist_filter", "keep");
+    GG_REQUIRE(s.waitUntil([&] { return history.searchActive() && history.visibleIds().size() == 3; }));
+    const auto sid = [&](int i) { return id[static_cast<size_t>(i)].substr(0, 7); };
+    // Below "keep c" is "skip b", not "keep a".
+    GG_CHECK_STR_EQ(dropHintAt(s, rowRef(id[3]), rowRef(id[2]), At::Bottom), "Move between " + sid(2) + " and " + sid(1));
+}
+
+GG_TEST("dnd", "the drop chooser disables its items while a task runs")
+{
+    const Chain r = makeChain(s);
+    s.write(r.path, "staged.txt", "staged\n");
+    s.git(r.path, {"add", "staged.txt"});
+    const fs::path go = s.root() / "go";
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
+    GG_REQUIRE(s.openRepository(r.path));
+    drag(s, rowRef(r.c[3]), rowRef(r.c[0]));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Copy after"); }));
+    GG_CHECK(!itemDisabled(s, "Copy after"));
+    s.session()->actions().commit("Waits for the hook", false, ggui::CommitMode::Index, {});
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
+    s.ctx->Yield(3);
+    for (const char* item : {"Move before", "Move after", "Copy after", "Squash into", "Rebase onto"})
+        GG_CHECK(itemDisabled(s, item));
+    s.ctx->KeyPress(ImGuiKey_Escape);
+    s.ctx->Yield(2);
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }, 10.0f));
+    s.settle();
+}
+
+GG_TEST("dnd", "a move under a merge shows no hint; a detached HEAD below the merge allows it")
+{
+    const Chain r = makeChain(s);
+    s.git(r.path, {"switch", "-q", "side"});
+    s.commitFile(r.path, "g.txt", "g\n", "on side");
+    const std::string g = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "merge side", "side"});
+    const std::string tip = s.head(r.path);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(g).c_str()) && s.itemExists(rowRef(r.c[0]).c_str()); }));
+    // c1 and c3 lie on one line, but the merge above c3 stops the worker.
+    GG_CHECK(dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Top).empty());
+    GG_CHECK(dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Middle, ImGuiMod_Shift).empty());
+    // A commit on the side branch is under the merge too.
+    GG_CHECK(dropHintAt(s, rowRef(g), rowRef(r.c[1]), At::Middle, ImGuiMod_Shift).empty());
+    GG_CHECK_STR_EQ(s.head(r.path), tip);
+    // HEAD detached at c3: the line from HEAD to c3 has no merge.
+    s.git(r.path, {"switch", "-q", "--detach", r.c[2]});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
+    s.settle();
+    GG_CHECK(!dropHintAt(s, rowRef(r.c[0]), rowRef(r.c[2]), At::Middle, ImGuiMod_Shift).empty());
 }
 
 } // namespace ggtest
