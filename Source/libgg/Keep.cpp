@@ -110,11 +110,12 @@ std::vector<git_oid> wanted(git_repository* repo, const std::vector<git_oid>& ca
         return {};
     const std::vector<git_oid> a = anchors(repo);
     // Pushes the ids that are commits to a walk that hides every anchor. A failed push (not a
-    // commit) counts as "not reachable", as the graph calls did.
+    // commit) counts as "not reachable", as the graph calls did. Returns false when the walk itself
+    // fails (a missing object): `out` is then partial.
     const auto walk = [&](const std::vector<git_oid>& ids, std::set<std::string>& out, std::set<std::string>& bad) {
         git_revwalk* raw = nullptr;
         if (git_revwalk_new(&raw, repo) != 0)
-            return;
+            return false;
         Revwalk w(raw);
         git_revwalk_sorting(raw, GIT_SORT_NONE);
         for (const auto& id : ids)
@@ -123,16 +124,19 @@ std::vector<git_oid> wanted(git_repository* repo, const std::vector<git_oid>& ca
         for (const auto& id : a)
             git_revwalk_hide(raw, &id);
         git_oid oid;
-        while (git_revwalk_next(&oid, raw) == 0)
+        int rc;
+        while ((rc = git_revwalk_next(&oid, raw)) == 0)
             out.insert(toHex(oid));
+        return rc == GIT_ITEROVER;
     };
     std::set<std::string> reached, bad;
-    walk(candidates, reached, bad);
+    const bool walked = walk(candidates, reached, bad);
     std::vector<git_oid> survivors;
     std::set<std::string> seen;
     for (const auto& c : candidates) {
         const std::string hex = toHex(c);
-        if (seen.insert(hex).second && (reached.count(hex) || bad.count(hex)))
+        // A failed walk keeps every candidate: a keep ref is never dropped on a partial picture.
+        if (seen.insert(hex).second && (!walked || reached.count(hex) || bad.count(hex)))
             survivors.push_back(c);
     }
     // A survivor with another survivor above it is no tip: it is a proper ancestor of one.
@@ -146,7 +150,7 @@ std::vector<git_oid> wanted(git_repository* repo, const std::vector<git_oid>& ca
         git_commit_free(raw);
     }
     std::set<std::string> ancestors, ignored;
-    walk(parents, ancestors, ignored);
+    walk(parents, ancestors, ignored); // a failed walk gives a partial set: more tips, so more is kept
     std::vector<git_oid> tips;
     for (const auto& s : survivors)
         if (!ancestors.count(toHex(s)))

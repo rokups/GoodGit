@@ -613,6 +613,25 @@ GG_TEST("keep", "a keep ref with a ref below it does not stop the keep ref the c
     GG_CHECK(again.changes.empty());
 }
 
+GG_TEST("keep", "a keep ref whose parent object is missing is kept")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string p = detachedCommit(s, repo, "main", "p.txt");
+    s.commitFile(repo, "x.txt", "x\n", "Detached x.txt");
+    const std::string x = s.head(repo);
+    s.git(repo, {"update-ref", gg::keep::refName(x), x});
+    s.git(repo, {"checkout", "-q", "main"});
+    std::error_code ec;
+    fs::remove(repo / ".git" / "logs" / "HEAD", ec); // git reports a reflog entry for a missing commit
+    const fs::path object = repo / ".git" / "objects" / p.substr(0, 2) / p.substr(2);
+    const fs::path saved = repo / "saved-object"; // put back at the end: the fixture's fsck must pass
+    fs::rename(object, saved, ec);
+    GG_CHECK(!ec);
+    maintain(repo);
+    GG_CHECK(keepRefs(s, repo) == names({x}));
+    fs::rename(saved, object, ec);
+}
+
 GG_TEST("keep", "an unborn HEAD keeps nothing")
 {
     const fs::path repo = s.fixture(Recipe::Empty);
