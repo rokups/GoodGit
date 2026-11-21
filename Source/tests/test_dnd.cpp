@@ -915,7 +915,7 @@ GG_TEST("dnd", "hint: a running task shows Wait")
     s.git(r.path, {"add", "staged.txt"});
     // The commit waits in pre-commit until the test lets it go.
     const fs::path go = s.root() / "go";
-    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 200 ]; do i=$((i+1)); sleep 0.05; done\n");
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 600 ]; do i=$((i+1)); sleep 0.05; done\n");
     // A GG_REQUIRE return must not leave the hook running.
     ScopeExit letGo{[&] { s.write(s.root(), "go", ""); }};
     fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
@@ -1081,7 +1081,7 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.git(r.path, {"add", "staged.txt"});
     s.write(r.path, "f1.txt", "1 changed\n");
     const fs::path go = s.root() / "go";
-    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 200 ]; do i=$((i+1)); sleep 0.05; done\n");
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 600 ]; do i=$((i+1)); sleep 0.05; done\n");
     // A GG_REQUIRE return must not leave the hook running.
     ScopeExit letGo{[&] { s.write(s.root(), "go", ""); }};
     fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
@@ -1109,6 +1109,9 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.ctx->MouseUp(ImGuiMouseButton_Left);
     s.ctx->Yield(3);
     GG_CHECK(s.itemExists(unstaged.c_str()));
+    GG_CHECK(!chooserOpen(s));
+    // git itself: the index holds no change of f1.txt (it would stage while the commit is held).
+    GG_CHECK(s.gitOut(r.path, {"diff", "--cached", "--name-only", "--", "f1.txt"}).empty());
     // The files of a commit: Wait on its parent, no hint on a row with no action.
     ctx->ItemClick(rowRef(r.c[3]).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileItem(s, "", "f4.txt").c_str()); }));
@@ -1219,7 +1222,7 @@ GG_TEST("dnd", "the drop chooser disables its items while a task runs")
     s.write(r.path, "staged.txt", "staged\n");
     s.git(r.path, {"add", "staged.txt"});
     const fs::path go = s.root() / "go";
-    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 200 ]; do i=$((i+1)); sleep 0.05; done\n");
+    s.write(r.path / ".git" / "hooks", "pre-commit", "#!/bin/sh\ni=0\nwhile [ ! -f '" + go.string() + "' ] && [ $i -lt 600 ]; do i=$((i+1)); sleep 0.05; done\n");
     // A GG_REQUIRE return must not leave the hook running.
     ScopeExit letGo{[&] { s.write(s.root(), "go", ""); }};
     fs::permissions(r.path / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
