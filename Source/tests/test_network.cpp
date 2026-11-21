@@ -780,6 +780,23 @@ GG_TEST("network", "force push keeps the remote commit that a fetch brought afte
     GG_CHECK(originHas(s, repo, "main", remoteHead));
 }
 
+GG_TEST("network", "force with lease is refused when the remote moves after the last fetch")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.commitFile(repo, "mine.txt", "mine\n", "Mine");
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->outgoing() == 1; }));
+    s.settle();
+    popupItem(s, "//###Toolbar/###tb_push_menu", "Force with lease...");
+    GG_REQUIRE(s.dialogOpen("Force push"));
+    remoteCommit(s, repo, "unseen.txt", "unseen\n"); // no fetch: the tracking ref is stale
+    const std::string remoteHead = s.gitOut(origin(s, repo), {"rev-parse", "main"});
+    s.dialogButton("Force push", "Force push");
+    s.settle();
+    GG_CHECK(originHas(s, repo, "main", remoteHead));
+    GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
+}
+
 GG_TEST("network", "a force push whose dialog saw no tracking ref is rejected when a fetch creates it")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
