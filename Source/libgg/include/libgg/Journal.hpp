@@ -24,6 +24,12 @@ constexpr int kFormatVersion = 1;
 // Test hook: runs after a lock is found stale and before it is removed.
 inline std::function<void(const std::filesystem::path&)> beforeStaleLockRemoveHook;
 
+// Rotation knobs (tests lower them). See Transaction::retain.
+inline size_t rotateBytes = 1024 * 1024;                          // rotate above this journal size
+inline size_t rotateKeepOps = 200;                                // operations a rotation keeps
+inline std::int64_t rotatePinMs = 30LL * 24 * 60 * 60 * 1000;     // an open rebase pins the cut this long
+inline std::int64_t rotateBackoffMs = 60 * 1000;                  // wait after a failed rotation
+
 struct RefChange {
     std::string ref;       // "refs/heads/x", "HEAD", "worktrees/<id>/HEAD"
     std::string oldValue;  // hex id, all-zero id (absent) or "ref:<target>"
@@ -70,6 +76,8 @@ struct Operation {
     std::vector<std::pair<std::string, std::string>> rewrites; // old → new commit
     std::vector<WorktreeChange> worktrees; // in the order they happened
     size_t order = 0;                   // position of the begin record
+    size_t last = 0;                    // index of the physical line of the operation's last record
+    size_t bytes = 0;                   // byte count of the operation's lines, newlines included
 
     bool isUndo() const { return !undoes.empty() && !redo; }
     // Something Undo can restore (refs, an index tree or worktrees).
@@ -142,6 +150,11 @@ public:
 
         bool locked() const;
         std::vector<Operation> read(std::string* error = nullptr, size_t* skipped = nullptr) const override;
+
+        // Rewrites the journal: the header and the lines of the operations with index >= first (as
+        // read() numbers them), in order. Other lines are dropped. Changes nothing and returns true
+        // when first == 0 or a record has "v" above 1. On failure the journal stays as it was.
+        bool retain(size_t first, std::string* error = nullptr);
 
     protected:
         bool appendLine(const std::string& line, std::string* error) override;

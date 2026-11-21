@@ -1,5 +1,6 @@
 #include "libgg/Journal.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Keep.hpp"
 #include "libgg/Process.hpp"
 
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <random>
 #include <set>
 #include <sstream>
@@ -297,25 +299,36 @@ bool Writer::end(const std::string& id, bool ok, std::string* error)
     return appendLine(j.dump(), error);
 }
 
-std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
-{
+namespace {
+
+// The result of parsing journal text.
+struct Parsed {
     std::vector<Operation> ops;
-    std::map<std::string, size_t> byId;
+    std::vector<std::optional<size_t>> lineOp; // per physical line: operation index, none for other lines
+    std::vector<bool> header;                  // per physical line: it is the header line
     size_t bad = 0;
-    std::ifstream in(m_path, std::ios::binary);
-    if (!in) {
-        if (skipped)
-            *skipped = 0;
-        return ops;
-    }
+    bool future = false;                       // a newer header or a record with "v" above 1 was seen
+    std::string error;                         // set for a newer header; ops is empty then
+};
+
+// Parses all physical lines (split at '\n', empty ones count). A record belongs to an operation when
+// its begin record exists; `last` and `bytes` of the operation follow from its lines.
+Parsed parseJournal(const std::string& text)
+{
+    Parsed r;
+    auto& ops = r.ops;
+    std::map<std::string, size_t> byId;
+    std::istringstream in(text);
     std::string line;
     bool first = true;
-    while (std::getline(in, line)) {
+    for (size_t index = 0; std::getline(in, line); ++index) {
+        r.lineOp.emplace_back();
+        r.header.push_back(false);
         if (line.empty())
             continue;
         json j = json::parse(line, nullptr, false);
         if (j.is_discarded() || !j.is_object()) {
-            ++bad;
+            ++r.bad;
             first = false;
             continue;
         }
@@ -323,18 +336,27 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
             first = false;
             const int version = j["gg-journal"].is_number_integer() ? j["gg-journal"].get<int>() : 0;
             if (version > kFormatVersion) {
-                if (error)
-                    *error = "journal written by a newer ggui (format " + std::to_string(version) + ")";
-                return {};
+                r.error = "journal written by a newer ggui (format " + std::to_string(version) + ")";
+                r.future = true;
+                r.ops.clear();
+                return r;
             }
+            r.header.back() = true;
             continue;
         }
         first = false;
+        if (j.contains("v") && j["v"].is_number_integer() && j["v"].get<int>() > 1)
+            r.future = true;
         if (!j.contains("t") || !j["t"].is_string() || !j.contains("op") || !j["op"].is_string()
             || (j.contains("v") && j["v"].is_number_integer() && j["v"].get<int>() > 1)) {
-            ++bad;
+            ++r.bad;
             continue;
         }
+        const auto own = [&](size_t opIndex) {
+            r.lineOp.back() = opIndex;
+            ops[opIndex].last = index;
+            ops[opIndex].bytes += line.size() + 1;
+        };
         const std::string type = j["t"].get<std::string>();
         const std::string id = j["op"].get<std::string>();
         auto it = byId.find(id);
@@ -353,12 +375,14 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
             op.order = ops.size();
             byId[id] = ops.size();
             ops.push_back(std::move(op));
+            own(ops.size() - 1);
             continue;
         }
         if (it == byId.end()) {
-            ++bad; // record for an operation whose begin was lost
+            ++r.bad; // record for an operation whose begin was lost
             continue;
         }
+        own(it->second);
         Operation& op = ops[it->second];
         if (type == "refs") {
             mergeRefs(op, j["u"]);
@@ -398,6 +422,27 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
         }
         // Unknown record types are ignored (minor additions stay compatible).
     }
+    return r;
+}
+
+} // namespace
+
+std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
+{
+    std::string text;
+    if (!gg::readFile(m_path, text)) {
+        if (skipped)
+            *skipped = 0;
+        return {};
+    }
+    Parsed result = parseJournal(text);
+    if (!result.error.empty()) {
+        if (error)
+            *error = result.error;
+        return {};
+    }
+    std::vector<Operation> ops = std::move(result.ops);
+    const size_t bad = result.bad;
     // Operations opened for plain git commands (by the managed hooks of older versions) close when that git process is gone
     // (or after 10 minutes). One that spans a native rebase stays open until its end record.
     const std::int64_t now = nowMs();
@@ -413,6 +458,41 @@ std::vector<Operation> Journal::read(std::string* error, size_t* skipped) const
     if (skipped)
         *skipped = bad;
     return ops;
+}
+
+bool Journal::Transaction::retain(size_t first, std::string* error)
+{
+    if (first == 0)
+        return true;
+    if (!locked()) {
+        if (error)
+            *error = "journal busy";
+        return false;
+    }
+    std::string out;
+    {
+        std::string text;
+        if (!gg::readFile(m_journal.path(), text)) {
+            if (error)
+                *error = "cannot read " + m_journal.path().string();
+            return false;
+        }
+        const Parsed parsed = parseJournal(text);
+        if (parsed.future)
+            return true; // a newer writer's records stay as they are
+        std::istringstream in(text);
+        std::string line;
+        for (size_t i = 0; std::getline(in, line) && i < parsed.lineOp.size(); ++i)
+            if (parsed.header[i] || (parsed.lineOp[i] && *parsed.lineOp[i] >= first))
+                out += line + "\n";
+    }
+    const std::error_code ec = gg::writeFileAtomic(m_journal.path(), out, std::nullopt, 1);
+    if (ec) {
+        if (error)
+            *error = ec.message();
+        return false;
+    }
+    return true;
 }
 
 bool Journal::hasOpenOperation(const std::string& id, size_t bytes) const

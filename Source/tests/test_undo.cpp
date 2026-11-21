@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <sstream>
 
 namespace ggtest {
 
@@ -744,5 +745,129 @@ GG_TEST("undo", "undo refuses a symbolic ref that was changed meanwhile (GG-65)"
     GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "HEAD"}), "refs/heads/other");
 }
 #endif
+
+namespace {
+
+std::vector<std::string> journalLines(const std::string& text)
+{
+    std::vector<std::string> lines;
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line))
+        lines.push_back(line);
+    return lines;
+}
+
+std::string rawRecord(const std::string& type, const std::string& id)
+{
+    return "{\"v\":1,\"t\":\"" + type + "\",\"op\":\"" + id + "\"}";
+}
+
+} // namespace
+
+GG_TEST("undo", "journal: read reports the last line and the byte count of each operation")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    fs::create_directories(journal.dir());
+    const std::string header = "{\"gg-journal\":1}", beginA = rawRecord("begin", "a"), beginB = rawRecord("begin", "b");
+    const std::string endA = rawRecord("end", "a");
+    std::ofstream(journal.path(), std::ios::binary) << header << "\n" << beginA << "\n[1]\n" << beginB << "\n"
+        << "{\"v\":2,\"t\":\"end\",\"op\":\"b\"}\n" << endA << "\n" << "{\"v\":1,\"t\":\"beg";
+    size_t skipped = 0;
+    const auto ops = journal.read(nullptr, &skipped);
+    GG_REQUIRE(ops.size() == 2u);
+    GG_CHECK(skipped == 3u);
+    GG_CHECK(ops[0].id == "a" && ops[0].ended && !ops[1].ended);
+    GG_CHECK(ops[0].last == 5u && ops[0].bytes == beginA.size() + endA.size() + 2);
+    GG_CHECK(ops[1].last == 3u && ops[1].bytes == beginB.size() + 1);
+}
+
+GG_TEST("undo", "journal: retain keeps the header and the records of the later operations in order")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    {
+        gg::journal::Journal::Transaction tx(journal);
+        GG_REQUIRE(tx.locked());
+        for (const char* id : {"o0", "o1", "o2"}) {
+            gg::journal::Operation op;
+            op.id = id;
+            op.src = "ggui";
+            op.wt = "main";
+            GG_CHECK(tx.begin(op));
+        }
+        const std::string zero(40, '0');
+        GG_CHECK(tx.appendRefs("o2", {{"refs/heads/x", zero, std::string(40, 'a')}}));
+        GG_CHECK(tx.end("o0", true));
+        for (const char* id : {"o3", "o4"}) {
+            gg::journal::Operation op;
+            op.id = id;
+            op.src = "ggui";
+            op.wt = "main";
+            GG_CHECK(tx.begin(op));
+        }
+        GG_CHECK(tx.appendRefs("o3", {{"refs/heads/y", zero, std::string(40, 'b')}}));
+        GG_CHECK(tx.end("o2", true));
+        GG_CHECK(tx.end("o4", true));
+        GG_CHECK(tx.end("o1", true));
+        GG_CHECK(tx.end("o3", true));
+    }
+    const std::string before = s.read(repo, ".git/gg/journal");
+    GG_REQUIRE(journal.read().size() == 5u);
+    std::vector<std::string> expected;
+    for (const auto& line : journalLines(before))
+        if (line.find("gg-journal") != std::string::npos
+            || (line.find("\"op\":\"o0\"") == std::string::npos && line.find("\"op\":\"o1\"") == std::string::npos))
+            expected.push_back(line);
+    {
+        gg::journal::Journal::Transaction tx(journal);
+        std::string error;
+        GG_CHECK(tx.retain(0, &error));
+        GG_CHECK_STR_EQ(s.read(repo, ".git/gg/journal"), before);
+        GG_CHECK(tx.retain(2, &error));
+        GG_CHECK(error.empty());
+    }
+    GG_CHECK(journalLines(s.read(repo, ".git/gg/journal")) == expected);
+    const auto ops = journal.read();
+    GG_REQUIRE(ops.size() == 3u);
+    GG_CHECK(ops[0].id == "o2" && ops[1].id == "o3" && ops[2].id == "o4");
+    GG_CHECK(ops[0].refs.size() == 1u && ops[1].refs.size() == 1u);
+    GG_CHECK(ops[0].ended && ops[1].ended && ops[2].ended);
+}
+
+GG_TEST("undo", "journal: retain changes nothing when a record has a newer version")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    fs::create_directories(journal.dir());
+    std::ofstream(journal.path(), std::ios::binary) << "{\"gg-journal\":1}\n" << rawRecord("begin", "a") << "\n"
+        << rawRecord("begin", "b") << "\n{\"v\":2,\"t\":\"end\",\"op\":\"b\"}\n";
+    const std::string before = s.read(repo, ".git/gg/journal");
+    {
+        gg::journal::Journal::Transaction tx(journal);
+        GG_CHECK(tx.retain(1));
+    }
+    GG_CHECK_STR_EQ(s.read(repo, ".git/gg/journal"), before);
+}
+
+GG_TEST("undo", "journal: retain drops lines with fields of the wrong type and does not throw")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::Journal journal(repo / ".git");
+    fs::create_directories(journal.dir());
+    std::ofstream(journal.path(), std::ios::binary) << "{\"gg-journal\":1}\n" << rawRecord("begin", "a") << "\n"
+        << "{\"op\":5}\n{\"t\":1}\n[1,2]\n{\"t\":\"end\",\"op\":5}\n\n" << rawRecord("begin", "b") << "\n"
+        << rawRecord("end", "b") << "\n";
+    {
+        gg::journal::Journal::Transaction tx(journal);
+        std::string error;
+        GG_CHECK(tx.retain(1, &error));
+    }
+    const auto lines = journalLines(s.read(repo, ".git/gg/journal"));
+    GG_CHECK(lines == (std::vector<std::string>{"{\"gg-journal\":1}", rawRecord("begin", "b"), rawRecord("end", "b")}));
+    size_t skipped = 0;
+    GG_CHECK(journal.read(nullptr, &skipped).size() == 1u && skipped == 0u);
+}
 
 } // namespace ggtest
