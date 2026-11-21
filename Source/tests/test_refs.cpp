@@ -1617,13 +1617,15 @@ GG_TEST("refs", "the multi menu of 3000 selected tags keeps the frames fast")
     sel.kind = ggui::RefKind::Tag;
     for (int i = 0; i < 3000; ++i)
         sel.names.insert("scale-" + std::to_string(i));
+    // The panel draws 3000 rows in each frame, so a slow runner needs a baseline from the same frames.
+    const double baselineMs = measureIdleFrameMs(ctx);
+    auto& probe = ggui::frameProbe();
+    probe.reset();
     s.ctx->ItemClick(tagRow("scale-0").c_str(), ImGuiMouseButton_Right);
-    const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < 10; ++i)
         s.ctx->Yield();
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     GG_CHECK(s.session()->tags().selection().names.size() == 3000); // prune keeps the drawn rows
-    GG_CHECK(ms < timeBudgetMs(10 * 20.0));
+    GG_CHECK(frameBudgetMet(ctx, probe, baselineMs));
     s.ctx->KeyPress(ImGuiKey_Escape);
 }
 
