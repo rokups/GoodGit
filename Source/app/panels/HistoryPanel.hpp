@@ -92,6 +92,7 @@ public:
     const core::HistoryRow* row(const core::Oid& id) const;
     // Whether `id` has `ancestor` among its ancestors in the loaded history (UI thread).
     bool descendsFrom(const core::Oid& id, const core::Oid& ancestor) const;
+    bool onOneLine(const core::Oid& a, const core::Oid& b) const;
     // Commits Ctrl-clicked in addition to the selection (New with several parents = merge).
     const std::vector<core::Oid>& extraSelection() const { return m_extra; }
     // The two selected commits (the primary one and one extra) as the lower row (older in list order) and
