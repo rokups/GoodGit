@@ -302,6 +302,7 @@ void DiffPanel::onDiff(const core::DiffEvent& event)
     const bool newFile = !m_diff || m_diff->files.empty() || event.diff->files.empty()
         || m_diff->files[0].path() != event.diff->files[0].path();
     m_diff = event.diff;
+    m_anchorRow = -1; // the rows change: an old anchor can lie past the new end
     m_resetScroll = m_resetScroll || newFile;
     buildRows();
     m_viewsDirty = true;
@@ -726,7 +727,7 @@ void DiffPanel::buildViews()
 void DiffPanel::selectRows(View& v, int row, bool extend)
 {
     m_active = &v;
-    if (!extend || m_anchorRow < 0)
+    if (!extend || m_anchorRow < 0 || m_anchorRow >= static_cast<int>(v.firstLine.size()))
         m_anchorRow = row;
     const int a = std::min(m_anchorRow, row), b = std::max(m_anchorRow, row);
     int first = -1, last = -1;

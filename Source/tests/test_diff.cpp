@@ -787,6 +787,24 @@ GG_TEST("diff", "side by side across files: switching, a binary file, Shift+clic
     GG_CHECK(!s.itemExists("//Diff/###diff_submodule_added"));
 }
 
+GG_TEST("diff", "Shift+click after the diff shrinks selects from the clicked line")
+{
+    const DiffRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    showFile(s, r.change, "code.cpp");
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_15").c_str()); }));
+    ctx->ItemClick((body(s) + "/###line_15").c_str()); // the anchor lies near the end
+    ctx->ItemInputValue("//Diff/Context##diff_context", 0);
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 2 && file(s)->hunks[0].lines.size() == 2; }));
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###line_2").c_str()); }));
+    ctx->KeyDown(ImGuiMod_Shift);
+    ctx->ItemClick((body(s) + "/###line_2").c_str());
+    ctx->KeyUp(ImGuiMod_Shift);
+    GG_CHECK(!s.session()->diff().selectedText().empty());
+}
+
 GG_TEST("diff", "hunk navigation: buttons and Alt+Down / Alt+Up scroll to the next and previous hunk in both views")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "hunknav");
