@@ -167,12 +167,14 @@ GG_TEST("frames", "scheduler handles focus, minimize and text input")
 GG_TEST("frames", "worker wake reaches the loop")
 {
     ggui::Platform& platform = s.app.platform();
-    // Other producers can set the flag at any time. The counter shows that the loop handled a wake.
+    // Other producers can wake the loop at any time. Drain them first. After our wake, a count
+    // above the start with no wake left in the queue shows that the loop handled our wake: it
+    // is pending until handled, or it joined a pending wake that the loop handled.
+    GG_REQUIRE(s.waitUntil([&] { return !platform.wakePending(); }));
     const std::uint64_t before = platform.wakesHandled();
     std::thread worker([] { gg::wakeUi(); });
     worker.join();
-    ctx->Yield(2);
-    GG_CHECK(platform.wakesHandled() > before);
+    GG_CHECK(s.waitUntil([&] { return platform.wakesHandled() > before && !platform.wakePending(); }));
 }
 
 } // namespace ggtest
