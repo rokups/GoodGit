@@ -615,6 +615,21 @@ GG_TEST("network", "pull disabled when detached or without upstream; Stash and p
     GG_CHECK(s.read(repo, "local-only.txt") == "local uncommitted\n");
 }
 
+GG_TEST("network", "pull on a branch without upstream is refused and creates no tracking ref")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"switch", "-q", "-c", "no-upstream"});
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headBranch == "no-upstream"; }));
+    // A branch that the clone never fetched: a bare pull would create its tracking ref.
+    s.git(other(s, repo), {"push", "-q", "origin", "main:extra"});
+    GG_REQUIRE(rev(s, repo, "origin/extra").empty());
+    s.session()->actions().pull(ggui::PullMode::Merge);
+    GG_CHECK(s.waitUntil([&] { return s.app.errorMessage().find("no upstream") != std::string::npos; }));
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }));
+    GG_CHECK(rev(s, repo, "origin/extra").empty());
+}
+
 GG_TEST("network", "push: toolbar, menu, History and Branches; no upstream prefills Push to")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
