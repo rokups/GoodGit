@@ -107,9 +107,13 @@ if(WIN32)
 else()
     set(GGUI_PACKAGE_SYSTEM linux-${CMAKE_SYSTEM_PROCESSOR})
 endif()
-set(GGUI_BUILD_COMMIT "$ENV{GITHUB_SHA}" CACHE STRING "Commit of a CI build; empty for local builds")
-# Configure time (Unix seconds, UTC). The updater offers only a release published after it.
-string(TIMESTAMP GGUI_BUILD_TIME "%s" UTC)
+set(GGUI_BUILD_COMMIT "" CACHE STRING "Commit of the build; empty: GITHUB_SHA at build time, else none")
+set(GGUI_BUILD_IDENTITY_CPP ${CMAKE_BINARY_DIR}/generated/BuildIdentity.cpp)
+# Each build runs the script: the commit and its time (GGUI_BUILD_TIME) match the sources.
+add_custom_target(ggui_build_identity BYPRODUCTS ${GGUI_BUILD_IDENTITY_CPP}
+    COMMAND ${CMAKE_COMMAND} -DSRC=${PROJECT_SOURCE_DIR} -DOUT=${GGUI_BUILD_IDENTITY_CPP}
+        -DCOMMIT=${GGUI_BUILD_COMMIT} -P ${PROJECT_SOURCE_DIR}/cmake/BuildIdentity.cmake
+    COMMENT "Build identity")
 
 add_subdirectory(Source/libgg)
 add_subdirectory(Source/gitgg)
