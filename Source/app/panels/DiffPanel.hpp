@@ -106,12 +106,15 @@ private:
         std::vector<int> firstLine; // per row: first editor line (-1 = not in this view)
         std::vector<int> lastLine;
         Side side = Side::Unified;
+        bool reset = true;    // the next build starts a new file: reset the editor state
         bool focused = false; // the editor (or a window over it) had the keyboard last frame (the cut path)
     };
 
     void request();
     void buildRows();
     void buildViews();
+    void buildShown();
+    bool shownBuilt() const { return sideBySideShown() ? m_splitBuilt : m_unifiedBuilt; }
     void setupView(View& v, Side side);
     void finishView(View& v, const std::string& text);
     std::string selectedText(View& v); // the code selected in `v`
@@ -153,6 +156,9 @@ private:
     View* m_active = nullptr;   // view the selection belongs to
     int m_anchorRow = -1;
     bool m_viewsDirty = true;
+    core::DiffQuery m_requestTarget, m_shownTarget; // what the last request / the shown diff is of
+    bool m_unifiedBuilt = false; // the text of each view is built when it is shown first
+    bool m_splitBuilt = false;
     bool m_cutKey = false;      // Ctrl+X or Shift+Delete went to the Diff window this frame
     bool m_resetScroll = true;
     int m_navLine = -1;         // editor line of the last hunk navigation ...
