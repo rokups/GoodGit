@@ -108,6 +108,7 @@ bool editCommit(Scenario& s, const fs::path& repo, const std::string& id, const 
 
 void amendStaged(ImGuiTestContext* ctx, Scenario& s)
 {
+    s.settle(); // the caller stages with plain git: let the app see the index before Commit... opens
     ctx->MenuClick("//##MainMenuBar/Commit/Commit...");
     if (s.dialogOpen("Commit")) {
         s.dialogCheck("Commit", "amend", "Amend");
