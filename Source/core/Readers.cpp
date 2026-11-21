@@ -1708,7 +1708,8 @@ BlamePtr readBlame(git_repository* repo, const BlameQuery& q, const gg::CancelTo
             throw std::runtime_error("A bare repository has no working tree to blame");
         const fs::path file = fs::path(wd) / q.path;
         std::error_code ec;
-        if (fs::file_size(file, ec) > kMaxTextBytes && !ec) // (a missing file reads as empty)
+        const auto size = fs::file_size(file, ec);
+        if (!ec && size > kMaxTextBytes) // (a missing file reads as empty)
             throw std::runtime_error("The file is too large to blame");
         content = readFileText(file);
     }
