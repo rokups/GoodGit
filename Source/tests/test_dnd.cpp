@@ -1255,7 +1255,7 @@ namespace {
 std::string repoState(Scenario& s, const fs::path& repo)
 {
     return s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname)"}) + "\nHEAD " + s.revParse(repo, "HEAD") + "\n"
-        + s.statusPorcelain(repo);
+        + s.gitMayFail(repo, {"symbolic-ref", "-q", "HEAD"}).out + "\n" + s.statusPorcelain(repo);
 }
 
 bool chooserOpen(Scenario& s)
@@ -1278,11 +1278,28 @@ GG_TEST("dnd", "a commit dragged onto itself with Alt, Ctrl or Shift offers no d
         // Alt asks the engine for descendants: wait for the answer.
         s.session()->requestDescendants(ggui::core::Oid::fromHex(r.c[1]));
         GG_REQUIRE(s.waitUntil([&] { return s.session()->descendants(ggui::core::Oid::fromHex(r.c[1])).has_value(); }));
+        // Mid-drag, over its own row: no hint.
+        const ImRect row = ctx->ItemInfo(rowRef(r.c[1]).c_str()).RectFull;
+        ctx->MouseMoveToPos(row.GetCenter());
+        ctx->MouseDown(ImGuiMouseButton_Left);
+        ctx->Yield(2);
+        ctx->KeyDown(m);
+        ctx->MouseMoveToPos(ImVec2(row.GetCenter().x + 40, row.GetCenter().y));
+        ctx->Yield(3);
+        ctx->MouseMoveToPos(row.GetCenter());
+        ctx->Yield(3);
+        GG_CHECK(ImGui::GetDragDropPayload() != nullptr); // the drag runs
+        GG_CHECK_STR_EQ(history.dropHint(), "");
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+        ctx->KeyUp(m);
+        ctx->MouseUp(ImGuiMouseButton_Left);
+        ctx->Yield(3);
+        // The drop itself.
         drag(s, rowRef(r.c[1]), rowRef(r.c[1]), m);
         ctx->Yield(3);
         GG_CHECK(!chooserOpen(s));
         GG_CHECK(!menuOpen(s));
-        GG_CHECK(history.dropHint().empty());
         s.settle();
         GG_CHECK_STR_EQ(repoState(s, r.path), before);
     }
@@ -1312,7 +1329,7 @@ GG_TEST("dnd", "a commit dragged onto one of its own descendants with Ctrl or Al
     ctx->Yield(3);
     s.settle();
     GG_CHECK_STR_EQ(repoState(s, r.path), before);
-    // c2 cannot squash into c4 or c3.
+    // c1 cannot squash into c4, and c2 cannot squash into c3.
     drag(s, rowRef(r.c[0]), rowRef(r.c[3]), ImGuiMod_Ctrl);
     ctx->Yield(3);
     GG_CHECK(!chooserOpen(s));
@@ -1329,6 +1346,7 @@ GG_TEST("dnd", "a commit dragged onto one of its own descendants with Ctrl or Al
     drag(s, rowRef(r.c[0]), rowRef(r.c[3]), ImGuiMod_Alt);
     ctx->Yield(3);
     s.settle();
+    GG_CHECK(!chooserOpen(s));
     GG_CHECK_STR_EQ(repoState(s, r.path), before);
 }
 
