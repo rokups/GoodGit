@@ -348,13 +348,17 @@ std::vector<git_oid> walk(git_repository* repo, const git_oid& push, const std::
         check(git_revwalk_hide(rw.get(), &*hide), "git_revwalk_hide");
     std::vector<git_oid> out;
     git_oid oid;
-    while (git_revwalk_next(&oid, rw.get()) == 0) {
+    int code;
+    while ((code = git_revwalk_next(&oid, rw.get())) == 0) {
         Commit c = lookupCommit(repo, oid);
         if (since && git_commit_time(c.get()) < *since)
             break;
         if (git_commit_parentcount(c.get()) <= 1)
             out.push_back(oid);
     }
+    // A failed step (a missing commit) must not give a shorter list.
+    if (code != GIT_ITEROVER)
+        check(code, "git_revwalk_next");
     git_error_clear();
     return out;
 }
@@ -401,12 +405,15 @@ std::vector<std::string> graphOrderRange(git_repository* repo, const git_oid& ti
         check(git_revwalk_hide(rw.get(), &*upstream), "git_revwalk_hide");
     std::map<std::string, std::vector<std::string>> parentsOf;
     git_oid oid;
-    while (git_revwalk_next(&oid, rw.get()) == 0) {
+    int code;
+    while ((code = git_revwalk_next(&oid, rw.get())) == 0) {
         Commit c = lookupCommit(repo, oid);
         auto& parents = parentsOf[toHex(oid)];
         for (unsigned i = 0; i < git_commit_parentcount(c.get()); ++i)
             parents.push_back(toHex(*git_commit_parent_id(c.get(), i)));
     }
+    if (code != GIT_ITEROVER)
+        check(code, "git_revwalk_next");
     git_error_clear();
     std::map<std::string, int> children;
     for (const auto& [id, parents] : parentsOf)
@@ -1736,8 +1743,9 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
             break; // otherwise the group's commit stays the current step
         }
         case Action::UpdateRef:
-            if (!current.empty())
-                plan.refsToSteps[item.arg] = current;
+            if (current.empty())
+                throw NoPreview("row " + std::to_string(i + 1) + " is update-ref on a new root commit, which has no step yet");
+            plan.refsToSteps[item.arg] = current;
             break;
         case Action::Label:
             labels[item.arg] = current;

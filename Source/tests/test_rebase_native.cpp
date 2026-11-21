@@ -12,6 +12,7 @@
 #include <libgg/Journal.hpp>
 #include "util/Env.hpp"
 
+#include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 #include <libgg/Todo.hpp>
 
@@ -909,6 +910,43 @@ GG_TEST("rebase-native", "todo::replayedCommits lists the commit rows and the me
     const auto ids = todo::replayedCommits(todo::parse(text));
     GG_CHECK(ids == (std::vector<std::string>{
                         "1111111", "2222222", "3333333", "4444444", "5555555", "6666666", "7777777", "8888888"}));
+}
+
+GG_TEST("rebase-native", "todo::read fails on a missing commit object, and toPlan refuses an update-ref row with no current step")
+{
+    const Repo r = makeRepo(s);
+    const auto handle = gg::git2::openRepository(r.path);
+
+    // update-ref before any commit of a root-based list: no step to point the ref at.
+    todo::ReadOptions all;
+    const todo::Context rootContext = todo::read(handle.get(), all);
+    todo::Todo list = todo::parse("update-ref refs/heads/x\npick " + r.c[1] + "\n");
+    todo::expand(handle.get(), list, const_cast<todo::Context&>(rootContext));
+    bool refused = false;
+    try {
+        (void)todo::toPlan(list, rootContext);
+    } catch (const todo::NoPreview& e) {
+        refused = std::string(e.what()).find("update-ref") != std::string::npos;
+    }
+    GG_CHECK(refused);
+
+    // Move the loose object of c3 away: the range c1..c5 is no longer readable.
+    const std::string hex = r.c[3];
+    const fs::path object = r.path / ".git" / "objects" / hex.substr(0, 2) / hex.substr(2);
+    const fs::path moved = r.path / "c3.object.moved";
+    GG_REQUIRE(fs::exists(object));
+    fs::rename(object, moved);
+    bool failed = false;
+    try {
+        todo::ReadOptions range;
+        range.upstream = r.c[1];
+        range.tip = "main";
+        (void)todo::read(handle.get(), range);
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    fs::rename(moved, object);
+    GG_CHECK(failed);
 }
 
 } // namespace ggtest
