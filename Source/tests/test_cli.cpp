@@ -288,6 +288,45 @@ GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all i
     GG_CHECK(secs > 0.5 && secs < 5.0);
 }
 
+#ifdef _WIN32
+
+GG_TEST("cli", "gg::run does not leak its pipes into a child that another thread starts")
+{
+    gg::RunRequest slow;
+    slow.args = {"cmd", "/c", "ping", "-n", "4", "127.0.0.1"};
+    gg::RunResult slowResult;
+    std::thread a([&] { slowResult = gg::run(slow); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    gg::RunRequest quick;
+    quick.args = {"cmd", "/c", "exit", "0"};
+    const auto start = std::chrono::steady_clock::now();
+    const gg::RunResult quickResult = gg::run(quick);
+    const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    a.join();
+    GG_CHECK(quickResult.ok());
+    GG_CHECK(ms < timeBudgetMs(2000));
+    GG_CHECK(slowResult.ok());
+}
+
+GG_TEST("cli", "gg::run cancel ends a grandchild that holds the pipes after the child exits")
+{
+    gg::RunRequest r;
+    r.args = {"cmd", "/c", "start", "/b", "ping", "-n", "30", "127.0.0.1"};
+    gg::CancelToken token;
+    r.cancel = token;
+    gg::RunResult result;
+    const auto start = std::chrono::steady_clock::now();
+    std::thread worker([&] { result = gg::run(r); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    token.cancel();
+    worker.join();
+    const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(result.cancelled);
+    GG_CHECK(ms < timeBudgetMs(3000));
+}
+
+#endif
+
 // These tests need POSIX sh, trap, sleep and signals, so Windows CI skips them.
 #ifndef _WIN32
 

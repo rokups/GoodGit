@@ -316,43 +316,91 @@ RunResult runProcess(const RunRequest& request)
 
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
     HANDLE inR = nullptr, inW = nullptr, outR = nullptr, outW = nullptr, errR = nullptr, errW = nullptr;
-    CreatePipe(&inR, &inW, &sa, 0);
-    CreatePipe(&outR, &outW, &sa, 0);
-    CreatePipe(&errR, &errW, &sa, 0);
-    SetHandleInformation(inW, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(outR, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(errR, HANDLE_FLAG_INHERIT, 0);
+    HANDLE job = nullptr;
+    std::vector<char> attrBuf;
+    LPPROC_THREAD_ATTRIBUTE_LIST attrs = nullptr;
+    const auto closeAll = [&] {
+        for (HANDLE* h : {&inR, &inW, &outR, &outW, &errR, &errW, &job}) {
+            if (*h)
+                CloseHandle(*h);
+            *h = nullptr;
+        }
+        if (attrs)
+            DeleteProcThreadAttributeList(attrs);
+        attrs = nullptr;
+    };
+    const auto fail = [&](const char* what) {
+        const DWORD e = GetLastError();
+        closeAll();
+        result.startFailed = true;
+        result.err = request.args.at(0) + ": " + what + " (error " + std::to_string(e) + ")";
+    };
+    if (!CreatePipe(&inR, &inW, &sa, 0) || !CreatePipe(&outR, &outW, &sa, 0) || !CreatePipe(&errR, &errW, &sa, 0)) {
+        fail("cannot create pipe");
+        return result;
+    }
+    if (!SetHandleInformation(inW, HANDLE_FLAG_INHERIT, 0) || !SetHandleInformation(outR, HANDLE_FLAG_INHERIT, 0)
+        || !SetHandleInformation(errR, HANDLE_FLAG_INHERIT, 0)) {
+        fail("cannot set handle flags");
+        return result;
+    }
 
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = inR;
-    si.hStdOutput = outW;
-    si.hStdError = errW;
+    // Only the three child pipe ends are inherited, so a run() on another thread cannot leak them to its child.
+    // The three handles are distinct, as the handle list requires.
+    HANDLE inherited[3] = {inR, outW, errW};
+    SIZE_T attrSize = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    attrBuf.resize(attrSize);
+    auto* attrList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuf.data());
+    if (attrSize == 0 || !InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize)) {
+        fail("cannot init attribute list");
+        return result;
+    }
+    attrs = attrList;
+    if (!UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr)) {
+        fail("cannot set handle list");
+        return result;
+    }
+
+    STARTUPINFOEXW si{};
+    si.StartupInfo.cb = sizeof(si);
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = inR;
+    si.StartupInfo.hStdOutput = outW;
+    si.StartupInfo.hStdError = errW;
+    si.lpAttributeList = attrs;
     PROCESS_INFORMATION pi{};
-    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    job = CreateJobObjectW(nullptr, nullptr);
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    if (!job || !SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
+        fail("cannot create job object");
+        return result;
+    }
 
     const std::wstring cwd = request.cwd.empty() ? std::wstring() : request.cwd.wstring();
     const BOOL created = CreateProcessW(application.empty() ? nullptr : application.c_str(), cmd.data(), nullptr, nullptr, TRUE,
-        CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, envBlock.data(),
-        cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
-    const DWORD createError = GetLastError();
+        CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT, envBlock.data(),
+        cwd.empty() ? nullptr : cwd.c_str(), &si.StartupInfo, &pi);
+    if (!created) {
+        fail("cannot start process");
+        return result;
+    }
+    DeleteProcThreadAttributeList(attrs);
+    attrs = nullptr;
     CloseHandle(inR);
     CloseHandle(outW);
     CloseHandle(errW);
-    if (!created) {
-        CloseHandle(inW);
-        CloseHandle(outR);
-        CloseHandle(errR);
-        CloseHandle(job);
-        result.startFailed = true;
-        result.err = request.args.at(0) + ": cannot start process (error " + std::to_string(createError) + ")";
+    inR = outW = errW = nullptr;
+    if (!AssignProcessToJobObject(job, pi.hProcess)) {
+        const DWORD e = GetLastError();
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        SetLastError(e);
+        fail("cannot assign process to job");
         return result;
     }
-    AssignProcessToJobObject(job, pi.hProcess);
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
 
@@ -366,11 +414,13 @@ RunResult runProcess(const RunRequest& request)
         }
         CloseHandle(inW);
     });
+    std::atomic<int> readersDone{0};
     std::thread outReader([&] {
         char buf[65536];
         DWORD n = 0;
         while (ReadFile(outR, buf, sizeof(buf), &n, nullptr) && n > 0)
             result.out.append(buf, n);
+        ++readersDone;
     });
     std::string errData;
     std::mutex errMutex;
@@ -381,6 +431,7 @@ RunResult runProcess(const RunRequest& request)
             std::lock_guard lock(errMutex);
             errData.append(buf, n);
         }
+        ++readersDone;
     });
 
     ProgressSplitter splitter(request.onProgress);
@@ -396,10 +447,18 @@ RunResult runProcess(const RunRequest& request)
         }
         if (w == WAIT_OBJECT_0)
             break;
-        if (request.cancel.cancelled()) {
+        if (request.cancel.cancelled() && !result.cancelled) {
             TerminateJobObject(job, 1);
             result.cancelled = true;
         }
+    }
+    // A grandchild can hold the pipes after the child exits: end the job on cancel instead of waiting for EOF.
+    while (readersDone.load() < 2) {
+        if (request.cancel.cancelled() && !result.cancelled) {
+            TerminateJobObject(job, 1);
+            result.cancelled = true;
+        }
+        Sleep(10);
     }
     writer.join();
     outReader.join();
