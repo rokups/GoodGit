@@ -620,8 +620,13 @@ void Session::showDiscardAllDialog()
     Field untrackedField{Field::Check, "untracked", "Also delete untracked files (" + std::to_string(untracked.size()) + ")"};
     f.add(untrackedField);
     f.buttons.push_back({"Discard", [this, untracked](Form& form) {
-                             m_actions->run("discard all changes", [untracked, all = form.checked("untracked")](core::MutationContext& ctx) {
-                                 ctx.git({"reset", "-q", "--hard"});
+                             const bool unborn = m_snapshot->headUnborn;
+                             m_actions->run("discard all changes", [untracked, unborn, all = form.checked("untracked")](core::MutationContext& ctx) {
+                                 // An unborn HEAD has no commit to reset to: the empty tree is the target, so every indexed file goes.
+                                 if (unborn)
+                                     ctx.git({"rm", "-r", "-f", "-q", "--ignore-unmatch", "."});
+                                 else
+                                     ctx.git({"reset", "-q", "--hard"});
                                  if (all && !untracked.empty())
                                      ctx.git(withPaths({"clean", "-f", "-q"}, untracked));
                                  ctx.worktreeFollowsIndex = true;
