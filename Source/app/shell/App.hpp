@@ -58,6 +58,8 @@ public:
     bool idle() const;
     bool quitRequested() const { return m_quit; }
     bool confirmQuit() { return true; }
+    // A cancelled quit must not leave a stale restart-for-update flag.
+    void quitCancelled() { m_restartForUpdate = false; }
     void requestQuit()
     {
         m_quit = true;

@@ -224,8 +224,10 @@ int main(int argc, char** argv)
         platform.pollEvents(waitMs);
         if (waitMs > 0)
             ++logWaits;
-        if (platform.quitRequested() && !app->confirmQuit())
+        if (platform.quitRequested() && !app->confirmQuit()) {
+            app->quitCancelled();
             platform.cancelQuit();
+        }
         if (platform.quitRequested())
             break;
         platform.beginFrame();
