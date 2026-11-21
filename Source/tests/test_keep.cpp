@@ -471,12 +471,20 @@ GG_TEST("keep", "worktrees: no detached HEAD is kept unless it is named, one in 
     s.gitMayFail(wt, {"cherry-pick", "side"});
     GG_REQUIRE(fs::exists(s.root() / "wt" / ".git"));
     GG_CHECK(!s.gitOut(wt, {"status", "--porcelain=v2"}).empty());
+    const std::string picked = s.head(wt);
     const Maintained stopped = maintain(repo);
     GG_CHECK(stopped.ok);
     GG_CHECK(keepRefs(s, repo).empty());
+    // Positive twin: named, the commit is kept in the stop as well.
+    GG_CHECK(maintain(repo, {picked}).ok);
+    GG_CHECK(keepRefs(s, repo) == names({picked}));
+    s.git(repo, {"update-ref", "-d", gg::keep::refName(picked)});
     s.git(wt, {"cherry-pick", "--abort"});
+    GG_CHECK_STR_EQ(s.head(wt), picked);
     GG_CHECK(maintain(repo).ok);
     GG_CHECK(keepRefs(s, repo).empty());
+    GG_CHECK(maintain(repo, {picked}).ok);
+    GG_CHECK(keepRefs(s, repo) == names({picked}));
 }
 
 GG_TEST("keep", "an operation that creates commits and finishes while a rebase is stopped names nothing")
@@ -506,17 +514,20 @@ GG_TEST("keep", "an operation that creates commits and finishes while a rebase i
     }
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_CHECK(keepRefs(s, repo).empty());
+    const std::string midCommit = s.head(repo);
     GG_CHECK(maintain(repo).ok);
     GG_CHECK(keepRefs(s, repo).empty());
+    // Positive twin: named, the commit is kept in the stop as well.
+    GG_CHECK(maintain(repo, {midCommit}).ok);
+    GG_CHECK(keepRefs(s, repo) == names({midCommit}));
+    s.git(repo, {"update-ref", "-d", gg::keep::refName(midCommit)});
     s.git(repo, {"rebase", "--abort"});
-    {
-        const Maintained again = maintain(repo);
-        GG_CHECK(again.ok);
-        GG_CHECK(again.changes.empty());
-    }
+    GG_CHECK(maintain(repo).ok);
+    GG_CHECK(keepRefs(s, repo).empty());
     // The fixtures stopped in a rebase, as the other tests have them.
     const fs::path mid = s.fixture(Recipe::MidRebaseApply);
-    GG_CHECK(maintain(mid).ok);
+    GG_REQUIRE(!s.gitOut(mid, {"for-each-ref", "--contains", s.head(mid), "refs/heads"}).empty());
+    GG_CHECK(maintain(mid, {s.head(mid)}).ok); // named, but a branch holds it already
     GG_CHECK(keepRefs(s, mid).empty());
 }
 
@@ -1416,6 +1427,7 @@ GG_TEST("keep", "a rebase that finishes without moving HEAD in its last step (ed
     s.git(repo, {"rebase", "-i", "main"}); // stops at t
     ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
     GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
+    const std::string stoppedHead = s.head(repo);
     std::string tip;
     {
         gg::OperationRecorder rec(r.get(), "test", "continue", false);
@@ -1426,6 +1438,7 @@ GG_TEST("keep", "a rebase that finishes without moving HEAD in its last step (ed
         rec.finish(true, false);
     }
     GG_REQUIRE(gg::native::rebaseIdentity(r.get()).empty());
+    GG_CHECK_STR_EQ(tip, stoppedHead); // the last step moved nothing
     GG_CHECK(keepRefs(s, repo) == names({tip}));
 }
 
@@ -2265,6 +2278,7 @@ GG_TEST("keep", "Amend and continue in a rebase of a kept detached HEAD leaves i
     const std::string after = refState(s, repo);
     GG_CHECK(amended != p);
     GG_CHECK(keepRefs(s, repo) == names({amended})); // p is replaced: its keep ref went with the finish
+    GG_CHECK_EQ(housekeepingCount(repo), 0u); // the change is the rebase's own, not housekeeping
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(becomes(s, repo, before));
     GG_CHECK(keepRefs(s, repo) == names({p}));
