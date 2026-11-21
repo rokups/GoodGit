@@ -1027,7 +1027,7 @@ GG_TEST("history", "cancel a long history load and a reveal")
     ctx->ItemInputValue("//Tags/##tag_filter", "t/0");
     ctx->Yield(2);
     s.contextMenu("//Tags/tag_t:0/###tag_t:0", "Reveal");
-    GG_CHECK(s.waitUntil([&] { return history.rows().size() > static_cast<size_t>(ggui::HistoryPanel::kPageSize) + 100; }, 60.0f));
+    GG_CHECK(s.waitUntil([&] { return history.rows().size() > static_cast<size_t>(ggui::HistoryPanel::kPageSize) + 100; }, static_cast<float>(timeBudgetMs(60000) / 1000)));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//###Toolbar/Cancel##tb_cancel"); }, 10.0f));
     ctx->ItemClick("//###Toolbar/Cancel##tb_cancel");
     // Other reads (the working tree status of the large fixture) finish on their own; on a slow
