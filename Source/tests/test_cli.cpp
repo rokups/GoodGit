@@ -9,8 +9,10 @@
 
 #include <libgg/GitRunner.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 namespace ggtest {
 
@@ -290,34 +292,62 @@ GG_TEST("cli", "gg::run survives a child that closes stdin before it reads all i
 
 #ifdef _WIN32
 
+// Each iteration starts a slow and a quick run together. A quick run that inherits the slow run's pipe ends
+// waits for the slow child. The race window is small, so many threads and iterations make it likely.
 GG_TEST("cli", "gg::run does not leak its pipes into a child that another thread starts")
 {
-    gg::RunRequest slow;
-    slow.args = {"cmd", "/c", "ping", "-n", "4", "127.0.0.1"};
-    gg::RunResult slowResult;
-    std::thread a([&] { slowResult = gg::run(slow); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    gg::RunRequest quick;
-    quick.args = {"cmd", "/c", "exit", "0"};
-    const auto start = std::chrono::steady_clock::now();
-    const gg::RunResult quickResult = gg::run(quick);
-    const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    a.join();
-    GG_CHECK(quickResult.ok());
-    GG_CHECK(ms < timeBudgetMs(2000));
-    GG_CHECK(slowResult.ok());
+    constexpr int kThreads = 6;
+    constexpr int kIterations = 25;
+    std::atomic<int> late{0};
+    std::atomic<int> failed{0};
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&] {
+            for (int i = 0; i < kIterations; ++i) {
+                gg::RunRequest slow;
+                slow.args = {"cmd", "/c", "ping", "-n", "3", "127.0.0.1"};
+                gg::RunResult slowResult;
+                std::thread a([&] { slowResult = gg::run(slow); });
+                gg::RunRequest quick;
+                quick.args = {"cmd", "/c", "exit", "0"};
+                const auto start = std::chrono::steady_clock::now();
+                const gg::RunResult quickResult = gg::run(quick);
+                const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                a.join();
+                if (!quickResult.ok() || !slowResult.ok())
+                    ++failed;
+                if (ms >= timeBudgetMs(1500))
+                    ++late;
+            }
+        });
+    }
+    for (auto& th : threads)
+        th.join();
+    GG_CHECK_EQ(failed.load(), 0);
+    GG_CHECK_EQ(late.load(), 0);
 }
 
-GG_TEST("cli", "gg::run cancel ends a grandchild that holds the pipes after the child exits")
+GG_TEST("cli", "gg::run returns when the direct child exits and a grandchild holds the pipes")
 {
     gg::RunRequest r;
     r.args = {"cmd", "/c", "start", "/b", "ping", "-n", "30", "127.0.0.1"};
+    const auto start = std::chrono::steady_clock::now();
+    const gg::RunResult result = gg::run(r);
+    const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(!result.startFailed);
+    GG_CHECK(ms < timeBudgetMs(3000));
+}
+
+GG_TEST("cli", "gg::run cancel ends the whole child tree")
+{
+    gg::RunRequest r;
+    r.args = {"cmd", "/c", "ping", "-n", "30", "127.0.0.1"};
     gg::CancelToken token;
     r.cancel = token;
     gg::RunResult result;
     const auto start = std::chrono::steady_clock::now();
     std::thread worker([&] { result = gg::run(r); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
     token.cancel();
     worker.join();
     const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();

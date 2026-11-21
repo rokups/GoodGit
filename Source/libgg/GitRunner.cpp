@@ -393,17 +393,15 @@ RunResult runProcess(const RunRequest& request)
     CloseHandle(errW);
     inR = outW = errW = nullptr;
     if (!AssignProcessToJobObject(job, pi.hProcess)) {
-        const DWORD e = GetLastError();
-        TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-        SetLastError(e);
-        fail("cannot assign process to job");
-        return result;
+        // Run without the job, as before: cancel then ends only the child.
+        std::fprintf(stderr, "gg: cannot assign process to job (error %lu)\n", static_cast<unsigned long>(GetLastError()));
+        CloseHandle(job);
+        job = nullptr;
     }
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
 
+    std::atomic<int> pumpsDone{0}; // the writer and the two readers
     std::thread writer([&] {
         DWORD written = 0;
         size_t off = 0;
@@ -413,14 +411,14 @@ RunResult runProcess(const RunRequest& request)
             off += written;
         }
         CloseHandle(inW);
+        ++pumpsDone;
     });
-    std::atomic<int> readersDone{0};
     std::thread outReader([&] {
         char buf[65536];
         DWORD n = 0;
         while (ReadFile(outR, buf, sizeof(buf), &n, nullptr) && n > 0)
             result.out.append(buf, n);
-        ++readersDone;
+        ++pumpsDone;
     });
     std::string errData;
     std::mutex errMutex;
@@ -431,9 +429,15 @@ RunResult runProcess(const RunRequest& request)
             std::lock_guard lock(errMutex);
             errData.append(buf, n);
         }
-        ++readersDone;
+        ++pumpsDone;
     });
 
+    const auto killTree = [&] {
+        if (job)
+            TerminateJobObject(job, 1);
+        else
+            TerminateProcess(pi.hProcess, 1);
+    };
     ProgressSplitter splitter(request.onProgress);
     size_t fed = 0;
     for (;;) {
@@ -448,15 +452,18 @@ RunResult runProcess(const RunRequest& request)
         if (w == WAIT_OBJECT_0)
             break;
         if (request.cancel.cancelled() && !result.cancelled) {
-            TerminateJobObject(job, 1);
+            killTree();
             result.cancelled = true;
         }
     }
-    // A grandchild can hold the pipes after the child exits: end the job on cancel instead of waiting for EOF.
-    while (readersDone.load() < 2) {
-        if (request.cancel.cancelled() && !result.cancelled) {
-            TerminateJobObject(job, 1);
-            result.cancelled = true;
+    // A grandchild can hold the pipes after the child exits. Like POSIX, wait 500 ms, then end the job.
+    // This also unblocks a writer that waits on a grandchild which holds stdin.
+    const auto exitDrainEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    bool drainKilled = false;
+    while (pumpsDone.load() < 3) {
+        if (!drainKilled && std::chrono::steady_clock::now() >= exitDrainEnd) {
+            killTree();
+            drainKilled = true;
         }
         Sleep(10);
     }
@@ -470,7 +477,8 @@ RunResult runProcess(const RunRequest& request)
     CloseHandle(outR);
     CloseHandle(errR);
     CloseHandle(pi.hProcess);
-    CloseHandle(job);
+    if (job)
+        CloseHandle(job);
     return result;
 }
 
