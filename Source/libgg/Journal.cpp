@@ -180,9 +180,7 @@ bool Journal::appendLine(const std::string& line, std::string* error)
             *error = busyMessage(m_dir);
         return false;
     }
-    if (!writeLocked(m_path, line, error))
-        return false;
-    return true;
+    return writeLocked(m_path, line, error);
 }
 
 struct Journal::Transaction::Held {
@@ -213,9 +211,7 @@ bool Journal::Transaction::appendLine(const std::string& line, std::string* erro
             *error = busyMessage(m_journal.m_dir);
         return false;
     }
-    if (!writeLocked(m_journal.m_path, line, error))
-        return false;
-    return true;
+    return writeLocked(m_journal.m_path, line, error);
 }
 
 bool Writer::begin(const Operation& op, std::string* error)
