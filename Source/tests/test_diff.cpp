@@ -1186,4 +1186,39 @@ GG_TEST("diff", "a different file still resets the scroll")
     GG_CHECK_EQ(diff.topLine(), 0);
 }
 
+GG_TEST("diff", "the same path in another group of the working tree resets the scroll")
+{
+    const fs::path repo = makeKeepRepo(s);
+    auto edit = [&](int value) {
+        std::string text;
+        for (int i = 1; i <= 400; ++i)
+            text += "int line" + std::to_string(i) + " = " + (i % 80 == 40 ? std::to_string(value) : "0") + ";\n";
+        s.write(repo, "nav.cpp", text);
+    };
+    edit(2);
+    s.git(repo, {"add", "nav.cpp"});
+    edit(3);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick("//History/**/###row_wt");
+    auto fileRef = [&](const char* group) {
+        return s.child("//Changes", "##files") + "/" + group + "/nav.cpp/###file_nav.cpp";
+    };
+    auto& diff = s.session()->diff();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef("Unstaged").c_str()) && s.itemExists(fileRef("Staged").c_str()); }));
+    ctx->ItemClick(fileRef("Unstaged").c_str());
+    s.showPanel("Diff");
+    ctx->WindowFocus("//Diff");
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->hunks.size() == 5; }));
+    ctx->Yield(3);
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->Yield(3);
+    GG_REQUIRE(diff.topLine() > 0);
+    const auto before = diff.diff();
+    ctx->ItemClick(fileRef("Staged").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return diff.diff() && diff.diff() != before; }));
+    ctx->Yield(3);
+    GG_CHECK_EQ(diff.topLine(), 0);
+}
+
 } // namespace ggtest

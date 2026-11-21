@@ -156,6 +156,7 @@ private:
     View* m_active = nullptr;   // view the selection belongs to
     int m_anchorRow = -1;
     bool m_viewsDirty = true;
+    core::DiffQuery m_requestTarget, m_shownTarget; // what the last request / the shown diff is of
     bool m_unifiedBuilt = false; // the text of each view is built when it is shown first
     bool m_splitBuilt = false;
     bool m_cutKey = false;      // Ctrl+X or Shift+Delete went to the Diff window this frame

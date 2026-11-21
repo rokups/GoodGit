@@ -290,6 +290,11 @@ void DiffPanel::request()
             q.against = m_fileCompare.rev;
         }
     }
+    // The target is the query without the view options: a same-file reload keeps the editor state.
+    m_requestTarget = q;
+    m_requestTarget.context = 3;
+    m_requestTarget.whitespace = core::Whitespace::Normal;
+    m_requestTarget.full = false;
     q.context = settings.diffContext;
     q.whitespace = static_cast<core::Whitespace>(settings.diffWhitespace);
     q.full = m_full;
@@ -314,7 +319,8 @@ void DiffPanel::onDiff(const core::DiffEvent& event)
         return; // stale
     m_loading = false;
     const bool newFile = !m_diff || m_diff->files.empty() || event.diff->files.empty()
-        || m_diff->files[0].path() != event.diff->files[0].path();
+        || m_diff->files[0].path() != event.diff->files[0].path() || m_requestTarget != m_shownTarget;
+    m_shownTarget = m_requestTarget;
     m_diff = event.diff;
     m_anchorRow = -1; // the rows change: an old anchor can lie past the new end
     m_resetScroll = m_resetScroll || newFile;
