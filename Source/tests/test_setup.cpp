@@ -244,6 +244,7 @@ GG_TEST("setup", "Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the 
     const fs::path system = s.root().parent_path() / "empty-system-config";
     fs::create_directories(system);
     s.write(system, "gitconfig", "[diff]\n\ttool = system-difftool\n");
+    ScopeExit removeConfig{[&] { std::error_code ec; fs::remove(system / "gitconfig", ec); }};
     GG_REQUIRE(s.openRepository(repo));
     s.app.openSettings();
     ctx->Yield(2);
@@ -259,7 +260,6 @@ GG_TEST("setup", "Settings ▸ Git: the user config in $XDG_CONFIG_HOME and the 
     GG_CHECK(s.waitUntil([&] { return s.textShown("//Settings", "xdg-editor  (User)"); }));
     GG_CHECK(s.textShown("//Settings", "system-difftool  (System)"));
     ctx->WindowClose("//Settings");
-    fs::remove(system / "gitconfig");
 }
 
 GG_TEST("setup", "ahead/behind badges follow ref changes made outside ggui")
