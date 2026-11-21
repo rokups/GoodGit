@@ -97,6 +97,16 @@ void InfoPanel::setOverride(const std::optional<Selection>& sel)
 
 void InfoPanel::show(const Selection& sel)
 {
+    // An unsaved edit stays as the one draft (with its commit id); a reverted edit drops it.
+    if (m_details && !m_saved) {
+        if (m_message != m_details->message) {
+            m_draftId = m_details->id;
+            m_draft = m_message;
+        } else if (m_draftId == m_details->id) {
+            m_draft.clear();
+        }
+    }
+    m_saved = false;
     m_selection = sel;
     m_details.reset();
     m_message.clear();
@@ -129,7 +139,7 @@ void InfoPanel::onDetails(const core::CommitDetailsEvent& event)
     const bool keepEdit = m_details && m_details->id == event.details->id && m_message != m_details->message;
     m_details = event.details;
     if (!keepEdit)
-        m_message = m_details->message;
+        m_message = !m_draft.empty() && m_draftId == m_details->id ? m_draft : m_details->message;
 }
 
 // The rows a real commit shows, filled with what the commit would be if made now: the configured
@@ -294,6 +304,8 @@ void InfoPanel::draw(bool* open)
     const bool pushed = !stash && d.published;
     if (pushed ? dangerButton(ICON_MS_SAVE, "Save message###save_message")
                : button(ICON_MS_SAVE, "Save message###save_message")) {
+        m_draft.clear();
+        m_saved = true;
         if (stash)
             m_session.actions().stashReword(m_selection.stashIndex, d.id, m_message);
         else if (isHead)

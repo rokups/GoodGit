@@ -422,6 +422,26 @@ GG_TEST("commit", "reword HEAD from Change information (amend mode)")
     GG_CHECK(ctx->ItemInfo("//Change information/###save_message").ItemFlags & ImGuiItemFlags_Disabled);
 }
 
+GG_TEST("commit", "reword draft survives a selection change")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string head = s.head(repo);
+    const std::string older = s.revParse(repo, "HEAD~1");
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string msg = "//Change information/##message";
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(msg.c_str()); }));
+    s.setText(msg.c_str(), "Unsaved draft");
+    ctx->ItemClick(("//History/**/###row_" + older).c_str());
+    const char* save = "//Change information/###save_message";
+    ctx->Yield(3);
+    GG_CHECK(ctx->ItemInfo(save).ItemFlags & ImGuiItemFlags_Disabled); // another commit: no edit
+    ctx->ItemClick(("//History/**/###row_" + head).c_str());
+    ctx->Yield(3);
+    // The save button is enabled only while the field differs from the commit message.
+    GG_CHECK(s.waitUntil([&] { return !(ctx->ItemInfo(save).ItemFlags & ImGuiItemFlags_Disabled); }));
+}
+
 GG_TEST("commit", "Save message button: an unpushed HEAD is saved without a question")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
