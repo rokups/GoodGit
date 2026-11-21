@@ -927,6 +927,7 @@ GG_TEST("dnd", "hint: a running task shows Wait")
     s.dialogText("Commit", "message", "Waits for the hook");
     s.dialogButton("Commit", "Commit");
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
+    const std::string tip = s.revParse(r.path, "main");
     // The middle of a row and a gap: both show the hint.
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[3]).c_str()).RectFull.GetCenter());
     s.ctx->MouseDown(ImGuiMouseButton_Left);
@@ -938,11 +939,11 @@ GG_TEST("dnd", "hint: a running task shows Wait")
     s.ctx->MouseMoveToPos(ImVec2(c2.GetCenter().x, c2.Max.y - 2));
     s.ctx->Yield(3);
     GG_CHECK_STR_EQ(history.dropHint(), "Wait: another task runs");
-    s.ctx->KeyPress(ImGuiKey_Escape);
-    s.ctx->Yield(2);
+    // The drop is refused while the task runs: no chooser, no change.
     s.ctx->MouseUp(ImGuiMouseButton_Left);
     s.ctx->Yield(3);
     GG_CHECK(!s.itemExists("//$FOCUSED/Copy after"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
     // Let the hook go: the task ends and the hint clears.
     s.write(s.root(), "go", "");
     GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }, 10.0f));
@@ -1097,13 +1098,17 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.dialogButton("Commit", "Commit");
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
     GG_REQUIRE(s.itemExists(unstaged.c_str()));
+    const std::string tip = s.revParse(r.path, "main");
     hold(s, unstaged, rowRef(r.c[0]));
     GG_CHECK_STR_EQ(history.dropHint(), "Wait: another task runs");
     GG_CHECK(s.textShown("//##Tooltip_DragDrop_00", "Wait: another task runs"));
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo((groupRef(s, "Staged") + "/###group").c_str()).RectFull.GetCenter());
     s.ctx->Yield(3);
     GG_CHECK_STR_EQ(changes.dropHint(), "Wait: another task runs");
-    release(s);
+    // The drop on Staged is refused: the file stays unstaged.
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    GG_CHECK(s.itemExists(unstaged.c_str()));
     // The files of a commit: Wait on its parent, no hint on a row with no action.
     ctx->ItemClick(rowRef(r.c[3]).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileItem(s, "", "f4.txt").c_str()); }));
@@ -1112,7 +1117,10 @@ GG_TEST("dnd", "hint: files while busy show Wait")
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo(rowRef(r.c[0]).c_str()).RectFull.GetCenter());
     s.ctx->Yield(3);
     GG_CHECK(history.dropHint().empty());
-    release(s);
+    // The drop on a row with no action does nothing.
+    s.ctx->MouseUp(ImGuiMouseButton_Left);
+    s.ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), tip);
     s.write(s.root(), "go", "");
     GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }, 10.0f));
     s.settle();
