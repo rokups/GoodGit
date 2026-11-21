@@ -359,7 +359,11 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
             st.maxLanes = std::max<int>(st.maxLanes, std::max<int>(lane + 1, static_cast<int>(st.lanes.size())));
 
             // ---- search index -----------------------------------------------------------------
-            std::string text = id.hex() + " " + git_commit_message(commit.get()) + " " + row.author + " " + row.authorEmail;
+            // Cap the message so the index stays small; a word after 4 KiB is not found.
+            std::string message = git_commit_message(commit.get());
+            if (message.size() > 4096)
+                message.resize(4096);
+            std::string text = id.hex() + " " + message + " " + row.author + " " + row.authorEmail;
             for (const auto& r : row.refs)
                 text += " " + r.name;
             st.searchText.push_back(lower(std::move(text)));
