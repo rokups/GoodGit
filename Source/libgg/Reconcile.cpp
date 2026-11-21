@@ -981,7 +981,7 @@ Result run(git_repository* repo, std::string* error)
                     // one ggui recorded at its start (plain git's own has none).
                     if (open->src != "git" && workdir)
                         t.appendIndex(open->op, journal::IndexChange{wt, "", indexTree(workdir), true}, &err);
-                    native::finishGroup(repo, t, true);
+                    native::finishGroup(repo, t, true, &err);
                     ++result.appended; // (the op list changed: it ended)
                 }
                 continue;

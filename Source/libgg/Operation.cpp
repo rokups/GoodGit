@@ -232,7 +232,7 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
     }
     if (m_resumed) {
         if (!rebasing)
-            native::finishGroup(m_repo, m_journal, ok);
+            native::finishGroup(m_repo, m_journal, ok, &error);
     } else if (startsGroup) {
         native::rememberGroup(m_repo, m_journal, m_op.id, m_op.src);
     } else {

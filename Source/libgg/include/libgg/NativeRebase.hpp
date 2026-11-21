@@ -59,9 +59,9 @@ std::optional<GroupInfo> openGroup(git_repository* repo);
 void rememberGroup(git_repository* repo, journal::Writer& journal, const std::string& op, const std::string& src = "ggui");
 // A remembered operation whose rebase is no longer in progress (finished or aborted, maybe in a
 // terminal) gets its end record; the state directory is removed.
-void closeFinishedGroup(git_repository* repo, journal::Writer& journal);
+void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::string* error = nullptr);
 // Ends and forgets the remembered operation (the rebase just finished).
-void finishGroup(git_repository* repo, journal::Writer& journal, bool ok = true);
+void finishGroup(git_repository* repo, journal::Writer& journal, bool ok = true, std::string* error = nullptr);
 
 // ---- Prepared todo and messages ---------------------------------------------------------------
 

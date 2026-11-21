@@ -8,6 +8,7 @@
 
 #include <libgg/Git2.hpp>
 #include <libgg/Journal.hpp>
+#include <libgg/NativeRebase.hpp>
 #include <libgg/Process.hpp>
 #include <libgg/Reconcile.hpp>
 
@@ -2050,6 +2051,58 @@ GG_TEST("reconcile", "a rotation does not count housekeeping operations: the use
     GG_CHECK_STR_EQ(ops.front().label, "git branch user");
     const auto plan = planFor(s, repo, ops, false);
     GG_CHECK(plan.ok && plan.target && plan.target->label == "git branch user");
+}
+
+GG_TEST("reconcile", "a rebase group whose end record fails keeps its state, and a later pass ends it")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::journal::Journal journal{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = "op-end-fails";
+    op.src = "ggui";
+    op.label = "rebase";
+    GG_REQUIRE(journal.begin(op));
+    gg::native::rememberGroup(r.get(), journal, op.id);
+    const fs::path dir = gg::native::stateDir(r.get());
+    GG_REQUIRE(fs::exists(dir / "operation"));
+    // A read-only journal file: the end record cannot be appended.
+    fs::permissions(journal.path(), fs::perms::owner_read, fs::perm_options::replace);
+    std::string error;
+    gg::native::finishGroup(r.get(), journal, true, &error);
+    GG_CHECK(!error.empty());
+    GG_CHECK(fs::exists(dir / "operation")); // the state is kept
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(fs::exists(dir / "operation"));
+    // A writable journal ends the group and removes the state.
+    fs::permissions(journal.path(), fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+    gg::native::finishGroup(r.get(), journal, true);
+    GG_CHECK(!fs::exists(dir / "operation"));
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ended);
+}
+
+GG_TEST("reconcile", "writePrepared leaves a complete prepared.json and no temp file")
+{
+    // Limit: a crash in the middle of the write cannot be simulated here; the test checks the
+    // content after a write, and that a rewrite replaces the old content whole.
+    const fs::path dir = s.fixture(Recipe::Linear) / ".git" / "gg" / "rebase" / "t";
+    gg::native::Prepared p;
+    p.todo = std::string(100000, 'x');
+    p.identity = "id";
+    std::string error;
+    GG_REQUIRE(gg::native::writePrepared(dir, p, error));
+    p.todo = "short";
+    GG_REQUIRE(gg::native::writePrepared(dir, p, error));
+    const auto back = gg::native::readPrepared(dir);
+    GG_REQUIRE(back.has_value());
+    GG_CHECK_STR_EQ(back->todo, "short");
+    GG_CHECK_STR_EQ(back->identity, "id");
+    size_t files = 0;
+    for (const auto& e : fs::directory_iterator(dir))
+        files += e.is_regular_file() ? 1 : 0;
+    GG_CHECK_EQ(files, 1u);
 }
 
 } // namespace ggtest

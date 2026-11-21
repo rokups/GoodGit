@@ -1,5 +1,6 @@
 #include "libgg/NativeRebase.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
@@ -30,12 +31,19 @@ std::optional<std::string> readFile(const fs::path& path)
     return out.str();
 }
 
+// For git's own files (todo, message): in place, as git and the sequence editor expect.
 bool writeFile(const fs::path& path, const std::string& text)
 {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << text;
     out.close(); // flush first: a full disk shows only here
     return !out.fail();
+}
+
+// For ggui's state files: a crash leaves the old file or the new one, never an empty one.
+bool writeState(const fs::path& path, const std::string& text)
+{
+    return !writeFileAtomic(path, text);
 }
 
 struct Group {
@@ -72,13 +80,13 @@ void removeState(const fs::path& dir)
 // not where the journal last saw it, the move is recorded before the operation ends. Only when the
 // finish was seen (post-rewrite, or ggui's own step): a rebase found finished later may have moved
 // refs outside the journal, and Undo must refuse it.
-void recordHeadNow(git_repository* repo, journal::Writer& journal, const std::string& op)
+bool recordHeadNow(git_repository* repo, journal::Writer& journal, const std::string& op, std::string* error)
 {
     std::string now;
     git_reference* head = nullptr;
     if (git_reference_lookup(&head, repo, "HEAD") != 0) {
         git_error_clear();
-        return;
+        return true;
     }
     if (git_reference_type(head) == GIT_REFERENCE_SYMBOLIC)
         now = std::string("ref:") + git_reference_symbolic_target(head);
@@ -90,7 +98,8 @@ void recordHeadNow(git_repository* repo, journal::Writer& journal, const std::st
         if (o.id == op)
             for (const auto& r : o.refs)
                 if (r.ref == key && !now.empty() && r.newValue != now)
-                    journal.appendRefs(op, {journal::RefChange{key, r.newValue, now}});
+                    return journal.appendRefs(op, {journal::RefChange{key, r.newValue, now}}, error);
+    return true;
 }
 
 } // namespace
@@ -159,11 +168,11 @@ void rememberGroup(git_repository* repo, journal::Writer& journal, const std::st
     const fs::path dir = stateDir(repo);
     std::error_code ec;
     fs::create_directories(dir, ec);
-    if (writeFile(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
+    if (writeState(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
         journal.markRebase(op);
 }
 
-void closeFinishedGroup(git_repository* repo, journal::Writer& journal)
+void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::string* error)
 {
     const fs::path dir = stateDir(repo);
     const auto group = readGroup(dir);
@@ -176,16 +185,16 @@ void closeFinishedGroup(git_repository* repo, journal::Writer& journal)
     }
     if (!identity.empty() && identity == group->identity)
         return; // still in progress
-    journal.end(group->op, true);
-    removeState(dir);
+    if (journal.end(group->op, true, error)) // on failure the state stays: the next pass retries
+        removeState(dir);
 }
 
-void finishGroup(git_repository* repo, journal::Writer& journal, bool ok)
+void finishGroup(git_repository* repo, journal::Writer& journal, bool ok, std::string* error)
 {
     const fs::path dir = stateDir(repo);
     if (const auto group = readGroup(dir)) {
-        recordHeadNow(repo, journal, group->op);
-        journal.end(group->op, ok);
+        if (!recordHeadNow(repo, journal, group->op, error) || !journal.end(group->op, ok, error))
+            return; // the state stays: the next pass retries
     }
     removeState(dir);
 }
@@ -195,7 +204,7 @@ bool writePrepared(const fs::path& dir, const Prepared& prepared, std::string& e
     std::error_code ec;
     fs::create_directories(dir, ec);
     json j{{"todo", prepared.todo}, {"messages", prepared.messages}, {"identity", prepared.identity}};
-    if (!writeFile(dir / "prepared.json", j.dump())) {
+    if (!writeState(dir / "prepared.json", j.dump())) {
         error = "cannot write " + (dir / "prepared.json").string();
         return false;
     }
