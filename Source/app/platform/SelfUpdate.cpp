@@ -191,6 +191,8 @@ STAGE=$(cd -- "$(dirname -- "$0")" && pwd -P) || exit 1
 DEST=$(dirname -- "$STAGE")
 NEW=$STAGE/new
 RESULT=$STAGE/result.txt
+LIST=$STAGE/files.txt
+DONE=$STAGE/done.txt
 p=0
 
 finish() {
@@ -201,12 +203,34 @@ finish() {
 }
 
 undo() {
+    if [ -f "$DONE" ]; then
+        while IFS= read -r rel; do
+            if [ -e "$DEST/$rel.old" ]; then
+                mv -f "$DEST/$rel.old" "$DEST/$rel" || U=1
+            else
+                rm -f "$DEST/$rel"
+            fi
+        done < "$DONE"
+    fi
     if [ "$p" -ge 2 ]; then
         mv -f "$DEST/git-gg.old" "$DEST/git-gg" || U=1
     fi
     if [ "$p" -ge 1 ]; then
         mv -f "$DEST/ggui.old" "$DEST/ggui" || U=1
     fi
+}
+
+# Prints the regular files below $1 (never a link) as paths relative to $NEW. Plain sh: no find.
+walk() {
+    for f in "$1"/* "$1"/.[!.]*; do
+        if [ -L "$f" ]; then
+            continue
+        elif [ -d "$f" ]; then
+            walk "$f"
+        elif [ -f "$f" ]; then
+            echo "${f#"$NEW"/}"
+        fi
+    done
 }
 
 bad() {
@@ -239,8 +263,26 @@ mv -f "$NEW/ggui" "$DEST/ggui" || bad "install ggui"
 p=3
 mv -f "$NEW/git-gg" "$DEST/git-gg" || bad "install git-gg"
 p=4
+# Every other file of new/ (a data file, a sub folder). Its name goes to $DONE once the old file
+# is safe, so the undo restores or removes exactly the files that were touched.
+: > "$DONE"
+walk "$NEW" > "$LIST"
+while IFS= read -r rel; do
+    rel=${rel#./}
+    case "$rel" in ggui|git-gg) continue ;; esac
+    mkdir -p "$(dirname -- "$DEST/$rel")" || bad "create folder for $rel"
+    if [ -e "$DEST/$rel" ]; then
+        rm -f "$DEST/$rel.old"
+        mv -f "$DEST/$rel" "$DEST/$rel.old" || bad "backup $rel"
+    fi
+    echo "$rel" >> "$DONE"
+    mv -f "$NEW/$rel" "$DEST/$rel" || bad "install $rel"
+done < "$LIST"
 echo "ok" > "$RESULT"
 rm -f "$DEST/ggui.old" "$DEST/git-gg.old"
+while IFS= read -r rel; do
+    rm -f "$DEST/$rel.old"
+done < "$DONE"
 finish
 )SH";
 
@@ -282,10 +324,59 @@ move /y "%NEW%\ggui.exe" "%DEST%\ggui.exe" >nul 2>&1
 if errorlevel 1 goto fail_install_ggui
 move /y "%NEW%\git-gg.exe" "%DEST%\git-gg.exe" >nul 2>&1
 if errorlevel 1 goto fail_install_gitgg
-if exist "%NEW%\LICENSE.txt" copy /y "%NEW%\LICENSE.txt" "%DEST%\LICENSE.txt" >nul 2>&1
+rem Every other file of new\ (a data file, a sub folder). Its name goes to done.txt once the old
+rem file is safe, so the undo restores or removes exactly the files that were touched.
+set "S=%NEW%\"
+set "NEWLEN=0"
+:len
+call set "C=%%S:~%NEWLEN%,1%%"
+if not defined C goto lendone
+set /a NEWLEN+=1
+goto len
+:lendone
+type nul >"%STAGE%done.txt"
+for /r "%NEW%" %%F in (*) do call :extra "%%F"
+if defined FAILSTEP goto fail_extra
 >"%RESULT%" echo ok
 del /f /q "%DEST%\ggui.exe.old" "%DEST%\git-gg.exe.old" >nul 2>&1
+for /f "usebackq delims=" %%R in ("%STAGE%done.txt") do call :dropold "%%R"
 goto start
+
+:extra
+if defined FAILSTEP goto :eof
+set "P=%~1"
+call set "REL=%%P:~%NEWLEN%%%"
+if /i "%REL%"=="ggui.exe" goto :eof
+if /i "%REL%"=="git-gg.exe" goto :eof
+for %%D in ("%DEST%\%REL%") do if not exist "%%~dpD" mkdir "%%~dpD"
+if not exist "%DEST%\%REL%" goto extra_put
+del /f /q "%DEST%\%REL%.old" >nul 2>&1
+move /y "%DEST%\%REL%" "%DEST%\%REL%.old" >nul 2>&1
+if errorlevel 1 set "FAILSTEP=backup %REL%"
+if defined FAILSTEP goto :eof
+:extra_put
+>>"%STAGE%done.txt" echo(%REL%
+move /y "%NEW%\%REL%" "%DEST%\%REL%" >nul 2>&1
+if errorlevel 1 set "FAILSTEP=install %REL%"
+goto :eof
+
+:dropold
+del /f /q "%DEST%\%~1.old" >nul 2>&1
+goto :eof
+
+:restore
+if not exist "%DEST%\%~1.old" goto restore_new
+move /y "%DEST%\%~1.old" "%DEST%\%~1" >nul 2>&1
+if errorlevel 1 set "UNDOFAIL=1"
+goto :eof
+:restore_new
+del /f /q "%DEST%\%~1" >nul 2>&1
+goto :eof
+
+:fail_extra
+set "STEP=%FAILSTEP%"
+for /f "usebackq delims=" %%R in ("%STAGE%done.txt") do call :restore "%%R"
+goto undo3
 
 :fail_stale
 set "STEP=delete old files"
@@ -782,11 +873,42 @@ std::string collectFiles(const fs::path& unpackDir, const fs::path& newDir)
     if (std::string error = moveFile(programs / kGitGgName, newDir / kGitGgName, kGitGgName, true); !error.empty()) {
         return error;
     }
-#ifdef _WIN32
-    return moveFile(top / "LICENSE.txt", newDir / "LICENSE.txt", "LICENSE.txt", false);
-#else
+    // Every other file of the program folder follows, with its sub folders. The unpack step made
+    // no links, but each entry is checked again. The update scripts quote a name, and cmd.exe also
+    // reads some marks (for example % and &) inside a quoted name, so only plain characters pass.
+    std::vector<fs::path> rest;
+    for (fs::recursive_directory_iterator it(programs, ec), end; !ec && it != end; it.increment(ec)) {
+        const fs::file_status status = it->symlink_status(ec);
+        if (ec || !(fs::is_regular_file(status) || fs::is_directory(status))) {
+            return "The update has a link or a special file.";
+        }
+        if (fs::is_regular_file(status)) {
+            rest.push_back(it->path());
+        }
+    }
+    if (ec) {
+        return "Cannot read the unpacked update: " + ec.message();
+    }
+    for (const fs::path& file : rest) {
+        const fs::path relPath = file.lexically_relative(programs);
+        const std::string rel = relPath.generic_string();
+        const bool plain = std::all_of(rel.begin(), rel.end(), [](char c) {
+            return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '-' || c == '/' ||
+                   c == ' ';
+        });
+        if (!plain || rel.empty()) {
+            return "The update has a file with an unsafe name: " + rel;
+        }
+        const fs::path target = newDir / relPath;
+        fs::create_directories(target.parent_path(), ec);
+        if (!ec) {
+            fs::rename(file, target, ec);
+        }
+        if (ec) {
+            return "Cannot move " + rel + ": " + ec.message();
+        }
+    }
     return {};
-#endif
 }
 
 // Runs `git-gg --version` with a time limit; "" when it prints "git gg ...".
