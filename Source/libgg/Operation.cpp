@@ -78,8 +78,13 @@ OperationRecorder::OperationRecorder(git_repository* repo, std::string src, std:
 
 OperationRecorder::~OperationRecorder()
 {
-    if (m_begun && !m_finished)
+    if (!m_begun || m_finished)
+        return;
+    try {
         finish(false);
+    } catch (const std::exception&) {
+        // A throw out of a destructor ends the process. The record stays unfinished, as after a crash.
+    }
 }
 
 void OperationRecorder::setUndoes(std::string id, bool redo)

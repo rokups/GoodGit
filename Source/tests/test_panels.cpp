@@ -434,6 +434,25 @@ GG_TEST("panels", "visibility: hidden refs survive a restart; refs that no longe
     GG_CHECK(s.app.settings().data().repoState.count(key) == 0);
 }
 
+GG_TEST("panels", "visibility: a new ref with the name of a deleted hidden ref is visible")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.toggleVisibility("//Branches/branch_side/###branch_side");
+    auto& history = s.session()->history();
+    GG_REQUIRE(!history.refVisible("refs/heads/side"));
+    s.git(repo, {"branch", "-D", "side"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return !s.itemExists("//Branches/branch_side/###branch_side"); }));
+    s.git(repo, {"branch", "side", "HEAD~2"});
+    s.session()->refresh();
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }));
+    GG_CHECK(history.refVisible("refs/heads/side"));
+}
+
 GG_TEST("panels", "visibility: the checked-out branch shows although hidden; the stored setting stays")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

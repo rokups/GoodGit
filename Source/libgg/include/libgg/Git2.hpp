@@ -144,6 +144,7 @@ std::string headTarget(git_repository* repo);
 std::map<std::string, std::string> branchesInOtherWorktrees(git_repository* repo);
 
 // Iterates references; `fn(git_reference*)` returns false to stop.
+// Throws when a read fails: a partial list must not look like the whole list.
 template <typename Fn>
 void forEachReference(git_repository* repo, Fn&& fn)
 {
@@ -151,11 +152,14 @@ void forEachReference(git_repository* repo, Fn&& fn)
     check(git_reference_iterator_new(&raw, repo), "git_reference_iterator_new");
     ReferenceIterator it(raw);
     git_reference* ref = nullptr;
-    while (git_reference_next(&ref, it.get()) == 0) {
+    int code;
+    while ((code = git_reference_next(&ref, it.get())) == 0) {
         Reference owned(ref);
         if (!fn(owned.get()))
-            break;
+            return;
     }
+    if (code != GIT_ITEROVER)
+        check(code, "git_reference_next");
 }
 
 } // namespace gg::git2
