@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <set>
 #include <vector>
 
 namespace gg::journal {
@@ -179,6 +180,12 @@ private:
     std::filesystem::path m_path;
 };
 
+// Whether `ref` is a HEAD key: "HEAD" or "worktrees/<id>/HEAD".
+inline bool isHeadKey(const std::string& ref)
+{
+    return ref == "HEAD" || (ref.rfind("worktrees/", 0) == 0 && ref.size() > 5 && ref.compare(ref.size() - 5, 5, "/HEAD") == 0);
+}
+
 // Worktree key for a repository handle's git dir: "main" or the linked worktree id.
 std::string worktreeKeyForGitDir(const std::filesystem::path& gitDir, const std::filesystem::path& commonDir);
 // Journal key for HEAD of a worktree.
@@ -205,6 +212,9 @@ struct UndoPlan {
     // literally, the caller hands them to keep::maintain as `extra` after applying `restore`.
     std::vector<std::string> keepExtra;
 };
+
+// The ids of the operations that an ended, ok undo or redo operation (that is not itself undone) undid.
+std::set<std::string> undoneIds(const std::vector<Operation>& ops);
 
 // Chooses the operation to undo (or redo) for worktree `wt` and checks that every ref it
 // touched still has the value the operation left (`current(ref)` returns the value now).

@@ -37,11 +37,6 @@ std::int64_t nowMs()
         .count();
 }
 
-bool isHeadKey(const std::string& ref)
-{
-    return ref == "HEAD" || (ref.rfind("worktrees/", 0) == 0 && ref.size() > 5 && ref.compare(ref.size() - 5, 5, "/HEAD") == 0);
-}
-
 // Removes the lock when it is older than 10 minutes and its mtime did not change since the check
 // (another process may have replaced it). Returns true when it removed the lock.
 bool removeStale(const fs::path& path)
@@ -583,6 +578,18 @@ static bool noRef(const std::string& v)
     return v.find_first_not_of('0') == std::string::npos;
 }
 
+std::set<std::string> undoneIds(const std::vector<Operation>& ops)
+{
+    // Walk from the end: an operation's "undone" state depends on later operations only.
+    std::set<std::string> undone;
+    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+        if (it->undoes.empty() || !it->ended || !it->ok || undone.count(it->id))
+            continue;
+        undone.insert(it->undoes);
+    }
+    return undone;
+}
+
 UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool redo,
     const std::function<std::string(const std::string& ref)>& current)
 {
@@ -590,22 +597,11 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
     plan.redo = redo;
     // Which operations are currently undone: X is undone when an undo op targets it and that
     // undo op is not itself undone (by a redo).
-    std::map<std::string, const Operation*> byId;
-    for (const auto& op : ops)
-        byId[op.id] = &op;
-    std::map<std::string, bool> undone;
-    // Walk from the end: an operation's "undone" state depends on later operations only.
-    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-        if (it->undoes.empty() || !it->ended || !it->ok)
-            continue;
-        if (undone[it->id])
-            continue;
-        undone[it->undoes] = true;
-    }
+    const std::set<std::string> undone = undoneIds(ops);
     const Operation* target = nullptr;
     if (!redo) {
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
-            if (!it->ended || !it->ok || it->isUndo() || undone[it->id] || !visibleFrom(*it, wt) || it->keepOnly())
+            if (!it->ended || !it->ok || it->isUndo() || undone.count(it->id) || !visibleFrom(*it, wt) || it->keepOnly())
                 continue;
             if (!it->restorable())
                 continue; // nothing to undo (e.g. a failed or no-op command)
@@ -622,7 +618,7 @@ UndoPlan planUndo(const std::vector<Operation>& ops, const std::string& wt, bool
                 continue;
             if (it->undoes.empty() && it->restorable())
                 break; // a newer normal operation: nothing to redo
-            if (it->isUndo() && !undone[it->id]) {
+            if (it->isUndo() && !undone.count(it->id)) {
                 target = &*it;
                 break;
             }

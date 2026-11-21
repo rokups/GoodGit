@@ -397,13 +397,16 @@ unsigned number), and no failed rotation is less than `rotateBackoffMs` (60 s) o
   (200) Undo targets (ended, ok, not an undo, not keep-only, with a change to restore), at least
   `rotateKeepOps / 10` of them, and it stops when it has `rotateBytes / 2` bytes. It always holds
   the operation with the newest record, and every operation that is open and younger than
-  `rotatePinMs` (30 days), such as a native rebase. An operation whose writer crashed is not open.
+  `rotatePinMs` (30 days): an open native rebase, or an operation of ggui or git-gg whose
+  writer is alive. A plain `git` operation that is not a rebase never pins, and neither does an
+  operation whose writer is gone or not recorded (`pid` 0). Undo targets that are undone do not count.
 - Before the rewrite, the last value of each tracked ref (also `HEAD` keys and `refs/gg/keep/`) of
   the dropped operations goes into the `baseline` (a ref that they deleted leaves it), so the next
   pass does not report them as external changes. `journal` becomes the id of the new first operation.
   `reconcile.json` is written first, then `Journal::Transaction::retain` rewrites the journal (header
   and kept records, in order) with one rename attempt. If that fails, the journal stays as it was,
-  and the next try is after the back-off. A journal with a record of a newer version is not rotated.
+  and the next try needs the back-off to pass and the size to be above twice `journalKept` (which
+  the failed rotation already set). A journal with a record of a newer version is not rotated.
 
 ## 6. Versioning
 - Header `{"gg-journal":1}` = major version 1. A new major version is only for incompatible

@@ -89,7 +89,7 @@ GG_TEST("files", "writeFileAtomic with one attempt fails at once and leaves no t
     fs::create_directories(dir / "target-dir");
     const auto start = std::chrono::steady_clock::now();
     GG_CHECK(static_cast<bool>(gg::writeFileAtomic(dir / "target-dir", "new\n", std::nullopt, 1)));
-    GG_CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(150));
+    GG_CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(static_cast<long long>(timeBudgetMs(150))));
     GG_CHECK(countFiles(dir) == 1);
 }
 
