@@ -1435,4 +1435,47 @@ GG_TEST("rewrite", "applyPatchToTree applies patches of odd paths and empty cont
     GG_CHECK_STR_EQ(removed, tree);
 }
 
+GG_TEST("rewrite", "a long run of dropped commits resolves without deep recursion")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    const std::string head = s.head(repo);
+    git_oid id;
+    GG_REQUIRE(git_oid_fromstr(&id, head.c_str(), GIT_OID_SHA1) == 0);
+    git_commit* rawTip = nullptr;
+    GG_REQUIRE(git_commit_lookup(&rawTip, r.get(), &id) == 0);
+    git_tree* rawTree = nullptr;
+    GG_REQUIRE(git_commit_tree(&rawTree, rawTip) == 0);
+    git_signature* sig = nullptr;
+    GG_REQUIRE(git_signature_new(&sig, "T", "t@example.com", 1700000000, 0) == 0);
+    std::vector<std::string> dropped;
+    std::string last;
+    for (int i = 0; i < 60000; ++i) { // the last one is kept and replayed; the rest are dropped
+        git_oid next;
+        const git_commit* parents[1] = {rawTip};
+        GG_REQUIRE(git_commit_create(&next, r.get(), nullptr, sig, sig, nullptr, "c\n", rawTree, 1, parents) == 0);
+        git_commit_free(rawTip);
+        rawTip = nullptr;
+        GG_REQUIRE(git_commit_lookup(&rawTip, r.get(), &next) == 0);
+        last = gg::git2::toHex(next);
+        if (i < 59999)
+            dropped.push_back(last);
+    }
+    git_commit_free(rawTip);
+    git_tree_free(rawTree);
+    git_signature_free(sig);
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {last});
+    plan.dropped = dropped;
+    gg::rewrite::Rewriter rewriter(repo);
+    const gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok);
+    // The new commit lives in the rewriter's in-memory store: its parent is the old HEAD, the run is gone.
+    git_oid newId;
+    GG_REQUIRE(git_oid_fromstr(&newId, result.mapping.at(last).c_str(), GIT_OID_SHA1) == 0);
+    git_commit* rawNew = nullptr;
+    GG_REQUIRE(git_commit_lookup(&rawNew, rewriter.repository(), &newId) == 0);
+    GG_CHECK_STR_EQ(gg::git2::toHex(*git_commit_parent_id(rawNew, 0)), head);
+    git_commit_free(rawNew);
+}
+
 } // namespace ggtest
