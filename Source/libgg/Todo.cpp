@@ -15,7 +15,7 @@ using namespace gg::git2;
 
 namespace {
 
-constexpr std::string_view kComment = "#"; // Git's default core.commentChar
+constexpr std::string_view kComment = "#"; // The commit message comment line; the todo uses core.commentChar
 
 bool isSpace(char c) { return c == ' ' || c == '\t'; }
 
@@ -152,14 +152,14 @@ std::optional<Action> parseAction(std::string_view word)
 
 // ---- Git's todo text --------------------------------------------------------------------------
 
-Todo parse(std::string_view text, std::vector<ParseError>* errors)
+Todo parse(std::string_view text, std::vector<ParseError>* errors, std::string_view comment)
 {
     Todo todo;
     int number = 0;
     for (std::string_view raw : lines(text)) {
         ++number;
         std::string_view line = trimRight(trimLeft(raw));
-        if (line.empty() || startsWith(line, kComment))
+        if (line.empty() || startsWith(line, comment))
             continue;
         auto fail = [&](const std::string& message) {
             if (errors)
@@ -177,9 +177,9 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors)
         Item item;
         item.action = *action;
         if (item.isCommit()) {
-            if (item.action == Action::Fixup && (startsWith(rest, "-C ") || startsWith(rest, "-c "))) {
+            if (item.action == Action::Fixup && (startsWith(rest, "-C") || startsWith(rest, "-c"))) {
                 item.fixup = rest[1] == 'C' ? FixupMessage::Use : FixupMessage::Edit;
-                rest.remove_prefix(3);
+                rest = trimLeft(rest.substr(2)); // Git needs no space before the id
             }
             item.commit = std::string(nextWord(rest));
             if (item.commit.empty()) {
@@ -187,30 +187,38 @@ Todo parse(std::string_view text, std::vector<ParseError>* errors)
                 continue;
             }
             // Git ≥ 2.44 writes "# subject", older versions the bare subject.
-            if (startsWith(rest, kComment))
-                rest = trimLeft(rest.substr(kComment.size()));
+            if (startsWith(rest, comment))
+                rest = trimLeft(rest.substr(comment.size()));
             item.subject = std::string(rest);
         } else if (item.action == Action::Break) {
             // Takes no argument.
         } else if (item.action == Action::Reset || item.action == Action::Merge) {
             // reset <label> [# subject]; merge [-C|-c <commit>] <label>... [# subject]
-            if (item.action == Action::Merge && (startsWith(rest, "-C ") || startsWith(rest, "-c "))) {
+            if (item.action == Action::Merge && (startsWith(rest, "-C") || startsWith(rest, "-c"))) {
                 item.fixup = rest[1] == 'C' ? FixupMessage::Use : FixupMessage::Edit;
-                rest.remove_prefix(3);
+                rest = trimLeft(rest.substr(2));
                 item.commit = std::string(nextWord(rest));
+                if (item.commit.empty() || startsWith(item.commit, comment)) {
+                    fail("missing arguments for merge");
+                    continue;
+                }
             }
             std::vector<std::string> names;
             if (item.action == Action::Reset && startsWith(rest, kNewRoot)) {
                 names.emplace_back(kNewRoot);
                 rest = trimLeft(rest.substr(std::string_view(kNewRoot).size()));
+                if (!rest.empty() && !startsWith(rest, comment)) {
+                    fail("invalid line " + std::to_string(number) + ": " + std::string(line));
+                    continue;
+                }
             }
-            while (!rest.empty() && !startsWith(rest, kComment) && (item.action == Action::Merge || names.empty()))
+            while (!rest.empty() && !startsWith(rest, comment) && (item.action == Action::Merge || names.empty()))
                 names.emplace_back(nextWord(rest));
             if (item.action == Action::Reset)
-                while (!rest.empty() && !startsWith(rest, kComment))
+                while (!rest.empty() && !startsWith(rest, comment))
                     nextWord(rest); // Git reads the first word only
-            if (startsWith(rest, kComment))
-                item.subject = std::string(trimLeft(rest.substr(kComment.size())));
+            if (startsWith(rest, comment))
+                item.subject = std::string(trimLeft(rest.substr(comment.size())));
             if (names.empty()) {
                 fail(std::string("missing arguments for ") + actionName(item.action));
                 continue;
@@ -238,7 +246,7 @@ std::vector<std::string> replayedCommits(const Todo& list)
     return out;
 }
 
-std::string format(const Todo& todo)
+std::string format(const Todo& todo, std::string_view comment)
 {
     if (todo.items.empty())
         return "noop\n";
@@ -251,19 +259,19 @@ std::string format(const Todo& todo)
             out += ' ';
             out += item.commit;
             if (!item.subject.empty())
-                out += " # " + item.subject;
+                out += " " + std::string(comment) + " " + item.subject;
         } else if (item.action == Action::Merge) {
             if (item.fixup != FixupMessage::None && !item.commit.empty())
                 out += (item.fixup == FixupMessage::Use ? " -C " : " -c ") + item.commit;
             out += ' ';
             out += item.arg;
             if (!item.subject.empty())
-                out += " # " + item.subject;
+                out += " " + std::string(comment) + " " + item.subject;
         } else if (item.action != Action::Break) {
             out += ' ';
             out += item.arg;
             if (item.action == Action::Reset && !item.subject.empty())
-                out += " # " + item.subject;
+                out += " " + std::string(comment) + " " + item.subject;
         }
         out += '\n';
         if (item.action == Action::UpdateRef)
@@ -912,8 +920,12 @@ namespace {
 // The list git wrote (parse + expand), its commits, merges and branches, into `context`.
 void readGitList(git_repository* repo, std::string_view todoText, Context& context, const char* what)
 {
+    // shortcut: "auto" is read as "#"; upgrade when the pick of git for auto matters.
+    const auto configured = git2::configString(git2::repositoryConfig(repo).get(), "core.commentChar");
+    if (configured && !configured->empty() && *configured != "auto")
+        context.commentChar = *configured;
     std::vector<ParseError> problems;
-    Todo list = parse(todoText, &problems);
+    Todo list = parse(todoText, &problems, context.commentChar);
     for (auto& p : expand(repo, list, context))
         problems.push_back(std::move(p));
     if (!problems.empty())
