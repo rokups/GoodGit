@@ -6,6 +6,7 @@
 #include "tests/Harness.hpp"
 
 #include <algorithm>
+#include <chrono>
 
 namespace ggtest {
 
@@ -289,6 +290,39 @@ GG_TEST("linestaging", "a truncated diff offers no staging until it is loaded in
     GG_REQUIRE(s.waitUntil([&] { return diffFile(s) && !diffFile(s)->truncated; }, 60.0f));
     GG_CHECK(s.waitUntil([&] { return s.itemExists((body(s) + "/###stage_hunk_0").c_str()); }));
     GG_CHECK(s.itemExists((body(s) + "/###discard_hunk_0").c_str()));
+}
+
+GG_TEST("linestaging", "a line over the byte limit is collapsed, shows fast and offers no hunk staging")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "longline");
+    const std::string mb5(5 * 1024 * 1024, 'x');
+    s.commitFile(repo, "app.min.js", "head\n" + mb5 + "\ntail\n", "Base");
+    const std::string changed = "head\n" + mb5 + "y\ntail\n";
+    s.write(repo, "app.min.js", changed);
+    GG_REQUIRE(s.openRepository(repo));
+    const auto start = std::chrono::steady_clock::now();
+    GG_REQUIRE(showFile(s, "Unstaged", "app.min.js"));
+    s.settle();
+    const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    ctx->LogInfo("long line diff shown in %.2f s", secs);
+    GG_CHECK(secs < 20.0);
+    GG_REQUIRE(diffFile(s) != nullptr);
+    GG_CHECK(diffFile(s)->linesCut);
+    GG_CHECK(!diffFile(s)->truncated);
+    bool marker = false;
+    for (const auto& h : diffFile(s)->hunks)
+        for (const auto& l : h.lines) {
+            GG_CHECK(l.text.size() < 20100);
+            marker = marker || l.text.find("bytes not shown]") != std::string::npos;
+        }
+    GG_CHECK(marker);
+    GG_CHECK(s.itemExists((body(s) + "/###hunk_0").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###stage_hunk_0").c_str()));
+    GG_CHECK(!s.itemExists((body(s) + "/###discard_hunk_0").c_str()));
+    GG_CHECK(!s.itemExists("//Diff/Load full diff##load_full")); // a full load shows no more
+    // Staging the whole file from the file list uses the real content.
+    s.contextMenu(fileRef(s, "Unstaged", "app.min.js").c_str(), "Stage");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"show", ":app.min.js"}).out == changed; }, 60.0f));
 }
 
 GG_TEST("linestaging", "randomized line staging matches the content model")
