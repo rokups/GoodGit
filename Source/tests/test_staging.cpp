@@ -53,6 +53,29 @@ bool rowsReady(Scenario& s, size_t n)
     return s.waitUntil([&] { return s.session()->changes().rows().size() == n; });
 }
 
+// Fake diff tool: logs each argument and, per run, one line "L=<left file> R=<right file>" with the contents.
+fs::path fakeDiffTool(Scenario& s)
+{
+    const fs::path log = s.fakeTool("fake-difftool");
+    s.fakeTool("fake-difftool", "printf 'L=%s R=%s\\n' \"$(cat \"$1\" 2>/dev/null)\" \"$(cat \"$2\" 2>/dev/null)\" >> '"
+        + log.generic_string() + ".content'\n");
+    return log;
+}
+
+// Waits for the next run of the tool and returns its contents line.
+std::string nextDiff(Scenario& s, const fs::path& log, size_t& seen)
+{
+    const std::string name = log.filename().string() + ".content";
+    auto all = [&] { return gg::splitLines(s.read(log.parent_path(), name)); };
+    s.waitUntil([&] { return all().size() > seen; });
+    const auto l = all();
+    if (l.size() <= seen)
+        return "<no run>";
+    const std::string line = l[seen];
+    seen = l.size();
+    return line;
+}
+
 } // namespace
 
 GG_TEST("staging", "stage, unstage and discard files")
@@ -249,7 +272,8 @@ GG_TEST("staging", "external editor, folder and diff tools")
     s.write(repo, "f1.txt", "edited\n");
     const fs::path editorLog = s.fakeTool("fake-editor");
     const fs::path folderLog = s.fakeTool(kFileManager);
-    const fs::path diffLog = s.fakeTool("fake-difftool");
+    const fs::path diffLog = fakeDiffTool(s);
+    size_t seen = 0;
     ggui::unsetEnv("GIT_EDITOR");
     ggui::unsetEnv("EDITOR");
     s.git(repo, {"config", "core.editor", "fake-editor"});
@@ -264,41 +288,37 @@ GG_TEST("staging", "external editor, folder and diff tools")
     GG_CHECK(logHas(editorLog, "f1.txt"));
     s.contextMenu(fileRef(s, "Unstaged", "f1.txt").c_str(), "Open containing folder");
     GG_CHECK(logHas(folderLog, repo.string()));
-    auto logLines = [&] { return gg::splitLines(s.read(diffLog.parent_path(), diffLog.filename().string())).size(); };
     // Unstaged: "Before" (the index) against the working tree.
     s.contextMenu(fileRef(s, "Unstaged", "f1.txt").c_str(), "Compare/\"Before\" vs Working tree");
-    GG_CHECK(logHas(diffLog, "f1.txt"));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L=line 1 R=edited");
     s.settle();
     // A commit's file: its diff against the parent.
-    size_t before = logLines();
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
     s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "Compare/Show diff");
-    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L= R=line 5");
     s.settle();
     // "Before" against the working tree (f5.txt is new in this commit: it differs).
-    before = logLines();
     s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "Compare/\"Before\" vs Working tree");
-    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L= R=line 5");
     s.settle();
     // With "Compare with" set, Compare is one item: "Before" against the target.
-    before = logLines();
     ctx->ItemClick(("//History/**/###row_" + s.revParse(repo, "HEAD~3")).c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, nullptr, "f5.txt").c_str()) || !s.session()->changes().rows().empty(); }));
     ctx->ItemInputValue("//Changes/##compare_with", "HEAD");
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().compareTarget().kind == ggui::CompareTarget::Rev; }));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, nullptr, "f5.txt").c_str()); }));
     s.contextMenu(fileRef(s, nullptr, "f5.txt").c_str(), "Compare");
-    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    // The old side is the compare target (HEAD, has f5), the new side is the selected commit (no f5).
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L=line 5 R=");
     s.settle();
     ctx->ItemInputValue("//Changes/##compare_with", "");
     // A staged file: the index against HEAD.
     s.git(repo, {"add", "f1.txt"});
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Staged", "f1.txt").c_str()); }));
-    before = logLines();
     s.contextMenu(fileRef(s, "Staged", "f1.txt").c_str(), "Compare/Show diff");
-    GG_CHECK(s.waitUntil([&] { return logLines() >= before + 2; }));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L=line 1 R=edited");
     s.settle();
 }
 
@@ -309,7 +329,8 @@ GG_TEST("staging", "double-click opens new files in the editor, others in the di
     s.write(repo, "f1.txt", "edited\n");
     s.write(repo, "new.txt", "new\n");
     const fs::path editorLog = s.fakeTool("fake-editor");
-    const fs::path diffLog = s.fakeTool("fake-difftool");
+    const fs::path diffLog = fakeDiffTool(s);
+    size_t seen = 0;
     ggui::unsetEnv("GIT_EDITOR");
     ggui::unsetEnv("EDITOR");
     s.git(repo, {"config", "core.editor", "fake-editor"});
@@ -329,15 +350,14 @@ GG_TEST("staging", "double-click opens new files in the editor, others in the di
     GG_CHECK(lines(diffLog).empty());
     // A modified file opens in the diff tool: the index against the working tree.
     ctx->ItemDoubleClick(fileRef(s, "Unstaged", "f1.txt").c_str());
-    GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= 2; }));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L=line 1 R=edited");
     s.settle();
     GG_CHECK_STR_EQ(xy(s, repo, "f1.txt"), ".M");
     // In a commit: the parent's version against the commit's.
-    const size_t before = lines(diffLog).size();
     ctx->ItemClick(("//History/**/###row_" + s.head(repo)).c_str());
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
     ctx->ItemDoubleClick(fileRef(s, nullptr, "f2.txt").c_str());
-    GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= before + 2; }));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L=line 2 R=changed");
     s.settle();
     // A staged file, and a stash's working tree and index parts.
     s.write(repo, "f4.txt", "in the index\n");
@@ -348,18 +368,18 @@ GG_TEST("staging", "double-click opens new files in the editor, others in the di
     s.git(repo, {"add", "f3.txt"});
     ctx->ItemClick("//History/**/###row_wt");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Staged", "f3.txt").c_str()); }));
-    size_t n = lines(diffLog).size();
     ctx->ItemDoubleClick(fileRef(s, "Staged", "f3.txt").c_str());
-    GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= n + 2; }));
+    GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), "L=line 3 R=staged");
     s.settle();
     s.showPanel("Stashes");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
     ctx->ItemClick("//Stashes/stash_0/###row");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Index", "f4.txt").c_str()); }));
-    for (const char* part : {"Working tree", "Index"}) {
-        n = lines(diffLog).size();
+    const std::pair<const char*, const char*> parts[] = {
+        {"Working tree", "L=line 4 R=and in the working tree"}, {"Index", "L=line 4 R=in the index"}};
+    for (const auto& [part, want] : parts) {
         ctx->ItemDoubleClick(fileRef(s, part, "f4.txt").c_str());
-        GG_CHECK(s.waitUntil([&] { return lines(diffLog).size() >= n + 2; }));
+        GG_CHECK_STR_EQ(nextDiff(s, diffLog, seen), want);
         s.settle();
     }
 }
