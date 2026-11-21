@@ -1126,6 +1126,8 @@ void addFirstClassConflicts(git_repository* repo, StatusResult& status, void* co
 namespace {
 
 constexpr size_t kMaxDiffLines = 20000;
+// The bytes of one diff line that are kept. The editor cannot lay out a longer line (a minified file).
+constexpr size_t kMaxDiffLineBytes = 20000;
 // The lines of all files of one diff: 10 files at the per-file cap. Later files are `truncated`.
 constexpr size_t kMaxDiffTotalLines = 10 * kMaxDiffLines;
 
@@ -1258,6 +1260,8 @@ std::optional<std::string> blobText(git_repository* repo, const git_oid& id)
 namespace {
 
 // The hunks of `patch` into `f`: at most kMaxDiffLines lines (then `truncated`) unless `full`.
+// A line over kMaxDiffLineBytes is cut and gets a marker. Then `linesCut` is set, also if `full`,
+// so no staging patch uses the cut text.
 // `budget` (if set) is the shared line count left for the diff: it also limits the lines, and it shrinks.
 // (Binary patches have no hunks.)
 void readHunks(git_patch* patch, DiffFile& f, bool full, size_t* budget = nullptr)
@@ -1300,6 +1304,15 @@ void readHunks(git_patch* patch, DiffFile& f, bool full, size_t* budget = nullpt
                     line.text.pop_back();
                     line.crlf = true;
                 }
+            }
+            if (line.text.size() > kMaxDiffLineBytes) {
+                const size_t all = line.text.size();
+                size_t keep = kMaxDiffLineBytes;
+                while (keep > 0 && (static_cast<unsigned char>(line.text[keep]) & 0xC0) == 0x80)
+                    --keep; // do not cut a UTF-8 sequence
+                line.text.resize(keep);
+                line.text += " \u2026 [" + std::to_string(all - keep) + " bytes not shown]";
+                f.linesCut = true;
             }
             hunk.lines.push_back(std::move(line));
             ++total;
@@ -1467,7 +1480,7 @@ void readConflictedWorktree(git_repository* repo, const std::string& path, const
     f.additions = static_cast<int>(adds);
     f.deletions = static_cast<int>(dels);
     readHunks(patch.get(), f, full);
-    if (!f.binary && !f.truncated && f.oldSize <= kMaxTextBytes) {
+    if (!f.binary && !f.truncated && !f.linesCut && f.oldSize <= kMaxTextBytes) {
         f.oldText = splitText(blobContent(blob.get()));
         f.newText = splitText(text);
     }
@@ -1726,7 +1739,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
                     result->patch += buf.str();
             }
             // Full texts for context expansion.
-            if (!f.binary && !f.truncated && !q.path.empty()) {
+            if (!f.binary && !f.truncated && !f.linesCut && !q.path.empty()) {
                 const auto oldText = blobText(repo, d->old_file.id);
                 std::optional<std::string> newText;
                 if (worktree) { // (a bare repository has no working tree to diff)

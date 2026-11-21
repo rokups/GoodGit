@@ -130,6 +130,41 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, discar
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
+GG_TEST("move", "a file with a line over the byte limit cannot move, revert or discard lines")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "longline");
+    const std::string mb5(5 * 1024 * 1024, 'x');
+    s.commitFile(repo, "base.txt", "base\n", "base");
+    s.commitFile(repo, "app.min.js", "head\n" + mb5 + "\ntail\n", "X");
+    const std::string x = s.head(repo);
+    s.commitFile(repo, "d.txt", "d\n", "Y");
+    const std::string head = s.head(repo);
+    const std::string tree = s.revParse(repo, "HEAD^{tree}");
+    const std::string blob = s.gitOut(repo, {"rev-parse", x + ":app.min.js"});
+    GG_REQUIRE(s.openRepository(repo));
+    selectCommit(s, x, 1);
+    ctx->ItemClick(fileRef(s, "app.min.js").c_str());
+    s.showPanel("Diff");
+    GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].linesCut; }, 60.0f));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
+    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    ctx->ItemClick((body(s) + "/###hunk_0").c_str(), ImGuiMouseButton_Right);
+    ctx->Yield(2);
+    for (const char* label : {"Move line(s) to child", "Move line(s) to parent", "Move line(s) to active commit", "Revert line(s)###revert",
+             "Revert line(s) (no commit)###revert_no_commit", "Discard line(s)", "Discard hunk(s)"})
+        ctx->ItemClick((std::string("//$FOCUSED/") + label).c_str());
+    ctx->KeyPress(ImGuiKey_Escape);
+    ctx->Yield(2);
+    if (s.itemExists((body(s) + "/###discard_hunk_0").c_str()))
+        ctx->ItemClick((body(s) + "/###discard_hunk_0").c_str());
+    s.settle();
+    GG_CHECK(!s.itemExists("//$FOCUSED/Discard changes")); // no confirm dialog
+    GG_CHECK_STR_EQ(s.head(repo), head);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tree);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", x + ":app.min.js"}), blob);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "HEAD~1:app.min.js"}), blob);
+}
+
 GG_TEST("move", "lines: a hunk to the parent and to the active commit")
 {
     const MoveRepo r = makeRepo(s);
