@@ -61,6 +61,14 @@ void AskpassServer::stop()
     m_listener = gg::net::kInvalid;
 }
 
+// git: "Password for 'url':"; ssh: "user@host's password:", "Enter passphrase for key ...", "Enter PIN for ...".
+bool AskpassServer::isSecretPrompt(const std::string& prompt)
+{
+    for (const char* word : {"assword", "assphrase", "PIN"})
+        if (prompt.find(word) != std::string::npos)
+            return true;
+    return false;
+}
 
 void AskpassServer::loop()
 {
@@ -75,7 +83,7 @@ void AskpassServer::loop()
         }
         auto slot = std::make_shared<Slot>();
         slot->request.prompt = prompt;
-        slot->request.secret = prompt.find("sername") == std::string::npos;
+        slot->request.secret = isSecretPrompt(prompt);
         {
             std::lock_guard lock(m_mutex);
             slot->request.id = m_next++;

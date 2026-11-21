@@ -42,6 +42,8 @@ public:
     // Refuses every pending prompt (closing: nobody is left to answer them).
     void cancelAll();
     int port() const { return m_port; }
+    // Password, passphrase and PIN prompts are masked; everything else is shown in clear text.
+    static bool isSecretPrompt(const std::string& prompt);
     // The git process of request `id` went away before an answer came.
     bool abandoned(std::uint64_t id) const { return id != 0 && m_abandoned == id; }
 

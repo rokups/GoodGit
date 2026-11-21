@@ -937,10 +937,21 @@ GG_TEST("network", "askpass: the dialog closes when git goes away, then the next
     GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
     const ggui::Form* f = s.app.dialogs().current();
     GG_REQUIRE(f != nullptr && f->field("answer") != nullptr);
+    GG_CHECK(f->field("answer")->kind == ggui::Field::Text);
     s.dialogButton("Credentials", "Cancel");
     gg::net::closeSocket(second);
 }
 
+GG_TEST("network", "askpass: only password, passphrase and PIN prompts are secret")
+{
+    using ggui::core::AskpassServer;
+    GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://x':"));
+    GG_CHECK(AskpassServer::isSecretPrompt("user@host's password: "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Enter passphrase for key '/home/u/.ssh/id_ed25519': "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Enter PIN for 'PIV_II': "));
+    GG_CHECK(!AskpassServer::isSecretPrompt("Are you sure you want to continue connecting (yes/no/[fingerprint])?"));
+    GG_CHECK(!AskpassServer::isSecretPrompt("Username for 'https://x':"));
+}
 
 GG_TEST("network", "remote actions are disabled while a mutation runs; browsing still works")
 {
