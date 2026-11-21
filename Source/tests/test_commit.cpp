@@ -269,6 +269,22 @@ GG_TEST("commit", "failing pre-commit hook goes to the banner; Skip hooks")
     s.settle();
 }
 
+GG_TEST("commit", "failing post-commit hook: the commit exists and no commit failure shows")
+{
+    const fs::path repo = s.fixture(Recipe::WorkingChanges);
+    writeHook(s, repo, "post-commit", "echo 'post-commit hook says no' >&2\nexit 1\n");
+    const std::string before = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Post hook fails");
+    s.dialogButton("Commit", "Commit");
+    GG_CHECK(s.waitUntil([&] { return headMessage(s, repo).rfind("Post hook fails", 0) == 0; }));
+    s.settle();
+    GG_CHECK(s.head(repo) != before);
+    GG_CHECK(s.app.errorMessage().empty());
+}
+
 GG_TEST("commit", "amend content and message, message only, Amend from the Working tree menu")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
