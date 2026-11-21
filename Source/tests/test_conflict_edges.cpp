@@ -149,6 +149,23 @@ GG_TEST("edges", "N-way: merging two conflicted lines gives three sides; merging
     GG_CHECK(s.gitgg(repo, {"conflicts", "HEAD"}).out.find("(2 sides)") != std::string::npos);
 }
 
+GG_TEST("edges", "a conflicting merge in a linked worktree finds its MERGE_HEAD and opens no error")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    s.git(repo, {"switch", "-q", "-c", "other", "main"});
+    s.commitFile(repo, "c.txt", "other\n", "other side");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(wt1, "c.txt", "wt1 side\n", "wt1 side");
+    GG_REQUIRE(s.openRepository(wt1));
+    s.session()->actions().mergeNative("other");
+    GG_CHECK(s.waitUntil([&] { return s.gitMayFail(wt1, {"rev-parse", "-q", "--verify", "MERGE_HEAD"}).ok(); }));
+    s.settle();
+    // The old test looked for wt1/.git/MERGE_HEAD, found nothing and reported the conflict as a failure.
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_CHECK(!(f && f->icon));
+}
+
 GG_TEST("edges", "randomized reorders of N changes to one place always come back exact")
 {
     const Line l = makeLine(s, "random", "f.txt", {"v=0\n", "v=1\n", "v=2\n", "v=3\n", "v=4\n"});

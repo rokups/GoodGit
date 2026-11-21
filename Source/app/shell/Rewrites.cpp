@@ -1437,7 +1437,7 @@ void Actions::mergeNative(const std::string& branch, const std::string& message)
             args.insert(args.end(), {"-m", message});
         args.push_back(branch);
         const auto r = ctx.gitMayFail(args);
-        if (!r.ok() && !std::filesystem::exists(ctx.cwd() / ".git" / "MERGE_HEAD"))
+        if (!r.ok() && !std::filesystem::exists(std::filesystem::absolute(git_repository_path(ctx.repo())) / "MERGE_HEAD"))
             throw MutationError{Outcome::Failed, r.message(), r.message()};
         ctx.submodules = SubmoduleSync::Update;
     }, {}, false, true, true, true);

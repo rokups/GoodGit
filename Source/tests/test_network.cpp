@@ -724,6 +724,33 @@ GG_TEST("network", "a force push whose dialog saw no tracking ref is rejected wh
     GG_CHECK(originHas(s, repo, "main", before));
 }
 
+GG_TEST("network", "a rejected push of a branch that is not checked out does not offer Pull then push")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"switch", "-q", "-c", "topic"});
+    s.commitFile(repo, "t.txt", "topic\n", "Topic one");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(repo, "x.txt", "x\n", "Remote topic");
+    s.git(repo, {"push", "-q", "origin", "main:topic"});
+    s.git(repo, {"reset", "-q", "--hard", "HEAD~1"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    s.git(repo, {"branch", "-q", "--set-upstream-to=origin/topic", "topic"});
+    const std::string mainBefore = s.head(repo);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_topic/###branch_topic"); }));
+    s.contextMenu("//Branches/branch_topic/###branch_topic", "Push");
+    GG_REQUIRE(s.dialogOpen("Push rejected", 30.0f));
+    bool offered = false;
+    for (const auto& b : s.app.dialogs().current()->buttons)
+        offered = offered || b.label == "Pull then push";
+    GG_CHECK(!offered);
+    s.dialogButton("Push rejected", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), mainBefore);
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "HEAD^2"}).ok());
+}
+
 GG_TEST("network", "Pull then push works with a submodule")
 {
     fs::path subRemote;

@@ -291,4 +291,26 @@ GG_TEST("reset", "a detached HEAD disables the item")
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
+GG_TEST("reset", "Discard all on an unborn HEAD removes the indexed files and keeps the untracked ones")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    s.write(repo, "a.txt", "staged\n");
+    s.write(repo, "b.txt", "staged\n");
+    s.git(repo, {"add", "a.txt", "b.txt"});
+    s.write(repo, "a.txt", "changed after staging\n");
+    s.write(repo, "u.txt", "untracked\n");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(statusIs(s, [](const ggui::core::StatusResult& st) { return st.staged.size() == 2 && !st.untracked.empty(); }));
+    s.session()->showDiscardAllDialog();
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(s.waitUntil([&] { return !fs::exists(repo / "a.txt"); }));
+    s.settle();
+    if (s.app.dialogs().current())
+        s.dismissError();
+    GG_CHECK(!fs::exists(repo / "b.txt"));
+    GG_CHECK(fs::exists(repo / "u.txt"));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"ls-files"}), "");
+}
+
 } // namespace ggtest
