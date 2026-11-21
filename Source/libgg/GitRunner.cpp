@@ -182,11 +182,12 @@ std::string batchShellArgs(const std::string& script, const std::vector<std::str
         return {};
     }
     // The outer quotes around the whole command are removed by `/s`.
-    std::string line = "/d /v:off /s /c \"\"" + script + "\"";
+    std::string line = "/d /e:on /v:off /s /c \"\"" + script + "\"";
     for (const auto& a : args) {
-        // Inside quotes `^&|<>` are plain text. A line break or another control character cannot be encoded.
+        // Inside quotes `^&|<>` and a tab are plain text. A line break or another control character cannot be encoded.
+        // `/e:on`: `%cd:~,%` needs command extensions, which the registry can turn off.
         for (const char c : a) {
-            if (static_cast<unsigned char>(c) < 0x20) {
+            if (static_cast<unsigned char>(c) < 0x20 && c != '\t') {
                 error = std::string("cannot pass an argument with ") +
                     (c == '\n' ? "a line break" : c == '\r' ? "a carriage return" : "a control character") +
                     " to a batch file";

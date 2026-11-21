@@ -109,10 +109,10 @@ bool windowsCommandLineFits(size_t length);
 // Whether the name ends in .cmd or .bat (any case).
 bool isBatchFileName(const std::string& name);
 
-// The command-line tail that runs a batch file through `cmd.exe`: `/d /v:off /s /c ""script" "arg""`.
+// The command-line tail that runs a batch file through `cmd.exe`: `/d /e:on /v:off /s /c ""script" "arg""`.
 // Every argument is quoted and encoded: `"` becomes `""`, `%` becomes `%%cd:~,%`, and the backslashes
 // before a `"` or the closing quote are doubled. `^&|<>` stay as they are (plain text in quotes).
-// It gives "" with `error` for a control character (line break too) in an argument, or `%`, `"` or a
+// It gives "" with `error` for a control character other than a tab (line break too) in an argument, or `%`, `"` or a
 // line break in the script path.
 std::string batchShellArgs(const std::string& script, const std::vector<std::string>& args, std::string& error);
 // File names to try for `program`. On Windows: .exe, .cmd, .bat, then the name itself when it already

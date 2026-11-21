@@ -102,9 +102,9 @@ GG_TEST("winargs", "batch command line quotes every argument")
 {
     std::string error;
     const std::string line = gg::batchShellArgs("C:\\My Tools\\code.cmd", {"--diff", "C:\\a b\\x.txt", "y"}, error);
-    GG_CHECK_STR_EQ(line, "/d /v:off /s /c \"\"C:\\My Tools\\code.cmd\" \"--diff\" \"C:\\a b\\x.txt\" \"y\"\"");
+    GG_CHECK_STR_EQ(line, "/d /e:on /v:off /s /c \"\"C:\\My Tools\\code.cmd\" \"--diff\" \"C:\\a b\\x.txt\" \"y\"\"");
     GG_CHECK(error.empty());
-    GG_CHECK_STR_EQ(gg::batchShellArgs("a.bat", {}, error), "/d /v:off /s /c \"\"a.bat\"\"");
+    GG_CHECK_STR_EQ(gg::batchShellArgs("a.bat", {}, error), "/d /e:on /v:off /s /c \"\"a.bat\"\"");
 }
 
 namespace {
@@ -113,7 +113,7 @@ namespace {
 std::string encodeBatchArg(const std::string& arg, std::string& error)
 {
     const std::string line = gg::batchShellArgs("a.cmd", {arg}, error);
-    const std::string head = "/d /v:off /s /c \"\"a.cmd\" ";
+    const std::string head = "/d /e:on /v:off /s /c \"\"a.cmd\" ";
     if (line.size() < head.size() + 1)
         return {};
     return line.substr(head.size(), line.size() - head.size() - 1);
@@ -124,6 +124,8 @@ std::string encodeBatchArg(const std::string& arg, std::string& error)
 GG_TEST("winargs", "batch command line encodes percent signs and quotes")
 {
     std::string error;
+    GG_CHECK_STR_EQ(encodeBatchArg("a\tb", error), "\"a\tb\""); // a tab is plain text, as in --format=%(refname)\t...
+    GG_CHECK(error.empty());
     GG_CHECK_STR_EQ(encodeBatchArg("--format=%H", error), "\"--format=%%cd:~,%H\"");
     GG_CHECK_STR_EQ(encodeBatchArg("%(refname)", error), "\"%%cd:~,%(refname)\"");
     GG_CHECK_STR_EQ(encodeBatchArg("a\"b", error), "\"a\"\"b\"");
@@ -137,7 +139,7 @@ GG_TEST("winargs", "batch command line encodes percent signs and quotes")
 
 GG_TEST("winargs", "batch command line refuses control characters and bad script paths")
 {
-    for (const char* bad : {"a\nb", "a\rb", "a\tb", "a\x01"
+    for (const char* bad : {"a\nb", "a\rb", "a\x01"
                                                     "b"}) {
         std::string error;
         GG_CHECK(gg::batchShellArgs("a.cmd", {"ok", bad}, error).empty());
