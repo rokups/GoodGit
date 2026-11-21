@@ -99,7 +99,8 @@ GG_TEST("blame", "blame at a commit and on the working tree")
     GG_CHECK(!s.textShown("//Blame", "@"));
     // Same as git blame --porcelain for the committed version.
     const std::string porcelain = s.git(r.path, {"blame", "--porcelain", "HEAD", "--", "tale.txt"}).out;
-    GG_CHECK(porcelain.find(r.c2 + " 3 3") != std::string::npos);
+    GG_CHECK(porcelain.find(line(s, 3)->commit.hex() + " 3 3") != std::string::npos);
+    GG_CHECK_STR_EQ(line(s, 3)->commit.hex(), r.c2);
     // At a commit (from History → Changes).
     s.ctx->ItemClick(("//History/**/###row_" + r.c2).c_str());
     GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
@@ -1293,12 +1294,17 @@ GG_TEST("blame", "history: closing the panel clears it")
     ctx->Yield(3);
     GG_CHECK(!blame.canGoBack());
     GG_CHECK_EQ(blame.editorLines(), 5);
-    // Closed while a blame is on its way: the late result is dropped.
+    // Closed while a blame is on its way: the late result is dropped. The slow job is in flight
+    // when the panel closes, and the engine goes idle only after it ran to the end.
+    gg::setSlowGitLatency(std::chrono::milliseconds(500));
     session.blameFile("tale.txt", ggui::core::Oid());
+    GG_CHECK(!s.app.idle());
     s.app.settings().data().panels["Blame"] = false;
     ctx->Yield(3);
+    GG_CHECK(!s.app.idle());
     s.showPanel("Blame");
     GG_REQUIRE(s.waitIdle());
+    gg::setSlowGitLatency(std::chrono::milliseconds(0));
     GG_CHECK(!blame.blame());
 }
 
