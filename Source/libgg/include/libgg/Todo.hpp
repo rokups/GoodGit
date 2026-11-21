@@ -156,6 +156,9 @@ struct Context {
     bool continuesHead = false;
 };
 
+// The comment string of the todo: core.commentChar, "#" when unset or "auto".
+std::string commentChar(git_repository* repo);
+
 // Reads the range and builds the starting todo (see the file comment). Throws on unknown
 // revisions or when `upstream` is not an ancestor of the tip's history.
 Context read(git_repository* repo, const ReadOptions& options);

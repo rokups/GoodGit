@@ -915,15 +915,19 @@ std::vector<ParseError> expand(git_repository* repo, Todo& todo, Context& contex
     return problems;
 }
 
+std::string commentChar(git_repository* repo)
+{
+    // shortcut: "auto" is read as "#"; upgrade when the pick of git for auto matters.
+    const auto configured = git2::configString(git2::repositoryConfig(repo).get(), "core.commentChar");
+    return configured && !configured->empty() && *configured != "auto" ? *configured : std::string("#");
+}
+
 namespace {
 
 // The list git wrote (parse + expand), its commits, merges and branches, into `context`.
 void readGitList(git_repository* repo, std::string_view todoText, Context& context, const char* what)
 {
-    // shortcut: "auto" is read as "#"; upgrade when the pick of git for auto matters.
-    const auto configured = git2::configString(git2::repositoryConfig(repo).get(), "core.commentChar");
-    if (configured && !configured->empty() && *configured != "auto")
-        context.commentChar = *configured;
+    context.commentChar = commentChar(repo);
     std::vector<ParseError> problems;
     Todo list = parse(todoText, &problems, context.commentChar);
     for (auto& p : expand(repo, list, context))

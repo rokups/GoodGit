@@ -10,6 +10,7 @@
 #include "tests/Harness.hpp"
 
 #include <libgg/Journal.hpp>
+#include <libgg/NativeRebase.hpp>
 #include "util/Env.hpp"
 
 #include <libgg/Git2.hpp>
@@ -989,6 +990,31 @@ GG_TEST("rebase-native", "todo reads core.commentChar: ; rows are comments and t
     const std::string text = todo::format(c.initial, c.commentChar);
     GG_CHECK(text.find(" ; c1 subject") != std::string::npos);
     GG_CHECK(todo::parse(text, nullptr, ";").items.size() == 1);
+}
+
+GG_TEST("rebase-native", "a native rebase with core.commentChar=; stops at edit, the done and todo files read right, and a typed reword reaches git")
+{
+    const Repo r = makeRepo(s);
+    s.git(r.path, {"config", "core.commentChar", ";"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(openFrom(s, r.c[2]));
+    key(s, r.c[2], ImGuiKey_E);
+    key(s, r.c[3], ImGuiKey_R);
+    s.setText("//Interactive rebase/**/###ir_msg_" + r.c[3], "c3 reworded with semicolon\n");
+    GG_REQUIRE(start(s));
+    GG_REQUIRE(stoppedAt(s, "edit"));
+    {
+        // done holds "edit <id> ; c2 add b", the todo holds the rest: both name their commits.
+        const auto handle = gg::git2::openRepository(r.path);
+        const auto ids = gg::native::replayedCommits(handle.get());
+        GG_REQUIRE(ids.has_value());
+        GG_CHECK(std::find(ids->begin(), ids->end(), r.c[2]) != ids->end());
+        GG_CHECK(std::find(ids->begin(), ids->end(), r.c[3]) != ids->end());
+        GG_CHECK(std::find(ids->begin(), ids->end(), r.c[5]) != ids->end());
+    }
+    ctx->ItemClick(kContinue);
+    GG_REQUIRE(finished(s, r.path));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "-1", "--format=%s", "HEAD~2"}), "c3 reworded with semicolon");
 }
 
 } // namespace ggtest
