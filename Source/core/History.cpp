@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <unordered_set>
 #include <chrono>
 #include <cstring>
 
@@ -57,11 +58,11 @@ void buildBadges(HistoryState& st)
         addBadge(st, z.base, RefKind::Stash, "stash@{" + std::to_string(z.index) + "}");
 }
 
-bool refVisible(const HistoryScope& scope, const std::string& fullName)
+bool refVisible(const HistoryScope& scope, const std::unordered_set<std::string>& refs, const std::string& fullName)
 {
     if (scope.allRefs)
         return true;
-    return std::find(scope.refs.begin(), scope.refs.end(), fullName) != scope.refs.end();
+    return refs.count(fullName) != 0;
 }
 
 int allocLane(HistoryState& st)
@@ -358,7 +359,11 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
             st.maxLanes = std::max<int>(st.maxLanes, std::max<int>(lane + 1, static_cast<int>(st.lanes.size())));
 
             // ---- search index -----------------------------------------------------------------
-            std::string text = id.hex() + " " + git_commit_message(commit.get()) + " " + row.author + " " + row.authorEmail;
+            // Cap the message so the index stays small; a word after 4 KiB is not found.
+            std::string message = git_commit_message(commit.get());
+            if (message.size() > 4096)
+                message.resize(4096);
+            std::string text = id.hex() + " " + message + " " + row.author + " " + row.authorEmail;
             for (const auto& r : row.refs)
                 text += " " + r.name;
             st.searchText.push_back(lower(std::move(text)));
@@ -412,7 +417,8 @@ void historyStart(git_repository* repo, HistoryState& st, std::uint64_t query, c
             st.remoteTips.insert(id);
     };
     const Snapshot& s = *st.snapshot;
-    if (!s.head.isNull() && (scope.allRefs || refVisible(scope, "HEAD"))) {
+    const std::unordered_set<std::string> scopeRefs(scope.refs.begin(), scope.refs.end());
+    if (!s.head.isNull() && (scope.allRefs || refVisible(scope, scopeRefs, "HEAD"))) {
         push(s.head, true, false);
         // The Working tree row above the history hangs on lane 0 and leads down to HEAD.
         if (!s.bare) {
@@ -421,13 +427,13 @@ void historyStart(git_repository* repo, HistoryState& st, std::uint64_t query, c
         }
     }
     for (const auto& b : s.branches)
-        push(b.target, refVisible(scope, "refs/heads/" + b.name), false);
+        push(b.target, refVisible(scope, scopeRefs, "refs/heads/" + b.name), false);
     for (const auto& r : s.remoteBranches)
-        push(r.target, refVisible(scope, "refs/remotes/" + r.name), true);
+        push(r.target, refVisible(scope, scopeRefs, "refs/remotes/" + r.name), true);
     for (const auto& t : s.tags)
-        push(t.target, refVisible(scope, "refs/tags/" + t.name), false);
+        push(t.target, refVisible(scope, scopeRefs, "refs/tags/" + t.name), false);
     for (const auto& k : s.kept)
-        push(k.id, refVisible(scope, gg::keep::refName(k.id.hex())), false);
+        push(k.id, refVisible(scope, scopeRefs, gg::keep::refName(k.id.hex())), false);
     for (const auto& w : s.worktrees)
         if (!w.isCurrent && !w.head.isNull())
             push(w.head, scope.allRefs, false);
