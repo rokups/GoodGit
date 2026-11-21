@@ -2356,6 +2356,8 @@ void ReflogPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged
 {
     m_snapshot = snapshot;
     const bool shown = ImGui::GetFrameCount() - m_lastDrawFrame <= 1;
+    // shortcut: the stamp is read only when a snapshot comes, so a pure reflog write with no watcher
+    // event (update-ref of a ref to its own value) shows on the next snapshot; poll it if users miss it.
     if (refsChanged || (shown && logStamp() != m_logStamp))
         invalidate();
     // The chosen ref is gone: go back to HEAD. The stash ref stays while a stash exists.
