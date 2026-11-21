@@ -2136,6 +2136,7 @@ GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i 
         checkAside(s, copy, "main", expected);
         for (const char* ref : {"main", "stack1", "stack2", "up"})
             GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
+        GG_CHECK(!postRewrite(s, path).empty());
         GG_CHECK(postRewrite(s, path) == postRewrite(s, copy));
         checkClean(s, path);
         GG_CHECK_STR_EQ(s.gitOut(path, {"symbolic-ref", "HEAD"}), "refs/heads/main");
@@ -2269,6 +2270,7 @@ GG_TEST("rebase-i", "conflicted input: carried along like git rebase -i, resolve
     for (const char* ref : {"main", "part1"})
         if (gitMovesBranches(s) || std::string(ref) == "main")
             GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
+    GG_CHECK(!postRewrite(s, path).empty());
     GG_CHECK(postRewrite(s, path) == postRewrite(s, copy));
 
     // 2. Resolved: onto c2 (the dropped cause, kept as branch "x") the terms cancel out. Every commit
