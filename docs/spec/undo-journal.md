@@ -288,6 +288,8 @@ A `git rebase` (either backend) that stops runs as several git commands
   opener, and a `rebase` record is appended. A rebase that ggui started (its Start step opens the
   operation) and that is finished in a terminal stays that one operation: the reconciler appends
   the rest of its ref changes and the final index tree.
+  When the group finishes as failed, a 4th line `failed` is added to that file before the `end`
+  record, so that a retried `end` keeps `ok` false; a file without that line means ok.
 - While that rebase is in progress, ggui and git-gg operations (other than undo/redo) join it
   instead of opening their own, and the reconciler appends the plain git commands' ref changes to
   it.

@@ -236,7 +236,9 @@ void OperationRecorder::finish(bool ok, bool worktreeFollowsIndex)
                 &error);
     }
     if (m_resumed) {
-        if (!rebasing)
+        // Without its ref records the group stays open: the next pass finds the finish in the reflog,
+        // appends the refs and ends the group.
+        if (!rebasing && refsRecorded)
             native::finishGroup(m_repo, m_journal, ok, &error);
     } else if (startsGroup) {
         native::rememberGroup(m_repo, m_journal, m_op.id, m_op.src);

@@ -2116,6 +2116,27 @@ GG_TEST("reconcile", "closeFinishedGroup ends a remembered group whose rebase is
     GG_CHECK(ops.front().ok);
 }
 
+namespace {
+
+// Makes the "refs" records of every Writer fail while it lives.
+struct FailRefRecords {
+    int hits = 0;
+    FailRefRecords()
+    {
+        gg::journal::failAppendHook = [this](const std::string& type) {
+            if (type != "refs")
+                return false;
+            ++hits;
+            return true;
+        };
+    }
+    ~FailRefRecords() { gg::journal::failAppendHook = nullptr; }
+    FailRefRecords(const FailRefRecords&) = delete;
+    FailRefRecords& operator=(const FailRefRecords&) = delete;
+};
+
+} // namespace
+
 GG_TEST("reconcile", "an operation whose ref records fail ends as failed, and the next pass journals the ref change")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
@@ -2127,18 +2148,9 @@ GG_TEST("reconcile", "an operation whose ref records fail ends as failed, and th
         gg::OperationRecorder rec(r.get(), "test", "plain commit", false);
         rec.begin();
         s.commitFile(repo, "late.txt", "late\n", "Late");
-        // Another process holds journal.lock: the ref records time out, then the lock is free for the end record.
-        gg::journal::Journal other{repo / ".git"};
-        std::atomic<bool> held{false};
-        std::thread holder([&] {
-            gg::journal::Journal::Transaction tx(other);
-            held = true;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1400));
-        });
-        while (!held)
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        FailRefRecords fail;
         rec.finish(true, false);
-        holder.join();
+        GG_CHECK(fail.hits >= 1);
         GG_CHECK(!rec.journalError().empty());
     }
     GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 2; }));
@@ -2152,6 +2164,40 @@ GG_TEST("reconcile", "an operation whose ref records fail ends as failed, and th
     GG_CHECK(ops[1].restorable());
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK(s.waitUntil([&] { return s.head(repo) == start; }));
+}
+
+GG_TEST("reconcile", "a rebase group whose final ref records fail stays open, and the next pass ends it as ok")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    const std::string start = refState(s, repo);
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
+    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
+    GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 1 && !journalOps(repo).front().ended; }));
+    {
+        // The step that continues joins the group; its final ref records fail.
+        gg::git2::Repository r = gg::git2::openRepository(repo);
+        gg::OperationRecorder rec(r.get(), "test", "continue", false);
+        rec.begin();
+        s.commitFile(repo, "amend.txt", "amend\n", "Amend");
+        s.git(repo, {"rebase", "--continue"});
+        while (fs::exists(repo / ".git" / "rebase-merge"))
+            s.git(repo, {"rebase", "--continue"});
+        FailRefRecords fail;
+        rec.finish(true, false);
+        GG_CHECK(fail.hits >= 1);
+    }
+    GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty() && journalOps(repo).front().ended; }));
+    s.settle();
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(ops.size() == 1);
+    GG_CHECK(ops.front().ok);
+    GG_CHECK(ops.front().restorable());
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(s.waitUntil([&] { return refState(s, repo) == start; }));
 }
 
 GG_TEST("reconcile", "writePrepared leaves a complete prepared.json and no temp file")
