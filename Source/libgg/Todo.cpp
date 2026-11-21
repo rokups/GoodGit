@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 
 namespace gg::todo {
@@ -331,13 +332,17 @@ void addCommit(git_repository* repo, Context& context, const git_oid& oid, const
     context.commits.emplace(id, std::move(info));
 }
 
+constexpr git_time_t kUpstreamTimeMargin = 7 * 24 * 3600;
+
 // Non-merge commits reachable from `push` but not from `hide`, parents first (Git's order).
-std::vector<git_oid> walk(git_repository* repo, const git_oid& push, const std::optional<git_oid>& hide)
+// With `since` the walk runs newest first, in no useful order, and stops at the first commit older than `since`.
+std::vector<git_oid> walk(git_repository* repo, const git_oid& push, const std::optional<git_oid>& hide,
+    std::optional<git_time_t> since = std::nullopt)
 {
     git_revwalk* raw = nullptr;
     check(git_revwalk_new(&raw, repo), "git_revwalk_new");
     Revwalk rw(raw);
-    check(git_revwalk_sorting(rw.get(), GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE), "git_revwalk_sorting");
+    check(git_revwalk_sorting(rw.get(), since ? GIT_SORT_TIME : GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE), "git_revwalk_sorting");
     check(git_revwalk_push(rw.get(), &push), "git_revwalk_push");
     if (hide)
         check(git_revwalk_hide(rw.get(), &*hide), "git_revwalk_hide");
@@ -345,6 +350,8 @@ std::vector<git_oid> walk(git_repository* repo, const git_oid& push, const std::
     git_oid oid;
     while (git_revwalk_next(&oid, rw.get()) == 0) {
         Commit c = lookupCommit(repo, oid);
+        if (since && git_commit_time(c.get()) < *since)
+            break;
         if (git_commit_parentcount(c.get()) <= 1)
             out.push_back(oid);
     }
@@ -699,7 +706,12 @@ Context read(git_repository* repo, const ReadOptions& options)
     std::set<std::string> samePatch; // listed commits whose change is already upstream
     if (upstream && !listed.empty()) {
         std::set<std::string> upstreamIds;
-        for (const auto& oid : walk(repo, *upstream, tip))
+        // A cherry-pick is not older than its source: skip upstream commits older than the oldest listed one, minus a margin.
+        // shortcut: a commit with a skewed clock (more than the margin) is missed, then its copy stays in the list.
+        git_time_t oldest = std::numeric_limits<git_time_t>::max();
+        for (const auto& oid : listed)
+            oldest = std::min(oldest, git_commit_time(lookupCommit(repo, oid).get()));
+        for (const auto& oid : walk(repo, *upstream, tip, oldest - kUpstreamTimeMargin))
             if (auto id = patchId(repo, oid))
                 upstreamIds.insert(*id);
         if (!upstreamIds.empty())
