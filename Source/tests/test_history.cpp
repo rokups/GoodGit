@@ -1201,6 +1201,13 @@ GG_TEST("history", "first rows of a large history appear quickly")
     // Load only adds time to the wall latency. A regression raises every sample, so the best of
     // three opens still fails it.
     constexpr int opens = 3;
+    // The idle frame time of this process shows the load of the machine, measured just before
+    // the opens. Without strict mode, the limit is at least 100 idle frames. A product regression
+    // does not move the idle frame time, so it still fails.
+    constexpr double baselineFactor = 100.0;
+    const double baselineMs = measureIdleFrameMs(ctx);
+    const bool strict = timeBudgetMs(1.0) == 1.0;
+    const double limitMs = strict ? 700.0 : std::max(timeBudgetMs(700), baselineFactor * baselineMs);
     for (const fs::path& repo : repos) {
         long long best = std::numeric_limits<long long>::max();
         for (int attempt = 0; attempt < opens; ++attempt) {
@@ -1222,8 +1229,9 @@ GG_TEST("history", "first rows of a large history appear quickly")
             ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
             ctx->Yield(3);
         }
-        ctx->LogInfo("%s: best first rows %lld ms", repo.string().c_str(), best);
-        GG_CHECK(best < timeBudgetMs(700));
+        ctx->LogInfo("%s: best first rows %lld ms, limit %.0f ms (idle frame %.1f ms)", repo.string().c_str(), best,
+            limitMs, baselineMs);
+        GG_CHECK(best < limitMs);
     }
 }
 
