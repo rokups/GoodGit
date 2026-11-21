@@ -600,11 +600,17 @@ static void simplify(Merge& m, bool strict)
     // merge resolves. Terms that cancel hunk by hunk but differ as whole files (the same change
     // made in other surroundings) then cancel too; without this a conflict rebased away and back
     // keeps such terms and grows each time.
+    // The attempts are capped: each one runs a three-way merge, and a term list can be long.
+    // Stopping early only leaves terms that could collapse; the value stays the same.
+    constexpr int kMaxCollapseTries = 2000;
+    int tries = 0;
     for (bool collapsed = true; collapsed && !m.removes.empty() && m.adds.size() >= 2;) {
         collapsed = false;
         for (size_t k = 0; k < m.removes.size() && !collapsed; ++k)
             for (size_t i = 0; i < m.adds.size() && !collapsed; ++i)
                 for (size_t j = i + 1; j < m.adds.size() && !collapsed; ++j) {
+                    if (++tries > kMaxCollapseTries)
+                        return;
                     auto merged = cleanMerge(m.removes[k], m.adds[i], m.adds[j]);
                     if (!merged)
                         continue;

@@ -1064,6 +1064,21 @@ GG_TEST("conflicts", "mergeFiles keeps the markers small for large files with fa
     GG_CHECK(gg::markers::mergeFiles(base, ours, theirs) == expected);
 }
 
+GG_TEST("conflicts", "materialize stops collapsing terms after a fixed number of tries (GG-94)")
+{
+    // Many different adds and removes that never collapse: every pair is tried.
+    gg::markers::Merge m;
+    for (int i = 0; i < 250; ++i) {
+        m.adds.push_back("a" + std::to_string(i) + "\nx\n");
+        m.removes.push_back("r" + std::to_string(i) + "\ny\n");
+    }
+    m.adds.push_back("last\n");
+    const auto start = std::chrono::steady_clock::now();
+    gg::markers::simplify(m);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    GG_CHECK(ms < timeBudgetMs(500));
+}
+
 GG_TEST("conflicts", "engine: a rewrite that creates a conflict labels ours/theirs/base with the right commits")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "side-labels");
