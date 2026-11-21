@@ -2513,6 +2513,36 @@ std::string refChangeName(const std::string& ref)
     return "detached " + ref.substr(std::string(gg::keep::kPrefix).size()).substr(0, 10);
 }
 
+// A short ID for the confirm list; a missing ref (the null id) shows as "none".
+std::string shortValue(const std::string& v)
+{
+    return v.find_first_not_of('0') == std::string::npos ? std::string("none") : v.substr(0, 10);
+}
+
+// Restore moves the refs back at once, so it asks first and lists each ref that moves. The ref
+// now has the operation's new value; the restore gives it the old one back.
+template <class SessionT>
+void confirmRestore(SessionT& session, const gg::journal::Operation& op)
+{
+    Form f;
+    f.title = "Restore operation";
+    f.message = "Restore \"" + op.label + "\"? These refs move:\n";
+    bool tree = !op.index.empty();
+    for (const auto& r : op.refs) {
+        if (r.oldValue == r.newValue)
+            continue;
+        f.message += "\n" + refChangeName(r.ref) + ": " + shortValue(r.newValue) + " -> " + shortValue(r.oldValue);
+        tree = tree || gg::journal::isHeadKey(r.ref);
+    }
+    if (tree)
+        f.message += "\n\nThe working tree and the index change too.";
+    const std::string id = op.id;
+    f.buttons.push_back({"Restore", [&session, id](Form&) { session.actions().restore(id); }});
+    f.buttons.back().danger = true;
+    f.buttons.push_back({"Cancel", {}});
+    session.app().dialogs().open(std::move(f));
+}
+
 } // namespace
 
 void OperationsPanel::draw(bool* open)
@@ -2570,7 +2600,7 @@ void OperationsPanel::draw(bool* open)
             }
             if (beginContextMenu("##op_menu")) {
                 if (menuItem(ICON_MS_RESTORE, "Restore (undo this operation)", nullptr, false, free && op.restorable() && !op.keepOnly()))
-                    actions.restore(op.id);
+                    confirmRestore(m_session, op);
                 if (menuItem(ICON_MS_CONTENT_COPY, "Copy operation ID"))
                     ImGui::SetClipboardText(op.id.c_str());
                 ImGui::EndPopup();
