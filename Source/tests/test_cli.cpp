@@ -392,7 +392,7 @@ GG_TEST("cli", "gg::run returns when the direct child exits and a grandchild hol
     const auto start = std::chrono::steady_clock::now();
     const gg::RunResult result = gg::run(r);
     const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    std::system("pkill -f 'sleep 31.4151'"); // the grandchild is not cancelled, so remove it here
+    [[maybe_unused]] const int killed = std::system("pkill -f 'sleep 31.4151'"); // the grandchild is not cancelled, so remove it here
     GG_CHECK_EQ(result.exitCode, 0);
     GG_CHECK(result.out.find("hi") != std::string::npos);
     GG_CHECK(secs < 3.0);
