@@ -9,6 +9,7 @@
 #include <set>
 
 #include "util/Env.hpp"
+#include "util/Logging.hpp"
 
 #include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
@@ -1108,6 +1109,59 @@ GG_TEST("network", "clone over git://: the server's progress shows its phase, no
     // The set can be empty: a fast clone ends between two frames, and pumpClone clears the phase.
     GG_CHECK(!phases.count("remote"));
     GG_CHECK_STR_EQ(s.head(dest), s.revParse(src, "main"));
+}
+
+GG_TEST("network", "a password in a remote URL stays out of the log, the command log, the journal, the errors and the UI (GG-140)")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string url = "https://alice:s3cret@invalid.invalid/r.git";
+    s.git(repo, {"remote", "add", "backup", url});
+    s.git(repo, {"remote", "set-url", "--push", "backup", "https://bob:pushs3cret@invalid.invalid/p.git"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Remotes");
+    s.commitFile(repo, "pw.txt", "p\n", "Needs a push");
+    s.settle();
+    gg::clearCommandLog();
+    s.session()->actions().fetch("backup", false, false);
+    s.settle();
+    s.session()->actions().push("backup", "main", "main", false, false);
+    s.settle();
+    const std::string secret = "s3cret";
+    auto has = [&](const std::string& text) { return text.find(secret) != std::string::npos; };
+    // Not vacuous: the failed fetch and push reach the log with the host.
+    bool hostInLog = false;
+    for (const auto& line : ggui::recentLogLines()) {
+        hostInLog = hostInLog || line.find("invalid.invalid") != std::string::npos;
+        GG_CHECK(!has(line));
+    }
+    GG_CHECK(hostInLog);
+    GG_CHECK(!gg::commandLog().empty());
+    for (const auto& e : gg::commandLog()) {
+        GG_CHECK(!has(e.err));
+        for (const auto& a : e.args)
+            GG_CHECK(!has(a));
+    }
+    for (const auto& [file, bytes] : s.gitDirBytes(repo))
+        if (file != ".git/config") // the remote URL lives in the config: git owns that file
+            GG_CHECK(!has(bytes));
+    for (const auto& t : s.app.toasts()) {
+        GG_CHECK(!has(t.title));
+        GG_CHECK(!has(t.message));
+    }
+    if (s.app.dialogs().current()) {
+        GG_CHECK(!has(s.app.dialogs().current()->title));
+        GG_CHECK(!has(s.app.dialogs().current()->message));
+        s.app.dialogs().closeCurrent(); // the dialog covers the Remotes panel
+        s.settle();
+    }
+    ctx->MouseMove("//Remotes/remote_backup/###row");
+    ctx->SleepNoSkip(kTooltipWait, 0.1f);
+    for (const char* window : {"//Remotes", "//##Tooltip_00"})
+        for (const auto& text : s.drawnText(window))
+            GG_CHECK(!has(text));
+    GG_CHECK(s.textShown("//Remotes", "backup@invalid.invalid"));
+    GG_CHECK(s.textShown("//##Tooltip_00", "alice"));
+    GG_CHECK(s.textShown("//##Tooltip_00", "bob")); // the push URL is hidden too
 }
 
 } // namespace ggtest
