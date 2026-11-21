@@ -1999,6 +1999,7 @@ GG_TEST("shell", "log file: a debug message reaches the rotated file in the sett
     closeLogFile();
 }
 
+#ifndef _WIN32 // setenv and a POSIX path
 GG_TEST("shell", "log file: an unwritable GGUI_LOG_FILE does not stop initLogging")
 {
     using namespace ggui;
@@ -2021,6 +2022,7 @@ GG_TEST("shell", "log file: an unwritable GGUI_LOG_FILE does not stop initLoggin
     GG_CHECK(logged);
     initLogging(false); // a clean logger for the next tests
 }
+#endif
 
 GG_TEST("shell", "Settings General tab: Log level combo and Open log folder button")
 {
