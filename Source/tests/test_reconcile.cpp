@@ -2026,4 +2026,30 @@ GG_TEST("reconcile", "a rotation counts only the Undo targets that are not undon
     GG_CHECK(plan.ok && plan.target && plan.target->label == "git branch n4");
 }
 
+GG_TEST("reconcile", "a rotation does not count housekeeping operations: the user operation stays the Undo target")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    RotationKnobs knobs;
+    pass(r.get());
+    branchOp(s, repo, r.get(), "user");
+    gg::journal::Journal j{repo / ".git"};
+    const std::string head = refNow(s, repo, "HEAD");
+    for (int i = 0; i < 40; ++i) { // far more than rotateKeepOps once it is lowered
+        const std::string ref = "refs/gg/keep/hk" + std::to_string(i);
+        s.git(repo, {"update-ref", ref, head}); // a real keep ref, so no pass sees an external change
+        GG_REQUIRE(gg::journal::writeKeepHousekeeping(j, "main", {{ref, std::string(40, '0'), head}}, nullptr));
+    }
+    const auto all = journalOps(repo);
+    GG_REQUIRE(all.size() == 41u);
+    GG_REQUIRE(all.back().keepOnly());
+    knobs.low();
+    GG_CHECK(pass(r.get()).empty());
+    const auto ops = journalOps(repo);
+    GG_REQUIRE(!ops.empty());
+    GG_CHECK_STR_EQ(ops.front().label, "git branch user");
+    const auto plan = planFor(s, repo, ops, false);
+    GG_CHECK(plan.ok && plan.target && plan.target->label == "git branch user");
+}
+
 } // namespace ggtest
