@@ -942,13 +942,29 @@ GG_TEST("network", "askpass: the dialog closes when git goes away, then the next
     gg::net::closeSocket(second);
 }
 
-GG_TEST("network", "askpass: only password, passphrase and PIN prompts are secret")
+GG_TEST("network", "askpass: a closed peer closes only its own dialog, not the queued ones")
+{
+    askpassClient("", "Password for 'https://x':", true);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+    ggui::Form other;
+    other.title = "Other dialog";
+    other.buttons.push_back({"Cancel", {}});
+    s.app.dialogs().open(std::move(other));
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Other dialog"); }, static_cast<float>(timeBudgetMs(1000) / 1000.0)));
+    GG_CHECK(!s.dialogOpen("Credentials"));
+    s.dialogButton("Other dialog", "Cancel");
+}
+
+GG_TEST("network", "askpass: every prompt is secret except a known non-secret one")
 {
     using ggui::core::AskpassServer;
     GG_CHECK(AskpassServer::isSecretPrompt("Password for 'https://x':"));
     GG_CHECK(AskpassServer::isSecretPrompt("user@host's password: "));
     GG_CHECK(AskpassServer::isSecretPrompt("Enter passphrase for key '/home/u/.ssh/id_ed25519': "));
     GG_CHECK(AskpassServer::isSecretPrompt("Enter PIN for 'PIV_II': "));
+    GG_CHECK(AskpassServer::isSecretPrompt("Passcode:"));
+    GG_CHECK(AskpassServer::isSecretPrompt("Verification code:"));
+    GG_CHECK(AskpassServer::isSecretPrompt("PASSWORD:"));
     GG_CHECK(!AskpassServer::isSecretPrompt("Are you sure you want to continue connecting (yes/no/[fingerprint])?"));
     GG_CHECK(!AskpassServer::isSecretPrompt("Username for 'https://x':"));
 }

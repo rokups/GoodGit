@@ -109,6 +109,13 @@ public:
     bool anyOpen() const { return !m_queue.empty(); }
     const Form* current() const { return m_queue.empty() ? nullptr : &m_queue.front(); }
     void closeAll() { m_queue.clear(); m_opened = false; }
+    // Removes the front dialog only; the queued ones stay.
+    void closeCurrent()
+    {
+        if (!m_queue.empty())
+            m_queue.erase(m_queue.begin());
+        m_opened = false;
+    }
 
     // Specific dialogs with non-trivial content. `message` is the MutationError's message (why
     // the push was refused: first-class conflicts or broken conflict markers).

@@ -9,6 +9,8 @@
 
 #include <git2.h>
 
+#include <cctype>
+#include <chrono>
 #include <fstream>
 #include <random>
 #include <sstream>
@@ -61,13 +63,16 @@ void AskpassServer::stop()
     m_listener = gg::net::kInvalid;
 }
 
-// git: "Password for 'url':"; ssh: "user@host's password:", "Enter passphrase for key ...", "Enter PIN for ...".
+// Fails closed: a prompt is secret unless it is a known non-secret one (case-insensitive).
 bool AskpassServer::isSecretPrompt(const std::string& prompt)
 {
-    for (const char* word : {"assword", "assphrase", "PIN"})
-        if (prompt.find(word) != std::string::npos)
-            return true;
-    return false;
+    std::string lower = prompt;
+    for (auto& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (const char* word : {"username", "(yes/no", "fingerprint", "are you sure you want to continue connecting"})
+        if (lower.find(word) != std::string::npos)
+            return false;
+    return true;
 }
 
 void AskpassServer::loop()
