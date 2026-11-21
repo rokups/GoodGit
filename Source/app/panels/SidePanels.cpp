@@ -2336,10 +2336,27 @@ void StashesPanel::draw(bool* open)
 
 // ---- Reflog -------------------------------------------------------------------------------------
 
+// The watcher ignores logs/. A reflog-only write (reset --hard HEAD) moves no ref, so the panel looks at the file.
+std::pair<std::uintmax_t, std::filesystem::file_time_type> ReflogPanel::logStamp() const
+{
+    namespace fs = std::filesystem;
+    std::pair<std::uintmax_t, fs::file_time_type> stamp{};
+    if (!m_snapshot)
+        return stamp;
+    const fs::path file = m_ref == "HEAD" ? m_snapshot->gitDir / "logs" / "HEAD" : m_snapshot->commonDir / "logs" / m_ref;
+    std::error_code ec;
+    stamp.first = fs::file_size(file, ec);
+    if (ec)
+        return {};
+    stamp.second = fs::last_write_time(file, ec);
+    return stamp;
+}
+
 void ReflogPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged)
 {
     m_snapshot = snapshot;
-    if (refsChanged)
+    const bool shown = ImGui::GetFrameCount() - m_lastDrawFrame <= 1;
+    if (refsChanged || (shown && logStamp() != m_logStamp))
         invalidate();
     // The chosen ref is gone: go back to HEAD. The stash ref stays while a stash exists.
     const bool gone = m_ref == "refs/stash" ? m_snapshot->stashes.empty()
@@ -2354,6 +2371,7 @@ void ReflogPanel::onSnapshot(const core::SnapshotPtr& snapshot, bool refsChanged
 void ReflogPanel::reload()
 {
     m_dirty = false;
+    m_logStamp = logStamp();
     m_request = m_session.engine().reflog(m_ref);
     m_requested = true;
 }
@@ -2374,18 +2392,20 @@ void ReflogPanel::onReflog(const core::ReflogEvent& event)
 
 void ReflogPanel::draw(bool* open)
 {
-    // A panel that was hidden shows no old list while the new one loads.
-    const int frame = ImGui::GetFrameCount();
-    if (m_dirty) {
-        if (frame - m_lastDrawFrame > 1)
-            m_reflog.reset();
-        m_dirty = false;
-        reload();
-    }
-    m_lastDrawFrame = frame;
     if (!ImGui::Begin(panel::Reflog, open)) {
         ImGui::End();
         return;
+    }
+    // A panel that was hidden shows no old list while the new one loads.
+    const int frame = ImGui::GetFrameCount();
+    const bool wasHidden = frame - m_lastDrawFrame > 1;
+    m_lastDrawFrame = frame;
+    if (wasHidden && logStamp() != m_logStamp)
+        m_dirty = true;
+    if (m_dirty) {
+        if (wasHidden)
+            m_reflog.reset();
+        reload();
     }
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
     if (ImGui::BeginCombo("##reflog_ref", m_ref.c_str())) {

@@ -1972,8 +1972,22 @@ GG_TEST("panels", "reflog: a hidden panel does not reload; it shows the new entr
     s.showPanel("Reflog");
     GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries[0].message.find("reflog hidden entry") != std::string::npos; }));
     GG_CHECK(reflog.request() != hidden);
+    s.settle();
+    const auto reloaded = reflog.request();
     ctx->Yield(3);
+    GG_CHECK(reflog.request() == reloaded);
     GG_CHECK(s.textShown("//Reflog", "reflog hidden entry"));
+}
+
+GG_TEST("panels", "reflog: a reflog-only write (reset --hard HEAD) shows in a visible panel")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && !reflog.reflog()->entries.empty(); }));
+    s.git(repo, {"reset", "-q", "--hard", "HEAD"});
+    GG_CHECK(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries[0].message.find("reset: moving to HEAD") != std::string::npos; }));
 }
 
 GG_TEST("panels", "reflog: the chosen ref falls back to HEAD when the branch is deleted")

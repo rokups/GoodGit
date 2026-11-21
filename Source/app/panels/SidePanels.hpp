@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <set>
 #include <string>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -182,6 +183,8 @@ private:
     core::SnapshotPtr m_snapshot;
     std::string m_ref = "HEAD";
     bool m_dirty = true;
+    std::pair<std::uintmax_t, std::filesystem::file_time_type> logStamp() const;
+    std::pair<std::uintmax_t, std::filesystem::file_time_type> m_logStamp;
     int m_lastDrawFrame = -10;
     FilterInput m_filter;
     core::RequestId m_request = 0;
