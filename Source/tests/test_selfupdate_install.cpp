@@ -11,7 +11,16 @@
 #include <system_error>
 #include <thread>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <cstdlib>
+#else
 #include <unistd.h>
 #endif
 
@@ -323,7 +332,6 @@ GG_TEST("selfupdate", "the update script restores both old files when install gg
     GG_CHECK(pathExists(up::stageDir(dir) / "new" / kGitGg));
 }
 
-#ifndef _WIN32
 GG_TEST("selfupdate", "the update script waits while ggui is running")
 {
     TempRoot root;
@@ -331,9 +339,18 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
     // A live process stands for ggui. The test reaps it: a zombie still answers kill -0.
     gg::DetachedProcess ggui;
     std::string error;
+#ifdef _WIN32
+    const char* systemRoot = std::getenv("SystemRoot");
+    GG_REQUIRE(systemRoot != nullptr);
+    GG_REQUIRE(gg::spawnDetached({(fs::path(systemRoot) / "System32" / "ping.exe").string(), "-n", "4", "127.0.0.1"}, ggui,
+        error));
+    const std::string pid = std::to_string(static_cast<unsigned long>(GetProcessId(static_cast<HANDLE>(ggui.process))));
+#else
     GG_REQUIRE(gg::spawnDetached({"/bin/sh", "-c", "sleep 2"}, ggui, error));
+    const std::string pid = std::to_string(ggui.pid);
+#endif
     gg::DetachedProcess script;
-    GG_REQUIRE(startUpdateScript(dir, std::to_string(ggui.pid), script));
+    GG_REQUIRE(startUpdateScript(dir, pid, script));
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     const fs::path stage = up::stageDir(dir);
     GG_CHECK(gg::stillRunning(ggui));
@@ -342,8 +359,11 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
     GG_CHECK_STR_EQ(readFile(dir / kGitGg), "old");
     GG_CHECK(!pathExists(stage / "result.txt"));
     bool ended = false;
-    for (int i = 0; i < 160 && !ended; ++i) {
-        gg::stillRunning(ggui);
+    for (int i = 0; i < 240 && !ended; ++i) {
+        // An ended process with an open handle can still be listed: close the handle at once.
+        if (!gg::stillRunning(ggui)) {
+            gg::release(ggui);
+        }
         ended = !gg::stillRunning(script);
         if (!ended) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -355,7 +375,6 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
     GG_CHECK(startsWith(readFile(stage / "result.txt"), "ok"));
     gg::release(ggui);
 }
-#endif
 
 GG_TEST("selfupdate", "spawnScriptDetached rejects an unsafe argument")
 {
