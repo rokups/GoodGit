@@ -1914,6 +1914,34 @@ GG_TEST("panels", "remotes: name@host label with the host dimmed, tooltip shows 
     GG_CHECK(s.textShown("//##Tooltip_00", "Push: ssh://git@example.invalid/push.git"));
 }
 
+GG_TEST("panels", "reflog: a new entry shows in the next frames (the row cache is rebuilt)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Reflog");
+    auto& reflog = s.session()->reflog();
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && !reflog.reflog()->entries.empty(); }));
+    const size_t before = reflog.reflog()->entries.size();
+    GG_CHECK(!s.textShown("//Reflog", "reflog cache entry"));
+    s.git(repo, {"commit", "--allow-empty", "-q", "-m", "reflog cache entry"});
+    GG_REQUIRE(s.waitUntil([&] { return reflog.reflog() && reflog.reflog()->entries.size() > before; }));
+    ctx->Yield(3);
+    GG_CHECK(s.textShown("//Reflog", "reflog cache entry"));
+}
+
+GG_TEST("panels", "operations: a new operation shows in the next frames")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Operations");
+    s.session()->actions().createBranch("opcache", "HEAD", false);
+    s.settle();
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->operations().empty(); }));
+    const std::string id = s.session()->operations().back().id;
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists((s.child("//Operations", "##ops_table") + "/**/op_" + id + "/###row").c_str()));
+}
+
 GG_TEST("panels", "reflog: HEAD, branch, stash; filter; copy; reveal")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);

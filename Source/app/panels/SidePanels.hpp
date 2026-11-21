@@ -182,6 +182,15 @@ private:
     core::RequestId m_request = 0;
     core::ReflogPtr m_reflog;
     bool m_requested = false;
+    // The entries that match the filter, with their ID texts. Built again when the reflog or the filter text changes.
+    struct Row {
+        size_t index; // in m_reflog->entries
+        std::string newHex, oldHex, newShort, oldShort;
+    };
+    std::vector<Row> m_rows;
+    core::ReflogPtr m_rowsReflog; // the reflog m_rows was built from (kept, so that its address is not reused)
+    std::string m_rowsFilter;
+    bool m_rowsValid = false;
 };
 
 class OperationsPanel {
