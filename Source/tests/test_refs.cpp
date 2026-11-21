@@ -190,6 +190,12 @@ GG_TEST("refs", "the multi menu deletes on the remote only the selected branches
     GG_CHECK(refExists(s, repo, "refs/heads/c"));
 }
 
+// Every ref with its tip and upstream: a click on a disabled item must not change it.
+static std::string refState(Scenario& s, const fs::path& repo)
+{
+    return s.gitOut(repo, {"for-each-ref", "--format=%(refname) %(objectname) %(upstream)"});
+}
+
 GG_TEST("refs", "the multi menu item On its remote is disabled when no selected branch has an upstream")
 {
     const fs::path repo = repoWithUpstreams(s);
@@ -217,8 +223,11 @@ GG_TEST("refs", "the multi menu item On its remote is disabled when no selected 
     GG_CHECK(disabled("On its remote"));
     GG_CHECK(!disabled("Local"));
     GG_CHECK(!disabled("Local and all remotes"));
-    closeMenus();
+    const std::string before = refState(s, repo);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/On its remote"));
     GG_CHECK(!s.dialogOpen("Delete branches", 0.5f));
+    GG_CHECK_STR_EQ(refState(s, repo), before);
+    closeMenus();
     // One selected branch with an upstream enables the item.
     selectBranches(s, {"a", "d"});
     GG_REQUIRE(s.session()->branches().selection().names.size() == 2);
@@ -516,8 +525,10 @@ GG_TEST("refs", "Move branch is disabled on a row where every branch already poi
     const std::string hereRef = "//History/**/###row_" + head;
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(hereRef.c_str()); }));
     ctx->ItemClick(hereRef.c_str(), ImGuiMouseButton_Right);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Move branch").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->KeyPress(ImGuiKey_Escape);
+    const std::string before = refState(s, repo);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Move branch"));
+    GG_CHECK(!s.dialogOpen("Move branch", 0.5f));
+    GG_CHECK_STR_EQ(refState(s, repo), before);
     // Another row still offers main.
     const std::string olderRef = "//History/**/###row_" + older;
     ctx->ItemClick(olderRef.c_str(), ImGuiMouseButton_Right);
@@ -1163,9 +1174,10 @@ GG_TEST("refs", "branches: a local branch with one remote ref has a Remote subme
     ctx->ItemClick(branchRow("side").c_str(), ImGuiMouseButton_Right);
     ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Remote origin");
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
+    const std::string before = refState(s, repo);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Set as upstream"));
+    GG_CHECK_STR_EQ(refState(s, repo), before);
+    GG_CHECK_STR_EQ(gg::trim(s.gitMayFail(repo, {"config", "--get", "branch.side.merge"}).out), "refs/heads/side");
 }
 
 GG_TEST("refs", "branches: no Remote submenu without a remote ref, with two remote refs or with a local upstream")
@@ -1217,9 +1229,10 @@ GG_TEST("refs", "branches: Set as upstream in the menu of a child row of a branc
     // The upstream child has it disabled.
     ctx->ItemClick(origin.c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
+    const std::string before = refState(s, repo);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Set as upstream"));
+    GG_CHECK_STR_EQ(refState(s, repo), before);
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("main")->upstream, "origin/main");
     s.contextMenu(second.c_str(), "Set as upstream");
     GG_CHECK(s.waitUntil([&] { return gg::trim(s.gitMayFail(repo, {"config", "--get", "branch.main.remote"}).out) == "second"; }));
     s.settle();
@@ -1254,10 +1267,11 @@ GG_TEST("refs", "branches: an upstream with another name is a second child row w
     // Each menu works: the upstream has Set as upstream disabled, the other ref has it enabled.
     ctx->ItemClick(renamed.c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemExists("//$FOCUSED/Copy name"));
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
+    const std::string before = refState(s, repo);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Set as upstream"));
+    GG_CHECK_STR_EQ(refState(s, repo), before);
+    GG_CHECK_STR_EQ(s.session()->snapshot()->findBranch("main")->upstream, "origin/other");
     ctx->ItemClick(usual.c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled));
@@ -1286,9 +1300,9 @@ GG_TEST("refs", "branches: <remote>/HEAD is not a remote ref of a branch; an ups
     ctx->ItemClick(branchRow("renamed").c_str(), ImGuiMouseButton_Right);
     ctx->MenuAction(ImGuiTestAction_Open, "//$FOCUSED/Remote origin");
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Set as upstream").ItemFlags & ImGuiItemFlags_Disabled); // already its upstream
-    ctx->PopupCloseAll();
-    ctx->Yield(2);
+    const std::string before = refState(s, repo);
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Set as upstream")); // already its upstream
+    GG_CHECK_STR_EQ(refState(s, repo), before);
     s.git(repo, {"remote", "set-head", "origin", "-d"});
 }
 

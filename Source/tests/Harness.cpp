@@ -474,6 +474,16 @@ void Scenario::dialogButton(const char* title, const char* button)
 
 bool Scenario::settle(float seconds) { return waitIdle(seconds); }
 
+bool Scenario::clickDisabled(const char* ref)
+{
+    const bool disabled = (ctx->ItemInfo(ref).ItemFlags & ImGuiItemFlags_Disabled) != 0;
+    ctx->ItemClick(ref);
+    settle();
+    ctx->PopupCloseAll();
+    ctx->Yield(2);
+    return disabled;
+}
+
 std::vector<Scenario::DrawnGlyph> Scenario::drawnGlyphs(ImGuiWindow* w)
 {
     struct Key {

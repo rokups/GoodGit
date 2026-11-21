@@ -272,6 +272,9 @@ public:
     void dialogButton(const char* title, const char* button);
     // Waits for the running mutation(s) to finish and the UI to settle.
     bool settle(float seconds = 60.0f);
+    // Clicks an item that must be disabled, settles, and closes the popups (a click on a disabled
+    // menu item keeps the menu open). Returns true if the item had the Disabled flag.
+    bool clickDisabled(const char* ref);
     // Saves the current frame as <artifacts>/screens/<name>.png (for looking at the UI).
     void screenshot(const std::string& name);
     // Clicks the merge row's expand toggle (merges start collapsed) and waits for the side history.
