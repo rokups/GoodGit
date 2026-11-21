@@ -329,9 +329,9 @@ void App::drawGitConfigSettings(Session& s)
 // in the registry (platform/PathSetup.hpp).
 void App::drawPathSetting()
 {
-    const PathSetupSupport support = pathSetupSupport();
-    const std::string dir = executableDir();
-    const std::string home = pathSetupConfigHome();
+    const PathSetupSupport support = m_pathSupport;
+    const std::string& dir = m_pathDir;
+    const std::string& home = m_pathHome;
     bool on = m_pathSetup.enabled;
     ImGui::Separator();
     ImGui::BeginDisabled(!pathSetupUsable(support));
@@ -539,7 +539,10 @@ void App::drawSettingsWindow()
     Session* s = (m_session && m_session->opened()) ? m_session.get() : nullptr;
     if (ImGui::BeginTabBar("##settings_tabs")) {
         if (m_settingsFreshOpen) {
-            m_pathSetup = readPathSetup(pathSetupSupport(), pathSetupConfigHome(), executableDir());
+            m_pathSupport = pathSetupSupport();
+            m_pathHome = pathSetupConfigHome();
+            m_pathDir = executableDir();
+            m_pathSetup = readPathSetup(m_pathSupport, m_pathHome, m_pathDir);
             m_contextMenu = readContextMenu(contextMenuDataHome(), executablePath());
         }
         const ImGuiTabItemFlags first = m_settingsFreshOpen ? ImGuiTabItemFlags_SetSelected : 0;
