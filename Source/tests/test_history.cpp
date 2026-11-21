@@ -1766,7 +1766,9 @@ GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
     const fs::path repo = s.fixture(Recipe::Unborn);
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/HEAD##hist_head"); }));
-    GG_CHECK(ctx->ItemInfo("//History/HEAD##hist_head").ItemFlags & ImGuiItemFlags_Disabled);
+    const std::string selected = s.session()->selection().id.hex();
+    GG_CHECK(s.clickDisabled("//History/HEAD##hist_head"));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), selected);
 }
 
 GG_TEST("history", "Go to parent selects the parent; a merge commit lists both parents")
@@ -1790,8 +1792,9 @@ GG_TEST("history", "Go to parent selects the parent; a merge commit lists both p
     const std::string root = s.revParse(repo, "main~3");
     ctx->ItemClick(rowRef(root).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Go to parent").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->KeyPress(ImGuiKey_Escape);
+    const std::string selected = s.session()->selection().id.hex();
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Go to parent"));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), selected);
 }
 
 GG_TEST("history", "Go to parent reveals a parent hidden in a collapsed merge")
@@ -2354,8 +2357,9 @@ GG_TEST("history", "Go to child selects the child; it is disabled without a chil
     // No child: disabled.
     ctx->ItemClick(rowRef(merge).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(ctx->ItemInfo("//$FOCUSED/Go to child").ItemFlags & ImGuiItemFlags_Disabled);
-    ctx->KeyPress(ImGuiKey_Escape);
+    const std::string selected = s.session()->selection().id.hex();
+    GG_CHECK(s.clickDisabled("//$FOCUSED/Go to child"));
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), selected);
     // Two children: a submenu.
     const std::string side = s.revParse(repo, "feature~1");
     const std::string mainSide = s.revParse(repo, "main~2");
