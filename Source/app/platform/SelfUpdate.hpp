@@ -20,6 +20,7 @@ struct Asset {
 
 struct Release {
     std::string commit; // target_commitish
+    std::int64_t publishedAt = 0; // published_at as Unix seconds (UTC); 0 when missing or invalid
     std::vector<Asset> assets;
 };
 
@@ -31,10 +32,16 @@ bool parseRelease(std::string_view json, Release& out, std::string& error);
 // is none or the asset is not trustworthy (foreign URL, bad digest, zero size).
 const Asset* selectAsset(const Release& release, std::string_view packageSystem);
 
-enum class Freshness { UpToDate, Newer, Unknown };
+enum class Freshness { UpToDate, Newer, Older, Unknown };
 
-// Compares two 40-hex commit ids (case-insensitive). Anything else gives Unknown.
-Freshness compare(std::string_view local, std::string_view release);
+// Compares two 40-hex commit ids (case-insensitive). Anything else gives Unknown. The same commit
+// is UpToDate. For different commits the release is Newer only when it was published after the
+// build time (Unix seconds); else it is Older. A time of 0 on one side gives Unknown.
+Freshness compare(std::string_view local, std::string_view release, std::int64_t buildTime,
+                  std::int64_t publishedAt);
+
+// Parses "YYYY-MM-DDTHH:MM:SSZ" to Unix seconds (UTC). Returns 0 for any other text.
+std::int64_t parseTimestamp(std::string_view text);
 
 // Empty when ggui can update the install of `exe`, else a message for the user. The checks run in
 // this order: file name (ggui or ggui.exe), installed by the package manager (Linux, /usr but not
@@ -48,7 +55,8 @@ std::filesystem::path stageDir(const std::filesystem::path& installDir);
 // The text of the update scripts (pure ASCII; the Windows text uses CRLF line ends). Contract: the
 // script is in the stage folder and its parent folder is the install folder. Argument 1 is the pid
 // of ggui, argument 2 "nostart" skips the restart (tests only). The script waits for the pid to
-// exit, swaps ggui and git-gg for the files in new/ (it undoes the swap when a step fails), writes
+// exit, swaps ggui and git-gg for the files in new/ and then installs every other file of new/ with
+// its sub folders (it undoes the whole swap when a step fails), writes
 // "ok" or "failed: <step>" to result.txt (a failed undo adds the line "failed: undo"), and then starts the installed ggui.
 std::string windowsUpdateScript();
 std::string unixUpdateScript();
@@ -74,8 +82,10 @@ std::optional<std::string> takeResult(const std::filesystem::path& installDir);
 //     or when its Unix mode is not a regular file or a folder. The ZIP has at most 1000 entries and
 //     1 GiB of data in total; the bytes written are counted, not only the sizes in the headers.
 //     A CRC error is an error. Nothing follows a link: links are not created.
-//  3. The ZIP holds exactly one top folder. ggui and git-gg are moved into <stage>/new: from
-//     <top>/bin/ on Linux, from <top>/ on Windows, where LICENSE.txt is moved too (when present).
+//  3. The ZIP holds exactly one top folder. All files of its program folder are moved into
+//     <stage>/new with their sub folders: <top>/bin/ on Linux, <top>/ on Windows. ggui and git-gg
+//     must be there. A file name with a character other than a letter, a digit, ".", "_", "-", " "
+//     or "/" is refused. Linux: <top>/share/ is not installed (it is outside the install folder).
 //  4. Linux: both files get mode 0755.
 //  5. `<stage>/new/git-gg --version` runs (it is killed after 20 s) and must print "git gg ...".
 //  6. <stage>/unpack is deleted.

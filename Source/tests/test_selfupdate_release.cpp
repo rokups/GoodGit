@@ -128,13 +128,24 @@ GG_TEST("selfupdate", "compare tells whether the release is newer")
     using ggui::update::Freshness;
     const std::string a = "0123456789abcdef0123456789abcdef01234567";
     const std::string b = "fedcba9876543210fedcba9876543210fedcba98";
-    GG_CHECK(ggui::update::compare(a, a) == Freshness::UpToDate);
-    GG_CHECK(ggui::update::compare("0123456789ABCDEF0123456789ABCDEF01234567", a) == Freshness::UpToDate);
-    GG_CHECK(ggui::update::compare(a, b) == Freshness::Newer);
-    GG_CHECK(ggui::update::compare("", a) == Freshness::Unknown);
-    GG_CHECK(ggui::update::compare(a, "") == Freshness::Unknown);
-    GG_CHECK(ggui::update::compare("abc", "abc") == Freshness::Unknown);
-    GG_CHECK(ggui::update::compare(std::string(40, 'g'), a) == Freshness::Unknown);
+    constexpr std::int64_t built = 1767225600; // 2026-01-01
+    constexpr std::int64_t later = 1767312000; // 2026-01-02
+    constexpr std::int64_t earlier = 1767139200; // 2025-12-31
+    GG_CHECK(ggui::update::parseTimestamp("2026-01-02T00:00:00Z") == later);
+    GG_CHECK(ggui::update::parseTimestamp("2026-01-02 00:00:00") == 0);
+    GG_CHECK(ggui::update::parseTimestamp("") == 0);
+    GG_CHECK(ggui::update::compare(a, a, built, later) == Freshness::UpToDate);
+    GG_CHECK(ggui::update::compare(a, a, 0, 0) == Freshness::UpToDate);
+    GG_CHECK(ggui::update::compare("0123456789ABCDEF0123456789ABCDEF01234567", a, built, later) == Freshness::UpToDate);
+    GG_CHECK(ggui::update::compare(a, b, built, later) == Freshness::Newer);
+    GG_CHECK(ggui::update::compare(a, b, built, earlier) == Freshness::Older); // a downgrade
+    GG_CHECK(ggui::update::compare(a, b, built, built) == Freshness::Older);
+    GG_CHECK(ggui::update::compare(a, b, 0, later) == Freshness::Unknown);
+    GG_CHECK(ggui::update::compare(a, b, built, 0) == Freshness::Unknown);
+    GG_CHECK(ggui::update::compare("", a, built, later) == Freshness::Unknown);
+    GG_CHECK(ggui::update::compare(a, "", built, later) == Freshness::Unknown);
+    GG_CHECK(ggui::update::compare("abc", "abc", built, later) == Freshness::Unknown);
+    GG_CHECK(ggui::update::compare(std::string(40, 'g'), a, built, later) == Freshness::Unknown);
 }
 
 } // namespace ggtest

@@ -112,7 +112,7 @@ struct Fixture {
 
     void setRelease(const std::string& commit, const std::string& digest = {}, const std::string& name = {})
     {
-        net->releaseJson = R"({"target_commitish":")" + commit + R"(","assets":[{"name":")" +
+        net->releaseJson = R"({"published_at":"2026-01-02T00:00:00Z","target_commitish":")" + commit + R"(","assets":[{"name":")" +
                            (name.empty() ? assetName : name) + R"(","browser_download_url":")" + kAssetBase +
                            (name.empty() ? assetName : name) + R"(","size":)" + std::to_string(asset.size) +
                            R"(,"digest":"sha256:)" + (digest.empty() ? asset.sha256 : digest) +
@@ -126,6 +126,7 @@ struct Fixture {
         config.fetch = net->fn();
         config.buildInfo.version = "1";
         config.buildInfo.commit = kLocalCommit;
+        config.buildInfo.buildTime = 1767225600; // 2026-01-01
         config.buildInfo.packageSystem = ggui::buildInfo().packageSystem;
         config.releaseUrl = kReleaseUrl;
         return config;
@@ -275,6 +276,21 @@ GG_TEST("selfupdate", "updater check finds a newer release and its package")
     GG_CHECK(!pathExists(f.workDir()));
     GG_CHECK(updater.error().empty());
     GG_CHECK(updater.offReason().empty());
+}
+
+GG_TEST("selfupdate", "updater check does not offer an older release")
+{
+    Fixture f;
+    SelfUpdater::Config config = f.config();
+    config.buildInfo.buildTime = 1767312001; // built after the release was published
+    SelfUpdater updater(config);
+    GG_CHECK(checkToEnd(updater) == State::UpToDate);
+    GG_CHECK(!updater.release().has_value());
+    // No build time: the order is unknown and nothing is offered.
+    config.buildInfo.buildTime = 0;
+    SelfUpdater unknown(config);
+    GG_CHECK(checkToEnd(unknown) == State::Failed);
+    GG_CHECK(!unknown.release().has_value());
 }
 
 GG_TEST("selfupdate", "updater check fails with the fetch error and then retries")

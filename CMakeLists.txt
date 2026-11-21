@@ -108,6 +108,8 @@ else()
     set(GGUI_PACKAGE_SYSTEM linux-${CMAKE_SYSTEM_PROCESSOR})
 endif()
 set(GGUI_BUILD_COMMIT "$ENV{GITHUB_SHA}" CACHE STRING "Commit of a CI build; empty for local builds")
+# Configure time (Unix seconds, UTC). The updater offers only a release published after it.
+string(TIMESTAMP GGUI_BUILD_TIME "%s" UTC)
 
 add_subdirectory(Source/libgg)
 add_subdirectory(Source/gitgg)

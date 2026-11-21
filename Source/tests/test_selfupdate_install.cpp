@@ -247,6 +247,41 @@ GG_TEST("selfupdate", "the update script swaps the files")
     GG_CHECK(!pathExists(stage / "new" / kGgui));
 }
 
+GG_TEST("selfupdate", "the update script installs every other file of new/")
+{
+    TempRoot root;
+    const fs::path dir = makeInstall(root.path, true);
+    const fs::path newDir = up::stageDir(dir) / "new";
+    writeFile(dir / "extra.dat", "old extra");
+    writeFile(newDir / "extra.dat", "new extra");
+    writeFile(newDir / "data" / "theme.txt", "theme");
+    GG_REQUIRE(runUpdateScript(dir));
+    GG_CHECK_STR_EQ(readFile(up::stageDir(dir) / "result.txt").substr(0, 2), "ok");
+    GG_CHECK_STR_EQ(readFile(dir / "extra.dat"), "new extra");
+    GG_CHECK_STR_EQ(readFile(dir / "data" / "theme.txt"), "theme");
+    GG_CHECK(!pathExists(dir / "extra.dat.old"));
+}
+
+GG_TEST("selfupdate", "the update script restores the extra files when an install fails")
+{
+    TempRoot root;
+    const fs::path dir = makeInstall(root.path, true);
+    const fs::path newDir = up::stageDir(dir) / "new";
+    writeFile(dir / "a.dat", "old a");
+    writeFile(newDir / "a.dat", "new a");
+    writeFile(newDir / "z" / "c.dat", "new c");
+    // A file in the place of the folder z makes the step after a.dat fail.
+    writeFile(dir / "z", "keep");
+    GG_REQUIRE(runUpdateScript(dir));
+    const std::string result = readFile(up::stageDir(dir) / "result.txt");
+    GG_CHECK(startsWith(result, "failed:"));
+    GG_CHECK_STR_EQ(readFile(dir / "a.dat"), "old a");
+    GG_CHECK_STR_EQ(readFile(dir / kGgui), "old");
+    GG_CHECK_STR_EQ(readFile(dir / kGitGg), "old");
+    GG_CHECK_STR_EQ(readFile(dir / "z"), "keep");
+    GG_CHECK(!pathExists(dir / "a.dat.old"));
+}
+
 GG_TEST("selfupdate", "the update script replaces stale .old files")
 {
     TempRoot root;
