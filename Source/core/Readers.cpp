@@ -1735,7 +1735,7 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
                 f.deletions = static_cast<int>(dels);
                 readHunks(patch.get(), f, q.full, &lineBudget);
                 Buf buf;
-                if (!f.truncated && !f.linesCut && git_patch_to_buf(&buf.buf, patch.get()) == 0)
+                if (!f.truncated && git_patch_to_buf(&buf.buf, patch.get()) == 0)
                     result->patch += buf.str();
             }
             // Full texts for context expansion.

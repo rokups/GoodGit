@@ -801,7 +801,7 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged || commitMode ? 1 : 0;
         handle("###hunk_" + std::to_string(l.hunk), width - button * static_cast<float>(count));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
-        ImGui::BeginDisabled(!free);
+        ImGui::BeginDisabled(!free || f.linesCut);
         auto iconButton = [&](const char* icon, const std::string& id, const char* tip) {
             ImGui::SameLine(0, 0);
             // One text line tall, so the glyph keeps the editor line's baseline.
@@ -1086,6 +1086,8 @@ void DiffPanel::drawMenuItems()
     // History editing on the selected lines of a commit's change.
     if (m_selection.kind == SelKind::Commit && m_diff->query.kind == core::DiffKind::Commit) {
         ImGui::Separator();
+        if (m_diff->files.front().linesCut)
+            ImGui::TextDisabled("Long lines are shortened: no line or hunk change is possible.");
         const std::string patch = changes ? buildPatch(m_diff->files.front(), lines, false) : std::string();
         const bool can = free && !patch.empty();
         const core::Oid id = m_selection.id;
