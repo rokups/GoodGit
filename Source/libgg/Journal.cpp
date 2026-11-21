@@ -1,5 +1,6 @@
 #include "libgg/Journal.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Keep.hpp"
 #include "libgg/Process.hpp"
 
@@ -40,6 +41,22 @@ bool isHeadKey(const std::string& ref)
     return ref == "HEAD" || (ref.rfind("worktrees/", 0) == 0 && ref.size() > 5 && ref.compare(ref.size() - 5, 5, "/HEAD") == 0);
 }
 
+// Removes the lock when it is older than 10 minutes and its mtime did not change since the check
+// (another process may have replaced it). Returns true when it removed the lock.
+bool removeStale(const fs::path& path)
+{
+    std::error_code ec;
+    const auto mtime = fs::last_write_time(path, ec);
+    if (ec || fs::file_time_type::clock::now() - mtime <= std::chrono::minutes(10))
+        return false;
+    if (beforeStaleLockRemoveHook)
+        beforeStaleLockRemoveHook(path);
+    const auto again = fs::last_write_time(path, ec);
+    if (ec || again != mtime)
+        return false;
+    return fs::remove(path, ec);
+}
+
 // Git-style lock: create the lock file exclusively; retry for up to 1 s; remove stale locks.
 class Lock {
 public:
@@ -64,12 +81,8 @@ public:
                 return;
             }
 #endif
-            std::error_code ec;
-            const auto age = fs::file_time_type::clock::now() - fs::last_write_time(m_path, ec);
-            if (!ec && age > minutes(10)) {
-                fs::remove(m_path, ec); // stale
+            if (removeStale(m_path))
                 continue;
-            }
             if (steady_clock::now() > deadline)
                 return;
             std::this_thread::sleep_for(milliseconds(10));
@@ -149,6 +162,47 @@ bool writeLocked(const fs::path& path, const std::string& line, std::string* err
     return true;
 }
 
+// Keeps the records of the last rotateKeepOps finished operations, and of every open operation (begun,
+// not ended), when the file is over rotateBytes. The caller holds the lock. A rewrite failure leaves
+// the journal as it was.
+void rotateLocked(const fs::path& path)
+{
+    std::error_code ec;
+    if (fs::file_size(path, ec) <= rotateBytes || ec)
+        return;
+    std::ifstream in(path, std::ios::binary);
+    std::vector<std::pair<std::string, std::string>> lines; // op id ("" = header), line
+    std::vector<std::string> order;
+    std::set<std::string> ended;
+    std::string line;
+    while (std::getline(in, line)) {
+        const json j = json::parse(line, nullptr, false);
+        if (!j.is_object())
+            continue;
+        const std::string id = j.value("op", std::string());
+        const std::string type = j.value("t", std::string());
+        if (type == "begin")
+            order.push_back(id);
+        else if (type == "end")
+            ended.insert(id);
+        else if (id.empty() && !j.contains("gg-journal"))
+            continue;
+        lines.emplace_back(id, line);
+    }
+    std::set<std::string> keep;
+    size_t finished = 0;
+    for (auto it = order.rbegin(); it != order.rend(); ++it)
+        if (!ended.count(*it) || finished++ < rotateKeepOps)
+            keep.insert(*it);
+    if (keep.size() == order.size())
+        return;
+    std::string text;
+    for (const auto& [id, l] : lines)
+        if (id.empty() || keep.count(id))
+            text += l + "\n";
+    gg::writeFileAtomic(path, text);
+}
+
 std::string busyMessage(const fs::path& dir)
 {
     return "journal busy (" + (dir / "journal.lock").string() + " exists)";
@@ -166,7 +220,10 @@ bool Journal::appendLine(const std::string& line, std::string* error)
             *error = busyMessage(m_dir);
         return false;
     }
-    return writeLocked(m_path, line, error);
+    if (!writeLocked(m_path, line, error))
+        return false;
+    rotateLocked(m_path);
+    return true;
 }
 
 struct Journal::Transaction::Held {
@@ -197,7 +254,10 @@ bool Journal::Transaction::appendLine(const std::string& line, std::string* erro
             *error = busyMessage(m_journal.m_dir);
         return false;
     }
-    return writeLocked(m_journal.m_path, line, error);
+    if (!writeLocked(m_journal.m_path, line, error))
+        return false;
+    rotateLocked(m_journal.m_path);
+    return true;
 }
 
 bool Writer::begin(const Operation& op, std::string* error)
