@@ -13,11 +13,21 @@ option(GGUI_ENABLE_IMGUI_TEST_ENGINE "Compile the integration tests into ggui (-
 option(GGUI_WERROR "Treat warnings in first-party code as errors" ON)
 option(GGUI_STATIC_CXX_RUNTIME
     "Link libstdc++/libgcc statically into ggui and git-gg on Linux (portable packages)" OFF)
+option(GGUI_SANITIZE "Build everything with AddressSanitizer and UBSan (gcc/clang on Linux)" OFF)
 set(GGUI_COVERAGE "OFF" CACHE STRING "Coverage instrumentation: OFF, CLANG (source-based) or GCOV")
 set_property(CACHE GGUI_COVERAGE PROPERTY STRINGS OFF CLANG GCOV)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
+endif()
+
+# All targets, third party too: a mix of instrumented and plain code gives false reports in ASan.
+if(GGUI_SANITIZE)
+    if(NOT (UNIX AND NOT APPLE))
+        message(FATAL_ERROR "GGUI_SANITIZE needs gcc or clang on Linux")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
 endif()
 
 if(UNIX AND NOT APPLE)

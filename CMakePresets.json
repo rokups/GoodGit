@@ -65,6 +65,16 @@
       }
     },
     {
+      "name": "asan",
+      "displayName": "AddressSanitizer + UBSan (Linux, tests on)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "GGUI_SANITIZE": "ON"
+      }
+    },
+    {
       "name": "mingw-x64-static",
       "displayName": "MinGW x64, fully static (Schannel)",
       "inherits": "base",
@@ -169,6 +179,10 @@
     {
       "name": "ninja-debug",
       "configurePreset": "ninja-debug"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
     },
     {
       "name": "coverage",
