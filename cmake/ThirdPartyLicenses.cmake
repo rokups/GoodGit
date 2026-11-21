@@ -17,6 +17,7 @@ function(ggui_tpl_add label pkg spdx file)
         set(path ${${pkg}_SOURCE_DIR}/${file})
     else()
         set(path ${GGUI_TPL_DIR}/${file})
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${path}) # an edit reconfigures
     endif()
     if(NOT EXISTS ${path})
         message(FATAL_ERROR "License file missing for ${label}: ${path}")

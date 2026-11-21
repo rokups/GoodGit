@@ -4,9 +4,10 @@
 # `git gg` resolve. Fonts are embedded in ggui (EmbedFont.cmake); there are no other runtime files.
 #
 #   Linux:   bin/ggui, bin/git-gg, share/applications/ggui.desktop,
-#            share/icons/hicolor/256x256/apps/ggui.png, share/doc/ggui/LICENSE
+#            share/icons/hicolor/256x256/apps/ggui.png, share/doc/ggui/LICENSE,
+#            share/doc/ggui/THIRD_PARTY_LICENSES.txt
 #            packages: TGZ and ZIP (relocatable, one top directory), DEB (/usr)
-#   Windows: ggui.exe, git-gg.exe, LICENSE.txt at the top of the ZIP
+#   Windows: ggui.exe, git-gg.exe, LICENSE.txt, THIRD_PARTY_LICENSES.txt at the top of the ZIP
 #
 # Only the "ggui" install component is packaged: the fetched dependencies' own install rules
 # (libgit2 headers, static libraries, CMake configs) go to "thirdparty" (CMakeLists.txt). Install
