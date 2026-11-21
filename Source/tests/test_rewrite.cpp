@@ -188,7 +188,7 @@ GG_TEST("rewrite", "published history asks first; a locked ref leaves everything
     const std::string published = s.revParse(repo, "origin/main~1");
     const std::string before = everything(s, repo);
     GG_REQUIRE(s.openRepository(repo));
-    GG_REQUIRE(s.expandMerge(s.head(repo)) || true);
+    s.expandMerge(s.head(repo));
     selectCommit(s, published);
     s.setText("//Change information/##message", "Rewrite what is on the remote");
     ctx->ItemClick("//Change information/###save_message");
