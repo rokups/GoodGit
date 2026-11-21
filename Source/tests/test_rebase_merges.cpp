@@ -1158,4 +1158,158 @@ GG_TEST("rebase-merges", "todo: a token longer than a full id is a problem, not 
     GG_REQUIRE(problems.size() == 1);
 }
 
+namespace {
+
+// c0 - a1 - b1 - M - e1 (main); topic: t1 - t2 from a1, merged by M. The editor opens from a1.
+struct SmallMerge {
+    fs::path path;
+    std::string c0, a1, t1, t2, b1, m, e1;
+};
+
+SmallMerge makeSmallMerge(Scenario& s)
+{
+    SmallMerge r;
+    r.path = s.fixture(Recipe::Empty);
+    const fs::path& p = r.path;
+    s.commitFile(p, "base.txt", "base\n", "c0 base");
+    r.c0 = s.head(p);
+    s.commitFile(p, "a.txt", "a\n", "a1 add a");
+    r.a1 = s.head(p);
+    s.git(p, {"switch", "-q", "-c", "topic"});
+    s.commitFile(p, "t.txt", "t1\n", "t1 add t");
+    r.t1 = s.head(p);
+    s.commitFile(p, "t.txt", "t1\nt2\n", "t2 change t");
+    r.t2 = s.head(p);
+    s.git(p, {"switch", "-q", "main"});
+    s.commitFile(p, "b.txt", "b\n", "b1 add b");
+    r.b1 = s.head(p);
+    s.git(p, {"merge", "-q", "--no-ff", "topic", "-m", "Merge branch 'topic'"});
+    r.m = s.head(p);
+    s.commitFile(p, "e.txt", "e\n", "e1 add e");
+    r.e1 = s.head(p);
+    return r;
+}
+
+// Opens the editor from a1 with Rebase merges on.
+bool openMerges(Scenario& s, const SmallMerge& r)
+{
+    if (!s.openRepository(r.path) || !openFrom(s, r.a1))
+        return false;
+    s.ctx->ItemCheck(irWidget("ir_rebase_merges").c_str());
+    s.ctx->Yield(2);
+    return editor(s).options().rebaseMerges;
+}
+
+} // namespace
+
+namespace {
+
+// Runs git rebase --rebase-merges with the same list on a copy: the same branches, ids and post-rewrite log.
+void sameAsGitOnCopy(Scenario& s, const SmallMerge& r, const fs::path& pristine, const std::string& todoText)
+{
+    const fs::path copy = copyRepo(s, pristine, "git-copy");
+    const fs::path todoFile = s.root() / "list.todo";
+    std::ofstream(todoFile, std::ios::binary) << todoText;
+    const auto run = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--rebase-merges",
+                                        s.gitAtLeast(2, 45) ? "--empty=stop" : "--empty=ask", r.c0},
+        "true");
+    GG_CHECK(run.ok());
+    GG_CHECK_STR_EQ(branches(s, r.path), branches(s, copy));
+    GG_CHECK_STR_EQ(s.read(r.path, ".git/post-rewrite.log"), s.read(copy, ".git/post-rewrite.log"));
+}
+
+bool reachable(Scenario& s, const SmallMerge& r, const std::string& id, const std::string& tip)
+{
+    return s.gitOut(r.path, {"rev-list", tip}).find(id) != std::string::npos;
+}
+
+// main must be e1 - b1 - a1 - c0 in a straight line, with the files of those commits.
+void checkStraightMain(Scenario& s, const SmallMerge& r)
+{
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "--format=%s", "main"}), "e1 add e\nb1 add b\na1 add a\nc0 base");
+    GG_CHECK_EQ(parentsOf(s, r.path, "main").size(), 1u);
+    GG_CHECK_STR_EQ(parentsOf(s, r.path, "main").at(0), s.revParse(r.path, "main~1"));
+    GG_CHECK_EQ(parentsOf(s, r.path, "main~1").size(), 1u);
+    GG_CHECK_STR_EQ(parentsOf(s, r.path, "main~1").at(0), s.revParse(r.path, "main~2"));
+    GG_CHECK_EQ(parentsOf(s, r.path, "main~2").size(), 1u);
+    GG_CHECK_STR_EQ(parentsOf(s, r.path, "main~2").at(0), r.c0);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main~3"), r.c0);
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"ls-tree", "-r", "--name-only", "main"}), "a.txt\nb.txt\nbase.txt\ne.txt");
+    GG_CHECK_STR_EQ(s.read(r.path, "a.txt"), "a\n");
+    GG_CHECK_STR_EQ(s.read(r.path, "b.txt"), "b\n");
+    GG_CHECK_STR_EQ(s.read(r.path, "e.txt"), "e\n");
+    GG_CHECK_STR_EQ(s.read(r.path, "base.txt"), "base\n");
+    GG_CHECK(!fs::exists(r.path / "t.txt"));
+    GG_CHECK(!reachable(s, r, r.m, "main"));
+}
+
+} // namespace
+
+GG_TEST("rebase-merges", "dropping a whole merged chain leaves a straight main: the merge has nothing to merge")
+{
+    const SmallMerge r = makeSmallMerge(s);
+    installRecordingHooks(s, r.path);
+    const fs::path pristine = copyRepo(s, r.path, "pristine");
+    GG_REQUIRE(openMerges(s, r));
+    for (const std::string& id : {r.t1, r.t2}) {
+        ctx->ItemClick(irRow(id).c_str());
+        ctx->KeyPress(ImGuiKey_D);
+    }
+    ctx->Yield(2);
+    GG_REQUIRE(indexOfCommit(s, r.t1) < editor(s).todo().items.size());
+    GG_CHECK(editor(s).todo().items[indexOfCommit(s, r.t1)].action == A::Drop);
+    GG_CHECK(editor(s).todo().items[indexOfCommit(s, r.t2)].action == A::Drop);
+    GG_CHECK(!todo::hasErrors(editor(s).issues()));
+    const std::string todoText = todo::format(editor(s).todo());
+    datesForGgui(true);
+    const bool started = start(s);
+    datesForGgui(false);
+    GG_REQUIRE(started);
+    checkClean(s, r.path);
+    checkStraightMain(s, r);
+    GG_CHECK(!reachable(s, r, r.t1, "main") && !reachable(s, r, r.t2, "main"));
+    // The dropped commits are on no branch: topic went back with the chain dropped.
+    GG_CHECK(!reachable(s, r, r.t1, "topic") && !reachable(s, r, r.t2, "topic"));
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic"), s.revParse(r.path, "main~2"));
+    sameAsGitOnCopy(s, r, pristine, todoText);
+}
+
+GG_TEST("rebase-merges", "dropping the merge row keeps the chain on its own branch and main straight")
+{
+    const SmallMerge r = makeSmallMerge(s);
+    installRecordingHooks(s, r.path);
+    const fs::path pristine = copyRepo(s, r.path, "pristine");
+    GG_REQUIRE(openMerges(s, r));
+    const auto merges = [&] {
+        const auto& items = editor(s).todo().items;
+        return std::count_if(items.begin(), items.end(), [](const auto& item) { return item.action == A::Merge; });
+    };
+    GG_REQUIRE(merges() == 1); // else the no-merge check below passes for a todo that never had one
+    // The merge row is under b1; the arrow selects it (its middle holds the action combo) and Delete removes it.
+    ctx->ItemClick(irRow(r.b1).c_str());
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->KeyPress(ImGuiKey_Delete);
+    ctx->Yield(2);
+    GG_REQUIRE(merges() == 0);
+    GG_CHECK(!todo::hasErrors(editor(s).issues()));
+    const std::string todoText = todo::format(editor(s).todo());
+    datesForGgui(true);
+    const bool started = start(s);
+    datesForGgui(false);
+    GG_REQUIRE(started);
+    checkClean(s, r.path);
+    checkStraightMain(s, r);
+    GG_CHECK(!reachable(s, r, r.t1, "main") && !reachable(s, r, r.t2, "main"));
+    // topic keeps its two commits on a1; the commits no longer reach main.
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"log", "--format=%s", "topic"}), "t2 change t\nt1 add t\na1 add a\nc0 base");
+    GG_CHECK_STR_EQ(s.revParse(r.path, "topic~2"), s.revParse(r.path, "main~2"));
+    GG_CHECK_EQ(parentsOf(s, r.path, "topic").size(), 1u);
+    GG_CHECK_STR_EQ(parentsOf(s, r.path, "topic").at(0), s.revParse(r.path, "topic~1"));
+    GG_CHECK_EQ(parentsOf(s, r.path, "topic~1").size(), 1u);
+    GG_CHECK_STR_EQ(parentsOf(s, r.path, "topic~1").at(0), s.revParse(r.path, "topic~2"));
+    GG_CHECK_STR_EQ(s.gitOut(r.path, {"ls-tree", "-r", "--name-only", "topic"}), "a.txt\nbase.txt\nt.txt");
+    GG_CHECK(!reachable(s, r, r.m, "topic"));
+    sameAsGitOnCopy(s, r, pristine, todoText);
+}
+
 } // namespace ggtest

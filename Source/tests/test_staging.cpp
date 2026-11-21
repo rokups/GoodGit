@@ -39,6 +39,14 @@ std::string xy(Scenario& s, const fs::path& repo, const std::string& path)
     return "";
 }
 
+// The exact `git status --porcelain` lines. gitOut trims a leading blank, so the branch line goes first and is cut.
+std::string porcelain(Scenario& s, const fs::path& repo)
+{
+    const std::string out = s.gitOut(repo, {"status", "--porcelain", "--branch"});
+    const size_t eol = out.find('\n');
+    return eol == std::string::npos ? "" : out.substr(eol + 1);
+}
+
 bool waitXY(Scenario& s, const fs::path& repo, const std::string& path, const std::string& expected)
 {
     const bool ok = s.waitUntil([&] { return xy(s, repo, path) == expected; }, 20.0f);
@@ -216,6 +224,90 @@ GG_TEST("staging", "stage all, unstage all, stage modified")
     GG_CHECK(waitXY(s, repo, "u.txt", "??"));
     ctx->ItemClick((groupRef(s, "Unstaged") + "/Stage all##stage_all").c_str());
     GG_CHECK(waitXY(s, repo, "u.txt", "A."));
+}
+
+GG_TEST("staging", "a deleted file: stage, unstage and discard bring back the exact line and content")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    s.commitFile(repo, "a.txt", "alpha\nsecond line\n", "Add a");
+    s.commitFile(repo, "b.txt", "beta\n", "Add b");
+    fs::remove(repo / "a.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowsReady(s, 1));
+    auto status = [&] { return porcelain(s, repo); };
+    GG_CHECK_STR_EQ(status(), " D a.txt");
+    s.contextMenu(fileRef(s, "Unstaged", "a.txt").c_str(), "Stage");
+    GG_CHECK(waitXY(s, repo, "a.txt", "D."));
+    GG_CHECK_STR_EQ(status(), "D  a.txt");
+    GG_CHECK(!fs::exists(repo / "a.txt"));
+    s.contextMenu(fileRef(s, "Staged", "a.txt").c_str(), "Unstage");
+    GG_CHECK(waitXY(s, repo, "a.txt", ".D"));
+    GG_CHECK_STR_EQ(status(), " D a.txt");
+    GG_CHECK(!fs::exists(repo / "a.txt"));
+    // Discard of the unstaged deletion restores the file.
+    s.contextMenu(fileRef(s, "Unstaged", "a.txt").c_str(), "Discard...");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(waitXY(s, repo, "a.txt", ""));
+    GG_CHECK_STR_EQ(status(), "");
+    GG_CHECK_STR_EQ(s.read(repo, "a.txt"), "alpha\nsecond line\n");
+    // Discard of the staged deletion restores it too.
+    fs::remove(repo / "a.txt");
+    s.git(repo, {"add", "a.txt"});
+    GG_REQUIRE(waitXY(s, repo, "a.txt", "D."));
+    GG_CHECK_STR_EQ(status(), "D  a.txt");
+    GG_REQUIRE(s.waitUntil([&] { return ctx->ItemExists(fileRef(s, "Staged", "a.txt").c_str()); }));
+    s.contextMenu(fileRef(s, "Staged", "a.txt").c_str(), "Discard...");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(waitXY(s, repo, "a.txt", ""));
+    GG_CHECK_STR_EQ(status(), "");
+    GG_CHECK_STR_EQ(s.read(repo, "a.txt"), "alpha\nsecond line\n");
+    GG_CHECK_STR_EQ(s.read(repo, "b.txt"), "beta\n");
+}
+
+GG_TEST("staging", "an unstaged rename: stage, unstage and discard each half")
+{
+    const fs::path repo = s.fixture(Recipe::Empty);
+    const std::string body = "unique content for rename detection\nsecond line\n";
+    s.commitFile(repo, "old.txt", body, "Add old");
+    fs::rename(repo / "old.txt", repo / "new.txt");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(rowsReady(s, 2));
+    auto status = [&] { return porcelain(s, repo); };
+    GG_CHECK_STR_EQ(status(), " D old.txt\n?? new.txt");
+    // The new half alone: an added file; the deletion stays unstaged.
+    s.contextMenu(fileRef(s, "Untracked", "new.txt").c_str(), "Stage");
+    GG_CHECK(waitXY(s, repo, "new.txt", "A."));
+    GG_CHECK_STR_EQ(status(), "A  new.txt\n D old.txt");
+    s.contextMenu(fileRef(s, "Staged", "new.txt").c_str(), "Unstage");
+    GG_CHECK(waitXY(s, repo, "new.txt", "??"));
+    GG_CHECK_STR_EQ(status(), " D old.txt\n?? new.txt");
+    // The old half alone: a staged deletion.
+    s.contextMenu(fileRef(s, "Unstaged", "old.txt").c_str(), "Stage");
+    GG_CHECK(waitXY(s, repo, "old.txt", "D."));
+    GG_CHECK_STR_EQ(status(), "D  old.txt\n?? new.txt");
+    s.contextMenu(fileRef(s, "Staged", "old.txt").c_str(), "Unstage");
+    GG_CHECK(waitXY(s, repo, "old.txt", ".D"));
+    GG_CHECK_STR_EQ(status(), " D old.txt\n?? new.txt");
+    GG_CHECK(!fs::exists(repo / "old.txt"));
+    GG_CHECK_STR_EQ(s.read(repo, "new.txt"), body);
+    // Discard of the deletion brings the old file back; the new file stays untracked.
+    s.contextMenu(fileRef(s, "Unstaged", "old.txt").c_str(), "Discard...");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(waitXY(s, repo, "old.txt", ""));
+    GG_CHECK_STR_EQ(status(), "?? new.txt");
+    GG_CHECK_STR_EQ(s.read(repo, "old.txt"), body);
+    GG_CHECK_STR_EQ(s.read(repo, "new.txt"), body);
+    // Discard of the untracked half removes it: back to the commit.
+    s.contextMenu(fileRef(s, "Untracked", "new.txt").c_str(), "Discard...");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_CHECK(s.waitUntil([&] { return !fs::exists(repo / "new.txt"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(status(), "");
+    GG_CHECK_STR_EQ(s.read(repo, "old.txt"), body);
 }
 
 GG_TEST("staging", "intent to add, delete; no Track / Untrack")

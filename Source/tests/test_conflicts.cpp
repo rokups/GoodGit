@@ -218,6 +218,38 @@ GG_TEST("conflicts", "commit with conflicts records diff3 regions; not offered f
     GG_CHECK(s.session()->status()->conflicted.front().binary);
 }
 
+GG_TEST("conflicts", "a binary conflict: Take ours and Take theirs stage the exact blob of that side")
+{
+    for (const bool takeOurs : {true, false}) {
+        const fs::path bin = s.path(takeOurs ? "bin-ours" : "bin-theirs");
+        s.git(s.root(), {"init", "-q", "-b", "main", bin.string()});
+        s.track(bin);
+        s.write(bin, "b.bin", std::string("base\0bin", 8));
+        s.git(bin, {"add", "b.bin"});
+        s.git(bin, {"commit", "-q", "-m", "Base"});
+        s.git(bin, {"branch", "other"});
+        s.write(bin, "b.bin", std::string("ours\0bin", 8));
+        s.git(bin, {"commit", "-q", "-am", "Ours"});
+        s.git(bin, {"switch", "-q", "other"});
+        s.write(bin, "b.bin", std::string("thrs\0bin", 8));
+        s.git(bin, {"commit", "-q", "-am", "Theirs"});
+        s.git(bin, {"switch", "-q", "main"});
+        s.gitMayFail(bin, {"merge", "other"});
+        GG_REQUIRE(unmerged(s, bin));
+        const std::string wanted = s.revParse(bin, takeOurs ? "main:b.bin" : "other:b.bin");
+        const std::string unwanted = s.revParse(bin, takeOurs ? "other:b.bin" : "main:b.bin");
+        GG_REQUIRE(wanted != unwanted);
+        GG_REQUIRE(s.openRepository(bin));
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(fileRef(s, "Conflicted", "b.bin").c_str()); }));
+        s.contextMenu(fileRef(s, "Conflicted", "b.bin").c_str(), takeOurs ? "Take ours" : "Take theirs");
+        GG_CHECK(s.waitUntil([&] { return !unmerged(s, bin); }));
+        s.settle();
+        GG_CHECK_STR_EQ(s.revParse(bin, ":b.bin"), wanted);
+        GG_CHECK_STR_EQ(s.gitOut(bin, {"cat-file", "-s", ":b.bin"}), "8");
+        GG_CHECK(s.read(bin, "b.bin") == std::string(takeOurs ? "ours\0bin" : "thrs\0bin", 8));
+    }
+}
+
 GG_TEST("conflicts", "first-class conflicts: History marks, filter, F7, Change information, Changes")
 {
     const fs::path repo = s.fixture(Recipe::Conflicted2);

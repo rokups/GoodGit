@@ -29,6 +29,23 @@ namespace ggui {
 
 namespace {
 
+// "https://user:secret@host/x" -> "https://user:***@host/x": a tooltip must not show a password.
+std::string hidePassword(const std::string& url)
+{
+    const auto scheme = url.find("://");
+    if (scheme == std::string::npos)
+        return url;
+    const auto start = scheme + 3;
+    const auto end = url.find_first_of("/?#", start);
+    const auto at = url.rfind('@', end == std::string::npos ? std::string::npos : end); // a raw '@' can be in the password
+    if (at == std::string::npos || at < start)
+        return url;
+    const auto colon = url.find(':', start);
+    if (colon == std::string::npos || colon > at)
+        return url;
+    return url.substr(0, colon + 1) + "***" + url.substr(at);
+}
+
 // Row IDs replace '/' with ':' so test references can address them (ref names contain '/').
 std::string rowId(std::string id)
 {
@@ -2185,8 +2202,9 @@ void RemotesPanel::draw(bool* open)
             actions.fetch(r.name, false, false);
         if (tooltipAllowed() && itemHoveredForTooltip()) {
             tooltip("%s", cachedTooltipText(ImGui::GetItemID(), snap->generation, [&] {
-                const std::string push = r.pushUrl.empty() ? r.url : r.pushUrl;
-                std::string text = push == r.url ? r.url : "Fetch: " + r.url + "\nPush: " + push;
+                const std::string fetch = hidePassword(r.url);
+                const std::string push = r.pushUrl.empty() ? fetch : hidePassword(r.pushUrl);
+                std::string text = push == fetch ? fetch : "Fetch: " + fetch + "\nPush: " + push;
                 if (r.pruneOnFetch)
                     text += "\nPrunes on fetch";
                 return text;
