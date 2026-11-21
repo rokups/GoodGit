@@ -2230,12 +2230,16 @@ void StashesPanel::draw(bool* open)
     int popIndex = 0;
     core::Oid popCommit = m_snapshot->stashes.empty() ? core::Oid() : m_snapshot->stashes.front().commit;
     if (sel.kind == SelKind::Stash)
+    {
+        // The selected stash may be gone: -1 disables Pop, so it never takes another stash.
+        popIndex = -1;
         for (const auto& s : m_snapshot->stashes)
             if (s.commit == sel.id)
             {
                 popIndex = s.index;
                 popCommit = s.commit;
             }
+    }
     const bool hasStashes = !m_snapshot->stashes.empty();
     ImGui::BeginDisabled(!free || !status || status->empty());
     if (button(ICON_MS_ARROW_CIRCLE_DOWN, "Push##stash_push"))
@@ -2244,7 +2248,7 @@ void StashesPanel::draw(bool* open)
     if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
         tooltip("Stash the changes in the working tree...");
     sameLineIfFits(buttonWidth(ICON_MS_ARROW_CIRCLE_UP, "Pop"));
-    ImGui::BeginDisabled(!free || !hasStashes);
+    ImGui::BeginDisabled(!free || !hasStashes || popIndex < 0);
     if (button(ICON_MS_ARROW_CIRCLE_UP, "Pop##stash_pop"))
         actions.stashApply(popIndex, popCommit, true, false);
     ImGui::EndDisabled();
@@ -2309,7 +2313,7 @@ void StashesPanel::draw(bool* open)
         ImGui::TextDisabled("No stashes");
     endList();
     // F2 renames the selected stash.
-    if (free && sel.kind == SelKind::Stash && ImGui::Shortcut(ImGuiKey_F2, ImGuiInputFlags_RouteFocused))
+    if (free && popIndex >= 0 && sel.kind == SelKind::Stash && ImGui::Shortcut(ImGuiKey_F2, ImGuiInputFlags_RouteFocused))
         m_session.showRenameStashDialog(popIndex);
     ImGui::End();
 }

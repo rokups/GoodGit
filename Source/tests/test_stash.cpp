@@ -383,4 +383,21 @@ GG_TEST("stash", "an action with a stale stash index is refused and drops nothin
         s.dismissError();
 }
 
+GG_TEST("stash", "Pop does nothing when the selected stash is gone")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(stashRow(2).c_str()); }));
+    // The session drops a missing stash from the selection only on a refresh: select one that does not exist.
+    const ggui::core::Oid gone = ggui::core::Oid::fromHex(s.gitOut(repo, {"rev-parse", "HEAD"}));
+    s.session()->select(ggui::Selection{ggui::SelKind::Stash, gone, 1});
+    const std::string before = s.gitOut(repo, {"stash", "list", "--format=%H"});
+    ctx->Yield(3);
+    ctx->ItemClick("//Stashes/Pop##stash_pop");
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "list", "--format=%H"}), before);
+    GG_CHECK_EQ(stashCount(s, repo), static_cast<size_t>(3));
+}
+
 } // namespace ggtest
