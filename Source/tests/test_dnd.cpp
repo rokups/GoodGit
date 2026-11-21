@@ -757,7 +757,8 @@ GG_TEST("dnd", "Alt on a tag-only tip commit rebases nothing: the chooser opens 
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto"); }));
     // The item is enabled until the engine answers that the tip has no descendant.
     GG_CHECK(s.waitUntil([&] { return itemDisabled(s, "Rebase onto"); }));
-    GG_CHECK(!itemDisabled(s, "Copy after"));
+    // "Copy after" follows the busy gate: it is enabled once no job runs.
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty() && !itemDisabled(s, "Copy after"); }));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(3);
     s.settle();

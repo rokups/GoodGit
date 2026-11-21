@@ -9,6 +9,7 @@
 #include <libgg/GitRunner.hpp>
 #include <libgg/Keep.hpp>
 
+#include <map>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -591,13 +592,21 @@ std::vector<std::string> chainToTip(git_repository* repo, const std::string& com
     if (git_reference_name_to_id(&head, repo, "HEAD") == 0 && contains(head))
         tip = head;
     git_error_clear();
-    if (!tip)
+    if (!tip) {
+        // By branch name: the History panel picks the same tip from its sorted branch list.
+        std::map<std::string, git_oid> heads;
         gg::git2::forEachReference(repo, [&](git_reference* ref) {
-            if (!tip && std::string(git_reference_name(ref)).rfind("refs/heads/", 0) == 0
-                && git_reference_type(ref) == GIT_REFERENCE_DIRECT && contains(*git_reference_target(ref)))
-                tip = *git_reference_target(ref);
+            const std::string name = git_reference_name(ref);
+            if (name.rfind("refs/heads/", 0) == 0 && git_reference_type(ref) == GIT_REFERENCE_DIRECT)
+                heads[name] = *git_reference_target(ref);
             return true;
         });
+        for (const auto& [name, target] : heads)
+            if (contains(target)) {
+                tip = target;
+                break;
+            }
+    }
     if (!tip)
         return {commit};
     std::vector<std::string> chain;

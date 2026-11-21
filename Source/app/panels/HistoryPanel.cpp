@@ -528,6 +528,21 @@ bool HistoryPanel::lineToTip(const core::Oid& commit, const core::Oid& through) 
 {
     if (!m_snapshot)
         return false;
+    // Cached like descendsFrom: planDrop asks each frame.
+    if (m_lineGen != m_rowsGen || m_lineRows != m_rows.size() || m_lineSnap != m_snapshot.get()) {
+        m_lineSnap = m_snapshot.get();
+        m_lines.clear();
+        m_lineGen = m_rowsGen;
+        m_lineRows = m_rows.size();
+    }
+    const std::string key = commit.hex() + through.hex();
+    if (const auto it = m_lines.find(key); it != m_lines.end())
+        return it->second;
+    return m_lines[key] = walkLineToTip(commit, through);
+}
+
+bool HistoryPanel::walkLineToTip(const core::Oid& commit, const core::Oid& through) const
+{
     const auto holds = [&](const core::Oid& tip) { return tip == commit || descendsFrom(tip, commit); };
     core::Oid tip;
     if (!m_snapshot->headUnborn && holds(m_snapshot->head))
