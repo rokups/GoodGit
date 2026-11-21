@@ -17,8 +17,17 @@ struct UndoResult {
     std::string target;        // id of the undone operation
 };
 
+// What a restore would do, from the same plan undo() runs (see `preview` below).
+struct UndoPreview {
+    struct Move { std::string ref, from, to; }; // from = the value now, to = the value after (the null id: none)
+    std::vector<Move> refs;                     // keep refs left out: they are derived state
+    bool tree = false;                          // the index or the working tree changes too
+};
+
 // Undoes (or redoes) the newest applicable operation for this worktree. `targetId` restores a
-// specific operation instead (Operations panel "Restore").
-UndoResult undo(git_repository* repo, bool redo, const std::string& src, const std::string& targetId = {});
+// specific operation instead (Operations panel "Restore"). With `preview`, nothing changes: it
+// gets the refs and the tree change of the plan, or `error` says why the plan fails.
+UndoResult undo(git_repository* repo, bool redo, const std::string& src, const std::string& targetId = {},
+    UndoPreview* preview = nullptr);
 
 } // namespace gg
