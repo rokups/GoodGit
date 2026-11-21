@@ -1913,7 +1913,14 @@ void RepositoriesPanel::draw(bool* open)
     m_openableSubmodules.clear();
     m_openableWorktrees.clear();
     m_sessionPath = sessionPath;
-    const auto tree = buildRepoTree(m_session.app().settings().data().repositories);
+    const auto& entries = m_session.app().settings().data().repositories;
+    if (!m_treeValid || !std::equal(entries.begin(), entries.end(), m_treeEntries.begin(), m_treeEntries.end(),
+            [](const RepoEntry& a, const RepoEntry& b) { return a.path == b.path && a.alias == b.alias; })) {
+        m_treeEntries = entries;
+        m_tree = buildRepoTree(entries);
+        m_treeValid = true;
+    }
+    const auto& tree = m_tree;
     std::string toOpen;
     beginList();
     drawNodes(tree, toOpen);

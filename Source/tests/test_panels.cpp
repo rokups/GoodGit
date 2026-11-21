@@ -787,6 +787,22 @@ GG_TEST("panels", "repositories: the open repository has the mark, an alias make
     GG_CHECK(s.itemExists("//Repositories/###group_grp/###group_grp:sub/repo_name/###row"));
 }
 
+GG_TEST("panels", "repositories: a repository added to the list shows in the tree")
+{
+    s.app.settings().data().repositories.clear();
+    const fs::path first = s.fixture(Recipe::Linear, "first");
+    const fs::path second = s.fixture(Recipe::Linear, "second");
+    GG_REQUIRE(s.openRepository(first));
+    s.showPanel("Repositories");
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(repoRow(s, first).c_str()));
+    // The tree is cached: a change of the list builds it again.
+    s.app.settings().addRepository(ggui::normalizeRepoPath(second.string()));
+    ctx->Yield(2);
+    GG_CHECK(s.itemExists(repoRow(s, second).c_str()));
+    GG_CHECK(s.itemExists(repoRow(s, first).c_str()));
+}
+
 GG_TEST("panels", "repositories: a row shows the detail of the recent menu, also for a repository that is not recent")
 {
     s.app.settings().data().repositories.clear();

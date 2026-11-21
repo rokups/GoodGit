@@ -125,6 +125,10 @@ private:
     std::set<std::string> m_openableSubmodules; // the paths of the submodule rows that open, as of the last frame drawn
     std::set<std::string> m_openableWorktrees;  // the paths of the worktree rows that open, as of the last frame drawn
     std::map<std::string, std::string> m_rowTexts;
+    // The tree is built again only when the repository list differs from the one it was built from.
+    std::vector<RepoEntry> m_treeEntries;
+    std::vector<RepoNode> m_tree;
+    bool m_treeValid = false;
 };
 
 class WorktreesPanel {
