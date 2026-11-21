@@ -522,6 +522,9 @@ std::vector<Activity> Engine::activities() const
 Outcome classifyFailure(const std::string& text)
 {
     auto has = [&](const char* s) { return text.find(s) != std::string::npos; };
+    // Untracked files: a stash does not help, so the user must move the files.
+    if (has("untracked working tree files would be overwritten"))
+        return Outcome::Failed;
     if (has("would be overwritten by") || has("Please commit your changes or stash them")
         || has("Your local changes to the following files") || has("You have unstaged changes")
         || has("cannot pull with rebase") || has("contains uncommitted changes"))

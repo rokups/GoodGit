@@ -1834,6 +1834,9 @@ void Actions::pull(PullMode mode, bool autostash)
                 const std::string branch = gg::trim(head.out);
                 const auto remote = ctx.gitMayFail({"config", "--get", "branch." + branch + ".remote"});
                 const auto merge = ctx.gitMayFail({"config", "--get", "branch." + branch + ".merge"});
+                if (!remote.ok() || !merge.ok())
+                    throw MutationError{Outcome::Refused,
+                                        "The branch " + branch + " has no upstream. Set one before you pull.", {}};
                 const std::string remoteName = gg::trim(remote.out);
                 std::string remoteBranch = gg::trim(merge.out);
                 constexpr std::string_view headsPrefix = "refs/heads/";
