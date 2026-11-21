@@ -895,6 +895,8 @@ void App::pumpSequenceEditor()
 
 void App::pumpAskpass()
 {
+    if (m_askpass.abandoned(m_askpassShown) && m_dialogs.current() && m_dialogs.current()->title == "Credentials")
+        m_dialogs.closeAll(); // shortcut: closes queued dialogs too, when git is gone
     const auto request = m_askpass.pending();
     if (!request || request->id == m_askpassShown)
         return;

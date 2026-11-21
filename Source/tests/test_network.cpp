@@ -12,6 +12,8 @@
 
 #include <IconsMaterialSymbols.h>
 #include <libgg/GitRunner.hpp>
+#include <libgg/LocalSocket.hpp>
+#include "core/Services.hpp"
 #include <libgg/Worktrees.hpp>
 
 namespace ggtest {
@@ -901,6 +903,44 @@ GG_TEST("network", "askpass: answer and cancel a credentials prompt")
     s.track(dest);
     GG_CHECK_STR_EQ(s.head(dest), s.revParse(repo, "origin/main"));
 }
+
+// Sends one askpass request to ggui's server the way git-gg does. Empty `token`: the right one.
+static gg::net::Socket askpassClient(const std::string& token, const std::string& prompt, bool closeNow)
+{
+    const std::string endpoint = gg::askpassEndpoint();
+    const auto s = gg::net::connectLoopback(std::stoi(endpoint.substr(0, endpoint.find(':'))));
+    if (s == gg::net::kInvalid)
+        return s;
+    gg::net::sendAll(s, (token.empty() ? endpoint.substr(endpoint.find(':') + 1) : token) + "\n" + prompt + "\n");
+    if (closeNow) {
+        gg::net::closeSocket(s);
+        return gg::net::kInvalid;
+    }
+    return s;
+}
+
+GG_TEST("network", "askpass: a client with a wrong token gets no prompt and the server keeps serving")
+{
+    askpassClient("wrong-token", "Password for 'https://x':", true);
+    ctx->Yield(10);
+    GG_CHECK(!s.dialogOpen("Credentials"));
+    askpassClient("", "Password for 'https://x':", true);
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+}
+
+GG_TEST("network", "askpass: the dialog closes when git goes away, then the next prompt shows")
+{
+    askpassClient("", "Password for 'https://x':", true);
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+    GG_CHECK(s.waitUntil([&] { return !s.dialogOpen("Credentials"); }, static_cast<float>(timeBudgetMs(1000) / 1000.0)));
+    const auto second = askpassClient("", "Are you sure you want to continue connecting (yes/no/[fingerprint])?", false);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_REQUIRE(f != nullptr && f->field("answer") != nullptr);
+    s.dialogButton("Credentials", "Cancel");
+    gg::net::closeSocket(second);
+}
+
 
 GG_TEST("network", "remote actions are disabled while a mutation runs; browsing still works")
 {

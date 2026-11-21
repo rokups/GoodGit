@@ -61,6 +61,7 @@ void AskpassServer::stop()
     m_listener = gg::net::kInvalid;
 }
 
+
 void AskpassServer::loop()
 {
     while (!m_stop) {
@@ -74,8 +75,7 @@ void AskpassServer::loop()
         }
         auto slot = std::make_shared<Slot>();
         slot->request.prompt = prompt;
-        const bool username = prompt.find("sername") != std::string::npos;
-        slot->request.secret = !username;
+        slot->request.secret = prompt.find("sername") == std::string::npos;
         {
             std::lock_guard lock(m_mutex);
             slot->request.id = m_next++;
@@ -83,7 +83,13 @@ void AskpassServer::loop()
         }
         gg::wakeUi(); // the UI shows the prompt
         std::unique_lock lock(m_mutex);
-        m_cv.wait(lock, [&] { return slot->done || m_stop.load(); });
+        while (!slot->done && !m_stop) {
+            m_cv.wait_for(lock, std::chrono::milliseconds(100));
+            if (!slot->done && gg::net::peerClosed(client)) { // git went away (the user cancelled the push)
+                m_abandoned = slot->request.id;
+                break;
+            }
+        }
         const bool ok = slot->done && slot->ok;
         const std::string answer = slot->answer;
         std::erase(m_slots, slot);
