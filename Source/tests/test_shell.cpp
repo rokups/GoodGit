@@ -1999,6 +1999,29 @@ GG_TEST("shell", "log file: a debug message reaches the rotated file in the sett
     closeLogFile();
 }
 
+GG_TEST("shell", "log file: an unwritable GGUI_LOG_FILE does not stop initLogging")
+{
+    using namespace ggui;
+    setenv("GGUI_LOG_FILE", "/nonexistent-dir-gg93/x.log", 1);
+    bool threw = false;
+    try {
+        initLogging(false);
+    } catch (...) {
+        threw = true;
+    }
+    unsetenv("GGUI_LOG_FILE");
+    GG_CHECK(!threw);
+    spdlog::warn("log after failed file sink 93c1");
+    bool warned = false, logged = false;
+    for (const auto& line : recentLogLines()) {
+        warned = warned || line.find("cannot open GGUI_LOG_FILE") != std::string::npos;
+        logged = logged || line.find("93c1") != std::string::npos;
+    }
+    GG_CHECK(warned);
+    GG_CHECK(logged);
+    initLogging(false); // a clean logger for the next tests
+}
+
 GG_TEST("shell", "Settings General tab: Log level combo and Open log folder button")
 {
     s.app.openSettings();

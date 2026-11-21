@@ -141,13 +141,18 @@ void initLogging(bool withLogFile)
     g_fileOpen = false;
     g_fileLevel = spdlog::level::debug;
     std::vector<spdlog::sink_ptr> sinks;
+    std::string fileError; // the logger does not exist yet: the warning goes out after it is set
     auto console = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
     console->set_level(spdlog::level::warn);
     sinks.push_back(console);
     if (const char* file = std::getenv("GGUI_LOG_FILE"); file && *file) {
-        auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file, true);
-        fileSink->set_level(spdlog::level::trace);
-        sinks.push_back(fileSink);
+        try {
+            auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file, true);
+            fileSink->set_level(spdlog::level::trace);
+            sinks.push_back(fileSink);
+        } catch (const std::exception& e) {
+            fileError = std::string("cannot open GGUI_LOG_FILE ") + file + ": " + e.what();
+        }
     }
     g_switch = std::make_shared<SwitchSink>();
     sinks.push_back(g_switch);
@@ -159,6 +164,8 @@ void initLogging(bool withLogFile)
     logger->flush_on(spdlog::level::warn);
     spdlog::set_default_logger(logger);
     spdlog::set_pattern("[%H:%M:%S.%e] [%t] [%l] %v");
+    if (!fileError.empty())
+        logger->warn("{}", fileError);
     if (withLogFile)
         openLogFile();
     // SPDLOG_LEVEL=debug (or "info,ggui=trace") overrides the default level.
