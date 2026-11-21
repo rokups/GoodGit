@@ -873,6 +873,7 @@ RequestId Engine::readRemoteBranches(std::string remote)
 RequestId Engine::readDescendants(Oid commit, int maxVisits)
 {
     return submit(Queue::Content, "Looking for descendants", kSlotDescendants, true, [this, commit, maxVisits](Job& job) {
+        simulateLatency(job.token);
         emit(DescendantsEvent{job.id, commit, ggui::core::readDescendants(job.repo(), commit, maxVisits, job.token)});
     });
 }
