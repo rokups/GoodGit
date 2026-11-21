@@ -265,8 +265,8 @@ mv -f "$NEW/git-gg" "$DEST/git-gg" || bad "install git-gg"
 p=4
 # Every other file of new/ (a data file, a sub folder). Its name goes to $DONE once the old file
 # is safe, so the undo restores or removes exactly the files that were touched.
-: > "$DONE"
-walk "$NEW" > "$LIST"
+printf '' > "$DONE" || bad "list files"
+walk "$NEW" > "$LIST" || bad "list files"
 while IFS= read -r rel; do
     rel=${rel#./}
     case "$rel" in ggui|git-gg) continue ;; esac
@@ -335,7 +335,7 @@ set /a NEWLEN+=1
 goto len
 :lendone
 type nul >"%STAGE%done.txt"
-for /r "%NEW%" %%F in (*) do call :extra "%%F"
+for /r "%NEW%" %%F in (*) do (set "P=%%F" & call :extra)
 if defined FAILSTEP goto fail_extra
 >"%RESULT%" echo ok
 del /f /q "%DEST%\ggui.exe.old" "%DEST%\git-gg.exe.old" >nul 2>&1
@@ -344,7 +344,6 @@ goto start
 
 :extra
 if defined FAILSTEP goto :eof
-set "P=%~1"
 call set "REL=%%P:~%NEWLEN%%%"
 if /i "%REL%"=="ggui.exe" goto :eof
 if /i "%REL%"=="git-gg.exe" goto :eof
