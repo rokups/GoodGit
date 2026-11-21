@@ -60,7 +60,11 @@ bool changedFrom(Scenario& s, const fs::path& repo, const std::string& before)
 
 void drag(Scenario& s, const std::string& from, const std::string& to, ImGuiKeyChord mods = 0)
 {
-    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    if (!s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); })) {
+        s.ctx->LogError("drag: missing source row %s (%d) or target row %s (%d)", from.c_str(), s.itemExists(from.c_str()),
+                        to.c_str(), s.itemExists(to.c_str()));
+        GG_REQUIRE(false);
+    }
     if (mods)
         s.ctx->KeyDown(mods);
     s.ctx->ItemDragAndDrop(from.c_str(), to.c_str());
