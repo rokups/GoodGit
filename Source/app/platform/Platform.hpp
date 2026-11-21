@@ -19,6 +19,9 @@ union SDL_Event;
 
 namespace ggui {
 
+// Name of the last blocking platform call. The test watchdog prints it on a timeout.
+extern std::atomic<const char*> g_platformStage;
+
 struct PlatformOptions {
     std::string title = "ggui";
     int width = 1600;
