@@ -33,6 +33,9 @@ public:
     // Classifies one changed path (absolute) into the event flags. Exposed for the listener.
     void changed(const std::filesystem::path& path);
 
+    // Posts one journal notice after `delay`, as if a journal event came in. Joins a pending burst.
+    void retryAfter(std::chrono::milliseconds delay);
+
 private:
     class Listener;
     void debounceLoop();

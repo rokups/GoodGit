@@ -234,6 +234,50 @@ GG_TEST("reconcile", "a deleted journal makes the baseline start over: no replay
     GG_CHECK(s.waitUntil([&] { return countOps(repo, "git", "git commit") == 1; }));
 }
 
+// A lock that git or ggui holds makes a pass defer or skip. The release of the lock makes only a
+// ".lock" event, which the watcher ignores, so the Engine must retry on its own.
+static void commitUnderLock(Scenario& s, const fs::path& repo, const fs::path& lock)
+{
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    { std::ofstream(lock) << ""; }
+    // Not a commit: it takes HEAD.lock itself. A new branch writes only its own ref and reflog.
+    s.git(repo, {"update-ref", "refs/heads/under-lock", s.head(repo)});
+    // The pass of the branch runs while the lock exists.
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(timeBudgetMs(600))));
+    std::error_code ec;
+    GG_REQUIRE(fs::remove(lock, ec));
+    GG_CHECK(s.waitUntil([&] { return countOps(repo, "git") == 1; }, static_cast<float>(timeBudgetMs(5000) / 1000.0)));
+}
+
+GG_TEST("reconcile", "a retry journals a ref update made while HEAD.lock existed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    commitUnderLock(s, repo, repo / ".git" / "HEAD.lock");
+}
+
+GG_TEST("reconcile", "a retry journals a ref update made while packed-refs.lock existed")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    commitUnderLock(s, repo, repo / ".git" / "packed-refs.lock");
+}
+
+GG_TEST("reconcile", "a retry journals a commit made while the journal lock was held")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    {
+        gg::journal::Journal journal{repo / ".git"};
+        gg::journal::Journal::Transaction t(journal);
+        GG_REQUIRE(t.locked());
+        s.git(repo, {"commit", "-q", "--allow-empty", "-m", "under journal lock"});
+        // Longer than the 1 s wait of a journal lock, so the pass gives up.
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(timeBudgetMs(1800))));
+    }
+    GG_CHECK(s.waitUntil([&] { return countOps(repo, "git", "git commit") == 1; }, static_cast<float>(timeBudgetMs(5000) / 1000.0)));
+}
+
 GG_TEST("reconcile", "Undo of a symbolic ref that is not HEAD restores that ref and leaves HEAD alone")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
