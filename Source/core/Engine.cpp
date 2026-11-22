@@ -827,12 +827,7 @@ RequestId Engine::readRemoteTags(std::vector<std::string> remotes)
                 ev.ok = res.ok();
                 if (!ev.ok)
                     ev.error = res.message();
-                for (const auto& line : gg::splitLines(res.out)) {
-                    const auto tab = line.find('\t');
-                    const std::string prefix = "refs/tags/";
-                    if (tab != std::string::npos && line.compare(tab + 1, prefix.size(), prefix) == 0)
-                        ev.tags.push_back(line.substr(tab + 1 + prefix.size()));
-                }
+                ev.tags = gg::lsRemoteNames(res.out, "refs/tags/");
                 emit(std::move(ev));
             }
         });
@@ -857,12 +852,7 @@ RequestId Engine::readRemoteBranches(std::string remote)
             ev.ok = res.ok();
             if (!ev.ok)
                 ev.error = res.message();
-            for (const auto& line : gg::splitLines(res.out)) {
-                const auto tab = line.find('\t');
-                const std::string prefix = "refs/heads/";
-                if (tab != std::string::npos && line.compare(tab + 1, prefix.size(), prefix) == 0)
-                    ev.branches.push_back(line.substr(tab + 1 + prefix.size()));
-            }
+            ev.branches = gg::lsRemoteNames(res.out, "refs/heads/");
             emit(std::move(ev));
         });
 }

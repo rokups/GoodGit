@@ -1463,13 +1463,8 @@ void Actions::fetch(const std::string& remote, bool prune, bool tags)
                     return;
                 }
                 // The branches on the remote. A failure here fails the mutation, as a failed fetch does.
-                std::set<std::string> heads;
-                const std::string headsPrefix = "refs/heads/";
-                for (const auto& line : gg::splitLines(ctx.git({"ls-remote", "--heads", "--refs", r}).out)) {
-                    const auto tab = line.find('\t');
-                    if (tab != std::string::npos && line.compare(tab + 1, headsPrefix.size(), headsPrefix) == 0)
-                        heads.insert(line.substr(tab + 1 + headsPrefix.size()));
-                }
+                const auto headNames = gg::lsRemoteNames(ctx.git({"ls-remote", "--heads", "--refs", r}).out, "refs/heads/");
+                const std::set<std::string> heads(headNames.begin(), headNames.end());
                 // An empty list while branches are tracked may be a hidden or broken answer: do not prune on it.
                 if (heads.empty() && !tracked.empty()) {
                     pruneNow = false;
