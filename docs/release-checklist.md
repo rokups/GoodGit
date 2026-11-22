@@ -76,6 +76,7 @@ Release metadata, after CI moves `latest`:
 
 ```sh
 # Clean build and the suite (4 shards; run every shard I = 0..3)
+# Parallel shards are slow: set GGUI_TIMING_SLACK=3 as CI does.
 rm -rf build/ninja && cmake --preset ninja && cmake --build build/ninja
 cd build/ninja && for i in 0 1 2 3; do ./bin/ggui --test --headless --shard=$i/4 & done; wait
 

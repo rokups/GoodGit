@@ -13,6 +13,7 @@
 #   PARALLEL=1        run the shards at the same time (each under its own virtual display)
 #   GGUI_HEADLESS=1   no display: SDL's offscreen driver (default: a virtual display through
 #                     xvfb-run when it is installed, as CI does, else headless)
+#   GGUI_TIMING_SLACK=N   multiplies the test time limits (CI sets 3; use it with PARALLEL=1)
 #   MIN_LINE, MIN_BRANCH   optional gate thresholds (default: none, report only)
 #   NO_GATE=1         report only (the default; kept for older instructions)
 set -euo pipefail

@@ -42,6 +42,7 @@ ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1:sup
 a harmless misaligned read in the libgit2 SHA-1 code.
 
 `GGUI_HEADLESS=1`/`--headless` runs without a visible window; `--shard=I/N` runs shard `I` of `N`;
+`GGUI_TIMING_SLACK=N` (default 1) multiplies the time limits of the tests. CI sets 3. Set it for parallel shards on a slow machine.
 `--trace=FILE` writes a JSON summary of the results. A failing test leaves a
 screenshot, the app log and the git commands it ran under `test-artifacts/<test>/`.
 
