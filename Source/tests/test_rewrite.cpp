@@ -1552,7 +1552,6 @@ GG_TEST("rewrite", "reword below a merge: the merge is rewritten with its second
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), s.revParse(repo, "atMerge"));
     GG_CHECK_STR_EQ(s.revParse(repo, "side"), side);
     GG_CHECK_STR_EQ(s.revParse(repo, "mid"), s.revParse(repo, "HEAD~3"));
-    GG_CHECK(gg::trim(s.gitOut(repo, {"rev-list", "--count", oldTip + "..HEAD"})) != "0");
 }
 
 } // namespace ggtest

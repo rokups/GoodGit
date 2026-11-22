@@ -744,6 +744,7 @@ GG_TEST("engine", "a cancelled descendants search does not stay pending in the s
     ggui::core::BlameQuery blame;
     blame.path = "f1.txt";
     engine.blame(blame);
+    GG_REQUIRE(s.waitUntil([&] { return engine.running(ggui::core::Queue::Content); }, 10.0f));
     GG_REQUIRE(s.waitUntil([&] { return gg::slowGitSleeps() > sleepsBefore; }, 10.0f));
     s.session()->requestDescendants(id);
     GG_CHECK(!s.session()->descendants(id).has_value());
