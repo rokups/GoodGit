@@ -42,6 +42,7 @@ private:
     std::condition_variable m_cv;
     WatchEvent m_pending;
     bool m_hasPending = false;
+    std::chrono::steady_clock::time_point m_first; // first event of the pending burst
     std::chrono::steady_clock::time_point m_last;
     bool m_stop = false;
     std::thread m_thread;
