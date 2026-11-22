@@ -519,7 +519,7 @@ struct Labels {
             name = sanitize(*text);
             if (name.empty())
                 name = "rev-" + abbreviation(id);
-            if ((name.size() == hexSize && isHex(name)) || name == "#" || used.count(name)) {
+            if ((name.size() == hexSize && isHex(name)) || used.count(name)) {
                 const std::string base = name;
                 for (int k = 2;; ++k) {
                     name = base + "-" + std::to_string(k);
