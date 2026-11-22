@@ -823,4 +823,16 @@ GG_TEST("worktrees", "a double-click opens a worktree here, Shift+double-click i
     GG_CHECK_EQ(stubLines().size(), size_t(1));
 }
 
+GG_TEST("worktrees", "Undo and Redo of an add pass a path with a leading dash after -- (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::journal::WorktreeChange c;
+    c.action = "add";
+    c.path = "-wt-dash"; // relative to the repository, where the command runs
+    c.head = s.gitOut(repo, {"rev-parse", "HEAD"});
+    const auto r = gg::worktrees::apply(repo, c);
+    GG_CHECK(r.ok);
+    GG_CHECK(fs::exists(repo / "-wt-dash" / ".git"));
+}
+
 } // namespace ggtest
