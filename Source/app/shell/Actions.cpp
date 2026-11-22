@@ -1740,6 +1740,11 @@ void Actions::submoduleRemove(const std::string& path, bool deleteData)
             ctx.git({"rm", "-f", "-q", "--", path});
             if (!hasData)
                 return;
+            // The git commands above ran since the first check: a link may have replaced the folder. Check again.
+            if (!strictChildOf(data, gitPath("modules"))) {
+                ctx.warning = "The repository data " + data.string() + " is not below .git/modules now. It was not deleted.";
+                return;
+            }
             std::error_code ec;
             removeTree(data, ec);
             if (ec)
