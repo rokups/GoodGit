@@ -872,6 +872,39 @@ std::string trim(std::string text)
     return text.substr(i);
 }
 
+#ifdef _WIN32
+bool widenUtf8(const std::string& s, std::wstring& out)
+{
+    out.clear();
+    if (s.empty())
+        return true;
+    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
+    if (n <= 0)
+        return false;
+    out.assign(static_cast<std::size_t>(n), L'\0');
+    return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), static_cast<int>(s.size()), out.data(), n)
+        == n;
+}
+#endif
+
+std::vector<std::string> lsRemoteNames(const std::string& output, const std::string& prefix)
+{
+    std::vector<std::string> names;
+    for (const auto& line : splitLines(output)) {
+        const auto tab = line.find('\t');
+        if (tab != std::string::npos && line.compare(tab + 1, prefix.size(), prefix) == 0)
+            names.push_back(line.substr(tab + 1 + prefix.size()));
+    }
+    return names;
+}
+
+std::string toLower(std::string text)
+{
+    for (char& c : text)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+}
+
 std::filesystem::path findInPath(const std::string& program)
 {
     namespace fs = std::filesystem;

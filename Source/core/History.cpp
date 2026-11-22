@@ -2,6 +2,7 @@
 
 #include "Readers.hpp"
 
+#include <libgg/GitRunner.hpp>
 #include <libgg/FilterExpr.hpp>
 #include <libgg/Keep.hpp>
 #include <libgg/Thread.hpp>
@@ -21,12 +22,6 @@ namespace {
 
 constexpr int kFirstBatch = 200;
 constexpr int kBatch = 2000;
-
-std::string lower(std::string s)
-{
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
 
 void addBadge(HistoryState& st, const Oid& id, RefKind kind, std::string name, bool current = false,
               std::string remote = {})
@@ -366,7 +361,7 @@ void walk(git_repository* repo, HistoryState& st, int limit, const gg::CancelTok
             std::string text = id.hex() + " " + message + " " + row.author + " " + row.authorEmail;
             for (const auto& r : row.refs)
                 text += " " + r.name;
-            st.searchText.push_back(lower(std::move(text)));
+            st.searchText.push_back(gg::toLower(std::move(text)));
             st.rowOf[id] = static_cast<int>(st.order.size());
             st.order.push_back(id);
             ++st.emitted;

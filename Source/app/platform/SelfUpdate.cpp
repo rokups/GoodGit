@@ -591,18 +591,10 @@ std::string pathUtf8(const fs::path& path)
     return std::string(text.begin(), text.end());
 }
 
-std::string lowerCase(std::string text)
-{
-    for (char& c : text) {
-        c = lower(c);
-    }
-    return text;
-}
-
 // A Windows device name, with or without an extension: Windows opens the device, not a file.
 bool isReservedName(const std::string& part)
 {
-    const std::string stem = lowerCase(part.substr(0, part.find('.')));
+    const std::string stem = gg::toLower(part.substr(0, part.find('.')));
     if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul")
         return true;
     return stem.size() == 4 && (stem.compare(0, 3, "com") == 0 || stem.compare(0, 3, "lpt") == 0) &&
@@ -711,7 +703,7 @@ std::string planEntries(ZipReader& reader, std::vector<PlannedEntry>& plan)
         }
         std::string key;
         for (const std::string& part : entry.parts) {
-            key += lowerCase(part) + '/';
+            key += gg::toLower(part) + '/';
         }
         if (!seen.insert(key).second) {
             return "The update has a duplicate file name: " + name;
@@ -737,7 +729,7 @@ std::string planEntries(ZipReader& reader, std::vector<PlannedEntry>& plan)
             return "The update is too big.";
         }
         total += entry.size;
-        tops.insert(lowerCase(entry.parts.front()));
+        tops.insert(gg::toLower(entry.parts.front()));
         plan.push_back(std::move(entry));
     }
     if (tops.size() != 1) {
@@ -962,7 +954,7 @@ std::string stageUpdate(const fs::path& installDir, const fs::path& zipFile, con
     if (digest.empty()) {
         return "Cannot read the downloaded update: " + hashError;
     }
-    if (digest != lowerCase(asset.sha256)) {
+    if (digest != gg::toLower(asset.sha256)) {
         return "The downloaded update has the wrong checksum.";
     }
 

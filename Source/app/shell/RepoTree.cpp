@@ -1,5 +1,6 @@
 #include "shell/RepoTree.hpp"
 
+#include <libgg/GitRunner.hpp>
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
@@ -24,13 +25,6 @@ std::vector<std::string> splitSegments(const std::string& alias)
     return out;
 }
 
-std::string lowerCase(std::string s)
-{
-    for (char& c : s)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
 void sortLevel(std::vector<RepoNode>& level)
 {
     for (auto& node : level)
@@ -38,7 +32,7 @@ void sortLevel(std::vector<RepoNode>& level)
     std::stable_sort(level.begin(), level.end(), [](const RepoNode& a, const RepoNode& b) {
         if (a.isGroup() != b.isGroup())
             return a.isGroup();
-        return lowerCase(a.label) < lowerCase(b.label);
+        return gg::toLower(a.label) < gg::toLower(b.label);
     });
 }
 

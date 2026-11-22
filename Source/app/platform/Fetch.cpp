@@ -373,21 +373,6 @@ std::string libCurlFetch(const std::string& url, const fs::path& out, std::uint6
 
 #ifdef _WIN32
 
-// UTF-8 to UTF-16, strict. False when `s` is not valid UTF-8.
-bool widenUtf8(const std::string& s, std::wstring& out)
-{
-    out.clear();
-    if (s.empty()) {
-        return true;
-    }
-    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
-    if (n <= 0) {
-        return false;
-    }
-    out.assign(static_cast<std::size_t>(n), L'\0');
-    return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), static_cast<int>(s.size()), out.data(), n) == n;
-}
-
 struct WinHttpHandle {
     HINTERNET handle = nullptr;
     WinHttpHandle() = default;
@@ -456,11 +441,11 @@ private:
 std::string winHttpFetch(const std::string& url, const fs::path& out, std::uint64_t maxBytes, const gg::CancelToken& cancel)
 {
     std::wstring wideUrl;
-    if (!widenUtf8(url, wideUrl)) {
+    if (!gg::widenUtf8(url, wideUrl)) {
         return "The URL is not valid UTF-8.";
     }
     std::wstring wideAgent;
-    if (!widenUtf8(userAgent(), wideAgent)) {
+    if (!gg::widenUtf8(userAgent(), wideAgent)) {
         return "The User-Agent is not valid.";
     }
 

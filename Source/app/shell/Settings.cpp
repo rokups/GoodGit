@@ -2,6 +2,7 @@
 
 #include "util/Env.hpp"
 
+#include <libgg/GitRunner.hpp>
 #include <libgg/Files.hpp>
 #include <libgg/SequenceEditorLink.hpp>
 #include <libgg/Thread.hpp>
@@ -790,14 +791,9 @@ std::vector<size_t> recentDisplayOrder(const std::vector<std::string>& paths, Re
     if (order != RecentOrder::Alphabetical)
         return idx;
     const auto names = uniqueRecentNames(paths);
-    auto lower = [](std::string s) {
-        for (char& c : s)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return s;
-    };
     std::vector<std::string> keys(paths.size());
     for (size_t i = 0; i < keys.size(); ++i)
-        keys[i] = lower(names[i].text());
+        keys[i] = gg::toLower(names[i].text());
     std::stable_sort(idx.begin(), idx.end(), [&](size_t a, size_t b) { return keys[a] < keys[b]; });
     return idx;
 }

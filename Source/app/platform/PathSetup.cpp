@@ -3,6 +3,7 @@
 #include "util/Env.hpp"
 
 #include <libgg/Files.hpp>
+#include <libgg/GitRunner.hpp>
 
 #include <cctype>
 #include <cerrno>
@@ -86,20 +87,6 @@ std::string normalizeEntry(const std::string& entry)
 
 #ifdef _WIN32
 
-// UTF-8 to UTF-16, strict. False when `s` is not valid UTF-8 or cannot be converted.
-bool widen(const std::string& s, std::wstring& out)
-{
-    out.clear();
-    if (s.empty())
-        return true;
-    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
-    if (n <= 0)
-        return false;
-    out.assign(static_cast<std::size_t>(n), L'\0');
-    return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), static_cast<int>(s.size()), out.data(), n)
-        == n;
-}
-
 // UTF-16 to UTF-8, strict. False when `w` has an invalid surrogate or cannot be converted.
 bool narrow(const std::wstring& w, std::string& out)
 {
@@ -119,7 +106,7 @@ bool narrow(const std::wstring& w, std::string& out)
 std::string expandEntry(const std::string& entry)
 {
     std::wstring wide;
-    if (!widen(entry, wide))
+    if (!gg::widenUtf8(entry, wide))
         return entry;
     const DWORD n = ExpandEnvironmentStringsW(wide.c_str(), nullptr, 0);
     if (n == 0)
@@ -183,7 +170,7 @@ std::string readUserPath(std::string& value, DWORD& type)
 std::string writeUserPath(const std::string& value, DWORD type)
 {
     std::wstring wide;
-    if (!widen(value, wide))
+    if (!gg::widenUtf8(value, wide))
         return "The new user PATH cannot be converted to UTF-16, so it was not written.";
     HKEY key = nullptr;
     LONG rc = RegCreateKeyExW(

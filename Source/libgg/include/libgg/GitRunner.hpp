@@ -103,6 +103,14 @@ std::vector<std::string> splitNul(const std::string& text);
 // Splits on '\n', dropping a trailing empty line.
 std::vector<std::string> splitLines(const std::string& text);
 std::string trim(std::string text);
+// The names after `prefix` (such as "refs/heads/") of the refs in `git ls-remote` output.
+std::vector<std::string> lsRemoteNames(const std::string& output, const std::string& prefix);
+// ASCII lower case (the C locale).
+std::string toLower(std::string text);
+#ifdef _WIN32
+// UTF-8 to UTF-16, strict. False when `s` is not valid UTF-8 or cannot be converted.
+bool widenUtf8(const std::string& s, std::wstring& out);
+#endif
 
 // Quotes one argument by the CommandLineToArgvW rules (UTF-8 in, UTF-8 out).
 std::string quoteWindowsArg(const std::string& arg);

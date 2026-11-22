@@ -2060,11 +2060,6 @@ std::optional<std::string> readCoreValue(const fs::path& common, const std::stri
     std::string line;
     bool inCore = false;
     std::optional<std::string> found;
-    auto lower = [](std::string text) {
-        for (auto& c : text)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return text;
-    };
     while (std::getline(in, line)) {
         const std::string text = gg::trim(line);
         if (text.empty() || text[0] == '#' || text[0] == ';')
@@ -2072,7 +2067,7 @@ std::optional<std::string> readCoreValue(const fs::path& common, const std::stri
         if (text[0] == '[') {
             const size_t close = text.find(']');
             // "[core]" only: a subsection like [core "x"] is another section.
-            inCore = close != std::string::npos && lower(gg::trim(text.substr(1, close - 1))) == "core";
+            inCore = close != std::string::npos && gg::toLower(gg::trim(text.substr(1, close - 1))) == "core";
             // A key can follow the header on the same line.
             if (!inCore || close + 1 >= text.size())
                 continue;
@@ -2083,7 +2078,7 @@ std::optional<std::string> readCoreValue(const fs::path& common, const std::stri
             line = text;
         }
         const size_t eq = line.find('=');
-        const std::string key = lower(gg::trim(line.substr(0, eq)));
+        const std::string key = gg::toLower(gg::trim(line.substr(0, eq)));
         if (key != wanted)
             continue;
         std::string value = eq == std::string::npos ? std::string("true") : line.substr(eq + 1);
