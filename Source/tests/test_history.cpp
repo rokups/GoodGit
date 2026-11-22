@@ -3046,8 +3046,8 @@ GG_TEST("history", "planDrop: table of zones, modifiers, neighbours, root and un
         {"squash of the root (no parent) is refused", true, 4, 1, Z::Middle, Ctrl, A::None, ""},
         {"middle, Shift: move after", true, 0, 3, Z::Middle, Shift, A::MoveAfter, "Move after " + sh(3)},
         {"middle, Ctrl+Shift: move before", true, 0, 3, Z::Middle, Ctrl | Shift, A::MoveBefore, "Move before " + sh(3)},
-        {"move of the root", true, 4, 1, Z::Middle, Shift, A::MoveAfter, ""},
-        {"move onto a descendant", true, 3, 0, Z::Middle, Shift, A::MoveAfter, ""},
+        {"move of the root is allowed on a linear history", true, 4, 1, Z::Middle, Shift, A::MoveAfter, "Move after " + sh(1)},
+        {"move onto a descendant is allowed on a linear history", true, 3, 0, Z::Middle, Shift, A::MoveAfter, "Move after " + sh(0)},
     };
     ImGuiIO& io = ImGui::GetIO();
     for (const auto& row : rows) {
@@ -3057,8 +3057,8 @@ GG_TEST("history", "planDrop: table of zones, modifiers, neighbours, root and un
         GG_REQUIRE(index >= 0);
         const auto* target = history.row(Oid::fromHex(c[row.target]));
         GG_REQUIRE(target);
-        io.KeyCtrl = row.mods & Ctrl;
-        io.KeyShift = row.mods & Shift;
+        io.KeyCtrl = (row.mods & Ctrl) != 0;
+        io.KeyShift = (row.mods & Shift) != 0;
         io.KeyAlt = false;
         const auto plan = history.planDrop(row.free, source, *target, index, row.zone);
         io.KeyCtrl = io.KeyShift = false;
@@ -3094,20 +3094,20 @@ GG_TEST("history", "squashCommits: table of empty, single, range, gap, merge, ro
         std::vector<Oid> ids;
         bool contiguous;
         std::vector<Oid> expect;
-        bool refused;
+        const char* why; // the refusal text, nullptr when the squash is allowed
     };
     const Oid unknown = Oid::fromHex(std::string(40, 'e'));
     const std::vector<Row> table = {
-        {"empty selection", {}, false, {}, true},
-        {"single commit: it and its parent", {plain->id}, false, {plain->id, parent}, false},
-        {"single commit marked contiguous", {plain->id}, true, {plain->id, parent}, false},
-        {"adjacent range: exactly those", {plain->id, parent}, true, {plain->id, parent}, false},
-        {"two commits with a gap", {plain->id, grandparent}, false, {}, true},
-        {"single merge", {merge->id}, false, {}, true},
-        {"range that holds a merge", {merge->id, plain->id}, true, {}, true},
-        {"single root: no parent", {root->id}, false, {}, true},
-        {"unknown commit", {unknown}, false, {}, true},
-        {"range that holds an unknown commit", {plain->id, unknown}, true, {}, true},
+        {"empty selection", {}, false, {}, "Select one commit, or adjacent commits (no gaps)."},
+        {"single commit: it and its parent", {plain->id}, false, {plain->id, parent}, nullptr},
+        {"single commit marked contiguous", {plain->id}, true, {plain->id, parent}, nullptr},
+        {"adjacent range: exactly those", {plain->id, parent}, true, {plain->id, parent}, nullptr},
+        {"two commits with a gap", {plain->id, grandparent}, false, {}, "Select one commit, or adjacent commits (no gaps)."},
+        {"single merge", {merge->id}, false, {}, "A merge commit cannot be squashed."},
+        {"range that holds a merge", {merge->id, plain->id}, true, {}, "A merge commit cannot be squashed."},
+        {"single root: no parent", {root->id}, false, {}, "A root commit has no parent to squash into."},
+        {"unknown commit", {unknown}, false, {}, "A merge commit cannot be squashed."},
+        {"range that holds an unknown commit", {plain->id, unknown}, true, {}, "A merge commit cannot be squashed."},
     };
     for (const auto& row : table) {
         ctx->LogInfo("row: %s", row.name);
@@ -3117,7 +3117,9 @@ GG_TEST("history", "squashCommits: table of empty, single, range, gap, merge, ro
         const char* why = "unset";
         const auto out = ggui::squashCommits(*s.session(), sel, &why);
         GG_CHECK(out == row.expect);
-        GG_CHECK_EQ(why != nullptr, row.refused);
+        GG_CHECK_EQ(why == nullptr, row.why == nullptr);
+        if (row.why && why)
+            GG_CHECK_STR_EQ(why, row.why);
     }
 }
 

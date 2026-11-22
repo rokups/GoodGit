@@ -93,7 +93,6 @@ std::vector<core::Oid> squashCommits(Session& s, const SelectionShape& sel, cons
     return out;
 }
 
-
 SelectionShape selectionShape(Session& s)
 {
     SelectionShape shape;
