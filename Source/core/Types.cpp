@@ -61,6 +61,7 @@ const char* repoStateBadge(RepoState s)
     case RepoState::Merging: return "MERGING";
     case RepoState::RebasingInteractive:
     case RepoState::Rebasing: return "REBASING";
+    case RepoState::Applying: return "APPLYING MAILBOX";
     case RepoState::CherryPicking: return "CHERRY-PICKING";
     case RepoState::Reverting: return "REVERTING";
     case RepoState::Bisecting: return "BISECTING";

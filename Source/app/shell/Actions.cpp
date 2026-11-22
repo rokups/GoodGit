@@ -2216,6 +2216,7 @@ std::string operationCommand(core::RepoState s)
     case core::RepoState::Merging: return "merge";
     case core::RepoState::RebasingInteractive:
     case core::RepoState::Rebasing: return "rebase";
+    case core::RepoState::Applying: return "am";
     case core::RepoState::CherryPicking: return "cherry-pick";
     case core::RepoState::Reverting: return "revert";
     case core::RepoState::Bisecting: return "bisect";

@@ -54,7 +54,8 @@ enum class RepoState {
     None,
     Merging,
     RebasingInteractive,
-    Rebasing, // apply backend / git am
+    Rebasing, // apply backend
+    Applying, // git am
     CherryPicking,
     Reverting,
     Bisecting,

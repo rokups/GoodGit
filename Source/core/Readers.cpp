@@ -151,7 +151,8 @@ RepoState detectState(git_repository* repo, std::string& detail)
         const int last = readInt(gitDir / "rebase-apply" / "last");
         if (last > 0)
             detail = std::to_string(next) + "/" + std::to_string(last);
-        return RepoState::Rebasing;
+        // git am keeps `applying` here; a rebase with the apply backend keeps `rebasing`.
+        return fs::exists(gitDir / "rebase-apply" / "applying", ec) ? RepoState::Applying : RepoState::Rebasing;
     }
     if (fs::exists(gitDir / "MERGE_HEAD", ec))
         return RepoState::Merging;
@@ -445,7 +446,8 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
         }
     }
     if (snap->state != RepoState::None) {
-        if (snap->state == RepoState::RebasingInteractive || snap->state == RepoState::Rebasing) {
+        if (snap->state == RepoState::RebasingInteractive || snap->state == RepoState::Rebasing
+            || snap->state == RepoState::Applying) {
             const fs::path dir = fs::exists(snap->gitDir / "rebase-merge") ? snap->gitDir / "rebase-merge"
                                                                            : snap->gitDir / "rebase-apply";
             snap->stateOnto = gg::trim(readFileText(dir / "head-name"));

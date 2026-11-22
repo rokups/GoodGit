@@ -889,6 +889,18 @@ GG_TEST("shell", "repository state badge")
     GG_CHECK(!s.itemExists("//###Toolbar/###tb_state"));
 }
 
+GG_TEST("shell", "git am stopped on a conflict shows APPLYING MAILBOX")
+{
+    const fs::path repo = s.fixture(Recipe::MidRebaseApply, "am-state");
+    s.git(repo, {"rebase", "--abort"});
+    const std::string patch = s.gitOut(repo, {"format-patch", "-1", "--stdout", "theirs"});
+    s.gitMayFail(repo, {"am", "-3"}, patch + "\n");
+    GG_REQUIRE(fs::exists(repo / ".git" / "rebase-apply" / "applying"));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_CHECK(s.session()->snapshot()->state == ggui::core::RepoState::Applying);
+    GG_CHECK(s.itemText("//###Toolbar/###tb_state").rfind("APPLYING MAILBOX", 0) == 0);
+}
+
 GG_TEST("shell", "Repository menu: copy path, refresh, working directory, settings, quit")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
