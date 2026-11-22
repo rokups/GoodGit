@@ -117,11 +117,12 @@ struct NonTextConflict {
 // Commits whose replayed change adds nothing although the originals changed something (Git's
 // "becomes empty"; commits that were empty to begin with are always kept).
 enum class Emptied {
-    Keep,  // kept as empty commits (git rebase --empty=keep)
-    Drop,  // picks left out; what came after goes onto their parent (--empty=drop)
-    Ask,   // kept by compute(), listed in Result::becameEmpty for the caller to ask (--empty=stop)
+    Keep,  // a pick that becomes empty is kept as an empty commit (git rebase --empty=keep)
+    Drop,  // a pick that becomes empty is left out; what came after goes onto its parent (--empty=drop).
+           // A fixup/squash that adds nothing to its group is left out too: no message, no report.
+    Ask,   // computed as Keep; Result::becameEmpty lists the picks for the caller to ask (--empty=stop)
     // A squash/fixup group that becomes empty is kept in every mode: git stops, and `--continue`
-    // keeps an empty commit.
+    // keeps an empty commit. A member that adds nothing is amended in as usual in Keep and Ask.
 };
 
 struct Plan {

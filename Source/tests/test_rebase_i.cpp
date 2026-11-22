@@ -2751,4 +2751,99 @@ GG_TEST("rebase-i", "Keep: a fixup folds into the head pick that became empty, a
     emptyHeadFixup(s, false);
 }
 
+// A fixup/squash that adds nothing to its group, against git rebase -i. Shapes:
+//   g  : a1, e1 (e.txt=1), h1 (e.txt=2), f1 (e.txt=1); the list "a1, e1, f1 (moved up), h1". f1 was
+//        not empty before the rebase, but the group e1 already holds its change.
+//   d  : a1, e0 (empty), f1 adds f.txt: the empty head keeps the fixup content.
+//   d2 : a1, e0 (empty), f0 (empty): both stay empty.
+//   f  : a1, e1 adds e.txt, f1 removes it, g1 adds it again: the group empties at f1, then fills.
+void noopFixup(Scenario& s, const std::string& shape, const char* action)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    const bool isG = shape == "g";
+    for (const char* mode : {"Drop", "Keep"}) {
+        std::string name = shape + "-" + action + "-" + mode;
+        std::replace(name.begin(), name.end(), ' ', '_');
+        const fs::path path = s.fixture(Recipe::Empty, "repo-" + name);
+        s.commitFile(path, "base.txt", "base\n", "c0 base");
+        const std::string c0 = s.head(path);
+        s.commitFile(path, "a.txt", "a\n", "a1 add a");
+        const std::string a1 = s.head(path);
+        std::vector<std::string> fixups;
+        const auto empty = [&](const char* subject) {
+            s.git(path, {"commit", "-q", "--allow-empty", "-m", subject});
+            return s.head(path);
+        };
+        if (isG) {
+            s.commitFile(path, "e.txt", "1\n", "e1 add e");
+            s.commitFile(path, "e.txt", "2\n", "h1 set 2");
+            s.commitFile(path, "e.txt", "1\n", "f1 set 1");
+            fixups = {s.head(path)};
+        } else if (shape == "d") {
+            empty("e0 empty");
+            s.commitFile(path, "f.txt", "f\n", "f1 add f");
+            fixups = {s.head(path)};
+        } else if (shape == "d2") {
+            empty("e0 empty");
+            fixups = {empty("f0 empty")};
+        } else {
+            s.commitFile(path, "e.txt", "e\n", "e1 add e");
+            s.git(path, {"rm", "-q", "e.txt"});
+            s.git(path, {"commit", "-q", "-m", "f1 remove e"});
+            fixups.push_back(s.head(path));
+            s.commitFile(path, "e.txt", "e\n", "g1 add e");
+            fixups.push_back(s.head(path));
+        }
+        installRecordingHooks(s, path);
+        const fs::path copy = copyRepo(s, path, "copy-" + name);
+        GG_REQUIRE(s.openRepository(path));
+        GG_REQUIRE(rowReady(s, a1));
+        ctx->ItemClick(historyRow(a1).c_str());
+        ctx->KeyPress(ImGuiKey_I);
+        GG_REQUIRE(editorReady(s));
+        s.comboSelect(irWidget("ir_empty").c_str(), mode);
+        if (isG)
+            key(s, fixups[0], ImGuiMod_Alt | ImGuiKey_UpArrow);
+        for (const auto& f : fixups)
+            s.comboSelect(irAction(f).c_str(), action);
+        rewordAll(s);
+        const std::string todoText = todo::format(editor(s).todo());
+        GG_REQUIRE(previewReady(s));
+        GG_REQUIRE(start(s));
+        gitRebase(s, copy, todoText, c0, "", mode == std::string("Drop") ? "drop" : "keep", shape == "f",
+            action == std::string("squash"));
+        GG_CHECK_STR_EQ(history(s, path, "main"), history(s, copy, "main"));
+        const auto ours = postRewrite(s, path);
+        GG_CHECK(!ours.empty());
+        GG_CHECK(ours == postRewrite(s, copy));
+    }
+}
+
+GG_TEST("rebase-i", "a fixup that adds nothing to its group is dropped in Drop and amended in Keep, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a no-op fixup differently");
+    noopFixup(s, "g", "fixup");
+}
+
+GG_TEST("rebase-i", "a squash that adds nothing to its group is dropped with its message in Drop, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a no-op squash differently");
+    noopFixup(s, "g", "squash");
+}
+
+GG_TEST("rebase-i", "an empty head pick keeps the content of the fixup after it, as git does")
+{
+    noopFixup(s, "d", "fixup");
+}
+
+GG_TEST("rebase-i", "an empty head pick and an empty fixup stay empty, as git does")
+{
+    noopFixup(s, "d2", "fixup");
+}
+
+GG_TEST("rebase-i", "a fixup that empties its group and a fixup that refills it make one commit, as git does")
+{
+    noopFixup(s, "f", "fixup");
+}
+
 } // namespace ggtest

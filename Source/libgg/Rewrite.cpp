@@ -680,8 +680,13 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     ? toHex(*git_commit_parent_id(src.get(), 0)) : std::string();
                 const std::string srcBase = srcBaseCommit.empty() ? m->emptyTree() : m->treeOf(srcBaseCommit);
                 // `pending->tree` is a growing squash accumulator, not one commit's tree: no ours label.
-                pending->tree = m->mergeTrees(srcBase, pending->tree, srcTree, key, step.source, plan, result,
+                const std::string merged = m->mergeTrees(srcBase, pending->tree, srcTree, key, step.source, plan, result,
                     /*oursCommit=*/{}, srcBaseCommit);
+                // Git 2.56 (--empty=drop) drops a fixup/squash that adds nothing, without its message
+                // and without a post-rewrite entry. A member that was empty before the rebase stays.
+                if (plan.emptied == Emptied::Drop && merged == pending->tree && !originallyEmpty(step.source))
+                    continue;
+                pending->tree = merged;
                 pending->squashed.push_back(step.source);
                 pending->contributors.push_back(step.source);
                 pending->unchanged = false;
