@@ -2122,8 +2122,8 @@ GG_TEST("shell", "welcome rows: cached, rebuilt when a recent repository changes
     ctx->Yield(5);
     GG_CHECK_EQ(s.app.welcomeRebuilds(), built); // nothing changed: the rows are reused
     // The folder goes away; the next summary read (an open and a close) shows it.
-    std::error_code ec;
-    fs::remove_all(gone, ec);
+    removeAll(gone); // fs::remove_all stops at git's read-only objects on mingw
+    GG_REQUIRE(!fs::exists(gone));
     GG_REQUIRE(s.openRepository(stays));
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
