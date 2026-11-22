@@ -437,6 +437,7 @@ void HistoryPanel::onSearch(const core::SearchEvent& event)
 
 void HistoryPanel::reveal(const core::Oid& id)
 {
+    ++m_revealCalls;
     if (m_index.count(id)) {
         m_session.selectCommit(id);
         m_scrollToSelection = true;

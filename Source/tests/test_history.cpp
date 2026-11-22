@@ -1910,8 +1910,10 @@ GG_TEST("history", "the HEAD button selects the HEAD commit")
     ctx->ItemClick(rowRef(other).c_str());
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), other);
     GG_CHECK(!(ctx->ItemInfo("//History/HEAD##hist_head").ItemFlags & ImGuiItemFlags_Disabled));
+    const int reveals = s.session()->history().revealCalls();
     ctx->ItemClick("//History/HEAD##hist_head");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == head; }));
+    GG_CHECK(s.session()->history().revealCalls() == reveals + 1);
 }
 
 GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
@@ -1920,8 +1922,12 @@ GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/HEAD##hist_head"); }));
     const std::string selected = s.session()->selection().id.hex();
+    const int reveals = s.session()->history().revealCalls();
     GG_CHECK(s.clickDisabled("//History/HEAD##hist_head"));
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), selected);
+    GG_CHECK(s.session()->history().revealCalls() == reveals); // the click reached no handler: no reveal job
+    GG_CHECK(s.session()->actions().busy().empty());
+    GG_CHECK(ImGui::GetTopMostPopupModal() == nullptr);
 }
 
 GG_TEST("history", "Go to parent selects the parent; a merge commit lists both parents")

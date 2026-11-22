@@ -137,6 +137,7 @@ public:
     // Test hooks: the stepTarget calls, and the calls that scanned the rows (the rest came from the cache).
     int stepCalls() const { return m_stepCalls; }
     int stepScans() const { return m_stepScans; }
+    int revealCalls() const { return m_revealCalls; } // test hook: the reveal() calls (the HEAD button)
     bool loading() const { return m_loading; }
     bool truncated() const { return m_truncated; }
     // Indexes into rows() of the rows currently shown, in order.
@@ -240,6 +241,7 @@ private:
     mutable StepCache m_stepCache[4];
     mutable int m_stepCalls = 0;
     mutable int m_stepScans = 0;
+    int m_revealCalls = 0;
     int stepTargetScan(int direction, bool rowOrder, int& pos) const;
     bool m_lastConflictedOnly = false; // conflictedOnly() when m_visible was last built
     // What a drop does now, for the drag tooltip: the target sets Next in a frame, the tooltip shows the value of the frame before.
