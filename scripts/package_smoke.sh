@@ -256,7 +256,7 @@ for image in "${containers[@]}"; do
     echo "== container $image: apt install ./$(basename "$deb"), checks against /usr"
     engine=$(command -v podman || command -v docker || true)
     if [[ -z $engine ]]; then bad "no docker or podman"; continue; fi
-    "$engine" run --rm -v "$pkgdir:/pkg:ro" -v "$self:/smoke.sh:ro" "$image" bash -c "
+    "$engine" run --rm -e GGUI_SMOKE_REQUIRED -v "$pkgdir:/pkg:ro" -v "$self:/smoke.sh:ro" "$image" bash -c "
         set -e
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -qq >/dev/null
