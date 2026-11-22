@@ -325,7 +325,7 @@ void RebasePanel::onRead(std::shared_ptr<const todo::Context> context, todo::Rea
         edit([&](State& s) {
             s.context = context;
             s.read = std::move(used);
-            s.onto = m_onto;
+            s.onto = request.onto;
         });
         return;
     }
@@ -372,8 +372,10 @@ void RebasePanel::undo(bool redo)
     if (from.empty())
         return;
     to.push_back(m_state);
+    const std::string ontoBefore = m_state.onto;
     m_state = std::move(from.back());
-    m_onto = m_state.onto;
+    if (m_state.onto != ontoBefore)
+        m_onto = m_state.onto; // a todo undo keeps the typed, unapplied text
     from.pop_back();
     std::erase_if(m_selection, [&](size_t row) { return row >= m_state.todo.items.size(); });
     onTodoChanged();

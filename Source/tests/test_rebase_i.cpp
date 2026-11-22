@@ -276,6 +276,11 @@ GG_TEST("rebase-i", "undo and redo restore the base and the Onto field")
     GG_REQUIRE(editorReady(s));
     const Rows before = rows(s);
     const std::string oldRead = editor(s).readOptions().onto;
+    // A fresh editor has nothing to undo.
+    GG_CHECK_EQ(editor(s).undoDepth(), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(rows(s) == before);
+    GG_CHECK_EQ(editor(s).undoDepth(), 0u);
     GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
     s.setText(irWidget("ir_onto"), "");
     ctx->KeyChars("other");
@@ -293,6 +298,17 @@ GG_TEST("rebase-i", "undo and redo restore the base and the Onto field")
     GG_CHECK_STR_EQ(editor(s).context()->onto, o1);
     GG_CHECK_STR_EQ(editor(s).ontoText(), "other");
     GG_CHECK_STR_EQ(editor(s).readOptions().onto, newRead);
+    // A todo edit, then one undo: the todo goes back; the applied Onto and the read stay.
+    const Rows applied = rows(s);
+    key(s, r.c[2], ImGuiKey_D);
+    GG_CHECK(rows(s) != applied);
+    s.setText(irWidget("ir_onto"), "typed");
+    ctx->ItemClick(irRow(r.c[2]).c_str()); // focus leaves the field
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(rows(s) == applied);
+    GG_CHECK_STR_EQ(editor(s).ontoText(), "typed"); // typed, unapplied text stays
+    GG_CHECK_STR_EQ(editor(s).readOptions().onto, newRead);
+    GG_CHECK_STR_EQ(editor(s).context()->onto, o1);
 }
 
 GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (asks for a base), Branches")
