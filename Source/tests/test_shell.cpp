@@ -1732,6 +1732,7 @@ GG_TEST("shell", "recent repositories whose state changed: upstream gone, unborn
         GG_REQUIRE(s.openRepository(p));
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitIdle()); // the retired session's last jobs still write to was-a-repo/.git
     s.git(gone, {"remote", "set-head", "origin", "-d"});
     s.git(gone, {"update-ref", "-d", "refs/remotes/origin/main"});
     s.git(unborn, {"config", "branch.main.remote", "origin"});
