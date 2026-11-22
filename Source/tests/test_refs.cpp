@@ -2220,4 +2220,19 @@ GG_TEST("refs", "an external tool does not mark the remote tags stale; a fetch d
     GG_CHECK(s.session()->remoteTagsStale());
 }
 
+GG_TEST("refs", "the merged answers of a deleted branch leave the session when the snapshot arrives (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"branch", "gone"});
+    s.settle();
+    const size_t base = s.session()->branchMergedCount();
+    s.session()->showDeleteBranchDialog("gone", 0);
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK_EQ(s.session()->branchMergedCount(), base + 1);
+    s.app.dialogs().closeAll();
+    s.git(repo, {"branch", "-D", "gone"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->branchMergedCount() == base; }));
+}
+
 } // namespace ggtest

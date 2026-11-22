@@ -155,6 +155,7 @@ public:
     // is not known; Failed when git could not tell (the caller then lets git decide).
     enum class MergedState { Unknown, Merged, NotMerged, Failed };
     MergedState branchMerged(core::RequestId request) const;
+    size_t branchMergedCount() const { return m_branchMerged.size(); }
     // What committing the staged files would make or leave conflicted (read off the UI thread on every
     // status change and when the commit dialog opens); never blocks.
     const std::vector<gg::outgoing::StagedWarning>& commitWarnings() const { return m_commitWarnings; }
@@ -305,6 +306,7 @@ private:
     std::vector<gg::outgoing::StagedWarning> m_commitWarnings;
     // The merged state of each readBranchMerged request, by request id (BranchMergedEvent).
     std::map<core::RequestId, MergedState> m_branchMerged;
+    std::map<core::RequestId, std::string> m_branchMergedOf; // the branch of each request: gone branches drop theirs
     std::map<std::string, std::map<std::string, std::string>> m_config;
     mutable std::atomic<bool> m_firstClassKnown{false}; // gg.firstClassConflicts as last read (for the UI thread)
     std::map<std::string, RemoteTags> m_remoteTags;

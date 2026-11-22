@@ -264,9 +264,11 @@ void Session::handle(core::Event& event)
             } else if constexpr (std::is_same_v<T, core::CommitWarningsEvent>) {
                 m_commitWarnings = std::move(e.warnings);
             } else if constexpr (std::is_same_v<T, core::BranchMergedEvent>) {
-                m_branchMerged[e.request] = e.result == core::BranchMergedEvent::Result::Merged ? MergedState::Merged
-                    : e.result == core::BranchMergedEvent::Result::NotMerged                    ? MergedState::NotMerged
-                                                                                                : MergedState::Failed;
+                // An answer for a branch that is gone has no entry any more: it makes none.
+                if (auto it = m_branchMerged.find(e.request); it != m_branchMerged.end())
+                    it->second = e.result == core::BranchMergedEvent::Result::Merged ? MergedState::Merged
+                        : e.result == core::BranchMergedEvent::Result::NotMerged     ? MergedState::NotMerged
+                                                                                     : MergedState::Failed;
             } else if constexpr (std::is_same_v<T, core::RebasePreviewEvent>) {
                 m_rebase->onPreview(e);
             }
@@ -287,6 +289,15 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
     m_snapshot = std::move(snap);
     if (refsChanged)
         m_descendants.clear();
+    // A branch that is gone drops the merged answers of its dialogs.
+    for (auto it = m_branchMergedOf.begin(); it != m_branchMergedOf.end();) {
+        if (m_snapshot->findBranch(it->second)) {
+            ++it;
+            continue;
+        }
+        m_branchMerged.erase(it->first);
+        it = m_branchMergedOf.erase(it);
+    }
     m_history->onSnapshot(m_snapshot, refsChanged || first);
     m_branches->onSnapshot(m_snapshot);
     m_tags->onSnapshot(m_snapshot);
