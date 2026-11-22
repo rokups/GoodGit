@@ -1268,4 +1268,46 @@ GG_TEST("diff", "another commit of the same file opens at the top")
     GG_CHECK_EQ(diff.topLine(), 0);
 }
 
+GG_TEST("diff", "Blame file in a stash view blames at the stash commit; an untracked stash file has it disabled")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "stashblame");
+    s.write(repo, "tracked.txt", "one\ntwo\n");
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Base"});
+    s.write(repo, "tracked.txt", "one\nTWO\n");
+    s.write(repo, "fresh.txt", "new\n");
+    s.git(repo, {"stash", "push", "-q", "--include-untracked"});
+    const std::string stash = s.revParse(repo, "refs/stash");
+    GG_REQUIRE(s.openRepository(repo));
+    auto files = [&](const char* group, const char* path) {
+        return s.child("//Changes", "##files") + "/" + group + "/" + path + "/###file_" + path;
+    };
+    s.showPanel("Stashes");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Stashes/stash_0/###row"); }));
+    ctx->ItemClick("//Stashes/stash_0/###row");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(files("Working tree", "tracked.txt").c_str()); }));
+    ctx->ItemClick(files("Working tree", "tracked.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->path() == "tracked.txt"; }));
+    s.showPanel("Diff");
+    ctx->Yield(3);
+    s.contextMenu((body(s) + "/###line_3").c_str(), "Blame file");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "tracked.txt" && b->query.commit.hex() == stash;
+    }));
+    // The untracked file: the item is disabled, a click opens nothing.
+    ctx->ItemClick("//Stashes/stash_0/###row");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(files("Untracked files", "fresh.txt").c_str()); }));
+    ctx->ItemClick(files("Untracked files", "fresh.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->path() == "fresh.txt"; }));
+    s.showPanel("Diff");
+    ctx->Yield(3);
+    ctx->ItemClick((body(s) + "/###line_1").c_str(), ImGuiMouseButton_Right);
+    ctx->MenuClick("//$FOCUSED/Blame file");
+    ctx->Yield(3);
+    const auto& b = s.session()->blame().blame();
+    GG_CHECK(b && b->query.path == "tracked.txt");
+    ctx->KeyPress(ImGuiKey_Escape);
+}
+
 } // namespace ggtest

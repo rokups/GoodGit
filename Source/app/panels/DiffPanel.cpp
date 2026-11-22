@@ -1085,12 +1085,16 @@ void DiffPanel::drawMenuItems()
     const std::string text = selectedText();
     if (menuItem(ICON_MS_CONTENT_COPY, "Copy", "Ctrl+C", false, !text.empty()))
         ImGui::SetClipboardText(text.c_str());
-    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, m_file.has_value())) {
+    // A stash commit holds the tracked files; an untracked file lives in another commit of the stash.
+    const bool untrackedStash = m_file && m_file->group == FileGroup::StashUntracked;
+    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, m_file.has_value() && !untrackedStash)) {
         core::Oid at;
-        if (m_selection.kind == SelKind::Commit)
+        if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash)
             at = m_selection.id;
         m_session.blameFile(m_file->path, at);
     }
+    if (untrackedStash && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("An untracked file of a stash has no blame.");
     const StagingMode mode = stagingMode();
     const bool free = m_session.actions().busy().empty();
     const LineSet lines = selectedLines();
