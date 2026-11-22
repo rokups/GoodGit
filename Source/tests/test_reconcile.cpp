@@ -2130,6 +2130,32 @@ GG_TEST("reconcile", "closeFinishedGroup keeps a group open when the rebase fold
     GG_CHECK(journalOps(repo).back().ended);
 }
 
+GG_TEST("reconcile", "openGroup adopts the identity of a rebase folder that appears after the group")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::journal::Journal journal{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = "op-gap-open";
+    op.src = "git";
+    op.label = "git rebase";
+    GG_REQUIRE(journal.begin(op));
+    gg::native::rememberGroup(r.get(), journal, op.id, "git");
+    const fs::path apply = repo / ".git" / "rebase-apply";
+    fs::create_directories(apply);
+    for (const char* name : {"rebasing", "orig-head", "onto", "head-name"})
+        std::ofstream(apply / name) << "x\n";
+    const auto info = gg::native::openGroup(r.get()); // before any closeFinishedGroup
+    GG_REQUIRE(info.has_value());
+    GG_CHECK(info->active);
+    std::ifstream in(gg::native::stateDir(r.get()) / "operation");
+    const std::string state((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    GG_CHECK(state.find(gg::native::rebaseIdentity(r.get())) != std::string::npos);
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(fs::exists(gg::native::stateDir(r.get()) / "operation"));
+    GG_CHECK(!journalOps(repo).back().ended);
+}
+
 GG_TEST("reconcile", "closeFinishedGroup ends a remembered group whose rebase is gone, and removes its state")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
