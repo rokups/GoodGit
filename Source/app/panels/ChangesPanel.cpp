@@ -768,10 +768,12 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     const bool canBlame = row.kind != core::ChangeKind::Deleted && row.group != FileGroup::StashUntracked;
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, canBlame)) {
         core::Oid at;
-        if (m_selection.kind == SelKind::Commit)
+        if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash)
             at = effectiveSelection().id;
         m_session.blameFile(row.path, at);
     }
+    if (row.group == FileGroup::StashUntracked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("An untracked file of a stash has no blame.");
     {
         // "Compare": Before is the file's old side, After its new side. With "Compare with" set, a commit's
         // file compares Before with that target (it is the left side, as in the internal diff).
