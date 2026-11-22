@@ -107,6 +107,7 @@ public:
     static constexpr size_t kMaxUndo = 100;
     size_t undoDepth() const { return m_undo.size(); }
     const std::string& ontoText() const { return m_onto; }
+    const gg::todo::ReadOptions& readOptions() const { return m_state.read; }
     // The text of a group's inline message editor (the group whose first row is `row`).
     std::string messageText(size_t row) const;
 

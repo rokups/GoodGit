@@ -275,19 +275,24 @@ GG_TEST("rebase-i", "undo and redo restore the base and the Onto field")
     ctx->KeyPress(ImGuiKey_I);
     GG_REQUIRE(editorReady(s));
     const Rows before = rows(s);
+    const std::string oldRead = editor(s).readOptions().onto;
     GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
     s.setText(irWidget("ir_onto"), "");
     ctx->KeyChars("other");
     ctx->KeyPress(ImGuiKey_Enter);
     GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == o1; }));
     GG_CHECK_STR_EQ(editor(s).ontoText(), "other");
+    const std::string newRead = editor(s).readOptions().onto;
+    GG_CHECK(newRead != oldRead);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
     GG_CHECK_STR_EQ(editor(s).ontoText(), "");
+    GG_CHECK_STR_EQ(editor(s).readOptions().onto, oldRead);
     GG_CHECK(rows(s) == before);
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z);
     GG_CHECK_STR_EQ(editor(s).context()->onto, o1);
     GG_CHECK_STR_EQ(editor(s).ontoText(), "other");
+    GG_CHECK_STR_EQ(editor(s).readOptions().onto, newRead);
 }
 
 GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (asks for a base), Branches")
