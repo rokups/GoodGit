@@ -3,6 +3,8 @@
 #include <efsw/efsw.hpp>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+
 namespace ggui::core {
 
 namespace fs = std::filesystem;
@@ -10,6 +12,8 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr auto kDebounce = std::chrono::milliseconds(150);
+// A steady stream of events must not delay the notice for ever: the first event of a burst sets the limit.
+constexpr auto kMaxWait = std::chrono::milliseconds(1000);
 
 // Relative path of `p` under `base` with '/' separators, or empty when outside.
 std::string relativeUnder(const fs::path& p, const fs::path& base)
@@ -132,8 +136,11 @@ void Watcher::changed(const fs::path& path)
         m_pending.index |= e.index;
         m_pending.refs |= e.refs;
         m_pending.journal |= e.journal;
+        const auto now = std::chrono::steady_clock::now();
+        if (!m_hasPending)
+            m_first = now;
         m_hasPending = true;
-        m_last = std::chrono::steady_clock::now();
+        m_last = now;
     }
     m_cv.notify_all();
 }
@@ -146,7 +153,7 @@ void Watcher::debounceLoop()
             m_cv.wait(lock, [this] { return m_stop || m_hasPending; });
             continue;
         }
-        const auto due = m_last + kDebounce;
+        const auto due = std::min(m_last + kDebounce, m_first + kMaxWait);
         if (std::chrono::steady_clock::now() < due) {
             m_cv.wait_until(lock, due);
             continue;

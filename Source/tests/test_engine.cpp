@@ -1,4 +1,5 @@
 // Engine contract, watcher and responsiveness (§3.1).
+#include "core/Watcher.hpp"
 #include "core/Worker.hpp"
 #include "panels/ChangesPanel.hpp"
 #include "panels/DiffPanel.hpp"
@@ -15,6 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -63,6 +65,38 @@ GG_TEST("engine", "watcher: plain git steps update the UI")
     // Staging with plain git moves it to Staged (index change).
     s.git(repo, {"add", "f1.txt"});
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
+}
+
+GG_TEST("engine", "watcher: a steady stream of events still notifies within the maximum wait")
+{
+    const fs::path dir = s.path("watched");
+    fs::create_directories(dir);
+    std::mutex mu;
+    std::vector<std::chrono::steady_clock::time_point> notices;
+    const auto start = std::chrono::steady_clock::now();
+    ggui::core::Watcher watcher(dir, fs::path(), fs::path(), [&](const ggui::core::WatchEvent&) {
+        std::lock_guard lock(mu);
+        notices.push_back(std::chrono::steady_clock::now());
+    });
+    std::atomic<bool> stop = false;
+    std::thread writer([&] {
+        for (int i = 0; !stop; ++i) {
+            std::ofstream(dir / "stream.txt") << i;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    });
+    ScopeExit join([&] {
+        stop = true;
+        writer.join();
+    });
+    std::this_thread::sleep_for(std::chrono::seconds(3)); // real time: the test engine sleep may be fast
+    stop = true;
+    std::lock_guard lock(mu);
+    GG_CHECK(notices.size() >= 2);
+    // kMaxWait is 1 s in Watcher.cpp; the debounce of 150 ms and the slack scale the margin.
+    GG_REQUIRE(!notices.empty());
+    const double firstMs = std::chrono::duration<double, std::milli>(notices.front() - start).count();
+    GG_CHECK(firstMs < 1000.0 + timeBudgetMs(500.0));
 }
 
 GG_TEST("engine", "status on a huge worktree lists all changes")
