@@ -8,7 +8,7 @@ Binaries land in `build/<preset>/bin/` (`ggui`, `git-gg`). Presets in `CMakePres
 - `release` — no test engine, for packaging;
 - `release-tests` — the `release` flags with the test engine, for the CI test job;
 - `asan` — Debug build with AddressSanitizer and UBSan, test engine included (see below);
-- `coverage` / `coverage-gcov` — instrumented builds for the coverage gate;
+- `coverage` / `coverage-gcov` — instrumented builds for the coverage report (informational; it fails only on COVERAGE_EXCL markers);
 - Windows: `mingw-x64-static` (fully static, Schannel) and `msvc-x64` with the test engine, and
   their `-release` variants for packaging;
 - workflow presets: `package-linux`, `package-mingw`, `package-msvc`, `package-mingw-cross`.
@@ -24,9 +24,9 @@ build/ninja/bin/ggui --test                 # run the whole suite
 build/ninja/bin/ggui --test=conflicts      # filter: substrings of category or test name
 build/ninja/bin/ggui --list-tests           # list test names
 
-# Headless, sharded (as CI runs it): 4 shards in parallel
-for i in 0 1 2 3; do
-  GGUI_HEADLESS=1 build/ninja/bin/ggui --headless --test --shard=$i/4 &
+# Headless, sharded (as CI runs it): 6 shards in parallel
+for i in 0 1 2 3 4 5; do
+  GGUI_HEADLESS=1 build/ninja/bin/ggui --headless --test --shard=$i/6 &
 done; wait
 ```
 
