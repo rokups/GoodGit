@@ -2516,7 +2516,8 @@ void Actions::confirmRestore(const std::string& operationId)
 
 void Actions::openInEditor(const std::string& path)
 {
-    run("open " + path,
+    // The Network queue keeps the tool off the mutation worker. It is no fetch: do not mark the remote tags stale.
+    const auto id = run("open " + path,
         [path](MutationContext& ctx) {
             const std::string editor = gg::trim(ctx.git({"var", "GIT_EDITOR"}).out);
             ctx.env.clear();
@@ -2530,23 +2531,26 @@ void Actions::openInEditor(const std::string& path)
                 throw MutationError{Outcome::Failed, res.message(), res.err};
         },
         {}, true, false);
+    m_networkRuns.erase(id);
 }
 
 void Actions::externalDiff(const std::string& path, const std::vector<std::string>& revs)
 {
-    run("external diff " + path,
+    const auto id = run("external diff " + path,
         [path, revs](MutationContext& ctx) {
             std::vector<std::string> args{"difftool", "-y"};
             args.insert(args.end(), revs.begin(), revs.end());
             ctx.git(withPaths(args, {path}));
         },
         {}, true, false);
+    m_networkRuns.erase(id);
 }
 
 void Actions::mergeTool(const std::string& path)
 {
-    run("merge tool " + path, [path](MutationContext& ctx) { ctx.git(withPaths({"mergetool", "-y"}, {path})); }, {}, true,
+    const auto id = run("merge tool " + path, [path](MutationContext& ctx) { ctx.git(withPaths({"mergetool", "-y"}, {path})); }, {}, true,
         false);
+    m_networkRuns.erase(id);
 }
 
 } // namespace ggui

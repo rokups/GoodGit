@@ -178,6 +178,7 @@ public:
     const std::map<std::string, RemoteTags>& remoteTags() const { return m_remoteTags; }
     void requestRemoteTagsIfStale();
     void markRemoteTagsStale() { m_remoteTagsStale = true; }
+    bool remoteTagsStale() const { return m_remoteTagsStale; }
 
     // Branches on one remote (git ls-remote), read when the Fetch more dialog asks. `ok` false: it
     // could not be read. A remote missing from the map has not been read yet.

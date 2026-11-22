@@ -2204,4 +2204,20 @@ GG_TEST("refs", "move and fast-forward read HEAD in the job: a stale snapshot do
     GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"}), "other");
 }
 
+GG_TEST("refs", "an external tool does not mark the remote tags stale; a fetch does (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"config", "core.editor", "true"});
+    s.session()->requestRemoteTagsIfStale(); // clears the flag
+    s.settle();
+    GG_REQUIRE(!s.session()->remoteTagsStale());
+    s.session()->actions().openInEditor("f1.txt");
+    s.settle();
+    GG_CHECK(!s.session()->remoteTagsStale());
+    s.session()->actions().fetch("", false, false);
+    s.settle();
+    GG_CHECK(s.session()->remoteTagsStale());
+}
+
 } // namespace ggtest
