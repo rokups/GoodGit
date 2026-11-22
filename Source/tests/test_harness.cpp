@@ -228,7 +228,9 @@ GG_TEST("harness", "stub guard kills the stub process at the end of its scope")
     {
         const StubGuard guard(pidFile, {"sleep"});
         GG_REQUIRE(s.waitUntil([&] { return !s.read(s.root(), "stub.pid").empty(); }));
-        s.settle();
+        // Wait for the exec: during it, /proc/<pid>/cmdline can read empty and the guard would not match.
+        const std::string cmdline = "/proc/" + gg::trim(s.read(s.root(), "stub.pid")) + "/cmdline";
+        GG_REQUIRE(s.waitUntil([&] { return s.read(fs::path("/"), cmdline.substr(1)).rfind("sleep", 0) == 0; }));
         GG_CHECK(gg::stillRunning(stub));
     }
     GG_CHECK(s.waitUntil([&] { return !gg::stillRunning(stub); }));
