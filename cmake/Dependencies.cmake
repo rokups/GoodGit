@@ -128,31 +128,10 @@ if(GGUI_ENABLE_IMGUI_TEST_ENGINE)
 endif()
 
 # ---------------------------------------------------------------------------------------------
-# ImGuiColorTextEdit (goossens): TextEditor + TextDiff, patched with a hash-stamped re-apply
+# ImGuiColorTextEdit (goossens): TextEditor + TextDiff
 # ---------------------------------------------------------------------------------------------
 CPMAddPackage(NAME ImGuiColorTextEdit GITHUB_REPOSITORY goossens/ImGuiColorTextEdit
     GIT_TAG fa6fd434d3db973e604653d2147316f41d49ed56 DOWNLOAD_ONLY YES)
-set(GGUI_TE_PATCH ${CMAKE_CURRENT_LIST_DIR}/ImGuiColorTextEdit.patch)
-if(EXISTS ${GGUI_TE_PATCH})
-    file(SHA256 ${GGUI_TE_PATCH} GGUI_TE_PATCH_HASH)
-    set(GGUI_TE_STAMP ${ImGuiColorTextEdit_SOURCE_DIR}/.ggui-patch-stamp)
-    set(GGUI_TE_OLD_HASH "")
-    if(EXISTS ${GGUI_TE_STAMP})
-        file(READ ${GGUI_TE_STAMP} GGUI_TE_OLD_HASH)
-    endif()
-    if(NOT GGUI_TE_OLD_HASH STREQUAL GGUI_TE_PATCH_HASH)
-        find_package(Git REQUIRED)
-        # Undo a previously applied (older) patch, then apply the current one.
-        execute_process(COMMAND ${GIT_EXECUTABLE} -c safe.directory=* checkout -- .
-            WORKING_DIRECTORY ${ImGuiColorTextEdit_SOURCE_DIR} RESULT_VARIABLE _r)
-        execute_process(COMMAND ${GIT_EXECUTABLE} -c safe.directory=* apply --whitespace=nowarn ${GGUI_TE_PATCH}
-            WORKING_DIRECTORY ${ImGuiColorTextEdit_SOURCE_DIR} RESULT_VARIABLE _r)
-        if(NOT _r EQUAL 0)
-            message(FATAL_ERROR "Failed to apply ${GGUI_TE_PATCH}")
-        endif()
-        file(WRITE ${GGUI_TE_STAMP} ${GGUI_TE_PATCH_HASH})
-    endif()
-endif()
 file(GLOB GGUI_CTE_SOURCES ${ImGuiColorTextEdit_SOURCE_DIR}/*.cpp)
 add_library(imgui_color_text_edit STATIC ${GGUI_CTE_SOURCES})
 target_include_directories(imgui_color_text_edit SYSTEM PUBLIC ${ImGuiColorTextEdit_SOURCE_DIR})

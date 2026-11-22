@@ -42,7 +42,7 @@ run_ggui() {
     fi
 }
 
-status=0
+status=0 crashed=0
 pids=()
 for ((i = 0; i < SHARDS; i++)); do
     args=(--test${FILTER:+=$FILTER} --trace="$OUT/traces/trace$i.json")
@@ -51,16 +51,17 @@ for ((i = 0; i < SHARDS; i++)); do
         run_ggui "$BUILD/bin/ggui" "${args[@]}" > "$OUT/shard$i.log" 2>&1 &
         pids+=($!)
     else
-        run_ggui "$BUILD/bin/ggui" "${args[@]}" || status=$?
+        run_ggui "$BUILD/bin/ggui" "${args[@]}" || { status=$?; if ((status > 128)); then crashed=1; fi; }
     fi
 done
 for pid in "${pids[@]}"; do
-    wait "$pid" || status=$?
+    wait "$pid" || { status=$?; if ((status > 128)); then crashed=1; fi; }
 done
 if [[ -n "${PARALLEL:-}" ]]; then cat "$OUT"/shard*.log | grep -E "tests passed|^FAILED|^SKIPPED" || true; fi
 # The traces decide whether the tests passed: xvfb-run can exit 1 after a passing run when its
-# cleanup finds Xvfb already gone. A missing trace keeps the exit status.
-if ((status != 0)); then
+# cleanup finds Xvfb already gone. A missing trace keeps the exit status. A crash (exit status
+# above 128: a signal) is never ignored, even when every test passed before it.
+if ((status != 0 && crashed == 0)); then
     if python3 - "$OUT"/traces/trace*.json "$SHARDS" <<'EOF'
 import json, sys
 paths, shards = sys.argv[1:-1], int(sys.argv[-1])
