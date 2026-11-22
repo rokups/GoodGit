@@ -125,6 +125,7 @@ GG_TEST("selfupdate/ui", "an up to date build says so and offers no download")
 
 GG_TEST("selfupdate/ui", "check, download and restart prompt")
 {
+    GG_CHECK_EQ(s.app.quitRequests(), 0); // the runner resets the App before the body
     UpdateFixture f(kNewCommit);
     openUpdates(s, f.config(kLocalCommit));
     const std::string check = ref("Check for updates##update_check");
@@ -167,15 +168,15 @@ GG_TEST("selfupdate/ui", "check, download and restart prompt")
 }
 
 // The tests share one App: the Quit requests of an earlier test (the shell tests press Ctrl+Q) must
-// not show in the count of a later one. The order of the tests differs between toolchains.
+// not show in the count of a later one. The test runner calls resetForTest before each body, so the
+// body only checks the count at its start. The order of the tests differs between toolchains.
 GG_TEST("selfupdate/ui", "the quit request count starts at zero in each test")
 {
-    s.app.requestQuit();
-    s.app.requestQuit();
-    GG_CHECK_EQ(s.app.quitRequests(), 2);
-    s.app.resetForTest();
     GG_CHECK_EQ(s.app.quitRequests(), 0);
     GG_CHECK(!s.app.quitRequested());
+    s.app.requestQuit();
+    GG_CHECK_EQ(s.app.quitRequests(), 1);
+    s.app.clearQuit();
 }
 
 GG_TEST("selfupdate/ui", "a failed check shows the error and allows a new check")

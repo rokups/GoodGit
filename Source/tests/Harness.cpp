@@ -822,7 +822,13 @@ void Scenario::screenshot(const std::string& name)
     ctx->CaptureReset();
     const std::string png = (dir / (name + ".png")).string();
     ImStrncpy(ctx->CaptureArgs->InOutputFile, png.c_str(), IM_ARRAYSIZE(ctx->CaptureArgs->InOutputFile));
-    ctx->CaptureScreenshot(ImGuiCaptureFlags_HideMouseCursor);
+    const bool captured = ctx->CaptureScreenshot(ImGuiCaptureFlags_HideMouseCursor);
+    std::error_code sizeEc;
+    const auto bytes = fs::file_size(png, sizeEc);
+    if (!captured || sizeEc || bytes == 0) {
+        ctx->LogError("screenshot %s was not written", png.c_str());
+        IM_CHECK_NO_RET(false);
+    }
 }
 
 void Scenario::showPanel(const char* name)

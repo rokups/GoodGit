@@ -1,6 +1,8 @@
 // Scripted repository recipes built with plain git (product spec §8.3).
 #include "tests/Harness.hpp"
 
+#include <stdexcept>
+
 namespace ggtest {
 
 const char* recipeName(Recipe r)
@@ -43,6 +45,14 @@ std::vector<Recipe> allRecipes()
 }
 
 namespace {
+
+// A Mid* fixture must leave the in-progress state in the git directory. Fails the test by name if not.
+void requireState(const fs::path& repo, const char* fixture, const char* entry)
+{
+    std::error_code ec;
+    if (!fs::exists(repo / ".git" / entry, ec))
+        throw std::runtime_error(std::string("fixture ") + fixture + ": .git/" + entry + " is missing");
+}
 
 void linear(Scenario& s, const fs::path& repo, int count, const std::string& prefix = "f")
 {
@@ -171,6 +181,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         init();
         conflictSetup(*this, repo);
         gitMayFail(repo, {"merge", "theirs"});
+        requireState(repo, "MidMerge", "MERGE_HEAD");
         break;
     case Recipe::MidRebase: {
         init();
@@ -180,17 +191,20 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         r.cwd = repo;
         r.env.emplace_back("GIT_SEQUENCE_EDITOR", "true");
         gg::run(r);
+        requireState(repo, "MidRebase", "rebase-merge");
         break;
     }
     case Recipe::MidRebaseApply:
         init();
         conflictSetup(*this, repo);
         gitMayFail(repo, {"rebase", "--apply", "theirs"});
+        requireState(repo, "MidRebaseApply", "rebase-apply");
         break;
     case Recipe::MidCherryPick:
         init();
         conflictSetup(*this, repo);
         gitMayFail(repo, {"cherry-pick", "theirs"});
+        requireState(repo, "MidCherryPick", "CHERRY_PICK_HEAD");
         break;
     case Recipe::MidRevert:
         init();
@@ -198,6 +212,7 @@ fs::path Scenario::fixture(Recipe recipe, const std::string& name)
         commitFile(repo, "f.txt", "2\n", "Two");
         commitFile(repo, "f.txt", "3\n", "Three");
         gitMayFail(repo, {"revert", "--no-edit", "HEAD~1"});
+        requireState(repo, "MidRevert", "REVERT_HEAD");
         break;
     case Recipe::Bisecting:
         init();

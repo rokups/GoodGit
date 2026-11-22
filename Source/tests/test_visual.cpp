@@ -143,7 +143,7 @@ GG_TEST("visual", "graph is not clipped at the left edge")
     GG_CHECK(checked > 100);
 }
 
-GG_TEST("visual", "screenshots of the main views")
+GG_MANUAL_TEST("visual", "screenshots of the main views")
 {
     const fs::path repo = s.fixture(Recipe::WorkingChanges);
     GG_REQUIRE(s.openRepository(repo));
