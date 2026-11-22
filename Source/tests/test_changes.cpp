@@ -293,16 +293,18 @@ GG_TEST("changes", "two selected commits: the D key and the file drag do nothing
     ctx->KeyPress(ImGuiKey_D);
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), tip);
+    GG_CHECK(!s.dialogOpen("Discard changes", 0.5f));
     GG_CHECK(!s.dialogOpen("Rewrite published history?", 0.5f));
     // f4.txt dropped on its commit's child, HEAD (it would move the file into HEAD): nothing moves.
     ctx->ItemDragAndDrop(fileRef(s, nullptr, "f4.txt").c_str(), headRow.c_str());
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), tip);
-    // One commit: the D key rewrites the commit without a dialog (Undo restores it) ...
+    // One commit: the D key asks, then rewrites the commit (Undo restores it) ...
     clickRow(s, older, ImGuiMod_Ctrl);
     GG_REQUIRE(s.waitUntil([&] { return paths(s, FileGroup::Commit) == (V{"f4.txt"}); }));
     ctx->ItemClick(fileRef(s, nullptr, "f4.txt").c_str());
     ctx->KeyPress(ImGuiKey_D);
+    s.dialogButton("Discard changes", "Discard");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
