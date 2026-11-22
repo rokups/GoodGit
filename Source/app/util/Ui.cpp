@@ -349,6 +349,8 @@ struct ScrollRecord {
     int frame = 0;             // the last frame the record was updated in
 };
 std::unordered_map<ImGuiID, ScrollRecord> g_scrollRecords;
+constexpr int kScrollRecordMaxAge = 60; // frames a record may go without an update
+constexpr int kScrollPrunePeriod = 30;  // frames between two prunes
 
 // Compares the window's scroll position with the record; a window not seen in the last frame only gets a baseline.
 ScrollRecord& updateScrollRecord(const ImGuiWindow* w, int frame, double now)
@@ -375,7 +377,12 @@ void trackScrolling()
     for (const ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
         if (w->Active)
             updateScrollRecord(w, frame, now);
+    // Windows that are gone leave their record behind: drop the ones not updated for a while.
+    if (frame % kScrollPrunePeriod == 0)
+        std::erase_if(g_scrollRecords, [&](const auto& e) { return frame - e.second.frame > kScrollRecordMaxAge; });
 }
+
+size_t scrollRecordCount() { return g_scrollRecords.size(); }
 
 bool listScrolling()
 {

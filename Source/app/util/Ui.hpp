@@ -67,6 +67,8 @@ bool listScrolling();
 // Updates the scroll record of every window; the app calls it once at the end of each frame, so listScrolling
 // compares with the previous frame whenever it is asked.
 void trackScrolling();
+// Number of scroll records kept (a test hook: gone windows must not keep theirs for ever).
+size_t scrollRecordCount();
 // Seconds an item stays hovered before its tooltip shows.
 constexpr float kTooltipDelay = 2.0f;
 // Use this, not ImGui::IsItemHovered, to gate every tooltip. It uses ImGuiHoveredFlags_DelayNormal, which no
