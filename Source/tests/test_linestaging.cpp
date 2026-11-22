@@ -205,6 +205,38 @@ GG_TEST("linestaging", "stage, discard and unstage hunks")
     s.settle();
 }
 
+GG_TEST("linestaging", "stage a hunk of a file with a space, a quote or a non-ASCII letter in its name")
+{
+    std::vector<std::string> names = {"with space.txt", "n\xC3\xA4me.txt"};
+#ifndef _WIN32
+    names.push_back("quo\"te.txt"); // a double quote is not valid in a Windows file name
+#endif
+    const fs::path repo = s.fixture(Recipe::Empty, "oddpaths");
+    std::string text;
+    for (int i = 1; i <= 30; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    for (const auto& name : names)
+        s.commitFile(repo, name, text, "Base " + name);
+    std::string changed = text;
+    changed.replace(changed.find("line 3\n"), 7, "LINE 3\n");
+    changed.replace(changed.find("line 27\n"), 8, "LINE 27\n");
+    GG_REQUIRE(s.openRepository(repo));
+    for (const auto& name : names) {
+        s.write(repo, name, changed);
+        GG_REQUIRE(showFile(s, "Unstaged", name));
+        GG_REQUIRE(diffFile(s)->hunks.size() == 2);
+        ctx->ItemClick((body(s) + "/###stage_hunk_1").c_str());
+        GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"show", ":" + name}).find("LINE 27") != std::string::npos; }));
+        s.settle();
+        GG_CHECK(s.gitOut(repo, {"show", ":" + name}).find("LINE 3") == std::string::npos);
+        GG_CHECK(s.gitOut(repo, {"diff", "--cached", "--name-only", "-z"}) == name + std::string(1, '\0'));
+        // Unstage and restore for the next name.
+        s.git(repo, {"reset", "-q"});
+        s.git(repo, {"checkout", "-q", "--", name});
+        s.settle();
+    }
+}
+
 GG_TEST("linestaging", "hunks from the context menu in the side-by-side view")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "hunks");
