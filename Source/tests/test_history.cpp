@@ -1183,7 +1183,8 @@ GG_TEST("history", "cancel a long history load and a reveal")
     ctx->ItemClick("//###Toolbar/Cancel##tb_cancel");
     // Other reads (the working tree status of the large fixture) finish on their own; on a slow
     // runner that alone can take 30 s.
-    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty() && !history.loading(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
+    // idle() also needs an empty event queue: the cancelled walk sends its last batch as it stops.
+    GG_CHECK(s.waitUntil([&] { return s.session()->activities().empty() && s.session()->idle() && !history.loading(); }, static_cast<float>(timeBudgetMs(60000) / 1000)));
     // The walk stopped: part of the history is loaded, the target is not, and nothing is selected.
     const size_t loaded = history.rows().size();
     GG_CHECK(loaded > static_cast<size_t>(ggui::HistoryPanel::kPageSize));
