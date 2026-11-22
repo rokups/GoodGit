@@ -171,8 +171,8 @@ void rememberGroup(git_repository* repo, journal::Writer& journal, const std::st
 {
     const fs::path dir = stateDir(repo);
     std::error_code ec;
-    fs::create_directories(dir, ec);
-    if (writeState(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
+    if (makeDirsUnder(dir.parent_path().parent_path().parent_path(), dir, ec)
+        && writeState(dir / "operation", op + "\n" + rebaseIdentity(repo) + "\n" + src + "\n"))
         journal.markRebase(op);
 }
 
@@ -216,7 +216,10 @@ void finishGroup(git_repository* repo, journal::Writer& journal, bool ok, std::s
 bool writePrepared(const fs::path& dir, const Prepared& prepared, std::string& error)
 {
     std::error_code ec;
-    fs::create_directories(dir, ec);
+    if (!makeDirsUnder(dir.parent_path().parent_path().parent_path(), dir, ec)) {
+        error = "cannot write " + (dir / "prepared.json").string();
+        return false;
+    }
     json j{{"todo", prepared.todo}, {"messages", prepared.messages}, {"identity", prepared.identity}};
     if (!writeState(dir / "prepared.json", j.dump())) {
         error = "cannot write " + (dir / "prepared.json").string();

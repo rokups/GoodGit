@@ -1,4 +1,5 @@
 #include <libgg/Ignore.hpp>
+#include <libgg/Files.hpp>
 
 #include <fstream>
 #include <set>
@@ -93,8 +94,10 @@ size_t addLines(const fs::path& file, const std::vector<std::string>& lines, std
     if (!content.empty() && content.back() != '\n')
         add.insert(0, "\n");
     if (file.has_parent_path()) {
-        fs::create_directories(file.parent_path(), ec);
-        if (ec)
+        // .git/info/exclude: the git directory itself must exist; a .gitignore parent is created as before.
+        const fs::path parent = file.parent_path();
+        const fs::path gitDir = parent.filename() == "info" ? parent.parent_path() : parent;
+        if (!makeDirsUnder(gitDir, parent, ec))
             return 0;
     }
     std::ofstream out(file, std::ios::binary | std::ios::app);

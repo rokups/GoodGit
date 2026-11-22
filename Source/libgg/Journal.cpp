@@ -170,9 +170,9 @@ std::string busyMessage(const fs::path& dir)
 bool Journal::appendLine(const std::string& line, std::string* error)
 {
     std::error_code ec;
-    fs::create_directories(m_dir, ec);
+    const bool made = makeDirsUnder(m_dir.parent_path(), m_dir, ec);
     Lock lock(m_dir / "journal.lock");
-    if (!lock.locked()) {
+    if (!made || !lock.locked()) {
         if (error)
             *error = busyMessage(m_dir);
         return false;
@@ -188,7 +188,7 @@ struct Journal::Transaction::Held {
 Journal::Transaction::Transaction(const Journal& journal) : m_journal(journal)
 {
     std::error_code ec;
-    fs::create_directories(journal.m_dir, ec);
+    makeDirsUnder(journal.m_dir.parent_path(), journal.m_dir, ec);
     m_held = std::make_unique<Held>(journal.m_dir / "journal.lock");
 }
 

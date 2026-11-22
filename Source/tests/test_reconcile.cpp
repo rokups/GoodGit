@@ -2302,4 +2302,18 @@ GG_TEST("reconcile", "writePrepared leaves a complete prepared.json and no temp 
     GG_CHECK_EQ(files, 1u);
 }
 
+GG_TEST("journal", "a writer never recreates a git directory that was moved away")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::error_code ec;
+    fs::rename(repo / ".git", repo / ".git-away", ec);
+    GG_REQUIRE(!ec);
+    gg::journal::Journal journal{repo / ".git"};
+    std::string error;
+    GG_CHECK(!journal.markRebase("late", &error));
+    GG_CHECK(!error.empty());
+    GG_CHECK(!fs::exists(repo / ".git"));
+    fs::rename(repo / ".git-away", repo / ".git", ec);
+}
+
 } // namespace ggtest

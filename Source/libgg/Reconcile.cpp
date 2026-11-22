@@ -110,7 +110,8 @@ bool writeState(const fs::path& dir, const fs::path& path, const State& st)
     doc["baseline"] = std::move(base);
     doc["journal"] = st.journal;
     std::error_code ec;
-    fs::create_directories(dir, ec);
+    if (!makeDirsUnder(dir.parent_path(), dir, ec))
+        return false;
     return !writeFileAtomic(path, doc.dump() + "\n");
 }
 

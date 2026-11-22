@@ -27,4 +27,8 @@ std::optional<std::string> readFile(const std::filesystem::path& path);
 std::error_code writeFileAtomic(const std::filesystem::path& path, std::string_view text,
                                 std::optional<std::filesystem::perms> mode = std::nullopt, int attempts = 20);
 
+// Creates dir and its missing parents, but only when gitDir is an existing directory. A late writer
+// must not recreate a git directory that the user moved away. Else sets no_such_file_or_directory.
+bool makeDirsUnder(const std::filesystem::path& gitDir, const std::filesystem::path& dir, std::error_code& ec);
+
 } // namespace gg

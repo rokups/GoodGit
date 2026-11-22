@@ -1133,8 +1133,7 @@ bool Rewriter::apply(const Plan& plan, Result& result, std::string& error, const
         if (gitVersion(m->cwd) >= 240) {
             const fs::path mapFile = fs::path(git_repository_commondir(m->repo.get())) / "gg" / ("rewrite-" + journal::Journal::newOperationId());
             std::error_code ec;
-            fs::create_directories(mapFile.parent_path(), ec);
-            {
+            if (makeDirsUnder(mapFile.parent_path().parent_path(), mapFile.parent_path(), ec)) {
                 std::ofstream f(mapFile, std::ios::binary);
                 f << map;
             }

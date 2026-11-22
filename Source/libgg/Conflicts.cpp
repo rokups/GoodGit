@@ -194,7 +194,8 @@ void Cache::save()
     if (m_file.empty())
         return;
     std::error_code ec;
-    fs::create_directories(m_file.parent_path(), ec);
+    if (!makeDirsUnder(m_file.parent_path().parent_path().parent_path(), m_file.parent_path(), ec))
+        return;
     std::ostringstream out;
     out << kHeader << '\n';
     for (const auto& [k, files] : trees) {

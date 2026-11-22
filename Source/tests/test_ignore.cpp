@@ -45,7 +45,8 @@ GG_TEST("ignore", "addLines creates the file, appends and skips lines that exist
 {
     const fs::path dir = s.root() / "ignore-lines";
     std::error_code ec;
-    // A missing file and a missing folder are created.
+    // A missing file and a missing info folder are created; the repository folder must exist.
+    fs::create_directories(dir, ec);
     GG_CHECK(gg::ignore::addLines(dir / "info" / "exclude", {"/a", "/b", "/a"}, ec) == 2);
     GG_CHECK(!ec);
     GG_CHECK_STR_EQ(s.read(dir, "info/exclude"), "/a\n/b\n");

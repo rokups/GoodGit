@@ -44,8 +44,8 @@ std::optional<Session> read(const fs::path& file)
 bool write(const fs::path& file, const Session& session)
 {
     std::error_code ec;
-    fs::create_directories(file.parent_path(), ec);
-    if (ec)
+    const fs::path gitDir = file.parent_path().parent_path().parent_path();
+    if (!makeDirsUnder(gitDir, file.parent_path(), ec))
         return false;
     // Not writeFileAtomic: its temp file sits in the session directory. Here the temp file stays outside it.
     // Written in a sibling directory of the session files (gg/edit.tmp) and renamed over the target. The name
@@ -54,8 +54,7 @@ bool write(const fs::path& file, const Session& session)
     // leaves the earlier session.
     const fs::path dir = file.parent_path();
     const fs::path tmpDir = dir.parent_path() / (dir.filename().string() + ".tmp");
-    fs::create_directories(tmpDir, ec);
-    if (ec)
+    if (!makeDirsUnder(gitDir, tmpDir, ec))
         return false;
     const fs::path tmp = tmpDir / file.filename();
     {

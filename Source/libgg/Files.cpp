@@ -109,6 +109,16 @@ std::error_code writeTempFile(const fs::path& tmp, std::string_view text, [[mayb
 
 } // namespace
 
+bool makeDirsUnder(const fs::path& gitDir, const fs::path& dir, std::error_code& ec)
+{
+    if (!fs::is_directory(gitDir)) {
+        ec = std::make_error_code(std::errc::no_such_file_or_directory);
+        return false;
+    }
+    fs::create_directories(dir, ec);
+    return !ec;
+}
+
 std::error_code writeFileAtomic(const fs::path& path, std::string_view text, std::optional<fs::perms> mode, int attempts)
 {
     // A unique name: the pid tells two processes apart, the counter two writes of one process.
