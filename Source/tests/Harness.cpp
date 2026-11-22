@@ -19,6 +19,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #undef Yield // winbase.h's, not ImGuiTestContext::Yield
+#else
+#include <csignal>
+#include <cstdlib>
 #endif
 
 namespace ggtest {
@@ -367,14 +370,30 @@ std::string Scenario::startGitDaemon(const fs::path& baseDir)
         args.push_back("--detach");
         args.push_back("--pid-file=" + pidFile.string());
         args.push_back(baseDir.string());
+        std::error_code ec;
+        fs::remove(pidFile, ec); // a stale file of an earlier attempt must not pass for this daemon
         if (!gitMayFail(m_root, args).ok())
             continue;
+        // --detach returns before the child writes the pid file: poll for it (5 s, 10 ms steps).
         // The pid is read now: the test's directory (with the file) may be gone when it ends.
-        const bool up = ready(url, [] { return true; });
-        if (const std::string pid = gg::trim(read(pidFile.parent_path(), pidFile.filename().string())); !pid.empty())
+        // The daemon writes the file before it binds the port. If its pid is missing or dead, another
+        // daemon owns the port and the answer on it is not ours: try another port.
+        std::string pid;
+        for (int i = 0; i < 500 && pid.empty(); ++i) {
+            pid = gg::trim(read(pidFile.parent_path(), pidFile.filename().string()));
+            if (pid.empty())
+                ctx->SleepNoSkip(0.01f, 0.01f);
+        }
+        if (pid.empty())
+            continue;
+        const long pidNumber = std::atol(pid.c_str());
+        auto ours = [pidNumber] { return pidNumber > 0 && ::kill(static_cast<pid_t>(pidNumber), 0) == 0; };
+        const bool up = ours() && ready(url, ours);
+        if (up) {
             m_daemonPids.push_back(pid);
-        if (up)
             return url;
+        }
+        run(fs::temp_directory_path(), {"kill", pid}); // the failed attempt must not leak its daemon
 #endif
     }
     IM_CHECK_NO_RET(false && "git daemon did not start");

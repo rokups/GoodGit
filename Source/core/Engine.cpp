@@ -80,6 +80,7 @@ void simulateLatency(const gg::CancelToken& token)
     if (latency.count() <= 0)
         return;
     const auto until = std::chrono::steady_clock::now() + latency;
+    gg::noteSlowGitSleep();
     while (std::chrono::steady_clock::now() < until) {
         gg::throwIfCancelled(token);
         std::this_thread::sleep_for(std::chrono::milliseconds(5));

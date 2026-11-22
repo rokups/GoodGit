@@ -770,6 +770,39 @@ GG_TEST("network", "rejected push: Pull then push, Force with lease; push tags")
     s.settle();
 }
 
+GG_TEST("network", "push of a tag that differs on the remote is refused and the remote tag stays")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    // Origin has v1 on one commit. The local v1 is on another one.
+    const std::string remoteTarget = s.revParse(repo, "HEAD");
+    s.git(repo, {"tag", "v1"});
+    s.git(repo, {"push", "-q", "origin", "refs/tags/v1"});
+    s.commitFile(repo, "next.txt", "n\n", "Next");
+    s.git(repo, {"tag", "-f", "v1"});
+    GG_REQUIRE(s.revParse(repo, "v1") != remoteTarget);
+    GG_REQUIRE(originHas(s, repo, "refs/tags/v1", remoteTarget));
+
+    // Plain git refuses the same push: the reason is "already exists".
+    const auto plain = s.gitMayFail(repo, {"push", "origin", "refs/tags/v1"});
+    GG_REQUIRE(!plain.ok());
+    GG_REQUIRE(plain.err.find("already exists") != std::string::npos);
+
+    // The single tag push shows the reason and leaves the remote tag.
+    s.session()->actions().pushTag("origin", "v1");
+    GG_REQUIRE(s.dialogOpen("push tag v1"));
+    GG_CHECK(s.app.dialogs().current()->message.find("already exists") != std::string::npos);
+    s.dialogButton("push tag v1", "OK");
+    GG_CHECK(originHas(s, repo, "refs/tags/v1", remoteTarget));
+    s.settle();
+
+    // Push tags (all tags) is refused in the same way.
+    popupItem(s, "//###Toolbar/###tb_push_menu", "Push tags");
+    GG_REQUIRE(s.waitUntil([&] { return s.app.dialogs().current() != nullptr; }));
+    GG_CHECK(s.app.dialogs().current()->message.find("already exists") != std::string::npos);
+    GG_CHECK(originHas(s, repo, "refs/tags/v1", remoteTarget));
+}
+
 GG_TEST("network", "push sends the checked oid when the branch moves after the guard")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
