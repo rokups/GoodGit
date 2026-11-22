@@ -196,6 +196,7 @@ private:
     void drawRebaseProgress(Session& s, const core::RebaseProgress& rebase);
     void drawToasts();
     void drawWelcome();
+    void refreshWelcomeRows();
     void drawDockHost();
     void drawSettingsWindow();
     void drawPathSetting();
@@ -263,7 +264,24 @@ private:
     bool m_restartForUpdate = false;
     bool m_updateResultTaken = false;
     bool m_autoOpenDone = false;
-    bool m_summariesRequested = false;   // requestSummaries() ran at least once
+    // Welcome rows: cached text of the recent list; see refreshWelcomeRows().
+    struct WelcomeRow {
+        size_t index = 0; // into the recent list
+        std::string text, warnPrefix, warning;
+        size_t dimLen = 0;
+    };
+    std::vector<WelcomeRow> m_welcomeRows;
+    std::vector<std::string> m_welcomeRecent;
+    std::string m_welcomeSig; // the summary fields that the rows show
+    RecentOrder m_welcomeOrder = RecentOrder::Alphabetical;
+    bool m_welcomeValid = false;
+    unsigned m_welcomeRebuilds = 0;
+
+public:
+    unsigned welcomeRebuilds() const { return m_welcomeRebuilds; } // for tests
+
+private:
+    bool m_summariesRequested = false;  // requestSummaries() ran at least once
     // GG-21: the refresh of the worktrees of the closed repositories that are expanded in the Repositories window.
     std::set<std::string> m_worktreeNoted;                                            // told in the last draw
     std::map<std::string, std::chrono::steady_clock::time_point> m_worktreeRequested; // expanded: last request time
