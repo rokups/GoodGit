@@ -21,81 +21,9 @@ bool isHex(const std::string& s)
     return true;
 }
 
-std::string lower(std::string s)
+// The target of a branch, remote branch or tag name (with an optional refs/, heads/, tags/ or remotes/ prefix).
+core::Oid namedRefTarget(const core::Snapshot& snap, std::string name)
 {
-    for (char& c : s)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
-// The commit a bare name (no ~ or ^ suffix) stands for.
-const core::HistoryRow* resolveBase(const core::Snapshot& snap, const std::vector<core::HistoryRow>& rows,
-    const RowLookup& lookup, std::string name)
-{
-    if (name.empty())
-        return nullptr;
-    if (name == "HEAD" || name == "@")
-        return snap.headUnborn || snap.head.isNull() ? nullptr : lookup(snap.head);
-    const size_t fullLen = snap.head.isNull() ? 40 : snap.head.size * 2u;
-    if (name.size() == fullLen && isHex(name)) {
-        const core::Oid id = core::Oid::fromHex(name);
-        if (!id.isNull())
-            return lookup(id);
-    }
-    auto strip = [&](const char* prefix) {
-        const std::string p = prefix;
-        if (name.compare(0, p.size(), p) == 0)
-            name.erase(0, p.size());
-    };
-    strip("refs/");
-    const bool heads = name.rfind("heads/", 0) == 0, tags = name.rfind("tags/", 0) == 0, remotes = name.rfind("remotes/", 0) == 0;
-    strip("heads/");
-    strip("tags/");
-    strip("remotes/");
-    if (!tags && !remotes)
-        for (const auto& b : snap.branches)
-            if (b.name == name)
-                return lookup(b.target);
-    if (!heads && !tags)
-        for (const auto& b : snap.remoteBranches)
-            if (b.name == name)
-                return lookup(b.target);
-    if (!heads && !tags)
-        for (const auto& h : snap.remoteHeads)
-            if (h.name == name && !h.target.isNull())
-                return lookup(h.target);
-    if (!heads && !remotes)
-        for (const auto& t : snap.tags)
-            if (t.name == name)
-                return lookup(t.target);
-    // A unique id prefix.
-    if (name.size() >= 4 && isHex(name)) {
-        const std::string prefix = lower(name);
-        const core::HistoryRow* found = nullptr;
-        for (const auto& r : rows) {
-            const bool match = prefix.size() <= r.shortId.size() ? r.shortId.compare(0, prefix.size(), prefix) == 0
-                                                                 : r.id.hex().compare(0, prefix.size(), prefix) == 0;
-            if (!match)
-                continue;
-            if (found && found->id != r.id)
-                return nullptr; // ambiguous
-            found = &r;
-        }
-        return found;
-    }
-    return nullptr;
-}
-
-// The commit a bare ref name (HEAD, branch, remote branch, tag) or a full id names, loaded or not.
-core::Oid refTarget(const core::Snapshot& snap, std::string name)
-{
-    if (name.empty())
-        return {};
-    if (name == "HEAD" || name == "@")
-        return snap.headUnborn ? core::Oid{} : snap.head;
-    const size_t fullLen = snap.head.isNull() ? 40 : snap.head.size * 2u;
-    if (name.size() == fullLen && isHex(name))
-        return core::Oid::fromHex(name);
     if (name.compare(0, 5, "refs/") == 0)
         name.erase(0, 5);
     const bool heads = name.rfind("heads/", 0) == 0, tags = name.rfind("tags/", 0) == 0, remotes = name.rfind("remotes/", 0) == 0;
@@ -122,6 +50,53 @@ core::Oid refTarget(const core::Snapshot& snap, std::string name)
             if (t.name == name)
                 return t.target;
     return {};
+}
+
+// The commit a bare name (no ~ or ^ suffix) stands for.
+const core::HistoryRow* resolveBase(const core::Snapshot& snap, const std::vector<core::HistoryRow>& rows,
+    const RowLookup& lookup, std::string name)
+{
+    if (name.empty())
+        return nullptr;
+    if (name == "HEAD" || name == "@")
+        return snap.headUnborn || snap.head.isNull() ? nullptr : lookup(snap.head);
+    const size_t fullLen = snap.head.isNull() ? 40 : snap.head.size * 2u;
+    if (name.size() == fullLen && isHex(name)) {
+        const core::Oid id = core::Oid::fromHex(name);
+        if (!id.isNull())
+            return lookup(id);
+    }
+    if (const core::Oid target = namedRefTarget(snap, name); !target.isNull())
+        return lookup(target);
+    // A unique id prefix.
+    if (name.size() >= 4 && isHex(name)) {
+        const std::string prefix = gg::toLower(name);
+        const core::HistoryRow* found = nullptr;
+        for (const auto& r : rows) {
+            const bool match = prefix.size() <= r.shortId.size() ? r.shortId.compare(0, prefix.size(), prefix) == 0
+                                                                 : r.id.hex().compare(0, prefix.size(), prefix) == 0;
+            if (!match)
+                continue;
+            if (found && found->id != r.id)
+                return nullptr; // ambiguous
+            found = &r;
+        }
+        return found;
+    }
+    return nullptr;
+}
+
+// The commit a bare ref name (HEAD, branch, remote branch, tag) or a full id names, loaded or not.
+core::Oid refTarget(const core::Snapshot& snap, std::string name)
+{
+    if (name.empty())
+        return {};
+    if (name == "HEAD" || name == "@")
+        return snap.headUnborn ? core::Oid{} : snap.head;
+    const size_t fullLen = snap.head.isNull() ? 40 : snap.head.size * 2u;
+    if (name.size() == fullLen && isHex(name))
+        return core::Oid::fromHex(name);
+    return namedRefTarget(snap, std::move(name));
 }
 
 } // namespace
