@@ -1976,30 +1976,36 @@ GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the f
 GG_TEST("rebase-i", "a pick dropped as empty is not reported to post-rewrite, as with git rebase -i --empty=drop")
 {
     // main: a1 e1 f1 onto up, where u1 already adds q.txt as e1 does: e1 becomes empty and is dropped.
-    const fs::path path = s.fixture(Recipe::Empty);
-    s.commitFile(path, "base.txt", "base\n", "c0 base");
-    const std::string base = s.head(path);
-    s.git(path, {"switch", "-q", "-c", "up"});
-    s.commitFile(path, "q.txt", "q\n", "u1 add q");
-    const std::string u1 = s.head(path);
-    s.git(path, {"switch", "-q", "main"});
-    s.commitFile(path, "a.txt", "a\n", "a1 add a");
-    const std::string a1 = s.head(path);
-    s.commitFile(path, "q.txt", "q\n", "e1 add q");
-    const std::string e1 = s.head(path);
-    s.commitFile(path, "f.txt", "f\n", "f1 add f");
-    installRecordingHooks(s, path);
-    const fs::path copy = copyRepo(s, path, "git-copy");
-    GG_REQUIRE(s.openRepository(path));
-    GG_REQUIRE(rowReady(s, a1));
-    ctx->ItemClick(historyRow(a1).c_str());
-    ctx->KeyPress(ImGuiKey_I);
-    GG_REQUIRE(editorReady(s));
-    ctx->ItemClick(irWidget("ir_onto").c_str());
-    ctx->KeyChars("up");
-    ctx->KeyPress(ImGuiKey_Enter);
-    GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
-    s.comboSelect(irWidget("ir_empty").c_str(), "Drop");
+    // The e1 row is a pick or a reword; git reports neither. (edit runs through git itself.)
+    for (const char* action : {"pick", "reword"}) {
+        const fs::path path = s.fixture(Recipe::Empty, std::string("repo-") + action);
+        s.commitFile(path, "base.txt", "base\n", "c0 base");
+        const std::string base = s.head(path);
+        s.git(path, {"switch", "-q", "-c", "up"});
+        s.commitFile(path, "q.txt", "q\n", "u1 add q");
+        const std::string u1 = s.head(path);
+        s.git(path, {"switch", "-q", "main"});
+        s.commitFile(path, "a.txt", "a\n", "a1 add a");
+        const std::string a1 = s.head(path);
+        s.commitFile(path, "q.txt", "q\n", "e1 add q");
+        const std::string e1 = s.head(path);
+        s.commitFile(path, "f.txt", "f\n", "f1 add f");
+        installRecordingHooks(s, path);
+        const fs::path copy = copyRepo(s, path, std::string("copy-") + action);
+        GG_REQUIRE(s.openRepository(path));
+        GG_REQUIRE(rowReady(s, a1));
+        ctx->ItemClick(historyRow(a1).c_str());
+        ctx->KeyPress(ImGuiKey_I);
+        GG_REQUIRE(editorReady(s));
+        ctx->ItemClick(irWidget("ir_onto").c_str());
+        ctx->KeyChars("up");
+        ctx->KeyPress(ImGuiKey_Enter);
+        GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
+        s.comboSelect(irWidget("ir_empty").c_str(), "Drop");
+        if (std::string(action) != "pick") {
+            s.comboSelect(irAction(e1).c_str(), action);
+            rewordAll(s);
+    }
     const std::string todoText = todo::format(editor(s).todo());
     GG_REQUIRE(previewReady(s));
     GG_REQUIRE(start(s));
@@ -2011,6 +2017,7 @@ GG_TEST("rebase-i", "a pick dropped as empty is not reported to post-rewrite, as
     GG_CHECK(ours == postRewrite(s, copy));
     for (const auto& line : ours)
         GG_CHECK(line.rfind(e1, 0) != 0);
+    }
 }
 
 GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i on a copy")
