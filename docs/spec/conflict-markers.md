@@ -120,8 +120,9 @@ Info panel's Commit button, product spec §4.10) without treating the file as st
 `gg::markers::brokenMarkers` (`Source/libgg/Markers.cpp`) compares a file's committed (HEAD) text with its edited text and
 reports the leftover opening/closing marker lines whose length matches a region HEAD had, that
 are not part of a well-formed region of the edit. It ignores marker-like lines that were
-already plain text outside HEAD's regions (a simple stray-line-count comparison per marker
-length, not a diff of which line is "new"). This is purely a diagnostic: it does not change
+already plain text outside HEAD's regions: each stray line of the edit cancels one equal stray
+line of HEAD with the same marker length, and only the lines left over are reported. It reports
+nothing when either text is binary. This is purely a diagnostic: it does not change
 whether a file is parsed as conflicted (§4) or eligible (§6).
 
 The commit warning never blocks the commit, and only covers staged paths

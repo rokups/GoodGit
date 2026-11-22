@@ -419,11 +419,11 @@ bool isConflicted(std::string_view text) { return !looksBinary(text) && parse(te
 
 namespace {
 
-// 1-based line numbers of `<`/`>` marker lines of length L in `text` that are not part of any
-// region of `parsed` (i.e. plain text sitting outside every well-formed region).
-std::vector<size_t> outsideBoundaryMarkers(std::string_view text, const Parsed& parsed, int L)
+// 1-based line number and text of `<`/`>` marker lines of length L in `text` that are not part
+// of any region of `parsed` (i.e. plain text sitting outside every well-formed region).
+std::vector<std::pair<size_t, std::string>> outsideBoundaryMarkers(std::string_view text, const Parsed& parsed, int L)
 {
-    std::vector<size_t> result;
+    std::vector<std::pair<size_t, std::string>> result;
     const auto lines = splitLines(text);
     size_t region = 0;
     for (size_t i = 0; i < lines.size(); ++i) {
@@ -435,7 +435,7 @@ std::vector<size_t> outsideBoundaryMarkers(std::string_view text, const Parsed& 
             continue;
         char kind = 0;
         if (markerRun(lines[i].body, &kind) == L && (kind == '<' || kind == '>'))
-            result.push_back(i + 1);
+            result.emplace_back(i + 1, std::string(lines[i].body));
     }
     return result;
 }
@@ -444,6 +444,8 @@ std::vector<size_t> outsideBoundaryMarkers(std::string_view text, const Parsed& 
 
 std::vector<size_t> brokenMarkers(std::string_view before, std::string_view after)
 {
+    if (looksBinary(before) || looksBinary(after))
+        return {};
     const Parsed beforeParsed = parse(before);
     if (!beforeParsed.conflicted())
         return {};
@@ -454,12 +456,18 @@ std::vector<size_t> brokenMarkers(std::string_view before, std::string_view afte
     const Parsed afterParsed = parse(after);
     std::vector<size_t> broken;
     for (int L : lengths) {
-        const size_t beforeStray = outsideBoundaryMarkers(before, beforeParsed, L).size();
-        std::vector<size_t> afterStray = outsideBoundaryMarkers(after, afterParsed, L);
-        // Only a net increase counts: a length whose stray count did not grow was already
-        // ordinary text before the edit, not something the edit broke.
-        if (afterStray.size() > beforeStray)
-            broken.insert(broken.end(), afterStray.begin(), afterStray.end());
+        // Old stray lines are ordinary text. Each one cancels one equal stray line of `after`;
+        // the remaining stray lines of `after` are new.
+        std::unordered_map<std::string, size_t> old;
+        for (const auto& s : outsideBoundaryMarkers(before, beforeParsed, L))
+            ++old[s.second];
+        for (const auto& s : outsideBoundaryMarkers(after, afterParsed, L)) {
+            auto it = old.find(s.second);
+            if (it != old.end() && it->second > 0)
+                --it->second;
+            else
+                broken.push_back(s.first);
+        }
     }
     std::sort(broken.begin(), broken.end());
     broken.erase(std::unique(broken.begin(), broken.end()), broken.end());

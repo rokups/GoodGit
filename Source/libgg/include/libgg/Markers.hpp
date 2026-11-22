@@ -49,10 +49,9 @@ bool looksBinary(std::string_view text);
 // it is not a clean resolution either. Returns the 1-based line numbers in `after` of such
 // leftover opening (`<`) or closing (`>`) marker lines: lines whose marker length equals the
 // length of some region `before` had, and which are not part of a well-formed region of
-// `after`. To ignore marker-like text that was already there outside `before`'s own regions,
-// a length only counts when `after` has *more* such stray lines than `before` did (simple
-// count comparison; it does not try to match which particular stray line is "new"). Empty when
-// `before` has no regions.
+// `after`. Marker-like text that was already there outside `before`'s own regions is ignored:
+// a stray line of `after` counts only when `before` has no unmatched stray line with the same
+// text. Empty when `before` has no regions or either text is binary.
 std::vector<size_t> brokenMarkers(std::string_view before, std::string_view after);
 
 // ---- Term algebra ------------------------------------------------------------------------------
