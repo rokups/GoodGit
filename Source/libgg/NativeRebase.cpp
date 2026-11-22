@@ -126,6 +126,7 @@ std::optional<std::vector<std::string>> replayedCommits(git_repository* repo)
     std::vector<std::string> out;
     const std::string comment = todo::commentChar(repo);
     for (const char* name : {"done", "git-rebase-todo"}) {
+        // Both files are git's own, read for display: parse errors are ignored on purpose.
         const auto rows = todo::replayedCommits(todo::parse(gg::readFile(dir / name).value_or(""), nullptr, comment));
         out.insert(out.end(), rows.begin(), rows.end());
     }
@@ -281,6 +282,7 @@ int sequenceEditor(const fs::path& file, std::string& error)
         comment = todo::commentChar(git2::openRepository(file.parent_path()).get());
     } catch (const std::exception&) {
     }
+    // `done` is git's own file: parse errors are ignored on purpose.
     const todo::Todo list = todo::parse(*done, nullptr, comment);
     // (A merge row's commit: its message for `merge -c`.)
     if (list.items.empty() || list.items.back().commit.empty()

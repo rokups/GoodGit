@@ -228,6 +228,7 @@ void Actions::nativeRebase(NativeRebase request, Callback done)
                 throw MutationError{core::classifyFailure(all), gitMessage(res), all};
             }
             // Finished in one step: there is no rebase-merge/ to read, the rows are the list written.
+            // The todo was prepared and validated before the run: parse errors are ignored on purpose.
             dropReplacedKeep(ctx, gg::todo::replayedCommits(gg::todo::parse(request.prepared.todo, nullptr, gg::todo::commentChar(repo))), origHead);
             ctx.submodules = SubmoduleSync::Update;
         },

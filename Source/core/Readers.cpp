@@ -84,6 +84,7 @@ std::string headFileBranch(const fs::path& headFile, Oid& oid)
 std::vector<RebaseStep> rebaseSteps(const std::string& text, const std::string& comment)
 {
     std::vector<RebaseStep> out;
+    // The todo is git's own, read for display: parse errors are ignored on purpose.
     for (const auto& item : gg::todo::parse(text, nullptr, comment).items) {
         RebaseStep step;
         step.action = gg::todo::actionName(item.action);
