@@ -16,6 +16,8 @@
 #include "shell/Theme.hpp"
 #include "tests/Harness.hpp"
 
+#include <stdexcept>
+
 #include <cstdlib>
 
 namespace ggtest {
@@ -47,20 +49,20 @@ struct Imgui {
 
 // Clones the user's imgui repository into the test directory (no hard links, nothing shared), pins
 // master to kPinned, keeps a few remote-tracking branches and leaves two small edits in the working
-// tree (one staged, one not). Returns an empty path when the clone is not available.
+// tree (one staged, one not). Returns an empty path when GGUI_README_REPO is not set (the test is
+// skipped). A wrong clone fails the test.
 Imgui prepareImgui(Scenario& s)
 {
     Imgui r;
     const char* env = std::getenv("GGUI_README_REPO");
     if (!env || !*env) {
-        s.ctx->LogError("readme: set GGUI_README_REPO to a full clone of https://github.com/ocornut/imgui");
+        markCurrentTestSkipped("GGUI_README_REPO is not set (a full clone of https://github.com/ocornut/imgui)");
         return r;
     }
     const fs::path source = fs::path(env);
     std::error_code ec;
     if (!fs::exists(source / ".git", ec) && !fs::exists(source / "HEAD", ec)) {
-        s.ctx->LogError("readme: GGUI_README_REPO=%s is not a git repository", env);
-        return r;
+        throw std::runtime_error(std::string("readme: GGUI_README_REPO=") + env + " is not a git repository");
     }
     const fs::path dest = s.path("imgui");
     s.git(s.root(), {"clone", "-q", "--no-hardlinks", source.string(), dest.string()});
@@ -198,7 +200,8 @@ void setTheme(Scenario& s, const char* theme)
 GG_MANUAL_TEST("readme", "screenshots of the imgui repository for the README")
 {
     const Imgui t = prepareImgui(s);
-    GG_REQUIRE(!t.path.empty());
+    if (t.path.empty())
+        return; // skipped: no clone
     GG_REQUIRE(s.openRepository(t.path));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 2; }));
     // The history of ~10k commits loads in the background: wait for all of it.
