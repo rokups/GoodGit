@@ -301,6 +301,7 @@ void ThemeManager::apply(Theme t, float scale)
         p.worktree = rgb(150, 110, 220);
         p.stash = rgb(120, 120, 120);
         p.badgeText = rgb(240, 240, 240);
+        p.badgeOutline = rgb(255, 255, 255, 220);
         p.unpublished = rgb(255, 205, 130);
         p.conflict = rgb(255, 60, 90);
         p.conflictFill = rgb(190, 50, 60);
@@ -337,6 +338,7 @@ void ThemeManager::apply(Theme t, float scale)
         p.worktree = rgb(110, 70, 160);
         p.stash = rgb(110, 110, 110);
         p.badgeText = rgb(255, 255, 255);
+        p.badgeOutline = rgb(40, 40, 40, 220); // dark ring: white is invisible on #f3f3f3
         p.unpublished = rgb(170, 100, 10);
         p.conflict = rgb(200, 30, 45);
         p.conflictFill = rgb(190, 40, 50);

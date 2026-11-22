@@ -338,3 +338,18 @@ GG_TEST("visual", "icon glyphs are vertically centred on the text")
 }
 
 } // namespace ggtest
+
+GG_TEST("visual", "badge outline keeps its contrast on the light window and the dark one is unchanged")
+{
+    const ggui::Theme original = ggui::theme().theme();
+    const float scale = ggui::theme().scale();
+    ggui::theme().apply(ggui::Theme::Light, scale);
+    const ImU32 window = ImGui::GetColorU32(ImGuiCol_WindowBg, 1.0f);
+    const float r = ggui::contrastRatio(ggui::theme().palette().badgeOutline | IM_COL32_A_MASK, window);
+    if (r < 3.0f)
+        ctx->LogError("Light theme: badge outline has contrast %.2f (needs 3)", r);
+    GG_CHECK(r >= 3.0f);
+    ggui::theme().apply(ggui::Theme::Dark, scale);
+    GG_CHECK(ggui::theme().palette().badgeOutline == IM_COL32(255, 255, 255, 220));
+    ggui::theme().apply(original, scale);
+}
