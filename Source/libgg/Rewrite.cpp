@@ -541,6 +541,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         std::optional<Pending> pending;
         std::map<std::string, std::vector<std::string>> contributorsOf; // new commit → its originals
         std::map<std::string, std::string> reported; // Result::rewritten entries that differ from mapping
+        std::set<std::string> droppedPicks; // picks dropped as empty: in mapping (for branch moves), not reported
         auto originallyEmpty = [&](const std::string& id) {
             Commit c = m->commit(id);
             const std::string base = git_commit_parentcount(c.get()) > 0 ? m->treeOf(toHex(*git_commit_parent_id(c.get(), 0))) : m->emptyTree();
@@ -556,8 +557,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 BecameEmpty e{pending->key, pending->source, firstLine(pending->message), plan.emptied == Emptied::Drop};
                 result.becameEmpty.push_back(e);
                 if (e.dropped) {
-                    // Left out: what comes after goes onto the parent, and Git reports the commit
-                    // as rewritten to that parent.
+                    // Left out: what comes after goes onto the parent. Git does not report a dropped
+                    // pick to post-rewrite, but it reports a squashed member as rewritten to the parent.
                     const std::string parent = pending->parents.empty() ? std::string() : pending->parents.front();
                     byKey[pending->key] = parent;
                     result.steps[pending->key] = parent;
@@ -566,7 +567,10 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                         if (parent.empty())
                             gone.push_back(pending->source);
                         else
+                        {
                             newOf[pending->source] = parent;
+                            droppedPicks.insert(pending->source);
+                        }
                     }
                     for (const auto& sq : gone) {
                         droppedSet.insert(sq);
@@ -850,6 +854,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         result.rewritten = result.mapping;
         for (const auto& [orig, now] : reported)
             result.rewritten[orig] = now;
+        for (const auto& src : droppedPicks)
+            if (!reported.count(src))
+                result.rewritten.erase(src);
 
         // Ref moves: local branches (never remote-tracking ones) and a detached HEAD.
         const std::map<std::string, std::string> otherWorktreeBranches = branchesInOtherWorktrees(m->repo.get());
