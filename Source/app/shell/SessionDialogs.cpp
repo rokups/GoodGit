@@ -727,17 +727,48 @@ Session::MergedState Session::branchMerged(core::RequestId request) const
     return it == m_branchMerged.end() ? MergedState::Unknown : it->second;
 }
 
-void Session::showDeleteBranchDialog(const std::string& branch, int mode)
+// The remotes that hold a branch of this name: every one (mode 2) or only the upstream's (mode 1).
+static std::vector<std::string> remotesHolding(const core::Snapshot& snap, const std::string& branch, int mode)
 {
     std::vector<std::string> remotes;
     if (mode > 0) {
-        const auto* b = m_snapshot->findBranch(branch);
-        for (const auto& r : m_snapshot->remoteBranches) {
+        const auto* b = snap.findBranch(branch);
+        for (const auto& r : snap.remoteBranches) {
             const std::string name = r.name.substr(r.remote.size() + 1);
             if (name == branch && (mode == 2 || (b && b->upstream == r.name)))
                 remotes.push_back(r.remote);
         }
     }
+    return remotes;
+}
+
+// What `git branch -d` checks the branch against: its upstream, else HEAD. A remote branch that the
+// operation deletes first is gone by then: git checks against HEAD. A local upstream has its full
+// name (refs/heads/...), a remote-tracking one has none.
+struct MergeTarget {
+    std::string target = "HEAD";
+    std::string shown = "HEAD";
+};
+static MergeTarget mergeTargetOf(const core::Snapshot& snap, const std::string& branch, const std::vector<std::string>& remotes)
+{
+    const std::string localPrefix = "refs/heads/";
+    const auto* b = snap.findBranch(branch);
+    const bool upstreamOk = b && !b->upstream.empty() && !b->upstreamGone;
+    bool useUpstream = upstreamOk;
+    for (const auto& r : remotes)
+        if (upstreamOk && b->upstream == r + "/" + branch)
+            useUpstream = false;
+    MergeTarget t;
+    if (useUpstream) {
+        t.target = b->upstream.rfind("refs/", 0) == 0 ? b->upstream : "refs/remotes/" + b->upstream;
+        t.shown = b->upstream.rfind(localPrefix, 0) == 0 ? b->upstream.substr(localPrefix.size()) : b->upstream;
+    }
+    return t;
+}
+
+void Session::showDeleteBranchDialog(const std::string& branch, int mode)
+{
+    const std::vector<std::string> remotes = remotesHolding(*m_snapshot, branch, mode);
     Form f;
     f.title = "Delete branch";
     std::string where = mode == 0 ? "the local branch" : mode == 1 ? "the branch on its remote" : "the local branch and every remote branch";
@@ -750,20 +781,10 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
     f.add(commitInfo(*this, mode == 1 ? "Remote branch" : "Branch", mode == 1 && upstreamOk ? b->upstream : branch));
     core::RequestId request = 0;
     if (mode != 1) {
-        // `git branch -d` refuses unless the tip is merged into its upstream (else HEAD). A remote branch
-        // that this operation deletes first is gone by then: git checks against HEAD.
-        // A local upstream has its full name (refs/heads/...), a remote-tracking one has none.
-        const std::string localPrefix = "refs/heads/";
-        bool useUpstream = upstreamOk;
-        for (const auto& r : remotes)
-            if (upstreamOk && b->upstream == r + "/" + branch)
-                useUpstream = false;
-        std::string target = "HEAD";
-        std::string shown = "HEAD";
-        if (useUpstream) {
-            target = b->upstream.rfind("refs/", 0) == 0 ? b->upstream : "refs/remotes/" + b->upstream;
-            shown = b->upstream.rfind(localPrefix, 0) == 0 ? b->upstream.substr(localPrefix.size()) : b->upstream;
-        }
+        // `git branch -d` refuses unless the tip is merged into its upstream (else HEAD).
+        const MergeTarget mt = mergeTargetOf(*m_snapshot, branch, remotes);
+        const std::string& target = mt.target;
+        const std::string shown = mt.shown;
         // The engine reads the answer off the UI thread; the dialog shows it when it arrives.
         request = m_engine->readBranchMerged(branch, target);
         m_branchMerged.emplace(request, MergedState::Unknown);
@@ -809,18 +830,7 @@ void Session::showDeleteBranchesDialog(std::vector<std::string> branches, int mo
     if (branches.empty())
         return;
     // The remotes that hold a branch of this name, as the single dialog finds them.
-    auto remotesOf = [this, mode](const std::string& branch) {
-        std::vector<std::string> remotes;
-        if (mode > 0) {
-            const auto* b = m_snapshot->findBranch(branch);
-            for (const auto& r : m_snapshot->remoteBranches) {
-                const std::string name = r.name.substr(r.remote.size() + 1);
-                if (name == branch && (mode == 2 || (b && b->upstream == r.name)))
-                    remotes.push_back(r.remote);
-            }
-        }
-        return remotes;
-    };
+    auto remotesOf = [this, mode](const std::string& branch) { return remotesHolding(*m_snapshot, branch, mode); };
     Form f;
     f.title = "Delete branches";
     const std::string count = std::to_string(branches.size());
@@ -838,20 +848,8 @@ void Session::showDeleteBranchesDialog(std::vector<std::string> branches, int mo
     auto requests = std::make_shared<std::map<std::string, core::RequestId>>();
     auto shown = std::make_shared<std::map<std::string, std::string>>();
     if (mode != 1) {
-        const std::string localPrefix = "refs/heads/";
         for (const auto& branch : branches) {
-            const auto* b = m_snapshot->findBranch(branch);
-            const bool upstreamOk = b && !b->upstream.empty() && !b->upstreamGone;
-            bool useUpstream = upstreamOk;
-            for (const auto& r : remotesOf(branch))
-                if (upstreamOk && b->upstream == r + "/" + branch)
-                    useUpstream = false;
-            std::string target = "HEAD";
-            std::string name = "HEAD";
-            if (useUpstream) {
-                target = b->upstream.rfind("refs/", 0) == 0 ? b->upstream : "refs/remotes/" + b->upstream;
-                name = b->upstream.rfind(localPrefix, 0) == 0 ? b->upstream.substr(localPrefix.size()) : b->upstream;
-            }
+            auto [target, name] = mergeTargetOf(*m_snapshot, branch, remotesOf(branch));
             shown->emplace(branch, std::move(name));
             const core::RequestId request = m_engine->readBranchMerged(branch, target);
             m_branchMerged.emplace(request, MergedState::Unknown);
