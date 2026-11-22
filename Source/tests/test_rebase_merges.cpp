@@ -1146,6 +1146,66 @@ GG_TEST("rebase-merges", "preview: an empty fixup after a reset drops its row an
     GG_CHECK(p->rows[1].decisions.empty());
 }
 
+GG_TEST("rebase-merges", "todo labels: names git rewrites (spaces, ':', '/', non-ASCII, a clash with onto) are the labels git writes")
+{
+    GG_REQUIRE_GIT(2, 38, "git 2.36 names the labels of a merge's parents after other text");
+    const fs::path p = s.fixture(Recipe::Empty);
+    s.commitFile(p, "base.txt", "base\n", "c0 base");
+    const std::string c0 = s.head(p);
+    s.git(p, {"branch", "-M", "main"});
+    // The label of a merged parent comes from the merge subject: sanitize() makes it a ref name part.
+    const char* merges[] = {"Merge branch 'my topic: with spaces'", "Merge branch 'feature/ünï-côdé'", "Merge branch 'onto'",
+        "Merge branch 'onto'", "Merge branch '***'", "Merge branch 'a\\b~c^d?e[f@{g'"};
+    int n = 0;
+    for (const char* message : merges) {
+        const std::string topic = "t" + std::to_string(++n);
+        s.git(p, {"switch", "-q", "-c", topic, "main"});
+        s.commitFile(p, topic + ".txt", "x\n", topic + " work");
+        s.git(p, {"switch", "-q", "main"});
+        s.commitFile(p, "m" + std::to_string(n) + ".txt", "x\n", "main " + std::to_string(n));
+        s.git(p, {"merge", "-q", "--no-ff", topic, "-m", message});
+        s.git(p, {"branch", "-q", "-D", topic});
+    }
+    gg::git2::Repository repo = gg::git2::openRepository(p);
+    const todo::Context context = todo::read(repo.get(), {c0, "main", ""});
+    GG_CHECK(sameList(s, context.initialMerges, gitStartingTodo(s, p, "labels", {"--rebase-merges", c0})));
+    size_t labels = 0;
+    for (const auto& item : context.initialMerges.items)
+        labels += item.action == A::Label;
+    GG_CHECK(labels > 6);
+}
+
+GG_TEST("rebase-merges", "todo order: a merge history whose graph order differs from date order is listed like git")
+{
+    const fs::path p = s.fixture(Recipe::Empty);
+    auto commit = [](const std::string& ref, int mark, const std::vector<int>& from, long time, const std::string& file) {
+        const std::string when = std::to_string(time) + " +0000\n";
+        std::string out = "commit " + ref + "\nmark :" + std::to_string(mark) + "\n";
+        out += "author T <t@example.com> " + when + "committer T <t@example.com> " + when + "data 2\nc\n";
+        for (size_t i = 0; i < from.size(); ++i)
+            out += (i == 0 ? "from :" : "merge :") + std::to_string(from[i]) + "\n";
+        return out + "M 100644 inline " + file + "\ndata 2\nx\n\n";
+    };
+    // Two branches whose commit times alternate, merged, then a second merge with a side commit older than all.
+    std::string stream = commit("refs/heads/main", 1, {}, 1000, "base");
+    stream += commit("refs/heads/a", 2, {1}, 2000, "a1");
+    stream += commit("refs/heads/b", 3, {1}, 3000, "b1");
+    stream += commit("refs/heads/a", 4, {2}, 4000, "a2");
+    stream += commit("refs/heads/b", 5, {3}, 5000, "b2");
+    stream += commit("refs/heads/main", 6, {1, 4, 5}, 6000, "m1");
+    stream += commit("refs/heads/c", 7, {1}, 500, "c1");
+    stream += commit("refs/heads/main", 8, {6, 7}, 7000, "m2");
+    stream += commit("refs/heads/main", 9, {8}, 8000, "tip");
+    s.git(p, {"fast-import", "--quiet"}, stream);
+    s.git(p, {"checkout", "-q", "-f", "main"});
+    s.git(p, {"branch", "-q", "-D", "a", "b", "c"});
+    const std::string base = s.revParse(p, "main~3");
+    gg::git2::Repository repo = gg::git2::openRepository(p);
+    const todo::Context context = todo::read(repo.get(), {base, "main", ""});
+    GG_CHECK(sameList(s, context.initialMerges, gitStartingTodo(s, p, "order", {"--rebase-merges", base})));
+    GG_CHECK(context.initialMerges.items.size() > 8);
+}
+
 GG_TEST("rebase-merges", "todo: a token longer than a full id is a problem, not an exception")
 {
     const fs::path path = s.fixture(Recipe::Empty);
