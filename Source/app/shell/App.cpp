@@ -159,6 +159,8 @@ bool App::idle() const
         return false;
     if (m_session && !m_session->idle())
         return false;
+    if (!m_closing.empty()) // a retired session still watches its folder (Windows cannot delete it then)
+        return false;
     return m_posted.empty();
 }
 
