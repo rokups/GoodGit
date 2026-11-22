@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -94,5 +95,8 @@ std::optional<std::string> takeResult(const std::filesystem::path& installDir);
 // Blocks (disk work, a child process): call it from a worker thread, never from the UI thread.
 std::string stageUpdate(const std::filesystem::path& installDir, const std::filesystem::path& zipFile,
                         const Asset& asset);
+
+// Step 5 of stageUpdate: runs `gitGg --version` and kills it after `timeout`. Returns "" or an error text.
+std::string checkVersion(const std::filesystem::path& gitGg, std::chrono::milliseconds timeout);
 
 } // namespace ggui::update

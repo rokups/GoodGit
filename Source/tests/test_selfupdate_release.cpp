@@ -2,6 +2,9 @@
 #include "tests/Harness.hpp"
 #include "platform/SelfUpdate.hpp"
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace ggtest {
@@ -155,5 +158,23 @@ GG_TEST("selfupdate", "compare tells whether the release is newer")
     GG_CHECK(ggui::update::compare("abc", "abc", built, later) == Freshness::Unknown);
     GG_CHECK(ggui::update::compare(std::string(40, 'g'), a, built, later) == Freshness::Unknown);
 }
+
+#ifndef _WIN32
+GG_TEST("selfupdate", "checkVersion kills a git-gg that does not answer and accepts one that does")
+{
+    namespace fs = std::filesystem;
+    const auto script = [&](const char* name, const char* body) {
+        const fs::path path = s.root() / name;
+        std::ofstream(path, std::ios::binary) << "#!/bin/sh\n" << body << "\n";
+        fs::permissions(path, fs::perms::owner_all, fs::perm_options::add);
+        return path;
+    };
+    GG_CHECK_STR_EQ(ggui::update::checkVersion(script("good", "echo 'git gg 1.0'"), std::chrono::seconds(20)), "");
+    const auto t0 = std::chrono::steady_clock::now();
+    GG_CHECK_STR_EQ(ggui::update::checkVersion(script("hung", "sleep 60"), std::chrono::milliseconds(300)),
+                    "The new git-gg did not answer in time.");
+    GG_CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(static_cast<int>(timeBudgetMs(5000))));
+}
+#endif
 
 } // namespace ggtest

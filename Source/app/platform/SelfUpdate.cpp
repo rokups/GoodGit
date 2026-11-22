@@ -902,19 +902,21 @@ std::string collectFiles(const fs::path& unpackDir, const fs::path& newDir)
     return {};
 }
 
-// Runs `git-gg --version` with a time limit; "" when it prints "git gg ...".
-std::string checkVersion(const fs::path& gitGg)
+} // namespace
+
+std::string checkVersion(const fs::path& gitGg, std::chrono::milliseconds timeout)
 {
     gg::RunRequest request;
     request.args = {pathUtf8(gitGg), "--version"};
     request.gitEnvironment = false;
+    request.cancel = gg::CancelToken(); // a token of its own: cancel() on the default none() is a no-op
     std::mutex mutex;
     std::condition_variable wake;
     bool done = false;
     const gg::CancelToken cancel = request.cancel;
     std::thread watchdog([&] {
         std::unique_lock lock(mutex);
-        if (!wake.wait_for(lock, kVersionTimeout, [&] { return done; })) {
+        if (!wake.wait_for(lock, timeout, [&] { return done; })) {
             cancel.cancel();
         }
     });
@@ -936,8 +938,6 @@ std::string checkVersion(const fs::path& gitGg)
     }
     return {};
 }
-
-} // namespace
 
 std::string stageUpdate(const fs::path& installDir, const fs::path& zipFile, const Asset& asset)
 {
@@ -987,7 +987,7 @@ std::string stageUpdate(const fs::path& installDir, const fs::path& zipFile, con
         }
     }
 #endif
-    if (std::string error = checkVersion(newDir / kGitGgName); !error.empty()) {
+    if (std::string error = checkVersion(newDir / kGitGgName, kVersionTimeout); !error.empty()) {
         return fail(error);
     }
     fs::remove_all(unpackDir, ec);
