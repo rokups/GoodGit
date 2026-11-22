@@ -1,5 +1,6 @@
 #include "core/Services.hpp"
 
+#include <libgg/Files.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/GitRunner.hpp>
 #include <libgg/LocalSocket.hpp>
@@ -170,12 +171,10 @@ long long ownPid()
 
 std::string readText(const fs::path& path)
 {
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
+    auto text = gg::readFile(path);
+    if (!text)
         throw std::runtime_error("cannot read " + path.string());
-    std::ostringstream out;
-    out << in.rdbuf();
-    return out.str();
+    return std::move(*text);
 }
 
 } // namespace

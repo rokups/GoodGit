@@ -3,6 +3,7 @@
 #include "StatusPorcelain.hpp"
 
 #include <memory>
+#include <libgg/Files.hpp>
 #include <libgg/Keep.hpp>
 #include <libgg/Todo.hpp>
 
@@ -55,12 +56,7 @@ constexpr std::chrono::seconds kRacyWindow{2};
 
 std::string readFileText(const fs::path& p)
 {
-    std::ifstream f(p, std::ios::binary);
-    if (!f)
-        return {};
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
+    return gg::readFile(p).value_or("");
 }
 
 std::string stripPrefix(const std::string& s, const std::string& prefix)

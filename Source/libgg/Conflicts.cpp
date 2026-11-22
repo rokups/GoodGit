@@ -195,30 +195,16 @@ void Cache::save()
         return;
     std::error_code ec;
     fs::create_directories(m_file.parent_path(), ec);
-    // A unique name: concurrent savers must not share one tmp file.
-    fs::path tmp = m_file;
-    tmp += "." + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-"
-        + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << kHeader << '\n';
-        for (const auto& [k, files] : trees) {
-            out << "T " << hexKey(k) << '\n';
-            for (const auto& f : files)
-                out << f.sides << '\t' << f.path << '\n';
-        }
-        out << kTrailer << '\n';
-        out.flush();
-        if (!out.good()) { // for example a full disk: keep the old file
-            out.close();
-            fs::remove(tmp, ec);
-            return;
-        }
+    std::ostringstream out;
+    out << kHeader << '\n';
+    for (const auto& [k, files] : trees) {
+        out << "T " << hexKey(k) << '\n';
+        for (const auto& f : files)
+            out << f.sides << '\t' << f.path << '\n';
     }
-    if (replaceFile(tmp, m_file)) { // failed: keep dirty so the next save retries
-        fs::remove(tmp, ec);
+    out << kTrailer << '\n';
+    if (writeFileAtomic(m_file, out.str())) // failed: keep dirty so the next save retries
         return;
-    }
     dirty = false;
 }
 

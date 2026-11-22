@@ -21,16 +21,6 @@ using json = nlohmann::json;
 
 namespace {
 
-std::optional<std::string> readFile(const fs::path& path)
-{
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
-        return std::nullopt;
-    std::ostringstream out;
-    out << in.rdbuf();
-    return out.str();
-}
-
 // For git's own files (todo, message): in place, as git and the sequence editor expect.
 bool writeFile(const fs::path& path, const std::string& text)
 {
@@ -55,7 +45,7 @@ struct Group {
 
 std::optional<Group> readGroup(const fs::path& dir)
 {
-    const auto text = readFile(dir / "operation");
+    const auto text = gg::readFile(dir / "operation");
     if (!text)
         return std::nullopt;
     const auto lines = splitLines(*text);
@@ -120,7 +110,7 @@ std::string rebaseIdentity(const fs::path& gitDir)
     for (const char* name : {"orig-head", "onto", "head-name"}) {
         if (!out.empty())
             out += ' ';
-        out += trim(readFile(dir / name).value_or(""));
+        out += trim(gg::readFile(dir / name).value_or(""));
     }
     return out;
 }
@@ -136,7 +126,7 @@ std::optional<std::vector<std::string>> replayedCommits(git_repository* repo)
     std::vector<std::string> out;
     const std::string comment = todo::commentChar(repo);
     for (const char* name : {"done", "git-rebase-todo"}) {
-        const auto rows = todo::replayedCommits(todo::parse(readFile(dir / name).value_or(""), nullptr, comment));
+        const auto rows = todo::replayedCommits(todo::parse(gg::readFile(dir / name).value_or(""), nullptr, comment));
         out.insert(out.end(), rows.begin(), rows.end());
     }
     return out;
@@ -225,7 +215,7 @@ bool writePrepared(const fs::path& dir, const Prepared& prepared, std::string& e
 
 std::optional<Prepared> readPrepared(const fs::path& dir)
 {
-    const auto text = readFile(dir / "prepared.json");
+    const auto text = gg::readFile(dir / "prepared.json");
     if (!text)
         return std::nullopt;
     const json j = json::parse(*text, nullptr, false);
@@ -282,7 +272,7 @@ int sequenceEditor(const fs::path& file, std::string& error)
     }
     // git's editor for a commit message (COMMIT_EDITMSG in the worktree's git dir): the commit
     // being picked, squashed or reworded is the last line of rebase-merge/done.
-    const auto done = readFile(file.parent_path() / "rebase-merge" / "done");
+    const auto done = gg::readFile(file.parent_path() / "rebase-merge" / "done");
     if (!done)
         return 0;
     // The editor file sits in the git dir, which opens as a repository.

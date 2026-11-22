@@ -50,6 +50,14 @@ bool readFile(const fs::path& path, std::string& out)
     return true;
 }
 
+std::optional<std::string> readFile(const fs::path& path)
+{
+    std::string out;
+    if (!readFile(path, out))
+        return std::nullopt;
+    return out;
+}
+
 namespace {
 
 // Creates a new file (it fails when the name exists), writes all data, flushes it to disk. A private file
@@ -115,6 +123,9 @@ std::error_code writeFileAtomic(const fs::path& path, std::string_view text, std
     std::error_code noTarget;
     const fs::perms perms = mode ? *mode : fs::status(path, noTarget).permissions();
     const bool setMode = mode || !noTarget;
+    // This live process owns the name, so a file with it is a stale leftover of a crashed process with a reused pid.
+    std::error_code stale;
+    fs::remove(tmp, stale);
     std::error_code ec = writeTempFile(tmp, text, setMode);
     if (!ec && setMode)
         fs::permissions(tmp, perms, ec);
