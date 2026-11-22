@@ -258,15 +258,16 @@ GG_TEST("cli", "git gg hook <name> exits 0 silently (what stale hooks of older v
     GG_CHECK_EQ(s.gitgg(s.root(), {"hook", "post-commit"}).exitCode, 0);
 }
 
-GG_TEST("cli", "git gg hooks install and status only print that the managed hooks were removed")
+GG_TEST("cli", "git gg hooks install installs nothing and status reports no managed hooks")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string configBefore = s.read(repo / ".git", "config");
-    for (const char* action : {"install", "status"}) {
-        const auto r = s.gitgg(repo, {"hooks", action});
-        GG_CHECK_EQ(r.exitCode, 0);
-        GG_CHECK_STR_EQ(r.out, "managed hooks were removed; Undo covers plain git without them\n");
-    }
+    auto r0 = s.gitgg(repo, {"hooks", "install"});
+    GG_CHECK_EQ(r0.exitCode, 0);
+    GG_CHECK_STR_EQ(r0.out, "managed hooks no longer exist; nothing to install (Undo covers plain git without them)\n");
+    r0 = s.gitgg(repo, {"hooks", "status"});
+    GG_CHECK_EQ(r0.exitCode, 0);
+    GG_CHECK_STR_EQ(r0.out, "no managed hooks installed\n");
     GG_CHECK_STR_EQ(s.read(repo / ".git", "config"), configBefore);
     GG_CHECK(!fs::exists(repo / ".git" / "gg" / "hooks"));
     // Uninstall with nothing installed says so.

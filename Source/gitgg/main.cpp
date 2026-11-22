@@ -4,7 +4,7 @@
 //   git gg new [-m MSG] [--detach] [PARENT...]
 //   git gg undo | redo | op log
 //   git gg conflicts [REV]           exit 1 when REV has first-class conflicts
-//   git gg hooks uninstall           removes managed hooks left by older versions
+//   git gg hooks uninstall|status|install  managed hooks of older versions: remove, report, (no install)
 //   git gg hook <name> [ARGS...]     does nothing: what stale hooks of older versions still call
 //   git gg ui [PATH]
 //   git gg sequence-editor FILE      sequence.editor for plain git rebase -i (ggui's todo editor), and
@@ -72,9 +72,10 @@ const std::map<std::string, std::string>& helpTexts()
         {"op", "usage: git gg op log\n\nLists the operations in the undo journal, newest first.\n"},
         {"conflicts", "usage: git gg conflicts [<rev>]\n\nLists files with first-class conflicts in <rev> (default HEAD).\n"
                       "Exit status 1 when there are any.\n"},
-        {"hooks", "usage: git gg hooks uninstall\n\nRemoves the managed hooks that older versions installed in this repository\n"
+        {"hooks", "usage: git gg hooks (uninstall | status | install)\n\nuninstall removes the managed hooks that older versions installed in this repository\n"
                   "(ggui and git gg also do this whenever they open a repository). The managed hooks no longer\n"
-                  "exist: Undo covers plain git without them.\n"},
+                  "exist: Undo covers plain git without them. status tells whether such hooks are installed;\n"
+                  "install installs nothing.\n"},
         {"hook", "usage: git gg hook <hook-name> [<args>...]\n\nDoes nothing and exits 0. Hooks installed by older versions still call it.\n"},
         {"ui", "usage: git gg ui [<path>]\n\nStarts ggui on the repository.\n"},
         {"sequence-editor", "usage: git gg sequence-editor <file>\n\n"
@@ -99,7 +100,7 @@ const char* kOverview =
     "    redo        redo the last undone operation\n"
     "    op log      list the operations in the undo journal\n"
     "    conflicts   list first-class conflicts in a commit (exit 1 when any)\n"
-    "    hooks       uninstall the managed hooks of older versions\n"
+    "    hooks       uninstall or report the managed hooks of older versions\n"
     "    ui          start ggui on the repository\n"
     "    sequence-editor  ggui's todo editor as sequence.editor for git rebase -i\n"
     "    help        show help for a command: git gg help <command>\n\n"
@@ -238,11 +239,16 @@ int cmdConflicts(const std::string& rev)
 
 int cmdHooks(const std::string& action)
 {
-    if (action != "uninstall") {
-        std::cout << "managed hooks were removed; Undo covers plain git without them\n";
+    if (action == "install") {
+        std::cout << "managed hooks no longer exist; nothing to install (Undo covers plain git without them)\n";
         return 0;
     }
     auto repo = openHere(false);
+    if (action == "status") {
+        std::cout << (gg::hooks::installed(repo.get()) ? "managed hooks of an older version are installed; run: git gg hooks uninstall\n"
+                                                       : "no managed hooks installed\n");
+        return 0;
+    }
     if (!gg::hooks::installed(repo.get())) {
         std::cout << "no managed hooks installed; nothing to do\n";
         return 0;
@@ -317,7 +323,7 @@ int main(int argc, char** argv)
     std::string rev;
     conflictsCmd->add_option("rev", rev, "Revision (default HEAD)");
 
-    auto* hooksCmd = app.add_subcommand("hooks", "Uninstall the managed hooks of older versions");
+    auto* hooksCmd = app.add_subcommand("hooks", "Uninstall or report the managed hooks of older versions");
     std::string hooksAction;
     hooksCmd->add_option("action", hooksAction, "install, uninstall or status")
         ->required()
