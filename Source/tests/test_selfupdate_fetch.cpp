@@ -119,7 +119,9 @@ GG_TEST("selfupdate", "fetch refuses a URL that is not https for every backend")
         const up::FetchFn fetch = up::makeFetch(backend);
         GG_CHECK(static_cast<bool>(fetch));
         for (const char* url : {"http://example.com/a.zip", "ftp://example.com/a", "file:///etc/passwd", "example.com/a",
-                 "HTTP://example.com/a", "https:///a.zip", "https://", "https://example.com/a b", ""}) {
+                 "HTTP://example.com/a", "https:///a.zip", "https://", "https://example.com/a b", "",
+                 "-o/tmp/gg-fetch-inject", "--config=/etc/passwd", "-K https://example.com/a", " https://example.com/a",
+                 "file://localhost/etc/passwd", "FILE:///etc/passwd"}) {
             fs::remove(out, ec);
             const std::string error = fetch(url, out, 1000, gg::CancelToken::none());
             GG_CHECK(!error.empty());
