@@ -189,7 +189,8 @@ public:
     void rewrite(const std::string& label, PlanBuilder build, Callback done = {}, bool autostash = false);
     // Like rewrite(), but first asks whether to rewrite the other branches that descend from the
     // changed commits too, or only the history of HEAD.
-    void rewriteOlder(const std::string& label, PlanBuilder build, Callback done = {}, bool autostash = false);
+    // `follow`: a commit id. When set, the finished event's `result` is its new id (a dropped commit: the id it went onto).
+    void rewriteOlder(const std::string& label, PlanBuilder build, Callback done = {}, bool autostash = false, std::string follow = {});
     void reword(const core::Oid& commit, const std::string& message);
     void editAuthor(const core::Oid& commit, const std::string& name, const std::string& email);
     // A detached copy of the commit (or of it and its descendants) on its parent.
@@ -346,7 +347,8 @@ private:
 
     struct RewriteState;
     // The core of rewrite() and rewriteOlder(): they differ only in `offerScope`.
-    void rewriteStart(const std::string& label, PlanBuilder build, Callback done, bool autostash, bool offerScope);
+    void rewriteStart(const std::string& label, PlanBuilder build, Callback done, bool autostash, bool offerScope,
+        std::string follow = {});
     void rewritePrepare(const std::shared_ptr<RewriteState>& state);
     void amendNow(const std::string& message, bool noVerify, bool messageOnly, Callback done);
     void rewriteDecide(const std::shared_ptr<RewriteState>& state);

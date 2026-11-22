@@ -131,6 +131,8 @@ public:
     // (not reset to the working tree when a snapshot arrives without it), then re-pointed at the
     // new commit, same index.
     void stashRewordPending(bool pending) { m_stashRewordPending = pending; }
+    // A rewrite replaced the selected commit: select its new id (a dropped commit: the id it went onto).
+    void commitRewritten(const std::string& oldCommit, const std::string& newCommit);
     void stashRewordDone(const std::string& oldCommit, const std::string& newCommit, int index);
     void selectCommit(const core::Oid& id);
     void revealCommit(const core::Oid& id);

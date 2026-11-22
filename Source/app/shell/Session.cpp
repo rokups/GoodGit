@@ -334,6 +334,14 @@ void Session::onSnapshot(core::SnapshotPtr snap, bool first)
     }
 }
 
+void Session::commitRewritten(const std::string& oldCommit, const std::string& newCommit)
+{
+    if (m_selection.kind != SelKind::Commit || m_selection.id.hex() != oldCommit)
+        return;
+    if (const core::Oid id = core::Oid::fromHex(newCommit); !id.isNull())
+        selectCommit(id);
+}
+
 void Session::stashRewordDone(const std::string& oldCommit, const std::string& newCommit, int index)
 {
     if (m_selection.kind != SelKind::Stash || m_selection.id.hex() != oldCommit)

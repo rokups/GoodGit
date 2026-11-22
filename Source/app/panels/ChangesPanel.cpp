@@ -179,6 +179,20 @@ std::vector<FileRow> rowsFromDiff(FileGroup g, const core::DiffResult& d)
 
 ChangesPanel::ChangesPanel(Session& session) : m_session(session) { }
 
+void ChangesPanel::confirmCommitDiscard(const core::Oid& commit, std::vector<std::string> paths)
+{
+    Form form;
+    form.title = "Discard changes";
+    form.message = "Discard " + std::to_string(paths.size()) + (paths.size() == 1 ? " file" : " files")
+        + " from this commit? The commit and the commits above it are rewritten. Undo restores them.";
+    form.buttons.push_back({"Discard", [this, commit, paths = std::move(paths)](Form&) {
+                                m_session.actions().moveChanges(commit, Actions::MoveTo::Discard, paths, {});
+                            }});
+    form.buttons.back().danger = true;
+    form.buttons.push_back({"Cancel", {}});
+    m_session.app().dialogs().open(std::move(form));
+}
+
 void ChangesPanel::onSelection(const Selection& sel)
 {
     m_selection = sel;
@@ -870,7 +884,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
             tooltip("%s", "Undo this change to the selected files in the index and working tree, without committing. Conflicts stop as in a revert; "
                           "added or deleted files may not apply (\"Revert\" handles them).");
         if (menuItem(ICON_MS_UNDO, "Discard", "D", false, free))
-            actions.moveChanges(id, Actions::MoveTo::Discard, paths, {});
+            confirmCommitDiscard(id, paths);
         if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
             tooltip("Rewrites the commit so it no longer makes this change (its descendants are rebased). Undo restores it.");
     }
@@ -1343,7 +1357,7 @@ void ChangesPanel::draw(bool* open)
                 std::vector<std::string> paths;
                 for (const FileRow* r : actionRows(*cur))
                     paths.push_back(r->path);
-                m_session.actions().moveChanges(m_selection.id, Actions::MoveTo::Discard, paths, {});
+                confirmCommitDiscard(m_selection.id, std::move(paths));
             }
         }
     }

@@ -34,6 +34,7 @@ struct Actions::RewriteState {
     PlanBuilder build;
     Callback done;
     bool autostash = false;
+    std::string follow; // see rewriteOlder()
     // rewriteOlder(): the user may limit the rewrite to the history of HEAD.
     bool offerScope = false;
     std::optional<bool> onlyHeadPath; // empty until the user chooses
@@ -176,7 +177,7 @@ rw::Plan scopedPlan(State& state, git_repository* repo)
 
 } // namespace
 
-void Actions::rewriteStart(const std::string& label, PlanBuilder build, Callback done, bool autostash, bool offerScope)
+void Actions::rewriteStart(const std::string& label, PlanBuilder build, Callback done, bool autostash, bool offerScope, std::string follow)
 {
     auto state = std::make_shared<RewriteState>();
     state->label = label;
@@ -184,6 +185,7 @@ void Actions::rewriteStart(const std::string& label, PlanBuilder build, Callback
     state->done = std::move(done);
     state->autostash = autostash;
     state->offerScope = offerScope;
+    state->follow = std::move(follow);
     rewritePrepare(state);
 }
 
@@ -192,9 +194,9 @@ void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done
     rewriteStart(label, std::move(build), std::move(done), autostash, false);
 }
 
-void Actions::rewriteOlder(const std::string& label, PlanBuilder build, Callback done, bool autostash)
+void Actions::rewriteOlder(const std::string& label, PlanBuilder build, Callback done, bool autostash, std::string follow)
 {
-    rewriteStart(label, std::move(build), std::move(done), autostash, true);
+    rewriteStart(label, std::move(build), std::move(done), autostash, true, std::move(follow));
 }
 
 void Actions::rewritePrepare(const std::shared_ptr<RewriteState>& state)
@@ -477,6 +479,9 @@ void Actions::rewriteApply(const std::shared_ptr<RewriteState>& state)
             // The files follow a moved HEAD (read-tree), but a submodule working tree does not.
             if (r.headAfter != r.headBefore && !plan.keepWorktree)
                 ctx.submodules = SubmoduleSync::Update;
+            if (!state->follow.empty())
+                if (const auto it = r.rewritten.find(state->follow); it != r.rewritten.end())
+                    ctx.result = it->second;
             state->preview = std::move(r);
         },
         [this, state](const core::MutationFinishedEvent& e) {
@@ -1674,7 +1679,13 @@ void Actions::moveChanges(const core::Oid& commit, MoveTo to, const std::vector<
             }
             }
             return plan;
-        });
+        },
+        [this, id](const core::MutationFinishedEvent& e) {
+            if (e.outcome == Outcome::Ok && !e.result.empty())
+                m_session.commitRewritten(id, e.result);
+            handleDefault(e);
+        },
+        false, id);
 }
 
 } // namespace ggui
