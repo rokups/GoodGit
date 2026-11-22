@@ -262,6 +262,11 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
     if (batch.complete) // a partial list can still lack a selected commit
         std::erase_if(m_extra, [&](const core::Oid& id) { return !m_index.count(id); }); // ids gone after a rewrite
     m_complete = batch.complete;
+    // shortcut: a toggle for a merge with no row stays while a merge hides commits or a ref is hidden (the
+    // merge can be hidden or out of scope, and a toggle is cheap); pruning then needs a git lookup.
+    if (batch.complete && m_hidden.empty()
+        && std::none_of(m_rows.begin(), m_rows.end(), [](const core::HistoryRow& r) { return r.collapsedCount > 0; }))
+        std::erase_if(m_toggledMerges, [&](const core::Oid& id) { return !m_index.count(id); }); // gone after a rewrite
     m_truncated = batch.truncated;
     m_maxLanes = std::max(1, batch.maxLanes);
     m_visibleDirty = true;

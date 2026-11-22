@@ -402,6 +402,24 @@ GG_TEST("history", "merges start collapsed; expand and collapse merged history")
     GG_CHECK(s.waitUntil([&] { return findRow(s, f1) == nullptr; }));
 }
 
+GG_TEST("history", "the toggle of a merge that a rewrite removed is dropped after the reload")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    const std::string f1 = s.revParse(repo, "feature~1");
+    s.git(repo, {"branch", "-D", "feature"});
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string merge = s.revParse(repo, "main");
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, merge) != nullptr && !history.loading(); }));
+    ctx->ItemClick(("//History/**/" + merge + "/##merge_icon").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return findRow(s, f1) != nullptr && !history.loading(); }));
+    GG_CHECK_EQ(history.toggledMergeCount(), static_cast<size_t>(1));
+    // The merge leaves the history: its toggle has no use any more.
+    s.git(repo, {"reset", "-q", "--hard", f1});
+    GG_CHECK(s.waitUntil([&] { return findRow(s, merge) == nullptr && !history.loading(); }));
+    GG_CHECK(s.waitUntil([&] { return history.toggledMergeCount() == 0; }));
+}
+
 GG_TEST("history", "a merge offers collapse only when collapsing hides commits")
 {
     const fs::path repo = s.fixture(Recipe::Merges);
