@@ -688,6 +688,43 @@ std::set<std::string> selectedCommits(Scenario& s)
 
 } // namespace
 
+GG_TEST("history", "selection shape follows the selection, the extra list and a reload")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string c[5];
+    for (int i = 0; i < 5; ++i)
+        c[i] = s.revParse(repo, "HEAD~" + std::to_string(i));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c[4]).c_str()); }));
+    auto& history = s.session()->history();
+    clickRow(s, c[1]);
+    GG_CHECK(ggui::selectionShape(*s.session()).single());
+    GG_CHECK(ggui::selectionShape(*s.session()).single()); // from the memo
+    // Ctrl-click adds a commit: the extra list changes, the primary one stays.
+    clickRow(s, c[2], ImGuiMod_Ctrl);
+    GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), static_cast<size_t>(2));
+    GG_CHECK(ggui::selectionShape(*s.session()).range());
+    // A gap: the shape is not a range any more.
+    clickRow(s, c[4], ImGuiMod_Ctrl);
+    GG_CHECK_EQ(ggui::selectionShape(*s.session()).count(), static_cast<size_t>(3));
+    GG_CHECK(!ggui::selectionShape(*s.session()).range());
+    // A plain click on another commit.
+    clickRow(s, c[0]);
+    GG_CHECK(ggui::selectionShape(*s.session()).single());
+    GG_CHECK_STR_EQ(ggui::selectionShape(*s.session()).ids.front().hex(), c[0]);
+    // Same selection, new rows: the memo takes the new rows.
+    clickRow(s, c[1], ImGuiMod_Shift);
+    GG_CHECK(ggui::selectionShape(*s.session()).range());
+    const size_t before = history.rows().size();
+    s.git(repo, {"commit", "-q", "--allow-empty", "-m", "external"});
+    GG_REQUIRE(s.waitUntil([&] { return history.rows().size() > before; }, 30.0f));
+    const auto shape = ggui::selectionShape(*s.session());
+    GG_CHECK(shape.range());
+    GG_CHECK_EQ(shape.count(), static_cast<size_t>(2));
+    GG_CHECK_EQ(history.shapeMemo.rows, history.rows().size());
+    GG_CHECK_EQ(history.shapeMemo.gen, history.rowsGen());
+}
+
 GG_TEST("history", "shift-click selects the range from the anchor, downward and upward, the clicked row is primary")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
