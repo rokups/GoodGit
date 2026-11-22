@@ -39,6 +39,9 @@ GG_TEST("harness", "isolation from user config and settings")
     GG_CHECK_STR_EQ(ggui::getEnv("GIT_CONFIG_GLOBAL"), (s.home() / ".gitconfig").string());
     GG_CHECK_STR_EQ(ggui::getEnv("GIT_CONFIG_NOSYSTEM"), "1");
     GG_CHECK_STR_EQ(s.gitOut(s.root(), {"config", "--global", "user.email"}), "test@example.com");
+    // Variables that change what the app reads or measures are unset.
+    GG_CHECK_STR_EQ(ggui::getEnv("GGUI_PERF_REPO"), "");
+    GG_CHECK_STR_EQ(ggui::getEnv("GG_STATUS_BACKEND"), "");
     // Nothing from a system config file can leak in either.
     auto sys = s.gitMayFail(s.root(), {"config", "--system", "--list"});
     GG_CHECK(sys.out.empty());

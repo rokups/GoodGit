@@ -260,6 +260,8 @@ void isolateEnvironment(const fs::path& dir)
     ggui::unsetEnv("GGUI_TEST_PICK_CANCEL");
     ggui::unsetEnv("GIT_SSH_COMMAND");
     ggui::unsetEnv("GG_GGUI");
+    ggui::unsetEnv("GGUI_PERF_REPO");
+    ggui::unsetEnv("GG_STATUS_BACKEND");
     ggui::setEnv("EDITOR", "true");
     gg::git2::resetConfigSearchPaths();
 }
