@@ -258,8 +258,14 @@ ImVec2 g_lastIdPrefixRange;
 // (the first kShortIdLength characters), a click on the rest copies all of `hex`.
 void idItem(const std::string& hex, size_t shownLen, size_t lead, const char* id, bool clickable)
 {
-    const std::string shown = hex.substr(0, shownLen);
-    const std::string label = id ? shown + "###" + id : shown;
+    // The buffers are reused: this runs for every visible ID, every frame.
+    thread_local std::string shown, label;
+    shown.assign(hex, 0, shownLen);
+    label = shown;
+    if (id) {
+        label += "###";
+        label += id;
+    }
     const float left = ImGui::GetCurrentWindow()->DC.CursorPos.x;
     g_lastIdPrefixRange = ImVec2(left, left + ImGui::CalcTextSize(shown.c_str(), shown.c_str() + std::min(lead, shown.size())).x);
     const Hit hit = textItem(label.c_str(), label.c_str() + shown.size(), lead, id ? ImGui::GetID(label.c_str()) : 0,

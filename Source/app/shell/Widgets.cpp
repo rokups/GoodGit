@@ -44,10 +44,12 @@ bool beginMenu(const char* icon, const char* label, bool enabled)
 
 namespace {
 
-// "icon  visible-label", the text button()/smallButton() render.
-std::string visibleText(const char* icon, const char* label)
+// "icon  visible-label", the text button()/smallButton() render. The buffer is reused: the result is valid
+// until the next call.
+const std::string& visibleText(const char* icon, const char* label)
 {
-    std::string visible(icon);
+    thread_local std::string visible;
+    visible.assign(icon);
     visible += "  ";
     visible.append(label, ImGui::FindRenderedTextEnd(label));
     return visible;
@@ -67,7 +69,7 @@ bool iconButtonEx(const char* icon, const char* label, const ImVec2& size_arg, I
     const ImGuiStyle& style = g.Style;
     const ImGuiID id = window->GetID(label);
 
-    const std::string visible = visibleText(icon, label);
+    const std::string& visible = visibleText(icon, label);
 
     ImVec2 pos = window->DC.CursorPos;
     if ((flags & ImGuiButtonFlags_AlignTextBaseLine) && style.FramePadding.y < window->DC.CurrLineTextBaseOffset)
