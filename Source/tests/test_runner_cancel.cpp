@@ -28,7 +28,7 @@ gg::RunResult runThenCancel(const std::string& script, int cancelAfterMs, double
 {
     gg::RunRequest r;
     r.args = {"sh", "-c", script};
-    r.cancel = gg::CancelToken(); // the default is a copy of the shared never-cancelled token
+    r.cancel = gg::CancelToken(); // the default is a copy of none(), which ignores cancel()
     gg::RunResult result;
     std::thread worker([&] { result = gg::run(r); });
     std::this_thread::sleep_for(std::chrono::milliseconds(cancelAfterMs));
@@ -98,6 +98,18 @@ GG_TEST("runner", "a token cancelled before the run still stops the child")
 }
 
 #endif
+
+GG_TEST("runner", "cancel on a copy of the never-cancelled token cancels nothing")
+{
+    const gg::CancelToken copy = gg::CancelToken::none();
+    copy.cancel();
+    GG_CHECK(!copy.cancelled());
+    GG_CHECK(!gg::CancelToken::none().cancelled());
+    gg::RunRequest r; // its default token is such a copy
+    r.args = {"git", "--version"};
+    r.cancel.cancel();
+    GG_CHECK(!gg::run(r).cancelled);
+}
 
 GG_TEST("hooks", "uninstall leaves a hook that is not ours and succeeds")
 {
