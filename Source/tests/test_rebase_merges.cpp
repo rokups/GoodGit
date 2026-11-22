@@ -1448,6 +1448,7 @@ GG_TEST("rebase-merges", "a fixup that empties the commit it amends after a drop
         return out;
     };
     GG_CHECK(rebaseLines(path).size() == 2); // A (unchanged) and X; git does not report the dropped pick C
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
     GG_CHECK(rebaseLines(path) == rebaseLines(copy));
 }
 
