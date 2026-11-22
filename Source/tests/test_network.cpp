@@ -639,8 +639,14 @@ GG_TEST("network", "pull disabled when detached or without upstream; Stash and p
     s.dialogButton("Stash and pull", "Stash and pull");
     GG_CHECK(s.waitUntil([&] { return rev(s, repo, "HEAD^2") == rev(s, repo, "origin/main"); }));
     s.settle();
-    // The stash was re-applied: the local edit is back (in conflict with the incoming one, or merged).
+    // Both sides replace the one line of o1.txt, so the re-applied stash conflicts there and git keeps it.
     GG_CHECK(s.read(repo, "local-only.txt") == "local uncommitted\n");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"diff", "--name-only", "--diff-filter=U"}) == "o1.txt"; }));
+    const std::string o1 = s.read(repo, "o1.txt");
+    GG_CHECK(o1.find("<<<<<<<") != std::string::npos);
+    GG_CHECK(o1.find("remote edit") != std::string::npos);
+    GG_CHECK(o1.find("local uncommitted") != std::string::npos);
+    GG_CHECK(!s.gitOut(repo, {"stash", "list"}).empty());
 }
 
 GG_TEST("network", "pull on a branch without upstream is refused and creates no tracking ref")
