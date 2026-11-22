@@ -1096,9 +1096,9 @@ void Actions::deleteBranches(std::vector<BranchDelete> items)
 
 void Actions::moveBranch(const std::string& name, const std::string& to)
 {
-    const auto snap = m_session.snapshot();
-    const bool current = snap->headBranch == name; // "" when detached
-    run("move branch " + name, [name, to, current](MutationContext& ctx) {
+    run("move branch " + name, [name, to](MutationContext& ctx) {
+        // Read HEAD now: the snapshot can be stale.
+        const bool current = gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "HEAD"}).out) == "refs/heads/" + name;
         if (current) {
             // The checked-out branch: keep local changes, refuse when they conflict.
             const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", "--end-of-options", to + "^{commit}"}).out);
@@ -1228,9 +1228,9 @@ void Actions::unsetUpstream(const std::string& branch)
 
 void Actions::fastForward(const std::string& branch)
 {
-    const auto snap = m_session.snapshot();
-    const bool current = snap->headBranch == branch; // "" when detached
-    run("fast-forward " + branch, [branch, current](MutationContext& ctx) {
+    run("fast-forward " + branch, [branch](MutationContext& ctx) {
+        // Read HEAD now: the snapshot can be stale.
+        const bool current = gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "HEAD"}).out) == "refs/heads/" + branch;
         if (current) {
             ctx.git({"merge", "-q", "--ff-only", "@{upstream}"});
             ctx.worktreeFollowsIndex = true;

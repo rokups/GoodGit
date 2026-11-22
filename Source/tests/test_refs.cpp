@@ -2173,4 +2173,35 @@ GG_TEST("refs", "rename, move, switch and worktree names that start with a dash 
     GG_CHECK(!fs::exists(req.path));
 }
 
+GG_TEST("refs", "move and fast-forward read HEAD in the job: a stale snapshot does not pick the wrong path (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& act = s.session()->actions();
+    const std::string cur = s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"});
+    const std::string tip = s.gitOut(repo, {"rev-parse", "HEAD"});
+    const std::string older = s.gitOut(repo, {"rev-parse", "HEAD~1"});
+    const std::string oldest = s.gitOut(repo, {"rev-parse", "HEAD~2"});
+    s.git(repo, {"branch", "other", oldest});
+    s.git(repo, {"branch", "up", tip});
+    s.settle();
+    // The snapshot says HEAD is on `cur`. A plain git checkout moves HEAD with no settle.
+    s.git(repo, {"checkout", "-q", "other"});
+    act.moveBranch(cur, older);
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", cur}), older);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "other"}), oldest);
+    // Fast-forward `cur` (now behind `up`) while HEAD is on `other`.
+    s.git(repo, {"branch", "--set-upstream-to=up", cur});
+    s.settle();
+    s.git(repo, {"checkout", "-q", cur});
+    s.settle();
+    s.git(repo, {"checkout", "-q", "other"});
+    act.fastForward(cur);
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", cur}), tip);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "other"}), oldest);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"}), "other");
+}
+
 } // namespace ggtest
