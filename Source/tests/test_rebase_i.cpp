@@ -730,6 +730,10 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
     s.commitFile(p, "h3.txt", "h3\n", "fixup! same subject");
     // By a subject prefix.
     s.commitFile(p, "i2.txt", "i2\n", "fixup! c5 ad");
+    // A prefix that matches several subjects: the earliest row wins, not the lowest key ("kz" sorts after "ka").
+    s.commitFile(p, "k1.txt", "k1\n", "kz target");
+    s.commitFile(p, "k2.txt", "k2\n", "ka other");
+    s.commitFile(p, "k3.txt", "k3\n", "fixup! k");
     s.commitFile(p, "g.txt", "g\n", "fixup! nothing has this subject");
 
     // Git's todo for the same range (the sequence editor copies it out and empties it: nothing runs).
@@ -750,13 +754,13 @@ GG_TEST("rebase-i", "autosquash places fixup!/squash!/amend! like git rebase -i 
         const std::string subject = s.gitOut(p, {"log", "-1", "--format=%s", rest.substr(0, rest.find(' '))});
         expected.push_back(action + " " + subject.substr(0, subject.find(' ')));
     }
-    GG_CHECK(expected.size() == 14);
+    GG_CHECK(expected.size() == 17);
     const fs::path copy = s.root() / "copy";
     s.git(s.root(), {"clone", "-q", p.string(), copy.string()});
     s.track(copy);
 
     GG_REQUIRE(s.openRepository(p));
-    const std::string c2 = s.revParse(p, "HEAD~13");
+    const std::string c2 = s.revParse(p, "HEAD~16");
     GG_REQUIRE(rowReady(s, c2));
     ctx->ItemClick(historyRow(c2).c_str());
     ctx->KeyPress(ImGuiKey_I);
