@@ -38,6 +38,11 @@
 
 namespace ggui {
 
+namespace detail {
+// The graph rows of a preview (newest first, then the base) and the lane count; a pure part of the panel.
+void layoutPreviewGraph(const core::RebasePreview& preview, std::vector<core::HistoryRow>& graph, int& laneCount);
+} // namespace detail
+
 class Session;
 
 namespace panel {

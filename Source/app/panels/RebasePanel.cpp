@@ -436,13 +436,18 @@ void RebasePanel::onPreview(const core::RebasePreviewEvent& event)
 
 void RebasePanel::layoutPreviewGraph()
 {
+    detail::layoutPreviewGraph(*m_preview, m_previewGraph, m_previewLanes);
+}
+
+void detail::layoutPreviewGraph(const core::RebasePreview& preview, std::vector<core::HistoryRow>& graph, int& laneCount)
+{
     // The resulting commits newest first, then the base: one lane for a straight history, more
     // for the branches and merges of a --rebase-merges list. Parents outside the result (commits
     // a merge keeps from outside the range) get no edge.
-    m_previewGraph.clear();
-    m_previewLanes = 1;
-    const auto& rows = m_preview->rows;
-    const std::string base = m_preview->onto.empty() ? std::string("(root)") : m_preview->onto;
+    graph.clear();
+    laneCount = 1;
+    const auto& rows = preview.rows;
+    const std::string base = preview.onto.empty() ? std::string("(root)") : preview.onto;
     std::set<std::string> shown{base};
     for (const auto& r : rows)
         shown.insert(r.id);
@@ -496,8 +501,8 @@ void RebasePanel::layoutPreviewGraph()
         }
         g.lane = lane;
         g.color = static_cast<std::uint8_t>(lane);
-        m_previewLanes = std::max(m_previewLanes, static_cast<int>(lanes.size()));
-        m_previewGraph.push_back(std::move(g));
+        laneCount = std::max(laneCount, static_cast<int>(lanes.size()));
+        graph.push_back(std::move(g));
     };
     for (size_t k = rows.size(); k-- > 0;)
         place(rows[k].id, rows[k].parents, !rows[k].conflicts.empty());
