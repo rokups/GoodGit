@@ -1087,10 +1087,10 @@ void DiffPanel::drawMenuItems()
         ImGui::SetClipboardText(text.c_str());
     // A stash commit holds the tracked files; an untracked file lives in another commit of the stash.
     const bool untrackedStash = m_file && m_file->group == FileGroup::StashUntracked;
-    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, m_file.has_value() && !untrackedStash)) {
+    if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, m_file && m_file->kind != core::ChangeKind::Deleted && !untrackedStash)) {
         core::Oid at;
         if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash)
-            at = m_selection.id;
+            at = m_selection.kind == SelKind::Stash ? stashBlameCommit(*m_session.snapshot(), m_selection.id, m_file->group) : m_selection.id;
         m_session.blameFile(m_file->path, at);
     }
     if (untrackedStash && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

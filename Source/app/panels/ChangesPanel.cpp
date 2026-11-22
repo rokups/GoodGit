@@ -101,6 +101,15 @@ const char* groupName(FileGroup g)
     return kNames[static_cast<size_t>(g)];
 }
 
+core::Oid stashBlameCommit(const core::Snapshot& snap, const core::Oid& stash, FileGroup group)
+{
+    if (group == FileGroup::StashIndex)
+        for (const auto& s : snap.stashes)
+            if (s.commit == stash)
+                return s.indexCommit;
+    return stash;
+}
+
 namespace {
 
 // The status letter (ChangeKind's values are git's letters: A M D R C T ? U).
@@ -769,7 +778,7 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, canBlame)) {
         core::Oid at;
         if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash)
-            at = effectiveSelection().id;
+            at = m_selection.kind == SelKind::Stash ? stashBlameCommit(*m_session.snapshot(), m_selection.id, row.group) : effectiveSelection().id;
         m_session.blameFile(row.path, at);
     }
     if (row.group == FileGroup::StashUntracked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

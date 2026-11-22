@@ -34,6 +34,8 @@ struct CompareTarget {
 // edit, a menu choice).
 bool compareWithField(const char* id, std::string& text);
 const char* groupName(FileGroup g);
+// The commit that "Blame file" reads for a stash file: the index commit for an index part, else the stash commit.
+core::Oid stashBlameCommit(const core::Snapshot& snap, const core::Oid& stash, FileGroup group);
 
 struct FileRow {
     FileGroup group = FileGroup::Commit;

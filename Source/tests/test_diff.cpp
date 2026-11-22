@@ -1272,12 +1272,16 @@ GG_TEST("diff", "Blame file in a stash view blames at the stash commit; an untra
 {
     const fs::path repo = s.fixture(Recipe::Empty, "stashblame");
     s.write(repo, "tracked.txt", "one\ntwo\n");
+    s.write(repo, "staged.txt", "a\n");
     s.git(repo, {"add", "."});
     s.git(repo, {"commit", "-q", "-m", "Base"});
     s.write(repo, "tracked.txt", "one\nTWO\n");
+    s.write(repo, "staged.txt", "a\nb\n");
+    s.git(repo, {"add", "staged.txt"});
     s.write(repo, "fresh.txt", "new\n");
     s.git(repo, {"stash", "push", "-q", "--include-untracked"});
     const std::string stash = s.revParse(repo, "refs/stash");
+    const std::string indexCommit = s.revParse(repo, "refs/stash^2");
     GG_REQUIRE(s.openRepository(repo));
     auto files = [&](const char* group, const char* path) {
         return s.child("//Changes", "##files") + "/" + group + "/" + path + "/###file_" + path;
@@ -1295,6 +1299,25 @@ GG_TEST("diff", "Blame file in a stash view blames at the stash commit; an untra
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "tracked.txt" && b->query.commit.hex() == stash;
     }));
+    // An index file blames at the index commit (the second parent).
+    ctx->ItemClick(files("Index", "staged.txt").c_str());
+    GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->path() == "staged.txt"; }));
+    s.showPanel("Diff");
+    ctx->Yield(3);
+    std::string lineRef;
+    GG_REQUIRE(s.waitUntil([&] {
+        for (const char* n : {"1", "2", "3", "4"})
+            if (s.itemExists((body(s) + "/###line_" + n).c_str())) {
+                lineRef = body(s) + "/###line_" + n;
+                return true;
+            }
+        return false;
+    }));
+    s.contextMenu(lineRef.c_str(), "Blame file");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "staged.txt" && b->query.commit.hex() == indexCommit;
+    }));
     // The untracked file: the item is disabled, a click opens nothing.
     ctx->ItemClick("//Stashes/stash_0/###row");
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(files("Untracked files", "fresh.txt").c_str()); }));
@@ -1306,7 +1329,7 @@ GG_TEST("diff", "Blame file in a stash view blames at the stash commit; an untra
     ctx->MenuClick("//$FOCUSED/Blame file");
     ctx->Yield(3);
     const auto& b = s.session()->blame().blame();
-    GG_CHECK(b && b->query.path == "tracked.txt");
+    GG_CHECK(b && b->query.path == "staged.txt");
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
@@ -1314,12 +1337,16 @@ GG_TEST("diff", "Blame file in the Changes menu of a stash blames at the stash c
 {
     const fs::path repo = s.fixture(Recipe::Empty, "stashblamechanges");
     s.write(repo, "tracked.txt", "one\ntwo\n");
+    s.write(repo, "staged.txt", "a\n");
     s.git(repo, {"add", "."});
     s.git(repo, {"commit", "-q", "-m", "Base"});
     s.write(repo, "tracked.txt", "one\nTWO\n");
+    s.write(repo, "staged.txt", "a\nb\n");
+    s.git(repo, {"add", "staged.txt"});
     s.write(repo, "fresh.txt", "new\n");
     s.git(repo, {"stash", "push", "-q", "--include-untracked"});
     const std::string stash = s.revParse(repo, "refs/stash");
+    const std::string indexCommit = s.revParse(repo, "refs/stash^2");
     GG_REQUIRE(s.openRepository(repo));
     auto files = [&](const char* group, const char* path) {
         return s.child("//Changes", "##files") + "/" + group + "/" + path + "/###file_" + path;
@@ -1333,13 +1360,19 @@ GG_TEST("diff", "Blame file in the Changes menu of a stash blames at the stash c
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "tracked.txt" && b->query.commit.hex() == stash;
     }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(files("Index", "staged.txt").c_str()); }));
+    s.contextMenu(files("Index", "staged.txt").c_str(), "Blame file");
+    GG_CHECK(s.waitUntil([&] {
+        const auto& b = s.session()->blame().blame();
+        return b && b->query.path == "staged.txt" && b->query.commit.hex() == indexCommit;
+    }));
     // The untracked file: the item is disabled, a click changes nothing.
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(files("Untracked files", "fresh.txt").c_str()); }));
     ctx->ItemClick(files("Untracked files", "fresh.txt").c_str(), ImGuiMouseButton_Right);
     ctx->MenuClick("//$FOCUSED/Blame file");
     ctx->Yield(3);
     const auto& b = s.session()->blame().blame();
-    GG_CHECK(b && b->query.path == "tracked.txt");
+    GG_CHECK(b && b->query.path == "staged.txt");
     ctx->KeyPress(ImGuiKey_Escape);
 }
 
