@@ -313,13 +313,13 @@ Legend: **K** = keep as is. **M** = keep the UI entry point but map it to Git se
   IDs.
 - **K** Keyboard: ↑/↓ navigation, N (new), Alt+Space (the focused row's context menu; every context menu opens this way), E (edit
   commit; check out is in the context menu and the Branches window), D / Shift+D
-  (duplicate commit / branch → cherry-pick), S / Shift+S / Alt+S (squash / with descendants /
-  split), A / Shift+A (drop commit / drop commit and descendants). **N** I (interactive rebase from the selected
+  (discard commit / discard commit and descendants), S / Shift+S / Alt+S (squash / with descendants /
+  split). **N** I (interactive rebase from the selected
   commit, §4.13).
 - **K** Row context menu, in groups: New, Check out ▸ (branches at this commit, and Detached),
   Create branch…, Create tag…, Move branch ▸ | Merge into HEAD…, Rebase onto…, Interactive rebase…,
   Reset \<branch\> to here… (Soft, Mixed or Hard), Interactive rebase selection… | Cherry-pick, Cherry-pick (no commit), Revert, Revert (no commit) | Edit commit (checkout detached), Duplicate, Squash…,
-  Split…, Simplify parents, Drop commit… | Go to parent, Go to child, Filter by author, Copy ▸ (ID, full description), Expand / Collapse merged history.
+  Split…, Simplify parents, Discard commit… | Go to parent, Go to child, Filter by author, Copy ▸ (ID, full description), Expand / Collapse merged history.
   **N** The header has a HEAD button that reveals and selects the HEAD commit. Go to parent and Go to child
   (a submenu for a merge or for several children) reveal and select the commit, as Reveal does; Filter by author sets the filter
   to the author's name (escaped, so a comma in the name stays text). No keyboard shortcut.
@@ -367,7 +367,7 @@ the History panel list newly conflicted commits. See §5, decision R1.
 | Squash… / with descendants | **M** | Fold into a parent or a chosen target (fixup/squash) |
 | Split… | **M** | Split a commit by selected files into two commits |
 | Restore… | **M** | Restore paths in a commit from another commit (rewrite), or restore the working tree from a commit (`git restore --source`) |
-| Drop commit… / Drop commit and descendants… | **M** | Both ask for confirmation first. Drop commit drops the commit and rebases its descendants. Drop commit and descendants drops the commit and all its descendants. Optionally delete the remote branch too |
+| Discard commit… / Discard commit and descendants… | **M** | Both ask for confirmation first. Discard commit drops the commit and rebases its descendants. Discard commit and descendants drops the commit and all its descendants. Optionally delete the remote branch too |
 | Simplify parents | **M** | Remove redundant merge parents |
 | Move @ to previous/next | **M** | Check out the parent/child commit. Detach if it is not a branch tip |
 | Reorder (drag) | **M** | Move a commit before or after another in the same chain, or copy it there |

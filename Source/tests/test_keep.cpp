@@ -2056,7 +2056,7 @@ GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, R
     const std::string row = detachedRow(x) + "/###detached_" + x;
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(row.c_str()); }));
     ctx->ItemClick(row.c_str(), ImGuiMouseButton_Right);
-    for (const char* item : {"Check out", "Create branch here...", "Reveal", "Drop commit..."})
+    for (const char* item : {"Check out", "Create branch here...", "Reveal", "Discard commit..."})
         GG_CHECK(s.itemExists(("//$FOCUSED/" + std::string(item)).c_str()));
     GG_CHECK_STR_EQ(s.itemLabel("//$FOCUSED/###copy_id"), "Copy " + x.substr(0, 7) + "###copy_id");
     ctx->ItemClick("//$FOCUSED/###copy_id");
@@ -2073,9 +2073,9 @@ GG_TEST("keep", "Branches: a Detached row's menu has Check out, Create branch, R
     s.contextMenu(row.c_str(), "Reveal");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == x; }));
     // Drop commit asks first; the commit is dropped and its row goes.
-    s.contextMenu(row.c_str(), "Drop commit...");
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Drop");
+    s.contextMenu(row.c_str(), "Discard commit...");
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Discard");
     GG_CHECK(s.waitUntil([&] { return keepRefs(s, repo).empty() && !s.itemExists(row.c_str()); }));
     GG_CHECK(keptOf(s).empty());
 }

@@ -276,9 +276,8 @@ stays as it is (it is only limited to 50–300 % on load).
 - Keys: ↑/↓ select the next commit on the same branch path as the selected commit: ↓ goes to its first parent, ↑ to the
   child that has it as first parent (the child on the same lane first). Commits of other lanes are skipped. At the end of a
   path the selection stays. `Alt+↑`/`Alt+↓` select the previous or next row in list order, on any lane. While the graph is
-  hidden (a filter is active) ↑/↓ move row by row. Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `E` edit commit, `D`/`Shift+D` duplicate
-  commit/branch, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `A`/`Shift+A` drop
-  commit/drop commit and descendants, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
+  hidden (a filter is active) ↑/↓ move row by row. Shift with ↑/↓, Page Up/Down, Home and End extends the range from the anchor (only when the cursor stops on a commit row, not on the Working tree, Index or Show more row), `N` new, `E` edit commit, `D`/`Shift+D` discard
+  commit/discard commit and descendants, `S`/`Shift+S`/`Alt+S` squash/with descendants/split, `I` interactive rebase (N), `F7`/`Shift+F7` next/previous conflicted commit (N).
 - Double click on a row (outside its badges; not with Ctrl or Shift, not on the Working tree and Index rows, only
   while no task runs) checks out, as in traditional git software. One local branch at the commit: it is checked out.
   Several: a popup (`##dblclick_checkout`) lists them and, after a separator, *Detached*. None: a dialog *Checkout
@@ -296,7 +295,7 @@ stays as it is (it is only limited to 50–300 % on load).
   *Interactive rebase selection…* (Phase 3, when several adjacent commits are selected with Ctrl-click or Shift-click:
   the list starts at the oldest selected commit and the selected commits start selected in the editor) |
   Cherry-pick · Cherry-pick (no commit) · Revert · Revert (no commit) (with several selected commits: "Cherry-pick 3 commits" and so on) | Edit commit (checkout detached) · Duplicate · Squash… · Split… · Simplify parents ·
-  Drop commit… | *Go to parent* · *Go to child* · *Filter by author* · Copy ▸ (ID, Full description) · Expand / Collapse merged history. The menu has no branch actions
+  Discard commit… | *Go to parent* · *Go to child* · *Filter by author* · Copy ▸ (ID, Full description) · Expand / Collapse merged history. The menu has no branch actions
   (Delete branch, Push): the menu of a branch badge has them (right click on the badge).
   *Go to parent* and *Go to child* (single selected commit) reveal and select the commit: one parent or child is
   a plain item, more (a merge commit; a commit with several children among the loaded rows) are a submenu with
@@ -438,7 +437,7 @@ stays as it is (it is only limited to 50–300 % on load).
 ## 4. Commit actions (Commit menu and History context menu)
 New commit, Check out (a branch, or detached), Edit commit (checkout detached) (E; detaches at any commit and never refuses it; it saves the edit session and shows the banner only when a local branch can be resolved, else it detaches with no session and removes an old one; makes a local branch for a commit only a remote branch has, which is set to track that remote branch, or says in a notice, not in an error, that the upstream was not set; all or nothing: a failure after the first change pops the stash that it pushed, puts HEAD back, deletes the branch that it made or puts a fast-forwarded branch back; a branch name in the way of the new branch (a branch below it or at a prefix of it) is a refusal; a toolbar banner *Editing \<id\> of \<branch\>* with Return / Stop editing, and Amend restacks the descendants atomically), Commit…, Describe (Save message), Edit author, Duplicate
 commit/branch, Rebase…, Interactive rebase…, Reset \<branch\> to here… (dialog *Reset branch*: the commit and a *Mode* Soft, Mixed (default) or Hard; Hard asks first in the dialog *Discard changes* (buttons *Reset hard* and *Cancel*) when it would discard staged, unstaged or conflicted changes, or an untracked file that the commit also has; other untracked files stay), Squash…/with descendants, Split…, Restore…,
-Drop commit…/Drop commit and descendants…, Simplify parents, Reorder, Move
+Discard commit…/Discard commit and descendants…, Simplify parents, Reorder, Move
 files/hunks/lines, Merge into HEAD, Rebase HEAD onto branch / Reconcile with remote. Meaning:
 plan §4.3 table.
 
@@ -841,7 +840,7 @@ the panel without touching the repository.
   is outlined as the current branch is. Hover actions: Check out `act_checkout` (not on the current row) ·
   Create branch `act_branch` (the `Create branch` dialog at the commit). Double-click checks the commit out.
   Context: Check out (detached; disabled on the current row) · Create branch here… · Reveal · Copy <ID> (as in
-  History) · Drop commit… (History's `Drop commit` dialog). The filter matches the commit ID or the summary,
+  History) · Discard commit… (History's `Discard commit` dialog). The filter matches the commit ID or the summary,
   ignoring case. Show all / Hide all at the top include the kept commits.
 - **Tags** `"Tags"`: Create tag… `###create_tag`, Show all `###show_all_tags` and Hide all `###hide_all_tags`
   (every tag in History; a right-click on either opens a menu *Show new tags* / *Hide new tags*: whether a tag that
@@ -1008,7 +1007,7 @@ A dialog with a text field keeps the first focus on that field. Enter in a text 
 The confirm button of a destructive action has the danger color (`Palette::errorBg`, reddish in the dark
 theme) and not the accent color. The keyboard focus of that dialog starts on *Cancel*. Set `FormButton::danger`
 for these dialogs: *Delete branch*, *Delete branches*, *Delete tags*, *Delete remote*, *Delete files*, *Discard changes* (all forms), *Reset hard*, *Force push*,
-*Rewrite published history* (button *Rewrite*), *Forget*, *Drop commit*, *Drop commit and descendants*, *Drop stash*, *Clear stashes*,
+*Rewrite published history* (button *Rewrite*), *Forget*, *Discard commit*, *Discard commit and descendants*, *Drop stash*, *Clear stashes*,
 *Remove worktree*, *Remove worktree with changes* (button *Delete changes and remove*), *Remove submodule*. The labels and the IDs of the buttons stay the same.
 
 ## 10. States

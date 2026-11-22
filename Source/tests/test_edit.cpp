@@ -70,13 +70,12 @@ bool changed(Scenario& s, const fs::path& repo, const std::string& before, const
 
 } // namespace
 
-GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copies")
+GG_TEST("edit", "duplicate a commit and a branch through the menu as detached copies")
 {
     const EditRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c3));
-    ctx->ItemClick(rowRef(r.c3).c_str());
-    ctx->KeyPress(ImGuiKey_D);
+    s.contextMenu(rowRef(r.c3).c_str(), "Duplicate");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK(s.session()->snapshot()->headDetached);
     GG_CHECK(s.head(r.path) != r.c3);
@@ -84,13 +83,34 @@ GG_TEST("edit", "duplicate a commit (D) and a branch (Shift+D) as detached copie
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), s.revParse(r.path, r.c3 + "^{tree}"));
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4); // branches stay
     const std::string copy = s.head(r.path);
-    ctx->ItemClick(rowRef(r.c3).c_str());
-    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_D);
+    s.contextMenu(rowRef(r.c3).c_str(), "Duplicate branch", true);
     GG_CHECK(changed(s, r.path, copy));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^{tree}"), s.revParse(r.path, r.c4 + "^{tree}"));
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD~2"), r.c2);
     GG_CHECK(s.revParse(r.path, "HEAD~1") != r.c3);
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
+}
+
+GG_TEST("edit", "D and Shift+D open the Discard dialogs; A does nothing and D no longer duplicates")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    const std::string head = s.head(r.path);
+    ctx->ItemClick(rowRef(r.c3).c_str());
+    ctx->KeyPress(ImGuiKey_A);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_A);
+    ctx->Yield(2);
+    GG_CHECK(!s.dialogOpen("Discard commit") && !s.dialogOpen("Discard commit and descendants"));
+    GG_CHECK_STR_EQ(s.head(r.path), head);
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Cancel");
+    GG_CHECK_STR_EQ(s.head(r.path), head); // D does not duplicate
+    GG_CHECK(!s.session()->snapshot()->headDetached);
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit and descendants"));
+    s.dialogButton("Discard commit and descendants", "Cancel");
 }
 
 GG_TEST("edit", "Rebase dialog prefills their commit field from the other selected commit or HEAD")
@@ -678,7 +698,7 @@ GG_TEST("edit", "split a commit by files (Alt+S)")
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), tree);
 }
 
-GG_TEST("edit", "drop a commit (A) and a commit with its descendants (Shift+A)")
+GG_TEST("edit", "drop a commit (D) and a commit with its descendants (Shift+D)")
 {
     const EditRepo r = makeRepo(s);
     // side has an upstream on a bare remote.
@@ -692,15 +712,15 @@ GG_TEST("edit", "drop a commit (A) and a commit with its descendants (Shift+A)")
     ctx->ItemClick(rowRef(r.c3).c_str());
     // Cancel leaves the history alone.
     const std::vector<std::string> before = subjects(s, r.path);
-    ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Cancel");
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Cancel");
     s.settle();
     GG_CHECK(s.revParse(r.path, "HEAD") == r.c4);
     GG_CHECK(subjects(s, r.path) == before);
-    ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Drop");
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Discard");
     GG_CHECK(changed(s, r.path, r.c4));
     GG_CHECK(subjects(s, r.path) == (std::vector<std::string>{"c4 add c and d", "c2 add b", "c1 add a"}));
     GG_CHECK_STR_EQ(s.read(r.path, "a.txt"), "one\ntwo\nthree\n");
@@ -716,10 +736,10 @@ GG_TEST("edit", "drop a commit (A) and a commit with its descendants (Shift+A)")
     // The side branch: dropped, deleted locally and on its remote.
     GG_REQUIRE(rowReady(s, r.s1));
     ctx->ItemClick(rowRef(r.s1).c_str());
-    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Drop commit and descendants"));
-    s.dialogCheck("Drop commit and descendants", "delete_remote", "Also delete them on their remote");
-    s.dialogButton("Drop commit and descendants", "Drop");
+    ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit and descendants"));
+    s.dialogCheck("Discard commit and descendants", "delete_remote", "Also delete them on their remote");
+    s.dialogButton("Discard commit and descendants", "Discard");
     // side is on its remote: rewriting it asks first.
     GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
     s.dialogButton("Rewrite published history?", "Rewrite");
@@ -729,7 +749,7 @@ GG_TEST("edit", "drop a commit (A) and a commit with its descendants (Shift+A)")
     GG_CHECK(hasOperation("drop commit and descendants from " + r.s1.substr(0, 10)));
 }
 
-GG_TEST("edit", "Drop commit and descendants deletes a branch whose tip is not in the loaded rows")
+GG_TEST("edit", "Discard commit and descendants deletes a branch whose tip is not in the loaded rows")
 {
     const EditRepo r = makeRepo(s);
     // side gets a second commit: its tip is a descendant of s1, not s1 itself.
@@ -743,8 +763,8 @@ GG_TEST("edit", "Drop commit and descendants deletes a branch whose tip is not i
     s.session()->history().setRefsVisible({"refs/heads/side"}, false);
     GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(r.s1)) == nullptr; }));
     ggui::showAbandonBranchDialog(*s.session(), ggui::core::Oid::fromHex(r.s1));
-    GG_REQUIRE(s.dialogOpen("Drop commit and descendants"));
-    s.dialogButton("Drop commit and descendants", "Drop");
+    GG_REQUIRE(s.dialogOpen("Discard commit and descendants"));
+    s.dialogButton("Discard commit and descendants", "Discard");
     GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(r.path, {"rev-parse", "--verify", "-q", "refs/heads/side"}).ok(); }));
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
@@ -806,12 +826,12 @@ GG_TEST("edit", "the commit menu swaps items for their siblings while Shift is h
     ctx->ItemClick(rowRef(r.c2).c_str(), ImGuiMouseButton_Right);
     auto shown = [&](const char* label) { return ctx->ItemInfo((std::string("//$FOCUSED/") + label).c_str(), ImGuiTestOpFlags_NoError).ID != 0; };
     GG_CHECK(shown("Duplicate") && !shown("Duplicate branch"));
-    GG_CHECK(shown("Drop commit...") && !shown("Drop commit and descendants..."));
+    GG_CHECK(shown("Discard commit...") && !shown("Discard commit and descendants..."));
     GG_CHECK(!shown("Push"));
     ctx->KeyDown(ImGuiMod_Shift);
     ctx->Yield(2);
     GG_CHECK(shown("Duplicate branch") && !shown("Duplicate"));
-    GG_CHECK(shown("Drop commit and descendants...") && !shown("Drop commit..."));
+    GG_CHECK(shown("Discard commit and descendants...") && !shown("Discard commit..."));
     ctx->KeyUp(ImGuiMod_Shift);
     ctx->KeyPress(ImGuiKey_Escape);
 }
@@ -964,9 +984,9 @@ GG_TEST("edit", "text conflicts become first-class and never stop a rewrite; a l
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, r.c3));
     ctx->ItemClick(rowRef(r.c3).c_str());
-    ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Drop");
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Discard");
     GG_CHECK(changed(s, r.path, c5));
     GG_CHECK(s.waitUntil([&] { return !s.app.toasts().empty(); }));
     GG_CHECK(s.app.toasts().back().message.find("now have first-class conflicts") != std::string::npos);
@@ -1244,18 +1264,18 @@ GG_TEST("edit", "by mouse: the commit menu's items, create tag, new commit, a co
     GG_CHECK_STR_EQ(s.gitOut(r.path, {"diff", "--name-only", "main~2", "main~1"}), "a.txt");
     GG_CHECK_STR_EQ(s.revParse(r.path, "main^{tree}"), c4Tree);
     // Drop commit and descendants: s1 dropped; side (which only pointed into it) is kept at its parent.
-    s.contextMenu(rowRef(r.s1).c_str(), "Drop commit and descendants...", true);
-    GG_REQUIRE(s.dialogOpen("Drop commit and descendants"));
-    s.dialogCheck("Drop commit and descendants", "delete_branches", "Delete the branches that only point into it", false);
-    s.dialogButton("Drop commit and descendants", "Drop");
+    s.contextMenu(rowRef(r.s1).c_str(), "Discard commit and descendants...", true);
+    GG_REQUIRE(s.dialogOpen("Discard commit and descendants"));
+    s.dialogCheck("Discard commit and descendants", "delete_branches", "Delete the branches that only point into it", false);
+    s.dialogButton("Discard commit and descendants", "Discard");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "side") == r.c2; }));
     s.settle();
     // Drop the detached copy's tip: HEAD moves to its parent.
     GG_REQUIRE(rowReady(s, branchCopy));
     const std::string copyParent = s.revParse(r.path, branchCopy + "^");
-    s.contextMenu(rowRef(branchCopy).c_str(), "Drop commit...");
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Drop");
+    s.contextMenu(rowRef(branchCopy).c_str(), "Discard commit...");
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Discard");
     GG_CHECK(changed(s, r.path, branchCopy));
     GG_CHECK_STR_EQ(s.head(r.path), copyParent);
     // Create tag... on a commit other than HEAD tags that commit.

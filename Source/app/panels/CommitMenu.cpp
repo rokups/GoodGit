@@ -258,7 +258,7 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
         session.actions().editCommit(row.id);
     if (!c.sel.single())
         disabledHint(true, "Needs a single selected commit.");
-    if (c.one(ICON_MS_CONTROL_POINT_DUPLICATE, c.shift ? "Duplicate branch" : "Duplicate", c.shift ? "Shift+D" : "D"))
+    if (c.one(ICON_MS_CONTROL_POINT_DUPLICATE, c.shift ? "Duplicate branch" : "Duplicate", nullptr))
         session.actions().duplicate(row.id, c.shift);
     if (c.shift) {
         if (c.one(ICON_MS_JOIN_INNER, "Squash descendants into this", "Shift+S"))
@@ -276,9 +276,9 @@ void drawCommitEditItems(Session& session, const core::HistoryRow& row)
     if (c.one(ICON_MS_ACCOUNT_TREE, "Simplify parents", nullptr, c.merge, "Only a merge commit has parents to simplify."))
         session.actions().simplifyParents(row.id);
     if (c.shift) {
-        if (c.one(ICON_MS_DELETE_FOREVER, "Drop commit and descendants...", "Shift+A"))
+        if (c.one(ICON_MS_DELETE_FOREVER, "Discard commit and descendants...", "Shift+D"))
             showAbandonBranchDialog(session, row.id);
-    } else if (c.one(ICON_MS_DELETE_FOREVER, "Drop commit...", "A")) {
+    } else if (c.one(ICON_MS_DELETE_FOREVER, "Discard commit...", "D")) {
         showAbandonDialog(session, row.id);
     }
 }
@@ -295,9 +295,7 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
         showSplitDialog(session, row.id);
         return;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_D, false))
-        session.actions().duplicate(row.id, io.KeyShift);
-    else if (ImGui::IsKeyPressed(ImGuiKey_I, false) && !io.KeyShift && !io.KeyAlt)
+    if (ImGui::IsKeyPressed(ImGuiKey_I, false) && !io.KeyShift && !io.KeyAlt)
         openInteractiveRebase(session, row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && io.KeyAlt)
         return; // Alt+S never squashes
@@ -305,9 +303,9 @@ void handleCommitEditKeys(Session& session, const core::HistoryRow& row)
         session.actions().squashDescendants(row.id);
     else if (ImGui::IsKeyPressed(ImGuiKey_S, false))
         squashSelection(session);
-    else if (ImGui::IsKeyPressed(ImGuiKey_A, false) && io.KeyShift)
+    else if (ImGui::IsKeyPressed(ImGuiKey_D, false) && io.KeyShift)
         showAbandonBranchDialog(session, row.id);
-    else if (ImGui::IsKeyPressed(ImGuiKey_A, false))
+    else if (ImGui::IsKeyPressed(ImGuiKey_D, false))
         showAbandonDialog(session, row.id);
 }
 
@@ -525,17 +523,17 @@ void showSplitDialog(Session& session, const core::Oid& commit)
 void showAbandonDialog(Session& session, const core::Oid& commit)
 {
     Form f;
-    f.title = "Drop commit";
+    f.title = "Discard commit";
     // Whatever pointed at the commit moves to its first parent's replacement, or to nothing when it has none.
     const core::HistoryRow* row = session.history().row(commit);
-    f.message = "Drop this commit. Its descendants are rebased onto its parent.";
+    f.message = "Discard this commit. Its descendants are rebased onto its parent.";
     if (row && row->parents.empty())
-        f.message = "Drop this commit. Its children become root commits.";
+        f.message = "Discard this commit. Its children become root commits.";
     else if (row && row->parents.size() > 1)
-        f.message = "Drop this merge. Its descendants are rebased onto its first parent; the merged-in commits are no longer part of them.";
-    f.add(commitInfo(session, "Drop", commit));
+        f.message = "Discard this merge. Its descendants are rebased onto its first parent; the merged-in commits are no longer part of them.";
+    f.add(commitInfo(session, "Discard", commit));
     Session* s = &session;
-    f.buttons.push_back({"Drop", [s, commit](Form&) { s->actions().abandon(commit, false); }});
+    f.buttons.push_back({"Discard", [s, commit](Form&) { s->actions().abandon(commit, false); }});
     f.buttons.back().danger = true;
     f.buttons.push_back({"Cancel", {}});
     session.app().dialogs().open(std::move(f));
@@ -569,15 +567,15 @@ void showResetDialog(Session& session, const core::Oid& commit)
 void showAbandonBranchDialog(Session& session, const core::Oid& commit)
 {
     Form f;
-    f.title = "Drop commit and descendants";
-    f.message = "Drop this commit and all its descendants.";
-    f.add(commitInfo(session, "Drop from", commit));
+    f.title = "Discard commit and descendants";
+    f.message = "Discard this commit and all its descendants.";
+    f.add(commitInfo(session, "Discard from", commit));
     Field del{Field::Check, "delete_branches", "Delete the branches that only point into it"};
     del.checked = true;
     f.add(del);
     f.add(Field{Field::Check, "delete_remote", "Also delete them on their remote"});
     Session* s = &session;
-    f.buttons.push_back({"Drop", [s, commit](Form& form) {
+    f.buttons.push_back({"Discard", [s, commit](Form& form) {
                              const bool deleteBranches = form.checked("delete_branches");
                              const bool deleteRemote = form.checked("delete_remote");
                              // The worker reads the doomed branches from git before the rewrite moves them.
