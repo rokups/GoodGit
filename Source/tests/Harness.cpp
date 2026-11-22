@@ -47,7 +47,13 @@ bool killProcessIfCmdline(long pid, const std::vector<std::string>& needles, boo
     if (pid <= 1)
         return false;
     std::ifstream f("/proc/" + std::to_string(pid) + "/cmdline", std::ios::binary);
-    std::string cmd((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    // istream::read catches the filebuf error; istreambuf_iterator throws ESRCH when the process exits.
+    std::string cmd;
+    char buf[512];
+    while (f.read(buf, sizeof buf) || f.gcount() > 0)
+        cmd.append(buf, static_cast<size_t>(f.gcount()));
+    if (f.bad())
+        return false; // the process exited during the read: nothing to kill
     std::replace(cmd.begin(), cmd.end(), '\0', ' '); // the arguments are NUL separated
     const auto has = [&](const std::string& needle) { return cmd.find(needle) != std::string::npos; };
     const bool match = all ? std::all_of(needles.begin(), needles.end(), has) : std::any_of(needles.begin(), needles.end(), has);
