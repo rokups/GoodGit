@@ -79,6 +79,43 @@ std::string App::recentRowText(size_t i) const
     return welcomeRowText(uniqueRecentNames(recent)[i], recentInfo(i));
 }
 
+// The rows are rebuilt only when the recent list, the order or a shown summary field changes.
+// The summaries come from the async SummaryService, which reads the disk again on each requestSummaries().
+void App::refreshWelcomeRows()
+{
+    const auto& d = m_settings.data();
+    const auto infos = recentInfos();
+    // The fields that the row shows: a cheap key, so the summary changes in place are seen.
+    std::string sig;
+    for (const auto* s : infos) {
+        if (!s) {
+            sig += '-';
+            continue;
+        }
+        sig += std::to_string(static_cast<int>(s->health)) + (s->detached ? 'd' : 'b') + s->branch + '\n' + s->upstream + '\n'
+            + s->upstreamRemote + '\n' + std::to_string(s->ahead) + ',' + std::to_string(s->behind) + ';';
+    }
+    if (m_welcomeValid && m_welcomeSig == sig && m_welcomeOrder == d.recentOrder && m_welcomeRecent == d.recent)
+        return;
+    m_welcomeValid = true;
+    ++m_welcomeRebuilds;
+    m_welcomeSig = std::move(sig);
+    m_welcomeOrder = d.recentOrder;
+    m_welcomeRecent = d.recent;
+    const auto names = uniqueRecentNames(d.recent);
+    m_welcomeRows.clear();
+    for (size_t i : recentDisplayOrder(d.recent, d.recentOrder)) {
+        WelcomeRow row;
+        row.index = i;
+        row.warnPrefix = summaryWarnPrefix(infos[i]);
+        row.text = welcomeRowText(names[i], infos[i]);
+        row.dimLen = names[i].prefix.size();
+        if (infos[i] && summaryWarns(*infos[i]))
+            row.warning = "\n" + summaryWarningText(*infos[i]);
+        m_welcomeRows.push_back(std::move(row));
+    }
+}
+
 void App::drawWelcome()
 {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -147,20 +184,18 @@ void App::drawWelcome()
     const auto& recent = m_settings.data().recent;
     if (recent.empty())
         ImGui::TextDisabled("No recent repositories");
-    const auto names = uniqueRecentNames(recent);
-    const auto infos = recentInfos();
     const std::string currentKey = currentRepoKey();
+    refreshWelcomeRows();
     std::string forget;
-    for (size_t i : recentDisplayOrder(recent, m_settings.data().recentOrder)) {
+    for (const WelcomeRow& row : m_welcomeRows) {
+        const size_t i = row.index;
         const std::string& path = recent[i];
         ImGui::PushID(("recent_" + std::to_string(i)).c_str());
-        const std::string warnPrefix = summaryWarnPrefix(infos[i]);
-        const std::string text = welcomeRowText(names[i], infos[i]);
-        if (selectableTextDimRanges(text, "row", {{warnPrefix.size(), warnPrefix.size() + names[i].prefix.size()}}, m_recentFocus == static_cast<int>(i),
-                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0), warnPrefix.size(), summaryWarnColor()))
+        if (selectableTextDimRanges(row.text, "row", {{row.warnPrefix.size(), row.warnPrefix.size() + row.dimLen}}, m_recentFocus == static_cast<int>(i),
+                ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, 0), row.warnPrefix.size(), summaryWarnColor()))
             post([this, path] { openRepository(path); });
         if (itemHoveredForTooltip())
-            tooltip("%s%s\nDel removes", path.c_str(), infos[i] && summaryWarns(*infos[i]) ? ("\n" + summaryWarningText(*infos[i])).c_str() : "");
+            tooltip("%s%s\nDel removes", path.c_str(), row.warning.c_str());
         if (ImGui::IsItemFocused())
             m_recentFocus = static_cast<int>(i);
         if ((ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) || (path != currentKey && hoveredDeletePressed()))

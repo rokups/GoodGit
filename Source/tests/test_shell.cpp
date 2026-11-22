@@ -2095,4 +2095,29 @@ GG_TEST("shell", "Settings General tab: Log level combo and Open log folder butt
     GG_CHECK(!s.app.settings().data().logTrace);
 }
 
+GG_TEST("shell", "welcome rows: cached, rebuilt when a recent repository changes on disk")
+{
+    const fs::path gone = s.fixture(Recipe::WithRemote);
+    const fs::path stays = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(gone));
+    GG_REQUIRE(s.openRepository(stays));
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitIdle());
+    ctx->Yield(3);
+    const unsigned built = s.app.welcomeRebuilds();
+    GG_CHECK(built > 0);
+    ctx->Yield(5);
+    GG_CHECK_EQ(s.app.welcomeRebuilds(), built); // nothing changed: the rows are reused
+    // The folder goes away; the next summary read (an open and a close) shows it.
+    std::error_code ec;
+    fs::remove_all(gone, ec);
+    GG_REQUIRE(s.openRepository(stays));
+    ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
+    GG_REQUIRE(s.waitUntil([&] { return closed(s); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.app.recentRowText(1).find("missing") != std::string::npos; }));
+    ctx->Yield(3);
+    GG_CHECK(s.app.welcomeRebuilds() > built);
+}
+
 } // namespace ggtest

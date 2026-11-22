@@ -98,6 +98,17 @@ public:
     bool walkDescendsFrom(const core::Oid& id, const core::Oid& ancestor) const;
     // Commits Ctrl-clicked in addition to the selection (New with several parents = merge).
     const std::vector<core::Oid>& extraSelection() const { return m_extra; }
+    // The last selectionShape() result with the inputs it came from (a menu asks it in each frame).
+    struct ShapeMemo {
+        bool valid = false;
+        SelKind kind = SelKind::None;
+        core::Oid id;
+        std::vector<core::Oid> extra;
+        size_t gen = 0, rows = 0;
+        SelectionShape shape;
+    };
+    mutable ShapeMemo shapeMemo;
+    size_t rowsGen() const { return m_rowsGen; }
     // The two selected commits (the primary one and one extra) as the lower row (older in list order) and
     // the upper row, in the order of all loaded rows. Empty with any other selection or a commit that is not loaded.
     struct CommitPair {

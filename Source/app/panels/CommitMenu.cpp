@@ -100,6 +100,11 @@ SelectionShape selectionShape(Session& s)
         return shape;
     const auto& history = s.history();
     const auto& extra = history.extraSelection();
+    // Reused while the selection, the extra list and the rows stay the same (menus and drags ask each frame).
+    auto& memo = history.shapeMemo;
+    if (memo.valid && memo.kind == s.selection().kind && memo.id == s.selection().id && memo.gen == history.rowsGen()
+        && memo.rows == history.rows().size() && memo.extra == extra)
+        return memo.shape;
     // The first occurrence of each ID stays (a set of the IDs seen: linear, the extra list can hold thousands).
     std::unordered_set<core::Oid, core::OidHash> seen;
     seen.reserve(extra.size() + 1);
@@ -125,6 +130,7 @@ SelectionShape selectionShape(Session& s)
         if (!r || r->parents.empty() || r->parents.front() != shape.ids[i + 1])
             shape.contiguous = false;
     }
+    memo = {true, SelKind::Commit, s.selection().id, extra, history.rowsGen(), history.rows().size(), shape};
     return shape;
 }
 
