@@ -305,8 +305,13 @@ int rowActions(std::span<const RowAction> actions, bool rowSelected, bool padded
         // buttons being held (a button id is the hash of "###id") continues.
         bool own = false;
         for (size_t i = 0; g.ActiveId != 0 && !own && i < actions.size(); ++i) {
-            const std::string key = std::string("###") + actions[i].id; // short ids stay in the SSO buffer
-            own = actions[i].visible && g.ActiveId == window->GetID(key.c_str());
+            // Hot path (each row, each frame): a stack buffer; only an id too long for it goes to the heap.
+            char key[128];
+            const int n = std::snprintf(key, sizeof key, "###%s", actions[i].id);
+            const ImGuiID id = n >= 0 && n < static_cast<int>(sizeof key)
+                ? window->GetID(key)
+                : window->GetID((std::string("###") + actions[i].id).c_str());
+            own = actions[i].visible && g.ActiveId == id;
         }
         if (!own)
             return -1;
