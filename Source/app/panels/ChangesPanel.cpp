@@ -105,7 +105,7 @@ core::Oid stashBlameCommit(const core::Snapshot& snap, const core::Oid& stash, F
 {
     if (group == FileGroup::StashIndex)
         for (const auto& s : snap.stashes)
-            if (s.commit == stash)
+            if (s.commit == stash && !s.indexCommit.isNull()) // no index part: the stash commit, never a null commit
                 return s.indexCommit;
     return stash;
 }
