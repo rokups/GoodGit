@@ -969,9 +969,11 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
         listsFile |= row.first.find("conflict.txt") != std::string::npos;
     GG_CHECK(listsFile);
     GG_CHECK(!originHas(s, repo, "main", s.head(repo)));
-    // Reveal jumps to the conflicted commit (the first listed row is the oldest or newest; either is conflicted).
+    // Reveal selects the commit of the first listed row. The walk lists the newest first, so that is HEAD.
+    GG_REQUIRE(!f->revealRows.empty());
+    GG_CHECK_STR_EQ(f->revealRows[0].second, s.head(repo));
     ctx->ItemClick("//Push refused/reveal_0/Reveal");
-    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == conflicted || s.session()->selection().id.hex() == s.head(repo); }));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == s.head(repo); }));
     GG_CHECK_STR_EQ(s.gitOut(bare, {"rev-parse", "main"}), s.revParse(repo, "main~2"));
 }
 

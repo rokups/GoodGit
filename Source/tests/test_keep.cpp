@@ -186,7 +186,7 @@ std::string rowRef(const std::string& hex) { return "//History/**/###row_" + hex
 // "New commit" on the commit `id` (its row is selected first).
 void newDetachedOn(ImGuiTestContext* ctx, Scenario& s, const std::string& id)
 {
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(id)) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(id)) != nullptr; }));
     ctx->ItemClick(rowRef(id).c_str());
     ctx->MenuClick("//##MainMenuBar/Commit/New commit");
 }

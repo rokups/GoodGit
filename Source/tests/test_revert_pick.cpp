@@ -358,6 +358,8 @@ GG_TEST("revert-pick", "refusals: HEAD itself, an ancestor of HEAD, staged chang
     ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
     GG_CHECK(ctx->ItemInfo("//$FOCUSED/###cherry_pick").ItemFlags & ImGuiItemFlags_Disabled);
     GG_CHECK(ctx->ItemInfo("//$FOCUSED/###cherry_pick_no_commit").ItemFlags & ImGuiItemFlags_Disabled);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/###revert"); }));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/###revert_no_commit"); }));
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/###revert").ItemFlags & ImGuiItemFlags_Disabled));
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/###revert_no_commit").ItemFlags & ImGuiItemFlags_Disabled));
     ctx->KeyPress(ImGuiKey_Escape);
@@ -470,6 +472,7 @@ GG_TEST("revert-pick", "Cherry-pick of three selected commits: three commits, th
     ctx->Yield(2);
     CHECK_MENU_LABEL("###cherry_pick", "Cherry-pick 3 commits");
     CHECK_MENU_LABEL("###cherry_pick_no_commit", "Cherry-pick 3 commits (no commit)");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/###cherry_pick"); }));
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/###cherry_pick").ItemFlags & ImGuiItemFlags_Disabled));
     ctx->MenuClick("//$FOCUSED/###cherry_pick");
     GG_CHECK(changed(s, r.path, r.c4));

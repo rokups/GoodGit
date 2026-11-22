@@ -464,6 +464,7 @@ GG_TEST("selfupdate", "updater destructor joins a running download")
         f.net->blockDownload = true;
         GG_CHECK(updater.download());
         GG_CHECK(waitUntil([&] { return f.net->started.load(); }));
+        GG_CHECK(pathExists(f.workDir())); // the job made its folder: the end check below can fail
         GG_CHECK(!f.net->finished.load());
     }
     GG_CHECK(f.net->finished.load());

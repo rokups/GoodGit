@@ -121,7 +121,7 @@ namespace {
 // A drag onto the top (or bottom) edge of the target row: the gap above (or below) it.
 void dragToGap(Scenario& s, const std::string& from, const std::string& to, bool top)
 {
-    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); }));
     const ImRect info = s.ctx->ItemInfo(to.c_str()).RectFull;
     const ImVec2 target(info.GetCenter().x, top ? info.Min.y + 2 : info.Max.y - 2);
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());
@@ -142,7 +142,7 @@ GG_TEST("dnd", "commit dropped between rows reorders with no modifier")
     const auto restore = [&] {
         s.git(r.path, {"reset", "-q", "--hard", r.c[3]});
         s.settle();
-        s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()); });
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(r.c[3]).c_str()); }));
     };
     // c4 below c2.
     std::string tip = s.revParse(r.path, "main");
@@ -283,7 +283,7 @@ std::string badgeRef(const std::string& commit, const std::string& branch) { ret
 // A drag of a badge onto an exact position (ItemDragAndDrop drops at the centre of the target item).
 void dragToPos(Scenario& s, const std::string& from, ImVec2 pos)
 {
-    s.waitUntil([&] { return s.itemExists(from.c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(from.c_str()); }));
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());
     s.ctx->MouseDown(ImGuiMouseButton_Left);
     s.ctx->Yield(2);
@@ -307,10 +307,10 @@ GG_TEST("dnd", "a branch badge dropped on the edge of a row opens the branch men
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));
     const std::string tip = s.revParse(r.path, "main");
-    s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tip).c_str()); }));
     const ImRect rowRect = s.ctx->ItemInfo(rowRef(tip).c_str()).RectFull;
     // 2 px below the top edge of the tip row, right of the badges: the zone of a gap for a commit drop.
-    s.waitUntil([&] { return s.itemExists(badgeRef(r.c[1], "side").c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(badgeRef(r.c[1], "side").c_str()); }));
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo(badgeRef(r.c[1], "side").c_str()).RectFull.GetCenter());
     s.ctx->MouseDown(ImGuiMouseButton_Left);
     s.ctx->Yield(2);
@@ -630,9 +630,9 @@ GG_TEST("dnd", "files onto a commit: a commit's files into its parent; working t
     const Chain r = makeChain(s);
     GG_REQUIRE(s.openRepository(r.path));
     // c4's file onto c3: c3 now adds f3 and f4, c4 is empty.
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(r.c[3])) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(r.c[3])) != nullptr; }));
     ctx->ItemClick(rowRef(r.c[3]).c_str());
-    s.waitUntil([&] { return s.session()->changes().rows().size() == 1; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == 1; }));
     std::string tip = s.revParse(r.path, "main");
     drag(s, s.child("//Changes", "##files") + "/f4.txt/###file_f4.txt", rowRef(r.c[2]));
     GG_CHECK(changedFrom(s, r.path, tip));
@@ -850,7 +850,7 @@ GG_TEST("dnd", "the drag tooltip of a commit shows the pill of the branch an Alt
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(tagged).c_str()); }));
     auto dragging = [&](const std::string& from, ImVec2 off) {
-        s.waitUntil([&] { return s.itemExists(from.c_str()); });
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(from.c_str()); }));
         const ImVec2 start = ctx->ItemInfo(from.c_str()).RectFull.GetCenter();
         ctx->MouseMoveToPos(start);
         ctx->MouseDown(ImGuiMouseButton_Left);
@@ -1137,7 +1137,7 @@ enum class At { Top, Middle, Bottom };
 // Drags a commit over a part of a row, releases it there, and returns the hint that showed before the drop.
 std::string dropHintAt(Scenario& s, const std::string& from, const std::string& to, At at, ImGuiKeyChord mods = 0)
 {
-    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); }));
     const ImRect t = s.ctx->ItemInfo(to.c_str()).RectFull;
     const float y = at == At::Top ? t.Min.y + 2 : at == At::Bottom ? t.Max.y - 2 : t.GetCenter().y;
     s.ctx->MouseMoveToPos(s.ctx->ItemInfo(from.c_str()).RectFull.GetCenter());

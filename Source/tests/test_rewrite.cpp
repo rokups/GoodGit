@@ -35,7 +35,7 @@ std::string info(Scenario& s, const fs::path& repo, const std::string& rev, cons
 void selectCommit(Scenario& s, const std::string& hex)
 {
     s.ctx->ItemClick(("//History/**/###row_" + hex).c_str());
-    s.waitUntil([&] { return s.itemExists("//Change information/##message"); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##message"); }));
 }
 
 // Main is A-B-C; topic is B-D-E; side is D-S; mid is on D. HEAD ends on main.
@@ -66,8 +66,9 @@ ForkRepo makeFork(Scenario& s)
 void rebaseTip(Scenario& s, const std::string& tip, const std::string& dest)
 {
     s.session()->actions().rebaseTipOnto(tip, dest);
+    // Best effort: a fast action may finish before the poll sees it busy.
     s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 1.0f);
-    s.waitUntil([&] { return s.session()->actions().busy().empty(); });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->actions().busy().empty(); }));
     s.settle();
 }
 
@@ -359,7 +360,7 @@ GG_TEST("rewrite", "pre-rebase can veto a rebase; post-checkout runs when HEAD m
     const std::string before = everything(s, repo);
     const std::string tip = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(tip)) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(tip)) != nullptr; }));
     s.contextMenu(("//History/**/###row_" + tip).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "dest");
@@ -1047,7 +1048,9 @@ GG_TEST("rewrite", "head path plan gives nothing when every step is on the path"
 {
     HeadPathRepo r = makeHeadPath(s);
     gg::git2::Repository repo = gg::git2::openRepository(r.path);
-    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), gg::rewrite::replayPlan(repo.get(), {r.c})).has_value());
+    const auto plan = gg::rewrite::replayPlan(repo.get(), {r.c});
+    GG_REQUIRE(!plan.steps.empty()); // an empty plan would also give nothing
+    GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
 }
 
 GG_TEST("rewrite", "head path plan gives nothing when HEAD is on the side branch with a changed C")
@@ -1056,9 +1059,13 @@ GG_TEST("rewrite", "head path plan gives nothing when HEAD is on the side branch
     s.git(r.path, {"checkout", "-q", "side"});
     gg::git2::Repository repo = gg::git2::openRepository(r.path);
     auto plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    int edited = 0;
     for (auto& step : plan.steps)
-        if (step.source == r.c)
+        if (step.source == r.c) {
             step.message = "Changed\n";
+            ++edited;
+        }
+    GG_REQUIRE(edited == 1); // the changed C is the reason for "nothing"
     GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
 }
 
@@ -1079,9 +1086,14 @@ GG_TEST("rewrite", "head path plan guard: a non-plain off-path step gives nothin
     HeadPathRepo r = makeHeadPath(s);
     gg::git2::Repository repo = gg::git2::openRepository(r.path);
     auto plan = gg::rewrite::replayPlan(repo.get(), {r.a});
+    GG_REQUIRE(gg::rewrite::headPathPlan(repo.get(), plan).has_value()); // the plain plan is cut
+    int edited = 0;
     for (auto& step : plan.steps)
-        if (step.source == r.d)
+        if (step.source == r.d) {
             step.message = "Changed\n";
+            ++edited;
+        }
+    GG_REQUIRE(edited == 1);
     GG_CHECK(!gg::rewrite::headPathPlan(repo.get(), plan).has_value());
     plan = gg::rewrite::replayPlan(repo.get(), {r.a});
     plan.keepBranches = true;

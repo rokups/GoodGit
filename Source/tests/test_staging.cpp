@@ -75,7 +75,7 @@ std::string nextDiff(Scenario& s, const fs::path& log, size_t& seen)
 {
     const std::string name = log.filename().string() + ".content";
     auto all = [&] { return gg::splitLines(s.read(log.parent_path(), name)); };
-    s.waitUntil([&] { return all().size() > seen; });
+    GG_CHECK(s.waitUntil([&] { return all().size() > seen; }));
     const auto l = all();
     if (l.size() <= seen)
         return "<no run>";

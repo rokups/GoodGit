@@ -1895,7 +1895,7 @@ bool startAnswering(Scenario& s, const char* answer)
 {
     s.ctx->ItemClick(irWidget("ir_start").c_str());
     auto asking = [&] { return s.app.dialogs().current() && s.app.dialogs().current()->title == "Commits become empty"; };
-    s.waitUntil([&] { return !editor(s).isOpen() || asking(); }, 60.0f);
+    GG_CHECK(s.waitUntil([&] { return !editor(s).isOpen() || asking(); }, 60.0f));
     if (asking())
         s.dialogButton("Commits become empty", answer);
     const bool done = s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f);

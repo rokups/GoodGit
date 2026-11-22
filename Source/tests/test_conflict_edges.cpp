@@ -81,7 +81,7 @@ bool move(Scenario& s, const fs::path& repo, const std::string& subject, const s
     const std::string before = s.revParse(repo, "main");
     // Dragged in History (ui-spec §2.x): Shift = Move after, Ctrl+Shift = Move before.
     const std::string from = "//History/**/###row_" + idOf(subject), to = "//History/**/###row_" + idOf(anchor);
-    s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); });
+    GG_CHECK(s.waitUntil([&] { return s.itemExists(from.c_str()) && s.itemExists(to.c_str()); }));
     const ImGuiKeyChord mods = after ? ImGuiMod_Shift : ImGuiMod_Ctrl | ImGuiMod_Shift;
     s.ctx->KeyDown(mods);
     s.ctx->ItemDragAndDrop(from.c_str(), to.c_str());

@@ -187,7 +187,7 @@ std::string settingsScope(Scenario& s, const char* scope)
     }
     s.ctx->ItemClick("//Settings/##settings_tabs/Git");
     const std::string tabs = kSettingsTabs;
-    s.waitUntil([&] { return s.itemExists((tabs + scope).c_str()); });
+    GG_CHECK(s.waitUntil([&] { return s.itemExists((tabs + scope).c_str()); }));
     s.ctx->ItemClick((tabs + scope).c_str());
     s.ctx->Yield(2);
     return tabs + scope + "/";

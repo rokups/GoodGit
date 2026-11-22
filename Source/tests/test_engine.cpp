@@ -184,7 +184,7 @@ GG_TEST("engine", "responsiveness on the large repository")
     ctx->ScrollToTop(table->ID);
     ctx->ItemClick("//History/**/###row_wt");
     ctx->KeyPress(ImGuiKey_DownArrow, 1);
-    s.waitUntil([&] { return !s.session()->changes().rows().empty(); }, 10.0f);
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }, 10.0f));
     ctx->KeyPress(ImGuiKey_F6);
     s.waitIdle(30.0f);
     ctx->ItemInputValue("//History/##hist_filter", "Merge side branch 1");
@@ -205,7 +205,7 @@ GG_TEST("engine", "responsiveness on the large repository")
     for (int i = 0; i < 10; ++i) {
         ctx->ItemClick("//History/**/###row_wt");
         ctx->KeyPress(ImGuiKey_DownArrow, i + 1);
-        s.waitUntil([&] { return !s.session()->changes().rows().empty(); }, 10.0f);
+        GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }, 10.0f));
         ctx->KeyPress(ImGuiKey_F6);
         s.waitIdle(30.0f);
     }
@@ -769,12 +769,12 @@ ggui::core::DescendantsResult askDescendants(Scenario& s, ggui::core::Engine& en
 {
     const auto id = engine.readDescendants(ggui::core::Oid::fromHex(commit), cap);
     std::optional<ggui::core::DescendantsResult> result;
-    s.waitUntil([&] {
+    GG_CHECK(s.waitUntil([&] {
         for (auto& event : engine.poll(64))
             if (const auto* d = std::get_if<ggui::core::DescendantsEvent>(&event); d && d->request == id)
                 result = d->result;
         return result.has_value();
-    }, 10.0f);
+    }, 10.0f));
     return result.value_or(ggui::core::DescendantsResult::Unknown);
 }
 

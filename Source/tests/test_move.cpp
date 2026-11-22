@@ -56,9 +56,9 @@ MoveRepo makeRepo(Scenario& s)
 
 void selectCommit(Scenario& s, const std::string& hex, size_t files)
 {
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(hex)) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(hex)) != nullptr; }));
     s.ctx->ItemClick(rowRef(hex).c_str());
-    s.waitUntil([&] { return s.session()->changes().rows().size() == files; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == files; }));
 }
 
 // Opens the context menu of `ref`, reports whether it lists `label`, and closes it again.
