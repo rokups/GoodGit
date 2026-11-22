@@ -130,6 +130,12 @@ const std::string& Session::repoStateKey() const
 
 void Session::cancelOpen() { m_engine->cancel(m_openRequest); }
 
+void Session::discardEvents()
+{
+    while (!m_engine->poll(64).empty()) {
+    }
+}
+
 bool Session::idle() const { return m_engine->idle(); }
 
 std::vector<core::Activity> Session::activities() const { return m_engine->activities(); }

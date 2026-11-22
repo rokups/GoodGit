@@ -628,6 +628,23 @@ GG_TEST("panels", "visibility: each worktree of a repository has its own hidden 
     GG_CHECK(!s.session()->history().refVisible("refs/tags/v1.0"));
 }
 
+GG_TEST("panels", "visibility: retired sessions close fast when repositories switch")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const fs::path linked = s.root() / "linked";
+    s.git(repo, {"worktree", "add", "-q", "-b", "wt", linked.string(), "HEAD~1"});
+    s.track(linked);
+    const fs::path other = s.fixture(Recipe::Linear, "other");
+    for (const fs::path& p : {repo, linked, other, repo, linked}) {
+        const auto start = std::chrono::steady_clock::now();
+        GG_REQUIRE(s.openRepository(p));
+        GG_REQUIRE(s.waitIdle());
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        GG_CHECK(ms < timeBudgetMs(1000));
+    }
+    GG_CHECK(s.waitUntil([&] { return s.app.closingCount() == 0; }, 2.0f));
+}
+
 GG_TEST("panels", "visibility: the legacy repository list is the default of each worktree")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

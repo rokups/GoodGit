@@ -223,13 +223,16 @@ RequestId Engine::open()
         }
         SnapshotPtr snap = readSnapshot(repo, ++m_generation, job.token);
         gg::throwIfCancelled(job.token);
-        if (m_options.watch && !m_watcher) {
-            try {
-                m_watcher = std::make_unique<Watcher>(snap->workdir, snap->gitDir, snap->commonDir,
-                    [this](const WatchEvent& e) { onWatchEvent(e); });
-                m_watcherPtr.store(m_watcher.get());
-            } catch (const std::exception& e) {
-                spdlog::warn("file watcher unavailable: {}", e.what());
+        {
+            std::lock_guard lock(m_watcherMutex);
+            if (m_options.watch && !m_watcher && !m_retired) {
+                try {
+                    m_watcher = std::make_unique<Watcher>(snap->workdir, snap->gitDir, snap->commonDir,
+                        [this](const WatchEvent& e) { onWatchEvent(e); });
+                    m_watcherPtr.store(m_watcher.get());
+                } catch (const std::exception& e) {
+                    spdlog::warn("file watcher unavailable: {}", e.what());
+                }
             }
         }
         emit(OpenedEvent{job.id, std::move(snap)});
@@ -239,6 +242,8 @@ RequestId Engine::open()
 
 void Engine::onWatchEvent(const WatchEvent& e)
 {
+    if (m_retired)
+        return;
     emit(e);
     if (e.refs || e.journal)
         reconcile();
@@ -508,9 +513,30 @@ void Engine::cancelAll()
             w->cancel(id);
 }
 
+void Engine::retire()
+{
+    {
+        std::lock_guard lock(m_watcherMutex);
+        m_retired = true;
+        // A reconcile job reads this pointer. From now on no new job gets it.
+        m_watcherPtr.store(nullptr);
+    }
+    cancelAll();
+    // The Mutation worker runs this job after any reconcile job that holds the old pointer, so the
+    // watcher dies only when no job uses it. Destroying it joins its threads and frees the folder handles.
+    submit(Queue::Mutation, "Stopping the file watcher", 0, false, [this](Job&) {
+        std::unique_ptr<Watcher> dying;
+        {
+            std::lock_guard lock(m_watcherMutex);
+            dying = std::move(m_watcher);
+        }
+    });
+}
+
 std::vector<Event> Engine::poll(size_t maxEvents)
 {
-    runHeldWatcherStatus();
+    if (!m_retired)
+        runHeldWatcherStatus();
     std::vector<Event> out;
     std::lock_guard lock(m_mutex);
     while (!m_events.empty() && out.size() < maxEvents) {

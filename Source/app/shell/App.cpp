@@ -464,6 +464,7 @@ void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
 void App::retireSession()
 {
     m_dialogs.closeAll();
+    m_session->retire();
     m_closing.push_back(std::move(m_session));
 }
 
@@ -724,7 +725,11 @@ void App::frame()
     pumpSummaries();
     pumpWorktrees();
     // Sessions being closed are destroyed once their engines have no running work.
-    std::erase_if(m_closing, [](const std::unique_ptr<Session>& s) { return s->idle(); });
+    // Nobody pumps them, so drop their events here: a late event must not keep a session alive.
+    std::erase_if(m_closing, [](const std::unique_ptr<Session>& s) {
+        s->discardEvents();
+        return s->idle();
+    });
 
     if (m_session) {
         m_session->engine().setWindowState(m_platform.minimized() ? core::WindowState::Minimized
@@ -733,6 +738,7 @@ void App::frame()
         m_session->pump();
         if (m_session->failed()) {
             // No closeAll here: the failure dialog is open already, and a failed session never opened.
+            m_session->retire();
             m_closing.push_back(std::move(m_session));
         } else if (m_session->opened()) {
             if (m_recordedRecent != m_session->path().string()) {

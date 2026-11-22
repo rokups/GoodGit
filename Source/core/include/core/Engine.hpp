@@ -381,6 +381,9 @@ public:
 
     void cancel(RequestId id);
     void cancelAll();
+    // The owner drops the engine soon: cancels all jobs, stops the watcher events and releases the
+    // watched folders. The engine stays valid: poll() still drains the events that are left.
+    void retire();
 
     // Up to `maxEvents` events, oldest first.
     std::vector<Event> poll(size_t maxEvents);
@@ -412,6 +415,8 @@ private:
     std::unique_ptr<Worker> m_workers[kQueueCount];
     std::unique_ptr<Watcher> m_watcher;
     std::atomic<Watcher*> m_watcherPtr{nullptr}; // m_watcher, published for the reconcile jobs
+    std::mutex m_watcherMutex; // guards m_watcher and m_retired against the open job and the retire job
+    std::atomic<bool> m_retired{false};
     // Retry of a deferred or skipped reconcile pass. Touched only by the reconcile jobs (one at a time).
     std::chrono::steady_clock::time_point m_retryStart;
     std::chrono::milliseconds m_retryDelay{0}; // 0: no retry series is open

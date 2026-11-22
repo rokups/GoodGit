@@ -92,6 +92,8 @@ public:
     // Test isolation: closes the repository and reloads settings from the (new)
     // preferences directory, as on a fresh start.
     void resetForTest();
+    // Sessions that are not closed yet. Used by tests.
+    size_t closingCount() const { return m_closing.size(); }
 
     // ---- actions (menus, toolbar, Welcome) --------------------------------------------------
     // Checks git first (G2), then opens.
