@@ -227,6 +227,7 @@ RequestId Engine::open()
             try {
                 m_watcher = std::make_unique<Watcher>(snap->workdir, snap->gitDir, snap->commonDir,
                     [this](const WatchEvent& e) { onWatchEvent(e); });
+                m_watcherPtr.store(m_watcher.get());
             } catch (const std::exception& e) {
                 spdlog::warn("file watcher unavailable: {}", e.what());
             }
@@ -336,7 +337,8 @@ RequestId Engine::reconcile()
         spdlog::debug("reconcile: pass appended={} deferred={} skipped={}", res.appended, res.deferred, res.skipped);
         // A lock release makes only a ".lock" event, which the watcher ignores: no event runs the next
         // pass. So retry with a backoff, up to kRetryCap, while the pass stays deferred or skipped.
-        if (!(res.deferred || res.skipped) || !m_watcher)
+        Watcher* const watcher = m_watcherPtr.load();
+        if (!(res.deferred || res.skipped) || !watcher)
             m_retryDelay = std::chrono::milliseconds(0);
         else {
             constexpr auto kRetryCap = std::chrono::seconds(10);
@@ -346,7 +348,7 @@ RequestId Engine::reconcile()
                 m_retryDelay = std::chrono::milliseconds(250);
             }
             if (now - m_retryStart < kRetryCap) {
-                m_watcher->retryAfter(m_retryDelay);
+                watcher->retryAfter(m_retryDelay);
                 m_retryDelay = std::min(m_retryDelay * 2, std::chrono::milliseconds(2000));
             } else
                 m_retryDelay = std::chrono::milliseconds(0); // gave up; the next event opens a new series

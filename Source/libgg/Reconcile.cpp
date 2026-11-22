@@ -54,7 +54,8 @@ bool freshLockFile(const fs::path& file)
 // True while git is in the middle of a ref update: it writes the reflog entries first and renames
 // refs/heads/<b>.lock onto the ref last, so a pass in between sees a new reflog and an old ref.
 // Looks at every ref lock (a new ref has no value yet to look up), packed-refs.lock and the
-// worktree's HEAD.lock. Its rename event runs the next pass.
+// worktree's HEAD.lock. The Engine retries a pass that
+// returns deferred (the lock release makes only a ".lock" event, which the watcher ignores).
 bool refUpdateRunning(git_repository* repo)
 {
     const fs::path common = git_repository_commondir(repo);
@@ -847,7 +848,7 @@ Result run(git_repository* repo, std::string* error)
     }
     if (!stable) {
         // Git is writing right now (tips that move, or a ref lock that is held): nothing is decided
-        // on a half-written picture. Its own change events run the next pass.
+        // on a half-written picture. The Engine retry runs the next pass.
         result.deferred = true;
         return result;
     }

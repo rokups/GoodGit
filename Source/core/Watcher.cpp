@@ -143,8 +143,8 @@ void Watcher::changed(const fs::path& path)
         m_pending.refs |= e.refs;
         m_pending.journal |= e.journal;
         const auto now = std::chrono::steady_clock::now();
-        if (!m_hasPending)
-            m_first = now;
+        // A retry notice can set m_first in the future: a real burst keeps kMaxWait from its first event.
+        m_first = m_hasPending ? std::min(m_first, now) : now;
         m_hasPending = true;
         m_last = now;
     }
