@@ -36,11 +36,12 @@ constexpr long long kEpoch = 1767225600; // 2026-01-01T00:00:00Z
 
 } // namespace
 
-bool killProcessIfCmdline(long pid, const std::vector<std::string>& needles)
+bool killProcessIfCmdline(long pid, const std::vector<std::string>& needles, bool all)
 {
 #ifdef _WIN32
     (void)pid;
     (void)needles;
+    (void)all;
     return false;
 #else
     if (pid <= 1)
@@ -48,10 +49,9 @@ bool killProcessIfCmdline(long pid, const std::vector<std::string>& needles)
     std::ifstream f("/proc/" + std::to_string(pid) + "/cmdline", std::ios::binary);
     std::string cmd((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     std::replace(cmd.begin(), cmd.end(), '\0', ' '); // the arguments are NUL separated
-    for (const auto& needle : needles)
-        if (cmd.find(needle) != std::string::npos)
-            return ::kill(static_cast<pid_t>(pid), SIGKILL) == 0;
-    return false;
+    const auto has = [&](const std::string& needle) { return cmd.find(needle) != std::string::npos; };
+    const bool match = all ? std::all_of(needles.begin(), needles.end(), has) : std::any_of(needles.begin(), needles.end(), has);
+    return match && ::kill(static_cast<pid_t>(pid), SIGKILL) == 0;
 #endif
 }
 
@@ -81,7 +81,11 @@ void killStaleDaemons(const fs::path& tempDir, const fs::path& root)
                 std::ifstream in(f->path());
                 long pid = 0;
                 in >> pid;
-                killProcessIfCmdline(pid, {"git-daemon", "git daemon"});
+                // A git daemon that was started with this very pid file: a reused pid of another
+                // process (or of a daemon of the developer) is not hit. The test directory and the
+                // file name are the needle: the temp directory can have a symlinked form.
+                killProcessIfCmdline(pid,
+                    {"git", "daemon", "--pid-file=", test->path().filename().string() + "/" + name}, true);
                 std::error_code e4;
                 fs::remove(f->path(), e4);
             }

@@ -9,6 +9,7 @@
 #include <libgg/Thread.hpp>
 
 #ifndef _WIN32
+#include <csignal>
 #include <unistd.h>
 #endif
 
@@ -195,7 +196,23 @@ GG_TEST("harness", "stale daemons of an aborted run are killed")
     const fs::path other = s.root().parent_path() / "other-test";
     fs::create_directories(other);
     s.write(other, "daemon-0.pid", std::to_string(getpid()) + "\n");
+    // A git daemon that was started without that pid file (a developer's own) is not killed either.
+    gg::DetachedProcess foreign;
+    std::string error;
+    GG_REQUIRE(gg::spawnDetached({gg::findInPath("git").string(), "daemon", "--listen=127.0.0.1",
+                   "--port=" + std::to_string(20000 + static_cast<int>(s.rng()() % 30000)),
+                   "--base-path=" + served.string(), served.string()},
+        foreign, error));
+    s.settle();
+    GG_REQUIRE(gg::stillRunning(foreign));
+    const fs::path other2 = s.root().parent_path() / "other-test2";
+    fs::create_directories(other2);
+    s.write(other2, "daemon-0.pid", std::to_string(foreign.pid) + "\n");
     killStaleDaemons(s.path("no-such-dir"), s.root().parent_path());
+    GG_CHECK(!fs::exists(other2 / "daemon-0.pid"));
+    GG_CHECK(gg::stillRunning(foreign));
+    ::kill(static_cast<pid_t>(foreign.pid), SIGKILL);
+    GG_CHECK(s.waitUntil([&] { return !gg::stillRunning(foreign); }));
     GG_CHECK(!fs::exists(pidFile));
     GG_CHECK(!fs::exists(other / "daemon-0.pid"));
     GG_CHECK(s.waitUntil([&] { return !fs::exists("/proc/" + std::to_string(pid)); }));

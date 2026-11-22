@@ -352,8 +352,8 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
     const fs::path release = root.path / "release-ggui-stub";
     const StubGuard guard(root.path / "stub.pid", {release.filename().string()});
     GG_REQUIRE(gg::spawnDetached({"/bin/sh", "-c",
-                   "echo $$ > '" + (root.path / "stub.pid").string() + "'; while [ ! -e '" + release.string() +
-                       "' ]; do sleep 0.05; done"},
+                   "i=0; echo $$ > '" + (root.path / "stub.pid").string() + "'; while [ ! -e '" + release.string() +
+                       "' ] && [ $((i += 1)) -lt 1200 ]; do sleep 0.05; done"},
         ggui, error));
     const std::string pid = std::to_string(ggui.pid);
 #endif
