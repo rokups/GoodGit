@@ -22,6 +22,7 @@ import sys
 from collections import defaultdict
 
 FIRST_PARTY = ("Source/libgg/", "Source/core/", "Source/app/", "Source/gitgg/")
+SOURCE_EXT = (".c", ".cc", ".cpp", ".h", ".hpp", ".inl", ".mm")
 MARKER_RE = re.compile(r"COVERAGE_EXCL_(START|STOP|LINE)(?::\s*(.*))?")
 
 
@@ -74,16 +75,32 @@ def exclusions(source_path):
     return excluded, markers
 
 
+def scan_markers(root):
+    """Markers in every first-party file on disk, whether or not the lcov lists the file."""
+    found = {}
+    for top in FIRST_PARTY:
+        for dirpath, _, names in os.walk(os.path.join(root, top)):
+            for name in names:
+                if name.endswith(SOURCE_EXT):
+                    path = os.path.join(dirpath, name)
+                    markers = exclusions(path)[1]
+                    if markers:
+                        found[os.path.relpath(path, root).replace(os.sep, "/")] = markers
+    return found
+
+
 def load_allowlist(path):
     allow = {}
     if not path or not os.path.exists(path):
         return allow
     with open(path, encoding="utf-8") as f:
-        for raw in f:
+        for n, raw in enumerate(f, 1):
             line = raw.split("#", 1)[0].strip()
             if line:
-                file_, count = line.split()[:2]
-                allow[os.path.normpath(file_)] = int(count)
+                parts = line.split()
+                if len(parts) < 2 or not parts[1].isdigit():
+                    sys.exit(f"{path}:{n}: bad allowlist line '{line}': expected '<file> <count>'")
+                allow[os.path.normpath(parts[0])] = int(parts[1])
     return allow
 
 
@@ -107,17 +124,11 @@ def main():
 
     per_dir = defaultdict(lambda: [0, 0, 0, 0])  # lines hit/total, branches hit/total
     rows, problems = [], []
-    marker_counts = {}
     for path, d in sorted(data.items()):
         rel = os.path.relpath(path, root).replace(os.sep, "/")
         if not rel.startswith(FIRST_PARTY):
             continue
-        excluded, markers = exclusions(path)
-        if markers:
-            marker_counts[rel] = len(markers)
-        for n, kind, reason in markers:
-            if not reason:
-                problems.append(f"{rel}:{n}: COVERAGE_EXCL_{kind} needs a one-line reason")
+        excluded = exclusions(path)[0]
         lines = {n: c for n, c in d["lines"].items() if n not in excluded}
         branches = {k: t for k, t in d["branches"].items() if k[0] not in excluded}
         lh, lt = sum(1 for c in lines.values() if c > 0), len(lines)
@@ -130,6 +141,15 @@ def main():
         acc[2] += bh
         acc[3] += bt
 
+    if not rows:
+        sys.exit(f"error: no first-party file {FIRST_PARTY} in {args.lcov} ({len(data)} file(s) in the lcov; "
+                 f"is --root {root} right?)")
+    marker_counts = {}
+    for rel, markers in scan_markers(root).items():
+        marker_counts[rel] = len(markers)
+        for n, kind, reason in markers:
+            if not reason:
+                problems.append(f"{rel}:{n}: COVERAGE_EXCL_{kind} needs a one-line reason")
     for rel, count in marker_counts.items():
         allowed = allow.get(os.path.normpath(rel), 0)
         if count > allowed:

@@ -6,6 +6,8 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from coverage_report import parse_lcov, exclusions  # noqa: E402
 
+if len(sys.argv) < 2:
+    sys.exit("usage: uncovered.py coverage.lcov [path-substring]")
 data = parse_lcov(sys.argv[1])
 flt = sys.argv[2] if len(sys.argv) > 2 else "Source/"
 for path, d in sorted(data.items()):
