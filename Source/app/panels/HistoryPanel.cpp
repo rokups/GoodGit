@@ -224,8 +224,14 @@ void HistoryPanel::onHistory(core::HistoryEvent& event)
         m_stagedRows.clear();
         m_stagedIndex.clear();
         m_staging = !m_rows.empty();
-        // shortcut: two full row sets live during a reload (about 2x memory); swap in pages only with a selection that survives a partial list.
-        m_stageTarget = m_rows.size();
+        // Swap early, but keep the selection and the shown rows in the partial list.
+        size_t keep = std::max<size_t>(kPageSize, m_lastShownRow + kPageSize);
+        for (size_t i = 0; i < m_rows.size(); ++i) {
+            const auto& id = m_rows[i].id;
+            if (m_session.selection().id == id || std::find(m_extra.begin(), m_extra.end(), id) != m_extra.end())
+                keep = std::max(keep, i + 1);
+        }
+        m_stageTarget = std::min(m_rows.size(), keep);
         if (!m_staging) {
             m_rows.clear();
             ++m_rowsGen;
@@ -2108,6 +2114,8 @@ void HistoryPanel::draw(bool* open)
         m_dropHint = std::move(m_dropHintNext);
         m_dropHintNext.clear();
         while (clipper.Step()) {
+            if (clipper.DisplayEnd - clipper.DisplayStart > 1) // a one-row range is a forced item (nav, test engine), not the view
+                m_lastShownRow = static_cast<size_t>(m_visible[static_cast<size_t>(clipper.DisplayEnd - 1)]);
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
                 drawRow(m_rows[static_cast<size_t>(m_visible[static_cast<size_t>(i)])], i, laneWidth);
         }

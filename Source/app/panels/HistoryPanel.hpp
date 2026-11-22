@@ -109,6 +109,8 @@ public:
     };
     mutable ShapeMemo shapeMemo;
     size_t rowsGen() const { return m_rowsGen; }
+    // The stage target of the last reload (a test reads it; the batch size changes the swap size).
+    size_t lastStageTarget() const { return m_stageTarget; }
     // The two selected commits (the primary one and one extra) as the lower row (older in list order) and
     // the upper row, in the order of all loaded rows. Empty with any other selection or a commit that is not loaded.
     struct CommitPair {
@@ -193,6 +195,7 @@ private:
     // many or the walk ends (no short list and scrollbar jump in between).
     bool m_staging = false;
     size_t m_stageTarget = 0;
+    size_t m_lastShownRow = 0; // the last row the clipper drew; sizes the stage target
     std::vector<core::HistoryRow> m_stagedRows;
     std::unordered_map<core::Oid, int, core::OidHash> m_stagedIndex;
     core::RequestId m_query = 0;
