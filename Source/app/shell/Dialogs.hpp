@@ -41,7 +41,7 @@ struct Field {
     std::string text;
     bool checked = false;
     int choice = 0;
-    std::vector<std::string> options;
+    std::vector<std::string> options; // after the first draw, change it only with setOptions (the filter cache)
     std::string hint;
     std::function<std::string()> live;
     bool filterable = false;  // Combo: a filter field at the top of the list (Enter picks the first match)

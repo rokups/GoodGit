@@ -305,9 +305,8 @@ int rowActions(std::span<const RowAction> actions, bool rowSelected, bool padded
         // buttons being held (a button id is the hash of "###id") continues.
         bool own = false;
         for (size_t i = 0; g.ActiveId != 0 && !own && i < actions.size(); ++i) {
-            char key[96];
-            std::snprintf(key, sizeof key, "###%s", actions[i].id);
-            own = actions[i].visible && g.ActiveId == window->GetID(key);
+            const std::string key = std::string("###") + actions[i].id; // short ids stay in the SSO buffer
+            own = actions[i].visible && g.ActiveId == window->GetID(key.c_str());
         }
         if (!own)
             return -1;
