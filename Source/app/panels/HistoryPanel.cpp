@@ -303,6 +303,7 @@ void HistoryPanel::selectConflicted(int direction)
 {
     if (m_visibleDirty) {
         m_visible = visibleIndexes();
+        ++m_visibleGen;
         m_visibleDirty = false;
     }
     int pos = direction > 0 ? -1 : static_cast<int>(m_visible.size());
@@ -322,6 +323,23 @@ void HistoryPanel::selectConflicted(int direction)
 }
 
 int HistoryPanel::stepTarget(int direction, bool rowOrder, int& pos) const
+{
+    ++m_stepCalls;
+    // The answer depends on the selection, the rows and the visible list only: keep it for each query.
+    StepCache& c = m_stepCache[(direction > 0 ? 1 : 0) + (rowOrder ? 2 : 0)];
+    const Selection& selNow = m_session.selection();
+    if (c.valid && c.kind == selNow.kind && c.id == selNow.id && c.rowsGen == m_rowsGen && c.rows == m_rows.size()
+        && c.visibleGen == m_visibleGen) {
+        pos = c.pos;
+        return c.target;
+    }
+    ++m_stepScans;
+    const int target = stepTargetScan(direction, rowOrder, pos);
+    c = {true, selNow.kind, selNow.id, m_rowsGen, m_rows.size(), m_visibleGen, pos, target};
+    return target;
+}
+
+int HistoryPanel::stepTargetScan(int direction, bool rowOrder, int& pos) const
 {
     const Selection& sel = m_session.selection();
     pos = -1;
@@ -2004,6 +2022,7 @@ void HistoryPanel::draw(bool* open)
     }
     if (m_visibleDirty) {
         m_visible = visibleIndexes();
+        ++m_visibleGen;
         m_visibleDirty = false;
         m_restoreAnchor = true;
     }

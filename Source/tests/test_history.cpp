@@ -2735,6 +2735,55 @@ GG_TEST("history", "arrows follow the branch path; Alt+arrows take the next row"
     GG_CHECK((selectedCommits(s) == std::set<std::string>{m2, s2}));
 }
 
+GG_TEST("history", "stepTarget gives the same targets and scans only for a changed selection")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string merge = interleavedLanes(s, repo);
+    const std::string m2 = s.revParse(repo, "main^");
+    const std::string m1 = s.revParse(repo, "main^^");
+    const std::string s2 = s.revParse(repo, "side");
+    const std::string s1 = s.revParse(repo, "side^");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(m2).c_str()); }));
+    auto& h = s.session()->history();
+    const auto visible = [&](const std::string& hex) {
+        const auto ids = h.visibleIds();
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (ids[i].hex() == hex)
+                return static_cast<int>(i);
+        return -1;
+    };
+    clickRow(s, m2);
+    struct Case { int dir; bool rowOrder; std::string want; };
+    const Case table[] = {{+1, false, m1}, {+1, true, s2}, {-1, true, merge}};
+    for (const Case& c : table) {
+        int pos = -1;
+        GG_CHECK(h.stepTarget(c.dir, c.rowOrder, pos) == visible(c.want));
+        GG_CHECK(pos == visible(m2));
+    }
+    // Idle frames call stepTarget (the key routing) but never scan: the answers come from the cache.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, s2);
+    ctx->Yield(3);
+    const int calls = h.stepCalls();
+    const int scans = h.stepScans();
+    ctx->Yield(20);
+    GG_CHECK(h.stepCalls() > calls);
+    GG_CHECK(h.stepScans() == scans);
+    // A selection change scans at most once for each query; the keys still work.
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s1);
+    GG_CHECK(h.stepScans() - scans <= 4);
+    const int after = h.stepScans();
+    ctx->Yield(20);
+    GG_CHECK(h.stepScans() == after);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
+}
+
 GG_TEST("history", "Alt+Up at the top commit moves the nav cursor to the Working tree row")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

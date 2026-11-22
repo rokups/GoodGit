@@ -134,6 +134,9 @@ public:
     void selectStep(int direction, bool rowOrder);
     // The visible index of the step target (-1: none); pos is the visible index of the selected commit.
     int stepTarget(int direction, bool rowOrder, int& pos) const;
+    // Test hooks: the stepTarget calls, and the calls that scanned the rows (the rest came from the cache).
+    int stepCalls() const { return m_stepCalls; }
+    int stepScans() const { return m_stepScans; }
     bool loading() const { return m_loading; }
     bool truncated() const { return m_truncated; }
     // Indexes into rows() of the rows currently shown, in order.
@@ -225,6 +228,19 @@ private:
     bool m_scrollToSelection = false;
     std::vector<int> m_visible; // indexes into m_rows (filtered)
     bool m_visibleDirty = true;
+    size_t m_visibleGen = 1; // bumped when m_visible is rebuilt
+    // stepTarget answers, one for each (direction, rowOrder); valid while the key below is unchanged.
+    struct StepCache {
+        bool valid = false;
+        SelKind kind = SelKind::None;
+        core::Oid id;
+        size_t rowsGen = 0, rows = 0, visibleGen = 0;
+        int pos = -1, target = -1;
+    };
+    mutable StepCache m_stepCache[4];
+    mutable int m_stepCalls = 0;
+    mutable int m_stepScans = 0;
+    int stepTargetScan(int direction, bool rowOrder, int& pos) const;
     bool m_lastConflictedOnly = false; // conflictedOnly() when m_visible was last built
     // What a drop does now, for the drag tooltip: the target sets Next in a frame, the tooltip shows the value of the frame before.
     std::string m_dropHint, m_dropHintNext;
