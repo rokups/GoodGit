@@ -36,6 +36,42 @@ bool startsWith(const std::string& s, const char* prefix) { return s.rfind(prefi
 
 } // namespace
 
+namespace detail {
+
+bool classifyGit(const std::string& rel, WatchEvent& e)
+{
+    if (rel.empty())
+        return false;
+    if (startsWith(rel, "objects/") || startsWith(rel, "logs/") || startsWith(rel, "hooks/")
+        || startsWith(rel, "gg/cache") || (rel.size() > 5 && rel.compare(rel.size() - 5, 5, ".lock") == 0))
+        return true; // ignored
+    if (startsWith(rel, "modules/")) {
+        // The git dir of a submodule. Its HEAD, refs and index change the superproject status.
+        // Objects, logs, hooks, lock files and FETCH_HEAD are noise, as in the main git dir.
+        const std::string name = rel.substr(rel.rfind('/') + 1);
+        if (rel.find("/objects/") != std::string::npos || rel.find("/logs/") != std::string::npos
+            || rel.find("/hooks/") != std::string::npos || rel.find("/gg/") != std::string::npos
+            || name == "FETCH_HEAD" || name == "ORIG_HEAD" || name == "COMMIT_EDITMSG"
+            || (name.size() > 5 && name.compare(name.size() - 5, 5, ".lock") == 0))
+            return true; // ignored
+        e.refs = true;
+        e.worktree = true;
+    } else if (rel == "gg/journal") {
+        e.journal = true;
+    } else if (rel == "gg" || startsWith(rel, "gg/")) {
+        return true; // ggui's own files (rebase/, cache, reconcile.json, ...) are no repository change
+    } else if (rel == "index" || (startsWith(rel, "worktrees/") && rel.find("/index") != std::string::npos)) {
+        e.index = true;
+    } else if (rel == "config") {
+        e.refs = true;
+    } else {
+        e.refs = true; // HEAD, refs/, packed-refs, MERGE_HEAD, rebase-*, sequencer, BISECT_*
+    }
+    return true;
+}
+
+} // namespace detail
+
 class Watcher::Listener final : public efsw::FileWatchListener {
 public:
     explicit Listener(Watcher& owner) : m_owner(owner) { }
@@ -89,40 +125,10 @@ Watcher::~Watcher()
 void Watcher::changed(const fs::path& path)
 {
     WatchEvent e;
-    auto classifyGit = [&](const std::string& rel) {
-        if (rel.empty())
-            return false;
-        if (startsWith(rel, "objects/") || startsWith(rel, "logs/") || startsWith(rel, "hooks/")
-            || startsWith(rel, "gg/cache") || (rel.size() > 5 && rel.compare(rel.size() - 5, 5, ".lock") == 0))
-            return true; // ignored
-        if (startsWith(rel, "modules/")) {
-            // The git dir of a submodule. Its HEAD, refs and index change the superproject status.
-            // Objects, logs, hooks, lock files and FETCH_HEAD are noise, as in the main git dir.
-            const std::string name = rel.substr(rel.rfind('/') + 1);
-            if (rel.find("/objects/") != std::string::npos || rel.find("/logs/") != std::string::npos
-                || rel.find("/hooks/") != std::string::npos || rel.find("/gg/") != std::string::npos
-                || name == "FETCH_HEAD" || name == "ORIG_HEAD" || name == "COMMIT_EDITMSG"
-                || (name.size() > 5 && name.compare(name.size() - 5, 5, ".lock") == 0))
-                return true; // ignored
-            e.refs = true;
-            e.worktree = true;
-        } else if (rel == "gg/journal") {
-            e.journal = true;
-        } else if (rel == "gg" || startsWith(rel, "gg/")) {
-            return true; // ggui's own files (rebase/, cache, reconcile.json, ...) are no repository change
-        } else if (rel == "index" || (startsWith(rel, "worktrees/") && rel.find("/index") != std::string::npos)) {
-            e.index = true;
-        } else if (rel == "config") {
-            e.refs = true;
-        } else {
-            e.refs = true; // HEAD, refs/, packed-refs, MERGE_HEAD, rebase-*, sequencer, BISECT_*
-        }
-        return true;
-    };
     const std::string inGit = relativeUnder(path, m_gitDir);
     const std::string inCommon = relativeUnder(path, m_commonDir);
     spdlog::debug("watch: {} (git dir: '{}', common dir: '{}')", path.string(), inGit, inCommon);
-    if (!classifyGit(inGit) && !classifyGit(inCommon)) {
+    if (!detail::classifyGit(inGit, e) && !detail::classifyGit(inCommon, e)) {
         const std::string inWork = relativeUnder(path, m_workdir);
         if (inWork.empty() || inWork == ".git" || startsWith(inWork, ".git/"))
             return;

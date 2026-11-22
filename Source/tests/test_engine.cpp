@@ -67,6 +67,44 @@ GG_TEST("engine", "watcher: plain git steps update the UI")
     GG_CHECK(s.waitUntil([&] { return s.session()->status() && s.session()->status()->staged.size() == 1; }));
 }
 
+GG_TEST("engine", "watcher: each git dir path class maps to its event flag")
+{
+    using ggui::core::WatchEvent;
+    struct Row {
+        const char* rel;
+        bool known;       // classifyGit returns true
+        char flag;        // r refs, i index, j journal, w refs+worktree, 0 no flag
+    };
+    const Row rows[] = {
+        {"HEAD", true, 'r'}, {"refs/heads/main", true, 'r'}, {"packed-refs", true, 'r'},
+        {"MERGE_HEAD", true, 'r'}, {"rebase-merge/todo", true, 'r'}, {"config", true, 'r'},
+        {"index", true, 'i'}, {"worktrees/wt/index", true, 'i'}, {"gg/journal", true, 'j'},
+        {"modules/sub/hooks/x", true, '0'}, {"modules/sub/gg/x", true, '0'}, {"modules/sub/ORIG_HEAD", true, '0'},
+        {"modules/sub/COMMIT_EDITMSG", true, '0'}, {"gg", true, '0'}, {"worktrees/wt/HEAD", true, 'r'},
+        {"gg/reconcile.json", true, '0'}, {"gg/cache", true, '0'}, {"gg/cache/x", true, '0'},
+        {"objects/ab/cdef", true, '0'}, {"logs/HEAD", true, '0'}, {"hooks/pre-commit", true, '0'},
+        {"index.lock", true, '0'}, {"refs/heads/main.lock", true, '0'}, {"HEAD.lock", true, '0'},
+        {"modules/sub/HEAD", true, 'w'}, {"modules/sub/index", true, 'w'},
+        {"modules/sub/objects/ab/cd", true, '0'}, {"modules/sub/logs/HEAD", true, '0'},
+        {"modules/sub/FETCH_HEAD", true, '0'}, {"modules/sub/index.lock", true, '0'},
+        {"", false, '0'},
+    };
+    for (const Row& r : rows) {
+        WatchEvent e;
+        GG_CHECK(ggui::core::detail::classifyGit(r.rel, e) == r.known);
+        WatchEvent want;
+        want.refs = r.flag == 'r' || r.flag == 'w';
+        want.index = r.flag == 'i';
+        want.journal = r.flag == 'j';
+        want.worktree = r.flag == 'w';
+        const bool same = e.refs == want.refs && e.index == want.index && e.journal == want.journal
+            && e.worktree == want.worktree;
+        if (!same)
+            ctx->LogInfo("classifyGit: wrong flags for '%s'", r.rel);
+        GG_CHECK(same);
+    }
+}
+
 GG_TEST("engine", "watcher: a steady stream of events still notifies within the maximum wait")
 {
     const fs::path dir = s.path("watched");

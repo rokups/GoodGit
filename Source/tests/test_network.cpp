@@ -1079,6 +1079,24 @@ GG_TEST("network", "askpass: a client with a wrong token gets no prompt and the 
     GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
 }
 
+GG_TEST("network", "askpass: a client without a token gets no prompt and the server keeps serving")
+{
+    const std::string endpoint = gg::askpassEndpoint();
+    const auto bad = gg::net::connectLoopback(std::stoi(endpoint.substr(0, endpoint.find(':'))));
+    GG_REQUIRE(bad != gg::net::kInvalid);
+    gg::net::sendAll(bad, "\nPassword for 'https://x':\n"); // an empty token line
+    std::string reply;
+    const auto sent = std::chrono::steady_clock::now();
+    GG_CHECK(!gg::net::recvLine(bad, reply, 5000) || reply.empty()); // the server closes: no credential
+    // A close comes at once; a hung server would only end at its own 2 s read timeout.
+    GG_CHECK(std::chrono::steady_clock::now() - sent < std::chrono::milliseconds(1500));
+    gg::net::closeSocket(bad);
+    ctx->Yield(10);
+    GG_CHECK(!s.dialogOpen("Credentials"));
+    askpassClient("", "Password for 'https://x':", true);
+    GG_CHECK(s.waitUntil([&] { return s.dialogOpen("Credentials"); }));
+}
+
 GG_TEST("network", "askpass: the dialog closes when git goes away, then the next prompt shows")
 {
     askpassClient("", "Password for 'https://x':", true);

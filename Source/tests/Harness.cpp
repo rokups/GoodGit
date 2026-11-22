@@ -110,9 +110,17 @@ gg::RunResult Scenario::run(const fs::path& cwd, std::vector<std::string> args, 
     return gg::run(r);
 }
 
+namespace {
+// A UTF-8 relative path; a plain char string converts with the ANSI code page on Windows.
+fs::path utf8Path(const std::string& rel)
+{
+    return fs::path(std::u8string(rel.begin(), rel.end()));
+}
+} // namespace
+
 void Scenario::write(const fs::path& repo, const std::string& rel, const std::string& content)
 {
-    const fs::path p = repo / rel;
+    const fs::path p = repo / utf8Path(rel);
     fs::create_directories(p.parent_path());
     std::ofstream f(p, std::ios::binary | std::ios::trunc);
     f << content;
@@ -122,7 +130,7 @@ std::string Scenario::read(const fs::path& repo, const std::string& rel)
 {
 #ifdef _WIN32
     // Share all access, so git can replace the file while this read is open.
-    const HANDLE h = CreateFileW((repo / rel).c_str(), GENERIC_READ,
+    const HANDLE h = CreateFileW((repo / utf8Path(rel)).c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE)
         return {};
