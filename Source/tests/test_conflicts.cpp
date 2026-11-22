@@ -1231,7 +1231,7 @@ GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrit
                 step.setFiles.push_back({"f.txt", "x=9\n"});
                 ++edited;
             }
-        GG_CHECK_EQ(edited, 1); // a rewrite with no edit would give equal trees for any reason
+        GG_CHECK(edited == 1); // a rewrite with no edit would give equal trees for any reason
         gg::rewrite::Rewriter rewriter(where);
         gg::rewrite::Result result = rewriter.compute(plan);
         std::string error;
@@ -1497,7 +1497,8 @@ GG_TEST("conflicts", "diff: a conflicted file with nothing to show gets a note, 
     // Modified by us, deleted by them: the working file is our version, so there is no change to show.
     const fs::path deletedByThem = mergeStopped(s, "deleted-by-them", "a\nb\n", "a\nours\n", "");
     showConflicted(s, deletedByThem);
-    GG_CHECK(s.session()->diff().diff()->files.empty() || s.session()->diff().diff()->files[0].hunks.empty());
+    GG_REQUIRE(s.session()->diff().diff()->files.size() == 1); // an empty list would also show nothing
+    GG_CHECK(s.session()->diff().diff()->files[0].hunks.empty());
     GG_CHECK(s.itemExists("//Diff/###diff_conflict"));
     GG_CHECK(s.itemText("//Diff/###diff_conflict").find("Conflicted file") != std::string::npos);
     GG_CHECK(!s.itemExists("//Diff/###diff_error"));
