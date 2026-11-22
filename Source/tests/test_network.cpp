@@ -1086,7 +1086,10 @@ GG_TEST("network", "askpass: a client without a token gets no prompt and the ser
     GG_REQUIRE(bad != gg::net::kInvalid);
     gg::net::sendAll(bad, "\nPassword for 'https://x':\n"); // an empty token line
     std::string reply;
-    GG_CHECK(!gg::net::recvLine(bad, reply, 2000) || reply.empty()); // the server closes: no credential
+    const auto sent = std::chrono::steady_clock::now();
+    GG_CHECK(!gg::net::recvLine(bad, reply, 5000) || reply.empty()); // the server closes: no credential
+    // A close comes at once; a hung server would only end at its own 2 s read timeout.
+    GG_CHECK(std::chrono::steady_clock::now() - sent < std::chrono::milliseconds(1500));
     gg::net::closeSocket(bad);
     ctx->Yield(10);
     GG_CHECK(!s.dialogOpen("Credentials"));

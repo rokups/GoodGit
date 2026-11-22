@@ -79,6 +79,8 @@ GG_TEST("engine", "watcher: each git dir path class maps to its event flag")
         {"HEAD", true, 'r'}, {"refs/heads/main", true, 'r'}, {"packed-refs", true, 'r'},
         {"MERGE_HEAD", true, 'r'}, {"rebase-merge/todo", true, 'r'}, {"config", true, 'r'},
         {"index", true, 'i'}, {"worktrees/wt/index", true, 'i'}, {"gg/journal", true, 'j'},
+        {"modules/sub/hooks/x", true, '0'}, {"modules/sub/gg/x", true, '0'}, {"modules/sub/ORIG_HEAD", true, '0'},
+        {"modules/sub/COMMIT_EDITMSG", true, '0'}, {"gg", true, '0'}, {"worktrees/wt/HEAD", true, 'r'},
         {"gg/reconcile.json", true, '0'}, {"gg/cache", true, '0'}, {"gg/cache/x", true, '0'},
         {"objects/ab/cdef", true, '0'}, {"logs/HEAD", true, '0'}, {"hooks/pre-commit", true, '0'},
         {"index.lock", true, '0'}, {"refs/heads/main.lock", true, '0'}, {"HEAD.lock", true, '0'},
