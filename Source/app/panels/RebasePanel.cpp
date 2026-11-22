@@ -1382,7 +1382,9 @@ void RebasePanel::drawPreview()
                         for (const auto& d : row.decisions)
                             text += "\n    " + d.path + " (" + d.kind + ")";
                     }
-                    if (row.empty)
+                    if (row.empty && row.group)
+                        text += "\nBecomes empty: git stops here. Start keeps it as an empty commit.";
+                    else if (row.empty)
                         text += row.wasEmpty ? "\nAn empty commit (it was empty before)."
                             : m_options.emptied == gg::rewrite::Emptied::Ask
                             ? "\nBecomes empty: its changes are already in the base. Start asks whether to keep it."

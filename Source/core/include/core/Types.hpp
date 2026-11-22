@@ -505,6 +505,7 @@ struct RebasePreview {
         std::string subject;              // first line of the resulting message
         bool unchanged = false;           // same commit as before (keeps its id)
         bool empty = false;               // same tree as its parent
+        bool group = false;               // empty because a squash/fixup group became empty (kept)
         bool wasEmpty = false;            // its commit(s) were already empty before the rebase
         std::vector<std::pair<std::string, int>> conflicts; // first-class conflicted files: path, sides
         bool newConflicts = false;        // conflicts this rebase creates (not only carried along)

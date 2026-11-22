@@ -114,8 +114,10 @@ struct NonTextConflict {
 // "becomes empty"; commits that were empty to begin with are always kept).
 enum class Emptied {
     Keep,  // kept as empty commits (git rebase --empty=keep)
-    Drop,  // left out; what came after goes onto their parent (--empty=drop)
+    Drop,  // picks left out; what came after goes onto their parent (--empty=drop)
     Ask,   // kept by compute(), listed in Result::becameEmpty for the caller to ask (--empty=stop)
+    // A squash/fixup group that becomes empty is kept in every mode: git stops, and `--continue`
+    // keeps an empty commit.
 };
 
 struct Plan {
@@ -171,6 +173,7 @@ struct BecameEmpty {
     std::string commit;     // its source commit ("" for an amending step)
     std::string subject;
     bool dropped = false;   // Emptied::Drop: left out (the step's key names its parent)
+    bool group = false;     // a squash/fixup group: always kept, whatever the mode
 };
 
 struct Result {
