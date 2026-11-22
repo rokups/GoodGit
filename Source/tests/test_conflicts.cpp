@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <fstream>
 
 namespace ggtest {
@@ -1242,7 +1243,10 @@ GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrit
         return trees;
     };
     const auto first = rewrite(repo);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1100)); // another second: other commit ids
+    // Wait for the next clock second: the second rewrite then makes other commit ids.
+    const std::time_t firstEnd = std::time(nullptr);
+    while (std::time(nullptr) <= firstEnd)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     const auto second = rewrite(copy);
     GG_CHECK(s.head(repo) != s.head(copy));
     GG_CHECK(first == second);
