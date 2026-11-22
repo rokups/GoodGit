@@ -120,6 +120,8 @@ git_oid fromHexOrThrow(std::string_view hex);
 git_oid_t oidType(git_repository* repo);
 size_t hexSize(git_oid_t type);
 bool isZero(const git_oid& oid);
+// `ancestor` is `of` or reachable from it. A walk error counts as false.
+bool isAncestorOrSame(git_repository* repo, const git_oid& ancestor, const git_oid& of);
 
 // ---- Small lookups -------------------------------------------------------------------------
 

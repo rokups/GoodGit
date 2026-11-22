@@ -100,6 +100,15 @@ git_oid fromHexOrThrow(std::string_view hex)
     throw Error(GIT_EINVALIDSPEC, GIT_ERROR_INVALID, "invalid object id: " + std::string(hex));
 }
 
+bool isAncestorOrSame(git_repository* repo, const git_oid& ancestor, const git_oid& of)
+{
+    if (git_oid_equal(&ancestor, &of))
+        return true;
+    const int r = git_graph_descendant_of(repo, &of, &ancestor);
+    git_error_clear();
+    return r == 1;
+}
+
 git_oid_t oidType(git_repository* repo) { return git_repository_oid_type(repo); }
 
 size_t hexSize(git_oid_t type) { return type == GIT_OID_SHA256 ? GIT_OID_SHA256_HEXSIZE : GIT_OID_SHA1_HEXSIZE; }

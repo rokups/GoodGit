@@ -562,10 +562,7 @@ bool isAncestor(git_repository* repo, const std::string& ancestor, const std::st
 {
     if (ancestor == of)
         return true;
-    const git_oid a = fromHexOrThrow(ancestor), b = fromHexOrThrow(of);
-    const int r = git_graph_descendant_of(repo, &b, &a);
-    git_error_clear();
-    return r == 1;
+    return gg::git2::isAncestorOrSame(repo, fromHexOrThrow(ancestor), fromHexOrThrow(of));
 }
 
 // The descendants' plan without some commits (kept by callers as other steps).

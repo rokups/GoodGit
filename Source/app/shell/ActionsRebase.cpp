@@ -98,11 +98,7 @@ bool fromOrigHead(git_repository* repo, const std::string& k, const std::string&
     if (k == origHead)
         return true;
     const auto a = gg::git2::fromHex(k), b = gg::git2::fromHex(origHead);
-    if (!a || !b)
-        return false;
-    const int r = git_graph_descendant_of(repo, &*b, &*a);
-    git_error_clear();
-    return r == 1;
+    return a && b && gg::git2::isAncestorOrSame(repo, *a, *b);
 }
 
 // A finished native rebase replaced the kept commits of its todo list (`replayed`: the ids of its
