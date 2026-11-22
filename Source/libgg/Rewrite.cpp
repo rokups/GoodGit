@@ -49,7 +49,6 @@ struct Rewriter::Impl {
     bool bare = false;
     std::string zero;
     gg::conflicts::Cache conflictCache; // memory only
-    std::map<std::string, std::string> blobConflicted; // not used for attribute decisions
     Result last;
 
     // ---- helpers ------------------------------------------------------------------------------
