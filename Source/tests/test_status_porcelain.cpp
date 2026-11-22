@@ -261,13 +261,16 @@ GG_TEST("status_porcelain", "malformed records throw")
     GG_CHECK(throwsMalformed(nul({"u UU N... 000000 100644 100644 100644"})));
     GG_CHECK(throwsMalformed(nul({"?"})));
     // The message names the record type and the raw record.
+    bool threw = false;
     try {
         parsePorcelainV2(nul({"1 M."}));
     } catch (const std::runtime_error& e) {
+        threw = true;
         const std::string what = e.what();
         GG_CHECK(what.find("'1'") != std::string::npos);
         GG_CHECK(what.find("1 M.") != std::string::npos);
     }
+    GG_CHECK(threw);
 }
 
 GG_TEST("status_porcelain", "output is sorted by path")

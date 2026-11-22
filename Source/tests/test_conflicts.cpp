@@ -1225,9 +1225,13 @@ GG_TEST("conflicts", "engine: conflict labels name original commits, so a rewrit
     auto rewrite = [&](const fs::path& where) {
         gg::git2::Repository r = gg::git2::openRepository(where);
         gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {base});
+        int edited = 0;
         for (auto& step : plan.steps)
-            if (step.source == base)
+            if (step.source == base) {
                 step.setFiles.push_back({"f.txt", "x=9\n"});
+                ++edited;
+            }
+        GG_CHECK_EQ(edited, 1); // a rewrite with no edit would give equal trees for any reason
         gg::rewrite::Rewriter rewriter(where);
         gg::rewrite::Result result = rewriter.compute(plan);
         std::string error;
