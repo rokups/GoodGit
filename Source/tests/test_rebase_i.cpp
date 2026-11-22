@@ -1975,6 +1975,8 @@ GG_TEST("rebase-i", "update-ref before squash/fixup rows: the branch keeps the f
 
 GG_TEST("rebase-i", "a pick dropped as empty is not reported to post-rewrite, as with git rebase -i --empty=drop")
 {
+    // git before 2.56 reported a dropped pick as rewritten to its parent (topic pw/rebase-drop-notes-with-commit).
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
     // main: a1 e1 f1 onto up, where u1 already adds q.txt as e1 does: e1 becomes empty and is dropped.
     // The e1 row is a pick or a reword; git reports neither. (edit runs through git itself.)
     for (const char* action : {"pick", "reword"}) {
