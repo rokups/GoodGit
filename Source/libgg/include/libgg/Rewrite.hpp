@@ -68,6 +68,10 @@ struct Step {
     // step amends it, as `git rebase -i` does for a squash/fixup after an update-ref, exec or break
     // row. The amended commit keeps that commit's parents and author; this step's key names it.
     bool amend = false;
+    // Squash only: how the source's message joins the amended commit's after a dropped head pick
+    // (squash: appended; fixup: not used; fixup -C/-c: replaces it).
+    enum class Fold { Fixup, Squash, UseSource };
+    Fold fold = Fold::Fixup;
     // Merge only, as `git rebase -i --rebase-merges` merges: parents after the first that are
     // already in the history of the first or of another parent are left out, and with none left
     // the step makes no commit (its key names the first parent). With `source` and the parents it

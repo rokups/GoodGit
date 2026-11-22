@@ -1477,4 +1477,89 @@ GG_TEST("rebase-merges", "a fixup after a head pick that empties with nothing be
     GG_CHECK(result.error.find("nothing to amend: every commit before it was dropped") != std::string::npos);
 }
 
+GG_TEST("rebase-merges", "a fixup after two dropped head picks is refused, never amending the onto commit")
+{
+    // onto holds q.txt and r.txt: e1 and e2 are both empty and dropped, and f has nothing to amend.
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.commitFile(path, "h.txt", "1\n", "base");
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.commitFile(path, "q.txt", "q\n", "u1 add q");
+    s.commitFile(path, "r.txt", "r\n", "u2 add r");
+    const std::string onto = s.head(path);
+    s.git(path, {"switch", "-q", "main"});
+    s.commitFile(path, "q.txt", "q\n", "e1 add q");
+    const std::string e1 = s.head(path);
+    s.commitFile(path, "r.txt", "r\n", "e2 add r");
+    const std::string e2 = s.head(path);
+    s.commitFile(path, "f.txt", "f\n", "f add f");
+    const std::string f = s.head(path);
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    todo::Context context = todo::read(repo.get(), {onto, "HEAD", ""});
+    todo::Todo list = todo::parse("pick " + e1 + "\npick " + e2 + "\nfixup " + f + "\n");
+    GG_REQUIRE(todo::expand(repo.get(), list, context).empty());
+    gg::rewrite::Plan plan = todo::toPlan(list, context, false);
+    plan.emptied = gg::rewrite::Emptied::Drop;
+    gg::rewrite::Rewriter rewriter(path);
+    const gg::rewrite::Result result = rewriter.compute(plan, gg::CancelToken());
+    GG_CHECK(!result.ok);
+    GG_CHECK(result.error.find("nothing to amend: every commit before it was dropped") != std::string::npos);
+}
+
+// main: a1 (message "a1 add a"), e1x (already upstream: dropped), f1 ("f1 add f"). The list is
+// "pick a1; pick e1x; <fold> f1" onto "up": f1 folds into a1, and git decides the message.
+void foldAfterDroppedHead(Scenario& s, const std::string& fold)
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.commitFile(path, "h.txt", "1\n", "base");
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.commitFile(path, "q.txt", "q\n", "u1 add q");
+    s.git(path, {"switch", "-q", "main"});
+    s.commitFile(path, "a.txt", "a\n", "a1 add a");
+    const std::string a1 = s.head(path);
+    s.commitFile(path, "q.txt", "q\n", "e1x add q");
+    const std::string e1x = s.head(path);
+    s.commitFile(path, "f.txt", "f\n", "f1 add f");
+    const std::string f1 = s.head(path);
+    const fs::path copy = copyRepo(s, path, "git-copy");
+    const std::string text = "pick " + a1 + "\npick " + e1x + "\n" + fold + " " + f1 + "\n";
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    todo::Context context = todo::read(repo.get(), {s.gitOut(path, {"rev-parse", "up"}), "HEAD", ""});
+    todo::Todo list = todo::parse(text);
+    GG_REQUIRE(todo::expand(repo.get(), list, context).empty());
+    gg::rewrite::Plan plan = todo::toPlan(list, context, false);
+    plan.emptied = gg::rewrite::Emptied::Drop;
+    datesForGgui(true);
+    {
+        gg::rewrite::Rewriter rewriter(path);
+        gg::rewrite::Result result = rewriter.compute(plan, gg::CancelToken());
+        GG_REQUIRE(result.ok);
+        std::string error;
+        GG_REQUIRE(rewriter.apply(plan, result, error));
+    }
+    datesForGgui(false);
+    const fs::path todoFile = s.root() / "fold.todo";
+    std::ofstream(todoFile, std::ios::binary) << text;
+    GG_CHECK(gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--empty=drop", "up"}, "true").ok());
+    GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", "up..main"}), "1");
+    GG_CHECK_STR_EQ(s.gitOut(path, {"log", "--format=%T %an %B%n--", "main"}), s.gitOut(copy, {"log", "--format=%T %an %B%n--", "main"}));
+}
+
+GG_TEST("rebase-merges", "squash after a dropped head pick appends its message to the amended commit's, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    foldAfterDroppedHead(s, "squash");
+}
+
+GG_TEST("rebase-merges", "fixup -C after a dropped head pick takes its message, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    foldAfterDroppedHead(s, "fixup -C");
+}
+
+GG_TEST("rebase-merges", "fixup after a dropped head pick keeps the amended commit's message, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    foldAfterDroppedHead(s, "fixup");
+}
+
 } // namespace ggtest

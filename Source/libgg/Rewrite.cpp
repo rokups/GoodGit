@@ -542,6 +542,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
         std::optional<Pending> pending;
         std::map<std::string, std::vector<std::string>> contributorsOf; // new commit → its originals
         std::map<std::string, std::string> reported; // Result::rewritten entries that differ from mapping
+        std::set<std::string> produced; // commits that a kept step made or kept: the only ones a fixup may amend
         std::set<std::string> droppedPicks; // picks dropped as empty: in mapping (for branch moves), not reported
         auto originallyEmpty = [&](const std::string& id) {
             Commit c = m->commit(id);
@@ -615,6 +616,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     committedAt ? &*committedAt : nullptr);
             }
             byKey[pending->key] = id;
+            produced.insert(id);
             if (!pending->alsoKey.empty())
                 byKey[pending->alsoKey] = result.steps[pending->alsoKey] = id;
             if (id != pending->source)
@@ -643,25 +645,17 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 if (!pending)
                     throw std::runtime_error("squash without a commit to squash into");
                 // A head pick that is empty at pick time is dropped (--empty=drop); the fixup then amends
-                // the commit before it, as git does. Nothing before it: refuse, never rewrite the onto commit.
-                bool amend = step.amend;
-                if (!amend && pending->squashed.empty() && plan.emptied == Emptied::Drop && becameEmpty()) {
-                    bool hasPrevious = false;
-                    for (const auto& kv : byKey)
-                        hasPrevious = hasPrevious || (!kv.second.empty() && !pending->parents.empty() && kv.second == pending->parents.front());
-                    if (!hasPrevious)
-                        throw std::runtime_error("nothing to amend: every commit before it was dropped");
-                    amend = true;
-                }
-                if (amend) {
+                // the commit before it, as git does. That commit must come from a kept step of the list:
+                // never the onto commit, nor the parent of an earlier dropped pick.
+                const bool droppedHead = pending->squashed.empty() && plan.emptied == Emptied::Drop && becameEmpty();
+                if (step.amend || droppedHead) {
                     // Finish the previous commit, then amend it (the result gets this key).
                     const std::string previous = pending->key;
-                    const bool droppedHead = pending->squashed.empty() && plan.emptied == Emptied::Drop && becameEmpty();
                     std::vector<std::string> contributors = pending->contributors;
                     const std::string dateFrom = pending->dateFrom;
                     flush();
                     const std::string target = byKey.at(previous);
-                    if (target.empty())
+                    if (target.empty() || (droppedHead && !produced.count(target)))
                         throw std::runtime_error("nothing to amend: every commit before it was dropped");
                     Commit t = m->commit(target);
                     Pending p;
@@ -691,8 +685,18 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 pending->squashed.push_back(step.source);
                 pending->contributors.push_back(step.source);
                 pending->unchanged = false;
-                if (step.message && pending->alsoKey.empty()) // a dropped head: the amended commit keeps its message
-                    pending->message = *step.message;
+                if (pending->alsoKey.empty()) {
+                    if (step.message)
+                        pending->message = *step.message;
+                } else if (step.fold == Step::Fold::Squash) {
+                    // A dropped head: the message of the amended commit, not the group's, is the base.
+                    // shortcut: an editor text typed for the group is not used here, only git's own combination.
+                    while (!pending->message.empty() && pending->message.back() == '\n')
+                        pending->message.pop_back();
+                    pending->message += "\n\n" + commitMessage(src.get());
+                } else if (step.fold == Step::Fold::UseSource) {
+                    pending->message = commitMessage(src.get());
+                }
                 continue; // (the group keeps its first commit's author)
             }
             flush();
