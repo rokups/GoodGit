@@ -1,10 +1,12 @@
 // Repo browser tree: grouping by alias, order, and the alias after a drop onto a group (GG-12).
 #include "core/Readers.hpp"
 #include "shell/RepoTree.hpp"
+#include "shell/Session.hpp"
 #include "util/Ui.hpp"
 #include "tests/Harness.hpp"
 
 #include <fstream>
+#include <libgg/Worktrees.hpp>
 
 namespace ggtest {
 
@@ -234,6 +236,28 @@ static void checkSameWorktrees(const std::vector<ggui::core::WorktreeInfo>& slow
         GG_CHECK_EQ(a.missing, b.missing);
         GG_CHECK_EQ(a.prunable, b.prunable);
     }
+}
+
+GG_TEST("summary", "the main worktree of a submodule is its checkout, not a path from the git dir (GG-72)")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules);
+    const fs::path sub = repo / "sub";
+    const fs::path linked = s.root() / "sub-linked";
+    s.git(sub, {"worktree", "add", "-q", "--detach", linked.string()});
+    // `git worktree list` names the git dir for a submodule; the main worktree is the checkout.
+    const fs::path expected = s.gitOut(sub, {"rev-parse", "--show-toplevel"});
+    for (const fs::path& at : {sub, linked}) {
+        const auto slow = ggui::core::readSummary(at).worktrees;
+        const auto fast = ggui::core::readWorktreesFast(at);
+        GG_REQUIRE(!slow.empty());
+        GG_REQUIRE(!fast.empty());
+        GG_CHECK(slow[0].isMain);
+        GG_CHECK(gg::worktrees::samePath(slow[0].path, expected));
+        GG_CHECK(gg::worktrees::samePath(fast[0].path, expected));
+    }
+    GG_REQUIRE(s.openRepository(sub));
+    GG_REQUIRE(!s.session()->snapshot()->worktrees.empty());
+    GG_CHECK(gg::worktrees::samePath(s.session()->snapshot()->worktrees[0].path, expected));
 }
 
 GG_TEST("summary", "readWorktreesFast gives the worktrees that readSummary gives (GG-21)")

@@ -353,6 +353,9 @@ DescendantsResult readDescendants(git_repository* repo, const Oid& commit, int m
 
 // The main worktree first, then the linked ones. `worktreeId` is the id of the worktree that `repo` is
 // ("main" for the main one): it sets isCurrent. An empty id marks none as current.
+namespace {
+fs::path mainWorktreePath(const fs::path& common, bool bare);
+}
 static std::vector<WorktreeInfo> readWorktrees(git_repository* repo, const fs::path& commonDir, const std::string& worktreeId)
 {
     std::vector<WorktreeInfo> out;
@@ -366,7 +369,7 @@ static std::vector<WorktreeInfo> readWorktrees(git_repository* repo, const fs::p
         return b.value_or(false);
     }();
     main.bare = commonIsBare;
-    main.path = commonIsBare ? common : common.parent_path().parent_path(); // common ends with a separator
+    main.path = mainWorktreePath(common, commonIsBare);
     main.branch = headFileBranch(common / "HEAD", main.head);
     if (!main.branch.empty()) {
         git_oid oid;
@@ -2053,14 +2056,14 @@ Oid readBranchId(const fs::path& common, const std::string& branch)
     return {};
 }
 
-// The value of core.bare in the file `common`/config: a small parse of the [core] section. The key is not case
-// sensitive. The last value wins. It does not follow includes. False when there is no value.
-bool readCoreBare(const fs::path& common)
+// The last value of the key `wanted` (lower case) in the [core] section of the file `common`/config: a small
+// parse. The key is not case sensitive. It does not follow includes. A key with no "=" has the value "true".
+std::optional<std::string> readCoreValue(const fs::path& common, const std::string& wanted)
 {
     std::istringstream in(readFileText(common / "config"));
     std::string line;
     bool inCore = false;
-    bool bare = false;
+    std::optional<std::string> found;
     auto lower = [](std::string text) {
         for (auto& c : text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -2085,15 +2088,37 @@ bool readCoreBare(const fs::path& common)
         }
         const size_t eq = line.find('=');
         const std::string key = lower(gg::trim(line.substr(0, eq)));
-        if (key != "bare")
+        if (key != wanted)
             continue;
         std::string value = eq == std::string::npos ? std::string("true") : line.substr(eq + 1);
         if (const size_t comment = value.find_first_of("#;"); comment != std::string::npos)
             value.resize(comment);
-        value = lower(gg::trim(value));
-        bare = value == "true" || value == "yes" || value == "on" || value == "1";
+        found = gg::trim(value);
     }
-    return bare;
+    return found;
+}
+
+// The value of core.bare in the file `common`/config. False when there is no value.
+bool readCoreBare(const fs::path& common)
+{
+    auto value = readCoreValue(common, "bare");
+    if (!value)
+        return false;
+    for (auto& c : *value)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return *value == "true" || *value == "yes" || *value == "on" || *value == "1";
+}
+
+// The main worktree path: the common dir itself when it is bare. Else core.worktree, which a submodule has
+// (the common dir is <super>/.git/modules/<name>). Else the parent of the parent of the common dir.
+// `common` ends with a separator, as libgit2 gives it.
+fs::path mainWorktreePath(const fs::path& common, bool bare)
+{
+    if (bare)
+        return common;
+    if (auto wt = readCoreValue(common, "worktree"); wt && !wt->empty())
+        return (common / *wt).lexically_normal();
+    return common.parent_path().parent_path();
 }
 
 // Sets the branch and the head id of `info` from the HEAD file `headFile`.
@@ -2139,7 +2164,7 @@ std::vector<WorktreeInfo> readWorktreesFast(const fs::path& repoPath)
         main.name = "main";
         main.isMain = true;
         main.bare = bare;
-        main.path = bare ? commonSlash : commonSlash.parent_path().parent_path();
+        main.path = mainWorktreePath(commonSlash, bare);
         readHeadFile(common, common / "HEAD", main);
         out.push_back(std::move(main));
 
