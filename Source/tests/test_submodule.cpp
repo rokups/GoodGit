@@ -1200,4 +1200,33 @@ GG_TEST("submodule", "A double-click on a missing submodule row of the Changes p
     GG_CHECK(fs::equivalent(s.session()->path(), repo));
 }
 
+GG_TEST("submodule", "scan cache skips unchanged submodules and sees a new commit")
+{
+    const fs::path repo = s.fixture(Recipe::Submodules, "scan-cache");
+    const fs::path other = s.root() / "scan-cache-other";
+    fs::create_directories(other);
+    s.git(s.root(), {"init", "-q", "-b", "main", other.string()});
+    s.commitFile(other, "o.txt", "o\n", "Other");
+    s.git(repo, {"-c", "protocol.file.allow=always", "submodule", "add", "-q", other.string(), "other"});
+    auto scan = [&] {
+        git_repository* raw = nullptr;
+        git_repository_open(&raw, repo.string().c_str());
+        gg::git2::Repository r(raw);
+        return ggui::core::readSubmodules(r.get(), true);
+    };
+    const auto first = scan();
+    GG_REQUIRE(first.size() == 2);
+    const int opens = ggui::core::gSubmoduleOpens;
+    const auto again = scan();
+    GG_CHECK(ggui::core::gSubmoduleOpens == opens); // no change: no submodule is opened
+    GG_CHECK(again.size() == 2 && again[0].head == first[0].head && again[0].branch == first[0].branch);
+    // A new commit in one submodule: that one is scanned again, the other one is not.
+    s.commitFile(repo / "sub", "s9.txt", "s9\n", "Sub 9");
+    const auto after = scan();
+    GG_CHECK(ggui::core::gSubmoduleOpens == opens + 1);
+    GG_REQUIRE(after.size() == 2);
+    const auto& moved = after[0].name == "sub" ? after[0] : after[1];
+    GG_CHECK_STR_EQ(moved.head.hex(), s.head(repo / "sub"));
+}
+
 } // namespace ggtest

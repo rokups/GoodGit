@@ -3,6 +3,7 @@
 
 #include "core/Types.hpp"
 
+#include <atomic>
 #include <libgg/Cancel.hpp>
 #include <libgg/Git2.hpp>
 #include <libgg/Todo.hpp>
@@ -58,6 +59,8 @@ bool isPublished(git_repository* repo, const git_oid& id);
 
 // The most commits the ahead/behind walk visits. A test lowers it.
 extern int gAheadBehindMaxVisits;
+// Test hook: the number of submodule repositories that readSubmodules opened.
+extern std::atomic<int> gSubmoduleOpens;
 
 // Whether `commit` has a child among the commits of all branches, remote branches, tags and HEAD.
 // The walk goes from the tips, newest first, and visits at most `maxVisits` commits. It checks `cancel`

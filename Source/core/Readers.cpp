@@ -16,6 +16,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstring>
@@ -2190,6 +2191,52 @@ std::vector<WorktreeInfo> readWorktreesFast(const fs::path& repoPath)
     return out;
 }
 
+// Counts the opens of a submodule repository by readSubmodules (a test hook for the cache below).
+std::atomic<int> gSubmoduleOpens{0};
+
+namespace {
+// The scan of one submodule, kept while its HEAD and refs are the same. The key is the HEAD file (content and
+// mtime), the file of the branch it names, packed-refs and the index mtime, all read with a stat or a small read
+// and no open of the repository. The cache lives for the process. It has a mutex: the snapshot reader and the
+// repository list reader call readSubmodules on different threads.
+// shortcut: a scan with nested submodules is not cached (their state has more files), upgrade if that costs.
+struct SubmoduleScan {
+    std::string sig;
+    std::string branch;
+    Oid head;
+};
+std::mutex gSubmoduleCacheMutex;
+std::map<std::string, SubmoduleScan> gSubmoduleCache;
+
+std::string mtimeText(const fs::path& p)
+{
+    std::error_code ec;
+    const auto t = fs::last_write_time(p, ec);
+    return ec ? "-" : std::to_string(t.time_since_epoch().count());
+}
+
+// "" when the git directory or HEAD cannot be read.
+std::string submoduleSignature(const fs::path& dir, bool scanIndex)
+{
+    fs::path gitDir = dir / ".git";
+    std::error_code ec;
+    if (fs::is_regular_file(gitDir, ec)) {
+        const std::string text = gg::trim(readFileText(gitDir));
+        if (text.rfind("gitdir:", 0) != 0)
+            return {};
+        gitDir = (dir / gg::trim(text.substr(7))).lexically_normal();
+    }
+    const std::string head = gg::trim(readFileText(gitDir / "HEAD"));
+    if (head.empty())
+        return {};
+    std::string sig = (scanIndex ? "i|" : "n|") + head + "|" + mtimeText(gitDir / "HEAD") + "|" + mtimeText(gitDir / "index")
+        + "|" + mtimeText(gitDir / "packed-refs");
+    if (head.rfind("ref: ", 0) == 0)
+        sig += "|" + gg::trim(readFileText(gitDir / head.substr(5)));
+    return sig;
+}
+} // namespace
+
 // The form of a repository path in the repository list (as normalizeRepoPath in the app), made on the worker.
 static std::string submoduleKey(const fs::path& path)
 {
@@ -2218,6 +2265,33 @@ static void readSubmoduleState(SubmoduleInfo& info, git_repository* sub, bool sc
         info.head = toOid(oid);
     if (depth < 8)
         info.children = readSubmodules(sub, scanIndex, depth + 1);
+}
+
+// Fills `info` from the submodule repository that `open` opens, or from the cache when its signature is the same.
+template <class Open>
+static void readSubmoduleCached(SubmoduleInfo& info, Open open, bool scanIndex, int depth)
+{
+    const std::string sig = submoduleSignature(info.path, scanIndex);
+    if (!sig.empty()) {
+        const std::lock_guard lock(gSubmoduleCacheMutex);
+        if (auto it = gSubmoduleCache.find(info.key); it != gSubmoduleCache.end() && it->second.sig == sig) {
+            info.branch = it->second.branch;
+            info.head = it->second.head;
+            return;
+        }
+    }
+    git_repository* rawSub = nullptr;
+    if (open(&rawSub) != 0)
+        return;
+    ++gSubmoduleOpens;
+    Repository sub(rawSub);
+    readSubmoduleState(info, sub.get(), scanIndex, depth);
+    if (sig.empty() || !info.children.empty())
+        return;
+    const std::lock_guard lock(gSubmoduleCacheMutex);
+    if (gSubmoduleCache.size() > 4096)
+        gSubmoduleCache.clear();
+    gSubmoduleCache[info.key] = {sig, info.branch, info.head};
 }
 
 // The paths of the gitlink entries (mode 160000) of the index, for a repository that has no .gitmodules file.
@@ -2265,13 +2339,10 @@ std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, bool scanIndex, 
                 std::error_code ec;
                 info.missing = !fs::exists(info.path, ec);
                 info.initialized = !info.missing && fs::exists(info.path / ".git", ec);
-                if (info.initialized) {
-                    git_repository* rawSub = nullptr;
-                    if (git_repository_open_ext(&rawSub, info.path.string().c_str(), GIT_REPOSITORY_OPEN_NO_SEARCH, nullptr) == 0) {
-                        Repository sub(rawSub);
-                        readSubmoduleState(info, sub.get(), scanIndex, depth);
-                    }
-                }
+                if (info.initialized)
+                    readSubmoduleCached(info, [&](git_repository** r) {
+                        return git_repository_open_ext(r, info.path.string().c_str(), GIT_REPOSITORY_OPEN_NO_SEARCH, nullptr);
+                    }, scanIndex, depth);
                 result.push_back(std::move(info));
             }
             std::sort(result.begin(), result.end(),
@@ -2293,13 +2364,9 @@ std::vector<SubmoduleInfo> readSubmodules(git_repository* repo, bool scanIndex, 
                 info.key = submoduleKey(info.path);
                 info.missing = !fs::exists(info.path, ec);
                 info.initialized = !info.missing && fs::exists(info.path / ".git", ec);
-                if (info.initialized) {
-                    git_repository* rawSub = nullptr;
-                    if (git_submodule_open(&rawSub, sm) == 0) {
-                        Repository sub(rawSub);
-                        readSubmoduleState(info, sub.get(), ctx->scanIndex, ctx->depth);
-                    }
-                }
+                if (info.initialized)
+                    readSubmoduleCached(info, [&](git_repository** r) { return git_submodule_open(r, sm); }, ctx->scanIndex,
+                        ctx->depth);
                 ctx->out->push_back(std::move(info));
             } catch (...) {
             }
