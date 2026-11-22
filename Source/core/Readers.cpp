@@ -464,11 +464,20 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
 
     // References
     std::vector<std::pair<std::string, git_oid>> localBranches;
+    // A remote HEAD is refs/remotes/<remote>/HEAD with a configured remote. Remote names may contain '/'.
+    std::set<std::string> remoteNames;
+    {
+        StrArray names;
+        git_remote_list(&names.arr, repo);
+        for (size_t i = 0; i < names.arr.count; ++i)
+            remoteNames.insert(names.arr.strings[i]);
+    }
     forEachReference(repo, [&](git_reference* ref) {
         gg::throwIfCancelled(cancel);
         const std::string name = git_reference_name(ref);
         const bool remoteHeadName = name.rfind("refs/remotes/", 0) == 0 && name.size() > 18
-            && name.compare(name.size() - 5, 5, "/HEAD") == 0;
+            && name.compare(name.size() - 5, 5, "/HEAD") == 0
+            && (remoteNames.count(name.substr(13, name.size() - 18)) > 0);
         if (remoteHeadName) {
             RemoteHeadInfo h;
             h.name = name.substr(13);

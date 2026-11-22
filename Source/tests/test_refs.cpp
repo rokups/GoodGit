@@ -1448,6 +1448,26 @@ GG_TEST("refs", "branches: <remote>/HEAD is not listed; the snapshot keeps it ap
     s.git(repo, {"remote", "set-head", "origin", "-d"}); // the after-test fsck rejects a dangling symref
 }
 
+GG_TEST("refs", "branches: a remote branch named x/HEAD is a branch, not a remote HEAD")
+{
+    const fs::path repo = repoWithRemoteBranches(s, {});
+    s.git(repo, {"push", "-q", "origin", "HEAD:refs/heads/x/HEAD"});
+    s.git(repo, {"remote", "set-head", "origin", "-a"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(refExists(s, repo, "refs/remotes/origin/x/HEAD"));
+    GG_REQUIRE(s.openRepository(repo));
+    const auto& snap = *s.session()->snapshot();
+    GG_CHECK(std::any_of(snap.remoteBranches.begin(), snap.remoteBranches.end(),
+        [](const auto& r) { return r.name == "origin/x/HEAD"; }));
+    GG_REQUIRE(snap.remoteHeads.size() == 1);
+    GG_CHECK_STR_EQ(snap.remoteHeads[0].name, "origin/HEAD");
+    GG_CHECK_STR_EQ(snap.remoteHeads[0].symref, "origin/main");
+    s.showPanel("Branches");
+    GG_REQUIRE(s.openRemote());
+    GG_CHECK(s.itemExists("//Branches/remote_group_origin/origin/rbranch_origin:x:HEAD/###rbranch_origin:x:HEAD"));
+    s.git(repo, {"remote", "set-head", "origin", "-d"});
+}
+
 GG_TEST("refs", "tags: a long annotated tag message is wrapped and cut after 10 lines in the tooltip; a short one is shown whole")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
