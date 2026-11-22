@@ -89,7 +89,17 @@ GG_TEST("engine", "watcher: a steady stream of events still notifies within the 
         stop = true;
         writer.join();
     });
-    std::this_thread::sleep_for(std::chrono::seconds(3)); // real time: the test engine sleep may be fast
+    // Real time: the test engine sleep may be fast. The writer runs until the deadline, so without
+    // the max wait no notice comes.
+    const auto deadline = start + std::chrono::milliseconds(static_cast<long long>(2000.0 + timeBudgetMs(1000.0)));
+    while (std::chrono::steady_clock::now() < deadline) {
+        {
+            std::lock_guard lock(mu);
+            if (notices.size() >= 2)
+                break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
     stop = true;
     std::lock_guard lock(mu);
     GG_CHECK(notices.size() >= 2);
