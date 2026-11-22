@@ -123,7 +123,10 @@ GG_TEST("network", "cancel a clone: no directory left behind")
     s.installSshShim();
     // A remote that never answers.
     const fs::path hang = s.root() / "hanging-ssh";
-    s.write(s.root(), "hanging-ssh", "#!/bin/sh\nexec sleep 60\n");
+    // The stubs write their pids: the guard kills them when a failed check ends the test early.
+    const fs::path stubPids = s.root() / "stub.pids";
+    const StubGuard guard(stubPids, {"sleep", "stubborn-ssh"});
+    s.write(s.root(), "hanging-ssh", "#!/bin/sh\necho $$ >> '" + stubPids.string() + "'\nexec sleep 60\n");
     fs::permissions(hang, fs::perms::owner_all);
     ggui::setEnv("GIT_SSH_COMMAND", hang.generic_string());
     const fs::path dest = s.path("cancelled");
@@ -140,7 +143,7 @@ GG_TEST("network", "cancel a clone: no directory left behind")
     GG_CHECK(s.app.errorMessage().empty());
     // A remote helper that ignores SIGTERM is killed all the same.
     const fs::path stubborn = s.root() / "stubborn-ssh";
-    s.write(s.root(), "stubborn-ssh", "#!/bin/sh\ntrap '' TERM\nsleep 60 &\nwait\n");
+    s.write(s.root(), "stubborn-ssh", "#!/bin/sh\necho $$ >> '" + stubPids.string() + "'\ntrap '' TERM\nsleep 60 &\necho $! >> '" + stubPids.string() + "'\nwait\n");
     fs::permissions(stubborn, fs::perms::owner_all);
     ggui::setEnv("GIT_SSH_COMMAND", stubborn.generic_string());
     const fs::path dest2 = s.path("cancelled-stubborn");

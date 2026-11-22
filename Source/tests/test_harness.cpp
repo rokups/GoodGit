@@ -5,6 +5,7 @@
 #include "util/Env.hpp"
 
 #include <libgg/Git2.hpp>
+#include <libgg/Launch.hpp>
 #include <libgg/Thread.hpp>
 
 #ifndef _WIN32
@@ -198,6 +199,22 @@ GG_TEST("harness", "stale daemons of an aborted run are killed")
     GG_CHECK(!fs::exists(pidFile));
     GG_CHECK(!fs::exists(other / "daemon-0.pid"));
     GG_CHECK(s.waitUntil([&] { return !fs::exists("/proc/" + std::to_string(pid)); }));
+}
+
+
+GG_TEST("harness", "stub guard kills the stub process at the end of its scope")
+{
+    const fs::path pidFile = s.root() / "stub.pid";
+    gg::DetachedProcess stub;
+    std::string error;
+    GG_REQUIRE(gg::spawnDetached({"/bin/sh", "-c", "echo $$ > '" + pidFile.string() + "'; exec sleep 60"}, stub, error));
+    {
+        const StubGuard guard(pidFile, {"sleep"});
+        GG_REQUIRE(s.waitUntil([&] { return !s.read(s.root(), "stub.pid").empty(); }));
+        s.settle();
+        GG_CHECK(gg::stillRunning(stub));
+    }
+    GG_CHECK(s.waitUntil([&] { return !gg::stillRunning(stub); }));
 }
 
 } // namespace ggtest

@@ -1008,4 +1008,12 @@ std::string Scenario::clipboard()
     return text ? text : "";
 }
 
+StubGuard::~StubGuard()
+{
+    std::ifstream in(m_pidFile);
+    long pid = 0;
+    while (in >> pid)
+        killProcessIfCmdline(pid, m_needles);
+}
+
 } // namespace ggtest

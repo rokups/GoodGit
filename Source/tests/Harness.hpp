@@ -97,6 +97,22 @@ inline bool existsQuiet(const fs::path& path)
     const bool found = fs::exists(path, ec);
     return found || ec;
 }
+// At the end of its scope it kills the stub processes whose pids a stub script wrote (white-space
+// separated) to `pidFile`. A failed test leaves no `sleep` behind. Windows: it does nothing.
+class StubGuard {
+public:
+    StubGuard(fs::path pidFile, std::vector<std::string> needles)
+        : m_pidFile(std::move(pidFile)), m_needles(std::move(needles))
+    {
+    }
+    StubGuard(const StubGuard&) = delete;
+    StubGuard& operator=(const StubGuard&) = delete;
+    ~StubGuard();
+
+private:
+    fs::path m_pidFile;
+    std::vector<std::string> m_needles;
+};
 // Directory for cached fixtures, resolved before the test environment is isolated.
 fs::path fixtureCacheDir();
 // Directory for failure output and explicit screenshots (--artifacts, default ./test-artifacts).

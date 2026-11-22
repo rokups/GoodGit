@@ -347,7 +347,14 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
         error));
     const std::string pid = std::to_string(static_cast<unsigned long>(GetProcessId(static_cast<HANDLE>(ggui.process))));
 #else
-    GG_REQUIRE(gg::spawnDetached({"/bin/sh", "-c", "sleep 2"}, ggui, error));
+    // The stub lives until the test creates the release file: no timing decides how long it runs.
+    // The guard kills it when a failed check ends the test early.
+    const fs::path release = root.path / "release-ggui-stub";
+    const StubGuard guard(root.path / "stub.pid", {release.filename().string()});
+    GG_REQUIRE(gg::spawnDetached({"/bin/sh", "-c",
+                   "echo $$ > '" + (root.path / "stub.pid").string() + "'; while [ ! -e '" + release.string() +
+                       "' ]; do sleep 0.05; done"},
+        ggui, error));
     const std::string pid = std::to_string(ggui.pid);
 #endif
     gg::DetachedProcess script;
@@ -359,6 +366,9 @@ GG_TEST("selfupdate", "the update script waits while ggui is running")
     GG_CHECK_STR_EQ(readFile(dir / kGgui), "old");
     GG_CHECK_STR_EQ(readFile(dir / kGitGg), "old");
     GG_CHECK(!pathExists(stage / "result.txt"));
+#ifndef _WIN32
+    std::ofstream(release) << "go\n"; // ggui ends now
+#endif
     bool ended = false;
     for (int i = 0; i < 240 && !ended; ++i) {
         // An ended process with an open handle can still be listed: close the handle at once.
