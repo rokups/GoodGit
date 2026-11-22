@@ -42,7 +42,8 @@ check_runtime() {
     local prefix=$1 version=$2
     local git_bin
     git_bin=$(command -v git) || { bad "no git on this system"; return; }
-    local work
+    work=
+    trap '[[ -z $work ]] || rm -rf "$work"' EXIT
     work=$(mktemp -d)
     mkdir -p "$work/gitbin" "$work/home" "$work/runtime"
     chmod 700 "$work/runtime"
@@ -96,15 +97,20 @@ check_runtime() {
         "$(command -v timeout)" 60 ggui --smoke "$repo" 2>&1) || rc=$?
     if [[ $rc == 0 ]]; then
         ok "ggui --smoke --headless on a repository"
-    elif [[ $out == *[Vv]ulkan* || $out == *GPU* || $out == *"No supported"* ]]; then
-        note "ggui --smoke skipped: no usable Vulkan device here (exit $rc): ${out%%$'\n'*}"
+    elif [[ $out == *"SDL_CreateGPUDevice failed"* ]]; then
+        # The exact message of Platform.cpp when no GPU device opens; any other failure is a crash.
+        if [[ ${GGUI_SMOKE_REQUIRED:-} == 1 ]]; then
+            bad "ggui --smoke needs a GPU device (GGUI_SMOKE_REQUIRED=1): ${out%%$'\n'*}"
+        else
+            note "ggui --smoke skipped: no usable Vulkan device here (exit $rc): ${out%%$'\n'*}"
+        fi
     else
         bad "ggui --smoke: exit $rc '$out'"
     fi
-    rm -rf "$work"
 }
 
 if [[ ${1:-} == --check ]]; then
+    [[ $# -ge 3 ]] || { echo "usage: $0 --check PREFIX VERSION" >&2; exit 2; }
     check_runtime "$2" "$3"
     exit $fail
 fi
@@ -118,7 +124,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --no-build) build=0 ;;
         --no-sandbox) sandbox=0 ;;
-        --container) containers+=("$2"); shift ;;
+        --container) containers+=("${2:?--container needs an image}"); shift ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
@@ -161,6 +167,8 @@ for exe in ggui git-gg; do
         || bad "$exe: $n test-engine symbols (of $total)"
 done
 # Every test name from Source/tests; none may appear in a packaged binary.
+names= tmp=
+trap '[[ -z $tmp ]] || rm -rf "$tmp"; [[ -z $names ]] || rm -f "$names"' EXIT
 names=$(mktemp)
 grep -rhoE 'GG_TEST\("[^"]+", *"[^"]+"' Source/tests | sed -E 's/.*, *"([^"]+)"$/\1/' | sort -u > "$names"
 echo "   ($(wc -l < "$names") test names from Source/tests)"
@@ -215,7 +223,7 @@ run_checks() { # PREFIX
         unshare -rm --propagation private bash -c '
             mount --bind "$1" /mnt && mount -t tmpfs tmpfs /home && mount -t tmpfs tmpfs /tmp \
                 && { [[ ! -d /root ]] || mount -t tmpfs tmpfs /root; } || exit 1
-            cd / && exec env -i PATH=/usr/bin:/bin ${3:+VK_DRIVER_FILES=$3} bash -s -- --check /mnt "$2"
+            cd / && exec env -i PATH=/usr/bin:/bin ${3:+VK_DRIVER_FILES=$3} GGUI_SMOKE_REQUIRED=${GGUI_SMOKE_REQUIRED:-} bash -s -- --check /mnt "$2"
         ' _ "$prefix" "$version" "${VK_DRIVER_FILES:-}" < "$self" || fail=1
     else
         note "runtime checks without a sandbox (unshare not permitted or --no-sandbox)"
@@ -224,7 +232,6 @@ run_checks() { # PREFIX
 }
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp" "$names"' EXIT
 
 echo "== $(basename "$tgz")"
 mkdir -p "$tmp/tgz" && tar -xzf "$tgz" -C "$tmp/tgz"
