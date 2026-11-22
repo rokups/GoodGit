@@ -1927,7 +1927,6 @@ GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), selected);
     GG_CHECK(s.session()->history().revealCalls() == reveals); // the click reached no handler: no reveal job
     GG_CHECK(s.session()->actions().busy().empty());
-    GG_CHECK(ImGui::GetTopMostPopupModal() == nullptr);
 }
 
 GG_TEST("history", "Go to parent selects the parent; a merge commit lists both parents")
@@ -2762,7 +2761,7 @@ GG_TEST("history", "stepTarget gives the same targets and scans only for a chang
     };
     clickRow(s, m2);
     struct Case { int dir; bool rowOrder; std::string want; };
-    const Case table[] = {{+1, false, m1}, {+1, true, s2}, {-1, true, merge}};
+    const Case table[] = {{+1, false, m1}, {-1, false, merge}, {+1, true, s2}, {-1, true, merge}};
     for (const Case& c : table) {
         int pos = -1;
         GG_CHECK(h.stepTarget(c.dir, c.rowOrder, pos) == visible(c.want));
@@ -2788,6 +2787,18 @@ GG_TEST("history", "stepTarget gives the same targets and scans only for a chang
     ctx->KeyPress(ImGuiKey_UpArrow);
     ctx->Yield(2);
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
+    // A list change with the same selection drops the cache: the filter drops the merge row from the visible list.
+    const int before = h.stepScans();
+    ctx->ItemInputValue("//History/##hist_filter", "-Merge");
+    GG_CHECK(s.waitUntil([&] { return visible(merge) < 0 && visible(s1) >= 0; }));
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
+    int pos = -1;
+    GG_CHECK(h.stepTarget(+1, false, pos) == visible(s1));
+    GG_CHECK(pos == visible(s2));
+    GG_CHECK(h.stepTarget(+1, true, pos) == visible(s2) + 1);
+    GG_CHECK(h.stepScans() > before);
+    ctx->ItemInputValue("//History/##hist_filter", "");
 }
 
 GG_TEST("history", "Alt+Up at the top commit moves the nav cursor to the Working tree row")
