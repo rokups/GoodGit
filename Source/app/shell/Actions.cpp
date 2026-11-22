@@ -1096,9 +1096,9 @@ void Actions::deleteBranches(std::vector<BranchDelete> items)
 
 void Actions::moveBranch(const std::string& name, const std::string& to)
 {
-    const auto snap = m_session.snapshot();
-    const bool current = snap->headBranch == name; // "" when detached
-    run("move branch " + name, [name, to, current](MutationContext& ctx) {
+    run("move branch " + name, [name, to](MutationContext& ctx) {
+        // Read HEAD now: the snapshot can be stale.
+        const bool current = gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "HEAD"}).out) == "refs/heads/" + name;
         if (current) {
             // The checked-out branch: keep local changes, refuse when they conflict.
             const std::string id = gg::trim(ctx.git({"rev-parse", "--verify", "--end-of-options", to + "^{commit}"}).out);
@@ -1228,9 +1228,9 @@ void Actions::unsetUpstream(const std::string& branch)
 
 void Actions::fastForward(const std::string& branch)
 {
-    const auto snap = m_session.snapshot();
-    const bool current = snap->headBranch == branch; // "" when detached
-    run("fast-forward " + branch, [branch, current](MutationContext& ctx) {
+    run("fast-forward " + branch, [branch](MutationContext& ctx) {
+        // Read HEAD now: the snapshot can be stale.
+        const bool current = gg::trim(ctx.gitMayFail({"symbolic-ref", "-q", "HEAD"}).out) == "refs/heads/" + branch;
         if (current) {
             ctx.git({"merge", "-q", "--ff-only", "@{upstream}"});
             ctx.worktreeFollowsIndex = true;
@@ -2516,7 +2516,8 @@ void Actions::confirmRestore(const std::string& operationId)
 
 void Actions::openInEditor(const std::string& path)
 {
-    run("open " + path,
+    // The Network queue keeps the tool off the mutation worker. It is no fetch: do not mark the remote tags stale.
+    const auto id = run("open " + path,
         [path](MutationContext& ctx) {
             const std::string editor = gg::trim(ctx.git({"var", "GIT_EDITOR"}).out);
             ctx.env.clear();
@@ -2530,23 +2531,26 @@ void Actions::openInEditor(const std::string& path)
                 throw MutationError{Outcome::Failed, res.message(), res.err};
         },
         {}, true, false);
+    m_networkRuns.erase(id);
 }
 
 void Actions::externalDiff(const std::string& path, const std::vector<std::string>& revs)
 {
-    run("external diff " + path,
+    const auto id = run("external diff " + path,
         [path, revs](MutationContext& ctx) {
             std::vector<std::string> args{"difftool", "-y"};
             args.insert(args.end(), revs.begin(), revs.end());
             ctx.git(withPaths(args, {path}));
         },
         {}, true, false);
+    m_networkRuns.erase(id);
 }
 
 void Actions::mergeTool(const std::string& path)
 {
-    run("merge tool " + path, [path](MutationContext& ctx) { ctx.git(withPaths({"mergetool", "-y"}, {path})); }, {}, true,
+    const auto id = run("merge tool " + path, [path](MutationContext& ctx) { ctx.git(withPaths({"mergetool", "-y"}, {path})); }, {}, true,
         false);
+    m_networkRuns.erase(id);
 }
 
 } // namespace ggui

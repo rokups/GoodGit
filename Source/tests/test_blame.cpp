@@ -1535,4 +1535,18 @@ GG_TEST("blame", "a working file over the size cap is refused before it is read"
     GG_CHECK(what.find("too large") != std::string::npos);
 }
 
+GG_TEST("blame", "the back history keeps the newest 50 entries")
+{
+    const BlameRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
+    blameFromChanges(s, "Unstaged", "tale.txt");
+    GG_REQUIRE(s.waitUntil([&] { return blameShows(s, "tale.txt", ""); }));
+    auto& blame = s.session()->blame();
+    for (int i = 0; i < 80; ++i)
+        blame.open("tale.txt", ggui::core::Oid(), false, 1, 0);
+    GG_CHECK_EQ(blame.historySize(), ggui::BlamePanel::kMaxHistory);
+    GG_CHECK(blame.query() != nullptr);
+}
+
 } // namespace ggtest

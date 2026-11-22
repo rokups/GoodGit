@@ -102,6 +102,10 @@ void BlamePanel::open(const std::string& path, const core::Oid& commit, bool bef
     }
     m_history.push_back(q);
     m_views.emplace_back();
+    if (m_history.size() > kMaxHistory) { // drop the oldest
+        m_history.erase(m_history.begin());
+        m_views.erase(m_views.begin());
+    }
     m_pos = static_cast<int>(m_history.size()) - 1;
     m_scrollRow = row;
     request();

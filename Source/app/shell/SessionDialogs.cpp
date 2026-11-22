@@ -767,6 +767,7 @@ void Session::showDeleteBranchDialog(const std::string& branch, int mode)
         // The engine reads the answer off the UI thread; the dialog shows it when it arrives.
         request = m_engine->readBranchMerged(branch, target);
         m_branchMerged.emplace(request, MergedState::Unknown);
+        m_branchMergedOf.emplace(request, branch);
         Field mergedInto = commitInfo(*this, "Merged into", shown);
         mergedInto.visible = [this, request](const Form&) { return branchMerged(request) == MergedState::Merged; };
         f.add(std::move(mergedInto));
@@ -854,6 +855,7 @@ void Session::showDeleteBranchesDialog(std::vector<std::string> branches, int mo
             shown->emplace(branch, std::move(name));
             const core::RequestId request = m_engine->readBranchMerged(branch, target);
             m_branchMerged.emplace(request, MergedState::Unknown);
+            m_branchMergedOf.emplace(request, branch);
             requests->emplace(branch, request);
         }
     }

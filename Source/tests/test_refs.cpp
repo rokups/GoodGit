@@ -2173,4 +2173,66 @@ GG_TEST("refs", "rename, move, switch and worktree names that start with a dash 
     GG_CHECK(!fs::exists(req.path));
 }
 
+GG_TEST("refs", "move and fast-forward read HEAD in the job: a stale snapshot does not pick the wrong path (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& act = s.session()->actions();
+    const std::string cur = s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"});
+    const std::string tip = s.gitOut(repo, {"rev-parse", "HEAD"});
+    const std::string older = s.gitOut(repo, {"rev-parse", "HEAD~1"});
+    const std::string oldest = s.gitOut(repo, {"rev-parse", "HEAD~2"});
+    s.git(repo, {"branch", "other", oldest});
+    s.git(repo, {"branch", "up", tip});
+    s.settle();
+    // The snapshot says HEAD is on `cur`. A plain git checkout moves HEAD with no settle.
+    s.git(repo, {"checkout", "-q", "other"});
+    act.moveBranch(cur, older);
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", cur}), older);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "other"}), oldest);
+    // Fast-forward `cur` (now behind `up`) while HEAD is on `other`.
+    s.git(repo, {"branch", "--set-upstream-to=up", cur});
+    s.settle();
+    s.git(repo, {"checkout", "-q", cur});
+    s.settle();
+    s.git(repo, {"checkout", "-q", "other"});
+    act.fastForward(cur);
+    s.settle();
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", cur}), tip);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"rev-parse", "other"}), oldest);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"symbolic-ref", "--short", "HEAD"}), "other");
+}
+
+GG_TEST("refs", "an external tool does not mark the remote tags stale; a fetch does (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"config", "core.editor", "true"});
+    s.session()->requestRemoteTagsIfStale(); // clears the flag
+    s.settle();
+    GG_REQUIRE(!s.session()->remoteTagsStale());
+    s.session()->actions().openInEditor("f1.txt");
+    s.settle();
+    GG_CHECK(!s.session()->remoteTagsStale());
+    s.session()->actions().fetch("", false, false);
+    s.settle();
+    GG_CHECK(s.session()->remoteTagsStale());
+}
+
+GG_TEST("refs", "the merged answers of a deleted branch leave the session when the snapshot arrives (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.git(repo, {"branch", "gone"});
+    s.settle();
+    const size_t base = s.session()->branchMergedCount();
+    s.session()->showDeleteBranchDialog("gone", 0);
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK_EQ(s.session()->branchMergedCount(), base + 1);
+    s.app.dialogs().closeAll();
+    s.git(repo, {"branch", "-D", "gone"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->branchMergedCount() == base; }));
+}
+
 } // namespace ggtest

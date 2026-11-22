@@ -209,10 +209,9 @@ Applied apply(const fs::path& cwd, const journal::WorktreeChange& c)
         }
         if (c.branch.empty()) {
             args.emplace_back("--detach");
-            args.push_back(c.path);
-            args.push_back(c.head);
+            args.insert(args.end(), {"--", c.path, c.head}); // "--": a path with a leading dash is no option
         } else {
-            args.push_back(c.path);
+            args.insert(args.end(), {"--", c.path});
             args.push_back(shortBranch(c.branch));
         }
         const RunResult r = git(cwd, args);
