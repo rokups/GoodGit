@@ -2690,4 +2690,65 @@ GG_TEST("rebase-i", "reading the range: commits already upstream, branches in ot
     s.git(r.path, {"worktree", "remove", "--force", wt2.string()});
 }
 
+// main: a1, e1x (already upstream: empty at pick time), f1. The list "pick a1; pick e1x; fixup f1".
+// Drop: e1x goes away and f1 amends a1. Keep: the empty e1x folds f1 in.
+void emptyHeadFixup(Scenario& s, bool drop)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    const char* mode = drop ? "Drop" : "Keep";
+    const fs::path path = s.fixture(Recipe::Empty, std::string("repo-head-") + mode);
+    s.commitFile(path, "base.txt", "base\n", "c0 base");
+    const std::string base = s.head(path);
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.commitFile(path, "q.txt", "q\n", "u1 add q");
+    const std::string u1 = s.head(path);
+    s.git(path, {"switch", "-q", "main"});
+    s.commitFile(path, "a.txt", "a\n", "a1 add a");
+    const std::string a1 = s.head(path);
+    s.commitFile(path, "q.txt", "q\n", "e1x add q");
+    s.commitFile(path, "f.txt", "f\n", "f1 add f");
+    const std::string f1 = s.head(path);
+    installRecordingHooks(s, path);
+    const fs::path copy = copyRepo(s, path, std::string("copy-head-") + mode);
+    GG_REQUIRE(s.openRepository(path));
+    GG_REQUIRE(rowReady(s, a1));
+    ctx->ItemClick(historyRow(a1).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    ctx->ItemClick(irWidget("ir_onto").c_str());
+    ctx->KeyChars("up");
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
+    s.comboSelect(irWidget("ir_empty").c_str(), mode);
+    s.comboSelect(irAction(f1).c_str(), "fixup");
+    const std::string todoText = todo::format(editor(s).todo());
+    GG_REQUIRE(previewReady(s));
+    GG_REQUIRE(start(s));
+    gitRebase(s, copy, todoText, base, "up", drop ? "drop" : "keep");
+    GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", "up..main"}), drop ? "1" : "2");
+    GG_CHECK_STR_EQ(history(s, path, "main"), history(s, copy, "main"));
+    auto ours = postRewrite(s, path);
+    auto git = postRewrite(s, copy);
+    if (drop) {
+        // Git also reports a stale "a1 -> a1'" line; ggui maps a1 only to the amended result.
+        const auto isA1 = [&](const std::string& l) { return l.rfind(a1, 0) == 0; };
+        GG_CHECK(std::count_if(ours.begin(), ours.end(), isA1) == 1);
+        ours.erase(std::remove_if(ours.begin(), ours.end(), isA1), ours.end());
+        git.erase(std::remove_if(git.begin(), git.end(), isA1), git.end());
+    }
+    GG_CHECK(!ours.empty());
+    GG_CHECK(ours == git);
+}
+
+GG_TEST("rebase-i", "a head pick that becomes empty is dropped and the fixup amends the commit before it, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    emptyHeadFixup(s, true);
+}
+
+GG_TEST("rebase-i", "Keep: a fixup folds into the head pick that became empty, as git does")
+{
+    emptyHeadFixup(s, false);
+}
+
 } // namespace ggtest

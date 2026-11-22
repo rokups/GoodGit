@@ -1386,4 +1386,95 @@ GG_TEST("rebase-merges", "dropping the merge row keeps the chain on its own bran
     sameAsGitOnCopy(s, r, pristine, todoText);
 }
 
+GG_TEST("rebase-merges", "a fixup that empties the commit it amends after a dropped pick keeps it empty, as git rebase --continue does")
+{
+    // base, A adds a.txt, X removes it, C adds it again. The list "pick A; pick C; exec true; fixup X":
+    // C is empty onto A (dropped), then X amends A and empties it. Git stops; --continue keeps A.
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.commitFile(path, "h.txt", "1\n", "base");
+    const std::string base = s.head(path);
+    s.commitFile(path, "a.txt", "a\n", "a add a");
+    const std::string a = s.head(path);
+    s.git(path, {"rm", "-q", "a.txt"});
+    s.git(path, {"commit", "-q", "-m", "x remove a"});
+    const std::string x = s.head(path);
+    s.commitFile(path, "a.txt", "a\n", "c add a again");
+    const std::string c = s.head(path);
+    installRecordingHooks(s, path);
+    const fs::path copy = copyRepo(s, path, "git-copy");
+    const std::string text = "label onto\nreset onto\npick " + a + "\nlabel l\nreset l\npick " + c + "\nexec true\nfixup " + x + "\n";
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    todo::Context context = todo::read(repo.get(), {base, "HEAD", ""});
+    todo::Todo list = todo::parse(text);
+    GG_REQUIRE(todo::expand(repo.get(), list, context).empty());
+    todo::Options options;
+    options.rebaseMerges = true;
+    options.emptied = gg::rewrite::Emptied::Drop;
+    const auto p = ggui::core::readRebasePreview(path, list, context, options, gg::CancelToken());
+    GG_REQUIRE(p != nullptr && p->ok);
+    GG_REQUIRE(p->rows.size() == 1);
+    GG_CHECK_STR_EQ(p->rows[0].subject, "a add a");
+    GG_CHECK(p->rows[0].empty && p->rows[0].group);
+
+    gg::rewrite::Plan plan = todo::toPlan(list, context, true);
+    plan.emptied = gg::rewrite::Emptied::Drop;
+    datesForGgui(true);
+    {
+        gg::rewrite::Rewriter rewriter(path);
+        gg::rewrite::Result result = rewriter.compute(plan, gg::CancelToken());
+        GG_REQUIRE(result.ok);
+        std::string error;
+        GG_REQUIRE(rewriter.apply(plan, result, error));
+    }
+    datesForGgui(false);
+    const fs::path todoFile = s.root() / "list2.todo";
+    std::ofstream(todoFile, std::ios::binary) << todo::format(list);
+    const auto run = gitDated(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--rebase-merges", "--empty=drop", base}, "true");
+    GG_CHECK(!run.ok()); // stops: nothing left in the amended commit
+    GG_CHECK(gitDated(copy, {"rebase", "--continue"}, "true").ok());
+    GG_CHECK_STR_EQ(s.gitOut(path, {"log", "--format=%T %s", "main"}), s.gitOut(copy, {"log", "--format=%T %s", "main"}));
+    GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", base + "..main"}), "1");
+    // post-rewrite's "rebase" lines (git also reports an "amend" event for --continue).
+    auto rebaseLines = [&](const fs::path& r) {
+        std::vector<std::string> out;
+        bool in = false;
+        for (const auto& line : gg::splitLines(s.read(r, ".git/post-rewrite.log"))) {
+            if (line.rfind("== ", 0) == 0)
+                in = line == "== rebase";
+            else if (in && !line.empty())
+                out.push_back(line);
+        }
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    GG_CHECK(rebaseLines(path).size() == 2); // A (unchanged) and X; git does not report the dropped pick C
+    GG_CHECK(rebaseLines(path) == rebaseLines(copy));
+}
+
+
+GG_TEST("rebase-merges", "a fixup after a head pick that empties with nothing before it is refused, never amending the onto commit")
+{
+    // onto already holds q.txt: "pick e; fixup f" drops e, and f has no commit of the list to amend.
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.commitFile(path, "h.txt", "1\n", "base");
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.commitFile(path, "q.txt", "q\n", "u add q");
+    const std::string onto = s.head(path);
+    s.git(path, {"switch", "-q", "main"});
+    s.commitFile(path, "q.txt", "q\n", "e add q");
+    const std::string e = s.head(path);
+    s.commitFile(path, "f.txt", "f\n", "f add f");
+    const std::string f = s.head(path);
+    gg::git2::Repository repo = gg::git2::openRepository(path);
+    todo::Context context = todo::read(repo.get(), {onto, "HEAD", ""});
+    todo::Todo list = todo::parse("pick " + e + "\nfixup " + f + "\n");
+    GG_REQUIRE(todo::expand(repo.get(), list, context).empty());
+    gg::rewrite::Plan plan = todo::toPlan(list, context, false);
+    plan.emptied = gg::rewrite::Emptied::Drop;
+    gg::rewrite::Rewriter rewriter(path);
+    const gg::rewrite::Result result = rewriter.compute(plan, gg::CancelToken());
+    GG_CHECK(!result.ok);
+    GG_CHECK(result.error.find("nothing to amend: every commit before it was dropped") != std::string::npos);
+}
+
 } // namespace ggtest

@@ -537,6 +537,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             bool ownAuthor = false;          // a revert: the current user, not the source's author
             std::vector<std::string> contributors; // original commits whose changes it holds
             std::string dateFrom;            // keepCommitterDate: the commit whose date it keeps
+            std::string alsoKey;             // a dropped head's step: it names this amended commit
         };
         std::optional<Pending> pending;
         std::map<std::string, std::vector<std::string>> contributorsOf; // new commit → its originals
@@ -547,13 +548,16 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             const std::string base = git_commit_parentcount(c.get()) > 0 ? m->treeOf(toHex(*git_commit_parent_id(c.get(), 0))) : m->emptyTree();
             return toHex(*git_commit_tree_id(c.get())) == base;
         };
+        auto becameEmpty = [&] {
+            return !pending->unchanged && !pending->contributors.empty() && pending->parents.size() <= 1
+                && pending->tree == (pending->parents.empty() ? m->emptyTree() : m->treeOf(pending->parents.front()))
+                && !std::all_of(pending->contributors.begin(), pending->contributors.end(), originallyEmpty);
+        };
         auto flush = [&] {
             if (!pending)
                 return;
             // A commit that becomes empty: its change is already in its new parent.
-            if (!pending->unchanged && !pending->contributors.empty() && pending->parents.size() <= 1
-                && pending->tree == (pending->parents.empty() ? m->emptyTree() : m->treeOf(pending->parents.front()))
-                && !std::all_of(pending->contributors.begin(), pending->contributors.end(), originallyEmpty)) {
+            if (becameEmpty()) {
                 // A group (squash/fixup members) is never dropped: git stops at the member that empties
                 // it, and `--continue` keeps an empty commit.
                 const bool group = !pending->squashed.empty();
@@ -611,6 +615,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     committedAt ? &*committedAt : nullptr);
             }
             byKey[pending->key] = id;
+            if (!pending->alsoKey.empty())
+                byKey[pending->alsoKey] = result.steps[pending->alsoKey] = id;
             if (id != pending->source)
                 originalOf[id] = pending->source; // "" for a commit with no original: no label
             if (!pending->unchanged && !pending->contributors.empty())
@@ -636,9 +642,21 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             if (step.kind == Step::Kind::Squash) {
                 if (!pending)
                     throw std::runtime_error("squash without a commit to squash into");
-                if (step.amend) {
+                // A head pick that is empty at pick time is dropped (--empty=drop); the fixup then amends
+                // the commit before it, as git does. Nothing before it: refuse, never rewrite the onto commit.
+                bool amend = step.amend;
+                if (!amend && pending->squashed.empty() && plan.emptied == Emptied::Drop && becameEmpty()) {
+                    bool hasPrevious = false;
+                    for (const auto& kv : byKey)
+                        hasPrevious = hasPrevious || (!kv.second.empty() && !pending->parents.empty() && kv.second == pending->parents.front());
+                    if (!hasPrevious)
+                        throw std::runtime_error("nothing to amend: every commit before it was dropped");
+                    amend = true;
+                }
+                if (amend) {
                     // Finish the previous commit, then amend it (the result gets this key).
                     const std::string previous = pending->key;
+                    const bool droppedHead = pending->squashed.empty() && plan.emptied == Emptied::Drop && becameEmpty();
                     std::vector<std::string> contributors = pending->contributors;
                     const std::string dateFrom = pending->dateFrom;
                     flush();
@@ -657,6 +675,8 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     p.mapSource = false;
                     p.contributors = std::move(contributors);
                     p.dateFrom = dateFrom;
+                    if (droppedHead) // the dropped head's step names the amended commit, whoever asked
+                        p.alsoKey = previous;
                     pending = std::move(p);
                     currentKey = key;
                 }
@@ -671,7 +691,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 pending->squashed.push_back(step.source);
                 pending->contributors.push_back(step.source);
                 pending->unchanged = false;
-                if (step.message)
+                if (step.message && pending->alsoKey.empty()) // a dropped head: the amended commit keeps its message
                     pending->message = *step.message;
                 continue; // (the group keeps its first commit's author)
             }
