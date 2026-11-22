@@ -218,6 +218,24 @@ GG_TEST("status_backends", "a deleted file and an intent-to-add copy of it give 
     GG_CHECK(status->staged.empty());
 }
 
+GG_TEST("status_backends", "several intent-to-add files with ordinary changes")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (int i = 0; i < 5; ++i) {
+        s.write(repo, "ita" + std::to_string(i) + ".txt", "new " + std::to_string(i) + "\n");
+        s.git(repo, {"add", "-N", "ita" + std::to_string(i) + ".txt"});
+    }
+    s.write(repo, "plain.txt", "untracked\n");
+    s.write(repo, "ita2.txt", "edited after add -N\n"); // also modified, so libgit2 reports it
+    const auto status = compareBackends(ctx, repo);
+    GG_REQUIRE(status);
+    for (int i = 0; i < 5; ++i)
+        GG_CHECK(has(status->unstaged, "ita" + std::to_string(i) + ".txt", ChangeKind::Added));
+    GG_CHECK(std::count_if(status->unstaged.begin(), status->unstaged.end(),
+                 [](const auto& e) { return e.path == "ita2.txt"; }) == 1);
+    GG_CHECK(status->staged.empty());
+}
+
 GG_TEST("status_backends", "status run appears in the command log")
 {
     // The libgit2 backend runs no `git status`: nothing to find.

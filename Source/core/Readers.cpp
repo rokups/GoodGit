@@ -871,10 +871,11 @@ StatusPtr readStatusOnce(git_repository* repo, std::uint64_t generation, const g
             git_submodule_free(rawSub);
         }
         // Intent-to-add files that libgit2 does not report as modified are still "added".
+        std::unordered_set<std::string> unstagedPaths;
+        for (const StatusEntry& e : result->unstaged)
+            unstagedPaths.insert(e.path);
         for (const auto& path : ita) {
-            const bool listed = std::any_of(result->unstaged.begin(), result->unstaged.end(),
-                [&](const StatusEntry& e) { return e.path == path; });
-            if (!listed) {
+            if (!unstagedPaths.count(path)) {
                 StatusEntry e;
                 e.path = path;
                 e.kind = ChangeKind::Added;
