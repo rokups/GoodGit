@@ -129,7 +129,7 @@ GG_TEST("reconcile", "plain git changes without hooks are journaled and Undo res
     // Undo everything the plain git did (one or more external operations).
     for (int i = 0; i < 4 && refState(s, repo) != beforeMany; ++i) {
         ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
-        s.waitUntil([&] { return refState(s, repo) != afterMany; });
+        GG_REQUIRE(s.waitUntil([&] { return refState(s, repo) != afterMany; }));
         s.settle();
     }
     GG_CHECK_STR_EQ(refState(s, repo), beforeMany);

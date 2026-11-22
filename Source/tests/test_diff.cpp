@@ -98,14 +98,14 @@ std::string body(Scenario& s) { return s.child("//Diff", "##diff_body"); }
 void showFile(Scenario& s, const std::string& commit, const std::string& path)
 {
     s.ctx->ItemClick(("//History/**/###row_" + commit).c_str());
-    s.waitUntil([&] { return !s.session()->changes().rows().empty(); });
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
     const std::string ref = s.child("//Changes", "##files") + "/" + Scenario::escapeRef(path) + "/###file_"
         + Scenario::escapeRef(path);
     s.ctx->ItemClick(ref.c_str());
-    s.waitUntil([&] {
+    GG_REQUIRE(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
         return d && !d->files.empty() && d->files[0].path() == path;
-    });
+    }));
     s.showPanel("Diff");
 }
 

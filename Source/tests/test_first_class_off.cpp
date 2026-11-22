@@ -27,8 +27,9 @@ bool hasFirstClass(Scenario& s)
 void rebaseTip(Scenario& s, const std::string& tip, const std::string& dest)
 {
     s.session()->actions().rebaseTipOnto(tip, dest);
+    // Best effort: a fast action may finish before the poll sees it busy.
     s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 1.0f);
-    s.waitUntil([&] { return s.session()->actions().busy().empty(); });
+    GG_CHECK(s.waitUntil([&] { return s.session()->actions().busy().empty(); }));
     s.settle();
 }
 

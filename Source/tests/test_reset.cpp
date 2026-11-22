@@ -25,7 +25,7 @@ bool openLinear(Scenario& s, fs::path& repo)
 // Opens the dialog of the reset item on `commit` and picks the mode (the default is Mixed).
 void openReset(Scenario& s, const std::string& commit, const char* mode = nullptr)
 {
-    s.waitUntil([&] { return s.itemExists(rowRef(commit).c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(commit).c_str()); }));
     s.contextMenu(rowRef(commit).c_str(), "###reset_here");
     if (mode && s.dialogOpen("Reset branch"))
         s.comboSelect("//Reset branch/Mode##mode", mode);
@@ -269,7 +269,7 @@ GG_TEST("reset", "the item is disabled while a merge is in progress")
     GG_REQUIRE(s.openRepository(repo));
     const std::string head = s.head(repo);
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::Merging; }));
-    s.waitUntil([&] { return s.itemExists(rowRef(head).c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(head).c_str()); }));
     ctx->ItemClick(rowRef(head).c_str(), ImGuiMouseButton_Right);
     const ImGuiTestItemInfo info = ctx->ItemInfo("//$FOCUSED/###reset_here");
     GG_CHECK(info.ItemFlags & ImGuiItemFlags_Disabled);
@@ -283,7 +283,7 @@ GG_TEST("reset", "a detached HEAD disables the item")
     const std::string target = s.revParse(repo, "HEAD~1");
     s.git(repo, {"switch", "-q", "--detach", "HEAD"});
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->headDetached; }));
-    s.waitUntil([&] { return s.itemExists(rowRef(target).c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(target).c_str()); }));
     ctx->ItemClick(rowRef(target).c_str(), ImGuiMouseButton_Right);
     const ImGuiTestItemInfo info = ctx->ItemInfo("//$FOCUSED/###reset_here");
     GG_CHECK(info.ItemFlags & ImGuiItemFlags_Disabled);

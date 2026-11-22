@@ -59,7 +59,7 @@ void cacheInfo(Scenario& s, const fs::path& repo, const std::string& mode, const
 // Rebase "theirs" onto "ours" through the UI (History row menu).
 void rebaseTheirs(Scenario& s, const TwoSides& t)
 {
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(t.theirs)) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(t.theirs)) != nullptr; }));
     s.contextMenu(("//History/**/###row_" + t.theirs).c_str(), "Rebase onto...");
     if (!s.dialogOpen("Rebase onto"))
         return;
@@ -261,7 +261,7 @@ GG_TEST("preflight", "conflicts are listed per commit in order; Cancel leaves .g
     const auto before = s.gitDirBytes(t.path);
     GG_REQUIRE(s.openRepository(t.path));
     const std::string first = s.revParse(t.path, "theirs~1");
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(first)) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(first)) != nullptr; }));
     s.contextMenu(("//History/**/###row_" + first).c_str(), "Rebase onto...");
     GG_REQUIRE(s.dialogOpen("Rebase onto"));
     s.dialogText("Rebase onto", "destination", "ours");

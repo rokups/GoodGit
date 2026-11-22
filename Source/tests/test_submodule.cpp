@@ -56,7 +56,7 @@ void commitWorkingTree(Scenario& s, const fs::path& repo, const std::string& mes
 const ggui::core::StatusEntry* unstagedEntry(Scenario& s, const std::string& path, unsigned state)
 {
     const ggui::core::StatusEntry* found = nullptr;
-    s.waitUntil([&] {
+    GG_CHECK(s.waitUntil([&] {
         const auto status = s.session()->status();
         if (!status)
             return false;
@@ -65,7 +65,7 @@ const ggui::core::StatusEntry* unstagedEntry(Scenario& s, const std::string& pat
             if (e.path == path && e.submoduleState == state)
                 found = &e;
         return found != nullptr;
-    });
+    }));
     return found;
 }
 
@@ -177,7 +177,7 @@ GG_TEST("submodule", "Moving a committed submodule row to the parent commit")
     const std::string tip = s.head(repo);
     const std::string tree = s.revParse(repo, "HEAD^{tree}");
     GG_REQUIRE(s.openRepository(repo));
-    s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(tip)) != nullptr; });
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(tip)) != nullptr; }));
     ctx->ItemClick(rowRef(tip).c_str());
     const std::string ref = s.child("//Changes", "##files") + "/sub/###file_sub";
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(ref.c_str()); }));

@@ -54,7 +54,7 @@ std::string focusedWindow()
 void selectCommit(Scenario& s, const std::string& hex)
 {
     s.ctx->ItemClick(("//History/**/###row_" + hex).c_str());
-    s.waitUntil([&] { return !s.session()->changes().rows().empty(); });
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->changes().rows().empty(); }));
 }
 
 // Clicks a History row with a modifier held (0: a plain click).

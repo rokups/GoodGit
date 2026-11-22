@@ -114,13 +114,13 @@ GG_TEST("removal", "ggui, git gg and plain git leave no refs/gg; .git/gg is only
     // The lock file and the temporary file of a write exist only while the app writes: wait until they are gone.
     std::set<std::string> entries;
     auto transient = [](const std::string& name) { return name == "journal.lock" || name.find(".tmp") != std::string::npos; };
-    s.waitUntil([&] {
+    GG_REQUIRE(s.waitUntil([&] {
         entries.clear();
         std::error_code ec;
         for (const auto& e : fs::directory_iterator(repo / ".git" / "gg", ec))
             entries.insert(e.path().filename().string());
         return !ec && std::none_of(entries.begin(), entries.end(), transient);
-    });
+    }));
     GG_CHECK(entries.count("journal") == 1);
     for (const auto& name : entries) {
         const bool allowed = name == "journal" || name == "cache" || name == "reconcile.json";
