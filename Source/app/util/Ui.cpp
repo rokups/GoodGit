@@ -196,7 +196,7 @@ void drawBadge(const char* label, ImU32 color, bool outlined, size_t dimFrom)
     const ImVec2 a(pos.x, pos.y - padY), b(pos.x + size.x, pos.y + size.y + padY);
     dl->AddRectFilled(a, b, color, rounding);
     if (outlined)
-        dl->AddRect(a, b, IM_COL32(255, 255, 255, 220), rounding, 0, 1.5f);
+        dl->AddRect(a, b, theme().palette().badgeOutline, rounding, 0, 1.5f);
     const ImU32 textColor = theme().palette().badgeText;
     const char* split = dimFrom < static_cast<size_t>(end - label) ? label + dimFrom : end;
     dl->AddText(ImVec2(pos.x + padX, pos.y), textColor, label, split);

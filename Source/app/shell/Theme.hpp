@@ -16,6 +16,7 @@ struct Palette {
     ImU32 branch, branchCurrent, remote, tag, head, worktree, stash; // badge fills
     ImU32 branchText, branchCurrentText, remoteText, tagText;        // the same, as text colours
     ImU32 badgeText;
+    ImU32 badgeOutline;     // ring around an outlined badge
     ImU32 unpublished;      // text colour of commits not on any remote
     ImU32 conflict;         // conflict as text/graph colour
     ImU32 conflictFill;     // conflict badge fill (against badgeText)
