@@ -686,6 +686,22 @@ GG_TEST("refs", "delete remote branches dialog deletes the checked branches on t
     GG_CHECK(refExists(s, repo, "refs/heads/r1")); // the local branch stays
 }
 
+GG_TEST("refs", "delete remote branch dialog deletes the branch on the remote (GG-99)")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    s.git(repo, {"branch", "one", "HEAD~1"});
+    s.git(repo, {"push", "-q", "origin", "one"});
+    s.git(repo, {"fetch", "-q", "origin"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.session()->showDeleteRemoteBranchDialog("origin/one");
+    GG_REQUIRE(s.dialogOpen("Delete branch"));
+    GG_CHECK_STR_EQ(s.app.dialogs().current()->message, "Delete the branch 'one' on the remote 'origin'?");
+    s.dialogButton("Delete branch", "Delete");
+    GG_CHECK(s.waitUntil([&] { return s.gitOut(origin(s, repo), {"ls-remote", "--heads", "."}).find("refs/heads/one") == std::string::npos; }));
+    s.settle();
+    GG_CHECK(refExists(s, repo, "refs/heads/one")); // the local branch stays
+}
+
 GG_TEST("refs", "forget refs dialog removes the checked remote-tracking branches; one undo restores them")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
