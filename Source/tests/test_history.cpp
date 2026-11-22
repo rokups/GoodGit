@@ -1910,8 +1910,10 @@ GG_TEST("history", "the HEAD button selects the HEAD commit")
     ctx->ItemClick(rowRef(other).c_str());
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), other);
     GG_CHECK(!(ctx->ItemInfo("//History/HEAD##hist_head").ItemFlags & ImGuiItemFlags_Disabled));
+    const int reveals = s.session()->history().revealCalls();
     ctx->ItemClick("//History/HEAD##hist_head");
     GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == head; }));
+    GG_CHECK(s.session()->history().revealCalls() == reveals + 1);
 }
 
 GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
@@ -1920,8 +1922,11 @@ GG_TEST("history", "the HEAD button is disabled while HEAD has no commit")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//History/HEAD##hist_head"); }));
     const std::string selected = s.session()->selection().id.hex();
+    const int reveals = s.session()->history().revealCalls();
     GG_CHECK(s.clickDisabled("//History/HEAD##hist_head"));
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), selected);
+    GG_CHECK(s.session()->history().revealCalls() == reveals); // the click reached no handler: no reveal job
+    GG_CHECK(s.session()->actions().busy().empty());
 }
 
 GG_TEST("history", "Go to parent selects the parent; a merge commit lists both parents")
@@ -2733,6 +2738,67 @@ GG_TEST("history", "arrows follow the branch path; Alt+arrows take the next row"
     ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
     ctx->Yield(2);
     GG_CHECK((selectedCommits(s) == std::set<std::string>{m2, s2}));
+}
+
+GG_TEST("history", "stepTarget gives the same targets and scans only for a changed selection")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string merge = interleavedLanes(s, repo);
+    const std::string m2 = s.revParse(repo, "main^");
+    const std::string m1 = s.revParse(repo, "main^^");
+    const std::string s2 = s.revParse(repo, "side");
+    const std::string s1 = s.revParse(repo, "side^");
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(merge));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(m2).c_str()); }));
+    auto& h = s.session()->history();
+    const auto visible = [&](const std::string& hex) {
+        const auto ids = h.visibleIds();
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (ids[i].hex() == hex)
+                return static_cast<int>(i);
+        return -1;
+    };
+    clickRow(s, m2);
+    struct Case { int dir; bool rowOrder; std::string want; };
+    const Case table[] = {{+1, false, m1}, {-1, false, merge}, {+1, true, s2}, {-1, true, merge}};
+    for (const Case& c : table) {
+        int pos = -1;
+        GG_CHECK(h.stepTarget(c.dir, c.rowOrder, pos) == visible(c.want));
+        GG_CHECK(pos == visible(m2));
+    }
+    // Idle frames call stepTarget (the key routing) but never scan: the answers come from the cache.
+    ctx->SetInputMode(ImGuiInputSource_Keyboard);
+    clickRow(s, s2);
+    ctx->Yield(3);
+    const int calls = h.stepCalls();
+    const int scans = h.stepScans();
+    ctx->Yield(20);
+    GG_CHECK(h.stepCalls() > calls);
+    GG_CHECK(h.stepScans() == scans);
+    // A selection change scans at most once for each query; the keys still work.
+    ctx->KeyPress(ImGuiKey_DownArrow);
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s1);
+    GG_CHECK(h.stepScans() - scans <= 4);
+    const int after = h.stepScans();
+    ctx->Yield(20);
+    GG_CHECK(h.stepScans() == after);
+    ctx->KeyPress(ImGuiKey_UpArrow);
+    ctx->Yield(2);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
+    // A list change with the same selection drops the cache: the filter drops the merge row from the visible list.
+    const int before = h.stepScans();
+    ctx->ItemInputValue("//History/##hist_filter", "-Merge");
+    GG_CHECK(s.waitUntil([&] { return visible(merge) < 0 && visible(s1) >= 0; }));
+    ctx->Yield(3);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
+    int pos = -1;
+    GG_CHECK(h.stepTarget(+1, false, pos) == visible(s1));
+    GG_CHECK(pos == visible(s2));
+    GG_CHECK(h.stepTarget(+1, true, pos) == visible(s2) + 1);
+    GG_CHECK(h.stepScans() > before);
+    ctx->ItemInputValue("//History/##hist_filter", "");
 }
 
 GG_TEST("history", "Alt+Up at the top commit moves the nav cursor to the Working tree row")
