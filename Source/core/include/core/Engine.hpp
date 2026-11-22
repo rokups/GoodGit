@@ -411,6 +411,9 @@ private:
     std::atomic<RequestId> m_nextId{1};
     std::unique_ptr<Worker> m_workers[kQueueCount];
     std::unique_ptr<Watcher> m_watcher;
+    // Retry of a deferred or skipped reconcile pass. Touched only by the reconcile jobs (one at a time).
+    std::chrono::steady_clock::time_point m_retryStart;
+    std::chrono::milliseconds m_retryDelay{0}; // 0: no retry series is open
     std::shared_ptr<HistoryState> m_history; // owned by the history worker thread
     std::atomic<std::uint64_t> m_generation{0};
 

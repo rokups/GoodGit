@@ -151,6 +151,19 @@ void Watcher::changed(const fs::path& path)
     m_cv.notify_all();
 }
 
+void Watcher::retryAfter(std::chrono::milliseconds delay)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_pending.journal = true;
+        if (!m_hasPending) {
+            m_hasPending = true;
+            m_first = m_last = std::chrono::steady_clock::now() + delay - kDebounce;
+        }
+    }
+    m_cv.notify_all();
+}
+
 void Watcher::debounceLoop()
 {
     std::unique_lock lock(m_mutex);

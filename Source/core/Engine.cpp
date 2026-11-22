@@ -334,6 +334,23 @@ RequestId Engine::reconcile()
         if (!error.empty())
             spdlog::warn("reconcile: {}", error);
         spdlog::debug("reconcile: pass appended={} deferred={} skipped={}", res.appended, res.deferred, res.skipped);
+        // A lock release makes only a ".lock" event, which the watcher ignores: no event runs the next
+        // pass. So retry with a backoff, up to kRetryCap, while the pass stays deferred or skipped.
+        if (!(res.deferred || res.skipped) || !m_watcher)
+            m_retryDelay = std::chrono::milliseconds(0);
+        else {
+            constexpr auto kRetryCap = std::chrono::seconds(10);
+            const auto now = std::chrono::steady_clock::now();
+            if (m_retryDelay.count() == 0) {
+                m_retryStart = now;
+                m_retryDelay = std::chrono::milliseconds(250);
+            }
+            if (now - m_retryStart < kRetryCap) {
+                m_watcher->retryAfter(m_retryDelay);
+                m_retryDelay = std::min(m_retryDelay * 2, std::chrono::milliseconds(2000));
+            } else
+                m_retryDelay = std::chrono::milliseconds(0); // gave up; the next event opens a new series
+        }
         if (res.appended > 0) {
             spdlog::debug("reconcile: journaled {} external operation(s)", res.appended);
             readOperations();
