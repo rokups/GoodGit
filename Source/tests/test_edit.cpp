@@ -330,13 +330,16 @@ GG_TEST("edit", "Rebase onto is disabled on a tag-only tip commit, with the reas
     GG_CHECK_STR_EQ(src.why, "The commit has no descendants.");
     ctx->ItemClick(rowRef(tip).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto..."); }));
     GG_CHECK(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled);
     ctx->KeyPress(ImGuiKey_Escape);
-    ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return !s.itemExists("//$FOCUSED/Rebase onto..."); })); // the menu has handled the key
+    s.settle();
     GG_CHECK(!s.dialogOpen("Rebase onto"));
     // The commit of the checked-out branch is enabled.
     ctx->ItemClick(rowRef(r.c4).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//$FOCUSED/Rebase onto..."); }));
     GG_CHECK(!(ctx->ItemInfo("//$FOCUSED/Rebase onto...").ItemFlags & ImGuiItemFlags_Disabled));
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->Yield(2);
@@ -919,7 +922,7 @@ namespace {
 // before, Shift = Move after); without modifiers the chooser's `choice` is clicked.
 void dragCommit(Scenario& s, const std::string& from, const std::string& to, ImGuiKeyChord mods, const char* choice = nullptr)
 {
-    s.waitUntil([&] { return s.itemExists(rowRef(from).c_str()) && s.itemExists(rowRef(to).c_str()); });
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(from).c_str()) && s.itemExists(rowRef(to).c_str()); }));
     if (mods)
         s.ctx->KeyDown(mods);
     s.ctx->ItemDragAndDrop(rowRef(from).c_str(), rowRef(to).c_str());
@@ -928,7 +931,7 @@ void dragCommit(Scenario& s, const std::string& from, const std::string& to, ImG
     s.ctx->Yield(2);
     if (choice) {
         const std::string item = std::string("//$FOCUSED/") + choice;
-        s.waitUntil([&] { return s.itemExists(item.c_str()); });
+        GG_REQUIRE(s.waitUntil([&] { return s.itemExists(item.c_str()); }));
         s.ctx->ItemClick(item.c_str());
     }
 }
