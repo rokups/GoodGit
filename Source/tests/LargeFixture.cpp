@@ -4,6 +4,8 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <random>
@@ -31,10 +33,10 @@ int fileCount()
     return count;
 }
 
-std::string versionName()
-{
-    return fileCount() == kDefaultFiles ? std::string(kVersion) : std::string(kVersion) + "-f" + std::to_string(fileCount());
-}
+// The cache directory name: the version, the size and a hash of the fast-import stream, so a
+// changed recipe makes a new cache entry. The hash covers the stream, not the git commands that
+// import it (see generate): change kVersion with those.
+std::string versionName();
 
 void appendData(std::string& out, const std::string& data)
 {
@@ -113,6 +115,23 @@ std::string buildStream()
         s += "reset refs/tags/t/" + std::to_string(i) + "\nfrom :" + std::to_string(marks[(static_cast<size_t>(i) * 53) % marks.size()]) + "\n\n";
     s += "reset refs/heads/side\nfrom 0000000000000000000000000000000000000000\n\n";
     return s;
+}
+
+std::string versionName()
+{
+    static const std::string name = [] {
+        const std::string stream = buildStream();
+        std::uint64_t hash = 1469598103934665603ull; // FNV-1a
+        for (const char c : stream)
+            hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+        char hex[17];
+        std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(hash));
+        std::string base = kVersion;
+        if (fileCount() != kDefaultFiles)
+            base += "-f" + std::to_string(fileCount());
+        return base + "-" + hex;
+    }();
+    return name;
 }
 
 // Builds the fixture into `dir` (a fresh directory) and marks it complete.
