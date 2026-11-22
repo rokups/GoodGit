@@ -20,7 +20,6 @@
 #include <libgg/Todo.hpp>
 
 #include <atomic>
-#include <atomic>
 #include <chrono>
 #include <deque>
 #include <functional>
