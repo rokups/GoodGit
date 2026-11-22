@@ -26,6 +26,19 @@ namespace ggui::core {
 
 namespace fs = std::filesystem;
 
+namespace {
+
+// The secret that a local client sends first to prove it may use the server.
+std::string newToken()
+{
+    std::random_device rd;
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%08x%08x%08x", rd(), rd(), rd());
+    return buf;
+}
+
+} // namespace
+
 // ---- AskpassServer ---------------------------------------------------------------------------------
 
 AskpassServer::AskpassServer() = default;
@@ -39,10 +52,7 @@ bool AskpassServer::start(const fs::path& gitGgProgram)
     m_listener = gg::net::listenLoopback(m_port);
     if (m_listener == gg::net::kInvalid)
         return false;
-    std::random_device rd;
-    char buf[40];
-    std::snprintf(buf, sizeof(buf), "%08x%08x%08x", rd(), rd(), rd());
-    m_token = buf;
+    m_token = newToken();
     gg::setAskpassProgram(gitGgProgram.string(), std::to_string(m_port) + ":" + m_token);
     m_stop = false;
     m_thread = std::thread([this] {
@@ -190,10 +200,7 @@ bool SequenceEditorServer::start()
     m_listener = gg::net::listenLoopback(m_port);
     if (m_listener == gg::net::kInvalid)
         return false;
-    std::random_device rd;
-    char buf[40];
-    std::snprintf(buf, sizeof(buf), "%08x%08x%08x", rd(), rd(), rd());
-    m_token = buf;
+    m_token = newToken();
     m_stop = false;
     m_thread = std::thread([this] {
         try {
