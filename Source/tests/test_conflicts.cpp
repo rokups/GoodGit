@@ -978,6 +978,18 @@ GG_TEST("conflicts", "brokenMarkers: unit cases for the broken-region diagnostic
     const std::string plain = "no conflict here\n";
     const std::string strayMarkers = "<<<<<<< a\nx\n>>>>>>> b\n";
     GG_CHECK(brokenMarkers(plain, strayMarkers).empty());
+    // Region break plus one deleted old stray line: the stray count stays equal, the new ones show.
+    const std::string oldStray = "<<<<<<< old\n" + region;
+    const std::string twoOld = "<<<<<<< old\n>>>>>>> old\n" + region;
+    GG_CHECK((brokenMarkers(twoOld, separatorDeleted) == std::vector<size_t>{2, 7}));
+    // A new stray line next to an old one: only the new one is reported.
+    GG_CHECK((brokenMarkers(oldStray, "<<<<<<< old\n<<<<<<< new\n" + resolved) == std::vector<size_t>{2}));
+    // Unchanged file with an old stray line: nothing.
+    GG_CHECK(brokenMarkers(oldStray, oldStray).empty());
+    // Binary before or after: nothing.
+    const std::string nul("\0", 1);
+    GG_CHECK(brokenMarkers(region + nul, separatorDeleted).empty());
+    GG_CHECK(brokenMarkers(region, separatorDeleted + nul).empty());
 }
 
 GG_TEST("conflicts", "an edit that breaks a conflict region warns (Status, Changes) instead of silently resolving")
