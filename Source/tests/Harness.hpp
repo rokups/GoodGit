@@ -81,6 +81,13 @@ std::vector<TestInfo>& registry();
 // Like fs::remove_all (errors ignored), but it also removes read-only files: git's objects are
 // read-only, and Windows refuses to delete those.
 void removeAll(const fs::path& path);
+// Kills `pid` (SIGKILL) only when its command line has one of `needles`: a reused pid is not hit.
+// It does nothing on Windows and when /proc has no such process. It gives true when it sent the kill.
+bool killProcessIfCmdline(long pid, const std::vector<std::string>& needles);
+// Kills the git daemons that an aborted run left: the pid files `<dir>/daemon-N.pid` one level
+// below `root` and below each `ggui-tests-<pid>` directory of `tempDir` whose run has ended.
+// It deletes each pid file it reads.
+void killStaleDaemons(const fs::path& tempDir, const fs::path& root);
 // Whether `path` exists, for a test that polls a path git is deleting (for example
 // .git/rebase-merge). On Windows fs::exists throws "Access is denied" while the path is being
 // deleted. A check that gives an error therefore counts as "exists": the path is not gone yet.

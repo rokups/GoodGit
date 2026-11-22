@@ -579,6 +579,7 @@ void prepareProcessForTests(const char* argv0)
     else
         g_root = fs::temp_directory_path() / ("ggui-tests-" + std::to_string(ggui::processId()));
     std::error_code ec;
+    killStaleDaemons(fs::temp_directory_path(ec), g_root); // an aborted run left them
     removeAll(g_root);
     fs::create_directories(g_root);
     g_root = fs::canonical(g_root);

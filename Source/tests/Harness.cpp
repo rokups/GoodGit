@@ -10,16 +10,19 @@
 #include <imgui_internal.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <map>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 #ifdef _WIN32
 #include <windows.h>
 #undef Yield // winbase.h's, not ImGuiTestContext::Yield
 #else
+#include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #endif
@@ -32,6 +35,63 @@ namespace {
 constexpr long long kEpoch = 1767225600; // 2026-01-01T00:00:00Z
 
 } // namespace
+
+bool killProcessIfCmdline(long pid, const std::vector<std::string>& needles)
+{
+#ifdef _WIN32
+    (void)pid;
+    (void)needles;
+    return false;
+#else
+    if (pid <= 1)
+        return false;
+    std::ifstream f("/proc/" + std::to_string(pid) + "/cmdline", std::ios::binary);
+    std::string cmd((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    std::replace(cmd.begin(), cmd.end(), '\0', ' '); // the arguments are NUL separated
+    for (const auto& needle : needles)
+        if (cmd.find(needle) != std::string::npos)
+            return ::kill(static_cast<pid_t>(pid), SIGKILL) == 0;
+    return false;
+#endif
+}
+
+void killStaleDaemons(const fs::path& tempDir, const fs::path& root)
+{
+#ifndef _WIN32
+    std::vector<fs::path> roots{root};
+    std::error_code ec;
+    for (fs::directory_iterator it(tempDir, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.rfind("ggui-tests-", 0) != 0)
+            continue;
+        // The run of a live process (a shard) owns its daemons.
+        const long owner = std::atol(name.c_str() + 11);
+        if (owner > 0 && (::kill(static_cast<pid_t>(owner), 0) == 0 || errno == EPERM))
+            continue;
+        roots.push_back(it->path());
+    }
+    for (const auto& r : roots) {
+        std::error_code e2;
+        for (fs::directory_iterator test(r, e2); !e2 && test != fs::directory_iterator(); test.increment(e2)) {
+            std::error_code e3;
+            for (fs::directory_iterator f(test->path(), e3); !e3 && f != fs::directory_iterator(); f.increment(e3)) {
+                const std::string name = f->path().filename().string();
+                if (name.rfind("daemon-", 0) != 0 || f->path().extension() != ".pid")
+                    continue;
+                std::ifstream in(f->path());
+                long pid = 0;
+                in >> pid;
+                killProcessIfCmdline(pid, {"git-daemon", "git daemon"});
+                std::error_code e4;
+                fs::remove(f->path(), e4);
+            }
+        }
+    }
+#else
+    (void)tempDir;
+    (void)root;
+#endif
+}
 
 Scenario::Scenario(ImGuiTestContext* c, ggui::App& a, fs::path root, std::uint64_t seed)
     : ctx(c), app(a), m_root(std::move(root)), m_seed(seed), m_rng(seed)

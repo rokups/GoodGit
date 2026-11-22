@@ -7,6 +7,10 @@
 #include <libgg/Git2.hpp>
 #include <libgg/Thread.hpp>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace ggtest {
 
 GG_TEST("harness", "smoke: welcome screen")
@@ -173,3 +177,28 @@ GG_TEST("harness", "transport fixtures: git daemon and ssh shim")
 }
 
 } // namespace ggtest
+
+#ifndef _WIN32
+namespace ggtest {
+
+GG_TEST("harness", "stale daemons of an aborted run are killed")
+{
+    const fs::path served = s.path("served");
+    fs::create_directories(served);
+    const std::string url = s.startGitDaemon(served);
+    GG_REQUIRE(!url.empty());
+    const fs::path pidFile = s.root() / "daemon-0.pid";
+    const long pid = std::atol(s.read(s.root(), "daemon-0.pid").c_str());
+    GG_REQUIRE(pid > 1);
+    // A pid file that names a process other than a daemon (this process) must not kill it.
+    const fs::path other = s.root().parent_path() / "other-test";
+    fs::create_directories(other);
+    s.write(other, "daemon-0.pid", std::to_string(getpid()) + "\n");
+    killStaleDaemons(s.path("no-such-dir"), s.root().parent_path());
+    GG_CHECK(!fs::exists(pidFile));
+    GG_CHECK(!fs::exists(other / "daemon-0.pid"));
+    GG_CHECK(s.waitUntil([&] { return !fs::exists("/proc/" + std::to_string(pid)); }));
+}
+
+} // namespace ggtest
+#endif
