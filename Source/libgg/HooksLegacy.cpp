@@ -1,5 +1,6 @@
 #include "libgg/HooksLegacy.hpp"
 
+#include "libgg/Files.hpp"
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 
@@ -17,18 +18,10 @@ namespace {
 
 constexpr const char* kWrapperMarker = "# ggui managed hook";
 
-std::string readFile(const fs::path& p)
-{
-    std::ifstream f(p, std::ios::binary);
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
-}
-
 bool isWrapper(const fs::path& p)
 {
     std::error_code ec;
-    return fs::is_regular_file(p, ec) && readFile(p).find(kWrapperMarker) != std::string::npos;
+    return fs::is_regular_file(p, ec) && readFile(p).value_or("").find(kWrapperMarker) != std::string::npos;
 }
 
 // Set only by a local-config entry: an entry from a global or system config is not ours.

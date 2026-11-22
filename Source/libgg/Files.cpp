@@ -50,6 +50,14 @@ bool readFile(const fs::path& path, std::string& out)
     return true;
 }
 
+std::optional<std::string> readFile(const fs::path& path)
+{
+    std::string out;
+    if (!readFile(path, out))
+        return std::nullopt;
+    return out;
+}
+
 namespace {
 
 // Creates a new file (it fails when the name exists), writes all data, flushes it to disk. A private file

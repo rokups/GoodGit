@@ -1,6 +1,7 @@
 #include "libgg/Rewrite.hpp"
 
 #include "libgg/Conflicts.hpp"
+#include "libgg/Files.hpp"
 #include "libgg/Git2.hpp"
 #include "libgg/GitRunner.hpp"
 #include "libgg/Journal.hpp"
@@ -29,14 +30,6 @@ namespace {
 
 constexpr std::uint32_t kModeLink = 0120000;
 constexpr std::uint32_t kModeGitlink = 0160000;
-
-std::string readFileBytes(const fs::path& p)
-{
-    std::ifstream f(p, std::ios::binary);
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
-}
 
 std::string firstLine(const std::string& message)
 {
@@ -321,7 +314,7 @@ struct Rewriter::Impl {
             case Choice::Delete: break;
             case Choice::File: {
                 const std::uint32_t mode = c.theirs ? c.theirs->mode : c.ours ? c.ours->mode : 0100644;
-                addEntry(path, writeBlob(readFileBytes(r.file)), mode);
+                addEntry(path, writeBlob(readFile(r.file).value_or("")), mode);
                 break;
             }
             }
