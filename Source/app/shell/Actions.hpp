@@ -345,6 +345,8 @@ private:
     void onRebaseStep(const core::MutationFinishedEvent& event);
 
     struct RewriteState;
+    // The core of rewrite() and rewriteOlder(): they differ only in `offerScope`.
+    void rewriteStart(const std::string& label, PlanBuilder build, Callback done, bool autostash, bool offerScope);
     void rewritePrepare(const std::shared_ptr<RewriteState>& state);
     void amendNow(const std::string& message, bool noVerify, bool messageOnly, Callback done);
     void rewriteDecide(const std::shared_ptr<RewriteState>& state);

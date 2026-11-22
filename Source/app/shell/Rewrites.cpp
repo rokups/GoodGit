@@ -176,25 +176,25 @@ rw::Plan scopedPlan(State& state, git_repository* repo)
 
 } // namespace
 
-void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done, bool autostash)
+void Actions::rewriteStart(const std::string& label, PlanBuilder build, Callback done, bool autostash, bool offerScope)
 {
     auto state = std::make_shared<RewriteState>();
     state->label = label;
     state->build = std::move(build);
     state->done = std::move(done);
     state->autostash = autostash;
+    state->offerScope = offerScope;
     rewritePrepare(state);
+}
+
+void Actions::rewrite(const std::string& label, PlanBuilder build, Callback done, bool autostash)
+{
+    rewriteStart(label, std::move(build), std::move(done), autostash, false);
 }
 
 void Actions::rewriteOlder(const std::string& label, PlanBuilder build, Callback done, bool autostash)
 {
-    auto state = std::make_shared<RewriteState>();
-    state->label = label;
-    state->build = std::move(build);
-    state->done = std::move(done);
-    state->autostash = autostash;
-    state->offerScope = true;
-    rewritePrepare(state);
+    rewriteStart(label, std::move(build), std::move(done), autostash, true);
 }
 
 void Actions::rewritePrepare(const std::shared_ptr<RewriteState>& state)
