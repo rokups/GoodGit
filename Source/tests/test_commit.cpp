@@ -759,4 +759,110 @@ GG_TEST("commit", "Change information: the sizer below the message field resizes
     GG_CHECK(std::abs(height() - before) < 1.0f);
 }
 
+namespace {
+
+// A repo with a staged edit (a.txt) and an unstaged edit (b.txt).
+fs::path mixedWorktree(Scenario& s)
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.write(repo, "a.txt", "a\n");
+    s.write(repo, "b.txt", "b\n");
+    s.git(repo, {"add", "a.txt", "b.txt"});
+    s.git(repo, {"commit", "-q", "-m", "add a and b"});
+    s.write(repo, "a.txt", "a staged\n");
+    s.git(repo, {"add", "a.txt"});
+    s.write(repo, "b.txt", "b unstaged\n");
+    return repo;
+}
+
+void commitFromWorktreeRow(ImGuiTestContext* ctx, Scenario& s, const fs::path& repo, const char* text)
+{
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.session()->status() && s.session()->status()->unstaged.size() == 1; }));
+    ctx->ItemClick("//History/**/###row_wt");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Change information/##commit_message"); }));
+    s.setText("//Change information/##commit_message", text);
+    ctx->Yield(2);
+    ctx->ItemClick("//Change information/###info_commit");
+}
+
+} // namespace
+
+GG_TEST("commit", "Working tree commit: a failing pre-commit hook leaves HEAD, index and files as they were")
+{
+    const fs::path repo = mixedWorktree(s);
+    writeHook(s, repo, "pre-commit", "echo 'wt hook says no' >&2\nexit 1\n");
+    const std::string before = s.head(repo);
+    const std::string status = s.gitOut(repo, {"status", "--porcelain"});
+    commitFromWorktreeRow(ctx, s, repo, "Blocked");
+    GG_CHECK(s.waitUntil([&] { return s.app.errorMessage().find("wt hook says no") != std::string::npos; }));
+    GG_CHECK(s.dismissError());
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), before);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), status);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":a.txt"}), "a staged");
+    GG_CHECK(!fs::exists(repo / ".git" / "gg-commit-index-a"));
+    GG_CHECK(!fs::exists(repo / ".git" / "gg-commit-index-b"));
+}
+
+GG_TEST("commit", "Working tree commit: an unfinished merge refuses and changes nothing")
+{
+    const fs::path repo = mixedWorktree(s);
+    const std::string before = s.head(repo);
+    s.write(repo / ".git", "MERGE_HEAD", before + "\n");
+    commitFromWorktreeRow(ctx, s, repo, "Refused");
+    GG_CHECK(s.waitUntil([&] { return s.app.errorMessage().find("Finish the merge first") != std::string::npos; }));
+    GG_CHECK(s.dismissError());
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(repo), before);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", ":a.txt"}), "a staged");
+}
+
+#ifndef _WIN32
+// A post-commit hook swaps .git/index for a directory, so the final rename of the new index fails.
+// The error must reach the banner, with no crash and no leftover temporary index.
+GG_TEST("commit", "Working tree commit: a failing rename of the new index shows an error and keeps the commit")
+{
+    const fs::path repo = mixedWorktree(s);
+    writeHook(s, repo, "post-commit", "echo ran > .git/hook-ran\nmv .git/index .git/index.bak\nmkdir .git/index\n");
+    const std::string before = s.head(repo);
+    commitFromWorktreeRow(ctx, s, repo, "Rename fails");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != before; }));
+    GG_CHECK(s.dismissError());
+    s.settle();
+    GG_CHECK(fs::exists(repo / ".git" / "hook-ran"));
+    GG_CHECK(fs::is_directory(repo / ".git" / "index"));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s"}), "Rename fails");
+    fs::remove(repo / ".git" / "index"); // put the old index back: the post-test fsck needs a valid repository
+    fs::rename(repo / ".git" / "index.bak", repo / ".git" / "index");
+    GG_CHECK(!fs::exists(repo / ".git" / "gg-commit-index-a"));
+    GG_CHECK(!fs::exists(repo / ".git" / "gg-commit-index-b"));
+}
+#endif
+
+GG_TEST("commit", "git gg new: an unknown revision fails with exit 128 and moves nothing")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string before = s.head(repo);
+    auto r = s.gitgg(repo, {"new", "no-such-rev"});
+    GG_CHECK_EQ(r.exitCode, 128);
+    GG_CHECK(r.err.find("unknown revision 'no-such-rev'") != std::string::npos);
+    GG_CHECK_STR_EQ(s.head(repo), before);
+}
+
+GG_TEST("commit", "git gg new: a locked branch ref fails with the git error and keeps HEAD")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string before = s.head(repo);
+    const std::string branch = s.gitOut(repo, {"branch", "--show-current"});
+    s.write(repo / ".git" / "refs" / "heads", branch + ".lock", "");
+    auto r = s.gitgg(repo, {"new", "-m", "Locked"});
+    GG_CHECK_EQ(r.exitCode, 128);
+    GG_CHECK(r.err.find(".lock") != std::string::npos);
+    GG_CHECK_STR_EQ(s.head(repo), before);
+    fs::remove(repo / ".git" / "refs" / "heads" / (branch + ".lock"));
+    r = s.gitgg(repo, {"new", "-m", "Unlocked"});
+    GG_CHECK_EQ(r.exitCode, 0);
+}
+
 } // namespace ggtest
