@@ -1052,6 +1052,87 @@ GG_TEST("history", "large history: first page, Show more, reveal, cancel")
     GG_CHECK(history.row(Oid::fromHex(deep)) != nullptr);
 }
 
+namespace {
+
+// Loads `pages` pages of the large fixture, selects row `at` and scrolls it into view. Sets the scroll.
+void loadAndSelect(Scenario& s, int pages, size_t at, float& scrollOut)
+{
+    auto* ctx = s.ctx;
+    auto& history = s.session()->history();
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 60.0f));
+    while (history.rows().size() < static_cast<size_t>(pages) * ggui::HistoryPanel::kPageSize) {
+        history.showMore();
+        ctx->Yield(2);
+        GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 120.0f));
+    }
+    s.session()->selectCommit(history.rows()[at].id);
+    ctx->Yield(2);
+    const auto table = s.child("//History", "##hist_table");
+    ImGuiWindow* w = ctx->GetWindowByRef(table.c_str());
+    const float pitch = w->ContentSize.y / static_cast<float>(history.rows().size() + 4);
+    ctx->ScrollTo(table.c_str(), ImGuiAxis_Y, static_cast<float>(at) * pitch - 100.0f);
+    ctx->Yield(3);
+    GG_REQUIRE(s.itemExists(rowRef(history.rows()[at].id.hex()).c_str()));
+    scrollOut = w->Scroll.y;
+}
+
+float tableScroll(Scenario& s)
+{
+    ImGuiWindow* w = s.ctx->GetWindowByRef(s.child("//History", "##hist_table").c_str());
+    return w ? w->Scroll.y : -1.0f;
+}
+
+// Reloads and waits for the first swap of the rows.
+void reloadToSwap(Scenario& s)
+{
+    auto& history = s.session()->history();
+    const size_t gen = history.rowsGen();
+    history.reload();
+    GG_CHECK(s.waitUntil([&] {
+        if (history.rowsGen() == gen)
+            return false;
+        return true;
+    }, 120.0f));
+}
+
+} // namespace
+
+GG_TEST("history", "a reload of a long history swaps before the walk ends and keeps selection and scroll")
+{
+    GG_REQUIRE(s.openRepository(s.largeFixture()));
+    auto& history = s.session()->history();
+    float scroll = 0;
+    loadAndSelect(s, 3, 100, scroll);
+    const size_t before = history.rows().size();
+    const Oid sel = s.session()->selection().id;
+    reloadToSwap(s);
+    GG_CHECK(history.lastStageTarget() < before);
+    GG_CHECK(history.lastStageTarget() >= 101u);
+    GG_CHECK(history.lastStageTarget() >= static_cast<size_t>(ggui::HistoryPanel::kPageSize));
+    GG_CHECK(s.session()->selection().id == sel);
+    ctx->Yield(3);
+    GG_CHECK(std::abs(tableScroll(s) - scroll) < 1.0f);
+    GG_REQUIRE(s.waitUntil([&] { return !history.loading(); }, 120.0f));
+    GG_CHECK_EQ(history.rows().size(), before);
+}
+
+GG_TEST("history", "a selection far below the first page survives a reload")
+{
+    GG_REQUIRE(s.openRepository(s.largeFixture()));
+    auto& history = s.session()->history();
+    const size_t at = 2u * ggui::HistoryPanel::kPageSize;
+    float scroll = 0;
+    loadAndSelect(s, 3, at, scroll);
+    const Oid sel = history.rows()[at].id;
+    reloadToSwap(s);
+    GG_CHECK(history.lastStageTarget() >= at + 1);
+    GG_CHECK(s.session()->selection().id == sel);
+    GG_CHECK(history.row(sel) != nullptr);
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists(rowRef(sel.hex()).c_str()));
+    GG_CHECK(std::abs(tableScroll(s) - scroll) < 1.0f);
+}
+
 GG_TEST("history", "cancel a long history load and a reveal")
 {
     const fs::path repo = s.largeFixture();
