@@ -652,6 +652,8 @@ SnapshotPtr readSnapshot(git_repository* repo, std::uint64_t generation, const g
                 if (git_commit_lookup(&raw, c->repo, id) == 0) {
                     Commit commit(raw);
                     s.time = git_commit_time(commit.get());
+                    if (git_commit_parentcount(commit.get()) > 1)
+                        s.indexCommit = toOid(*git_commit_parent_id(commit.get(), 1));
                     if (git_commit_parentcount(commit.get()) > 0)
                         s.base = toOid(*git_commit_parent_id(commit.get(), 0));
                     s.hasUntracked = git_commit_parentcount(commit.get()) > 2;

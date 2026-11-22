@@ -139,6 +139,7 @@ public:
     int stepScans() const { return m_stepScans; }
     int revealCalls() const { return m_revealCalls; } // test hook: the reveal() calls (the HEAD button)
     bool loading() const { return m_loading; }
+    size_t toggledMergeCount() const { return m_toggledMerges.size(); } // test hook
     bool truncated() const { return m_truncated; }
     // Indexes into rows() of the rows currently shown, in order.
     std::vector<int> visibleIndexes() const;

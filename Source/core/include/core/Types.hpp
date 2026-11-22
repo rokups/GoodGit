@@ -159,6 +159,7 @@ struct StashInfo {
     std::string message;
     Oid commit;
     Oid base;                    // first parent
+    Oid indexCommit;             // second parent (the staged state)
     std::int64_t time = 0;
     bool hasIndexChanges = false;
     bool hasUntracked = false;

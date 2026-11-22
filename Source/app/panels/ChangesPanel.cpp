@@ -101,6 +101,15 @@ const char* groupName(FileGroup g)
     return kNames[static_cast<size_t>(g)];
 }
 
+core::Oid stashBlameCommit(const core::Snapshot& snap, const core::Oid& stash, FileGroup group)
+{
+    if (group == FileGroup::StashIndex)
+        for (const auto& s : snap.stashes)
+            if (s.commit == stash && !s.indexCommit.isNull()) // no index part: the stash commit, never a null commit
+                return s.indexCommit;
+    return stash;
+}
+
 namespace {
 
 // The status letter (ChangeKind's values are git's letters: A M D R C T ? U).
@@ -768,10 +777,12 @@ void ChangesPanel::drawFileMenu(const FileRow& row)
     const bool canBlame = row.kind != core::ChangeKind::Deleted && row.group != FileGroup::StashUntracked;
     if (menuItem(ICON_MS_PERSON_SEARCH, "Blame file", nullptr, false, canBlame)) {
         core::Oid at;
-        if (m_selection.kind == SelKind::Commit)
-            at = effectiveSelection().id;
+        if (m_selection.kind == SelKind::Commit || m_selection.kind == SelKind::Stash)
+            at = m_selection.kind == SelKind::Stash ? stashBlameCommit(*m_session.snapshot(), m_selection.id, row.group) : effectiveSelection().id;
         m_session.blameFile(row.path, at);
     }
+    if (row.group == FileGroup::StashUntracked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("An untracked file of a stash has no blame.");
     {
         // "Compare": Before is the file's old side, After its new side. With "Compare with" set, a commit's
         // file compares Before with that target (it is the left side, as in the internal diff).
