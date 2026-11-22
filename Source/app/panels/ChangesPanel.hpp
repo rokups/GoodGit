@@ -123,6 +123,8 @@ private:
     {
         m_session.showDiscardDialog(plan.tracked, plan.untracked, plan.staged, plan.submodules);
     }
+    // Asks first: the discard from a commit rewrites it and the commits above it.
+    void confirmCommitDiscard(const core::Oid& commit, std::vector<std::string> paths);
     std::vector<const FileRow*> visibleRows() const;
     std::vector<const FileRow*> m_visible; // visibleRows() of the current frame, set once in draw()
     core::DiffQuery patchQuery(const FileRow& row) const;

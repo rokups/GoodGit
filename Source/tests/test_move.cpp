@@ -125,6 +125,8 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, discar
     const std::string beforeDiscard = s.head(r.path);
     selectCommit(s, mid, 1);
     s.contextMenu(fileRef(s, "a.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
     GG_CHECK(moved(s, r.path, beforeDiscard));
     GG_CHECK(s.read(r.path, "a.txt").find("LINE") == std::string::npos);
     GG_CHECK(s.statusPorcelain(r.path).empty());
@@ -327,11 +329,15 @@ GG_TEST("move", "discard from a published commit asks first: Cancel keeps it, Re
     GG_REQUIRE(s.openRepository(repo));
     selectCommit(s, published, 1);
     s.contextMenu(fileRef(s, "o3.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
     s.dialogButton("Rewrite published history?", "Cancel");
     s.settle();
     GG_CHECK_STR_EQ(s.head(repo), tip);
     s.contextMenu(fileRef(s, "o3.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(s.dialogOpen("Rewrite published history?"));
     s.dialogButton("Rewrite published history?", "Rewrite");
     GG_REQUIRE(moved(s, repo, tip));
@@ -340,15 +346,26 @@ GG_TEST("move", "discard from a published commit asks first: Cancel keeps it, Re
     GG_CHECK(s.fsck(repo));
 }
 
-GG_TEST("move", "discard: the D key on a commit's file rewrites it without a dialog; Undo restores it")
+GG_TEST("move", "discard: the D key on a commit's file asks first; Cancel changes nothing, Discard rewrites and selects the new commit")
 {
     const MoveRepo r = makeRepo(s);
     GG_REQUIRE(s.openRepository(r.path));
     selectCommit(s, r.x, 3);
     ctx->ItemClick(fileRef(s, "c.txt").c_str());
     ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(r.path), r.y);
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), r.x);
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(moved(s, r.path, r.y));
     GG_CHECK(!s.dialogOpen("Rewrite published history?"));
+    const std::string x2 = s.revParse(r.path, "HEAD~1");
+    GG_CHECK(x2 != r.x);
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == x2 && s.session()->changes().rows().size() == 2; }));
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~1"), "a.txt b.txt");
     GG_CHECK(!s.gitMayFail(r.path, {"cat-file", "-e", "HEAD:c.txt"}).ok());
     GG_CHECK(s.fsck(r.path));
@@ -356,6 +373,24 @@ GG_TEST("move", "discard: the D key on a commit's file rewrites it without a dia
     GG_CHECK(s.waitUntil([&] { return s.head(r.path) == r.y; }));
     s.settle();
     GG_CHECK_STR_EQ(changedFiles(s, r.path, "HEAD~1"), "a.txt b.txt c.txt");
+}
+
+GG_TEST("move", "discard: the menu item asks first and selects the rewritten commit")
+{
+    const MoveRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    selectCommit(s, r.x, 3);
+    s.contextMenu(fileRef(s, "c.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Cancel");
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(r.path), r.y);
+    s.contextMenu(fileRef(s, "c.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_REQUIRE(moved(s, r.path, r.y));
+    const std::string x2 = s.revParse(r.path, "HEAD~1");
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == x2 && s.session()->changes().rows().size() == 2; }));
 }
 
 GG_TEST("move", "discard: a hunk's button in commit mode rewrites the commit without that hunk")
