@@ -1898,14 +1898,14 @@ GG_TEST("history", "the commit menu uses git words")
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(commit).c_str()); }));
     ctx->ItemClick(rowRef(commit).c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
-    GG_CHECK(s.itemExists("//$FOCUSED/Drop commit..."));
+    GG_CHECK(s.itemExists("//$FOCUSED/Discard commit..."));
     GG_CHECK(s.itemExists("//$FOCUSED/Edit commit (checkout detached)"));
     // Every item exists and each one is below the one before.
     const char* labels[] = {"New", "Check out", "Create branch...", "Create tag...", "Move branch",
         "Merge into HEAD...", "Rebase onto...", "Interactive rebase...", "Reset to here...###reset_here",
         "Interactive rebase selection...", "Cherry-pick###cherry_pick", "Cherry-pick (no commit)###cherry_pick_no_commit",
         "Revert###revert", "Revert (no commit)###revert_no_commit", "Edit commit (checkout detached)", "Duplicate",
-        "Squash...", "Split...", "Simplify parents", "Drop commit...", "Go to child", "Go to parent", "Filter by author",
+        "Squash...", "Split...", "Simplify parents", "Discard commit...", "Go to child", "Go to parent", "Filter by author",
         "Copy"};
     float last = -1.0f;
     for (const char* label : labels) {

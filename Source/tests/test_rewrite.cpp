@@ -437,9 +437,9 @@ GG_TEST("rewrite", "in a bare repository, and at the root: reword, drop the root
     const std::string tip = s.head(repo);
     GG_REQUIRE(s.waitUntil([&] { return s.session()->history().row(ggui::core::Oid::fromHex(newRoot)) != nullptr; }));
     ctx->ItemClick(("//History/**/###row_" + newRoot).c_str());
-    ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Drop");
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Discard");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != tip; }));
     s.settle();
     GG_CHECK_STR_EQ(gg::trim(s.gitOut(repo, {"rev-list", "--count", "HEAD"})), "4");
@@ -1168,9 +1168,9 @@ GG_TEST("rewrite", "drop asks the scope: Only main leaves the side branch with t
     const std::string side = s.revParse(r.path, "side");
     GG_REQUIRE(s.openRepository(r.path));
     selectCommit(s, r.b);
-    ctx->KeyPress(ImGuiKey_A);
-    GG_REQUIRE(s.dialogOpen("Drop commit"));
-    s.dialogButton("Drop commit", "Drop");
+    ctx->KeyPress(ImGuiKey_D);
+    GG_REQUIRE(s.dialogOpen("Discard commit"));
+    s.dialogButton("Discard commit", "Discard");
     GG_REQUIRE(s.dialogOpen("Rewrite other branches?"));
     s.dialogButton("Rewrite other branches?", "Only main");
     GG_CHECK(s.waitUntil([&] { return s.revParse(r.path, "main") != r.c; }));
