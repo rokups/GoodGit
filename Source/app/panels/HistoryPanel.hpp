@@ -274,6 +274,7 @@ private:
     bool m_openCheckoutChooser = false;
     std::optional<core::Oid> m_firstClickRow; // the row that got the last first click (a double click needs it)
     void dragAndDrop(const core::HistoryRow& row, int index);
+public: // test hook: the drop decision
     // What a drop of the commit `source` on the zone of `row` does. The line, the tooltip hint and the drop use it.
     enum class DropZone { Top, Middle, Bottom };
     enum class DropAct { None, Busy, ReorderAbove, ReorderBelow, MoveBefore, MoveAfter, Squash, Rebase, Chooser };
@@ -283,6 +284,7 @@ private:
         std::string hint;    // the line of the drag tooltip
     };
     DropPlan planDrop(bool free, const core::Oid& source, const core::HistoryRow& row, int index, DropZone zone) const;
+private:
     void drawDropChooser();
     // A branch dropped on a row (without Shift) waits for the menu: the branch, the row, and the local branch
     // the drop was on ("" = the target is the commit).

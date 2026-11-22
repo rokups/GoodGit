@@ -22,6 +22,8 @@ struct SelectionShape {
     bool range() const { return ids.size() > 1 && contiguous; } // two or more adjacent commits
 };
 SelectionShape selectionShape(Session& session);
+// The commits that Squash folds for `sel` (newest first). Empty, and `why` set, when it cannot be done.
+std::vector<core::Oid> squashCommits(Session& s, const SelectionShape& sel, const char** why);
 // Tooltip for a menu item that just drew, shown while it is disabled (`disabled`) and hovered.
 void disabledHint(bool disabled, const char* why);
 

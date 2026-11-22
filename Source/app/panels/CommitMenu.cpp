@@ -61,6 +61,8 @@ Other otherCommit(Session& s, const core::HistoryRow& row)
     return {snap->head, snap->headDetached || snap->headBranch.empty() ? snap->head.hex() : snap->headBranch};
 }
 
+} // namespace
+
 // What Squash acts on: the commits to fold into one, newest first. One selected commit with a
 // single parent: it and its parent. Adjacent selected commits (none a merge): exactly those.
 // Empty, and `why` set, when the selection cannot be squashed.
@@ -91,7 +93,6 @@ std::vector<core::Oid> squashCommits(Session& s, const SelectionShape& sel, cons
     return out;
 }
 
-} // namespace
 
 SelectionShape selectionShape(Session& s)
 {

@@ -7,6 +7,7 @@
 #include "shell/Session.hpp"
 #include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
+#include <libgg/Keep.hpp>
 #include "../core/History.hpp"
 #include "util/Ui.hpp"
 
@@ -2903,6 +2904,221 @@ GG_TEST("history", "arrows move row by row in a filtered list")
     ctx->KeyPress(ImGuiKey_DownArrow);
     ctx->Yield(2);
     GG_CHECK_STR_EQ(s.session()->selection().id.hex(), s2);
+}
+
+// hideNewRefs: which refs of `now` that `before` lacks the panel hides. Refs are "b:name", "r:remote/name",
+// "t:name" and "k:<one hex char>".
+GG_TEST("history", "hideNewRefs: table of settings, groups, categories, tags, kept and the checked-out branch")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    auto& history = s.session()->history();
+    auto& settings = s.session()->app().settings().data();
+    const auto full = [](const std::string& r) {
+        const std::string n = r.substr(2);
+        switch (r[0]) {
+        case 'b': return "refs/heads/" + n;
+        case 'r': return "refs/remotes/" + n;
+        case 't': return "refs/tags/" + n;
+        default: return gg::keep::refName(std::string(40, n[0]));
+        }
+    };
+    const auto snap = [](const std::vector<std::string>& refs, bool detached) {
+        ggui::core::Snapshot sn;
+        sn.headBranch = "main";
+        sn.headDetached = detached;
+        for (const auto& r : refs) {
+            const std::string n = r.substr(2);
+            if (r[0] == 'b') {
+                sn.branches.push_back({});
+                sn.branches.back().name = n;
+            } else if (r[0] == 'r') {
+                sn.remoteBranches.push_back({});
+                sn.remoteBranches.back().remote = n.substr(0, n.find('/'));
+                sn.remoteBranches.back().name = n;
+            } else if (r[0] == 't') {
+                sn.tags.push_back({});
+                sn.tags.back().name = n;
+            } else {
+                sn.kept.push_back({});
+                sn.kept.back().id = Oid::fromHex(std::string(40, n[0]));
+            }
+        }
+        return sn;
+    };
+    struct Row {
+        const char* name;
+        bool hideBranches, hideTags, detached;
+        std::vector<std::string> hidden, before, now, expect; // `expect`: the refs newly hidden
+    };
+    const std::vector<Row> rows = {
+        {"empty snapshots", true, true, false, {}, {}, {}, {}},
+        {"no change", true, true, false, {}, {"b:a", "t:v1"}, {"b:a", "t:v1"}, {}},
+        {"setting off: a new branch stays shown", false, false, false, {}, {"b:a"}, {"b:a", "b:topic"}, {}},
+        {"setting on: a new branch is hidden, an old one is not", true, false, false, {}, {"b:a"}, {"b:a", "b:topic"}, {"b:topic"}},
+        {"setting on: the checked-out branch stays shown", true, false, false, {}, {"b:a"}, {"b:a", "b:main"}, {}},
+        {"detached HEAD: a branch of the HEAD name is hidden", true, false, true, {}, {"b:a"}, {"b:a", "b:main"}, {"b:main"}},
+        {"setting on: a kept commit is not hidden", true, false, false, {}, {"b:a"}, {"b:a", "k:1"}, {}},
+        {"category all hidden: a new branch is hidden", false, false, false, {"b:a"}, {"b:a"}, {"b:a", "b:topic"}, {"b:topic"}},
+        {"category partly shown: a new branch is shown", false, false, false, {"b:a"}, {"b:a", "b:c"}, {"b:a", "b:c", "b:topic"}, {}},
+        {"folder all hidden: a new branch in it is hidden", false, false, false, {"b:f/x", "b:f/y"}, {"b:f/x", "b:f/y", "b:z"},
+            {"b:f/x", "b:f/y", "b:z", "b:f/new", "b:f/g/deep", "b:other"}, {"b:f/new", "b:f/g/deep"}},
+        {"folder partly shown: a new branch in it is shown", false, false, false, {"b:f/x"}, {"b:f/x", "b:f/y"},
+            {"b:f/x", "b:f/y", "b:f/new"}, {}},
+        {"remote with all hidden: its new branch is hidden, another remote is not", false, false, false, {"r:origin/m"},
+            {"r:origin/m"}, {"r:origin/m", "r:origin/n", "r:up/n"}, {"r:origin/n"}},
+        {"kept all hidden: a new kept commit is hidden", false, false, false, {"k:1"}, {"k:1"}, {"k:1", "k:2"}, {"k:2"}},
+        {"tags: setting on hides a new tag only", false, true, false, {}, {"t:v1"}, {"t:v1", "t:v2"}, {"t:v2"}},
+        {"tags: setting off", false, false, false, {}, {"t:v1"}, {"t:v1", "t:v2"}, {}},
+        {"branches and tags together", true, true, false, {}, {}, {"b:n", "t:n"}, {"b:n", "t:n"}},
+    };
+    for (const auto& row : rows) {
+        ctx->LogInfo("row: %s", row.name);
+        history.showAllRefs();
+        settings.branchesHideNew = row.hideBranches;
+        settings.tagsHideNew = row.hideTags;
+        std::vector<std::string> names;
+        for (const auto& h : row.hidden)
+            names.push_back(full(h));
+        history.setRefsVisible(names, false);
+        const bool hid = history.hideNewRefs(snap(row.before, row.detached), snap(row.now, row.detached));
+        GG_CHECK_EQ(hid, !row.expect.empty());
+        std::set<std::string> want(names.begin(), names.end());
+        for (const auto& e : row.expect)
+            want.insert(full(e));
+        std::set<std::string> all;
+        for (const auto* list : {&row.before, &row.now, &row.hidden})
+            for (const auto& r : *list)
+                all.insert(full(r));
+        for (const auto& name : all)
+            GG_CHECK_EQ(history.refStoredVisible(name), !want.count(name));
+    }
+    settings.branchesHideNew = false;
+    settings.tagsHideNew = false;
+}
+
+// planDrop: the plan for a drop of `source` on a zone of `target`, by the modifiers.
+GG_TEST("history", "planDrop: table of zones, modifiers, neighbours, root and unknown commits")
+{
+    using Panel = ggui::HistoryPanel;
+    const fs::path repo = s.fixture(Recipe::Linear);
+    std::string c[5];
+    for (int i = 0; i < 5; ++i)
+        c[i] = s.revParse(repo, "HEAD~" + std::to_string(i));
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists(rowRef(c[4]).c_str()); }));
+    auto& history = s.session()->history();
+    const auto at = [&](const std::string& hex) {
+        const auto vis = history.visibleIndexes();
+        for (size_t i = 0; i < vis.size(); ++i)
+            if (history.rows()[static_cast<size_t>(vis[i])].id.hex() == hex)
+                return static_cast<int>(i);
+        return -1;
+    };
+    const auto sh = [&](int i) { return c[i].substr(0, 7); };
+    enum { Ctrl = 1, Shift = 2 };
+    using Z = Panel::DropZone;
+    using A = Panel::DropAct;
+    struct Row {
+        const char* name;
+        bool free;
+        int source, target; // index in c; 9 = an unknown commit as the source
+        Z zone;
+        int mods;
+        A act;
+        std::string hint; // "" = not checked
+    };
+    const std::vector<Row> rows = {
+        {"busy", false, 0, 2, Z::Middle, 0, A::Busy, "Wait: another task runs"},
+        {"onto itself", true, 2, 2, Z::Middle, Ctrl, A::None, ""},
+        {"top zone onto itself", true, 2, 2, Z::Top, 0, A::None, ""},
+        {"top gap next to the dragged row (it is above)", true, 0, 1, Z::Top, 0, A::None, ""},
+        {"bottom gap next to the dragged row (it is below)", true, 1, 0, Z::Bottom, 0, A::None, ""},
+        {"unknown source", true, 9, 2, Z::Middle, 0, A::None, ""},
+        {"top: between a child and its parent", true, 0, 2, Z::Top, 0, A::ReorderAbove, "Move between " + sh(1) + " and " + sh(2)},
+        {"top: above the first row is a new tip", true, 3, 0, Z::Top, 0, A::ReorderAbove, "Move above " + sh(0) + " (new tip)"},
+        {"bottom: between a child and its parent", true, 0, 2, Z::Bottom, 0, A::ReorderBelow, "Move between " + sh(2) + " and " + sh(3)},
+        {"bottom: below the root has no neighbour", true, 0, 4, Z::Bottom, 0, A::ReorderBelow, "Move below " + sh(4)},
+        {"middle, no modifier: the chooser", true, 0, 3, Z::Middle, 0, A::Chooser, ""},
+        {"middle, Ctrl: squash into an ancestor", true, 0, 3, Z::Middle, Ctrl, A::Squash, "Squash into " + sh(3)},
+        {"squash into the direct parent", true, 1, 2, Z::Middle, Ctrl, A::Squash, "Squash into " + sh(2)},
+        {"squash onto a descendant is refused", true, 3, 0, Z::Middle, Ctrl, A::None, ""},
+        {"squash of the root (no parent) is refused", true, 4, 1, Z::Middle, Ctrl, A::None, ""},
+        {"middle, Shift: move after", true, 0, 3, Z::Middle, Shift, A::MoveAfter, "Move after " + sh(3)},
+        {"middle, Ctrl+Shift: move before", true, 0, 3, Z::Middle, Ctrl | Shift, A::MoveBefore, "Move before " + sh(3)},
+        {"move of the root", true, 4, 1, Z::Middle, Shift, A::MoveAfter, ""},
+        {"move onto a descendant", true, 3, 0, Z::Middle, Shift, A::MoveAfter, ""},
+    };
+    ImGuiIO& io = ImGui::GetIO();
+    for (const auto& row : rows) {
+        ctx->LogInfo("row: %s", row.name);
+        const Oid source = row.source == 9 ? Oid::fromHex(std::string(40, 'e')) : Oid::fromHex(c[row.source]);
+        const int index = at(c[row.target]);
+        GG_REQUIRE(index >= 0);
+        const auto* target = history.row(Oid::fromHex(c[row.target]));
+        GG_REQUIRE(target);
+        io.KeyCtrl = row.mods & Ctrl;
+        io.KeyShift = row.mods & Shift;
+        io.KeyAlt = false;
+        const auto plan = history.planDrop(row.free, source, *target, index, row.zone);
+        io.KeyCtrl = io.KeyShift = false;
+        GG_CHECK(plan.act == row.act);
+        if (!row.hint.empty())
+            GG_CHECK_STR_EQ(plan.hint, row.hint);
+    }
+}
+
+// squashCommits: the commits that Squash folds for a selection shape.
+GG_TEST("history", "squashCommits: table of empty, single, range, gap, merge, root and unknown selections")
+{
+    const fs::path repo = s.fixture(Recipe::Merges);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(s.expandMerge(s.revParse(repo, "main")));
+    const auto& history = s.session()->history();
+    // The rows are newest first. Find a merge, a commit with a plain parent, and the root.
+    const ggui::core::HistoryRow *merge = nullptr, *plain = nullptr, *root = nullptr;
+    for (const auto& r : history.rows()) {
+        if (r.parents.size() > 1 && !merge)
+            merge = &r;
+        if (r.parents.empty())
+            root = &r;
+        const auto* p = r.parents.size() == 1 ? history.row(r.parents.front()) : nullptr;
+        if (!plain && p && p->parents.size() == 1)
+            plain = &r;
+    }
+    GG_REQUIRE(merge && plain && root);
+    const Oid parent = plain->parents.front();
+    const Oid grandparent = history.row(parent)->parents.front();
+    struct Row {
+        const char* name;
+        std::vector<Oid> ids;
+        bool contiguous;
+        std::vector<Oid> expect;
+        bool refused;
+    };
+    const Oid unknown = Oid::fromHex(std::string(40, 'e'));
+    const std::vector<Row> table = {
+        {"empty selection", {}, false, {}, true},
+        {"single commit: it and its parent", {plain->id}, false, {plain->id, parent}, false},
+        {"single commit marked contiguous", {plain->id}, true, {plain->id, parent}, false},
+        {"adjacent range: exactly those", {plain->id, parent}, true, {plain->id, parent}, false},
+        {"two commits with a gap", {plain->id, grandparent}, false, {}, true},
+        {"single merge", {merge->id}, false, {}, true},
+        {"range that holds a merge", {merge->id, plain->id}, true, {}, true},
+        {"single root: no parent", {root->id}, false, {}, true},
+        {"unknown commit", {unknown}, false, {}, true},
+        {"range that holds an unknown commit", {plain->id, unknown}, true, {}, true},
+    };
+    for (const auto& row : table) {
+        ctx->LogInfo("row: %s", row.name);
+        ggui::SelectionShape sel;
+        sel.ids = row.ids;
+        sel.contiguous = row.contiguous;
+        const char* why = "unset";
+        const auto out = ggui::squashCommits(*s.session(), sel, &why);
+        GG_CHECK(out == row.expect);
+        GG_CHECK_EQ(why != nullptr, row.refused);
+    }
 }
 
 } // namespace ggtest
