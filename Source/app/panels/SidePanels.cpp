@@ -1005,28 +1005,39 @@ void BranchesPanel::keptMenu(const core::KeptInfo& k, bool current, const IdSlot
     ImGui::EndPopup();
 }
 
-void BranchesPanel::draw(bool* open)
+// The top of the Branches and Tags panels: the window, the create button, the selection prune and the Esc hotkey.
+// Returns false when the window is closed or collapsed (it is ended then).
+static bool drawRefListHeader(bool* open, const char* panelName, const char* createLabel, const char* createTooltip,
+    Session& session, RefSelection& selection, const std::function<void()>& create)
 {
-    if (!ImGui::Begin(panel::Branches, open)) {
+    if (!ImGui::Begin(panelName, open)) {
         ImGui::End();
-        return;
+        return false;
     }
-    const bool free = m_session.actions().busy().empty();
-    ImGui::BeginDisabled(!free || m_snapshot->head.isNull());
-    if (ImGui::Button(ICON_MS_ADD "###create_branch"))
-        m_session.showCreateBranchDialog(m_snapshot->head.hex());
+    const bool free = session.actions().busy().empty();
+    ImGui::BeginDisabled(!free || session.snapshot()->head.isNull());
+    if (ImGui::Button(createLabel))
+        create();
     ImGui::EndDisabled();
     if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
-        tooltip("Create branch at HEAD...");
+        tooltip("%s", createTooltip);
+    // The selection keeps the rows that the last frame drew. The caller collects its own rows.
+    selection.prune();
+    // Esc drops the selection (not while a popup is open or the filter field takes the key).
+    if (!selection.names.empty() && !ImGui::GetIO().WantTextInput
+        && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && hotkey(ImGuiKey_Escape))
+        selection.clear();
+    return true;
+}
+
+void BranchesPanel::draw(bool* open)
+{
+    if (!drawRefListHeader(open, panel::Branches, ICON_MS_ADD "###create_branch", "Create branch at HEAD...", m_session, m_selection, [&] { m_session.showCreateBranchDialog(m_snapshot->head.hex()); }))
+        return;
+    const bool free = m_session.actions().busy().empty();
     auto& history = m_session.history();
-    // The selection keeps the rows that the last frame drew. This frame collects its own rows.
-    m_selection.prune();
     SelectionFrame selection{m_selection, {}};
     selection.drawn.reserve(m_selection.drawn.size());
-    // Esc drops the selection (not while a popup is open or the filter field takes the key).
-    if (!m_selection.names.empty() && !ImGui::GetIO().WantTextInput
-        && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && hotkey(ImGuiKey_Escape))
-        m_selection.clear();
     // Show all / Hide all: every local and remote-tracking branch and kept commit in History.
     std::vector<std::string> all;
     for (const auto& b : m_snapshot->branches)
@@ -1413,26 +1424,11 @@ void tagMenuItems(Session& session, const core::Snapshot& snap, const core::TagI
 
 void TagsPanel::draw(bool* open)
 {
-    if (!ImGui::Begin(panel::Tags, open)) {
-        ImGui::End();
+    if (!drawRefListHeader(open, panel::Tags, ICON_MS_ADD "###create_tag", "Create tag at HEAD...", m_session, m_selection, [&] { m_session.showCreateTagDialog(m_snapshot->head.hex()); }))
         return;
-    }
-    const bool freeTags = m_session.actions().busy().empty();
-    ImGui::BeginDisabled(!freeTags || m_snapshot->head.isNull());
-    if (ImGui::Button(ICON_MS_ADD "###create_tag"))
-        m_session.showCreateTagDialog(m_snapshot->head.hex());
-    ImGui::EndDisabled();
-    if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
-        tooltip("Create tag at HEAD...");
     auto& history = m_session.history();
-    // The selection keeps the rows that the last frame drew. This frame collects its own rows.
-    m_selection.prune();
     SelectionFrame selection{m_selection, {}};
     selection.drawn.reserve(m_selection.drawn.size());
-    // Esc drops the selection (not while a popup is open or the filter field takes the key).
-    if (!m_selection.names.empty() && !ImGui::GetIO().WantTextInput
-        && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && hotkey(ImGuiKey_Escape))
-        m_selection.clear();
     // Show all / Hide all: every tag in History.
     std::vector<std::string> all;
     for (const auto& t : m_snapshot->tags)
