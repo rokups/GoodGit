@@ -358,7 +358,6 @@ jobs:
           msystem: MINGW64
           install: >-
             git patch unzip mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-python
       - uses: actions/cache@v6
         with:
           path: .cache/CPM
