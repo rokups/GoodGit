@@ -333,6 +333,7 @@ RequestId Engine::reconcile()
         const gg::reconcile::Result res = gg::reconcile::run(job.repo(), &error);
         if (!error.empty())
             spdlog::warn("reconcile: {}", error);
+        spdlog::debug("reconcile: pass appended={} deferred={} skipped={}", res.appended, res.deferred, res.skipped);
         if (res.appended > 0) {
             spdlog::debug("reconcile: journaled {} external operation(s)", res.appended);
             readOperations();
