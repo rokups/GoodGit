@@ -16,6 +16,12 @@ class FileWatcher;
 
 namespace ggui::core {
 
+namespace detail {
+// Sorts a path relative to a git dir into the event flags of `e`. False: not a git dir path.
+// Exposed for tests only.
+bool classifyGit(const std::string& rel, WatchEvent& e);
+} // namespace detail
+
 class Watcher {
 public:
     Watcher(std::filesystem::path workdir, std::filesystem::path gitDir, std::filesystem::path commonDir,
