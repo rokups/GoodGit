@@ -353,7 +353,8 @@ GG_TEST("engine", "a status request from the watcher does not cancel the running
     // Two watcher requests during the scan: the first is replaced, one follow-up stays.
     worker.post(followUp(probe, 2, false));
     worker.post(followUp(probe, 3, false));
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // The drop callback runs when the third request replaces the second one.
+    GG_REQUIRE(s.waitUntil([&] { return probe.droppedCount.load() >= 1; }, 10.0f));
     GG_CHECK(worker.running());
     GG_CHECK(!probe.sawCancel.load());
     GG_CHECK_EQ(probe.followUpRuns.load(), 0);
