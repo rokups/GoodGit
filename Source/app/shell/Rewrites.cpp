@@ -353,13 +353,16 @@ void Actions::rewriteDecide(const std::shared_ptr<RewriteState>& state)
         return;
     }
     // 2. Commits that become empty (git rebase -i stops on them): keep or drop them.
-    if (state->askEmpty && !state->emptied && !r.becameEmpty.empty()) {
+    const auto askable = std::count_if(r.becameEmpty.begin(), r.becameEmpty.end(), [](const rw::BecameEmpty& e) { return !e.group; });
+    if (state->askEmpty && !state->emptied && askable > 0) {
         Form f;
         f.title = "Commits become empty";
         f.message = "The changes of these commits are already in the commits they go onto. Keep them as "
                     "empty commits or drop them?";
         for (size_t i = 0; i < r.becameEmpty.size(); ++i) {
             const auto& e = r.becameEmpty[i];
+            if (e.group)
+                continue;
             f.add(Field{Field::Info, "empty_" + std::to_string(i), "",
                 (e.commit.empty() ? std::string() : shortId(e.commit) + " ") + e.subject});
         }

@@ -1649,7 +1649,7 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     GG_CHECK_STR_EQ(s.revParse(path, "main"), c5);
 
     // A squash group that ends up empty (c6 fixed up into c5 undoes it) is dropped as a whole.
-    ctx->ItemClick("//History/**/###row_wt");
+    // A squash group that ends up empty (c6 fixed up into c5 undoes it) is kept as an empty commit.
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
     GG_REQUIRE(s.waitUntil([&] { return s.head(path) == before; }));
     s.settle();
@@ -1661,8 +1661,8 @@ GG_TEST("rebase-i", "live preview: non-text conflicts that need a decision, comm
     s.comboSelect(irWidget("ir_empty").c_str(), "Drop");
     p = previewReady(s);
     GG_REQUIRE(p && p->ok);
-    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4", "c7"}));
-    GG_CHECK(p->droppedEmpty == (Rows{"c5 add f"}));
+    GG_CHECK(previewSubjects(*p) == (Rows{"c2", "c3", "c4", "c5", "c7"}));
+    GG_CHECK(p->droppedEmpty.empty() && p->rows[3].empty && !p->rows[3].wasEmpty);
     const Preview group = *p;
     GG_REQUIRE(start(s));
     checkMatches(s, path, "main", group);
@@ -1843,7 +1843,7 @@ void checkAside(Scenario& s, const fs::path& repo, const std::string& tip, const
 
 // Runs `git rebase -i` on `copy` with ggui's todo text and the rewording editor.
 void gitRebase(Scenario& s, const fs::path& copy, std::string todoText, const std::string& upstream,
-    const std::string& onto, const char* empty)
+    const std::string& onto, const char* empty, bool stops = false, bool editorOnContinue = false)
 {
     if (!gitMovesBranches(s))
         todoText = withoutUpdateRefRows(todoText);
@@ -1862,7 +1862,15 @@ void gitRebase(Scenario& s, const fs::path& copy, std::string todoText, const st
     }
     args.push_back(upstream);
     ggui::setEnv("GIT_EDITOR", editorFile.generic_string()); // the test runner's GIT_EDITOR=true beats core.editor
-    s.git(copy, args);
+    if (stops) {
+        // A squash/fixup that empties its group stops the rebase; --continue keeps an empty commit.
+        GG_CHECK(s.gitMayFail(copy, args).exitCode != 0);
+        if (!editorOnContinue)
+            ggui::setEnv("GIT_EDITOR", "true"); // the kept empty commit keeps its message
+        GG_CHECK(s.gitMayFail(copy, {"rebase", "--continue"}).exitCode == 0);
+    } else {
+        s.git(copy, args);
+    }
     ggui::setEnv("GIT_EDITOR", "true");
 }
 
@@ -2019,6 +2027,127 @@ GG_TEST("rebase-i", "a pick dropped as empty is not reported to post-rewrite, as
     GG_CHECK(ours == postRewrite(s, copy));
     for (const auto& line : ours)
         GG_CHECK(line.rfind(e1, 0) != 0);
+    }
+}
+
+// main: e1 adds q.txt, f1 removes it again: the group "e1 + f1" holds no change. One test for each
+// action, because every repository the test opens costs about a minute in the headless runner.
+void groupBecomesEmpty(Scenario& s, const char* action)
+{
+    ImGuiTestContext* ctx = s.ctx;
+    {
+        for (const char* mode : {"Drop", "Keep"}) {
+            std::string name = std::string(action) + "-" + mode;
+            std::replace(name.begin(), name.end(), ' ', '_');
+            const fs::path path = s.fixture(Recipe::Empty, "repo-" + name);
+            s.commitFile(path, "base.txt", "base\n", "c0 base");
+            const std::string c0 = s.head(path);
+            s.commitFile(path, "q.txt", "q\n", "e1 add q");
+            const std::string e1 = s.head(path);
+            s.git(path, {"rm", "-q", "q.txt"});
+            s.git(path, {"commit", "-q", "-m", "f1 remove q"});
+            const std::string f1 = s.head(path);
+            s.commitFile(path, "g.txt", "g\n", "g1 add g");
+            installRecordingHooks(s, path);
+            const fs::path copy = copyRepo(s, path, "copy-" + name);
+            GG_REQUIRE(s.openRepository(path));
+            GG_REQUIRE(rowReady(s, e1));
+            ctx->ItemClick(historyRow(e1).c_str());
+            ctx->KeyPress(ImGuiKey_I);
+            GG_REQUIRE(editorReady(s));
+            s.comboSelect(irWidget("ir_empty").c_str(), mode);
+            s.comboSelect(irAction(f1).c_str(), action);
+            rewordAll(s);
+            const std::string todoText = todo::format(editor(s).todo());
+            GG_REQUIRE(previewReady(s));
+            GG_REQUIRE(start(s));
+            GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", c0 + "..main"}), "2");
+            // The group stays as an empty commit.
+            GG_CHECK_STR_EQ(s.revParse(path, "main~1^{tree}"), s.revParse(path, c0 + "^{tree}"));
+            gitRebase(s, copy, todoText, c0, "", mode == std::string("Drop") ? "drop" : "keep", true,
+                action == std::string("squash") || action == std::string("fixup -c"));
+            GG_CHECK_STR_EQ(history(s, path, "main"), history(s, copy, "main"));
+            const auto ours = postRewrite(s, path);
+            GG_CHECK(!ours.empty());
+            GG_CHECK(ours == postRewrite(s, copy));
+        }
+    }
+}
+
+GG_TEST("rebase-i", "a fixup group that becomes empty is kept in every mode, as git rebase --continue keeps it")
+{
+    groupBecomesEmpty(s, "fixup");
+}
+
+GG_TEST("rebase-i", "a squash group that becomes empty is kept in every mode, as git rebase --continue keeps it")
+{
+    groupBecomesEmpty(s, "squash");
+}
+
+GG_TEST("rebase-i", "a fixup -C group that becomes empty is kept in every mode, as git rebase --continue keeps it")
+{
+    groupBecomesEmpty(s, "fixup -C");
+}
+
+GG_TEST("rebase-i", "a fixup -c group that becomes empty is kept in every mode, as git rebase --continue keeps it")
+{
+    groupBecomesEmpty(s, "fixup -c");
+}
+
+GG_TEST("rebase-i", "Start does not ask about a group that becomes empty; a pick that becomes empty is still listed")
+{
+    // up adds q.txt. main: a1, [e1 adds q.txt: becomes empty onto up], g1 adds g.txt, g2 removes it (fixup).
+    for (const bool withE1 : {false, true}) {
+        const fs::path path = s.fixture(Recipe::Empty, withE1 ? "repo-mixed" : "repo-group");
+        s.commitFile(path, "base.txt", "base\n", "c0 base");
+        s.git(path, {"switch", "-q", "-c", "up"});
+        s.commitFile(path, "q.txt", "q\n", "u1 add q");
+        const std::string u1 = s.head(path);
+        s.git(path, {"switch", "-q", "main"});
+        s.commitFile(path, "a.txt", "a\n", "a1 add a");
+        const std::string a1 = s.head(path);
+        std::string e1;
+        if (withE1) {
+            s.commitFile(path, "q.txt", "q\n", "e1 add q");
+            e1 = s.head(path);
+        }
+        s.commitFile(path, "g.txt", "g\n", "g1 add g");
+        s.git(path, {"rm", "-q", "g.txt"});
+        s.git(path, {"commit", "-q", "-m", "g2 remove g"});
+        const std::string g2 = s.head(path);
+        GG_REQUIRE(s.openRepository(path));
+        GG_REQUIRE(rowReady(s, a1));
+        ctx->ItemClick(historyRow(a1).c_str());
+        ctx->KeyPress(ImGuiKey_I);
+        GG_REQUIRE(editorReady(s));
+        ctx->ItemClick(irWidget("ir_onto").c_str());
+        ctx->KeyChars("up");
+        ctx->KeyPress(ImGuiKey_Enter);
+        GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
+        key(s, g2, ImGuiKey_F);
+        const Preview* p = previewReady(s);
+        GG_REQUIRE(p && p->ok);
+        const size_t groupRow = p->rows.size() - 1;
+        GG_CHECK(p->rows[groupRow].empty && !p->rows[groupRow].wasEmpty && p->rows[groupRow].sources.size() == 2);
+        ctx->MouseMove((previewPane(s) + "/**/###irp_row_" + std::to_string(groupRow)).c_str());
+        ctx->SleepNoSkip(kTooltipWait, 0.1f);
+        GG_CHECK(s.textShown("//##Tooltip_00", "git stops here"));
+        ctx->ItemClick(irWidget("ir_start").c_str());
+        if (withE1) {
+            GG_REQUIRE(s.dialogOpen("Commits become empty"));
+            const auto* f = s.app.dialogs().current();
+            GG_REQUIRE(f->field("empty_0") && !f->field("empty_1"));
+            GG_CHECK(f->field("empty_0")->text.find("e1 add q") != std::string::npos);
+            s.dialogButton("Commits become empty", "Drop them");
+        } else {
+            GG_CHECK(!s.dialogOpen("Commits become empty", 1.0f));
+        }
+        GG_REQUIRE(s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f));
+        s.settle();
+        // a1 and the group stay; the pick e1 is left out. The group is an empty commit.
+        GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", "up..main"}), "2");
+        GG_CHECK_STR_EQ(s.revParse(path, "main^{tree}"), s.revParse(path, "main~1^{tree}"));
+        GG_CHECK(s.statusPorcelain(path).empty());
     }
 }
 
