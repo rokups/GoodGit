@@ -2974,6 +2974,12 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one), 
     s.showPanel("Worktrees");
     const std::string wt1 = repo.filename().string() + "-wt1";
     const std::string wt3 = repo.filename().string() + "-wt3"; // its directory is gone
+    // Records the launches instead of opening a file manager or a window on the desktop.
+    ggui::TestLaunchLog launches;
+    struct Reset {
+        ~Reset() { ggui::testLaunchLog = nullptr; }
+    } reset;
+    ggui::testLaunchLog = &launches;
     auto row = [](const std::string& name) { return "//Worktrees/worktree_" + name + "/###row"; };
     auto button = [](const std::string& name, const char* act) { return "//Worktrees/worktree_" + name + "/###" + act; };
     auto disabled = [&](const std::string& ref) { return (ctx->ItemInfo(ref.c_str()).ItemFlags & ImGuiItemFlags_Disabled) != 0; };
@@ -3004,6 +3010,8 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one), 
         GG_CHECK(s.clickDisabled(button(wt3, act).c_str()));
         GG_CHECK(gg::worktrees::samePath(s.session()->path(), repo));
     }
+    GG_CHECK(launches.folders.empty());
+    GG_CHECK(launches.windows.empty());
     // Another worktree: both, enabled; Open here switches this window to it.
     ctx->MouseMove(row(wt1).c_str());
     ctx->Yield(3);
@@ -3013,6 +3021,17 @@ GG_TEST("panels", "worktrees: hover actions Open here (not on the current one), 
     GG_CHECK(!disabled(button(wt1, "act_open_dir")));
     GG_REQUIRE(s.itemExists(button(wt1, "act_open_window").c_str()));
     GG_CHECK(!disabled(button(wt1, "act_open_window")));
+    ctx->ItemClick(button(wt1, "act_open_dir").c_str());
+    GG_REQUIRE(launches.folders.size() == 1);
+    GG_CHECK(gg::worktrees::samePath(launches.folders[0], s.root() / wt1));
+    ctx->MouseMove(row(wt1).c_str());
+    ctx->Yield(3);
+    ctx->ItemClick(button(wt1, "act_open_window").c_str());
+    GG_REQUIRE(launches.windows.size() == 1);
+    GG_CHECK(gg::worktrees::samePath(launches.windows[0], s.root() / wt1));
+    GG_CHECK_EQ(launches.folders.size(), 1u);
+    ctx->MouseMove(row(wt1).c_str());
+    ctx->Yield(3);
     ctx->ItemClick(button(wt1, "act_open_here").c_str());
     GG_CHECK(s.waitUntil([&] {
         auto* session = s.session();

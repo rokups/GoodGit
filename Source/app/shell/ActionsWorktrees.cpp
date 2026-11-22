@@ -5,6 +5,7 @@
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
 #include "shell/Session.hpp"
+#include "util/Ui.hpp"
 
 #include <libgg/Launch.hpp>
 #include <libgg/Worktrees.hpp>
@@ -184,6 +185,12 @@ void Actions::repairWorktree(const std::string& path)
 
 void Actions::openInNewWindow(const std::string& path)
 {
+#ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
+    if (testLaunchLog) {
+        testLaunchLog->windows.push_back(path);
+        return;
+    }
+#endif
     App* app = &m_session.app();
     app->io().post([app, path]() -> std::function<void()> {
         const fs::path program = gg::gguiProgram();

@@ -645,8 +645,18 @@ void spinner(const char* id, float radius)
     dl->PathStroke(ImGui::GetColorU32(ImGuiCol_Text), 0, radius * 0.35f);
 }
 
+#ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
+TestLaunchLog* testLaunchLog = nullptr;
+#endif
+
 void openInFileManager(const std::filesystem::path& path)
 {
+#ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
+    if (testLaunchLog) {
+        testLaunchLog->folders.push_back(path);
+        return;
+    }
+#endif
     // Explorer opens Documents for a path with '/': it needs backslashes.
     std::filesystem::path preferred = path;
     const std::string p = preferred.make_preferred().string();

@@ -184,6 +184,13 @@ bool beginContextMenu(const char* strId = nullptr, ImGuiPopupFlags flags = ImGui
 void spinner(const char* id, float radius);
 // Opens a directory or file with the desktop's default handler (off the UI thread).
 void openInFileManager(const std::filesystem::path& path);
+#ifdef GGUI_ENABLE_IMGUI_TEST_ENGINE
+// Test seam: while set, openInFileManager and Actions::openInNewWindow record the path here and launch nothing.
+struct TestLaunchLog {
+    std::vector<std::filesystem::path> folders, windows;
+};
+extern TestLaunchLog* testLaunchLog;
+#endif
 // Help marker "(?)" with a tooltip.
 void helpMarker(const char* text);
 // Layout helpers so toolbars flow like words instead of clipping at the panel edge.
