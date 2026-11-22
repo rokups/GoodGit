@@ -397,6 +397,79 @@ GG_TEST("panels", "tags: filter, visibility, reveal, copy")
     GG_CHECK(s.waitUntil([&] { return history.refVisible("refs/tags/v2.0") && history.rows().size() == 4; }));
 }
 
+GG_TEST("panels", "branches: the rows are cached and rebuilt when the snapshot or the filter changes")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    s.settle();
+    auto& panel = s.session()->branches();
+    ctx->Yield(3);
+    const unsigned built = panel.rowRebuilds();
+    GG_CHECK(built > 0);
+    ctx->Yield(5);
+    GG_CHECK_EQ(panel.rowRebuilds(), built); // nothing changed: the rows are reused
+    // A new branch from plain git: a new snapshot, so the rows show it.
+    GG_CHECK(!s.itemExists("//Branches/branch_fresh/###branch_fresh"));
+    s.git(repo, {"branch", "fresh"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->findBranch("fresh") != nullptr; }));
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists("//Branches/branch_fresh/###branch_fresh"));
+    GG_CHECK(panel.rowRebuilds() > built);
+    // The filter text.
+    const unsigned afterBranch = panel.rowRebuilds();
+    ctx->ItemInputValue("//Branches/##branch_filter", "fre");
+    ctx->Yield(3);
+    GG_CHECK(panel.rowRebuilds() > afterBranch);
+    GG_CHECK(!s.itemExists("//Branches/branch_main/###branch_main"));
+    GG_CHECK(s.itemExists("//Branches/branch_fresh/###branch_fresh"));
+    // A hidden ref changes the row state, not the rows: the cache stays and the row still shows.
+    ctx->ItemInputValue("//Branches/##branch_filter", "");
+    ctx->Yield(3);
+    const unsigned beforeHide = panel.rowRebuilds();
+    auto& history = s.session()->history();
+    history.setRefsVisible({"refs/heads/fresh"}, false);
+    ctx->Yield(3);
+    GG_CHECK(!history.refVisible("refs/heads/fresh"));
+    GG_CHECK_EQ(panel.rowRebuilds(), beforeHide);
+    GG_CHECK(s.itemExists("//Branches/branch_fresh/###branch_fresh"));
+}
+
+GG_TEST("panels", "tags: the rows are cached and rebuilt when the snapshot or the filter changes")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.git(repo, {"tag", "v1.0", "HEAD~1"});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Tags");
+    s.settle();
+    auto& panel = s.session()->tags();
+    ctx->Yield(3);
+    const unsigned built = panel.rowRebuilds();
+    GG_CHECK(built > 0);
+    ctx->Yield(5);
+    GG_CHECK_EQ(panel.rowRebuilds(), built); // nothing changed: the rows are reused
+    GG_CHECK(!s.itemExists("//Tags/tag_v3.0/###tag_v3.0"));
+    s.git(repo, {"tag", "v3.0"});
+    GG_CHECK(s.waitUntil([&] { return s.session()->snapshot()->tags.size() == 2; }));
+    ctx->Yield(3);
+    GG_CHECK(s.itemExists("//Tags/tag_v3.0/###tag_v3.0"));
+    GG_CHECK(panel.rowRebuilds() > built);
+    const unsigned afterTag = panel.rowRebuilds();
+    ctx->ItemInputValue("//Tags/##tag_filter", "v3");
+    ctx->Yield(3);
+    GG_CHECK(panel.rowRebuilds() > afterTag);
+    GG_CHECK(!s.itemExists("//Tags/tag_v1.0/###tag_v1.0"));
+    ctx->ItemInputValue("//Tags/##tag_filter", "");
+    ctx->Yield(3);
+    const unsigned beforeHide = panel.rowRebuilds();
+    auto& history = s.session()->history();
+    history.setRefsVisible({"refs/tags/v3.0"}, false);
+    ctx->Yield(3);
+    GG_CHECK(!history.refVisible("refs/tags/v3.0"));
+    GG_CHECK_EQ(panel.rowRebuilds(), beforeHide);
+    GG_CHECK(s.itemExists("//Tags/tag_v3.0/###tag_v3.0"));
+}
+
 GG_TEST("panels", "visibility: hidden refs survive a restart; refs that no longer exist are dropped")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

@@ -52,12 +52,52 @@ struct RefSelection {
     void clear();
 };
 
+// The remote-tracking branches that a local branch relates to.
+// The pointers stay valid while the snapshot that they come from lives.
+struct BranchRemotes {
+    std::vector<const core::RemoteBranchInfo*> refs; // the refs with the name of the branch, in the order of the remotes
+    const core::RemoteBranchInfo* upstream = nullptr; // the upstream of the branch, when it is a listed ref
+};
+
+// Ref names as a tree split on '/'. A group is named by the longest '/'-separated prefix its
+// members share; a group of one is shown as that ref, unsplit.
+struct NameTree {
+    struct Entry {
+        std::string label;           // group prefix, or the ref's name below its group
+        size_t item = 0;             // leaf: index into the names
+        std::vector<Entry> children; // group
+        bool group = false;
+    };
+    std::vector<Entry> entries;
+};
+
+// The rows of the Branches panel. They depend on the snapshot and the filter text only.
+struct BranchRowCache {
+    bool valid = false;
+    std::string filter;
+    unsigned rebuilds = 0;
+    std::vector<std::pair<size_t, std::string>> locals;
+    std::vector<std::vector<std::string>> localRefs;
+    std::vector<BranchRemotes> localRemotes;
+    std::vector<NameTree::Entry> localTree;
+    std::map<std::string, std::vector<NameTree::Entry>> remoteTrees;
+};
+
+// The rows of the Tags panel. They depend on the snapshot and the filter text only.
+struct TagRowCache {
+    bool valid = false;
+    std::string filter;
+    unsigned rebuilds = 0;
+    std::vector<NameTree::Entry> tree;
+};
+
 class BranchesPanel {
 public:
     explicit BranchesPanel(Session& session) : m_session(session) { }
-    void onSnapshot(const core::SnapshotPtr& snapshot) { m_snapshot = snapshot; }
+    void onSnapshot(const core::SnapshotPtr& snapshot) { m_snapshot = snapshot; m_rows.valid = false; }
     void draw(bool* open);
     const RefSelection& selection() const { return m_selection; }
+    unsigned rowRebuilds() const { return m_rows.rebuilds; } // for tests
 
 private:
     // `allRefs`: the full refs of each branch of the snapshot, by index (the menu of a selection needs them).
@@ -70,20 +110,23 @@ private:
     // Remote nodes opened by the filter: the open state each had before it, put back when the filter is cleared.
     std::map<std::string, bool> m_remoteOpenBeforeFilter;
     RefSelection m_selection;
+    BranchRowCache m_rows;
 };
 
 class TagsPanel {
 public:
     explicit TagsPanel(Session& session) : m_session(session) { }
-    void onSnapshot(const core::SnapshotPtr& snapshot) { m_snapshot = snapshot; }
+    void onSnapshot(const core::SnapshotPtr& snapshot) { m_snapshot = snapshot; m_rows.valid = false; }
     void draw(bool* open);
     const RefSelection& selection() const { return m_selection; }
+    unsigned rowRebuilds() const { return m_rows.rebuilds; } // for tests
 
 private:
     Session& m_session;
     core::SnapshotPtr m_snapshot;
     FilterInput m_filter;
     RefSelection m_selection;
+    TagRowCache m_rows;
 };
 
 // The permanent repository list as a tree of groups and repositories (GG-12).

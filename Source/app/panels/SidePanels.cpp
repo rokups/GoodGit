@@ -99,12 +99,6 @@ struct BranchLabelParts {
     std::string_view name, link, upstream, tail;
 };
 
-// The remote-tracking branches that a local branch relates to.
-// The pointers stay valid while the snapshot that they come from lives.
-struct BranchRemotes {
-    std::vector<const core::RemoteBranchInfo*> refs; // the refs with the name of the branch, in the order of the remotes
-    const core::RemoteBranchInfo* upstream = nullptr; // the upstream of the branch, when it is a listed ref
-};
 
 // The remote-tracking branches by their name without the remote ("origin/feature/one" is "feature/one").
 // A "<remote>/HEAD" ref is not listed.
@@ -281,17 +275,6 @@ RowEvents visibilityRow(const std::string& rawId, const std::string& label, bool
     return events;
 }
 
-// Ref names as a tree split on '/'. A group is named by the longest '/'-separated prefix its
-// members share; a group of one is shown as that ref, unsplit.
-struct NameTree {
-    struct Entry {
-        std::string label;           // group prefix, or the ref's name below its group
-        size_t item = 0;             // leaf: index into the names
-        std::vector<Entry> children; // group
-        bool group = false;
-    };
-    std::vector<Entry> entries;
-};
 
 std::vector<std::string> splitSegments(const std::string& name)
 {
@@ -1093,26 +1076,44 @@ void BranchesPanel::draw(bool* open)
     // Only the list scrolls: the controls above stay put.
     beginList();
 
-    std::vector<std::pair<size_t, std::string>> locals;
-    for (size_t i = 0; i < m_snapshot->branches.size(); ++i)
-        if (filter.matches(m_snapshot->branches[i].name))
-            locals.push_back({i, m_snapshot->branches[i].name});
-    // The refs of a local branch row: the branch and its remote-tracking refs. Built once for the frame.
-    std::vector<std::vector<std::string>> localRefs(m_snapshot->branches.size());
-    std::vector<BranchRemotes> localRemotes(m_snapshot->branches.size());
-    {
+    // The rows depend on the snapshot (onSnapshot drops the cache) and the filter text only.
+    if (!m_rows.valid || m_rows.filter != m_filter.text) {
+        ++m_rows.rebuilds;
+        m_rows.valid = true;
+        m_rows.filter = m_filter.text;
+        auto& locals = m_rows.locals;
+        locals.clear();
+        for (size_t i = 0; i < m_snapshot->branches.size(); ++i)
+            if (filter.matches(m_snapshot->branches[i].name))
+                locals.push_back({i, m_snapshot->branches[i].name});
+        // The refs of a local branch row: the branch and its remote-tracking refs.
+        m_rows.localRefs.assign(m_snapshot->branches.size(), {});
+        m_rows.localRemotes.assign(m_snapshot->branches.size(), {});
         const auto remoteIndex = remotesByShortName(*m_snapshot);
-        for (size_t i = 0; i < localRefs.size(); ++i) {
+        for (size_t i = 0; i < m_rows.localRefs.size(); ++i) {
             const auto& b = m_snapshot->branches[i];
-            localRemotes[i] = branchRemotes(*m_snapshot, remoteIndex, b.name, b.upstream);
-            localRefs[i].push_back("refs/heads/" + b.name);
-            for (const auto* r : localRemotes[i].refs)
-                localRefs[i].push_back("refs/remotes/" + r->name);
+            m_rows.localRemotes[i] = branchRemotes(*m_snapshot, remoteIndex, b.name, b.upstream);
+            m_rows.localRefs[i].push_back("refs/heads/" + b.name);
+            for (const auto* r : m_rows.localRemotes[i].refs)
+                m_rows.localRefs[i].push_back("refs/remotes/" + r->name);
         }
+        m_rows.localTree = buildTree(locals);
+        // Remote-tracking branches under their remote.
+        std::map<std::string, std::vector<std::pair<size_t, std::string>>> byRemote;
+        for (size_t i = 0; i < m_snapshot->remoteBranches.size(); ++i) {
+            const auto& r = m_snapshot->remoteBranches[i];
+            if (filter.matches(r.name))
+                byRemote[r.remote].push_back({i, r.name.substr(std::min(r.name.size(), r.remote.size() + 1))});
+        }
+        m_rows.remoteTrees.clear();
+        for (const auto& [remote, list] : byRemote)
+            m_rows.remoteTrees[remote] = buildTree(list);
     }
+    const auto& localRefs = m_rows.localRefs;
+    const auto& localRemotes = m_rows.localRemotes;
     const GroupRefs localGroupRefs{history, [&](size_t index) { return localRefs[index]; }, RefKind::LocalBranch,
         [&](size_t index) { return m_snapshot->branches[index].name; }, &m_session, m_snapshot.get()};
-    drawTree(buildTree(locals), "local:", filtering, [&](size_t index, const std::string& shortName) {
+    drawTree(m_rows.localTree, "local:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& b = m_snapshot->branches[index];
         const BranchRemotes& branchRemoteRefs = localRemotes[index];
         // Two or more remote refs: an expandable node, and the refs are its child rows (no "@" suffix).
@@ -1243,19 +1244,12 @@ void BranchesPanel::draw(bool* open)
     }
 
     // Remote-tracking branches under their remote.
-    std::map<std::string, std::vector<std::pair<size_t, std::string>>> byRemote;
-    for (size_t i = 0; i < m_snapshot->remoteBranches.size(); ++i) {
-        const auto& r = m_snapshot->remoteBranches[i];
-        if (filter.matches(r.name))
-            byRemote[r.remote].push_back({i, r.name.substr(std::min(r.name.size(), r.remote.size() + 1))});
-    }
-    for (const auto& [remote, list] : byRemote) {
+    for (const auto& [remote, remoteTree] : m_rows.remoteTrees) {
         ImGui::PushID(("remote_group_" + remote).c_str());
         const core::RemoteInfo* info = nullptr;
         for (const auto& r : m_snapshot->remotes)
             if (r.name == remote)
                 info = &r;
-        const auto remoteTree = buildTree(list);
         const GroupRefs remoteGroupRefs{history, [&](size_t index) {
             return std::vector<std::string>{"refs/remotes/" + m_snapshot->remoteBranches[index].name};
         }, RefKind::RemoteBranch, [&](size_t index) { return m_snapshot->remoteBranches[index].name; }, &m_session};
@@ -1483,14 +1477,21 @@ void TagsPanel::draw(bool* open)
     beginList();
     // The menus offer Delete on the remotes that have the tag: read them while this panel is shown.
     m_session.requestRemoteTagsIfStale();
-    std::vector<std::pair<size_t, std::string>> localTags;
-    for (size_t i = 0; i < m_snapshot->tags.size(); ++i)
-        if (filter.matches(m_snapshot->tags[i].name))
-            localTags.push_back({i, m_snapshot->tags[i].name});
+    // The rows depend on the snapshot (onSnapshot drops the cache) and the filter text only.
+    if (!m_rows.valid || m_rows.filter != m_filter.text) {
+        ++m_rows.rebuilds;
+        m_rows.valid = true;
+        m_rows.filter = m_filter.text;
+        std::vector<std::pair<size_t, std::string>> localTags;
+        for (size_t i = 0; i < m_snapshot->tags.size(); ++i)
+            if (filter.matches(m_snapshot->tags[i].name))
+                localTags.push_back({i, m_snapshot->tags[i].name});
+        m_rows.tree = buildTree(localTags);
+    }
     // A folder row acts on the tags below it. Its menu has the same items as the menu of a selection of tags.
     const GroupRefs tagGroupRefs{history, [&](size_t index) { return std::vector<std::string>{"refs/tags/" + m_snapshot->tags[index].name}; },
         RefKind::Tag, [&](size_t index) { return m_snapshot->tags[index].name; }, &m_session, m_snapshot.get()};
-    drawTree(buildTree(localTags), "tag:", filtering, [&](size_t index, const std::string& shortName) {
+    drawTree(m_rows.tree, "tag:", filtering, [&](size_t index, const std::string& shortName) {
         const auto& t = m_snapshot->tags[index];
         const std::string full = "refs/tags/" + t.name;
         ImGui::PushOverrideID(windowId);
