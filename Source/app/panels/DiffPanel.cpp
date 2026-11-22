@@ -167,6 +167,7 @@ void DiffPanel::showFile(const Selection& sel, const FileRow& row, const Compare
     m_file = row;
     m_compare = compare;
     if (!sameFile) {
+        m_resetScroll = true; // the same path in another commit is another file
         m_gapShown.clear();
         m_anchorRow = -1;
         m_full = false;

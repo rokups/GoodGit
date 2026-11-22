@@ -1245,4 +1245,27 @@ GG_TEST("diff", "image size of a large image reads only a prefix")
     GG_CHECK(gImageBytesRead - mid <= 2 * 1024 * 1024); // the old blob and the file: a prefix of each
 }
 
+GG_TEST("diff", "another commit of the same file opens at the top")
+{
+    const fs::path repo = makeKeepRepo(s);
+    const std::string second = s.head(repo);
+    std::string changed;
+    for (int i = 1; i <= 400; ++i)
+        changed += (i % 80 == 40) ? "int line" + std::to_string(i) + " = 2; // again\n" : "int line" + std::to_string(i) + " = 0;\n";
+    s.write(repo, "nav.cpp", changed);
+    s.git(repo, {"add", "."});
+    s.git(repo, {"commit", "-q", "-m", "Third"});
+    GG_REQUIRE(s.openRepository(repo));
+    showFile(s, s.head(repo), "nav.cpp");
+    auto& diff = s.session()->diff();
+    ctx->WindowFocus("//Diff");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->ItemClick("//Diff/##diff_next_hunk");
+    ctx->Yield(3);
+    GG_REQUIRE(diff.topLine() > 0);
+    showFile(s, second, "nav.cpp");
+    ctx->Yield(3);
+    GG_CHECK_EQ(diff.topLine(), 0);
+}
+
 } // namespace ggtest
