@@ -61,6 +61,8 @@ bool isPublished(git_repository* repo, const git_oid& id);
 extern int gAheadBehindMaxVisits;
 // Test hook: the number of submodule repositories that readSubmodules opened.
 extern std::atomic<int> gSubmoduleOpens;
+// Test hook: the image bytes that readDiff read to find the image sizes.
+extern std::atomic<std::uint64_t> gImageBytesRead;
 
 // Whether `commit` has a child among the commits of all branches, remote branches, tags and HEAD.
 // The walk goes from the tips, newest first, and visits at most `maxVisits` commits. It checks `cancel`

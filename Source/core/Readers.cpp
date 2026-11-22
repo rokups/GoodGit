@@ -1152,7 +1152,7 @@ bool isImagePath(const std::string& p)
 }
 
 // "WxH" from PNG, GIF, BMP or JPEG header bytes ("" when unknown).
-std::string imageDims(const std::string& b)
+std::string imageDims(std::string_view b)
 {
     auto be16 = [&](size_t i) { return (static_cast<unsigned char>(b[i]) << 8) | static_cast<unsigned char>(b[i + 1]); };
     auto le16 = [&](size_t i) { return static_cast<unsigned char>(b[i]) | (static_cast<unsigned char>(b[i + 1]) << 8); };
@@ -1181,7 +1181,11 @@ std::string imageDims(const std::string& b)
     return {};
 }
 
-std::string rawBlob(git_repository* repo, const git_oid& id)
+// The parser needs the header, or the JPEG segments up to the first SOF marker: a prefix is enough.
+constexpr size_t kImagePrefixBytes = 1024 * 1024;
+
+// The dimensions of the image in a blob. libgit2 gives a pointer to the content: no copy is made.
+std::string blobImageDims(git_repository* repo, const git_oid& id)
 {
     if (git_oid_is_zero(&id))
         return {};
@@ -1191,7 +1195,20 @@ std::string rawBlob(git_repository* repo, const git_oid& id)
         return {};
     }
     Blob b(raw);
-    return blobContent(b.get());
+    const size_t n = std::min<size_t>(static_cast<size_t>(git_blob_rawsize(b.get())), kImagePrefixBytes);
+    gImageBytesRead += n;
+    return imageDims({static_cast<const char*>(git_blob_rawcontent(b.get())), n});
+}
+
+// The dimensions of the image in a file: only the prefix is read.
+std::string fileImageDims(const fs::path& p)
+{
+    std::ifstream in(p, std::ios::binary);
+    std::string prefix(kImagePrefixBytes, '\0');
+    in.read(prefix.data(), static_cast<std::streamsize>(prefix.size()));
+    prefix.resize(static_cast<size_t>(std::max<std::streamsize>(in.gcount(), 0)));
+    gImageBytesRead += prefix.size();
+    return imageDims(prefix);
 }
 
 std::shared_ptr<std::vector<std::string>> splitText(const std::string& s)
@@ -1721,11 +1738,11 @@ DiffPtr readDiff(git_repository* repo, const DiffQuery& q, const gg::CancelToken
             readSubmoduleDiff(repo, d, q.kind, f, cancel);
         f.image = isImagePath(f.path());
         if (f.image && q.withHunks) {
-            f.oldImage = imageDims(rawBlob(repo, d->old_file.id));
+            f.oldImage = blobImageDims(repo, d->old_file.id);
             if (worktree) // (a bare repository has no working tree to diff)
-                f.newImage = imageDims(readFileText(fs::path(git_repository_workdir(repo)) / newPath));
+                f.newImage = fileImageDims(fs::path(git_repository_workdir(repo)) / newPath);
             else
-                f.newImage = imageDims(rawBlob(repo, d->new_file.id));
+                f.newImage = blobImageDims(repo, d->new_file.id);
         }
         f.oldSize = static_cast<std::uint64_t>(d->old_file.size);
         f.newSize = static_cast<std::uint64_t>(d->new_file.size);
@@ -2190,6 +2207,9 @@ std::vector<WorktreeInfo> readWorktreesFast(const fs::path& repoPath)
     }
     return out;
 }
+
+// Counts the image bytes that readDiff hands to the image parser (a test hook: it must stay near the prefix size).
+std::atomic<std::uint64_t> gImageBytesRead{0};
 
 // Counts the opens of a submodule repository by readSubmodules (a test hook for the cache below).
 std::atomic<int> gSubmoduleOpens{0};

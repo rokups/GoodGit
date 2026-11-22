@@ -1221,4 +1221,28 @@ GG_TEST("diff", "the same path in another group of the working tree resets the s
     GG_CHECK_EQ(diff.topLine(), 0);
 }
 
+GG_TEST("diff", "image size of a large image reads only a prefix")
+{
+    using namespace ggui::core;
+    const DiffRepo r = makeRepo(s);
+    std::string png("\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x07\0\0\0\x09", 24);
+    png.append(6 * 1024 * 1024, 'x'); // pixel data: the parser never needs it
+    s.write(r.path, "big.png", png);
+    s.git(r.path, {"add", "big.png"});
+    s.git(r.path, {"commit", "-q", "-m", "Big image"});
+    const std::string head = s.head(r.path);
+    const std::uint64_t before = gImageBytesRead;
+    auto d = readOne(r.path, DiffKind::Commit, "big.png", {}, head);
+    GG_REQUIRE(d && !d->files.empty());
+    GG_CHECK_STR_EQ(d->files[0].newImage, "7x9");
+    GG_CHECK(gImageBytesRead - before <= 1024 * 1024);
+    s.write(r.path, "big.png", png + "more");
+    const std::uint64_t mid = gImageBytesRead;
+    d = readOne(r.path, DiffKind::Unstaged, "big.png");
+    GG_REQUIRE(d && !d->files.empty());
+    GG_CHECK_STR_EQ(d->files[0].newImage, "7x9");
+    GG_CHECK_STR_EQ(d->files[0].oldImage, "7x9");
+    GG_CHECK(gImageBytesRead - mid <= 2 * 1024 * 1024); // the old blob and the file: a prefix of each
+}
+
 } // namespace ggtest
