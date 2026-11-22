@@ -122,6 +122,8 @@ std::string elideStart(const std::string& text, float width);
 std::string elideMiddle(std::string_view text, int prefix, int suffix);
 // `text` cut in the middle (an ellipsis between its head and tail) to fit `width` pixels; as it is if it fits.
 std::string elideMiddleToWidth(const std::string& text, float width);
+// Test counter: the CalcTextSize calls of fitText, elideStart and elideMiddleToWidth.
+inline int g_textMeasures = 0;
 // firstLine(text) as one line of text in the current text colour that ends in an ellipsis where it does
 // not fit `width` (the room left to the window's content edge when 0). A table cell clips without one.
 // An item like TextUnformatted (laid out, SameLine and IsItemHovered work), but with no ID and no hover

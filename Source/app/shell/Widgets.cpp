@@ -583,37 +583,71 @@ bool beginOpaqueDragSource(ImGuiDragDropFlags flags)
     return active;
 }
 
+namespace {
+
+bool isContinuation(char c) { return (static_cast<unsigned char>(c) & 0xC0) == 0x80; }
+
+float textWidth(const char* begin, const char* end)
+{
+    ++g_textMeasures;
+    return ImGui::CalcTextSize(begin, end).x;
+}
+
+// The largest code point boundary b in [0, size] with fits(b) (fits is true for a shorter prefix, and for 0).
+template <class Fits> size_t lastFit(std::string_view text, Fits fits)
+{
+    size_t lo = 0, hi = text.size();
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo + 1) / 2;
+        while (mid < hi && isContinuation(text[mid]))
+            ++mid;
+        if (fits(mid)) {
+            lo = mid;
+            continue;
+        }
+        hi = mid - 1;
+        while (hi > lo && isContinuation(text[hi]))
+            --hi;
+    }
+    return lo;
+}
+
+// The smallest code point boundary b in [0, size] with fits(b) (fits is true for a longer suffix start, and for size).
+template <class Fits> size_t firstFit(std::string_view text, Fits fits)
+{
+    size_t lo = 0, hi = text.size();
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        while (mid > lo && isContinuation(text[mid]))
+            --mid;
+        if (fits(mid)) {
+            hi = mid;
+            continue;
+        }
+        lo = mid + 1;
+        while (lo < hi && isContinuation(text[lo]))
+            ++lo;
+    }
+    return lo;
+}
+
+} // namespace
+
 std::string fitText(const std::string& text, float width)
 {
-    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+    if (textWidth(text.c_str(), nullptr) <= width)
         return text;
-    const float room = width - ImGui::CalcTextSize("\xE2\x80\xA6").x;
-    size_t cut = 0;
-    while (cut < text.size()) {
-        size_t next = cut + 1;
-        while (next < text.size() && (static_cast<unsigned char>(text[next]) & 0xC0) == 0x80)
-            ++next;
-        if (ImGui::CalcTextSize(text.c_str(), text.c_str() + next).x > room)
-            break;
-        cut = next;
-    }
+    const float room = width - textWidth("\xE2\x80\xA6", nullptr);
+    const size_t cut = lastFit(text, [&](size_t n) { return textWidth(text.c_str(), text.c_str() + n) <= room; });
     return text.substr(0, cut) + "\xE2\x80\xA6";
 }
 
 std::string elideStart(const std::string& text, float width)
 {
-    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+    if (textWidth(text.c_str(), nullptr) <= width)
         return text;
-    const float room = width - ImGui::CalcTextSize("\xE2\x80\xA6").x;
-    size_t cut = text.size();
-    while (cut > 0) {
-        size_t prev = cut - 1;
-        while (prev > 0 && (static_cast<unsigned char>(text[prev]) & 0xC0) == 0x80)
-            --prev;
-        if (ImGui::CalcTextSize(text.c_str() + prev, text.c_str() + text.size()).x > room)
-            break;
-        cut = prev;
-    }
+    const float room = width - textWidth("\xE2\x80\xA6", nullptr);
+    const size_t cut = firstFit(text, [&](size_t n) { return textWidth(text.c_str() + n, text.c_str() + text.size()) <= room; });
     return "\xE2\x80\xA6" + text.substr(cut);
 }
 
@@ -634,18 +668,22 @@ std::string elideMiddle(std::string_view text, int prefix, int suffix)
 
 std::string elideMiddleToWidth(const std::string& text, float width)
 {
-    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+    if (textWidth(text.c_str(), nullptr) <= width)
         return text;
-    // Keep n codepoints in all (the head one more than the tail), fewer until the cut text fits.
+    // Keep n codepoints in all (the head one more than the tail), the most that fit (more than 2).
     size_t count = 0;
     for (const char c : text)
-        count += (static_cast<unsigned char>(c) & 0xC0) != 0x80;
-    for (size_t keep = count; keep > 2; --keep) {
-        const std::string cut = elideMiddle(text, static_cast<int>((keep + 1) / 2), static_cast<int>(keep / 2));
-        if (ImGui::CalcTextSize(cut.c_str()).x <= width)
-            return cut;
+        count += !isContinuation(c);
+    const auto cutTo = [&](size_t keep) { return elideMiddle(text, static_cast<int>((keep + 1) / 2), static_cast<int>(keep / 2)); };
+    size_t lo = 2, hi = count; // keep == lo is the fallback; the answer is in [lo, hi]
+    while (lo < hi) {
+        const size_t mid = lo + (hi - lo + 1) / 2;
+        if (const std::string cut = cutTo(mid); textWidth(cut.c_str(), nullptr) <= width)
+            lo = mid;
+        else
+            hi = mid - 1;
     }
-    return elideMiddle(text, 1, 1);
+    return lo > 2 ? cutTo(lo) : elideMiddle(text, 1, 1);
 }
 
 bool textElided(std::string_view text, const char* id, bool tooltip, float width)
