@@ -36,6 +36,8 @@ public:
     void back();
     void forward();
     bool canGoBack() const { return m_pos > 0; }
+    static constexpr size_t kMaxHistory = 50;
+    size_t historySize() const { return m_history.size(); }
     bool canGoForward() const { return m_pos + 1 < static_cast<int>(m_history.size()); }
     void onBlame(const core::BlameEvent& event);
     void draw(bool* open);
