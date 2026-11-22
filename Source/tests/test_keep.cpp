@@ -1423,9 +1423,7 @@ GG_TEST("keep", "a rebase that finishes without moving HEAD in its last step (ed
     gg::reconcile::run(r.get(), &error); // the baseline
     detachedCommit(s, repo, "main", "p.txt");
     s.commitFile(repo, "t.txt", "t\n", "Detached t");
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // stops at t
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}, "2s/^pick/edit/"); // stops at t
     GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
     const std::string stoppedHead = s.head(repo);
     std::string tip;
@@ -1450,9 +1448,7 @@ GG_TEST("keep", "a keep ref a resumed recorder creates again after an operation 
     gg::reconcile::run(r.get(), &error); // the baseline
     const std::string t = detachedOperation(s, repo, "main", "t.txt"); // K(t)
     GG_REQUIRE(keepRefs(s, repo) == names({t}));
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // stops on t, unchanged
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}); // stops on t, unchanged
     GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
     GG_REQUIRE(s.head(repo) == t);
     gg::reconcile::run(r.get(), &error); // begins the rebase's operation
@@ -1490,9 +1486,7 @@ GG_TEST("keep", "Undo of a rebase finished through ggui on a detached HEAD delet
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt"); // the rebase below replays it onto main
     s.commitFile(repo, "t.txt", "t\n", "Detached t");
     const std::string before = s.head(repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // stops at t
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}, "2s/^pick/edit/"); // stops at t
     GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
     std::string tip;
     {
@@ -1524,9 +1518,7 @@ GG_TEST("keep", "a keep ref deleted in the step that finishes a rebase belongs t
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
     s.commitFile(repo, "t.txt", "t\n", "Detached t");
     const std::string before = s.head(repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // stops at t
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}, "2s/^pick/edit/"); // stops at t
     GG_REQUIRE(!gg::native::rebaseIdentity(r.get()).empty());
     std::string tip;
     {
@@ -2231,9 +2223,7 @@ GG_TEST("keep", "a rebase of a detached HEAD stopped in an edit and continued in
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt"); // the rebase below replays it onto main
     s.commitFile(repo, "t.txt", "t\n", "Detached t");
     const std::string tipBefore = s.head(repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '2s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // stops at the replayed t
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}, "2s/^pick/edit/"); // stops at the replayed t
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     const std::string stopped = s.head(repo);
     GG_REQUIRE(s.openRepository(repo));
@@ -2261,9 +2251,7 @@ GG_TEST("keep", "Amend and continue in a rebase of a kept detached HEAD leaves i
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
     const std::string before = refState(s, repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "HEAD~1"}); // stops at p itself (fast-forwarded)
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"HEAD~1"}, "1s/^pick/edit/"); // stops at p itself (fast-forwarded)
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_REQUIRE(s.head(repo) == p);
     GG_REQUIRE(s.openRepository(repo));
@@ -2291,9 +2279,7 @@ GG_TEST("keep", "Abort of a rebase of a kept detached HEAD in the app keeps the 
 {
     const fs::path repo = s.fixture(Recipe::Linear);
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "HEAD~1"}); // stops at p itself (fast-forwarded)
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"HEAD~1"}, "1s/^pick/edit/"); // stops at p itself (fast-forwarded)
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive; }));
@@ -2312,9 +2298,7 @@ GG_TEST("keep", "a rebase --onto of the upper part of a kept detached history re
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
     s.commitFile(repo, "t.txt", "t\n", "Detached t"); // plain git: not kept
     const std::string t = s.head(repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "--onto", "main", p}); // replays t alone and stops at it
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"--onto", "main", p}, "1s/^pick/edit/"); // replays t alone and stops at it
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive; }));
@@ -2342,9 +2326,7 @@ GG_TEST("keep", "a rebase of one kept detached commit leaves another kept tip al
     const std::string p = detachedOperation(s, repo, "main~1", "p.txt");
     const std::string q = detachedOperation(s, repo, "main~1", "q.txt");
     s.git(repo, {"checkout", "-q", "--detach", p});
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // replays p alone and stops at it
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}, "1s/^pick/edit/"); // replays p alone and stops at it
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(s.waitUntil([&] { return s.session()->snapshot()->state == ggui::core::RepoState::RebasingInteractive; }));
@@ -2379,9 +2361,7 @@ GG_TEST("keep", "a rebase of a branch stopped in a pass and finished in a termin
     s.commitFile(repo, "t2.txt", "t2\n", "Topic 2");
     gg::reconcile::run(r.get(), &error); // the baseline
     GG_REQUIRE(keepRefs(s, repo) == names({k}));
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i '1s/^pick/edit/'");
-    s.git(repo, {"rebase", "-i", "main"}); // stops at the replayed Topic 1
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"main"}, "1s/^pick/edit/"); // stops at the replayed Topic 1
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     gg::reconcile::run(r.get(), &error); // the pass that begins the rebase's operation
     GG_CHECK(error.empty());

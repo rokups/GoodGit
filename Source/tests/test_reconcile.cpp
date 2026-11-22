@@ -874,9 +874,7 @@ GG_TEST("reconcile", "a rebase finished in another worktree is not part of the r
     ctx->Yield(3);
 
     // This worktree: a rebase stopped at an edit. A linked worktree: the rebase of "other" is done.
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     const fs::path linked = repo.parent_path() / "linked";
     s.git(repo, {"worktree", "add", "-q", linked.string(), "other"});
@@ -901,9 +899,7 @@ GG_TEST("reconcile", "a rebase started and aborted in a terminal, then a commit:
     const std::string start = refState(s, repo);
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     s.git(repo, {"rebase", "--abort"});
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "after the abort"});
@@ -929,9 +925,7 @@ GG_TEST("reconcile", "a plain rebase -i with an edit stop is one open op until i
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     const std::string start = refState(s, repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_CHECK(s.waitUntil([&] { return !journalOps(repo).empty(); }));
     s.settle();
@@ -991,9 +985,7 @@ GG_TEST("reconcile", "a plain rebase run entirely while ggui is closed is one op
     const std::string start = refState(s, repo);
     ctx->MenuClick("//##MainMenuBar/Repository/Close repository");
     ctx->Yield(3);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     s.git(repo, {"commit", "-q", "--amend", "--allow-empty", "-m", "amended"});
     s.git(repo, {"rebase", "--continue"});
     s.git(repo, {"rebase", "--continue"});
@@ -1017,9 +1009,7 @@ GG_TEST("reconcile", "a plain rebase --abort ends its group; there is nothing to
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     const std::string start = refState(s, repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 1 && !journalOps(repo).front().ended; }));
     s.git(repo, {"rebase", "--abort"});
@@ -1124,9 +1114,7 @@ GG_TEST("reconcile", "Undo refuses a plain git operation while a rebase is in pr
     s.git(repo, {"commit", "-q", "--allow-empty", "-m", "before the rebase"});
     GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 1; }));
     s.settle();
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_CHECK(s.waitUntil([&] { return gitOps(repo).size() == 2; }));
     s.settle();
@@ -2223,9 +2211,7 @@ GG_TEST("reconcile", "a rebase group whose final ref records fail stays open, an
     GG_REQUIRE(s.openRepository(repo));
     s.settle();
     const std::string start = refState(s, repo);
-    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'");
-    s.git(repo, {"rebase", "-q", "-i", "HEAD~2"});
-    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    s.rebaseStopAt(repo, {"-q", "HEAD~2"});
     GG_REQUIRE(fs::exists(repo / ".git" / "rebase-merge"));
     GG_CHECK(s.waitUntil([&] { return journalOps(repo).size() == 1 && !journalOps(repo).front().ended; }));
     {

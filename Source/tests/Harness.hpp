@@ -356,6 +356,9 @@ public:
     // Puts an executable script named `name` first on PATH for this test; returns its log file
     // (each invocation appends its arguments, one per line).
     fs::path fakeTool(const std::string& name, const std::string& body = {});
+    // Runs `git rebase -i <args>` with a todo list edited by the sed expression `expr` (default: every
+    // pick becomes edit, so the rebase stops). The editor is a portable `sed > tmp && mv` (no `sed -i`).
+    gg::RunResult rebaseStopAt(const fs::path& repo, std::vector<std::string> args, const std::string& expr = "s/^pick/edit/");
     // The ssh:// URL of a local repository through the ssh shim (a "/" before a Windows drive).
     static std::string sshUrl(const fs::path& repo);
     // The path that starts fake tool `name` (a program path for GG_GGUI and the like).

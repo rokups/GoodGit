@@ -578,7 +578,7 @@ GG_TEST("sequence-editor", "no ggui has the repository open: git gg starts ggui 
 
     // No display: git's own editor (GIT_EDITOR) edits the list. (git runs an editor with sh: the
     // script itself, not its Windows launcher.) Windows always has a display.
-    gguiStub(s, "drop-first", "sed -i '1s/^pick/drop/' \"$1\"\n");
+    gguiStub(s, "drop-first", "sed '1s/^pick/drop/' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n");
     const fs::path gitEditor = s.root() / "fake-bin" / "drop-first";
 #ifndef _WIN32
     {

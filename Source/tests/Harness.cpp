@@ -951,6 +951,16 @@ fs::path Scenario::fakeTool(const std::string& name, const std::string& body)
     return log;
 }
 
+gg::RunResult Scenario::rebaseStopAt(const fs::path& repo, std::vector<std::string> args, const std::string& expr)
+{
+    // Git appends the todo path to the command: it becomes $1 of the inner sh and `expr` is $0.
+    ggui::setEnv("GIT_SEQUENCE_EDITOR", "sh -c 'sed \"$0\" \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"' '" + expr + "'");
+    args.insert(args.begin(), {"rebase", "-i"});
+    const gg::RunResult result = git(repo, std::move(args));
+    ggui::unsetEnv("GIT_SEQUENCE_EDITOR");
+    return result;
+}
+
 void Scenario::comboSelect(const char* combo, const char* item)
 {
     ctx->ItemClick(combo);
