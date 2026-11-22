@@ -1509,4 +1509,50 @@ GG_TEST("rewrite", "a long run of dropped commits resolves without deep recursio
     git_commit_free(rawNew);
 }
 
+GG_TEST("rewrite", "reword below a merge: the merge is rewritten with its second parent and tree, all branches move")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    const std::string base = s.revParse(repo, "HEAD~3");
+    // side comes off an ancestor of the target: the merge holds it as its second parent.
+    s.git(repo, {"checkout", "-q", "-b", "side", base});
+    s.commitFile(repo, "side.txt", "s\n", "Side");
+    const std::string side = s.head(repo);
+    s.git(repo, {"checkout", "-q", "main"});
+    s.git(repo, {"branch", "mid", "HEAD~1"});
+    s.git(repo, {"merge", "-q", "--no-ff", "-m", "Merge side", "side"});
+    s.commitFile(repo, "after.txt", "a\n", "After the merge");
+    s.git(repo, {"branch", "atMerge", "HEAD~1"});
+    const std::string target = s.revParse(repo, "HEAD~4");
+    const std::string oldMerge = s.revParse(repo, "atMerge");
+    const std::string oldTip = s.head(repo);
+    const std::string mergeTree = s.revParse(repo, "atMerge^{tree}");
+    const std::string tipTree = s.revParse(repo, "HEAD^{tree}");
+    GG_REQUIRE(parentIds(s, repo, "atMerge").size() == 2);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::rewrite::Plan plan = gg::rewrite::replayPlan(r.get(), {target});
+    for (auto& step : plan.steps)
+        if (step.source == target)
+            step.message = "Reworded below the merge\n";
+    gg::rewrite::Rewriter rewriter(repo);
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok && result.changed());
+    std::string error;
+    GG_REQUIRE(rewriter.apply(plan, result, error, gg::CancelToken()));
+    GG_CHECK_STR_EQ(info(s, repo, "HEAD~4", "%s"), "Reworded below the merge");
+    // The merge is a new commit with the same second parent and the same tree.
+    const auto merge = parentIds(s, repo, "atMerge");
+    GG_REQUIRE(merge.size() == 2);
+    GG_CHECK(s.revParse(repo, "atMerge") != oldMerge);
+    GG_CHECK_STR_EQ(merge[1], side);
+    GG_CHECK_STR_EQ(s.revParse(repo, "atMerge^{tree}"), mergeTree);
+    GG_CHECK_STR_EQ(s.revParse(repo, "atMerge^1"), s.revParse(repo, "HEAD~2"));
+    // Every branch that held an old commit moves with it.
+    GG_CHECK(s.head(repo) != oldTip);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tipTree);
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1"), s.revParse(repo, "atMerge"));
+    GG_CHECK_STR_EQ(s.revParse(repo, "side"), side);
+    GG_CHECK_STR_EQ(s.revParse(repo, "mid"), s.revParse(repo, "HEAD~3"));
+    GG_CHECK(gg::trim(s.gitOut(repo, {"rev-list", "--count", oldTip + "..HEAD"})) != "0");
+}
+
 } // namespace ggtest
