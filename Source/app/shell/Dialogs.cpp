@@ -130,6 +130,23 @@ void Field::setOptions(std::vector<std::string> names)
     }
     options = std::move(names);
     checks = std::move(kept);
+    m_shownValid = false;
+}
+
+const std::vector<int>& Field::shownOptions()
+{
+    if (m_shownValid && m_shownOf == options.size() && m_shownFor == filter.text)
+        return m_shown;
+    ++g_fieldFilterRuns;
+    m_shown.clear();
+    const FilterExpr& expr = filter.expr();
+    for (size_t k = 0; k < options.size(); ++k)
+        if (expr.matches(options[k]))
+            m_shown.push_back(static_cast<int>(k));
+    m_shownFor = filter.text;
+    m_shownOf = options.size();
+    m_shownValid = true;
+    return m_shown;
 }
 
 std::vector<std::string> Form::checkedOptions(const std::string& id) const
@@ -251,17 +268,20 @@ void Dialogs::draw()
                     pickFirst = ImGui::InputTextWithHint("##filter", ICON_MS_SEARCH " Filter", &f.filter.text,
                         ImGuiInputTextFlags_EnterReturnsTrue);
                 }
-                for (size_t k = 0; k < f.options.size(); ++k) {
-                    if (!f.filter.expr().matches(f.options[k]))
-                        continue;
-                    if (pickFirst) {
-                        f.choice = static_cast<int>(k);
-                        ImGui::CloseCurrentPopup();
-                        break;
-                    }
-                    if (selectable(f.options[k].c_str(), static_cast<int>(k) == f.choice))
-                        f.choice = static_cast<int>(k);
+                const std::vector<int>& shown = f.shownOptions();
+                if (pickFirst && !shown.empty()) {
+                    f.choice = shown.front();
+                    ImGui::CloseCurrentPopup();
                 }
+                ImGuiListClipper clipper;
+                clipper.Begin(static_cast<int>(shown.size()));
+                while (clipper.Step())
+                    for (int r = clipper.DisplayStart; r < clipper.DisplayEnd; ++r) {
+                        const int k = shown[static_cast<size_t>(r)];
+                        ++g_fieldRowsDrawn;
+                        if (selectable(f.options[static_cast<size_t>(k)].c_str(), k == f.choice))
+                            f.choice = k;
+                    }
                 ImGui::EndCombo();
             }
             break;
@@ -276,13 +296,17 @@ void Dialogs::draw()
                     ImGuiChildFlags_Borders)) {
                 if (f.options.empty())
                     ImGui::TextDisabled("%s", f.hint.c_str());
-                for (size_t k = 0; k < f.options.size(); ++k) {
-                    if (!f.filter.expr().matches(f.options[k]))
-                        continue;
-                    bool on = f.checks[k] != 0;
-                    if (ImGui::Checkbox((f.options[k] + "##" + f.id + "_" + f.options[k]).c_str(), &on))
-                        f.checks[k] = on ? 1 : 0;
-                }
+                const std::vector<int>& shown = f.shownOptions();
+                ImGuiListClipper clipper;
+                clipper.Begin(static_cast<int>(shown.size()));
+                while (clipper.Step())
+                    for (int r = clipper.DisplayStart; r < clipper.DisplayEnd; ++r) {
+                        const size_t k = static_cast<size_t>(shown[static_cast<size_t>(r)]);
+                        ++g_fieldRowsDrawn;
+                        bool on = f.checks[k] != 0;
+                        if (ImGui::Checkbox((f.options[k] + "##" + f.id + "_" + f.options[k]).c_str(), &on))
+                            f.checks[k] = on ? 1 : 0;
+                    }
             }
             ImGui::EndChild();
             break;

@@ -68,7 +68,20 @@ struct Field {
 
     // CheckList: replaces `options`. A name that stays in the list keeps its check state.
     void setOptions(std::vector<std::string> names);
+
+    // Combo/CheckList: the indexes of the options that match `filter`, kept between frames. It is
+    // rebuilt only when the filter text or the option list changes.
+    const std::vector<int>& shownOptions();
+
+    std::vector<int> m_shown;
+    std::string m_shownFor;
+    size_t m_shownOf = 0;
+    bool m_shownValid = false;
 };
+
+// Test counters: filter passes over an option list, and option rows drawn.
+inline int g_fieldFilterRuns = 0;
+inline int g_fieldRowsDrawn = 0;
 
 struct FormButton {
     std::string label;
