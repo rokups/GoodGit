@@ -232,7 +232,7 @@ void RebasePanel::read(const Request& request, bool keepTodo)
         // read arrives; the panel shows it is reading. (Otherwise Enter in Onto meanwhile
         // re-read the old range, and this read's result was dropped as outdated.)
         m_state.context.reset();
-        m_read = {};
+        m_state.read = {};
     }
     if (request.sequence) {
         // Read already, by the sequence editor link (off the UI thread).
@@ -318,10 +318,15 @@ void RebasePanel::read(const Request& request, bool keepTodo)
 void RebasePanel::onRead(std::shared_ptr<const todo::Context> context, todo::ReadOptions used, const Request& request,
     bool keepTodo)
 {
-    m_read = std::move(used);
+    if (!keepTodo)
+        m_state.read = std::move(used);
     if (keepTodo) {
         // A new base: the list stays, the context (onto) changes.
-        edit([&](State& s) { s.context = context; });
+        edit([&](State& s) {
+            s.context = context;
+            s.read = std::move(used);
+            s.onto = request.onto;
+        });
         return;
     }
     m_state.context = std::move(context);
@@ -367,7 +372,10 @@ void RebasePanel::undo(bool redo)
     if (from.empty())
         return;
     to.push_back(m_state);
+    const std::string ontoBefore = m_state.onto;
     m_state = std::move(from.back());
+    if (m_state.onto != ontoBefore)
+        m_onto = m_state.onto; // a todo undo keeps the typed, unapplied text
     from.pop_back();
     std::erase_if(m_selection, [&](size_t row) { return row >= m_state.todo.items.size(); });
     onTodoChanged();
@@ -1062,8 +1070,8 @@ void RebasePanel::drawRunOptions()
     applyOnto = acceptCommitDrop(m_onto) || applyOnto;
     if (applyOnto) {
         Request r;
-        r.upstream = m_read.upstream;
-        r.tip = m_read.tip;
+        r.upstream = m_state.read.upstream;
+        r.tip = m_state.read.tip;
         r.onto = gg::trim(m_onto);
         read(r, true);
     }

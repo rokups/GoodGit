@@ -262,6 +262,55 @@ GG_TEST("rebase-i", "the undo stack keeps the newest 100 steps")
     GG_CHECK(rows(s) == start);
 }
 
+GG_TEST("rebase-i", "undo and redo restore the base and the Onto field")
+{
+    const Repo r = makeRepo(s);
+    s.git(r.path, {"switch", "-q", "-c", "other", r.c[1]});
+    s.commitFile(r.path, "o.txt", "o\n", "o1 add o");
+    const std::string o1 = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c[2]));
+    ctx->ItemClick(historyRow(r.c[2]).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    const Rows before = rows(s);
+    const std::string oldRead = editor(s).readOptions().onto;
+    // A fresh editor has nothing to undo.
+    GG_CHECK_EQ(editor(s).undoDepth(), 0u);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(rows(s) == before);
+    GG_CHECK_EQ(editor(s).undoDepth(), 0u);
+    GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
+    s.setText(irWidget("ir_onto"), "");
+    ctx->KeyChars("other");
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == o1; }));
+    GG_CHECK_STR_EQ(editor(s).ontoText(), "other");
+    const std::string newRead = editor(s).readOptions().onto;
+    GG_CHECK(newRead != oldRead);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK_STR_EQ(editor(s).context()->onto, r.c[1]);
+    GG_CHECK_STR_EQ(editor(s).ontoText(), "");
+    GG_CHECK_STR_EQ(editor(s).readOptions().onto, oldRead);
+    GG_CHECK(rows(s) == before);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z);
+    GG_CHECK_STR_EQ(editor(s).context()->onto, o1);
+    GG_CHECK_STR_EQ(editor(s).ontoText(), "other");
+    GG_CHECK_STR_EQ(editor(s).readOptions().onto, newRead);
+    // A todo edit, then one undo: the todo goes back; the applied Onto and the read stay.
+    const Rows applied = rows(s);
+    key(s, r.c[2], ImGuiKey_D);
+    GG_CHECK(rows(s) != applied);
+    s.setText(irWidget("ir_onto"), "typed");
+    ctx->ItemClick(irRow(r.c[2]).c_str()); // focus leaves the field
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_CHECK(rows(s) == applied);
+    GG_CHECK_STR_EQ(editor(s).ontoText(), "typed"); // typed, unapplied text stays
+    GG_CHECK_STR_EQ(editor(s).readOptions().onto, newRead);
+    GG_CHECK_STR_EQ(editor(s).context()->onto, o1);
+}
+
 GG_TEST("rebase-i", "entry points: I key, History menu, selection, Commit menu (asks for a base), Branches")
 {
     const Repo r = makeRepo(s);

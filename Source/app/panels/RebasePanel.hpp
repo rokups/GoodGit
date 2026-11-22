@@ -106,6 +106,8 @@ public:
     // Undo steps kept (the oldest is dropped past kMaxUndo).
     static constexpr size_t kMaxUndo = 100;
     size_t undoDepth() const { return m_undo.size(); }
+    const std::string& ontoText() const { return m_onto; }
+    const gg::todo::ReadOptions& readOptions() const { return m_state.read; }
     // The text of a group's inline message editor (the group whose first row is `row`).
     std::string messageText(size_t row) const;
 
@@ -130,6 +132,8 @@ private:
         bool updateRefs = true;
         bool autosquash = false;
         bool rebaseMerges = false;
+        gg::todo::ReadOptions read; // what the context was read with (revisions resolved)
+        std::string onto;           // the applied Onto text; m_onto is the edit buffer
     };
 
     void read(const Request& request, bool keepTodo);
@@ -181,7 +185,6 @@ private:
     std::string m_remainingText;      // git-rebase-todo as read
     std::optional<Request::Sequence> m_sequence; // a waiting git rebase -i (sequence.editor)
     std::uint64_t m_generation = 0;   // results of older reads are ignored
-    gg::todo::ReadOptions m_read;     // what the current context was read with (revisions resolved)
     State m_state;
     // Per-frame caches of the groups and the editor texts, rebuilt when m_todoVersion changes.
     // Every change of m_state goes through onTodoChanged() or a reset, and both bump the version.
