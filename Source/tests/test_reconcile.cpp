@@ -2104,6 +2104,32 @@ GG_TEST("reconcile", "a rebase group whose end record fails keeps its state, and
 }
 #endif
 
+GG_TEST("reconcile", "closeFinishedGroup keeps a group open when the rebase folder appears after the group")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    gg::git2::Repository r = gg::git2::openRepository(repo);
+    gg::journal::Journal journal{repo / ".git"};
+    gg::journal::Operation op;
+    op.id = "op-gap";
+    op.src = "git";
+    op.label = "git rebase";
+    GG_REQUIRE(journal.begin(op));
+    gg::native::rememberGroup(r.get(), journal, op.id, "git"); // the start entry came before rebase-apply/
+    const fs::path apply = repo / ".git" / "rebase-apply";
+    fs::create_directories(apply);
+    for (const char* name : {"rebasing", "orig-head", "onto", "head-name"})
+        std::ofstream(apply / name) << "x\n";
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(fs::exists(gg::native::stateDir(r.get()) / "operation"));
+    const auto info = gg::native::openGroup(r.get());
+    GG_REQUIRE(info.has_value());
+    GG_CHECK(info->active);
+    GG_CHECK(!journalOps(repo).back().ended);
+    fs::remove_all(apply);
+    gg::native::closeFinishedGroup(r.get(), journal);
+    GG_CHECK(journalOps(repo).back().ended);
+}
+
 GG_TEST("reconcile", "closeFinishedGroup ends a remembered group whose rebase is gone, and removes its state")
 {
     const fs::path repo = s.fixture(Recipe::Linear);
