@@ -32,6 +32,8 @@ std::string summaryWarningText(const core::RepoSummary& s);
 // Its length is the offset of the dim ranges. The icon has the colour summaryWarnColor().
 std::string summaryWarnPrefix(const core::RepoSummary* s);
 ImU32 summaryWarnColor();
+// `color` with its alpha channel set to `alpha` (0..255).
+ImU32 withAlpha(ImU32 color, int alpha);
 // The same icon and space for any row that warns: `warns` false gives an empty string. The colour is summaryWarnColor().
 std::string warnIconPrefix(bool warns);
 // The number of different repositories (by path) in `recent` and `listed` that are not usable (health is not Ok).

@@ -25,8 +25,6 @@ const ImGuiID kMenuId = ImHashStr("##blame_menu");
 const char kNotCommitted[] = "Not committed";
 const float kAuthorColumns = 20; // longer author names are cut in the gutter
 
-ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
-
 } // namespace
 
 // Read-only editor of the blamed file. Like the diff's editor it does not take the keyboard focus when

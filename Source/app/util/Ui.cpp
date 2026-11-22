@@ -135,6 +135,8 @@ std::string warnIconPrefix(bool warns)
     return warns ? std::string(ICON_MS_WARNING " ") : std::string();
 }
 
+ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
+
 ImU32 summaryWarnColor()
 {
     return theme().palette().warning;

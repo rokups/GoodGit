@@ -24,8 +24,6 @@ std::string stripCr(const std::string& text)
     return !text.empty() && text.back() == '\r' ? text.substr(0, text.size() - 1) : text;
 }
 
-ImU32 withAlpha(ImU32 color, int alpha) { return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT); }
-
 // Read-only diff editor. Unlike a plain TextEditor it does not take the keyboard focus when it
 // first appears: diffs show up as a side effect of clicks elsewhere (and would close their menus).
 class DiffEditor : public TextEditor {
