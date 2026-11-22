@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ggui {
@@ -58,6 +59,9 @@ struct Field {
     std::function<CommitPreview(const std::string&)> resolve;
     CommitPreview preview;
     std::string previewFor;
+    // Commit: what the preview depends on besides the text (the loaded history); a change redoes it.
+    std::function<std::pair<size_t, size_t>()> revision;
+    std::pair<size_t, size_t> previewRevision;
     bool previewValid = false;
     bool focus = false; // the field that gets the keyboard focus when the dialog opens (none set: the first text field)
     std::vector<char> checks; // CheckList: parallel to `options` (1 = checked)

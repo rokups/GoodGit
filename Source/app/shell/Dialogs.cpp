@@ -66,9 +66,11 @@ void drawCommitPreview(Field& f)
 {
     if (!f.resolve)
         return;
-    if (!f.previewValid || f.previewFor != f.text) {
+    const auto revision = f.revision ? f.revision() : std::pair<size_t, size_t>{};
+    if (!f.previewValid || f.previewFor != f.text || f.previewRevision != revision) {
         f.preview = f.resolve(f.text);
         f.previewFor = f.text;
+        f.previewRevision = revision;
         f.previewValid = true;
     }
     const CommitPreview& p = f.preview;

@@ -170,6 +170,8 @@ Field commitField(Session& session, const std::string& id, const std::string& la
     Field f{Field::Commit, id, label};
     f.text = prefill;
     Session* s = &session;
+    // The preview depends on the loaded rows: a reload (generation) or "Show more" (row count) redoes it.
+    f.revision = [s] { return std::pair{s->history().rowsGen(), s->history().rows().size()}; };
     f.resolve = [s, emptyLabel, emptyTarget](const std::string& text) {
         CommitPreview p;
         const std::string trimmed = gg::trim(text);
