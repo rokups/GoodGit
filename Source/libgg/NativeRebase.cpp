@@ -93,6 +93,17 @@ bool recordHeadNow(git_repository* repo, journal::Writer& journal, const std::st
     return true;
 }
 
+// git --apply writes its start reflog entry before rebase-apply/ exists, so a group can be
+// remembered with an empty identity. The first non-empty identity after that belongs to it.
+std::optional<Group> adoptIdentity(const fs::path& dir, std::optional<Group> group, const std::string& identity)
+{
+    if (group && group->identity.empty() && !identity.empty()) {
+        group->identity = identity;
+        writeState(dir / "operation", group->op + "\n" + identity + "\n" + group->src + "\n" + (group->ok ? "" : "failed\n"));
+    }
+    return group;
+}
+
 } // namespace
 
 std::string rebaseIdentity(const fs::path& gitDir)
@@ -149,10 +160,10 @@ std::string groupOperation(git_repository* repo)
 
 std::optional<GroupInfo> openGroup(git_repository* repo)
 {
-    const auto group = readGroup(stateDir(repo));
+    const std::string identity = rebaseIdentity(repo);
+    const auto group = adoptIdentity(stateDir(repo), readGroup(stateDir(repo)), identity);
     if (!group)
         return std::nullopt;
-    const std::string identity = rebaseIdentity(repo);
     return GroupInfo{group->op, group->src, !identity.empty() && identity == group->identity};
 }
 
@@ -168,8 +179,8 @@ void rememberGroup(git_repository* repo, journal::Writer& journal, const std::st
 void closeFinishedGroup(git_repository* repo, journal::Writer& journal, std::string* error)
 {
     const fs::path dir = stateDir(repo);
-    const auto group = readGroup(dir);
     const std::string identity = rebaseIdentity(repo);
+    const auto group = adoptIdentity(dir, readGroup(dir), identity);
     if (!group) {
         // A todo ggui prepared for a rebase that is gone (finished in a terminal) is left behind.
         if (const auto prepared = readPrepared(dir); prepared && !prepared->identity.empty() && prepared->identity != identity)
