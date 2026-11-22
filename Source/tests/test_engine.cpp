@@ -272,6 +272,7 @@ GG_TEST("engine", "a long content job does not delay a diff")
     ggui::core::Engine engine(ggui::core::Engine::Options{repo, false});
     // The blame job sleeps on the Content queue for 5 s unless the test cancels it.
     gg::setSlowGitLatency(std::chrono::milliseconds(5000));
+    const long long sleepsBefore = gg::slowGitSleeps();
     ggui::core::BlameQuery blame;
     blame.path = "f1.txt";
     const auto blameId = engine.blame(blame);
@@ -279,7 +280,7 @@ GG_TEST("engine", "a long content job does not delay a diff")
     GG_REQUIRE(started);
     // The job reads the latency a short time after it starts. Wait until it is in its sleep.
     // Then a new job does not sleep.
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    GG_REQUIRE(s.waitUntil([&] { return gg::slowGitSleeps() > sleepsBefore; }, 10.0f));
     gg::setSlowGitLatency(std::chrono::milliseconds(0));
     ggui::core::DiffQuery query;
     query.kind = ggui::core::DiffKind::Unstaged;
@@ -739,11 +740,11 @@ GG_TEST("engine", "a cancelled descendants search does not stay pending in the s
     auto& engine = s.session()->engine();
     // A blame job holds the Content queue, so the search waits behind it.
     gg::setSlowGitLatency(std::chrono::milliseconds(5000));
+    const long long sleepsBefore = gg::slowGitSleeps();
     ggui::core::BlameQuery blame;
     blame.path = "f1.txt";
     engine.blame(blame);
-    GG_REQUIRE(s.waitUntil([&] { return engine.running(ggui::core::Queue::Content); }, 10.0f));
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    GG_REQUIRE(s.waitUntil([&] { return gg::slowGitSleeps() > sleepsBefore; }, 10.0f));
     s.session()->requestDescendants(id);
     GG_CHECK(!s.session()->descendants(id).has_value());
     engine.cancelAll();

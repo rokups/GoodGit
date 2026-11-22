@@ -75,6 +75,9 @@ std::string currentOperation();
 
 void setSlowGitLatency(std::chrono::milliseconds latency);
 std::chrono::milliseconds slowGitLatency();
+// A job calls noteSlowGitSleep() right before it sleeps for the latency. Tests wait on slowGitSleeps().
+void noteSlowGitSleep();
+long long slowGitSleeps();
 
 struct CommandLogEntry {
     std::vector<std::string> args;

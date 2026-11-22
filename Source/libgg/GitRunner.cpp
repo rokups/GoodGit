@@ -35,6 +35,7 @@ std::string g_askpass;
 std::string g_askpassEndpoint;
 thread_local std::string t_operation;
 std::atomic<long long> g_slowGitMs{0};
+std::atomic<long long> g_slowGitSleeps{0};
 
 std::mutex g_logMutex;
 bool g_logEnabled = false;
@@ -776,6 +777,8 @@ std::string currentOperation() { return t_operation; }
 
 void setSlowGitLatency(std::chrono::milliseconds latency) { g_slowGitMs = latency.count(); }
 std::chrono::milliseconds slowGitLatency() { return std::chrono::milliseconds(g_slowGitMs.load()); }
+void noteSlowGitSleep() { ++g_slowGitSleeps; }
+long long slowGitSleeps() { return g_slowGitSleeps.load(); }
 
 void setCommandLogEnabled(bool enabled)
 {
