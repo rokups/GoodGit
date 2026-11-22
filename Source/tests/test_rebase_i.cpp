@@ -2198,6 +2198,8 @@ GG_TEST("rebase-i", "randomized differential: in-memory engine vs git rebase -i 
         for (const char* ref : {"main", "stack1", "stack2", "up"})
             GG_CHECK_STR_EQ(history(s, path, ref), history(s, copy, ref));
         GG_CHECK(!postRewrite(s, path).empty());
+        for (const auto& l : postRewrite(s, path)) ctx->LogInfo("PRW-ours %s", l.c_str());
+        for (const auto& l : postRewrite(s, copy)) ctx->LogInfo("PRW-git %s", l.c_str());
         GG_CHECK(postRewrite(s, path) == postRewrite(s, copy));
         checkClean(s, path);
         GG_CHECK_STR_EQ(s.gitOut(path, {"symbolic-ref", "HEAD"}), "refs/heads/main");

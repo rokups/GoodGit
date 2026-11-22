@@ -358,6 +358,7 @@ public:
     fs::path fakeTool(const std::string& name, const std::string& body = {});
     // Runs `git rebase -i <args>` with a todo list edited by the sed expression `expr` (default: every
     // pick becomes edit, so the rebase stops). The editor is a portable `sed > tmp && mv` (no `sed -i`).
+    // `expr` must not contain a single quote: it goes inside a `sh -c '...'` string.
     gg::RunResult rebaseStopAt(const fs::path& repo, std::vector<std::string> args, const std::string& expr = "s/^pick/edit/");
     // The ssh:// URL of a local repository through the ssh shim (a "/" before a Windows drive).
     static std::string sshUrl(const fs::path& repo);
