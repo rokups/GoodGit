@@ -1004,6 +1004,19 @@ Context readStarting(git_repository* repo, std::string_view todoText, const std:
 
 // ---- Autosquash -------------------------------------------------------------------------------
 
+// The lowest row among the keys of `rows` that start with `prefix`, or -1.
+int firstWithPrefix(const std::map<std::string, size_t>& rows, std::string_view prefix)
+{
+    int found = -1;
+    for (auto it = rows.lower_bound(std::string(prefix)); it != rows.end() && startsWith(it->first, prefix); ++it) {
+        if (it->first.empty())
+            continue;
+        if (found < 0 || it->second < static_cast<size_t>(found))
+            found = static_cast<int>(it->second);
+    }
+    return found;
+}
+
 void autosquash(Todo& todo, const Context& context)
 {
     const size_t n = todo.items.size();
@@ -1011,8 +1024,11 @@ void autosquash(Todo& todo, const Context& context)
     std::vector<bool> chained(n, false);
     std::vector<std::string> subjects(n);
     std::map<std::string, size_t> bySubject; // earliest row with that subject
+    std::map<std::string, size_t> byHash;    // earliest row with that commit id
     bool rearranged = false;
     for (size_t i = 0; i < n; ++i) {
+        if (i > 0 && todo.items[i - 1].isCommit())
+            byHash.emplace(todo.items[i - 1].commit, i - 1);
         Item& item = todo.items[i];
         if (item.action != Action::Pick && item.action != Action::Reword && item.action != Action::Edit)
             continue;
@@ -1025,14 +1041,10 @@ void autosquash(Todo& todo, const Context& context)
             if (auto it = bySubject.find(std::string(target)); it != bySubject.end()) {
                 found = static_cast<int>(it->second);
             } else if (target.find(' ') == std::string_view::npos && target.size() >= 4 && isHex(target)) {
-                for (size_t j = 0; j < i && found < 0; ++j)
-                    if (todo.items[j].isCommit() && startsWith(todo.items[j].commit, target))
-                        found = static_cast<int>(j);
+                found = firstWithPrefix(byHash, target);
             }
             if (found < 0)
-                for (size_t j = 0; j < i && found < 0; ++j)
-                    if (todo.items[j].isCommit() && !subjects[j].empty() && startsWith(subjects[j], target))
-                        found = static_cast<int>(j);
+                found = firstWithPrefix(bySubject, target);
             if (found >= 0) {
                 rearranged = true;
                 if (startsWith(subject, "fixup!")) {
