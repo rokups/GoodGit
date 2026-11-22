@@ -1,7 +1,10 @@
 // Per-frame cost of widgets and dialogs (GG-133): work is bounded by what is visible, not by the data.
 #include "shell/App.hpp"
 #include "shell/Dialogs.hpp"
+#include "shell/Widgets.hpp"
 #include "tests/Harness.hpp"
+
+#include <imgui_internal.h>
 
 namespace ggtest {
 
@@ -29,6 +32,27 @@ GG_TEST("widget_cost", "a check list of 10000 options filters once for each filt
     ctx->ItemInputValue("//Many tags/##tags_filter", "tag-77");
     ctx->Yield(5);
     GG_CHECK(ggui::g_fieldFilterRuns == runs + 1); // one pass for the one change
+}
+
+GG_TEST("widget_cost", "row buttons are not built while a filter is active and no row is hovered")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    for (const char* b : {"feature/one", "feature/two", "solo/x"})
+        s.git(repo, {"branch", b});
+    GG_REQUIRE(s.openRepository(repo));
+    s.showPanel("Branches");
+    ctx->ItemClick("//Branches/##branch_filter"); // the filter is the active item
+    ctx->MouseMoveToPos(ImVec2(2.0f, 2.0f));
+    ctx->Yield(3);
+    GG_REQUIRE(ImGui::GetCurrentContext()->ActiveId != 0);
+    const int builds = ggui::g_rowActionBuilds;
+    ctx->Yield(5);
+    GG_CHECK(ggui::g_rowActionBuilds == builds);
+
+    // With the mouse on a row, its buttons are built (the counter works).
+    ctx->MouseMoveToPos(ctx->ItemInfo("//Branches/branch_solo:x/###branch_solo:x").RectFull.GetCenter());
+    ctx->Yield(3);
+    GG_CHECK(ggui::g_rowActionBuilds > builds);
 }
 
 } // namespace ggtest

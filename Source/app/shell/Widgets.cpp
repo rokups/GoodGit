@@ -14,6 +14,7 @@
 #include <cassert>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <span>
 #include <utility>
 #include <string>
@@ -297,8 +298,19 @@ int rowActions(std::span<const RowAction> actions, bool rowSelected, bool padded
     const bool hovered = g.HoveredWindow == window && (g.ActiveId == 0 || g.ActiveIdAllowOverlap)
         && ImGui::IsMouseHoveringRect(ImVec2(window->InnerRect.Min.x, bandTop), ImVec2(window->InnerRect.Max.x, bandBottom))
         && ImGui::IsWindowContentHoverable(window, ImGuiHoveredFlags_None);
-    if (!hovered && g.ActiveId == 0)
-        return -1; // the common case, for every row of every frame: nothing is built
+    if (!hovered) {
+        // The common case, for every row of every frame: nothing is built. Only one of the row's own
+        // buttons being held (a button id is the hash of "###id") continues.
+        bool own = false;
+        for (size_t i = 0; g.ActiveId != 0 && !own && i < actions.size(); ++i) {
+            char key[96];
+            std::snprintf(key, sizeof key, "###%s", actions[i].id);
+            own = actions[i].visible && g.ActiveId == window->GetID(key);
+        }
+        if (!own)
+            return -1;
+    }
+    ++g_rowActionBuilds;
     std::vector<std::string> labels;
     std::vector<size_t> shown;
     bool held = false;

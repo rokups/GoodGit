@@ -70,6 +70,8 @@ struct RowAction {
 // selection's hover colour); false: a plain text row, as tall as its text. Returns the index of the button
 // clicked, or -1.
 int rowActions(std::span<const RowAction> actions, bool rowSelected = false, bool paddedRow = true);
+// Test counter: the calls of rowActions that went past the early return (the row's buttons were built).
+inline int g_rowActionBuilds = 0;
 // Called with the cursor at the start of the row, before its label is built: the width of rowActions' strip
 // for `actions` while the row is hovered (the buttons are shown), else 0. What the label leaves free at the
 // right edge so that it does not run under the buttons; the row is at full width while not hovered.
