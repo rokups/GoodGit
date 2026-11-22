@@ -138,6 +138,10 @@ public:
     std::vector<core::Activity> activities() const;
     void cancel(core::RequestId id) { m_engine->cancel(id); }
     void cancelAll() { m_engine->cancelAll(); }
+    // The session leaves the screen: stops the engine work and the watcher.
+    void retire() { m_engine->retire(); }
+    // Drops the engine events of a retired session so that idle() can turn true.
+    void discardEvents();
     void nextChangedFile(int direction);
     void blameFile(const std::string& path, const core::Oid& commit);
     // Shows the panel and focuses it (after it has been drawn, if it was hidden).
