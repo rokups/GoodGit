@@ -958,7 +958,6 @@ GG_TEST("network", "push is refused when outgoing commits hold first-class confl
     s.git(repo, {"push", "-q", "origin", "main~2:refs/heads/main"});
     s.git(repo, {"fetch", "-q", "origin"});
     s.git(repo, {"branch", "--set-upstream-to=origin/main", "main"});
-    const std::string conflicted = s.revParse(repo, "main~1");
     GG_REQUIRE(s.openRepository(repo));
     ctx->ItemClick("//###Toolbar/###tb_push");
     GG_REQUIRE(s.dialogOpen("Push refused"));
