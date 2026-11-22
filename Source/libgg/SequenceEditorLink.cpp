@@ -125,33 +125,10 @@ bool writeInstance(const Instance& instance)
     if (registryDir().empty())
         return false;
     const fs::path file = instanceFile(instance.pid);
-    const fs::path tmp = file.string() + ".tmp";
-    std::error_code ec;
     const std::string text = std::to_string(instance.port) + "\n" + instance.token + "\n" + instance.gitDir + "\n";
-#ifdef _WIN32
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << text;
-        if (!out)
-            return false;
-    }
-    fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
-#else
-    // Created new (O_EXCL) and 0600: the token is never readable by others and a planted link is not followed.
-    fs::remove(tmp, ec);
-    const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-    if (fd < 0)
-        return false;
-    const bool wrote = ::write(fd, text.data(), text.size()) == static_cast<ssize_t>(text.size());
-    ::close(fd);
-    if (!wrote) {
-        fs::remove(tmp, ec);
-        return false;
-    }
-#endif
     removeDeadInstances(instance.pid);
-    ec = replaceFile(tmp, file);
-    return !ec;
+    // 0600: the token is never readable by others. The temp file is new, so a planted link is not followed.
+    return !writeFileAtomic(file, text, fs::perms::owner_read | fs::perms::owner_write);
 }
 
 void removeInstance(long long pid)

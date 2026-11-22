@@ -47,6 +47,7 @@ bool write(const fs::path& file, const Session& session)
     fs::create_directories(file.parent_path(), ec);
     if (ec)
         return false;
+    // Not writeFileAtomic: its temp file sits in the session directory. Here the temp file stays outside it.
     // Written in a sibling directory of the session files (gg/edit.tmp) and renamed over the target. The name
     // of a session file is the id of a worktree, one path component, so it never names a file in another
     // directory: no worktree id (foo, foo.tmp) can take the name of a temporary file. A write that fails
