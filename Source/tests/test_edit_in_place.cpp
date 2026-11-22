@@ -103,7 +103,10 @@ bool editCommit(Scenario& s, const fs::path& repo, const std::string& id, const 
     if (!rowReady(s, id))
         return false;
     s.contextMenu(rowRef(id).c_str(), "Edit commit (checkout detached)");
-    return editing(s, id, branch) && s.head(repo) == id;
+    if (!editing(s, id, branch) || s.head(repo) != id)
+        return false;
+    s.settle(); // the session shows before the job ends; a busy engine disables the next Edit click
+    return true;
 }
 
 void amendStaged(ImGuiTestContext* ctx, Scenario& s)
