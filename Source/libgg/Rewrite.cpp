@@ -556,7 +556,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 && !std::all_of(pending->contributors.begin(), pending->contributors.end(), originallyEmpty)) {
                 // A group (squash/fixup members) is never dropped: git stops at the member that empties
                 // it, and `--continue` keeps an empty commit.
-                const bool group = !pending->squashed.empty() && !pending->source.empty(); // an amending step has no own pick
+                const bool group = !pending->squashed.empty();
                 BecameEmpty e{pending->key, pending->source, firstLine(pending->message), !group && plan.emptied == Emptied::Drop, group};
                 result.becameEmpty.push_back(e);
                 if (e.dropped) {

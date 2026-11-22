@@ -67,8 +67,12 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
         if (!context.onto.empty())
             out->ontoSubject = summaryOf(repo, context.onto);
         std::set<std::string> dropped; // step keys of commits left out because they became empty
+        std::set<std::string> groupIds; // commits of squash/fixup groups that became empty (kept)
         for (const auto& e : result.becameEmpty)
-            if (e.dropped) {
+            if (e.group) {
+                if (const auto st = result.steps.find(e.step); st != result.steps.end())
+                    groupIds.insert(st->second);
+            } else if (e.dropped) {
                 dropped.insert(e.step);
                 out->droppedEmpty.push_back(e.subject);
             }
@@ -198,6 +202,7 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
             } else {
                 row.empty = row.parents.size() == 1 && tree == treeOf(repo, row.parents.front());
             }
+            row.group = groupIds.count(row.id) > 0;
             row.wasEmpty = std::all_of(row.sources.begin(), row.sources.end(), [&](const std::string& id) {
                 const auto it = context.commits.find(id);
                 return it != context.commits.end() && it->second.empty;

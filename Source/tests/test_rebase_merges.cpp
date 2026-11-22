@@ -1101,7 +1101,7 @@ GG_TEST("rebase-merges", "an octopus merge: git's merge row with three labels, p
     GG_CHECK(s.statusPorcelain(path).empty());
 }
 
-GG_TEST("rebase-merges", "preview: an empty fixup after a reset drops its row and later rows keep the right commit and decision")
+GG_TEST("rebase-merges", "preview: an empty fixup after a reset keeps its row, as an empty commit, and later rows keep the right commit and decision")
 {
     const fs::path path = s.fixture(Recipe::Empty);
     s.write(path, "bin.dat", std::string("A\0", 2));
@@ -1125,8 +1125,8 @@ GG_TEST("rebase-merges", "preview: an empty fixup after a reset drops its row an
     const std::string d = s.head(path);
 
     // B goes on A without Q: a binary conflict that needs a decision. After "reset l" C is empty
-    // (A has a.txt already) and is left out, so the fixup row after the exec row amends nothing
-    // of its own: the row of A (not the last row) is the one that goes.
+    // (A has a.txt already) and is left out. The fixup of X then amends A and empties it: the
+    // rebase stops there and --continue keeps A as an empty commit (the same in every mode).
     const std::string text = "label onto\nreset onto\npick " + a + "\nlabel l\npick " + b + "\nreset l\npick " + c
         + "\nexec true\nfixup " + x + "\npick " + d + "\n";
     gg::git2::Repository repo = gg::git2::openRepository(path);
@@ -1139,11 +1139,12 @@ GG_TEST("rebase-merges", "preview: an empty fixup after a reset drops its row an
     const auto p = ggui::core::readRebasePreview(path, list, context, options, gg::CancelToken());
     GG_REQUIRE(p != nullptr);
     GG_REQUIRE(p->ok);
-    GG_REQUIRE(p->rows.size() == 2);
-    GG_CHECK_STR_EQ(p->rows[0].sources.front(), b);
-    GG_CHECK_STR_EQ(p->rows[1].sources.front(), d);
-    GG_CHECK_EQ(p->rows[0].decisions.size(), 1u);
-    GG_CHECK(p->rows[1].decisions.empty());
+    GG_REQUIRE(p->rows.size() == 3);
+    GG_CHECK(p->rows[0].empty && p->rows[0].group);
+    GG_CHECK_STR_EQ(p->rows[1].sources.front(), b);
+    GG_CHECK_STR_EQ(p->rows[2].sources.front(), d);
+    GG_CHECK_EQ(p->rows[1].decisions.size(), 1u);
+    GG_CHECK(p->rows[2].decisions.empty());
 }
 
 GG_TEST("rebase-merges", "todo labels: names git rewrites (spaces, ':', '/', non-ASCII, a clash with onto) are the labels git writes")
