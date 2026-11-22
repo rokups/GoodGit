@@ -1566,4 +1566,94 @@ GG_TEST("rewrite", "reword below a merge: the merge is rewritten with its second
     GG_CHECK_STR_EQ(s.revParse(repo, "mid"), s.revParse(repo, "HEAD~3"));
 }
 
+// A fixup/squash that adds nothing in Drop mode (git 2.56): history c0, a1 (a=1), h1 (a=2), f0 (a=1).
+// f0 was not empty, but a1 already holds its change.
+namespace {
+
+struct NoopRepo {
+    fs::path path;
+    std::string a1, f0, e1x;
+};
+
+NoopRepo makeNoop(Scenario& s)
+{
+    NoopRepo r;
+    r.path = s.fixture(Recipe::Empty);
+    s.commitFile(r.path, "base.txt", "base\n", "c0 base");
+    s.git(r.path, {"switch", "-q", "-c", "side"});
+    s.commitFile(r.path, "a.txt", "1\n", "e1x set 1");
+    r.e1x = s.head(r.path);
+    s.git(r.path, {"switch", "-q", "main"});
+    s.commitFile(r.path, "a.txt", "1\n", "a1 set 1");
+    r.a1 = s.head(r.path);
+    s.commitFile(r.path, "a.txt", "2\n", "h1 set 2");
+    s.commitFile(r.path, "a.txt", "1\n", "f0 set 1");
+    r.f0 = s.head(r.path);
+    return r;
+}
+
+gg::rewrite::Step noopStep(const std::string& source, bool amend)
+{
+    gg::rewrite::Step st;
+    st.kind = gg::rewrite::Step::Kind::Squash;
+    st.source = source;
+    st.amend = amend;
+    return st;
+}
+
+} // namespace
+
+GG_TEST("rewrite", "Drop: a no-op fixup after exec or after a dropped head keeps the target commit as it is")
+{
+    const NoopRepo r = makeNoop(s);
+    gg::rewrite::Rewriter rewriter(r.path);
+    gg::rewrite::Plan plan;
+    plan.emptied = gg::rewrite::Emptied::Drop;
+    gg::rewrite::Step pick;
+    pick.source = r.a1;
+    // pick a1; exec true; fixup f0: a1 is fast-forwarded, so the target is a1 itself.
+    plan.steps = {pick, noopStep(r.f0, true)};
+    gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok);
+    GG_CHECK_STR_EQ(result.steps.at(r.f0), r.a1);
+    // pick a1; pick e1x (empty there: dropped); fixup f0.
+    gg::rewrite::Step head;
+    head.source = r.e1x;
+    head.sourceParents = false;
+    head.parents = {r.a1};
+    plan.steps = {pick, head, noopStep(r.f0, false)};
+    result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok);
+    GG_CHECK_STR_EQ(result.steps.at(r.f0), r.a1);
+    GG_CHECK_STR_EQ(result.steps.at(r.e1x), r.a1);
+}
+
+GG_TEST("rewrite", "Drop: a no-op last squash keeps the group message the step carries")
+{
+    const fs::path path = s.fixture(Recipe::Empty);
+    s.commitFile(path, "base.txt", "base\n", "c0 base");
+    s.commitFile(path, "e.txt", "1\n", "e1 set 1");
+    const std::string e1 = s.head(path);
+    s.commitFile(path, "e.txt", "2\n", "h1 set 2");
+    s.commitFile(path, "s.txt", "s\n", "s1 add s");
+    const std::string s1 = s.head(path);
+    s.commitFile(path, "e.txt", "1\n", "s0 set 1");
+    const std::string s0 = s.head(path);
+    gg::rewrite::Rewriter rewriter(path);
+    gg::rewrite::Plan plan;
+    plan.emptied = gg::rewrite::Emptied::Drop;
+    gg::rewrite::Step pick;
+    pick.source = e1;
+    gg::rewrite::Step last = noopStep(s0, false);
+    last.message = "edited group message\n";
+    plan.steps = {pick, noopStep(s1, false), last};
+    const gg::rewrite::Result result = rewriter.compute(plan);
+    GG_REQUIRE(result.ok);
+    const git_oid id = gg::git2::fromHexOrThrow(result.steps.at(e1));
+    git_commit* c = nullptr;
+    GG_REQUIRE(git_commit_lookup(&c, rewriter.repository(), &id) == 0);
+    GG_CHECK_STR_EQ(git_commit_message(c), "edited group message\n");
+    git_commit_free(c);
+}
+
 } // namespace ggtest

@@ -538,6 +538,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             std::vector<std::string> contributors; // original commits whose changes it holds
             std::string dateFrom;            // keepCommitterDate: the commit whose date it keeps
             std::string alsoKey;             // a dropped head's step: it names this amended commit
+            std::string amended;             // an amending step: the commit it starts from
         };
         std::optional<Pending> pending;
         std::map<std::string, std::vector<std::string>> contributorsOf; // new commit → its originals
@@ -667,6 +668,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     const git_signature* a = git_commit_author(t.get());
                     p.author = Person{a->name, a->email, a->when.time, a->when.offset};
                     p.mapSource = false;
+                    p.amended = target;
                     p.contributors = std::move(contributors);
                     p.dateFrom = dateFrom;
                     if (droppedHead) // the dropped head's step names the amended commit, whoever asked
@@ -684,12 +686,22 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     /*oursCommit=*/{}, srcBaseCommit);
                 // Git 2.56 (--empty=drop) drops a fixup/squash that adds nothing, without its message
                 // and without a post-rewrite entry. A member that was empty before the rebase stays.
-                if (plan.emptied == Emptied::Drop && merged == pending->tree && !originallyEmpty(step.source))
+                if (plan.emptied == Emptied::Drop && merged == pending->tree && !originallyEmpty(step.source)) {
+                    // The group message sits on the last member: keep it. Git keeps the target as it is.
+                    if (step.message && pending->alsoKey.empty())
+                        pending->message = *step.message;
+                    if (pending->squashed.empty() && !pending->amended.empty()) {
+                        pending->unchanged = true;
+                        pending->source = pending->amended;
+                    }
                     continue;
+                }
                 pending->tree = merged;
                 pending->squashed.push_back(step.source);
                 pending->contributors.push_back(step.source);
                 pending->unchanged = false;
+                if (!pending->amended.empty())
+                    pending->source.clear();
                 if (pending->alsoKey.empty()) {
                     if (step.message)
                         pending->message = *step.message;
