@@ -1156,9 +1156,9 @@ std::string imageDims(std::string_view b)
 {
     auto be16 = [&](size_t i) { return (static_cast<unsigned char>(b[i]) << 8) | static_cast<unsigned char>(b[i + 1]); };
     auto le16 = [&](size_t i) { return static_cast<unsigned char>(b[i]) | (static_cast<unsigned char>(b[i + 1]) << 8); };
-    auto be32 = [&](size_t i) { return (be16(i) << 16) | be16(i + 2); };
-    auto le32 = [&](size_t i) { return le16(i) | (le16(i + 2) << 16); };
-    auto dims = [](long w, long h) { return std::to_string(w) + "x" + std::to_string(h); };
+    auto be32 = [&](size_t i) { return (static_cast<std::uint32_t>(be16(i)) << 16) | static_cast<std::uint32_t>(be16(i + 2)); };
+    auto le32 = [&](size_t i) { return static_cast<std::uint32_t>(le16(i)) | (static_cast<std::uint32_t>(le16(i + 2)) << 16); };
+    auto dims = [](long long w, long long h) { return std::to_string(w) + "x" + std::to_string(h); };
     if (b.size() >= 24 && b.compare(1, 3, "PNG") == 0)
         return dims(be32(16), be32(20));
     if (b.size() >= 10 && b.compare(0, 3, "GIF") == 0)
@@ -2216,7 +2216,7 @@ std::atomic<int> gSubmoduleOpens{0};
 
 namespace {
 // The scan of one submodule, kept while its HEAD and refs are the same. The key is the HEAD file (content and
-// mtime), the file of the branch it names, packed-refs and the index mtime, all read with a stat or a small read
+// mtime), the file of the branch it names, packed-refs, the index and .gitmodules mtimes, all read with a stat or a small read
 // and no open of the repository. The cache lives for the process. It has a mutex: the snapshot reader and the
 // repository list reader call readSubmodules on different threads.
 // shortcut: a scan with nested submodules is not cached (their state has more files), upgrade if that costs.
@@ -2250,7 +2250,7 @@ std::string submoduleSignature(const fs::path& dir, bool scanIndex)
     if (head.empty())
         return {};
     std::string sig = (scanIndex ? "i|" : "n|") + head + "|" + mtimeText(gitDir / "HEAD") + "|" + mtimeText(gitDir / "index")
-        + "|" + mtimeText(gitDir / "packed-refs");
+        + "|" + mtimeText(gitDir / "packed-refs") + "|" + mtimeText(dir / ".gitmodules");
     if (head.rfind("ref: ", 0) == 0)
         sig += "|" + gg::trim(readFileText(gitDir / head.substr(5)));
     return sig;
