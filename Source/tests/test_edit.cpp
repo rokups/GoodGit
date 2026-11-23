@@ -770,6 +770,41 @@ GG_TEST("edit", "Discard commit and descendants deletes a branch whose tip is no
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), r.c4);
 }
 
+GG_TEST("edit", "Discard commit and descendants drops a merge descendant and keeps its outside parent")
+{
+    const EditRepo r = makeRepo(s);
+    // main: c4 <- M (second parent s1, outside the descendant set) <- c5.
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "M merge side", "side"});
+    s.commitFile(r.path, "e.txt", "e\n", "c5 add e");
+    s.git(r.path, {"switch", "-q", "side"});
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, r.c3));
+    ggui::showAbandonBranchDialog(*s.session(), ggui::core::Oid::fromHex(r.c3));
+    GG_REQUIRE(s.dialogOpen("Discard commit and descendants"));
+    s.dialogButton("Discard commit and descendants", "Discard");
+    GG_CHECK(s.waitUntil([&] { return !s.gitMayFail(r.path, {"rev-parse", "--verify", "-q", "refs/heads/main"}).ok(); }));
+    s.settle();
+    // Only the descendants went: the other parent s1 and its ancestors stay.
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.s1);
+    GG_CHECK(subjects(s, r.path, "side") == (std::vector<std::string>{"s1 add s", "c2 add b", "c1 add a"}));
+}
+
+GG_TEST("edit", "Squash descendants refuses when a descendant is a merge and leaves the history alone")
+{
+    const EditRepo r = makeRepo(s);
+    s.git(r.path, {"merge", "-q", "--no-ff", "-m", "M merge side", "side"});
+    const std::string merge = s.head(r.path);
+    const std::vector<std::string> before = subjects(s, r.path, "main");
+    GG_REQUIRE(s.openRepository(r.path));
+    GG_REQUIRE(rowReady(s, merge));
+    s.session()->actions().squashDescendants(ggui::core::Oid::fromHex(r.c3));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "main"), merge);
+    GG_CHECK(subjects(s, r.path, "main") == before);
+    GG_CHECK_STR_EQ(s.revParse(r.path, "side"), r.s1);
+    GG_CHECK(s.statusPorcelain(r.path).empty());
+}
+
 GG_TEST("edit", "restore paths in a commit or the working tree; simplify parents")
 {
     const EditRepo r = makeRepo(s);
