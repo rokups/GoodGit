@@ -264,10 +264,10 @@ void Actions::addIgnore(const std::vector<std::string>& lines, bool exclude)
     run(
         exclude ? "add to .git/info/exclude" : "add to .gitignore",
         [lines, exclude](MutationContext& ctx) {
-            const fs::path file = exclude ? fs::path(git_repository_commondir(ctx.repo())) / "info" / "exclude"
-                                          : ctx.cwd() / ".gitignore";
+            const fs::path gitDir = exclude ? fs::path(git_repository_commondir(ctx.repo())) : fs::path();
+            const fs::path file = exclude ? gitDir / "info" / "exclude" : ctx.cwd() / ".gitignore";
             std::error_code ec;
-            gg::ignore::addLines(file, lines, ec);
+            gg::ignore::addLines(file, lines, gitDir, ec);
             if (ec)
                 throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
         },

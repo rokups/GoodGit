@@ -19,7 +19,9 @@ std::string folderPattern(const std::string& path);
 
 // Appends each line that the file does not have yet. Creates the file and its folder when they are
 // missing. Keeps a trailing newline. Returns the number of lines added. `ec` holds the error when
-// the file cannot be read or written.
-size_t addLines(const std::filesystem::path& file, const std::vector<std::string>& lines, std::error_code& ec);
+// the file cannot be read or written. A non-empty `gitDir` must exist: the call creates nothing and
+// sets `ec` when it is gone. An empty `gitDir` (a .gitignore) creates the parent folder as before.
+size_t addLines(const std::filesystem::path& file, const std::vector<std::string>& lines,
+                const std::filesystem::path& gitDir, std::error_code& ec);
 
 } // namespace gg::ignore

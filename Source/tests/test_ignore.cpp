@@ -47,15 +47,24 @@ GG_TEST("ignore", "addLines creates the file, appends and skips lines that exist
     std::error_code ec;
     // A missing file and a missing info folder are created; the repository folder must exist.
     fs::create_directories(dir, ec);
-    GG_CHECK(gg::ignore::addLines(dir / "info" / "exclude", {"/a", "/b", "/a"}, ec) == 2);
+    GG_CHECK(gg::ignore::addLines(dir / "info" / "exclude", {"/a", "/b", "/a"}, dir, ec) == 2);
     GG_CHECK(!ec);
     GG_CHECK_STR_EQ(s.read(dir, "info/exclude"), "/a\n/b\n");
     // A file without a trailing newline gets one before the new line.
     s.write(dir, ".gitignore", "*.o\r\n/keep");
-    GG_CHECK(gg::ignore::addLines(dir / ".gitignore", {"*.o", "/keep", "/new"}, ec) == 1);
+    GG_CHECK(gg::ignore::addLines(dir / ".gitignore", {"*.o", "/keep", "/new"}, {}, ec) == 1);
     GG_CHECK_STR_EQ(s.read(dir, ".gitignore"), "*.o\r\n/keep\n/new\n");
-    GG_CHECK(gg::ignore::addLines(dir / ".gitignore", {"/new"}, ec) == 0);
+    GG_CHECK(gg::ignore::addLines(dir / ".gitignore", {"/new"}, {}, ec) == 0);
     GG_CHECK_STR_EQ(s.read(dir, ".gitignore"), "*.o\r\n/keep\n/new\n");
+}
+
+GG_TEST("ignore", "addLines creates nothing when the git dir is gone")
+{
+    const fs::path gone = s.root() / "ignore-gone" / "common";
+    std::error_code ec;
+    GG_CHECK(gg::ignore::addLines(gone / "info" / "exclude", {"/a"}, gone, ec) == 0);
+    GG_CHECK(!!ec);
+    GG_CHECK(!fs::exists(gone, ec));
 }
 
 GG_TEST("ignore", "Ignore this file writes the .gitignore and the row disappears")
