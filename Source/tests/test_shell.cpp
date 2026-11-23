@@ -1577,6 +1577,9 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_CHECK((ctx->ItemInfo("//$FOCUSED/Commit...").ItemFlags & ImGuiItemFlags_Disabled) != 0);
     ctx->KeyPress(ImGuiKey_Escape);
     ctx->KeyPress(ImGuiKey_Escape);
+    // A popup left open would take the next menu click.
+    GG_REQUIRE(s.waitUntil([&] { return ctx->UiContext->OpenPopupStack.Size == 0; }));
+    GG_REQUIRE(s.session());
     // Keys do nothing either.
     ctx->ItemClick(("//History/**/###row_" + older).c_str());
     ctx->KeyPress(ImGuiKey_D);
@@ -1597,6 +1600,7 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     menu("//Reflog/##reflog_table/r0/###reflog_0", "Create branch from new...", true);
     s.showPanel("Operations");
     s.settle(); // the reconcile reload replaces the operations list
+    GG_REQUIRE(s.session());
     // Copy the id first: s.child runs frames, and a reload frees the string a reference would hold.
     const std::string opRowId = s.session()->operations().back().id;
     const std::string opRow = s.child("//Operations", "##ops_table") + "/**/op_" + opRowId + "/###row";

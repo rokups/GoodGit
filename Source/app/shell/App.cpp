@@ -533,6 +533,7 @@ void App::closeRepository()
 {
     if (!m_session)
         return;
+    spdlog::info("closing {}", m_session->path().string());
     m_session->cancelAll();
     retireSession();
     // Refuse git-gg hand-overs for this repository now, not on the next frame.
