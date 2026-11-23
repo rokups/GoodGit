@@ -95,6 +95,18 @@ std::string modeText(std::uint32_t mode)
     return buf;
 }
 
+// The function context after the closing "@@" of a hunk header (empty when there is none).
+std::string hunkContext(const std::string& header)
+{
+    const size_t close = header.find("@@", 2);
+    if (close == std::string::npos)
+        return {};
+    const size_t b = header.find_first_not_of(" \t\r\n", close + 2);
+    if (b == std::string::npos)
+        return {};
+    return header.substr(b, header.find_last_not_of("\r\n") + 1 - b);
+}
+
 } // namespace
 
 DiffPanel::DiffPanel(Session& session) : m_session(session) { }
@@ -355,8 +367,8 @@ void DiffPanel::buildRows()
         const auto& hunk = f.hunks[h];
         const int newStart = hunk.newLines == 0 ? hunk.newStart + 1 : hunk.newStart;
         addGap(prevNewEnd + 1, newStart - 1, prevOldEnd - prevNewEnd);
-        // The hunk row (with its buttons) sits directly above the first changed line, after the
-        // leading context lines.
+        // The hunk row (its function context, if any) sits directly above the first changed line,
+        // after the leading context lines. The hunk buttons live in that line's gutter.
         size_t lead = 0;
         while (lead < hunk.lines.size() && hunk.lines[lead].origin == ' ')
             ++lead;
@@ -364,7 +376,8 @@ void DiffPanel::buildRows()
             lead = 0;
         for (size_t l = 0; l < lead; ++l)
             m_rows.push_back(Row{Row::Line, static_cast<int>(h), static_cast<int>(l)});
-        m_rows.push_back(Row{Row::Hunk, static_cast<int>(h)});
+        if (!hunkContext(hunk.header).empty())
+            m_rows.push_back(Row{Row::Hunk, static_cast<int>(h)});
         for (size_t l = lead; l < hunk.lines.size(); ++l)
             m_rows.push_back(Row{Row::Line, static_cast<int>(h), static_cast<int>(l)});
         prevNewEnd = hunk.newStart + hunk.newLines - (hunk.newLines == 0 ? 0 : 1);
@@ -666,14 +679,9 @@ void DiffPanel::buildShown()
                 gapLines(r, [&](EditorLine l, const std::string& t) { l.row = static_cast<int>(i); emitU(l, t); });
             } else if (r.kind == Row::Hunk) {
                 // Only the function context (after the closing "@@"): no range text anywhere in the
-                // editor, so it can never be selected or copied. The gutter hosts the hunk's buttons.
+                // editor, so it can never be selected or copied.
                 EditorLine l{EditorLine::Hunk, static_cast<int>(i), r.hunk};
-                const std::string& header = f.hunks[static_cast<size_t>(r.hunk)].header;
-                const size_t close = header.find("@@", 2);
-                std::string context = close == std::string::npos ? std::string() : header.substr(close + 2);
-                const size_t b = context.find_first_not_of(" \t");
-                context = b == std::string::npos ? std::string() : context.substr(b);
-                emitU(l, stripCr(context));
+                emitU(l, hunkContext(f.hunks[static_cast<size_t>(r.hunk)].header));
             } else {
                 const auto& hl = f.hunks[static_cast<size_t>(r.hunk)].lines[static_cast<size_t>(r.line)];
                 EditorLine l{EditorLine::Line, static_cast<int>(i), r.hunk, r.line};
@@ -793,16 +801,22 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const bool primary = v.side != Side::Right;
     const bool free = m_session.actions().busy().empty();
-    auto handle = [&](const std::string& id, float w) {
-        ImGui::InvisibleButton(id.c_str(), ImVec2(std::max(1.0f, w), height));
+    // `toRow` >= 0: the handle selects the rows l.row..toRow (the changes of a hunk).
+    auto handle = [&](const char* id, float w, int toRow = -1) {
+        auto select = [&](bool extend) {
+            selectRows(v, l.row, extend);
+            if (toRow > l.row)
+                selectRows(v, toRow, true);
+        };
+        ImGui::InvisibleButton(id, ImVec2(std::max(1.0f, w), height));
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-            selectRows(v, l.row, ImGui::GetIO().KeyShift);
+            select(ImGui::GetIO().KeyShift);
         const bool byKey = contextMenuKeyPressed();
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right) || byKey) {
             m_active = &v;
             const auto rows = selectedRows();
             if (std::find(rows.begin(), rows.end(), l.row) == rows.end())
-                selectRows(v, l.row, false);
+                select(false);
             if (byKey)
                 openPopupBelowItem(kMenuId);
             else
@@ -819,8 +833,18 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             std::snprintf(nums, sizeof(nums), "%5s %5s %c", num(l.oldNo).c_str(), num(l.newNo).c_str(), mark);
         else
             std::snprintf(nums, sizeof(nums), "%5s %c", num(v.side == Side::Left ? l.oldNo : l.newNo).c_str(), mark);
-        if (l.kind == EditorLine::Line)
-            handle("###line_" + std::to_string(l.row), width);
+        // The first changed line of a hunk (unified view) carries the hunk's buttons and handle.
+        bool firstChange = l.kind == EditorLine::Line && v.side == Side::Unified && l.origin != ' ';
+        if (firstChange) {
+            const auto& before = f.hunks[static_cast<size_t>(l.hunk)].lines;
+            for (int k = 0; k < l.line && firstChange; ++k)
+                firstChange = before[static_cast<size_t>(k)].origin == ' ';
+        }
+        char hid[48];
+        if (l.kind == EditorLine::Line && !firstChange) {
+            std::snprintf(hid, sizeof(hid), "###line_%d", l.row);
+            handle(hid, width);
+        }
         const ImU32 color = l.origin == '+' ? p.added : l.origin == '-' ? p.removed : p.lineNumber;
         dl->AddText(pos, color, nums);
         const auto& hl = l.hunk < 0 ? nullptr
@@ -830,35 +854,62 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             if (itemHoveredForTooltip())
                 tooltip("No newline at end of file");
         }
-        break;
-    }
-    case EditorLine::Hunk: {
-        const StagingMode mode = stagingMode(); // hunk rows are in the unified view only
-        const float button = ImGui::GetFontSize() * 1.3f;
+        if (!firstChange)
+            break;
+        const StagingMode mode = stagingMode();
         const bool commitMode = m_selection.kind == SelKind::Commit && m_diff->query.kind == core::DiffKind::Commit;
         const int count = mode == StagingMode::Unstaged ? 2 : mode == StagingMode::Staged || commitMode ? 1 : 0;
-        handle("###hunk_" + std::to_string(l.hunk), width - button * static_cast<float>(count));
+        // The buttons sit in the number column that is blank on this line: the old number of an
+        // added line, the new number of a removed line. Each button is half a 5-character column.
+        const float cw = ImGui::CalcTextSize("0").x;
+        const float button = cw * 2.5f;
+        const float bx0 = l.origin == '+' ? 0.0f : cw * 6.0f;
+        const float bx1 = bx0 + button * static_cast<float>(count);
+        // The line handle and the hunk handle share the space around the buttons.
+        float lineX = 0.0f, lineW = bx0, hunkX = bx1, hunkW = width - bx1;
+        if (bx0 < 1.0f) {
+            lineX = bx1;
+            lineW = hunkW * 0.5f;
+            hunkX = bx1 + lineW;
+            hunkW -= lineW;
+        }
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + lineX, pos.y));
+        std::snprintf(hid, sizeof(hid), "###line_%d", l.row);
+        handle(hid, lineW);
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + hunkX, pos.y));
+        std::snprintf(hid, sizeof(hid), "###hunk_%d", l.hunk);
+        const auto& hunkText = f.hunks[static_cast<size_t>(l.hunk)].lines;
+        int lastChange = l.line;
+        for (int k = l.line; k < static_cast<int>(hunkText.size()); ++k)
+            if (hunkText[static_cast<size_t>(k)].origin != ' ')
+                lastChange = k;
+        handle(hid, hunkW, l.row + lastChange - l.line);
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + bx0, pos.y));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
         ImGui::BeginDisabled(!free || f.linesCut);
-        auto iconButton = [&](const char* icon, const std::string& id, const char* tip) {
-            ImGui::SameLine(0, 0);
+        bool placed = false;
+        auto iconButton = [&](const char* icon, const char* name, const char* tip) {
+            if (placed)
+                ImGui::SameLine(0, 0);
+            placed = true;
+            char label[64];
+            std::snprintf(label, sizeof(label), "%s###%s_hunk_%d", icon, name, l.hunk);
             // One text line tall, so the glyph keeps the editor line's baseline.
-            const bool clicked = ImGui::Button((std::string(icon) + "###" + id).c_str(), ImVec2(button, ImGui::GetTextLineHeight()));
+            const bool clicked = ImGui::Button(label, ImVec2(button, ImGui::GetTextLineHeight()));
             if (itemHoveredForTooltip(ImGuiHoveredFlags_AllowWhenDisabled))
                 tooltip("%s", tip);
             return clicked;
         };
-        const std::string n = std::to_string(l.hunk);
         if (mode == StagingMode::Unstaged) {
-            if (iconButton(ICON_MS_ADD, "stage_hunk_" + n, "Stage hunk"))
+            if (iconButton(ICON_MS_ADD, "stage", "Stage hunk"))
                 applyLines(hunkLines(f, l.hunk), StagingAction::Stage);
-            if (iconButton(ICON_MS_UNDO, "discard_hunk_" + n, "Discard hunk"))
+            if (iconButton(ICON_MS_UNDO, "discard", "Discard hunk"))
                 applyLines(hunkLines(f, l.hunk), StagingAction::Discard);
         } else if (mode == StagingMode::Staged) {
-            if (iconButton(ICON_MS_REMOVE, "unstage_hunk_" + n, "Unstage hunk"))
+            if (iconButton(ICON_MS_REMOVE, "unstage", "Unstage hunk"))
                 applyLines(hunkLines(f, l.hunk), StagingAction::Unstage);
         } else if (commitMode) {
-            if (iconButton(ICON_MS_UNDO, "discard_hunk_" + n, "Discard hunk"))
+            if (iconButton(ICON_MS_UNDO, "discard", "Discard hunk"))
                 confirmDiscard(hunkLines(f, l.hunk), true, [&actions = m_session.actions(), id = m_selection.id,
                                                          patch = buildPatch(f, hunkLines(f, l.hunk), false)] {
                     actions.moveChanges(id, Actions::MoveTo::Discard, {}, patch);
@@ -866,6 +917,13 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         }
         ImGui::EndDisabled();
         ImGui::PopStyleVar();
+        break;
+    }
+    case EditorLine::Hunk: {
+        // The function context only: a click target, no buttons (they are on the first change).
+        char hid[48];
+        std::snprintf(hid, sizeof(hid), "###hunkctx_%d", l.hunk);
+        handle(hid, width);
         break;
     }
     case EditorLine::GapHidden:

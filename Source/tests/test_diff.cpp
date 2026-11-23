@@ -453,7 +453,8 @@ GG_TEST("diff", "no @@ ranges in the unified text; copies hold only code")
     GG_CHECK_STR_EQ(s.clipboard(), expected);
     // A hunk row alone holds no code: nothing is copied over the clipboard.
     ImGui::SetClipboardText("keep");
-    ctx->ItemClick((body(s) + "/###hunk_1").c_str());
+    GG_REQUIRE(s.itemExists((body(s) + "/###hunkctx_0").c_str()));
+    ctx->ItemClick((body(s) + "/###hunkctx_0").c_str());
     GG_CHECK_STR_EQ(s.session()->diff().selectedText(), "");
     ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
     GG_CHECK_STR_EQ(s.clipboard(), "keep");
@@ -575,7 +576,7 @@ GG_TEST("diff", "edge cases: GIF, BMP, JPEG and unknown images; CRLF without a f
     GG_REQUIRE(file(s) != nullptr && !file(s)->hunks.empty());
     const auto& lines = file(s)->hunks[0].lines;
     GG_CHECK(std::any_of(lines.begin(), lines.end(), [](const auto& l) { return l.noNewline && l.origin == '+'; }));
-    ctx->MouseMove((body(s) + "/###line_3").c_str());
+    ctx->MouseMove((body(s) + "/###line_2").c_str()); // no hunk row: this hunk has no function context
     ctx->Yield(2);
     GG_CHECK(!s.textShown(body(s).c_str(), "changed\r"));
 
@@ -1294,7 +1295,7 @@ GG_TEST("diff", "Blame file in a stash view blames at the stash commit; an untra
     GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->path() == "tracked.txt"; }));
     s.showPanel("Diff");
     ctx->Yield(3);
-    s.contextMenu((body(s) + "/###line_3").c_str(), "Blame file");
+    s.contextMenu((body(s) + "/###line_1").c_str(), "Blame file");
     GG_CHECK(s.waitUntil([&] {
         const auto& b = s.session()->blame().blame();
         return b && b->query.path == "tracked.txt" && b->query.commit.hex() == stash;
@@ -1325,7 +1326,7 @@ GG_TEST("diff", "Blame file in a stash view blames at the stash commit; an untra
     GG_REQUIRE(s.waitUntil([&] { return file(s) && file(s)->path() == "fresh.txt"; }));
     s.showPanel("Diff");
     ctx->Yield(3);
-    ctx->ItemClick((body(s) + "/###line_1").c_str(), ImGuiMouseButton_Right);
+    ctx->ItemClick((body(s) + "/###line_0").c_str(), ImGuiMouseButton_Right); // one row: no hunk row
     ctx->MenuClick("//$FOCUSED/Blame file");
     ctx->Yield(3);
     const auto& b = s.session()->blame().blame();
