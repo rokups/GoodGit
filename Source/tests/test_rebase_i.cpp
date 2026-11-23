@@ -2734,8 +2734,8 @@ void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool a
     GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
     s.comboSelect(irWidget("ir_empty").c_str(), mode);
     s.comboSelect(irAction(f1).c_str(), action);
-    // The editor of a group with a dropped head shows the dropped commit's message in ggui: type what
-    // git's editor shows and "reworded" appends to.
+    // The editor of a group with a dropped head shows the text of git's editor, from the preview.
+    // rewordAll types the message that git's editor shows and "reworded" appends to.
     if (action2)
         s.comboSelect(irAction(f2).c_str(), action2);
     if (edit)
@@ -2795,6 +2795,72 @@ GG_TEST("rebase-i", "a dropped head pick: the fixup -C message is kept as it is,
 {
     GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
     emptyHeadFixup(s, true, "fixup -C", false, false, nullptr, true);
+}
+
+// The text the editor of git shows for "pick a1; pick e1x (empty after the rebase); squash f1" with
+// --empty=drop, without its comment lines, against the text of the editor in the panel.
+GG_TEST("rebase-i", "the squash editor shows the text of git when the head pick becomes empty")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick differently");
+    const fs::path path = s.fixture(Recipe::Empty, "repo-template-head");
+    s.commitFile(path, "base.txt", "base\n", "c0 base");
+    const std::string base = s.head(path);
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.commitFile(path, "q.txt", "q\n", "u1 add q");
+    const std::string u1 = s.head(path);
+    s.git(path, {"switch", "-q", "main"});
+    s.commitFile(path, "a.txt", "a\n", "a1 add a");
+    const std::string a1 = s.head(path);
+    s.commitFile(path, "q.txt", "q\n", "e1x add q");
+    const std::string e1 = s.head(path);
+    s.commitFile(path, "f.txt", "f\n", "f1 add f");
+    const std::string f1 = s.head(path);
+    const fs::path copy = copyRepo(s, path, "copy-template-head");
+    GG_REQUIRE(s.openRepository(path));
+    GG_REQUIRE(rowReady(s, a1));
+    ctx->ItemClick(historyRow(a1).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    ctx->ItemClick(irWidget("ir_onto").c_str());
+    ctx->KeyChars("up");
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto == u1; }));
+    s.comboSelect(irWidget("ir_empty").c_str(), "Drop");
+    s.comboSelect(irAction(f1).c_str(), "squash");
+    GG_REQUIRE(previewReady(s));
+    const todo::Todo list = editor(s).todo();
+    std::string ours;
+    for (const auto& g : todo::groups(list))
+        if (list.items[g.first].commit == e1)
+            ours = editor(s).messageText(g.first);
+    GG_REQUIRE(!ours.empty());
+
+    // Git runs an editor that saves the text it gets.
+    const fs::path seen = s.root() / "editor-text.txt";
+    const fs::path todoFile = s.root() / "template-todo.txt";
+    const fs::path editorFile = s.root() / "copy-editor.sh";
+    std::ofstream(todoFile, std::ios::binary) << "pick " << a1 << "\npick " << e1 << "\nsquash " << f1 << "\n";
+    std::ofstream(editorFile, std::ios::binary) << "#!/bin/sh\ncp \"$1\" '" << seen.generic_string() << "'\n";
+    fs::permissions(editorFile, fs::perms::owner_all, fs::perm_options::add);
+    ggui::setEnv("GIT_EDITOR", editorFile.generic_string());
+    s.git(copy, {"-c", "sequence.editor=cp '" + todoFile.generic_string() + "'", "rebase", "-q", "-i", "--empty=drop",
+        "--onto", "up", base});
+    ggui::setEnv("GIT_EDITOR", "true");
+    std::ifstream in(seen, std::ios::binary);
+    const std::string git{std::istreambuf_iterator<char>(in), {}};
+    GG_REQUIRE(!git.empty());
+    // Git strips the comment lines; blank lines at the ends do not count.
+    const auto strip = [](const std::string& text) {
+        std::string out, line;
+        std::istringstream lines(text);
+        while (std::getline(lines, line))
+            if (line.empty() || line[0] != '#')
+                out += line + '\n';
+        const size_t b = out.find_first_not_of('\n'), e = out.find_last_not_of('\n');
+        return b == std::string::npos ? std::string() : out.substr(b, e - b + 1);
+    };
+    GG_CHECK_STR_EQ(strip(ours), strip(git));
+    GG_CHECK(ours.find("a1 add a") != std::string::npos && ours.find("f1 add f") != std::string::npos);
 }
 
 GG_TEST("rebase-i", "Keep: a fixup folds into the head pick that became empty, as git does")
