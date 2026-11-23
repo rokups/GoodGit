@@ -1667,8 +1667,10 @@ GG_TEST("shell", "a close while a job runs: Cancel the job and close closes the 
     GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
     s.dialogButton("A job is running", "Cancel the job and close");
     GG_CHECK(s.waitUntil([&] { return s.session() == nullptr; }, 10.0f));
+    s.settle(); // the kill is async: the old session must be gone before the hook may end
     s.write(s.root(), "go", ""); // lets a leftover hook end
     s.settle();
+    GG_CHECK_STR_EQ(s.head(c.repo), c.head); // the cancelled commit did not land
 }
 
 GG_TEST("shell", "an open while a job runs asks first; Keep open keeps the repository and the job")
@@ -1698,6 +1700,8 @@ GG_TEST("shell", "an open while a job runs: Cancel the job and open opens the ot
     GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
     s.dialogButton("A job is running", "Cancel the job and open");
     GG_CHECK(s.waitUntil([&] { return s.session() && fs::equivalent(s.session()->path(), other); }, 10.0f));
+    // The kill is async: wait until the old session is gone. The hook still waits, so only a real kill ends it.
+    s.settle();
     s.write(s.root(), "go", ""); // lets a leftover hook end
     s.settle();
     GG_CHECK_STR_EQ(s.head(c.repo), c.head); // the cancelled commit did not land
