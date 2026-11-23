@@ -16,6 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -110,17 +111,21 @@ GG_TEST("engine", "watcher: a steady stream of events still notifies within the 
     const fs::path dir = s.path("watched");
     fs::create_directories(dir);
     std::mutex mu;
+    std::condition_variable cv;
     std::vector<std::chrono::steady_clock::time_point> notices;
     const auto start = std::chrono::steady_clock::now();
     ggui::core::Watcher watcher(dir, fs::path(), fs::path(), [&](const ggui::core::WatchEvent&) {
-        std::lock_guard lock(mu);
-        notices.push_back(std::chrono::steady_clock::now());
+        {
+            std::lock_guard lock(mu);
+            notices.push_back(std::chrono::steady_clock::now());
+        }
+        cv.notify_all();
     });
     std::atomic<bool> stop = false;
     std::thread writer([&] {
         for (int i = 0; !stop; ++i) {
             std::ofstream(dir / "stream.txt") << i;
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // paces the steady stream on purpose
         }
     });
     ScopeExit join([&] {
@@ -130,16 +135,9 @@ GG_TEST("engine", "watcher: a steady stream of events still notifies within the 
     // Real time: the test engine sleep may be fast. The writer runs until the deadline, so without
     // the max wait no notice comes.
     const auto deadline = start + std::chrono::milliseconds(static_cast<long long>(2000.0 + timeBudgetMs(1000.0)));
-    while (std::chrono::steady_clock::now() < deadline) {
-        {
-            std::lock_guard lock(mu);
-            if (notices.size() >= 2)
-                break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
+    std::unique_lock lock(mu);
+    cv.wait_until(lock, deadline, [&] { return notices.size() >= 2; });
     stop = true;
-    std::lock_guard lock(mu);
     GG_CHECK(notices.size() >= 2);
     // kMaxWait is 1 s in Watcher.cpp; the debounce of 150 ms and the slack scale the margin.
     GG_REQUIRE(!notices.empty());
@@ -403,7 +401,7 @@ ggui::core::Worker::Task slowScan(SlotProbe& probe, std::uint64_t id, bool cance
     task.fn = [&probe](ggui::core::Worker&, const gg::CancelToken& token) {
         probe.started = true;
         while (!probe.release && !token.cancelled())
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            std::this_thread::yield(); // CancelToken has no wait: poll it without a timed sleep
         probe.sawCancel = token.cancelled();
     };
     task.token = gg::CancelToken();
