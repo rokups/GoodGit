@@ -415,9 +415,11 @@ void tryAllStale(Scenario& s, int index, const ggui::core::Oid& shown)
     };
     for (const auto& step : steps) {
         step();
-        s.settle();
-        if (s.app.dialogs().current())
-            s.dismissError();
+        GG_CHECK(s.settle());
+        GG_CHECK(s.waitUntil([&] { const ggui::Form* f = s.app.dialogs().current(); return f && f->icon; }));
+        const ggui::Form* f = s.app.dialogs().current();
+        GG_CHECK(f && f->message.find("stash list changed") != std::string::npos);
+        s.dismissError();
     }
 }
 

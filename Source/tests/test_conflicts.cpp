@@ -1777,11 +1777,12 @@ GG_TEST("conflicts", "absorb folds each file into its own earlier commit and kee
     const auto first = absorbHead(s, repo, {"p.txt"}, "HEAD~2");
     GG_REQUIRE(first.has_value());
     GG_CHECK(first->outcome == ggui::core::Outcome::Ok);
-    // The ids above "add p" changed: find "add q" by its subject.
+    // The ids above "add p" changed: "add q" is now HEAD~1.
     const auto second = absorbHead(s, repo, {"q.txt"}, "HEAD~1");
     GG_REQUIRE(second.has_value());
     GG_CHECK(second->outcome == ggui::core::Outcome::Ok);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD~2:p.txt"}), "p2");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-3", "--format=%s"}), "add r\nadd q\nadd p");
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD~1:q.txt"}), "q2");
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:r.txt"}), "r1");
     // r.txt has no target: it stays a plain working tree change.
@@ -1796,8 +1797,9 @@ GG_TEST("conflicts", "absorb with nothing changed ends with a clear message and 
     const std::string tree = s.revParse(repo, "HEAD^{tree}");
     const std::string files = s.gitOut(repo, {"ls-files"});
     const std::string file = files.substr(0, files.find('\n'));
+    bool fired = false;
     // Nothing to fold: the action ends with a notice and no mutation event.
-    s.session()->actions().absorb(ggui::core::Oid::fromHex(s.revParse(repo, "HEAD")), {file}, [](const auto&) {});
+    s.session()->actions().absorb(ggui::core::Oid::fromHex(s.revParse(repo, "HEAD")), {file}, [&](const auto&) { fired = true; });
     GG_CHECK(s.waitUntil([&] {
         for (const auto& t : s.app.toasts())
             if (t.message == "Nothing to change.")
@@ -1805,6 +1807,7 @@ GG_TEST("conflicts", "absorb with nothing changed ends with a clear message and 
         return false;
     }));
     s.settle();
+    GG_CHECK(!fired);
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tree);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "");
 }
