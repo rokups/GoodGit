@@ -2260,7 +2260,11 @@ void Actions::continueOperation()
 bool noteRefusedMergeCommit(MutationContext& ctx, const std::string& output)
 {
     const fs::path dir = fs::absolute(git_repository_path(ctx.repo()));
-    if (!fs::exists(dir / "MERGE_HEAD") || !ctx.gitMayFail({"ls-files", "-u"}).out.empty())
+    if (!fs::exists(dir / "MERGE_HEAD"))
+        return false;
+    // A failed ls-files does not prove that nothing is unmerged.
+    const auto unmerged = ctx.gitMayFail({"ls-files", "-u"});
+    if (!unmerged.ok() || !unmerged.out.empty())
         return false;
     std::ifstream in(dir / "MERGE_MSG", std::ios::binary);
     const std::string message{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};

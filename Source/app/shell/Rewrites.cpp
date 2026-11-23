@@ -1464,8 +1464,11 @@ void Actions::mergeNative(const std::string& branch, const std::string& message)
         if (!message.empty())
             args.insert(args.end(), {"-m", message});
         args.push_back(branch);
+        const auto mergeHead = std::filesystem::absolute(git_repository_path(ctx.repo())) / "MERGE_HEAD";
+        // An earlier merge in progress makes git refuse: that is no stop of this merge.
+        const bool had = std::filesystem::exists(mergeHead);
         const auto r = ctx.gitMayFail(args);
-        if (!r.ok() && !std::filesystem::exists(std::filesystem::absolute(git_repository_path(ctx.repo())) / "MERGE_HEAD"))
+        if (!r.ok() && (had || !std::filesystem::exists(mergeHead)))
             throw MutationError{Outcome::Failed, r.message(), r.message()};
         // A hook refused the merge commit: MERGE_HEAD stays, the user edits the message.
         if (!r.ok() && noteRefusedMergeCommit(ctx, r.err + r.out))

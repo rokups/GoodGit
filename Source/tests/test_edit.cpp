@@ -977,6 +977,26 @@ GG_TEST("edit", "Continue on a merge that a commit-msg hook refuses opens the me
     GG_CHECK(refusedDialogShows(s.app.dialogs(), "NO ISSUE ID"));
     GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
 }
+
+GG_TEST("edit", "a native merge during an earlier merge fails and does not offer the message dialog")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(nativeMergeRefusedByHook(s, r));
+    s.dialogButton("The merge commit was refused", "Edit later");
+    s.settle();
+    const std::string head = s.head(r.path);
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");
+    s.dialogButton("Merge into HEAD", "Merge");
+    // git refuses ("You have not concluded your merge"): an error shows, not the message dialog.
+    GG_CHECK(s.waitUntil([&] { return s.app.dialogs().current() != nullptr; }));
+    s.settle();
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_CHECK(f && f->title != "The merge commit was refused");
+    GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
+    GG_CHECK_STR_EQ(s.head(r.path), head);
+}
 #endif
 
 GG_TEST("edit", "Branches panel: Rebase HEAD onto a local branch uses the branch when a tag has the same name")
