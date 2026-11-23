@@ -755,6 +755,7 @@ void Actions::squashRange(const std::vector<core::Oid>& commits, const std::stri
                     fold.kind = rw::Step::Kind::Squash;
                     fold.source = ids[i];
                     fold.message = text;
+                    fold.messageEdited = true; // the user typed or confirmed the dialog text
                     plan.steps.push_back(fold);
                 }
             }
