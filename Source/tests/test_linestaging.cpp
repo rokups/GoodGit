@@ -334,9 +334,14 @@ GG_TEST("linestaging", "a line over the byte limit is collapsed, shows fast and 
     GG_REQUIRE(s.openRepository(repo));
     const auto start = std::chrono::steady_clock::now();
     GG_REQUIRE(showFile(s, "Unstaged", "app.min.js"));
+    // Wait for the cut diff and its first hunk: the checks below read the state without a wait.
+    GG_REQUIRE(s.waitUntil([&] {
+        return diffFile(s) && diffFile(s)->linesCut && s.itemExists((body(s) + "/###hunk_0").c_str());
+    }));
     s.settle();
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     ctx->LogInfo("long line diff shown in %.2f s", secs);
+    // A generous bound: the time of a 5 MB diff depends on the machine load.
     GG_CHECK(secs < 20.0);
     GG_REQUIRE(diffFile(s) != nullptr);
     GG_CHECK(diffFile(s)->linesCut);
