@@ -76,6 +76,11 @@ RebasePreviewPtr readRebasePreview(const std::filesystem::path& repoPath, const 
                 dropped.insert(e.step);
                 out->droppedEmpty.push_back(e.subject);
             }
+        for (const auto& g : todo::groups(list))
+            if (g.needsEditor)
+                if (const auto t = result.droppedHeadTemplates.find("row:" + std::to_string(g.first));
+                    t != result.droppedHeadTemplates.end())
+                    out->editorTexts[list.items[g.first].commit] = t->second;
 
         // One row per commit row that starts a commit; squash/fixup rows join the current one. A
         // squash/fixup that amends a finished commit (after an update-ref or label row) replaces

@@ -429,6 +429,7 @@ void RebasePanel::onPreview(const core::RebasePreviewEvent& event)
         return; // superseded or closed
     m_previewRequest = 0;
     m_preview = event.preview;
+    m_editorTexts.clear(); // the texts may come from the new preview
     m_previewTodo = m_pendingTodo;
     ++m_previewsShown;
     layoutPreviewGraph();
@@ -755,8 +756,15 @@ const std::string& RebasePanel::editorTextOf(size_t row) const
 {
     const auto* group = groupOf(row);
     auto it = m_editorTexts.find(row);
-    if (it == m_editorTexts.end())
-        it = m_editorTexts.emplace(row, todo::editorText(m_state.todo, *group, *m_state.context)).first;
+    if (it == m_editorTexts.end()) {
+        // A dropped head pick: the preview has the text of git's editor.
+        const todo::Item& head = m_state.todo.items[group->first];
+        const std::string* git = nullptr;
+        if (m_preview && !head.message && group->needsEditor)
+            if (const auto t = m_preview->editorTexts.find(head.commit); t != m_preview->editorTexts.end())
+                git = &t->second;
+        it = m_editorTexts.emplace(row, git ? *git : todo::editorText(m_state.todo, *group, *m_state.context)).first;
+    }
     return it->second;
 }
 
