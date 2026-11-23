@@ -1,6 +1,7 @@
 // Shared helpers of the self-update tests: temp folders, ZIP building and package contents.
 #pragma once
 
+#include "libgg/Files.hpp"
 #include "libgg/Launch.hpp"
 #include "platform/SelfUpdate.hpp"
 #include "util/Sha256.hpp"
@@ -71,8 +72,7 @@ struct Entry {
 
 inline std::string readFile(const fs::path& path)
 {
-    std::ifstream file(path, std::ios::binary);
-    return std::string(std::istreambuf_iterator<char>(file), {});
+    return gg::readFile(path).value_or(std::string());
 }
 
 inline bool pathExists(const fs::path& path)
