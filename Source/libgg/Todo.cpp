@@ -1769,8 +1769,10 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
                 s.amend = true;
                 current = key;
             }
-            if (auto it = lastRow.find(i); it != lastRow.end())
+            if (auto it = lastRow.find(i); it != lastRow.end()) {
                 s.message = groupMessage(todo, *it->second, context);
+                s.messageEdited = todo.items[it->second->first].message.has_value();
+            }
             plan.steps.push_back(std::move(s));
             break; // otherwise the group's commit stays the current step
         }

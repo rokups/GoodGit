@@ -702,12 +702,12 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 pending->unchanged = false;
                 if (!pending->amended.empty())
                     pending->source.clear();
-                if (pending->alsoKey.empty()) {
-                    if (step.message)
-                        pending->message = *step.message;
+                if (step.message && (step.messageEdited || pending->alsoKey.empty())) {
+                    pending->message = *step.message; // the edited group message wins, as in git
+                } else if (pending->alsoKey.empty()) {
+                    // not a dropped head: the plan carries the message
                 } else if (step.fold == Step::Fold::Squash) {
                     // A dropped head: the message of the amended commit, not the group's, is the base.
-                    // shortcut: an editor text typed for the group is not used here, only git's own combination.
                     while (!pending->message.empty() && pending->message.back() == '\n')
                         pending->message.pop_back();
                     pending->message += "\n\n" + commitMessage(src.get());

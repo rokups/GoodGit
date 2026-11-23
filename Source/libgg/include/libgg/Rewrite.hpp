@@ -53,6 +53,7 @@ struct Step {
     std::vector<std::string> parents;
     bool sourceParents = true;       // the source's own parents, mapped
     std::optional<std::string> message;
+    bool messageEdited = false;      // the user typed the message: a dropped head pick still uses it
     std::optional<Person> author;
     std::optional<std::string> tree; // fixed resulting tree
     // Apply only these paths of the source's change (empty = all).
