@@ -16,8 +16,10 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <random>
+#include <sstream>
 
 namespace ggtest {
 
