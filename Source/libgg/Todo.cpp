@@ -1665,6 +1665,7 @@ gg::rewrite::Plan toPlan(const Todo& todo, const Context& context, bool replaySt
             s.key = key;
             s.fold = item.action == Action::Squash ? rw::Step::Fold::Squash
                 : item.fixup != FixupMessage::None ? rw::Step::Fold::UseSource : rw::Step::Fold::Fixup;
+            s.foldEdit = item.fixup == FixupMessage::Edit;
             if (!started && context.continuesHead) {
                 // The rest of a stopped rebase: folded into HEAD as it is (amended).
                 rw::Step head;

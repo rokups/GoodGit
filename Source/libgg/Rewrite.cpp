@@ -648,6 +648,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
             std::string dateFrom;            // keepCommitterDate: the commit whose date it keeps
             std::string alsoKey;             // a dropped head's step: it names this amended commit
             std::string amended;             // an amending step: the commit it starts from
+            std::string base;                // a dropped head's group: the amended commit's message
+            std::vector<std::pair<std::string, Step::Fold>> members; // a dropped head's group: folded messages
+            bool editor = false;             // a dropped head's group: git opens an editor (squash or fixup -c)
         };
         std::optional<Pending> pending;
         std::map<std::string, std::vector<std::string>> contributorsOf; // new commit → its originals
@@ -778,6 +781,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                         p.parents.push_back(toHex(*git_commit_parent_id(t.get(), i)));
                     p.tree = toHex(*git_commit_tree_id(t.get()));
                     p.message = commitMessage(t.get());
+                    p.base = p.message;
                     const git_signature* a = git_commit_author(t.get());
                     p.author = Person{a->name, a->email, a->when.time, a->when.offset};
                     p.mapSource = false;
@@ -815,17 +819,21 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 pending->unchanged = false;
                 if (!pending->amended.empty())
                     pending->source.clear();
+                if (!pending->alsoKey.empty()) {
+                    // A dropped head: git's message is built from the amended commit's (the base) and the members.
+                    pending->members.push_back({commitMessage(src.get()), step.fold});
+                    pending->editor = pending->editor || step.fold == Step::Fold::Squash || step.foldEdit;
+                    if (pending->editor) // git opens an editor: record its text
+                        result.droppedHeadTemplates[pending->alsoKey] = squashTemplate(pending->base, pending->members);
+                }
                 if (step.message && (step.messageEdited || pending->alsoKey.empty())) {
                     pending->message = *step.message; // the edited group message wins, as in git
                 } else if (pending->alsoKey.empty()) {
                     // not a dropped head: the plan carries the message
-                } else if (step.fold == Step::Fold::Squash) {
-                    // A dropped head: the message of the amended commit, not the group's, is the base.
-                    while (!pending->message.empty() && pending->message.back() == '\n')
-                        pending->message.pop_back();
-                    pending->message += "\n\n" + commitMessage(src.get());
+                } else if (pending->editor) {
+                    pending->message = cleanupMessage(result.droppedHeadTemplates.at(pending->alsoKey));
                 } else if (step.fold == Step::Fold::UseSource) {
-                    pending->message = commitMessage(src.get());
+                    pending->message = pending->members.back().first; // fixup -C: verbatim, no cleanup
                 }
                 continue; // (the group keeps its first commit's author)
             }
