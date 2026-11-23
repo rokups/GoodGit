@@ -1467,8 +1467,11 @@ void Actions::mergeNative(const std::string& branch, const std::string& message)
         const auto r = ctx.gitMayFail(args);
         if (!r.ok() && !std::filesystem::exists(std::filesystem::absolute(git_repository_path(ctx.repo())) / "MERGE_HEAD"))
             throw MutationError{Outcome::Failed, r.message(), r.message()};
+        // A hook refused the merge commit: MERGE_HEAD stays, the user edits the message.
+        if (!r.ok() && noteRefusedMergeCommit(ctx, r.err + r.out))
+            return;
         ctx.submodules = SubmoduleSync::Update;
-    }, {}, false, true, true, true);
+    }, [this](const core::MutationFinishedEvent& e) { onMergeStep(e); }, false, true, true, true);
 }
 
 void Actions::rebaseHeadOnto(const std::string& branch) { rebaseTipOnto("HEAD", branch); }

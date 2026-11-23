@@ -61,6 +61,11 @@ std::string revertMessage(const std::string& message, const std::string& id);
 std::string revertPartMessage(const std::string& message, const std::string& id, const std::string& what);
 std::string cherryPickMessage(const std::string& message, const std::string& id);
 
+// Called when a merge or `git commit` stopped with MERGE_HEAD set. True when no index entry is unmerged:
+// then a hook refused the commit. It sets ctx.result (the merge message) and ctx.info (`output`) for
+// Actions::onMergeStep. False: a conflict stop, nothing changes.
+bool noteRefusedMergeCommit(core::MutationContext& ctx, const std::string& output);
+
 class Actions {
 public:
     using Callback = std::function<void(const core::MutationFinishedEvent&)>;
@@ -344,6 +349,10 @@ private:
     void handleDefault(const core::MutationFinishedEvent& event);
     // A step of a stopped rebase finished: stopping again shows git's message, errors a popup.
     void onRebaseStep(const core::MutationFinishedEvent& event);
+    // Commits the merge in progress. `write`: MERGE_MSG gets `message` first.
+    void commitMerge(bool write, const std::string& message);
+    // A merge step finished: a commit that a hook refused opens the message dialog.
+    void onMergeStep(const core::MutationFinishedEvent& event);
 
     struct RewriteState;
     // The core of rewrite() and rewriteOlder(): they differ only in `offerScope`.
