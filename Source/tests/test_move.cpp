@@ -132,6 +132,24 @@ GG_TEST("move", "files: to the parent, to the child, to the working tree, discar
     GG_CHECK(s.statusPorcelain(r.path).empty());
 }
 
+GG_TEST("move", "undo of a discard in a commit selects the restored commit")
+{
+    const MoveRepo r = makeRepo(s);
+    GG_REQUIRE(s.openRepository(r.path));
+    const std::string beforeDiscard = s.head(r.path);
+    const std::string mid = s.revParse(r.path, "HEAD~1");
+    selectCommit(s, mid, 3);
+    s.contextMenu(fileRef(s, "a.txt").c_str(), "Discard");
+    GG_REQUIRE(s.dialogOpen("Discard changes"));
+    s.dialogButton("Discard changes", "Discard");
+    GG_REQUIRE(moved(s, r.path, beforeDiscard));
+    const std::string newMid = s.revParse(r.path, "HEAD~1");
+    GG_CHECK_STR_EQ(s.session()->selection().id.hex(), newMid);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_Z);
+    GG_REQUIRE(s.waitUntil([&] { return s.head(r.path) == beforeDiscard; }));
+    GG_CHECK(s.waitUntil([&] { return s.session()->selection().id.hex() == mid; }));
+}
+
 GG_TEST("move", "a file with a line over the byte limit cannot move, revert or discard lines")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "longline");

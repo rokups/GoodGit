@@ -338,8 +338,10 @@ void Session::commitRewritten(const std::string& oldCommit, const std::string& n
 {
     if (m_selection.kind != SelKind::Commit || m_selection.id.hex() != oldCommit)
         return;
-    if (const core::Oid id = core::Oid::fromHex(newCommit); !id.isNull())
+    if (const core::Oid id = core::Oid::fromHex(newCommit); !id.isNull()) {
+        m_lastRewrite = {oldCommit, newCommit};
         selectCommit(id);
+    }
 }
 
 void Session::stashRewordDone(const std::string& oldCommit, const std::string& newCommit, int index)
