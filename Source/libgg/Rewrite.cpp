@@ -651,7 +651,7 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 const bool emptyHead = pending->squashed.empty() && becameEmpty();
                 const bool droppedHead = emptyHead && plan.emptied == Emptied::Drop;
                 // Git 2.56 (--empty=stop) stops on an empty head pick of a group, as on a plain pick: ask.
-                if (emptyHead && !droppedHead)
+                if (emptyHead && !droppedHead && !step.amend) // (with amend, flush() below reports it)
                     result.becameEmpty.push_back({pending->key, pending->source, firstLine(pending->message), false, false});
                 if (step.amend || droppedHead) {
                     // Finish the previous commit, then amend it (the result gets this key).

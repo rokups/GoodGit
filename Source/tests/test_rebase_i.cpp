@@ -2777,6 +2777,42 @@ GG_TEST("rebase-i", "Ask: a head pick of a group that becomes empty gets the dia
     emptyHeadFixup(s, true, "fixup", true);
 }
 
+// The list "pick a1; pick e1x; update-ref mid; fixup f1" in Ask mode: the update-ref row finishes the empty
+// head e1x, and the dialog lists it once.
+GG_TEST("rebase-i", "Ask: an empty head after which an update-ref row comes is listed once")
+{
+    const fs::path path = s.fixture(Recipe::Empty, "repo-head-ref");
+    s.commitFile(path, "base.txt", "base\n", "c0 base");
+    s.git(path, {"switch", "-q", "-c", "up"});
+    s.commitFile(path, "q.txt", "q\n", "u1 add q");
+    s.git(path, {"switch", "-q", "main"});
+    s.commitFile(path, "a.txt", "a\n", "a1 add a");
+    const std::string a1 = s.head(path);
+    s.commitFile(path, "q.txt", "q\n", "e1x add q");
+    s.git(path, {"branch", "mid"});
+    s.commitFile(path, "f.txt", "f\n", "f1 add f");
+    const std::string f1 = s.head(path);
+    GG_REQUIRE(s.openRepository(path));
+    GG_REQUIRE(rowReady(s, a1));
+    ctx->ItemClick(historyRow(a1).c_str());
+    ctx->KeyPress(ImGuiKey_I);
+    GG_REQUIRE(editorReady(s));
+    ctx->ItemClick(irWidget("ir_onto").c_str());
+    ctx->KeyChars("up");
+    ctx->KeyPress(ImGuiKey_Enter);
+    GG_REQUIRE(s.waitUntil([&] { return editor(s).context() && editor(s).context()->onto != a1; }));
+    s.comboSelect(irWidget("ir_empty").c_str(), "Ask");
+    s.comboSelect(irAction(f1).c_str(), "fixup");
+    GG_REQUIRE(previewReady(s));
+    ctx->ItemClick(irWidget("ir_start").c_str());
+    GG_REQUIRE(s.dialogOpen("Commits become empty"));
+    const ggui::Form* form = s.app.dialogs().current();
+    GG_REQUIRE(form != nullptr);
+    GG_CHECK(form->field("empty_0") != nullptr);
+    GG_CHECK(form->field("empty_1") == nullptr);
+    s.dialogButton("Commits become empty", "Cancel");
+}
+
 // A fixup/squash that adds nothing to its group, against git rebase -i. Shapes:
 //   g  : a1, e1 (e.txt=1), h1 (e.txt=2), f1 (e.txt=1); the list "a1, e1, f1 (moved up), h1". f1 was
 //        not empty before the rebase, but the group e1 already holds its change.
