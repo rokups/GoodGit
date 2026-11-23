@@ -1651,7 +1651,7 @@ GG_TEST("shell", "a close while a job runs asks first; Keep open keeps the repos
     GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
     s.dialogButton("A job is running", "Keep open");
     s.settle();
-    GG_CHECK(s.session() != nullptr);
+    GG_REQUIRE(s.session() != nullptr);
     GG_CHECK(!s.session()->actions().busy().empty());
     s.write(s.root(), "go", "");
     GG_CHECK(s.waitUntil([&] { return s.head(c.repo) != c.head; }, 30.0f));
