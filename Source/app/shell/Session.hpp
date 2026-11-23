@@ -133,6 +133,8 @@ public:
     void stashRewordPending(bool pending) { m_stashRewordPending = pending; }
     // A rewrite replaced the selected commit: select its new id (a dropped commit: the id it went onto).
     void commitRewritten(const std::string& oldCommit, const std::string& newCommit);
+    // The last rewrite that moved the selection {old, new}: Undo selects old again.
+    const std::pair<std::string, std::string>& lastRewrite() const { return m_lastRewrite; }
     void stashRewordDone(const std::string& oldCommit, const std::string& newCommit, int index);
     void selectCommit(const core::Oid& id);
     void revealCommit(const core::Oid& id);
@@ -316,6 +318,7 @@ private:
     std::map<std::string, std::map<std::string, std::string>> m_config;
     mutable std::atomic<bool> m_firstClassKnown{false}; // gg.firstClassConflicts as last read (for the UI thread)
     std::map<std::string, RemoteTags> m_remoteTags;
+    std::pair<std::string, std::string> m_lastRewrite;
     std::string m_journalError; // the undo journal's problem last reported ("" = none)
     std::vector<std::string> m_remoteTagsFor; // the remotes last asked about
     core::RequestId m_remoteTagsRequest = 0;

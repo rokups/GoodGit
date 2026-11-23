@@ -2413,7 +2413,7 @@ std::string headCommit(MutationContext& ctx)
 void Actions::undo(bool redo)
 {
     run(redo ? "redo" : "undo",
-        [redo](MutationContext& ctx) {
+        [redo, rewrite = m_session.lastRewrite()](MutationContext& ctx) {
             const std::string headBefore = headCommit(ctx);
             const auto r = gg::undo(ctx.repo(), redo, "ggui");
             if (r.nothing)
@@ -2427,8 +2427,15 @@ void Actions::undo(bool redo)
             // A moved HEAD carries the files along (not the submodule working trees).
             if (headCommit(ctx) != headBefore)
                 ctx.submodules = SubmoduleSync::Update;
+            // Undo of a rewrite: the new commit left HEAD's history and the old one is back.
+            if (!redo && !rewrite.first.empty()
+                && !ctx.gitMayFail({"merge-base", "--is-ancestor", rewrite.second, "HEAD"}).ok()
+                && ctx.gitMayFail({"merge-base", "--is-ancestor", rewrite.first, "HEAD"}).ok())
+                ctx.result = rewrite.first;
         },
-        [this, redo](const core::MutationFinishedEvent& e) {
+        [this, redo, rewrite = m_session.lastRewrite()](const core::MutationFinishedEvent& e) {
+            if (e.outcome == Outcome::Ok && !e.result.empty())
+                m_session.commitRewritten(rewrite.second, e.result);
             if (e.outcome == Outcome::LocalChanges) {
                 const std::string target = e.detail;
                 Form f;
