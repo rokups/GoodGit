@@ -355,7 +355,8 @@ void Actions::rewriteDecide(const std::shared_ptr<RewriteState>& state)
         return;
     }
     // 2. Commits that become empty (git rebase -i stops on them): keep or drop them.
-    const auto askable = std::count_if(r.becameEmpty.begin(), r.becameEmpty.end(), [](const rw::BecameEmpty& e) { return !e.group; });
+    // Git 2.56: a group that ends empty at a fixup/squash member stops in every mode and keeps it: no dialog.
+    const auto askable =std::count_if(r.becameEmpty.begin(), r.becameEmpty.end(), [](const rw::BecameEmpty& e) { return !e.group; });
     if (state->askEmpty && !state->emptied && askable > 0) {
         Form f;
         f.title = "Commits become empty";

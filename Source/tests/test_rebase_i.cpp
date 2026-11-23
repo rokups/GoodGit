@@ -2692,10 +2692,11 @@ GG_TEST("rebase-i", "reading the range: commits already upstream, branches in ot
 
 // main: a1, e1x (already upstream: empty at pick time), f1. The list "pick a1; pick e1x; fixup f1".
 // Drop: e1x goes away and f1 amends a1. Keep: the empty e1x folds f1 in.
-void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup")
+// ask: the mode is Ask; the dialog lists the head and "Drop them" gives the result of Drop.
+void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool ask = false)
 {
     ImGuiTestContext* ctx = s.ctx;
-    const char* mode = drop ? "Drop" : "Keep";
+    const char* mode = ask ? "Ask" : drop ? "Drop" : "Keep";
     std::string tag = std::string(mode) + "-" + action;
     std::replace(tag.begin(), tag.end(), ' ', '_');
     const fs::path path = s.fixture(Recipe::Empty, "repo-head-" + tag);
@@ -2728,7 +2729,14 @@ void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup")
     rewordAll(s, std::string(action) == "squash" ? "a1 add a reworded\n\nf1 add f\n" : "f1 add f reworded\n");
     const std::string todoText = todo::format(editor(s).todo());
     GG_REQUIRE(previewReady(s));
-    GG_REQUIRE(start(s));
+    if (ask) {
+        // Git stops on the empty head pick of a group, as on a plain pick: the editor waits for the answer.
+        ctx->ItemClick(irWidget("ir_start").c_str());
+        GG_REQUIRE(s.dialogOpen("Commits become empty"));
+        s.dialogButton("Commits become empty", "Drop them");
+    }
+    GG_REQUIRE(ask ? s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f) : start(s));
+    s.settle();
     gitRebase(s, copy, todoText, base, "up", drop ? "drop" : "keep");
     GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", "up..main"}), drop ? "1" : "2");
     GG_CHECK_STR_EQ(history(s, path, "main"), history(s, copy, "main"));
@@ -2761,6 +2769,12 @@ GG_TEST("rebase-i", "a dropped head pick: a squash, fixup -C and fixup -c messag
 GG_TEST("rebase-i", "Keep: a fixup folds into the head pick that became empty, as git does")
 {
     emptyHeadFixup(s, false);
+}
+
+GG_TEST("rebase-i", "Ask: a head pick of a group that becomes empty gets the dialog, as git stops on it")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    emptyHeadFixup(s, true, "fixup", true);
 }
 
 // A fixup/squash that adds nothing to its group, against git rebase -i. Shapes:

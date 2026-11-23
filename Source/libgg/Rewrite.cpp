@@ -648,7 +648,11 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                 // A head pick that is empty at pick time is dropped (--empty=drop); the fixup then amends
                 // the commit before it, as git does. That commit must come from a kept step of the list:
                 // never the onto commit, nor the parent of an earlier dropped pick.
-                const bool droppedHead = pending->squashed.empty() && plan.emptied == Emptied::Drop && becameEmpty();
+                const bool emptyHead = pending->squashed.empty() && becameEmpty();
+                const bool droppedHead = emptyHead && plan.emptied == Emptied::Drop;
+                // Git 2.56 (--empty=stop) stops on an empty head pick of a group, as on a plain pick: ask.
+                if (emptyHead && !droppedHead)
+                    result.becameEmpty.push_back({pending->key, pending->source, firstLine(pending->message), false, false});
                 if (step.amend || droppedHead) {
                     // Finish the previous commit, then amend it (the result gets this key).
                     const std::string previous = pending->key;
