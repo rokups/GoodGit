@@ -75,6 +75,7 @@ struct Step {
     // (squash: appended; fixup: not used; fixup -C/-c: replaces it).
     enum class Fold { Fixup, Squash, UseSource };
     Fold fold = Fold::Fixup;
+    bool foldEdit = false;   // UseSource only: fixup -c (git opens an editor), not fixup -C
     // Merge only, as `git rebase -i --rebase-merges` merges: parents after the first that are
     // already in the history of the first or of another parent are left out, and with none left
     // the step makes no commit (its key names the first parent). With `source` and the parents it
@@ -207,6 +208,9 @@ struct Result {
     std::vector<std::string> resolved;               // new commits whose originals' conflicts are gone
     std::vector<std::string> published;              // rewritten originals already on a remote
     std::vector<BecameEmpty> becameEmpty;            // in step order
+    // A squash/fixup group whose head pick was dropped: git's editor text, by the dropped head's step
+    // key. Only for a group where git opens an editor (squash, fixup -c).
+    std::map<std::string, std::string> droppedHeadTemplates;
     std::string headBefore;                          // this worktree's HEAD commit
     std::string headAfter;
     bool changed() const { return !mapping.empty() || !moves.empty(); }

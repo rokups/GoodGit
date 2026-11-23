@@ -1843,7 +1843,8 @@ void checkAside(Scenario& s, const fs::path& repo, const std::string& tip, const
 
 // Runs `git rebase -i` on `copy` with ggui's todo text and the rewording editor.
 void gitRebase(Scenario& s, const fs::path& copy, std::string todoText, const std::string& upstream,
-    const std::string& onto, const char* empty, bool stops = false, bool editorOnContinue = false)
+    const std::string& onto, const char* empty, bool stops = false, bool editorOnContinue = false,
+    bool rewordEditor = true)
 {
     if (!gitMovesBranches(s))
         todoText = withoutUpdateRefRows(todoText);
@@ -1861,7 +1862,8 @@ void gitRebase(Scenario& s, const fs::path& copy, std::string todoText, const st
         args.push_back(onto);
     }
     args.push_back(upstream);
-    ggui::setEnv("GIT_EDITOR", editorFile.generic_string()); // the test runner's GIT_EDITOR=true beats core.editor
+    if (rewordEditor) // (false: git's editor keeps its text as it is)
+        ggui::setEnv("GIT_EDITOR", editorFile.generic_string()); // the test runner's GIT_EDITOR=true beats core.editor
     if (stops) {
         // A squash/fixup that empties its group stops the rebase; --continue keeps an empty commit.
         GG_CHECK(s.gitMayFail(copy, args).exitCode != 0);
@@ -2693,11 +2695,14 @@ GG_TEST("rebase-i", "reading the range: commits already upstream, branches in ot
 // main: a1, e1x (already upstream: empty at pick time), f1. The list "pick a1; pick e1x; fixup f1".
 // Drop: e1x goes away and f1 amends a1. Keep: the empty e1x folds f1 in.
 // ask: the mode is Ask; the dialog lists the head and "Drop them" gives the result of Drop.
-void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool ask = false)
+// edit = false: no typed message (git's own message). action2: a second member f2 (adds g.txt) with that
+// action. hashMsg: the message of f1 has a '#' line.
+void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool ask = false, bool edit = true,
+    const char* action2 = nullptr, bool hashMsg = false)
 {
     ImGuiTestContext* ctx = s.ctx;
     const char* mode = ask ? "Ask" : drop ? "Drop" : "Keep";
-    std::string tag = std::string(mode) + "-" + action;
+    std::string tag = std::string(mode) + "-" + action + (action2 ? std::string("-") + action2 : "") + (edit ? "" : "-plain");
     std::replace(tag.begin(), tag.end(), ' ', '_');
     const fs::path path = s.fixture(Recipe::Empty, "repo-head-" + tag);
     s.commitFile(path, "base.txt", "base\n", "c0 base");
@@ -2709,8 +2714,13 @@ void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool a
     s.commitFile(path, "a.txt", "a\n", "a1 add a");
     const std::string a1 = s.head(path);
     s.commitFile(path, "q.txt", "q\n", "e1x add q");
-    s.commitFile(path, "f.txt", "f\n", "f1 add f");
+    s.commitFile(path, "f.txt", "f\n", hashMsg ? "f1 add f\n\n# not a comment?\nbody" : "f1 add f");
     const std::string f1 = s.head(path);
+    std::string f2;
+    if (action2) {
+        s.commitFile(path, "g.txt", "g\n", "f2 add g");
+        f2 = s.head(path);
+    }
     installRecordingHooks(s, path);
     const fs::path copy = copyRepo(s, path, "copy-head-" + tag);
     GG_REQUIRE(s.openRepository(path));
@@ -2726,7 +2736,10 @@ void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool a
     s.comboSelect(irAction(f1).c_str(), action);
     // The editor of a group with a dropped head shows the dropped commit's message in ggui: type what
     // git's editor shows and "reworded" appends to.
-    rewordAll(s, std::string(action) == "squash" ? "a1 add a reworded\n\nf1 add f\n" : "f1 add f reworded\n");
+    if (action2)
+        s.comboSelect(irAction(f2).c_str(), action2);
+    if (edit)
+        rewordAll(s, std::string(action) == "squash" ? "a1 add a reworded\n\nf1 add f\n" : "f1 add f reworded\n");
     const std::string todoText = todo::format(editor(s).todo());
     GG_REQUIRE(previewReady(s));
     if (ask) {
@@ -2737,7 +2750,7 @@ void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool a
     }
     GG_REQUIRE(ask ? s.waitUntil([&] { return !editor(s).isOpen(); }, 60.0f) : start(s));
     s.settle();
-    gitRebase(s, copy, todoText, base, "up", drop ? "drop" : "keep");
+    gitRebase(s, copy, todoText, base, "up", drop ? "drop" : "keep", false, false, edit);
     GG_CHECK_STR_EQ(s.gitOut(path, {"rev-list", "--count", "up..main"}), drop ? "1" : "2");
     GG_CHECK_STR_EQ(history(s, path, "main"), history(s, copy, "main"));
     auto ours = postRewrite(s, path);
@@ -2764,6 +2777,24 @@ GG_TEST("rebase-i", "a dropped head pick: a squash, fixup -C and fixup -c messag
     GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
     for (const char* action : {"squash", "fixup -C", "fixup -c"})
         emptyHeadFixup(s, true, action);
+}
+
+GG_TEST("rebase-i", "a dropped head pick: the squash message without a typed edit is git's")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    emptyHeadFixup(s, true, "squash", false, false);
+}
+
+GG_TEST("rebase-i", "a dropped head pick: a fixup -c after a squash keeps the earlier messages, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    emptyHeadFixup(s, true, "squash", false, false, "fixup -c");
+}
+
+GG_TEST("rebase-i", "a dropped head pick: the fixup -C message is kept as it is, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a dropped pick to post-rewrite");
+    emptyHeadFixup(s, true, "fixup -C", false, false, nullptr, true);
 }
 
 GG_TEST("rebase-i", "Keep: a fixup folds into the head pick that became empty, as git does")
