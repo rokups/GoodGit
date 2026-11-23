@@ -918,6 +918,87 @@ GG_TEST("edit", "merge into HEAD in memory (and natively), rebase HEAD onto a br
     GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), s.revParse(r.path, "side"));
 }
 
+#ifndef _WIN32
+// A commit-msg hook refuses a message without "GG-". A native merge of `side` stops with MERGE_HEAD and no conflicts.
+template <class S>
+static bool nativeMergeRefusedByHook(S& s, const EditRepo& r)
+{
+    s.write(r.path / ".git" / "hooks", "commit-msg",
+        "#!/bin/sh\ngrep -q 'GG-' \"$1\" || { echo 'ERROR: NO ISSUE ID'; exit 1; }\n");
+    fs::permissions(r.path / ".git" / "hooks" / "commit-msg", fs::perms::owner_all);
+    if (!s.openRepository(r.path))
+        return false;
+    s.showPanel("Branches");
+    if (!s.waitUntil([&] { return s.itemExists("//Branches/branch_side/###branch_side"); }))
+        return false;
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    if (!s.dialogOpen("Merge into HEAD"))
+        return false;
+    s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");
+    s.dialogButton("Merge into HEAD", "Merge");
+    return s.dialogOpen("The merge commit was refused");
+}
+
+static bool refusedDialogShows(const ggui::Dialogs& d, const char* text)
+{
+    const ggui::Form* f = d.current();
+    return f && f->title == "The merge commit was refused" && f->message.find(text) != std::string::npos;
+}
+
+GG_TEST("edit", "a native merge that a commit-msg hook refuses offers to edit the message")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(nativeMergeRefusedByHook(s, r));
+    GG_CHECK(refusedDialogShows(s.app.dialogs(), "NO ISSUE ID"));
+    GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
+    // A bad message opens the dialog again.
+    s.dialogText("The merge commit was refused", "message", "still no id");
+    s.dialogButton("The merge commit was refused", "Commit merge");
+    GG_CHECK(s.waitUntil([&] { return refusedDialogShows(s.app.dialogs(), "NO ISSUE ID"); }));
+    GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
+    s.dialogText("The merge commit was refused", "message", "GG-1 merge");
+    s.dialogButton("The merge commit was refused", "Commit merge");
+    GG_CHECK(s.waitUntil([&] { return !fs::exists(r.path / ".git" / "MERGE_HEAD"); }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(r.path, "HEAD^2"), r.s1);
+    GG_CHECK(s.gitOut(r.path, {"log", "-1", "--format=%s"}).find("GG-1 merge") == 0);
+}
+
+GG_TEST("edit", "Continue on a merge that a commit-msg hook refuses opens the message dialog")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(nativeMergeRefusedByHook(s, r));
+    s.dialogButton("The merge commit was refused", "Edit later");
+    s.settle();
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+    GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
+    ctx->ItemClick("//###Toolbar/Continue##tb_continue");
+    GG_CHECK(s.dialogOpen("The merge commit was refused"));
+    GG_CHECK(refusedDialogShows(s.app.dialogs(), "NO ISSUE ID"));
+    GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
+}
+
+GG_TEST("edit", "a native merge during an earlier merge fails and does not offer the message dialog")
+{
+    const EditRepo r = makeRepo(s);
+    GG_REQUIRE(nativeMergeRefusedByHook(s, r));
+    s.dialogButton("The merge commit was refused", "Edit later");
+    s.settle();
+    const std::string head = s.head(r.path);
+    s.contextMenu("//Branches/branch_side/###branch_side", "Merge into HEAD...");
+    GG_REQUIRE(s.dialogOpen("Merge into HEAD"));
+    s.dialogCheck("Merge into HEAD", "native", "Use native git merge (stops with index conflicts)");
+    s.dialogButton("Merge into HEAD", "Merge");
+    // git refuses ("You have not concluded your merge"): an error shows, not the message dialog.
+    GG_CHECK(s.waitUntil([&] { return s.app.dialogs().current() != nullptr; }));
+    s.settle();
+    const ggui::Form* f = s.app.dialogs().current();
+    GG_CHECK(f && f->title != "The merge commit was refused");
+    GG_CHECK(fs::exists(r.path / ".git" / "MERGE_HEAD"));
+    GG_CHECK_STR_EQ(s.head(r.path), head);
+}
+#endif
+
 GG_TEST("edit", "Branches panel: Rebase HEAD onto a local branch uses the branch when a tag has the same name")
 {
     const EditRepo r = makeRepo(s);

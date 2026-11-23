@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string_view>
 #include <map>
@@ -2244,17 +2245,73 @@ void Actions::continueOperation()
 {
     const auto snap = m_session.snapshot();
     const std::string cmd = operationCommand(snap->state);
+    if (cmd == "merge")
+        return commitMerge(false, {});
     run(cmd + " --continue", [cmd](MutationContext& ctx) {
         if (cmd == "rebase")
             return rebaseStep(ctx, {"--continue"});
         ctx.env.emplace_back("GIT_EDITOR", "true");
-        if (cmd == "merge")
-            ctx.git({"commit", "--no-edit", "-q"});
-        else
-            ctx.git({cmd, "--continue"});
+        ctx.git({cmd, "--continue"});
         ctx.worktreeFollowsIndex = true;
         ctx.submodules = SubmoduleSync::Update;
     }, [this](const core::MutationFinishedEvent& e) { onRebaseStep(e); }, false, true, true, true);
+}
+
+bool noteRefusedMergeCommit(MutationContext& ctx, const std::string& output)
+{
+    const fs::path dir = fs::absolute(git_repository_path(ctx.repo()));
+    if (!fs::exists(dir / "MERGE_HEAD"))
+        return false;
+    // A failed ls-files does not prove that nothing is unmerged.
+    const auto unmerged = ctx.gitMayFail({"ls-files", "-u"});
+    if (!unmerged.ok() || !unmerged.out.empty())
+        return false;
+    std::ifstream in(dir / "MERGE_MSG", std::ios::binary);
+    const std::string message{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    ctx.result = "merge-refused\n" + message;
+    ctx.info = output;
+    return true;
+}
+
+void Actions::commitMerge(bool write, const std::string& message)
+{
+    run("merge --continue", [write, message](MutationContext& ctx) {
+        ctx.env.emplace_back("GIT_EDITOR", "true");
+        if (write) {
+            const fs::path file = fs::absolute(git_repository_path(ctx.repo())) / "MERGE_MSG";
+            if (const auto ec = gg::writeFileAtomic(file, message))
+                throw MutationError{Outcome::Failed, "cannot write " + file.string() + ": " + ec.message(), {}};
+        }
+        const auto r = ctx.gitMayFail({"commit", "--no-edit", "-q"});
+        // The merge state stays when a hook refuses the commit (no rollback).
+        if (!r.ok()) {
+            if (noteRefusedMergeCommit(ctx, r.err + r.out))
+                return;
+            const std::string all = r.err + r.out;
+            throw MutationError{core::classifyFailure(all), r.message(), all};
+        }
+        ctx.worktreeFollowsIndex = true;
+        ctx.submodules = SubmoduleSync::Update;
+    }, [this](const core::MutationFinishedEvent& e) { onMergeStep(e); }, false, true, true, true);
+}
+
+void Actions::onMergeStep(const core::MutationFinishedEvent& e)
+{
+    static const std::string tag = "merge-refused\n";
+    if (e.outcome != Outcome::Ok || e.result.rfind(tag, 0) != 0)
+        return onRebaseStep(e);
+    Form f;
+    f.title = "The merge commit was refused";
+    f.message = e.message;
+    Field msg{Field::Multiline, "message", "Message", e.result.substr(tag.size())};
+    f.add(std::move(msg));
+    Session* s = &m_session;
+    f.buttons.push_back({"Commit merge", [s](Form& form) { s->actions().commitMerge(true, form.text("message")); }});
+    f.buttons.push_back({"Edit later", {}});
+    FormButton abort{"Abort merge", [s](Form&) { s->actions().abortOperation(); }};
+    abort.danger = true;
+    f.buttons.push_back(std::move(abort));
+    m_session.app().dialogs().open(std::move(f));
 }
 
 void Actions::skipOperation()
