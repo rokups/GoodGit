@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -544,6 +545,7 @@ struct RebasePreview {
     };
     std::vector<Aside> aside;
     std::vector<std::string> droppedEmpty; // subjects of commits left out because they became empty
+    std::map<std::string, std::string> editorTexts; // head commit of a squash group whose head pick is dropped -> the text of git's editor
 };
 using RebasePreviewPtr = std::shared_ptr<const RebasePreview>;
 
