@@ -22,6 +22,8 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 struct git_repository;
@@ -279,5 +281,13 @@ std::string reversePatch(const std::string& patch);
 // nothing comes after `at`, the branches (and a detached HEAD) at it advance to the new commit.
 // The step key of the new commit is "inserted".
 Plan insertPlan(git_repository* repo, const std::string& at, bool before, const std::string& message);
+
+// The commit message editor's template for a squash group, as Git writes it. `base` is the message
+// of the commit the group amends. Each member has its message and its fold kind.
+std::string squashTemplate(const std::string& base, const std::vector<std::pair<std::string, Step::Fold>>& members);
+
+// A message cleaned as Git does after its editor (cleanup=strip): comment lines out, trailing
+// spaces off, blank lines collapsed, none at the start, one newline at the end.
+std::string cleanupMessage(std::string_view text);
 
 } // namespace gg::rewrite

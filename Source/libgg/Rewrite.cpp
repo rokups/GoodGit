@@ -42,6 +42,115 @@ std::atomic<std::uint64_t> g_computeCount{0};
 
 std::uint64_t computeCount() { return g_computeCount.load(); }
 
+namespace {
+
+bool tplStarts(std::string_view s, std::string_view prefix) { return s.substr(0, prefix.size()) == prefix; }
+
+std::vector<std::string_view> tplLines(std::string_view text)
+{
+    std::vector<std::string_view> out;
+    while (!text.empty()) {
+        const size_t nl = text.find('\n');
+        out.push_back(text.substr(0, nl));
+        if (nl == std::string_view::npos)
+            break;
+        text.remove_prefix(nl + 1);
+    }
+    return out;
+}
+
+// Every line commented out ("# line", "#" for an empty line).
+std::string tplCommentOut(std::string_view message)
+{
+    std::string out;
+    for (std::string_view line : tplLines(message)) {
+        out += '#';
+        if (!line.empty()) {
+            out += ' ';
+            out += line;
+        }
+        out += '\n';
+    }
+    return out;
+}
+
+} // namespace
+
+std::string cleanupMessage(std::string_view message)
+{
+    std::string out;
+    int pendingBlank = 0;
+    for (std::string_view line : tplLines(message)) {
+        if (tplStarts(line, "#"))
+            continue;
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r' || line.back() == '\n'))
+            line.remove_suffix(1);
+        if (line.empty()) {
+            ++pendingBlank;
+            continue;
+        }
+        if (pendingBlank && !out.empty())
+            out += '\n';
+        pendingBlank = 0;
+        out += line;
+        out += '\n';
+    }
+    return out;
+}
+
+std::string squashTemplate(const std::string& base, const std::vector<std::pair<std::string, Step::Fold>>& members)
+{
+    struct Entry {
+        std::string message;
+        bool kept = true;
+        bool commentSubject = false;
+    };
+    std::vector<Entry> entries;
+    entries.push_back({base, true, false});
+    bool seenSquash = false;
+    for (const auto& [message, fold] : members) {
+        const bool fixupish = tplStarts(message, "squash!") || tplStarts(message, "fixup!");
+        if (fold == Step::Fold::Squash) {
+            seenSquash = true;
+            entries.push_back({message, true, fixupish || tplStarts(message, "amend!")});
+        } else if (fold == Step::Fold::UseSource) {
+            // fixup -C/-c replaces the messages so far unless a squash already combined them.
+            if (!seenSquash)
+                for (auto& e : entries)
+                    e.kept = false;
+            entries.push_back({message, true, tplStarts(message, "amend!") || (seenSquash && fixupish)});
+        } else {
+            entries.push_back({message, false, false});
+        }
+    }
+    // Git's "#2", "#3", ... (the first message has its own wording).
+    auto ordinal = [](size_t n) { return "#" + std::to_string(n); };
+    const std::string c = "#";
+    std::string out = c + " This is a combination of " + std::to_string(entries.size()) + " commits.\n";
+    for (size_t k = 0; k < entries.size(); ++k) {
+        const Entry& e = entries[k];
+        if (k > 0)
+            out += '\n';
+        if (e.kept)
+            out += k == 0 ? c + " This is the 1st commit message:\n\n" : c + " This is the commit message " + ordinal(k + 1) + ":\n\n";
+        else
+            out += c + " The " + (k == 0 ? std::string("1st commit message") : "commit message " + ordinal(k + 1)) + " will be skipped:\n\n";
+        std::string message = e.message;
+        if (message.empty() || message.back() != '\n')
+            message += '\n';
+        if (!e.kept) {
+            out += tplCommentOut(message);
+        } else if (e.commentSubject) {
+            const size_t nl = message.find('\n');
+            out += tplCommentOut(std::string_view(message).substr(0, nl + 1));
+            out += message.substr(nl + 1);
+        } else {
+            out += message;
+        }
+    }
+    return out;
+}
+
 struct Rewriter::Impl {
     Repository repo;
     git_odb_backend* mempack = nullptr; // owned by the odb

@@ -67,13 +67,6 @@ bool isHex(std::string_view s)
     return std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isxdigit(c) != 0; });
 }
 
-std::string withNewline(std::string s)
-{
-    if (s.empty() || s.back() != '\n')
-        s += '\n';
-    return s;
-}
-
 // "fixup! ", "squash! " or "amend! " at the start of `s`: the rest in `rest`.
 bool skipFixupish(std::string_view s, std::string_view& rest)
 {
@@ -1080,26 +1073,7 @@ void autosquash(Todo& todo, const Context& context)
 
 // ---- Messages ---------------------------------------------------------------------------------
 
-std::string cleanup(std::string_view message)
-{
-    std::string out;
-    int pendingBlank = 0;
-    for (std::string_view line : lines(message)) {
-        if (startsWith(line, kComment))
-            continue;
-        line = trimRight(line);
-        if (line.empty()) {
-            ++pendingBlank;
-            continue;
-        }
-        if (pendingBlank && !out.empty())
-            out += '\n';
-        pendingBlank = 0;
-        out += line;
-        out += '\n';
-    }
-    return out;
-}
+std::string cleanup(std::string_view message) { return rewrite::cleanupMessage(message); }
 
 std::vector<Group> groups(const Todo& todo)
 {
@@ -1166,24 +1140,6 @@ namespace {
 // Every commit a todo names is in its context (read()/expand() put it there).
 const std::string& messageOf(const Context& context, const Item& item) { return context.commits.at(item.commit).message; }
 
-// Git's "#2", "#3", … (the first message has its own wording).
-std::string ordinal(size_t n) { return "#" + std::to_string(n); }
-
-// Every line commented out ("# line", "#" for an empty line).
-std::string commentOut(std::string_view message)
-{
-    std::string out;
-    for (std::string_view line : lines(message)) {
-        out += kComment;
-        if (!line.empty()) {
-            out += ' ';
-            out += line;
-        }
-        out += '\n';
-    }
-    return out;
-}
-
 // The rows after the group's starting commit: its followers, or for a group that amends a
 // finished commit every row of it.
 std::vector<size_t> foldedRows(const Group& group)
@@ -1231,53 +1187,14 @@ std::string keptMessage(const Todo& todo, const Group& group, const Context& con
 
 std::string squashTemplate(const Todo& todo, const Group& group, const Context& context)
 {
-    struct Entry {
-        std::string message;
-        bool kept = true;
-        bool commentSubject = false;
-    };
-    std::vector<Entry> entries;
-    entries.push_back({baseMessage(todo, group, context), true, false});
-    bool seenSquash = false;
+    std::vector<std::pair<std::string, rewrite::Step::Fold>> members;
     for (size_t row : foldedRows(group)) {
         const Item& item = todo.items[row];
-        const std::string& message = messageOf(context, item);
-        const bool fixupish = startsWith(message, "squash!") || startsWith(message, "fixup!");
-        if (item.action == Action::Squash) {
-            seenSquash = true;
-            entries.push_back({message, true, fixupish || startsWith(message, "amend!")});
-        } else if (item.fixup != FixupMessage::None) {
-            // fixup -C/-c replaces the messages so far unless a squash already combined them.
-            if (!seenSquash)
-                for (auto& e : entries)
-                    e.kept = false;
-            entries.push_back({message, true, startsWith(message, "amend!") || (seenSquash && fixupish)});
-        } else {
-            entries.push_back({message, false, false});
-        }
+        members.emplace_back(messageOf(context, item),
+            item.action == Action::Squash ? rewrite::Step::Fold::Squash
+                : item.fixup != FixupMessage::None ? rewrite::Step::Fold::UseSource : rewrite::Step::Fold::Fixup);
     }
-    const std::string c(kComment);
-    std::string out = c + " This is a combination of " + std::to_string(entries.size()) + " commits.\n";
-    for (size_t k = 0; k < entries.size(); ++k) {
-        const Entry& e = entries[k];
-        if (k > 0)
-            out += '\n';
-        if (e.kept)
-            out += k == 0 ? c + " This is the 1st commit message:\n\n" : c + " This is the commit message " + ordinal(k + 1) + ":\n\n";
-        else
-            out += c + " The " + (k == 0 ? std::string("1st commit message") : "commit message " + ordinal(k + 1)) + " will be skipped:\n\n";
-        const std::string message = withNewline(e.message);
-        if (!e.kept) {
-            out += commentOut(message);
-        } else if (e.commentSubject) {
-            const size_t nl = message.find('\n');
-            out += commentOut(message.substr(0, nl + 1));
-            out += message.substr(nl + 1);
-        } else {
-            out += message;
-        }
-    }
-    return out;
+    return rewrite::squashTemplate(baseMessage(todo, group, context), members);
 }
 
 std::string groupMessage(const Todo& todo, const Group& group, const Context& context)
