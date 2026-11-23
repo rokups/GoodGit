@@ -62,7 +62,7 @@ std::string folderPattern(const std::string& path)
     return "/" + escapeText(p.substr(0, slash), false) + "/";
 }
 
-size_t addLines(const fs::path& file, const std::vector<std::string>& lines, std::error_code& ec)
+size_t addLines(const fs::path& file, const std::vector<std::string>& lines, const fs::path& gitDir, std::error_code& ec)
 {
     ec.clear();
     std::string content;
@@ -94,10 +94,9 @@ size_t addLines(const fs::path& file, const std::vector<std::string>& lines, std
     if (!content.empty() && content.back() != '\n')
         add.insert(0, "\n");
     if (file.has_parent_path()) {
-        // .git/info/exclude: the git directory itself must exist; a .gitignore parent is created as before.
+        // With a git dir (the exclude file) that folder must exist; a .gitignore parent is created as before.
         const fs::path parent = file.parent_path();
-        const fs::path gitDir = parent.filename() == "info" ? parent.parent_path() : parent;
-        if (!makeDirsUnder(gitDir, parent, ec))
+        if (!makeDirsUnder(gitDir.empty() ? parent : gitDir, parent, ec))
             return 0;
     }
     std::ofstream out(file, std::ios::binary | std::ios::app);
