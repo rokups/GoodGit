@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace ggtest {
 
@@ -163,6 +164,69 @@ GG_TEST("linestaging", "discard hunk needs a confirm")
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == text; }));
 }
 
+GG_TEST("linestaging", "hunk buttons sit in the gutter of the first change")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "hunkgutter");
+    std::string text;
+    for (int i = 1; i <= 30; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    s.commitFile(repo, "f.txt", text, "Base");
+    // Hunk 0 starts with an addition after line 3; hunk 1 starts with a removal of line 27.
+    std::string changed = text;
+    changed.replace(changed.find("line 27\n"), 8, "");
+    changed.insert(changed.find("line 4\n"), "extra\n");
+    s.write(repo, "f.txt", changed);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    const auto* file = diffFile(s);
+    GG_REQUIRE(file->hunks.size() == 2);
+    GG_REQUIRE(file->hunks[0].lines[3].origin == '+'); // 3 context lines, then the change
+    GG_REQUIRE(file->hunks[1].lines[3].origin == '-');
+    ctx->ScrollToItem((body(s) + "/###discard_hunk_0").c_str(), ImGuiAxis_Y);
+    // Hunk 0 has no function context: row 3 is the first change, directly after context rows 0-2.
+    const ImRect add = ctx->ItemInfo((body(s) + "/###line_3").c_str()).RectFull;
+    const ImRect ctxLine = ctx->ItemInfo((body(s) + "/###line_2").c_str()).RectFull;
+    GG_CHECK(std::abs(add.Min.y - ctxLine.Max.y) <= 1.0f); // no empty row in between
+    for (const char* id : {"stage_hunk_0", "discard_hunk_0"}) {
+        const ImRect b = ctx->ItemInfo((body(s) + "/###" + id).c_str()).RectFull;
+        GG_CHECK(std::abs(b.Min.y - add.Min.y) <= 1.0f);
+    }
+    s.screenshot("gg160/hunk_added");
+    // Hunk 1 starts with a removal: its buttons are on that line too, after the old number.
+    ctx->ScrollToItem((body(s) + "/###hunk_1").c_str(), ImGuiAxis_Y);
+    const ImRect handle = ctx->ItemInfo((body(s) + "/###hunk_1").c_str()).RectFull;
+    for (const char* id : {"stage_hunk_1", "discard_hunk_1"}) {
+        const ImRect b = ctx->ItemInfo((body(s) + "/###" + id).c_str()).RectFull;
+        GG_CHECK(std::abs(b.Min.y - handle.Min.y) <= 1.0f);
+        GG_CHECK(b.Max.x <= handle.Min.x + 1.0f);
+    }
+    s.screenshot("gg160/hunk_removed");
+}
+
+GG_TEST("linestaging", "a click on the hunk handle selects exactly the changed rows")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "hunkselect");
+    std::string text;
+    for (int i = 1; i <= 30; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    s.commitFile(repo, "f.txt", text, "Base");
+    std::string changed = text;
+    changed.replace(changed.find("line 3\n"), 7, "LINE 3\n"); // hunk 0 starts with a removal
+    s.write(repo, "f.txt", changed);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    GG_REQUIRE(diffFile(s)->hunks[0].lines[2].origin == '-');
+    const std::string ref = body(s) + "/###hunk_0";
+    ctx->ScrollToItem(ref.c_str(), ImGuiAxis_Y);
+    ctx->Yield(2);
+    ctx->ItemClick(ref.c_str());
+    // Only the removed and the added line: no context line before or after them.
+    std::string sel = s.session()->diff().selectedText();
+    while (!sel.empty() && sel.back() == '\n')
+        sel.pop_back();
+    GG_CHECK_STR_EQ(sel, "line 3\nLINE 3");
+}
+
 GG_TEST("linestaging", "stage, discard and unstage hunks")
 {
     const fs::path repo = s.fixture(Recipe::Empty, "hunks");
@@ -177,11 +241,12 @@ GG_TEST("linestaging", "stage, discard and unstage hunks")
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
     GG_REQUIRE(diffFile(s)->hunks.size() == 2);
-    // The hunk buttons sit directly above the first changed line (rows: 0-1 context, 2 hunk, 3 change).
+    // The first hunk has no function context, so it has no hunk row: rows 0-1 are context and
+    // row 2 is the first change. Its buttons sit in the gutter of that line.
     {
         const ImRect button = ctx->ItemInfo((body(s) + "/###discard_hunk_0").c_str()).RectFull;
-        const ImRect change = ctx->ItemInfo((body(s) + "/###line_3").c_str()).RectFull;
-        GG_CHECK(button.Max.y <= change.Min.y && change.Min.y - button.Max.y < 8.0f);
+        const ImRect change = ctx->ItemInfo((body(s) + "/###line_2").c_str()).RectFull;
+        GG_CHECK(std::abs(button.Min.y - change.Min.y) <= 1.0f);
     }
     // Stage the second hunk only.
     ctx->ItemClick((body(s) + "/###stage_hunk_1").c_str());
@@ -253,17 +318,17 @@ GG_TEST("linestaging", "hunks from the context menu in the side-by-side view")
     s.comboSelect("//Diff/##diff_view", "Side by side");
     ctx->Yield(3);
     const std::string left = s.child(body(s).c_str(), "##sbs_left");
-    // Row 0 is the first hunk's header (not shown here); rows 1-2 are context, row 3 removes line 3.
-    s.contextMenu((left + "/###line_3").c_str(), "Stage hunk(s)");
+    // Rows 0-1 are context, row 2 removes line 3 (the first hunk has no function context).
+    s.contextMenu((left + "/###line_2").c_str(), "Stage hunk(s)");
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"show", ":f.txt"}).find("LINE 3") != std::string::npos; }));
     s.settle();
     GG_CHECK(s.gitOut(repo, {"show", ":f.txt"}).find("LINE 27") == std::string::npos);
     GG_REQUIRE(showFile(s, "Staged", "f.txt"));
-    s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_3").c_str(), "Unstage hunk(s)");
+    s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_2").c_str(), "Unstage hunk(s)");
     GG_CHECK(s.waitUntil([&] { return s.gitOut(repo, {"diff", "--cached", "--name-only"}).empty(); }));
     s.settle();
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
-    s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_3").c_str(), "Discard hunk(s)");
+    s.contextMenu((s.child(body(s).c_str(), "##sbs_left") + "/###line_2").c_str(), "Discard hunk(s)");
     s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt").find("LINE 3") == std::string::npos; }));
@@ -287,10 +352,10 @@ GG_TEST("linestaging", "CRLF lines, missing final newline, new files")
     ctx->ItemClick((body(s) + "/###stage_hunk_0").c_str());
     GG_CHECK(s.waitUntil([&] { return s.git(repo, {"show", ":noeol.txt"}).out == "no final newline, changed"; }));
     s.settle();
-    // Discard one line of an untracked file (rows: 0 hunk, 1..3 lines).
+    // Discard one line of an untracked file (rows: 0..2 lines, no hunk row without function context).
     GG_REQUIRE(showFile(s, "Untracked", "new.txt"));
-    ctx->ItemClick((body(s) + "/###line_2").c_str());
-    s.contextMenu((body(s) + "/###line_2").c_str(), "Discard line(s)");
+    ctx->ItemClick((body(s) + "/###line_1").c_str());
+    s.contextMenu((body(s) + "/###line_1").c_str(), "Discard line(s)");
     s.dialogButton("Discard changes", "Discard");
     // Read the file once git is done with it: on Windows an open handle makes git's rewrite fail.
     GG_REQUIRE(s.waitIdle());
@@ -298,8 +363,8 @@ GG_TEST("linestaging", "CRLF lines, missing final newline, new files")
     s.settle();
     // Stage one line of it (a new file with only that line in the index).
     GG_REQUIRE(showFile(s, "Untracked", "new.txt"));
-    ctx->ItemClick((body(s) + "/###line_1").c_str());
-    s.contextMenu((body(s) + "/###line_1").c_str(), "Stage line(s)");
+    ctx->ItemClick((body(s) + "/###line_0").c_str());
+    s.contextMenu((body(s) + "/###line_0").c_str(), "Stage line(s)");
     GG_CHECK(s.waitUntil([&] { return s.gitMayFail(repo, {"show", ":new.txt"}).out == "keep one\n"; }));
     s.settle();
 }
@@ -408,11 +473,16 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
                 ++lead;
             return lead == hk.lines.size() ? size_t(0) : lead;
         };
+        // The header row exists only when the hunk header has function context after the "@@".
+        auto hasContext = [](const ggui::core::DiffHunk& hk) {
+            const size_t close = hk.header.find("@@", 2);
+            return close != std::string::npos && hk.header.find_first_not_of(" \t\r\n", close + 2) != std::string::npos;
+        };
         std::vector<std::pair<int, int>> rows; // (hunk, line) with line = -1 for the header
         for (size_t h = 0; h < file.hunks.size(); ++h) {
             const size_t lead = leadOf(file.hunks[h]);
             for (size_t l = 0; l < file.hunks[h].lines.size(); ++l) {
-                if (l == lead)
+                if (l == lead && hasContext(file.hunks[h]))
                     rows.emplace_back(static_cast<int>(h), -1);
                 rows.emplace_back(static_cast<int>(h), static_cast<int>(l));
             }
@@ -429,7 +499,7 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
                     ++visual; // gap row
                 const size_t lead = leadOf(hk);
                 for (size_t l = 0; l < hk.lines.size(); ++l) {
-                    if (l == lead)
+                    if (l == lead && hasContext(hk))
                         rowIndex.push_back(visual++);
                     rowIndex.push_back(visual++);
                 }
@@ -462,9 +532,9 @@ GG_TEST("linestaging", "randomized line staging matches the content model")
         }
         if (!changes)
             continue;
-        const std::string first = "###" + std::string(rows[a].second < 0 ? "hunk_" + std::to_string(rows[a].first)
+        const std::string first = "###" + std::string(rows[a].second < 0 ? "hunkctx_" + std::to_string(rows[a].first)
                                                                         : "line_" + std::to_string(rowIndex[a]));
-        const std::string last = "###" + std::string(rows[b].second < 0 ? "hunk_" + std::to_string(rows[b].first)
+        const std::string last = "###" + std::string(rows[b].second < 0 ? "hunkctx_" + std::to_string(rows[b].first)
                                                                        : "line_" + std::to_string(rowIndex[b]));
         scrollToRow(s, first);
         ctx->ItemClick((body(s) + "/" + first).c_str());
@@ -503,9 +573,9 @@ GG_TEST("linestaging", "eol: discarding a line of a CRLF working file (core.auto
     s.writeCrlf(repo, "f.txt", "one\ntwo\nNEW\nthree\n");
     GG_REQUIRE(s.openRepository(repo));
     GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
-    // Rows: 0 hunk, 1 "one", 2 "two", 3 "+NEW", 4 "three".
-    ctx->ItemClick((body(s) + "/###line_3").c_str());
-    s.contextMenu((body(s) + "/###line_3").c_str(), "Discard line(s)");
+    // Rows: 0 "one", 1 "two", 2 "+NEW", 3 "three" (no hunk row without function context).
+    ctx->ItemClick((body(s) + "/###line_2").c_str());
+    s.contextMenu((body(s) + "/###line_2").c_str(), "Discard line(s)");
     s.dialogButton("Discard changes", "Discard");
     GG_REQUIRE(s.waitIdle());
     GG_CHECK(s.waitUntil([&] { return s.read(repo, "f.txt") == "one\r\ntwo\r\nthree\r\n"; }));
