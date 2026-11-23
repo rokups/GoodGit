@@ -33,11 +33,14 @@ void App::initializeRepository()
         if (path.empty())
             return;
         ++m_pendingOpens;
-        m_io.post([this, path]() -> std::function<void()> {
+        const unsigned gen = m_generation;
+        m_io.post([this, path, gen]() -> std::function<void()> {
             std::error_code ec;
             fs::create_directories(path, ec);
             const gg::RunResult r = gg::git(path, {"init", "-q", path});
-            return [this, r, path] {
+            return [this, r, path, gen] {
+                if (gen != m_generation)
+                    return;
                 --m_pendingOpens;
                 if (!r.ok()) {
                     showError("Initialize repository", r.message());

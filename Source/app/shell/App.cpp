@@ -180,6 +180,10 @@ void App::resetForTest()
     m_closing.clear();
     m_io.flush();
     m_io.pump();
+    // Work of an earlier test must not reach the next test: drop posted work and stale opens.
+    m_posted.clear();
+    ++m_generation;
+    m_pendingOpens = 0;
     m_errorTitle.clear();
     m_errorMessage.clear();
     m_toasts.clear();
@@ -427,21 +431,28 @@ void App::openChecked(const fs::path& path, bool quiet)
     // G2: git must be present and new enough; checked (off the UI thread) before every open.
     // The open is pending until the check ends either way (Retry starts a new open).
     ++m_pendingOpens;
+    const unsigned gen = m_generation;
     checkGit(
-        [this, path, quiet](bool ok) {
+        [this, path, quiet, gen](bool ok) {
+            if (gen != m_generation)
+                return; // a test reset already zeroed the count
             if (ok) {
                 openUnlessOpenElsewhere(path, quiet); // the open stays pending until it is decided
                 return;
             }
             --m_pendingOpens;
         },
-        [this, path, quiet] { openChecked(path, quiet); });
+        [this, path, quiet, gen] {
+            if (gen == m_generation)
+                openChecked(path, quiet);
+        });
 }
 
 void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
 {
     const std::string own = (m_session && m_session->opened()) ? m_session->snapshot()->gitDir.string() : std::string();
-    m_io.post([this, path, quiet, own]() -> std::function<void()> {
+    const unsigned gen = m_generation;
+    m_io.post([this, path, quiet, own, gen]() -> std::function<void()> {
         std::error_code ec;
         fs::path abs = fs::absolute(path, ec);
         if (ec)
@@ -455,7 +466,9 @@ void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
             if (own.empty() || gg::seqlink::gitDirKey(own) != key)
                 elsewhere = gg::seqlink::raiseOther(key, processId());
         }
-        return [this, path, quiet, gitDir, elsewhere] {
+        return [this, path, quiet, gitDir, elsewhere, gen] {
+            if (gen != m_generation)
+                return;
             --m_pendingOpens;
             if (elsewhere) {
                 if (!quiet)

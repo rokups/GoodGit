@@ -300,6 +300,7 @@ private:
     float m_zoomWheel = 0.0f; // Ctrl+wheel notches not yet turned into whole percents
     bool m_iniApplied = false;
     int m_pendingOpens = 0;
+    unsigned m_generation = 0; // counts test resets: an async open of an earlier test sees a new value and stops
     std::string m_welcomePath;
     FilterInput m_recentFilter;
     // Alt tap -> main menu bar (see handleMenuBarKey): nav state at the end of the previous frame, and the

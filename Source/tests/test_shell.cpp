@@ -1026,6 +1026,15 @@ GG_TEST("shell", "ini load skips split dock nodes")
     s.app.resetForTest();
 }
 
+GG_TEST("shell", "a reset drops work that an earlier phase posted")
+{
+    bool ran = false;
+    s.app.post([&ran] { ran = true; });
+    s.app.resetForTest();
+    ctx->Yield(3);
+    GG_CHECK(!ran);
+}
+
 GG_TEST("shell", "settings persist across restarts")
 {
     s.app.openSettings();
