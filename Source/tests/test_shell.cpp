@@ -1689,6 +1689,21 @@ GG_TEST("shell", "an open while a job runs asks first; Keep open keeps the repos
     GG_CHECK(s.session() != nullptr && s.session()->path() == path);
 }
 
+GG_TEST("shell", "an open while a job runs: Cancel the job and open opens the other repository")
+{
+    BusyCommit c;
+    startBusyCommit(s, ctx, c);
+    const fs::path other = s.fixture(Recipe::Linear);
+    s.app.openRepository(other);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
+    s.dialogButton("A job is running", "Cancel the job and open");
+    GG_CHECK(s.waitUntil([&] { return s.session() && fs::equivalent(s.session()->path(), other); }, 10.0f));
+    s.write(s.root(), "go", ""); // lets a leftover hook end
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(c.repo), c.head); // the cancelled commit did not land
+    GG_CHECK(s.gitOut(c.repo, {"fsck", "--no-progress"}).find("error") == std::string::npos);
+}
+
 GG_TEST("shell", "a close with no job running closes at once")
 {
     const fs::path repo = s.fixture(Recipe::WithRemote);
