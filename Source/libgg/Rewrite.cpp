@@ -773,7 +773,9 @@ Result Rewriter::compute(const Plan& plan, const gg::CancelToken& cancel)
                     flush();
                     const std::string target = byKey.at(previous);
                     if (target.empty() || (droppedHead && !produced.count(target)))
-                        throw std::runtime_error("nothing to amend: every commit before it was dropped");
+                        // Git folds the group into the onto commit then; ggui does not rewrite a commit outside the range (GG-161).
+                        throw std::runtime_error("nothing to amend: every commit before it was dropped. Git would fold it into "
+                                                 "the onto commit, which is outside the rebase. Make it a pick, or keep empty commits.");
                     Commit t = m->commit(target);
                     Pending p;
                     p.key = key;

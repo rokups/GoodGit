@@ -1476,6 +1476,8 @@ GG_TEST("rebase-merges", "a fixup after a head pick that empties with nothing be
     const gg::rewrite::Result result = rewriter.compute(plan, gg::CancelToken());
     GG_CHECK(!result.ok);
     GG_CHECK(result.error.find("nothing to amend: every commit before it was dropped") != std::string::npos);
+    // Git folds it into the onto commit; ggui refuses and says why (GG-161).
+    GG_CHECK(result.error.find("Make it a pick, or keep empty commits.") != std::string::npos);
 }
 
 GG_TEST("rebase-merges", "a fixup after two dropped head picks is refused, never amending the onto commit")
