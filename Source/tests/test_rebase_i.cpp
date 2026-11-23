@@ -2768,11 +2768,12 @@ GG_TEST("rebase-i", "Keep: a fixup folds into the head pick that became empty, a
 //        not empty before the rebase, but the group e1 already holds its change.
 //   d  : a1, e0 (empty), f1 adds f.txt: the empty head keeps the fixup content.
 //   d2 : a1, e0 (empty), f0 (empty): both stay empty.
+//   m  : as g, but h1 is a member too: the list "a1, e1, f1, h1" has a no-op member before a real one.
 //   f  : a1, e1 adds e.txt, f1 removes it, g1 adds it again: the group empties at f1, then fills.
 void noopFixup(Scenario& s, const std::string& shape, const char* action)
 {
     ImGuiTestContext* ctx = s.ctx;
-    const bool isG = shape == "g";
+    const bool isG = shape == "g" || shape == "m";
     for (const char* mode : {"Drop", "Keep"}) {
         std::string name = shape + "-" + action + "-" + mode;
         std::replace(name.begin(), name.end(), ' ', '_');
@@ -2789,8 +2790,11 @@ void noopFixup(Scenario& s, const std::string& shape, const char* action)
         if (isG) {
             s.commitFile(path, "e.txt", "1\n", "e1 add e");
             s.commitFile(path, "e.txt", "2\n", "h1 set 2");
+            const std::string h1 = s.head(path);
             s.commitFile(path, "e.txt", "1\n", "f1 set 1");
             fixups = {s.head(path)};
+            if (shape == "m")
+                fixups.push_back(h1);
         } else if (shape == "d") {
             empty("e0 empty");
             s.commitFile(path, "f.txt", "f\n", "f1 add f");
@@ -2841,6 +2845,13 @@ GG_TEST("rebase-i", "a squash that adds nothing to its group is dropped with its
 {
     GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a no-op squash differently");
     noopFixup(s, "g", "squash");
+}
+
+GG_TEST("rebase-i", "a no-op fixup or squash before a real member of its group, as git does")
+{
+    GG_REQUIRE_GIT(2, 56, "git before 2.56 reports a no-op member differently");
+    noopFixup(s, "m", "fixup");
+    noopFixup(s, "m", "squash");
 }
 
 GG_TEST("rebase-i", "an empty head pick keeps the content of the fixup after it, as git does")
