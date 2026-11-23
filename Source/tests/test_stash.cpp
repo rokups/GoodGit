@@ -400,6 +400,55 @@ GG_TEST("stash", "an action with a stale stash index is refused and drops nothin
         s.dismissError();
 }
 
+namespace {
+
+// Runs every stash action on the stale (index 1, shown) pair; each must refuse.
+void tryAllStale(Scenario& s, int index, const ggui::core::Oid& shown)
+{
+    auto& a = s.session()->actions();
+    const std::function<void()> steps[] = {
+        [&] { a.stashApply(index, shown, true, false); },
+        [&] { a.stashApply(index, shown, false, true); },
+        [&] { a.stashDrop(index, shown); },
+        [&] { a.stashReword(index, shown, "reworded"); },
+        [&] { a.stashRename(index, shown, "renamed"); },
+    };
+    for (const auto& step : steps) {
+        step();
+        s.settle();
+        if (s.app.dialogs().current())
+            s.dismissError();
+    }
+}
+
+} // namespace
+
+GG_TEST("stash", "every action refuses a stale index after an outside push (GG-98)")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    const ggui::core::Oid shown = ggui::core::Oid::fromHex(s.gitOut(repo, {"rev-parse", "stash@{1}"}));
+    s.write(repo, "outside.txt", "outside\n");
+    s.git(repo, {"add", "outside.txt"});
+    s.git(repo, {"stash", "push", "-q", "-m", "outside"});
+    const std::string list = s.gitOut(repo, {"stash", "list", "--format=%H %gs"});
+    tryAllStale(s, 1, shown);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "list", "--format=%H %gs"}), list);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "");
+}
+
+GG_TEST("stash", "every action refuses a stale index after an outside drop (GG-98)")
+{
+    const fs::path repo = s.fixture(Recipe::Stashes);
+    GG_REQUIRE(s.openRepository(repo));
+    const ggui::core::Oid shown = ggui::core::Oid::fromHex(s.gitOut(repo, {"rev-parse", "stash@{1}"}));
+    s.git(repo, {"stash", "drop", "-q", "stash@{0}"});
+    const std::string list = s.gitOut(repo, {"stash", "list", "--format=%H %gs"});
+    tryAllStale(s, 1, shown);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"stash", "list", "--format=%H %gs"}), list);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "");
+}
+
 GG_TEST("stash", "Pop does nothing when the selected stash is gone")
 {
     const fs::path repo = s.fixture(Recipe::Stashes);

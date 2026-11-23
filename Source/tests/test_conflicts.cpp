@@ -1711,10 +1711,10 @@ namespace ggtest {
 namespace {
 
 // Runs Actions::absorb of `paths` into HEAD and waits for the event.
-std::optional<ggui::core::MutationFinishedEvent> absorbHead(Scenario& s, const fs::path& repo, const std::vector<std::string>& paths)
+std::optional<ggui::core::MutationFinishedEvent> absorbHead(Scenario& s, const fs::path& repo, const std::vector<std::string>& paths, const std::string& rev = "HEAD")
 {
     std::optional<ggui::core::MutationFinishedEvent> event;
-    s.session()->actions().absorb(ggui::core::Oid::fromHex(s.revParse(repo, "HEAD")), paths,
+    s.session()->actions().absorb(ggui::core::Oid::fromHex(s.revParse(repo, rev)), paths,
         [&](const ggui::core::MutationFinishedEvent& e) { event = e; });
     if (!s.waitUntil([&] { return event.has_value(); }))
         return std::nullopt;
@@ -1762,6 +1762,51 @@ GG_TEST("conflicts", "absorb stores the clean content of a file with an eol attr
     GG_REQUIRE(e.has_value());
     GG_CHECK(e->outcome == ggui::core::Outcome::Ok);
     GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:a.crlf"}), "one\nthree");
+}
+
+GG_TEST("conflicts", "absorb folds each file into its own earlier commit and keeps the rest (GG-98)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    s.commitFile(repo, "p.txt", "p1\n", "add p");
+    s.commitFile(repo, "q.txt", "q1\n", "add q");
+    s.commitFile(repo, "r.txt", "r1\n", "add r");
+    GG_REQUIRE(s.openRepository(repo));
+    s.write(repo, "p.txt", "p2\n");
+    s.write(repo, "q.txt", "q2\n");
+    s.write(repo, "r.txt", "r2\n");
+    const auto first = absorbHead(s, repo, {"p.txt"}, "HEAD~2");
+    GG_REQUIRE(first.has_value());
+    GG_CHECK(first->outcome == ggui::core::Outcome::Ok);
+    // The ids above "add p" changed: find "add q" by its subject.
+    const auto second = absorbHead(s, repo, {"q.txt"}, "HEAD~1");
+    GG_REQUIRE(second.has_value());
+    GG_CHECK(second->outcome == ggui::core::Outcome::Ok);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD~2:p.txt"}), "p2");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD~1:q.txt"}), "q2");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"show", "HEAD:r.txt"}), "r1");
+    // r.txt has no target: it stays a plain working tree change.
+    GG_CHECK_STR_EQ(s.read(repo, "r.txt"), "r2\n");
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "M r.txt");
+}
+
+GG_TEST("conflicts", "absorb with nothing changed ends with a clear message and keeps the tree (GG-98)")
+{
+    const fs::path repo = s.fixture(Recipe::Linear);
+    GG_REQUIRE(s.openRepository(repo));
+    const std::string tree = s.revParse(repo, "HEAD^{tree}");
+    const std::string files = s.gitOut(repo, {"ls-files"});
+    const std::string file = files.substr(0, files.find('\n'));
+    // Nothing to fold: the action ends with a notice and no mutation event.
+    s.session()->actions().absorb(ggui::core::Oid::fromHex(s.revParse(repo, "HEAD")), {file}, [](const auto&) {});
+    GG_CHECK(s.waitUntil([&] {
+        for (const auto& t : s.app.toasts())
+            if (t.message == "Nothing to change.")
+                return true;
+        return false;
+    }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD^{tree}"), tree);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "");
 }
 
 GG_TEST("conflicts", "commit with conflicts keeps a file the user resolved by hand (GG-88)")
