@@ -359,4 +359,46 @@ GG_TEST("edges", "marker-like text: only complete regions are conflicts (CRLF, n
     }));
 }
 
+GG_TEST("edges", "a merge in a linked worktree moves only that worktree's HEAD, index and files (GG-98)")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    s.git(repo, {"switch", "-q", "-c", "other", "main"});
+    s.commitFile(repo, "o.txt", "other\n", "other side");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(wt1, "w.txt", "wt1 side\n", "wt1 side");
+    const std::string mainHead = s.revParse(repo, "HEAD");
+    const std::string wtHead = s.revParse(wt1, "HEAD");
+    GG_REQUIRE(s.openRepository(wt1));
+    s.session()->actions().mergeNative("other");
+    GG_REQUIRE(s.waitUntil([&] { return s.revParse(wt1, "HEAD") != wtHead; }));
+    s.settle();
+    GG_CHECK_STR_EQ(s.revParse(wt1, "HEAD^1"), wtHead);
+    GG_CHECK_STR_EQ(s.revParse(wt1, "HEAD^2"), s.revParse(repo, "other"));
+    GG_CHECK_STR_EQ(s.read(wt1, "o.txt"), "other\n");
+    GG_CHECK_STR_EQ(s.gitOut(wt1, {"status", "--porcelain"}), "");
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD"), mainHead);
+    GG_CHECK(!fs::exists(repo / "o.txt"));
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "");
+}
+
+GG_TEST("edges", "a conflicting merge in a linked worktree leaves the main worktree clean (GG-98)")
+{
+    const fs::path repo = s.fixture(Recipe::LinkedWorktrees);
+    const fs::path wt1 = s.root() / (repo.filename().string() + "-wt1");
+    s.git(repo, {"switch", "-q", "-c", "other", "main"});
+    s.commitFile(repo, "c.txt", "other\n", "other side");
+    s.git(repo, {"switch", "-q", "main"});
+    s.commitFile(wt1, "c.txt", "wt1 side\n", "wt1 side");
+    const std::string mainHead = s.revParse(repo, "HEAD");
+    GG_REQUIRE(s.openRepository(wt1));
+    s.session()->actions().mergeNative("other");
+    GG_REQUIRE(s.waitUntil([&] { return s.gitMayFail(wt1, {"rev-parse", "-q", "--verify", "MERGE_HEAD"}).ok(); }));
+    s.settle();
+    GG_CHECK(s.read(wt1, "c.txt").find("<<<<<<<") != std::string::npos);
+    GG_CHECK(!s.gitMayFail(repo, {"rev-parse", "-q", "--verify", "MERGE_HEAD"}).ok());
+    GG_CHECK_STR_EQ(s.revParse(repo, "HEAD"), mainHead);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"status", "--porcelain"}), "");
+}
+
 } // namespace ggtest
