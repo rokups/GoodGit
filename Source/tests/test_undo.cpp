@@ -94,6 +94,21 @@ GG_TEST("undo", "the repository state compare sees a lost untracked file and cha
     GG_CHECK_STR_EQ(repoState(s, repo), clean);
 }
 
+GG_TEST("undo", "the journal says the repository is gone when the git dir is deleted")
+{
+    // A git dir that does not exist is the same as a deleted one; the harness checks every fixture repo.
+    const fs::path gitDir = s.root() / "journal-gone" / ".git";
+    gg::journal::Journal journal(gitDir);
+    std::error_code ec;
+    gg::journal::Operation op;
+    op.id = "gone-1";
+    std::string error;
+    GG_CHECK(!journal.begin(op, &error));
+    GG_CHECK(error.find("The repository is gone") != std::string::npos);
+    GG_CHECK(error.find("busy") == std::string::npos);
+    GG_CHECK(!fs::exists(gitDir, ec));
+}
+
 GG_TEST("undo", "undo and redo from the menu, keys and toolbar; Operations lists sources and restores")
 {
     const fs::path repo = s.fixture(Recipe::Linear);

@@ -165,6 +165,16 @@ std::string busyMessage(const fs::path& dir)
     return "journal busy (" + (dir / "journal.lock").string() + " exists)";
 }
 
+// The journal folder lives in the git dir. A missing git dir is not a lock problem.
+std::string unavailableMessage(const fs::path& dir)
+{
+    std::error_code ec;
+    const fs::path gitDir = dir.parent_path();
+    if (!fs::exists(gitDir, ec))
+        return "The repository is gone: " + gitDir.string() + " no longer exists.";
+    return busyMessage(dir);
+}
+
 } // namespace
 
 bool Journal::appendLine(const std::string& line, std::string* error)
@@ -174,7 +184,7 @@ bool Journal::appendLine(const std::string& line, std::string* error)
     Lock lock(m_dir / "journal.lock");
     if (!made || !lock.locked()) {
         if (error)
-            *error = busyMessage(m_dir);
+            *error = unavailableMessage(m_dir);
         return false;
     }
     return writeLocked(m_path, line, error);
@@ -205,7 +215,7 @@ bool Journal::Transaction::appendLine(const std::string& line, std::string* erro
 {
     if (!locked()) {
         if (error)
-            *error = busyMessage(m_journal.m_dir);
+            *error = unavailableMessage(m_journal.m_dir);
         return false;
     }
     return writeLocked(m_journal.m_path, line, error);
