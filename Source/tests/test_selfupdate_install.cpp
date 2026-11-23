@@ -1,4 +1,5 @@
 // Self-update: install checks, the update scripts, and the result of a finished update.
+#include "libgg/Files.hpp"
 #include "libgg/Launch.hpp"
 #include "platform/SelfUpdate.hpp"
 #include "tests/Harness.hpp"
@@ -80,8 +81,7 @@ void writeFile(const fs::path& path, const std::string& text)
 
 std::string readFile(const fs::path& path)
 {
-    std::ifstream file(path, std::ios::binary);
-    return std::string(std::istreambuf_iterator<char>(file), {});
+    return gg::readFile(path).value_or(std::string());
 }
 
 bool pathExists(const fs::path& path)
