@@ -468,7 +468,30 @@ void App::retireSession()
     m_closing.push_back(std::move(m_session));
 }
 
+void App::confirmLeave(std::function<void()> go)
+{
+    const std::string job = m_session ? m_session->actions().busy() : std::string();
+    if (job.empty()) {
+        go();
+        return;
+    }
+    if (m_dialogs.anyOpen())
+        return; // one question at a time
+    Form f;
+    f.title = "A job is running";
+    f.message = "\"" + job + "\" is still running. Closing the repository cancels it.";
+    f.buttons.push_back({"Cancel the job and close", [this, go](Form&) { go(); }});
+    f.buttons.back().danger = true;
+    f.buttons.push_back({"Keep open", {}});
+    m_dialogs.open(std::move(f));
+}
+
 void App::openNow(const fs::path& path)
+{
+    confirmLeave([this, path] { openConfirmed(path); });
+}
+
+void App::openConfirmed(const fs::path& path)
 {
     if (m_session) {
         m_session->cancelAll();
@@ -530,6 +553,13 @@ void App::checkGit(std::function<void(bool ok)> done, std::function<void()> retr
 }
 
 void App::closeRepository()
+{
+    if (!m_session)
+        return;
+    confirmLeave([this] { closeNow(); });
+}
+
+void App::closeNow()
 {
     if (!m_session)
         return;

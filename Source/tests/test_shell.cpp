@@ -1617,6 +1617,58 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
+// Starts a commit that waits in pre-commit until the file `go` exists, then presses Ctrl+W.
+#define GG159_START_BUSY_COMMIT()                                                                                    \
+    const fs::path repo = s.fixture(Recipe::WithRemote);                                                             \
+    const fs::path go = s.root() / "go";                                                                             \
+    s.write(repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n"); \
+    fs::permissions(repo / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);                                   \
+    GG_REQUIRE(s.openRepository(repo));                                                                              \
+    const std::string head = s.head(repo);                                                                           \
+    s.write(repo, "busy.txt", "busy\n");                                                                             \
+    s.git(repo, {"add", "busy.txt"});                                                                                \
+    s.settle();                                                                                                      \
+    ctx->ItemClick("//###Toolbar/###tb_commit");                                                                     \
+    GG_REQUIRE(s.dialogOpen("Commit"));                                                                              \
+    s.dialogText("Commit", "message", "Waits for the hook");                                                         \
+    s.dialogButton("Commit", "Commit");                                                                              \
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));                          \
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_W);                                                                       \
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f))
+
+GG_TEST("shell", "GG-159 Ctrl+W while a job runs asks; Keep open keeps the repository and the job")
+{
+    GG159_START_BUSY_COMMIT();
+    s.dialogButton("A job is running", "Keep open");
+    s.settle();
+    GG_CHECK(s.session() != nullptr);
+    GG_CHECK(!s.session()->actions().busy().empty());
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.head(repo) != head; }, 30.0f));
+    s.settle();
+    GG_CHECK(s.session() != nullptr);
+    GG_CHECK_STR_EQ(s.gitOut(repo, {"log", "-1", "--format=%s"}), "Waits for the hook");
+}
+
+GG_TEST("shell", "GG-159 Ctrl+W while a job runs: Cancel the job and close closes the repository")
+{
+    GG159_START_BUSY_COMMIT();
+    s.dialogButton("A job is running", "Cancel the job and close");
+    GG_CHECK(s.waitUntil([&] { return s.session() == nullptr; }, 10.0f));
+    s.write(s.root(), "go", ""); // lets a leftover hook end
+    s.settle();
+}
+
+GG_TEST("shell", "GG-159 Ctrl+W with no job closes at once")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_W);
+    GG_CHECK(s.waitUntil([&] { return s.session() == nullptr; }, 10.0f));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
 GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not JSON; out-of-range values are clamped")
 {
     // A fresh ggui (a restart) reads each settings.json; what it cannot use falls back to defaults.
