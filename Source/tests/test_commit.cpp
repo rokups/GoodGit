@@ -828,6 +828,10 @@ GG_TEST("commit", "Working tree commit: a failing rename of the new index shows 
     const std::string before = s.head(repo);
     commitFromWorktreeRow(ctx, s, repo, "Rename fails");
     GG_CHECK(s.waitUntil([&] { return s.head(repo) != before; }));
+    GG_CHECK(s.waitUntil([&] { const ggui::Form* f = s.app.dialogs().current(); return f && f->icon; }));
+    const std::string text = s.app.dialogs().current()->message;
+    GG_CHECK(text.find("commit " + s.head(repo).substr(0, 7)) != std::string::npos);
+    GG_CHECK(text.find("git reset") != std::string::npos);
     GG_CHECK(s.dismissError());
     s.settle();
     GG_CHECK(fs::exists(repo / ".git" / "hook-ran"));

@@ -414,7 +414,16 @@ void Actions::commitWorktree(const std::string& message, Callback done)
                 throw MutationError{Outcome::Refused,
                     "The staged changes cannot be kept staged on top of the new commit; nothing was committed", {}};
             }
-            fs::rename(indexB, gitDir / "index");
+            std::error_code renameEc;
+            fs::rename(indexB, gitDir / "index", renameEc);
+            if (renameEc) {
+                const std::string subject = message.substr(0, message.find('\n'));
+                // The popup shows the detail when it is set, so the detail holds the full text.
+                const std::string text = "The commit " + newHead.substr(0, 7) + " \"" + subject +
+                    "\" was made, but the index was not updated, so the changes look reverted. Run \"git reset\" "
+                    "to fix the index.";
+                throw MutationError{Outcome::Failed, text, text + " (" + renameEc.message() + ")"};
+            }
             ctx.result = newHead;
         },
         std::move(done), false, true, true, true);
