@@ -1741,6 +1741,7 @@ GG_TEST("history", "a double click on a remote branch badge makes or checks out 
     // With a local branch of the short name: it is checked out.
     doubleClickBadge(s, second, "origin/other");
     GG_CHECK(s.waitUntil([&] { return onBranch(s, "other"); }));
+    s.settle(); // HEAD can move before the switch job ends; a double click while busy does nothing
     waitOutDoubleClick(s);
     // Without: the Create branch dialog opens with the short name as the name.
     doubleClickBadge(s, first, "origin/topic");

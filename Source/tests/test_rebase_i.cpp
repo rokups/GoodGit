@@ -2706,6 +2706,10 @@ void emptyHeadFixup(Scenario& s, bool drop, const char* action = "fixup", bool a
     const char* mode = ask ? "Ask" : drop ? "Drop" : "Keep";
     std::string tag = std::string(mode) + "-" + action + (action2 ? std::string("-") + action2 : "") + (edit ? "" : "-plain");
     std::replace(tag.begin(), tag.end(), ' ', '_');
+    // Windows folder names ignore case: "fixup -C" and "fixup -c" must not share a folder.
+    for (const std::string_view from : {"-C", "-c"})
+        for (size_t at = tag.find(from); at != std::string::npos; at = tag.find(from, at + 1))
+            tag.replace(at, 2, from == "-C" ? "-upperC" : "-lowerc");
     const fs::path path = s.fixture(Recipe::Empty, "repo-head-" + tag);
     s.commitFile(path, "base.txt", "base\n", "c0 base");
     const std::string base = s.head(path);
