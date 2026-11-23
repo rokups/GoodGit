@@ -8,6 +8,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <thread>
 
 #ifndef _WIN32
@@ -107,37 +110,50 @@ GG_TEST("runner", "a token cancelled before the run still stops the child")
 
 #else
 
-namespace {
-
-// Whether the process is gone. A process that cannot be opened is gone too.
-bool winProcessGone(unsigned long pid)
-{
-    HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
-    if (!h)
-        return true;
-    const DWORD w = WaitForSingleObject(h, 5000);
-    CloseHandle(h);
-    return w == WAIT_OBJECT_0;
-}
-
-} // namespace
-
-// The job object kill (GG-156): PowerShell starts a grandchild ping and prints its pid.
+// The job object kill: PowerShell starts a grandchild ping and writes its pid to a file.
 GG_TEST("runner", "cancel ends a running child and its grandchild on Windows")
 {
+    const fs::path pidFile = s.path("pid.txt");
     gg::RunRequest r;
     r.args = {"powershell", "-NoProfile", "-Command",
-        "$p = Start-Process ping -ArgumentList '-n','60','127.0.0.1' -PassThru -WindowStyle Hidden; $p.Id; Start-Sleep 60"};
+        "$p = Start-Process ping -ArgumentList '-n','60','127.0.0.1' -PassThru -WindowStyle Hidden; "
+        "$p.Id | Out-File -Encoding ascii '" + pidFile.string() + "'; Start-Sleep 60"};
     r.cancel = gg::CancelToken(); // the default is a copy of none(), which ignores cancel()
     gg::RunResult result;
     std::thread worker([&] { result = gg::run(r); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    // A failed GG_REQUIRE returns: the guard ends the run, so the thread is never left joinable.
+    const ScopeExit stop{[&] {
+        r.cancel.cancel();
+        if (worker.joinable())
+            worker.join();
+    }};
+    HANDLE h = nullptr;
+    const ScopeExit closeHandle{[&] {
+        if (h)
+            CloseHandle(h);
+    }};
+    unsigned long pid = 0;
+    const bool written = s.waitUntil([&] {
+        std::ifstream in(pidFile);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (text.find('\n') == std::string::npos) // the whole line is there
+            return false;
+        pid = std::strtoul(text.c_str(), nullptr, 10);
+        return true;
+    }, 30.0f);
+    GG_REQUIRE(written);
+    GG_REQUIRE(pid > 4);
+    // The open handle keeps the pid from being reused, and shows that the grandchild runs.
+    h = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+    GG_REQUIRE(h != nullptr);
+    GG_REQUIRE(WaitForSingleObject(h, 0) == WAIT_TIMEOUT);
+    const auto t0 = std::chrono::steady_clock::now();
     r.cancel.cancel();
     worker.join();
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     GG_CHECK(result.cancelled);
-    const unsigned long pid = std::strtoul(result.out.c_str(), nullptr, 10);
-    GG_REQUIRE(pid > 4);
-    GG_CHECK(winProcessGone(pid));
+    GG_CHECK(ms < timeBudgetMs(15000)); // a pipe that a grandchild holds open would delay run()
+    GG_CHECK(WaitForSingleObject(h, 5000) == WAIT_OBJECT_0);
 }
 
 #endif
