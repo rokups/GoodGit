@@ -13,6 +13,14 @@
 #ifndef _WIN32
 #include <csignal>
 #include <unistd.h>
+#else
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 namespace ggtest {
@@ -95,6 +103,41 @@ GG_TEST("runner", "a token cancelled before the run still stops the child")
     const auto result = gg::run(r);
     GG_CHECK(result.cancelled);
     GG_CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(static_cast<int>(timeBudgetMs(1500))));
+}
+
+#else
+
+namespace {
+
+// Whether the process is gone. A process that cannot be opened is gone too.
+bool winProcessGone(unsigned long pid)
+{
+    HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+    if (!h)
+        return true;
+    const DWORD w = WaitForSingleObject(h, 5000);
+    CloseHandle(h);
+    return w == WAIT_OBJECT_0;
+}
+
+} // namespace
+
+// The job object kill (GG-156): PowerShell starts a grandchild ping and prints its pid.
+GG_TEST("runner", "cancel ends a running child and its grandchild on Windows")
+{
+    gg::RunRequest r;
+    r.args = {"powershell", "-NoProfile", "-Command",
+        "$p = Start-Process ping -ArgumentList '-n','60','127.0.0.1' -PassThru -WindowStyle Hidden; $p.Id; Start-Sleep 60"};
+    r.cancel = gg::CancelToken(); // the default is a copy of none(), which ignores cancel()
+    gg::RunResult result;
+    std::thread worker([&] { result = gg::run(r); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    r.cancel.cancel();
+    worker.join();
+    GG_CHECK(result.cancelled);
+    const unsigned long pid = std::strtoul(result.out.c_str(), nullptr, 10);
+    GG_REQUIRE(pid > 4);
+    GG_CHECK(winProcessGone(pid));
 }
 
 #endif
