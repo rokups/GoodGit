@@ -1558,9 +1558,10 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     ctx->ItemClick(fileRef("Staged", "staged.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] {
         const auto& d = s.session()->diff().diff();
-        return d && !d->files.empty() && d->files[0].path() == "staged.txt" && s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str());
+        return d && !d->files.empty() && d->files[0].path() == "staged.txt" && s.itemExists((s.child("//Diff", "##diff_body") + "/###line_0").c_str());
     }));
-    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Unstage line(s)");
+    // A new file has no hunk row: its added line is row 0.
+    menu(s.child("//Diff", "##diff_body") + "/###line_0", "Unstage line(s)");
     // A commit: its row, its files, its lines, its author; the Commit menu.
     const std::string older = s.revParse(repo, "HEAD~1");
     ctx->ItemClick(("//History/**/###row_" + older).c_str());
@@ -1570,8 +1571,8 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     const std::string first = s.session()->changes().rows().front().path;
     menu(files + "/" + first + "/###file_" + first, "Move to parent");
     ctx->ItemClick((files + "/" + first + "/###file_" + first).c_str());
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_1").c_str()); }));
-    menu(s.child("//Diff", "##diff_body") + "/###line_1", "Discard line(s)");
+    GG_REQUIRE(s.waitUntil([&] { return s.itemExists((s.child("//Diff", "##diff_body") + "/###line_0").c_str()); }));
+    menu(s.child("//Diff", "##diff_body") + "/###line_0", "Discard line(s)");
     menu("//Change information/**/###author", "Edit author...", true);
     ctx->MenuAction(ImGuiTestAction_Hover, "//##MainMenuBar/Commit/Commit...");
     GG_CHECK((ctx->ItemInfo("//$FOCUSED/Commit...").ItemFlags & ImGuiItemFlags_Disabled) != 0);
