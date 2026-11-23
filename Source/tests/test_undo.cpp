@@ -262,7 +262,11 @@ GG_TEST("undo", "refusals: nothing to undo, plain git is undone first, local cha
     s.commitFile(repo, "f1.txt", "other content\n", "Other f1");
     s.git(repo, {"switch", "-q", "main"});
     s.showPanel("Branches");
-    GG_REQUIRE(s.waitUntil([&] { return s.itemExists("//Branches/branch_other/###branch_other"); }));
+    // A refresh may have seen HEAD on "other" (then "Check out" is disabled): wait for the end state.
+    GG_REQUIRE(s.waitUntil([&] {
+        return s.itemExists("//Branches/branch_other/###branch_other") && s.session()->snapshot()->headBranch == "main";
+    }));
+    s.settle();
     s.contextMenu("//Branches/branch_other/###branch_other", "Check out");
     GG_REQUIRE(s.waitUntil([&] { return s.gitOut(repo, {"branch", "--show-current"}) == "other"; }));
     s.settle();
