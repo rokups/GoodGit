@@ -865,14 +865,10 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
         const float button = cw * 2.5f;
         const float bx0 = l.origin == '+' ? 0.0f : cw * 6.0f;
         const float bx1 = bx0 + button * static_cast<float>(count);
-        // The line handle and the hunk handle share the space around the buttons.
-        float lineX = 0.0f, lineW = bx0, hunkX = bx1, hunkW = width - bx1;
-        if (bx0 < 1.0f) {
-            lineX = bx1;
-            lineW = hunkW * 0.5f;
-            hunkX = bx1 + lineW;
-            hunkW -= lineW;
-        }
+        // The line handle covers the number column of this line. The hunk handle covers the rest
+        // of the gutter right of the buttons and of that column, mark column included.
+        const float lineX = l.origin == '+' ? cw * 6.0f : 0.0f, lineW = cw * 5.0f;
+        const float hunkX = std::max(bx1, lineX + lineW), hunkW = width - hunkX;
         ImGui::SetCursorScreenPos(ImVec2(pos.x + lineX, pos.y));
         std::snprintf(hid, sizeof(hid), "###line_%d", l.row);
         handle(hid, lineW);
@@ -884,6 +880,8 @@ void DiffPanel::drawGutter(View& v, int index, float width, float height)
             if (hunkText[static_cast<size_t>(k)].origin != ' ')
                 lastChange = k;
         handle(hid, hunkW, l.row + lastChange - l.line);
+        if (itemHoveredForTooltip())
+            tooltip("Select hunk");
         ImGui::SetCursorScreenPos(ImVec2(pos.x + bx0, pos.y));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1.0f, 0.0f));
         ImGui::BeginDisabled(!free || f.linesCut);

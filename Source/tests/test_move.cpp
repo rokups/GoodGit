@@ -61,6 +61,15 @@ void selectCommit(Scenario& s, const std::string& hex, size_t files)
     GG_REQUIRE(s.waitUntil([&] { return s.session()->changes().rows().size() == files; }));
 }
 
+// Scrolls the hunk handle into view and clicks it (a handle outside the view cannot be hovered).
+void selectHunk(Scenario& s, int hunk)
+{
+    const std::string ref = body(s) + "/###hunk_" + std::to_string(hunk);
+    s.ctx->ScrollToItem(ref.c_str(), ImGuiAxis_Y);
+    s.ctx->Yield(2);
+    s.ctx->ItemClick(ref.c_str());
+}
+
 // Opens the context menu of `ref`, reports whether it lists `label`, and closes it again.
 bool menuHas(Scenario& s, const std::string& ref, const char* label)
 {
@@ -167,7 +176,7 @@ GG_TEST("move", "a file with a line over the byte limit cannot move, revert or d
     s.showPanel("Diff");
     GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].linesCut; }, 60.0f));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     ctx->ItemClick((body(s) + "/###hunk_0").c_str(), ImGuiMouseButton_Right);
     ctx->Yield(2);
     for (const char* label : {"Move line(s) to child", "Move line(s) to parent", "Move line(s) to active commit", "Revert line(s)###revert",
@@ -196,9 +205,9 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].hunks.size() == 2; }));
     // The second hunk (line 18) to the parent.
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_1").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_1").c_str());
+    selectHunk(s, 1);
     checkMoveSlot(s, body(s) + "/###hunk_1", false, "Move line(s) to child", "Move line(s) to working tree"); // not HEAD
-    ctx->ItemClick((body(s) + "/###hunk_1").c_str());
+    selectHunk(s, 1);
     s.contextMenu((body(s) + "/###hunk_1").c_str(), "Move line(s) to parent");
     GG_CHECK(moved(s, r.path, r.y));
     GG_CHECK(s.gitOut(r.path, {"show", "HEAD~2:a.txt"}).find("LINE 18") != std::string::npos);
@@ -211,7 +220,7 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     ctx->ItemClick(fileRef(s, "a.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { const auto& d = s.session()->diff().diff(); return d && !d->files.empty() && d->files[0].hunks.size() == 1 && d->query.a.hex() == x2; }));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     const std::string beforeActive = s.head(r.path);
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to active commit");
     GG_CHECK(moved(s, r.path, beforeActive));
@@ -223,7 +232,7 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     selectCommit(s, tip, 2);
     ctx->ItemClick(fileRef(s, "a.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Discard line(s)");
     s.dialogButton("Discard changes", "Discard");
     GG_CHECK(moved(s, r.path, tip));
@@ -234,9 +243,9 @@ GG_TEST("move", "lines: a hunk to the parent and to the active commit")
     selectCommit(s, tip, 2);
     ctx->ItemClick(fileRef(s, "a.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     checkMoveSlot(s, body(s) + "/###hunk_0", true, "Move line(s) to child", "Move line(s) to working tree"); // HEAD
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to working tree");
     GG_CHECK(moved(s, r.path, tip));
     GG_CHECK(s.gitOut(r.path, {"show", "HEAD:a.txt"}).find("LINE 2") == std::string::npos);
@@ -281,7 +290,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
             return d && !d->files.empty() && d->files[0].path() == path && !d->files[0].hunks.empty();
         }));
         GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-        ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+        selectHunk(s, 0);
         s.contextMenu((body(s) + "/###hunk_0").c_str(), "Discard line(s)");
         s.dialogButton("Discard changes", "Discard");
         const bool ok = moved(s, repo, y);
@@ -317,7 +326,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
     selectCommit(s, x, 5);
     ctx->ItemClick(fileRef(s, "renamed.txt").c_str());
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to parent");
     GG_REQUIRE(moved(s, repo, y));
     GG_CHECK(s.gitOut(repo, {"show", "HEAD~2:old.txt"}).find("line FIVE") != std::string::npos);
@@ -332,7 +341,7 @@ GG_TEST("move", "lines of an added file, a renamed file, a CRLF file and a mode 
         return d && !d->files.empty() && d->files[0].path() == "crlf.txt" && d->query.a.hex() == x2;
     }));
     GG_REQUIRE(s.waitUntil([&] { return s.itemExists((body(s) + "/###hunk_0").c_str()); }));
-    ctx->ItemClick((body(s) + "/###hunk_0").c_str());
+    selectHunk(s, 0);
     s.contextMenu((body(s) + "/###hunk_0").c_str(), "Move line(s) to child");
     GG_REQUIRE(moved(s, repo, tip2));
     GG_CHECK_STR_EQ(s.revParse(repo, "HEAD~1:crlf.txt"), s.revParse(repo, base + ":crlf.txt"));

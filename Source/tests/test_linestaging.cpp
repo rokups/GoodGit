@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace ggtest {
 
@@ -200,6 +201,30 @@ GG_TEST("linestaging", "hunk buttons sit in the gutter of the first change")
         GG_CHECK(b.Max.x <= handle.Min.x + 1.0f);
     }
     s.screenshot("gg160/hunk_removed");
+}
+
+GG_TEST("linestaging", "a click on the hunk handle selects exactly the changed rows")
+{
+    const fs::path repo = s.fixture(Recipe::Empty, "hunkselect");
+    std::string text;
+    for (int i = 1; i <= 30; ++i)
+        text += "line " + std::to_string(i) + "\n";
+    s.commitFile(repo, "f.txt", text, "Base");
+    std::string changed = text;
+    changed.replace(changed.find("line 3\n"), 7, "LINE 3\n"); // hunk 0 starts with a removal
+    s.write(repo, "f.txt", changed);
+    GG_REQUIRE(s.openRepository(repo));
+    GG_REQUIRE(showFile(s, "Unstaged", "f.txt"));
+    GG_REQUIRE(diffFile(s)->hunks[0].lines[2].origin == '-');
+    const std::string ref = body(s) + "/###hunk_0";
+    ctx->ScrollToItem(ref.c_str(), ImGuiAxis_Y);
+    ctx->Yield(2);
+    ctx->ItemClick(ref.c_str());
+    // Only the removed and the added line: no context line before or after them.
+    std::string sel = s.session()->diff().selectedText();
+    while (!sel.empty() && sel.back() == '\n')
+        sel.pop_back();
+    GG_CHECK_STR_EQ(sel, "line 3\nLINE 3");
 }
 
 GG_TEST("linestaging", "stage, discard and unstage hunks")
