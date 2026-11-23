@@ -225,9 +225,9 @@ private:
     void retireSession(); // closes all dialogs, then moves the session to m_closing
     void openNow(const std::filesystem::path& path);
     void closeNow();
-    void openConfirmed(const std::filesystem::path& path);
+    void openChecked(const std::filesystem::path& path, bool quiet);
     // Runs `go` at once, or after the user agrees to cancel the running job of the open repository (GG-159).
-    void confirmLeave(std::function<void()> go);
+    void confirmLeave(std::function<void()> go, bool opening = false);
     // Opens `path` unless another ggui has its repository open (that window is raised instead).
     // `quiet`: no notice then (the automatic opening of the recent repository).
     void openUnlessOpenElsewhere(const std::filesystem::path& path, bool quiet);

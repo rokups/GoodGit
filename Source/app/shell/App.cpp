@@ -414,6 +414,12 @@ void App::openRepository(const fs::path& path, bool quiet)
 {
     if (path.empty())
         return;
+    // Before any claim or pending count: "Keep open" changes no state.
+    confirmLeave([this, path, quiet] { openChecked(path, quiet); }, true);
+}
+
+void App::openChecked(const fs::path& path, bool quiet)
+{
     // G2: git must be present and new enough; checked (off the UI thread) before every open.
     // The open is pending until the check ends either way (Retry starts a new open).
     ++m_pendingOpens;
@@ -425,7 +431,7 @@ void App::openRepository(const fs::path& path, bool quiet)
             }
             --m_pendingOpens;
         },
-        [this, path, quiet] { openRepository(path, quiet); });
+        [this, path, quiet] { openChecked(path, quiet); });
 }
 
 void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
@@ -468,7 +474,7 @@ void App::retireSession()
     m_closing.push_back(std::move(m_session));
 }
 
-void App::confirmLeave(std::function<void()> go)
+void App::confirmLeave(std::function<void()> go, bool opening)
 {
     const std::string job = m_session ? m_session->actions().busy() : std::string();
     if (job.empty()) {
@@ -479,19 +485,15 @@ void App::confirmLeave(std::function<void()> go)
         return; // one question at a time
     Form f;
     f.title = "A job is running";
-    f.message = "\"" + job + "\" is still running. Closing the repository cancels it.";
-    f.buttons.push_back({"Cancel the job and close", [this, go](Form&) { go(); }});
+    f.message = "\"" + job + "\" is still running. " + (opening ? "Opening another" : "Closing the") + " repository cancels it.";
+    // Posted: retireSession closes all dialogs, and this runs inside the dialog draw.
+    f.buttons.push_back({opening ? "Cancel the job and open" : "Cancel the job and close", [this, go](Form&) { post(go); }});
     f.buttons.back().danger = true;
     f.buttons.push_back({"Keep open", {}});
     m_dialogs.open(std::move(f));
 }
 
 void App::openNow(const fs::path& path)
-{
-    confirmLeave([this, path] { openConfirmed(path); });
-}
-
-void App::openConfirmed(const fs::path& path)
 {
     if (m_session) {
         m_session->cancelAll();
