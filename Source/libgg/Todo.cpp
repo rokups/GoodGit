@@ -15,7 +15,6 @@ using namespace gg::git2;
 
 namespace {
 
-constexpr std::string_view kComment = "#"; // The commit message comment line; the todo uses core.commentChar
 
 bool isSpace(char c) { return c == ' ' || c == '\t'; }
 
