@@ -798,6 +798,8 @@ GG_TEST("edit", "Squash descendants refuses when a descendant is a merge and lea
     GG_REQUIRE(s.openRepository(r.path));
     GG_REQUIRE(rowReady(s, merge));
     s.session()->actions().squashDescendants(ggui::core::Oid::fromHex(r.c3));
+    GG_CHECK(s.dismissError()); // proves the action ran and was refused
+    GG_CHECK(s.app.errorMessage().find("not a single line") != std::string::npos);
     s.settle();
     GG_CHECK_STR_EQ(s.revParse(r.path, "main"), merge);
     GG_CHECK(subjects(s, r.path, "main") == before);
