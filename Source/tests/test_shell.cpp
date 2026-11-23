@@ -1617,6 +1617,103 @@ GG_TEST("shell", "while a mutation runs every menu disables what would conflict;
     GG_CHECK(s.app.dialogs().current() == nullptr);
 }
 
+// Opens a repository and starts a commit that waits in pre-commit until the file `go` exists.
+struct BusyCommit {
+    fs::path repo;
+    std::string head;
+};
+
+template <class S, class C>
+static void startBusyCommit(S& s, C* ctx, BusyCommit& c)
+{
+    c.repo = s.fixture(Recipe::WithRemote);
+    const fs::path go = s.root() / "go";
+    s.write(c.repo / ".git" / "hooks", "pre-commit", "#!/bin/sh\nwhile [ ! -f '" + go.string() + "' ]; do sleep 0.05; done\n");
+    fs::permissions(c.repo / ".git" / "hooks" / "pre-commit", fs::perms::owner_all);
+    GG_REQUIRE(s.openRepository(c.repo));
+    c.head = s.head(c.repo);
+    s.write(c.repo, "busy.txt", "busy\n");
+    s.git(c.repo, {"add", "busy.txt"});
+    s.settle();
+    ctx->ItemClick("//###Toolbar/###tb_commit");
+    GG_REQUIRE(s.dialogOpen("Commit"));
+    s.dialogText("Commit", "message", "Waits for the hook");
+    s.dialogButton("Commit", "Commit");
+    GG_REQUIRE(s.waitUntil([&] { return !s.session()->actions().busy().empty(); }, 10.0f));
+}
+
+GG_TEST("shell", "a close while a job runs asks first; Keep open keeps the repository and the job")
+{
+    BusyCommit c;
+    startBusyCommit(s, ctx, c);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_W);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
+    s.dialogButton("A job is running", "Keep open");
+    s.settle();
+    GG_CHECK(s.session() != nullptr);
+    GG_CHECK(!s.session()->actions().busy().empty());
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.head(c.repo) != c.head; }, 30.0f));
+    s.settle();
+    GG_CHECK(s.session() != nullptr);
+    GG_CHECK_STR_EQ(s.gitOut(c.repo, {"log", "-1", "--format=%s"}), "Waits for the hook");
+}
+
+GG_TEST("shell", "a close while a job runs: Cancel the job and close closes the repository")
+{
+    BusyCommit c;
+    startBusyCommit(s, ctx, c);
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_W);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
+    s.dialogButton("A job is running", "Cancel the job and close");
+    GG_CHECK(s.waitUntil([&] { return s.session() == nullptr; }, 10.0f));
+    s.write(s.root(), "go", ""); // lets a leftover hook end
+    s.settle();
+}
+
+GG_TEST("shell", "an open while a job runs asks first; Keep open keeps the repository and the job")
+{
+    BusyCommit c;
+    startBusyCommit(s, ctx, c);
+    const fs::path other = s.fixture(Recipe::Linear);
+    const fs::path path = s.session()->path();
+    s.app.openRepository(other);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
+    s.dialogButton("A job is running", "Keep open");
+    s.settle();
+    GG_CHECK(s.session() != nullptr && s.session()->path() == path);
+    GG_CHECK(!s.session()->actions().busy().empty());
+    s.write(s.root(), "go", "");
+    GG_CHECK(s.waitUntil([&] { return s.head(c.repo) != c.head; }, 30.0f));
+    s.settle();
+    GG_CHECK(s.session() != nullptr && s.session()->path() == path);
+}
+
+GG_TEST("shell", "an open while a job runs: Cancel the job and open opens the other repository")
+{
+    BusyCommit c;
+    startBusyCommit(s, ctx, c);
+    const fs::path other = s.fixture(Recipe::Linear);
+    s.app.openRepository(other);
+    GG_REQUIRE(s.waitUntil([&] { return s.dialogOpen("A job is running"); }, 5.0f));
+    s.dialogButton("A job is running", "Cancel the job and open");
+    GG_CHECK(s.waitUntil([&] { return s.session() && fs::equivalent(s.session()->path(), other); }, 10.0f));
+    s.write(s.root(), "go", ""); // lets a leftover hook end
+    s.settle();
+    GG_CHECK_STR_EQ(s.head(c.repo), c.head); // the cancelled commit did not land
+    GG_CHECK(s.gitOut(c.repo, {"fsck", "--no-progress"}).find("error") == std::string::npos);
+}
+
+GG_TEST("shell", "a close with no job running closes at once")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    GG_REQUIRE(s.openRepository(repo));
+    s.settle();
+    ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_W);
+    GG_CHECK(s.waitUntil([&] { return s.session() == nullptr; }, 10.0f));
+    GG_CHECK(s.app.dialogs().current() == nullptr);
+}
+
 GG_TEST("shell", "settings files from elsewhere: wrong types, not an object, not JSON; out-of-range values are clamped")
 {
     // A fresh ggui (a restart) reads each settings.json; what it cannot use falls back to defaults.

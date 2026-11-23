@@ -410,10 +410,20 @@ void App::updateLiveSummary()
     m_liveValid = true;
 }
 
-void App::openRepository(const fs::path& path, bool quiet)
+bool App::openRepository(const fs::path& path, bool quiet)
 {
     if (path.empty())
-        return;
+        return true;
+    // Before any claim or pending count: "Keep open" changes no state.
+    if (confirmLeave([this, path, quiet] { openChecked(path, quiet); }, true))
+        return true;
+    if (!quiet)
+        notify(Notice::Info, "Open", "Close the open dialog first, then try again.");
+    return false;
+}
+
+void App::openChecked(const fs::path& path, bool quiet)
+{
     // G2: git must be present and new enough; checked (off the UI thread) before every open.
     // The open is pending until the check ends either way (Retry starts a new open).
     ++m_pendingOpens;
@@ -425,7 +435,7 @@ void App::openRepository(const fs::path& path, bool quiet)
             }
             --m_pendingOpens;
         },
-        [this, path, quiet] { openRepository(path, quiet); });
+        [this, path, quiet] { openChecked(path, quiet); });
 }
 
 void App::openUnlessOpenElsewhere(const fs::path& path, bool quiet)
@@ -466,6 +476,26 @@ void App::retireSession()
     m_dialogs.closeAll();
     m_session->retire();
     m_closing.push_back(std::move(m_session));
+}
+
+bool App::confirmLeave(std::function<void()> go, bool opening)
+{
+    const std::string job = m_session ? m_session->actions().busy() : std::string();
+    if (job.empty()) {
+        go();
+        return true;
+    }
+    if (m_dialogs.anyOpen())
+        return false; // one question at a time
+    Form f;
+    f.title = "A job is running";
+    f.message = "\"" + job + "\" is still running. " + (opening ? "Opening another" : "Closing the") + " repository cancels it.";
+    // Posted: retireSession closes all dialogs, and this runs inside the dialog draw.
+    f.buttons.push_back({opening ? "Cancel the job and open" : "Cancel the job and close", [this, go](Form&) { post(go); }});
+    f.buttons.back().danger = true;
+    f.buttons.push_back({"Keep open", {}});
+    m_dialogs.open(std::move(f));
+    return true;
 }
 
 void App::openNow(const fs::path& path)
@@ -529,7 +559,17 @@ void App::checkGit(std::function<void(bool ok)> done, std::function<void()> retr
     });
 }
 
-void App::closeRepository()
+bool App::closeRepository()
+{
+    if (!m_session)
+        return true;
+    if (confirmLeave([this] { closeNow(); }))
+        return true;
+    notify(Notice::Info, "Close", "Close the open dialog first, then try again.");
+    return false;
+}
+
+void App::closeNow()
 {
     if (!m_session)
         return;

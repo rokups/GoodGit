@@ -97,11 +97,12 @@ public:
 
     // ---- actions (menus, toolbar, Welcome) --------------------------------------------------
     // Checks git first (G2), then opens.
-    void openRepository(const std::filesystem::path& path, bool quiet = false);
+    // False only when a job runs and another dialog is open: nothing happened (a notice tells the user unless `quiet`).
+    bool openRepository(const std::filesystem::path& path, bool quiet = false);
     // Folders dropped on the window: every repository among them joins the recent list, the
     // first folder opens. Files are ignored.
     void openDropped(const std::vector<std::string>& paths);
-    void closeRepository();
+    bool closeRepository(); // false as for openRepository
     void pickAndOpenRepository();
     void initializeRepository();
     void showCloneDialog();
@@ -224,6 +225,11 @@ private:
     void checkGit(std::function<void(bool ok)> done, std::function<void()> retry);
     void retireSession(); // closes all dialogs, then moves the session to m_closing
     void openNow(const std::filesystem::path& path);
+    void closeNow();
+    void openChecked(const std::filesystem::path& path, bool quiet);
+    // Runs `go` at once, or after the user agrees to cancel the running job of the open repository (GG-159).
+    // Returns false (nothing done) only when a job runs and a dialog is already open.
+    bool confirmLeave(std::function<void()> go, bool opening = false);
     // Opens `path` unless another ggui has its repository open (that window is raised instead).
     // `quiet`: no notice then (the automatic opening of the recent repository).
     void openUnlessOpenElsewhere(const std::filesystem::path& path, bool quiet);

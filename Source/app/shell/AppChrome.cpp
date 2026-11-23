@@ -919,8 +919,9 @@ void App::pumpClone()
     switch (m_clone.state()) {
     case core::CloneService::State::Done: {
         const fs::path dest = m_clone.destination();
-        m_clone.reset();
-        openRepository(dest);
+        // Quiet: while a job runs and a dialog is open the Done state stays and the next frame tries again.
+        if (openRepository(dest, true))
+            m_clone.reset();
         break;
     }
     case core::CloneService::State::Failed:
