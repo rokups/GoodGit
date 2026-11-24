@@ -315,6 +315,7 @@ struct HistoryScope {
     std::vector<std::string> refs;    // full ref names when !allRefs
     bool mergesCollapsed = true;      // default state of every merge's side history
     std::vector<Oid> toggledMerges;   // merges whose state differs from the default
+    std::vector<std::string> remoteTags; // sorted local tag names that also exist on a remote; they publish their commits
     bool operator==(const HistoryScope&) const = default;
 };
 

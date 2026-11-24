@@ -49,6 +49,8 @@ public:
     void onSearch(const core::SearchEvent& event);
     void onTaskFinished(const core::TaskFinishedEvent& event);
     void onConflicts(const core::ConflictsEvent& event);
+    // Reloads when the remote tag names change which commits are published.
+    void onRemoteTags();
     void draw(bool* open);
 
     void reload();
@@ -183,6 +185,7 @@ private:
 
     Session& m_session;
     core::SnapshotPtr m_snapshot;
+    std::vector<std::string> m_loadedRemoteTags; // remoteTags of the last history query
     std::vector<core::HistoryRow> m_rows;
     std::unordered_map<core::Oid, int, core::OidHash> m_index;
     // childrenOf cache; the key is the commit, the row count (appends) and m_rowsGen (resets and swaps).

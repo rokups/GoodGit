@@ -253,6 +253,7 @@ void Session::handle(core::Event& event)
                     r.ok = e.ok;
                     r.tags = std::set<std::string>(e.tags.begin(), e.tags.end());
                     r.error = e.error;
+                    m_history->onRemoteTags();
                 }
             } else if constexpr (std::is_same_v<T, core::RemoteBranchesEvent>) {
                 if (e.request == m_remoteBranchesRequest) {

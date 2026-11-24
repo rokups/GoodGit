@@ -143,6 +143,30 @@ GG_TEST("history", "published vs unpublished commits")
     GG_CHECK(s.session()->info().details()->published);
 }
 
+GG_TEST("history", "published by a remote tag")
+{
+    const fs::path repo = s.fixture(Recipe::WithRemote);
+    const std::string local = s.revParse(repo, "main");
+    s.git(repo, {"tag", "pub-tag", local});
+    GG_REQUIRE(s.openRepository(repo));
+    const auto handle = gg::git2::openRepository(repo);
+    const auto published = [&](const ggui::core::HistoryScope& scope) {
+        ggui::core::HistoryState state;
+        std::vector<ggui::core::HistoryRow> rows;
+        ggui::core::historyStart(handle.get(), state, 1, scope, s.session()->snapshot(), 1000, gg::CancelToken::none(),
+            [&](std::shared_ptr<ggui::core::HistoryBatch> b) { rows.insert(rows.end(), b->rows.begin(), b->rows.end()); });
+        for (const auto& row : rows)
+            if (row.id.hex() == local)
+                return row.published;
+        GG_CHECK(false); // the commit has no row
+        return false;
+    };
+    GG_CHECK(!published({}));
+    ggui::core::HistoryScope scope;
+    scope.remoteTags = {"pub-tag"};
+    GG_CHECK(published(scope));
+}
+
 GG_TEST("history", "Working tree menu items have the spacing of the commit menu")
 {
     // The History table runs with zero vertical item spacing; the menus must not inherit it (GG-20).

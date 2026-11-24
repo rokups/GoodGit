@@ -39,6 +39,13 @@ core::HistoryScope HistoryPanel::buildScope() const
 {
     core::HistoryScope scope;
     scope.toggledMerges = m_toggledMerges;
+    for (const auto& t : m_snapshot->tags)
+        for (const auto& [remote, r] : m_session.remoteTags())
+            if (r.ok && r.tags.count(t.name)) {
+                scope.remoteTags.push_back(t.name);
+                break;
+            }
+    std::sort(scope.remoteTags.begin(), scope.remoteTags.end());
     if (m_hidden.empty())
         return scope;
     scope.allRefs = false;
@@ -66,7 +73,11 @@ void HistoryPanel::reload()
     if (m_query)
         m_session.engine().cancel(m_query);
     m_limit = std::max(m_limit, kPageSize);
-    m_query = m_session.engine().loadHistory(buildScope(), m_limit, m_snapshot);
+    core::HistoryScope scope = buildScope();
+    m_loadedRemoteTags = scope.remoteTags;
+    m_query = m_session.engine().loadHistory(std::move(scope), m_limit, m_snapshot);
+    if (!m_snapshot->tags.empty())
+        m_session.requestRemoteTagsIfStale(); // a no-op when fresh
     m_loading = true;
     m_badgeRects.clear(); // rows of an older snapshot never draw again; the shown rows refill it next frame
     // The load cancels a reveal in flight: ask again, behind the load.
@@ -290,6 +301,12 @@ void HistoryPanel::onTaskFinished(const core::TaskFinishedEvent& event)
         if (event.cancelled)
             m_pendingReveal.reset();
     }
+}
+
+void HistoryPanel::onRemoteTags()
+{
+    if (m_snapshot && buildScope().remoteTags != m_loadedRemoteTags)
+        reload();
 }
 
 void HistoryPanel::onConflicts(const core::ConflictsEvent& event)

@@ -425,8 +425,10 @@ void historyStart(git_repository* repo, HistoryState& st, std::uint64_t query, c
         push(b.target, refVisible(scope, scopeRefs, "refs/heads/" + b.name), false);
     for (const auto& r : s.remoteBranches)
         push(r.target, refVisible(scope, scopeRefs, "refs/remotes/" + r.name), true);
+    // shortcut: matches the tag by name only (ls-remote gives no target here), compare targets if a moved tag shows wrong
     for (const auto& t : s.tags)
-        push(t.target, refVisible(scope, scopeRefs, "refs/tags/" + t.name), false);
+        push(t.target, refVisible(scope, scopeRefs, "refs/tags/" + t.name),
+             std::binary_search(scope.remoteTags.begin(), scope.remoteTags.end(), t.name));
     for (const auto& k : s.kept)
         push(k.id, refVisible(scope, scopeRefs, gg::keep::refName(k.id.hex())), false);
     for (const auto& w : s.worktrees)
